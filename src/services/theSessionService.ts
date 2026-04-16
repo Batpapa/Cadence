@@ -61,7 +61,7 @@ export async function searchTunes(query: string): Promise<TuneSearchResult[]> {
 }
 
 export async function fetchTuneById(id: number): Promise<TuneResult> {
-  const res = await fetch(`${BASE}/tunes/${id}?format=json`);
+  const res = await fetch(`${BASE}/tunes/${id}?format=json&order=popular`);
   if (!res.ok) throw new Error(`TheSession fetch failed: ${res.status}`);
   const data = (await res.json()) as RawTuneResponse;
   return {
