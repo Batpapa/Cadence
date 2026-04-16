@@ -4,7 +4,7 @@ A spaced repetition app for building and maintaining a long-term repertoire of a
 
 When you sit down to practice, Cadence helps you make the most of your session by choosing what to review first — prioritising items that are about to be forgotten. It uses the [FSRS v4.5](https://github.com/open-spaced-repetition/fsrs4anki) algorithm, the current state of the art in spaced repetition research.
 
-**[→ Open the app](https://batpapa.github.io/cadence/)**
+**[→ Open the app](https://batpapa.github.io/Cadence/)**
 
 ---
 
