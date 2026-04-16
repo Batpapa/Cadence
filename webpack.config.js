@@ -1,6 +1,7 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = (env, argv) => {
   const isDev = argv.mode === 'development';
@@ -36,6 +37,13 @@ module.exports = (env, argv) => {
     plugins: [
       new HtmlWebpackPlugin({ template: './src/index.html' }),
       ...(!isDev ? [new MiniCssExtractPlugin({ filename: 'styles.[contenthash].css' })] : []),
+      new CopyPlugin({
+        patterns: [
+          { from: 'src/icons',        to: 'icons' },
+          { from: 'src/manifest.json', to: 'manifest.json' },
+          { from: 'src/sw.js',         to: 'sw.js' },
+        ],
+      }),
     ],
     devServer: {
       port: 3002,

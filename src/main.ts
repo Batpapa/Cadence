@@ -12,6 +12,10 @@ import { renderLibraryView } from './views/libraryView';
 import { ensureCurrentUser } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+}
+
 class App {
   private state: AppState;
   private route: Route = { view: 'folder', folderId: null };
