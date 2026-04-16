@@ -1,0 +1,4209 @@
+{
+  "users": {
+    "seed-user": {
+      "id": "seed-user",
+      "name": "Alex",
+      "halfLifeDays": 7,
+      "masteryThreshold": 0.9
+    }
+  },
+  "currentUserId": "seed-user",
+  "cards": {
+    "seed-1": {
+      "id": "seed-1",
+      "name": "ser vs estar",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "grammar"
+      ],
+      "content": {
+        "notes": "**ser** = permanent. **estar** = temporary.\n\n- *Soy alto* (I am tall)\n- *Estoy cansado* (I am tired)",
+        "files": []
+      }
+    },
+    "seed-2": {
+      "id": "seed-2",
+      "name": "tener — to have",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "verbs"
+      ],
+      "content": {
+        "notes": "Irregular verb.\n- tengo, tienes, tiene, tenemos, tenéis, tienen",
+        "files": []
+      }
+    },
+    "seed-3": {
+      "id": "seed-3",
+      "name": "ir — to go",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "verbs"
+      ],
+      "content": {
+        "notes": "- voy, vas, va, vamos, vais, van\n\nOften used as future: *voy a comer* (I am going to eat)",
+        "files": []
+      }
+    },
+    "seed-4": {
+      "id": "seed-4",
+      "name": "hacer — to make/do",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "verbs"
+      ],
+      "content": {
+        "notes": "Irregular: *yo hago*, *él hace*, *hiciste* (past)\n\n*¿Qué haces?* — What are you doing?",
+        "files": []
+      }
+    },
+    "seed-5": {
+      "id": "seed-5",
+      "name": "poder — can/to be able to",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "verbs"
+      ],
+      "content": {
+        "notes": "Stem-changing: o→ue\n- puedo, puedes, puede, podemos, podéis, pueden",
+        "files": []
+      }
+    },
+    "seed-6": {
+      "id": "seed-6",
+      "name": "Subjunctive mood",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "grammar"
+      ],
+      "content": {
+        "notes": "Used for doubt, wishes, emotions.\n\n*Espero que vengas* — I hope you come\n*Es posible que llueva* — It might rain",
+        "files": []
+      }
+    },
+    "seed-7": {
+      "id": "seed-7",
+      "name": "Por vs Para",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "grammar"
+      ],
+      "content": {
+        "notes": "**por** = cause, exchange, duration\n**para** = purpose, destination, deadline",
+        "files": []
+      }
+    },
+    "seed-8": {
+      "id": "seed-8",
+      "name": "Preterite vs Imperfect",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "grammar"
+      ],
+      "content": {
+        "notes": "**Preterite**: completed action\n**Imperfect**: ongoing/habitual in past",
+        "files": []
+      }
+    },
+    "seed-9": {
+      "id": "seed-9",
+      "name": "Reflexive verbs",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "grammar"
+      ],
+      "content": {
+        "notes": "me, te, se, nos, os, se\n\n*Levantarse* — to get up\n*Me levanto a las 7*",
+        "files": []
+      }
+    },
+    "seed-10": {
+      "id": "seed-10",
+      "name": "Ser — conjugation",
+      "importance": 1,
+      "tags": [
+        "spanish",
+        "verbs"
+      ],
+      "content": {
+        "notes": "soy, eres, es, somos, sois, son\n\nIrregular in all forms.",
+        "files": []
+      }
+    },
+    "seed-11": {
+      "id": "seed-11",
+      "name": "Le Passé Composé",
+      "importance": 1,
+      "tags": [
+        "french",
+        "grammar"
+      ],
+      "content": {
+        "notes": "Formed with avoir or être + past participle.\n\n*J'ai mangé* — I ate\n*Je suis allé* — I went",
+        "files": []
+      }
+    },
+    "seed-12": {
+      "id": "seed-12",
+      "name": "L'Imparfait",
+      "importance": 1,
+      "tags": [
+        "french",
+        "grammar"
+      ],
+      "content": {
+        "notes": "Used for habits, descriptions, background in past.\n\n*Je mangeais souvent ici* — I used to eat here often",
+        "files": []
+      }
+    },
+    "seed-13": {
+      "id": "seed-13",
+      "name": "avoir — to have",
+      "importance": 1,
+      "tags": [
+        "french",
+        "verbs"
+      ],
+      "content": {
+        "notes": "j'ai, tu as, il a, nous avons, vous avez, ils ont",
+        "files": []
+      }
+    },
+    "seed-14": {
+      "id": "seed-14",
+      "name": "être — to be",
+      "importance": 1,
+      "tags": [
+        "french",
+        "verbs"
+      ],
+      "content": {
+        "notes": "je suis, tu es, il est, nous sommes, vous êtes, ils sont",
+        "files": []
+      }
+    },
+    "seed-15": {
+      "id": "seed-15",
+      "name": "Gender of nouns",
+      "importance": 1,
+      "tags": [
+        "french",
+        "grammar"
+      ],
+      "content": {
+        "notes": "All nouns are masculine or feminine.\n\nTips:\n- -tion, -ée → feminine\n- -ment, -age → masculine",
+        "files": []
+      }
+    },
+    "seed-16": {
+      "id": "seed-16",
+      "name": "French liaisons",
+      "importance": 1,
+      "tags": [
+        "french",
+        "phonetics"
+      ],
+      "content": {
+        "notes": "Linking consonants between words.\n\n*les amis* → [lez ami]\n*vous avez* → [vuz ave]",
+        "files": []
+      }
+    },
+    "seed-17": {
+      "id": "seed-17",
+      "name": "Negation: ne...pas",
+      "importance": 1,
+      "tags": [
+        "french",
+        "grammar"
+      ],
+      "content": {
+        "notes": "Surrounds the verb.\n*Je ne sais pas* — I don't know\nIn spoken French, *ne* is often dropped.",
+        "files": []
+      }
+    },
+    "seed-18": {
+      "id": "seed-18",
+      "name": "Conditional mood",
+      "importance": 1,
+      "tags": [
+        "french",
+        "grammar"
+      ],
+      "content": {
+        "notes": "Formed with infinitive + imperfect endings.\n*Je voudrais* — I would like",
+        "files": []
+      }
+    },
+    "seed-19": {
+      "id": "seed-19",
+      "name": "Closures",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "fundamentals"
+      ],
+      "content": {
+        "notes": "A closure captures variables from its outer scope.\n\n```js\nfunction counter() {\n  let n = 0;\n  return () => ++n;\n}\n```",
+        "files": []
+      }
+    },
+    "seed-20": {
+      "id": "seed-20",
+      "name": "Event Loop",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "runtime"
+      ],
+      "content": {
+        "notes": "JS is single-threaded. The event loop processes:\n1. Call stack\n2. Microtasks (Promises)\n3. Macrotasks (setTimeout)",
+        "files": []
+      }
+    },
+    "seed-21": {
+      "id": "seed-21",
+      "name": "Promise vs async/await",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "async"
+      ],
+      "content": {
+        "notes": "`async/await` is syntactic sugar over Promises.\n\nBoth are non-blocking and use the microtask queue.",
+        "files": []
+      }
+    },
+    "seed-22": {
+      "id": "seed-22",
+      "name": "Prototype chain",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "oop"
+      ],
+      "content": {
+        "notes": "Every object has a `[[Prototype]]`. Property lookup walks the chain until `null`.\n\n`Object.create(proto)` sets the prototype explicitly.",
+        "files": []
+      }
+    },
+    "seed-23": {
+      "id": "seed-23",
+      "name": "Array.reduce()",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "arrays"
+      ],
+      "content": {
+        "notes": "```js\n[1,2,3].reduce((acc, x) => acc + x, 0) // 6\n```\nBuilds a single value by iterating.",
+        "files": []
+      }
+    },
+    "seed-24": {
+      "id": "seed-24",
+      "name": "Destructuring",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "syntax"
+      ],
+      "content": {
+        "notes": "```js\nconst { a, b } = obj;\nconst [x, y] = arr;\nconst { a: renamed } = obj;\n```",
+        "files": []
+      }
+    },
+    "seed-25": {
+      "id": "seed-25",
+      "name": "var vs let vs const",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "fundamentals"
+      ],
+      "content": {
+        "notes": "- `var`: function-scoped, hoisted\n- `let`: block-scoped\n- `const`: block-scoped, no reassignment",
+        "files": []
+      }
+    },
+    "seed-26": {
+      "id": "seed-26",
+      "name": "Spread & Rest operators",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "syntax"
+      ],
+      "content": {
+        "notes": "```js\n// Spread\nconst merged = { ...a, ...b };\n// Rest\nfunction f(x, ...rest) {}\n```",
+        "files": []
+      }
+    },
+    "seed-27": {
+      "id": "seed-27",
+      "name": "WeakMap & WeakRef",
+      "importance": 1,
+      "tags": [
+        "javascript",
+        "memory"
+      ],
+      "content": {
+        "notes": "Allow GC to collect keys/values.\nUseful for caches without memory leaks.",
+        "files": []
+      }
+    },
+    "seed-28": {
+      "id": "seed-28",
+      "name": "Singleton",
+      "importance": 1,
+      "tags": [
+        "patterns",
+        "creational"
+      ],
+      "content": {
+        "notes": "Ensures a class has only one instance.\n\nRisk: global state, hard to test.",
+        "files": []
+      }
+    },
+    "seed-29": {
+      "id": "seed-29",
+      "name": "Observer",
+      "importance": 1,
+      "tags": [
+        "patterns",
+        "behavioral"
+      ],
+      "content": {
+        "notes": "Subject notifies observers when state changes.\n\nUsed in event systems, React state.",
+        "files": []
+      }
+    },
+    "seed-30": {
+      "id": "seed-30",
+      "name": "Factory",
+      "importance": 1,
+      "tags": [
+        "patterns",
+        "creational"
+      ],
+      "content": {
+        "notes": "Creates objects without specifying the exact class.\n\n```ts\nfunction createShape(type: string): Shape { ... }\n```",
+        "files": []
+      }
+    },
+    "seed-31": {
+      "id": "seed-31",
+      "name": "Strategy",
+      "importance": 1,
+      "tags": [
+        "patterns",
+        "behavioral"
+      ],
+      "content": {
+        "notes": "Encapsulates interchangeable algorithms.\n\n```ts\ncontext.setStrategy(new QuickSort());\n```",
+        "files": []
+      }
+    },
+    "seed-32": {
+      "id": "seed-32",
+      "name": "Decorator",
+      "importance": 1,
+      "tags": [
+        "patterns",
+        "structural"
+      ],
+      "content": {
+        "notes": "Wraps an object to add behaviour dynamically.\n\nUsed in middleware, logging, caching.",
+        "files": []
+      }
+    },
+    "seed-33": {
+      "id": "seed-33",
+      "name": "Command",
+      "importance": 1,
+      "tags": [
+        "patterns",
+        "behavioral"
+      ],
+      "content": {
+        "notes": "Encapsulates an action as an object.\n\nEnables undo/redo, queuing, logging.",
+        "files": []
+      }
+    },
+    "seed-34": {
+      "id": "seed-34",
+      "name": "Adapter",
+      "importance": 1,
+      "tags": [
+        "patterns",
+        "structural"
+      ],
+      "content": {
+        "notes": "Translates one interface into another.\n\nUseful when integrating third-party libraries.",
+        "files": []
+      }
+    },
+    "seed-35": {
+      "id": "seed-35",
+      "name": "Mitosis phases",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "cells"
+      ],
+      "content": {
+        "notes": "PMAT: Prophase, Metaphase, Anaphase, Telophase\n\nResult: 2 identical daughter cells.",
+        "files": []
+      }
+    },
+    "seed-36": {
+      "id": "seed-36",
+      "name": "DNA replication",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "genetics"
+      ],
+      "content": {
+        "notes": "Semi-conservative: each strand is a template.\n\nKey enzymes: helicase, primase, DNA polymerase, ligase.",
+        "files": []
+      }
+    },
+    "seed-37": {
+      "id": "seed-37",
+      "name": "Krebs cycle",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "metabolism"
+      ],
+      "content": {
+        "notes": "Takes acetyl-CoA, produces CO₂, NADH, FADH₂, ATP.\n\nOccurs in mitochondrial matrix.",
+        "files": []
+      }
+    },
+    "seed-38": {
+      "id": "seed-38",
+      "name": "Membrane structure",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "cells"
+      ],
+      "content": {
+        "notes": "Fluid mosaic model: phospholipid bilayer + proteins.\n\nSemi-permeable, controls transport.",
+        "files": []
+      }
+    },
+    "seed-39": {
+      "id": "seed-39",
+      "name": "Natural selection",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "evolution"
+      ],
+      "content": {
+        "notes": "1. Variation exists\n2. Some variants survive better\n3. Traits are heritable\n4. Allele frequencies shift over generations",
+        "files": []
+      }
+    },
+    "seed-40": {
+      "id": "seed-40",
+      "name": "Enzyme kinetics",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "biochemistry"
+      ],
+      "content": {
+        "notes": "Michaelis-Menten: v = Vmax·[S] / (Km + [S])\n\nKm = substrate conc at half Vmax.",
+        "files": []
+      }
+    },
+    "seed-41": {
+      "id": "seed-41",
+      "name": "Transcription vs Translation",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "genetics"
+      ],
+      "content": {
+        "notes": "**Transcription**: DNA → mRNA (nucleus)\n**Translation**: mRNA → protein (ribosome)",
+        "files": []
+      }
+    },
+    "seed-42": {
+      "id": "seed-42",
+      "name": "ATP structure",
+      "importance": 1,
+      "tags": [
+        "biology",
+        "biochemistry"
+      ],
+      "content": {
+        "notes": "Adenosine + 3 phosphate groups.\n\nHydrolysis of terminal phosphate releases ~30.5 kJ/mol.",
+        "files": []
+      }
+    },
+    "seed-43": {
+      "id": "seed-43",
+      "name": "Newton's second law",
+      "importance": 1,
+      "tags": [
+        "physics",
+        "mechanics"
+      ],
+      "content": {
+        "notes": "F = ma\n\nForce = mass × acceleration.\nSI units: Newtons (N) = kg·m/s²",
+        "files": []
+      }
+    },
+    "seed-44": {
+      "id": "seed-44",
+      "name": "Conservation of momentum",
+      "importance": 1,
+      "tags": [
+        "physics",
+        "mechanics"
+      ],
+      "content": {
+        "notes": "In a closed system: Σp = constant\n\np = mv\n\nUsed in collision problems.",
+        "files": []
+      }
+    },
+    "seed-45": {
+      "id": "seed-45",
+      "name": "Work-energy theorem",
+      "importance": 1,
+      "tags": [
+        "physics",
+        "mechanics"
+      ],
+      "content": {
+        "notes": "W = ΔKE\n\nNet work done = change in kinetic energy.",
+        "files": []
+      }
+    },
+    "seed-46": {
+      "id": "seed-46",
+      "name": "Projectile motion",
+      "importance": 1,
+      "tags": [
+        "physics",
+        "mechanics"
+      ],
+      "content": {
+        "notes": "Horizontal: x = v₀t\nVertical: y = v₀t − ½gt²\n\nIndependent components.",
+        "files": []
+      }
+    },
+    "seed-47": {
+      "id": "seed-47",
+      "name": "Torque",
+      "importance": 1,
+      "tags": [
+        "physics",
+        "mechanics"
+      ],
+      "content": {
+        "notes": "τ = r × F\n\nRotational equivalent of force.\nUnits: N·m",
+        "files": []
+      }
+    },
+    "seed-48": {
+      "id": "seed-48",
+      "name": "Simple harmonic motion",
+      "importance": 1,
+      "tags": [
+        "physics",
+        "mechanics"
+      ],
+      "content": {
+        "notes": "Restoring force: F = −kx\n\nPeriod: T = 2π√(m/k)\n\nEnergy oscillates between KE and PE.",
+        "files": []
+      }
+    },
+    "seed-49": {
+      "id": "seed-49",
+      "name": "Speed of light",
+      "importance": 1,
+      "tags": [
+        "physics",
+        "constants"
+      ],
+      "content": {
+        "notes": "c ≈ 3 × 10⁸ m/s in vacuum.\n\nDefines the metre since 1983.",
+        "files": []
+      }
+    },
+    "seed-50": {
+      "id": "seed-50",
+      "name": "Pythagorean theorem",
+      "importance": 1,
+      "tags": [
+        "maths"
+      ],
+      "content": {
+        "notes": "a² + b² = c² for right triangles.\n\nGeneralised by the law of cosines.",
+        "files": []
+      }
+    },
+    "seed-51": {
+      "id": "seed-51",
+      "name": "Photosynthesis equation",
+      "importance": 1,
+      "tags": [
+        "biology"
+      ],
+      "content": {
+        "notes": "6CO₂ + 6H₂O + light → C₆H₁₂O₆ + 6O₂",
+        "files": []
+      }
+    },
+    "seed-52": {
+      "id": "seed-52",
+      "name": "Avogadro's number",
+      "importance": 1,
+      "tags": [
+        "chemistry",
+        "constants"
+      ],
+      "content": {
+        "notes": "Nₐ ≈ 6.022 × 10²³ mol⁻¹\n\nNumber of particles in 1 mole.",
+        "files": []
+      }
+    },
+    "seed-53": {
+      "id": "seed-53",
+      "name": "The French Revolution",
+      "importance": 1,
+      "tags": [
+        "history"
+      ],
+      "content": {
+        "notes": "1789–1799\n\nKey events: storming of the Bastille, Declaration of Rights, Terror, Napoleon's rise.",
+        "files": []
+      }
+    },
+    "seed-54": {
+      "id": "seed-54",
+      "name": "Supply and demand",
+      "importance": 1,
+      "tags": [
+        "economics"
+      ],
+      "content": {
+        "notes": "Price rises when demand exceeds supply.\nPrice falls when supply exceeds demand.\n\nEquilibrium: quantity supplied = demanded.",
+        "files": []
+      }
+    },
+    "seed-55": {
+      "id": "seed-55",
+      "name": "Cognitive biases",
+      "importance": 1,
+      "tags": [
+        "psychology"
+      ],
+      "content": {
+        "notes": "Confirmation bias: seek info that confirms beliefs.\nDunning-Kruger: low competence → overconfidence.\nAnchor effect: first number influences judgement.",
+        "files": []
+      }
+    }
+  },
+  "decks": {
+    "seed-56": {
+      "id": "seed-56",
+      "name": "Spanish Essentials",
+      "entries": [
+        {
+          "cardId": "seed-1"
+        },
+        {
+          "cardId": "seed-2"
+        },
+        {
+          "cardId": "seed-3"
+        },
+        {
+          "cardId": "seed-4"
+        },
+        {
+          "cardId": "seed-5"
+        },
+        {
+          "cardId": "seed-6"
+        },
+        {
+          "cardId": "seed-7"
+        },
+        {
+          "cardId": "seed-8"
+        },
+        {
+          "cardId": "seed-9"
+        },
+        {
+          "cardId": "seed-10"
+        }
+      ]
+    },
+    "seed-57": {
+      "id": "seed-57",
+      "name": "French Grammar",
+      "entries": [
+        {
+          "cardId": "seed-11"
+        },
+        {
+          "cardId": "seed-12"
+        },
+        {
+          "cardId": "seed-13"
+        },
+        {
+          "cardId": "seed-14"
+        },
+        {
+          "cardId": "seed-15"
+        },
+        {
+          "cardId": "seed-16"
+        },
+        {
+          "cardId": "seed-17"
+        },
+        {
+          "cardId": "seed-18"
+        }
+      ]
+    },
+    "seed-58": {
+      "id": "seed-58",
+      "name": "JavaScript",
+      "entries": [
+        {
+          "cardId": "seed-19"
+        },
+        {
+          "cardId": "seed-20"
+        },
+        {
+          "cardId": "seed-21"
+        },
+        {
+          "cardId": "seed-22"
+        },
+        {
+          "cardId": "seed-23"
+        },
+        {
+          "cardId": "seed-24"
+        },
+        {
+          "cardId": "seed-25"
+        },
+        {
+          "cardId": "seed-26"
+        },
+        {
+          "cardId": "seed-27"
+        }
+      ]
+    },
+    "seed-59": {
+      "id": "seed-59",
+      "name": "Design Patterns",
+      "entries": [
+        {
+          "cardId": "seed-28"
+        },
+        {
+          "cardId": "seed-29"
+        },
+        {
+          "cardId": "seed-30"
+        },
+        {
+          "cardId": "seed-31"
+        },
+        {
+          "cardId": "seed-32"
+        },
+        {
+          "cardId": "seed-33"
+        },
+        {
+          "cardId": "seed-34"
+        }
+      ]
+    },
+    "seed-60": {
+      "id": "seed-60",
+      "name": "Biology",
+      "entries": [
+        {
+          "cardId": "seed-35"
+        },
+        {
+          "cardId": "seed-36"
+        },
+        {
+          "cardId": "seed-37"
+        },
+        {
+          "cardId": "seed-38"
+        },
+        {
+          "cardId": "seed-39"
+        },
+        {
+          "cardId": "seed-40"
+        },
+        {
+          "cardId": "seed-41"
+        },
+        {
+          "cardId": "seed-42"
+        }
+      ]
+    },
+    "seed-61": {
+      "id": "seed-61",
+      "name": "Mechanics",
+      "entries": [
+        {
+          "cardId": "seed-43"
+        },
+        {
+          "cardId": "seed-44"
+        },
+        {
+          "cardId": "seed-45"
+        },
+        {
+          "cardId": "seed-46"
+        },
+        {
+          "cardId": "seed-47"
+        },
+        {
+          "cardId": "seed-48"
+        }
+      ]
+    },
+    "seed-62": {
+      "id": "seed-62",
+      "name": "General Culture",
+      "entries": [
+        {
+          "cardId": "seed-49"
+        },
+        {
+          "cardId": "seed-50"
+        },
+        {
+          "cardId": "seed-51"
+        },
+        {
+          "cardId": "seed-52"
+        },
+        {
+          "cardId": "seed-53"
+        },
+        {
+          "cardId": "seed-54"
+        },
+        {
+          "cardId": "seed-55"
+        }
+      ]
+    }
+  },
+  "cardWorks": {
+    "seed-user:seed-1": {
+      "userId": "seed-user",
+      "cardId": "seed-1",
+      "history": [
+        {
+          "ts": 1721408460000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1724187540000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1728586260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731257820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1735925580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1742328540000,
+          "rating": "well"
+        },
+        {
+          "ts": 1746630060000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752612000000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757446920000,
+          "rating": "well"
+        },
+        {
+          "ts": 1764007500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768236360000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774030320000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 35.4375
+    },
+    "seed-user:seed-2": {
+      "userId": "seed-user",
+      "cardId": "seed-2",
+      "history": [
+        {
+          "ts": 1722963120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1725811620000,
+          "rating": "again"
+        },
+        {
+          "ts": 1730665500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1732820820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1736540940000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1739047920000,
+          "rating": "well"
+        },
+        {
+          "ts": 1743613740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747162740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751475720000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758990540000,
+          "rating": "well"
+        },
+        {
+          "ts": 1764434280000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767037320000,
+          "rating": "well"
+        },
+        {
+          "ts": 1770830520000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775753700000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 39.8671875
+    },
+    "seed-user:seed-3": {
+      "userId": "seed-user",
+      "cardId": "seed-3",
+      "history": [
+        {
+          "ts": 1718909820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1725218280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1728062820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1735749240000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741724880000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1748109720000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755459120000,
+          "rating": "well"
+        },
+        {
+          "ts": 1761246180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1767116640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774635660000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 15.75
+    },
+    "seed-user:seed-4": {
+      "userId": "seed-user",
+      "cardId": "seed-4",
+      "history": [
+        {
+          "ts": 1724005500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1727372520000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731879180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1735232880000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1737138360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740687420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743615780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747509360000,
+          "rating": "well"
+        },
+        {
+          "ts": 1751573340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1754766000000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758903780000,
+          "rating": "well"
+        },
+        {
+          "ts": 1762628820000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767024540000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771618020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775681520000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 79.734375
+    },
+    "seed-user:seed-5": {
+      "userId": "seed-user",
+      "cardId": "seed-5",
+      "history": [
+        {
+          "ts": 1717620300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1719688440000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1721402700000,
+          "rating": "again"
+        },
+        {
+          "ts": 1724353980000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1725652680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1727708760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1729445700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731261420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1734283080000,
+          "rating": "well"
+        },
+        {
+          "ts": 1737309720000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740415260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743182100000,
+          "rating": "well"
+        },
+        {
+          "ts": 1745855340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747595400000,
+          "rating": "well"
+        },
+        {
+          "ts": 1750440600000,
+          "rating": "well"
+        },
+        {
+          "ts": 1751988600000,
+          "rating": "well"
+        },
+        {
+          "ts": 1755361380000,
+          "rating": "well"
+        },
+        {
+          "ts": 1757105820000,
+          "rating": "well"
+        },
+        {
+          "ts": 1762542300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765316280000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767384420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770569100000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772742180000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775838900000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 302.741455078125
+    },
+    "seed-user:seed-6": {
+      "userId": "seed-user",
+      "cardId": "seed-6",
+      "history": [
+        {
+          "ts": 1722793560000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1726590180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1729787520000,
+          "rating": "again"
+        },
+        {
+          "ts": 1734026820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1737754380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1739651040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743535020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1745420580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747423680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750950120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1754511600000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758732420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762881540000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1766866620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768495920000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771190580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773857460000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 7.875
+    },
+    "seed-user:seed-7": {
+      "userId": "seed-user",
+      "cardId": "seed-7",
+      "history": [
+        {
+          "ts": 1715183220000,
+          "rating": "again"
+        },
+        {
+          "ts": 1720381080000,
+          "rating": "again"
+        },
+        {
+          "ts": 1722444360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1724859180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1728057120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1733518380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1736276820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740515220000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1744656840000,
+          "rating": "well"
+        },
+        {
+          "ts": 1747668480000,
+          "rating": "well"
+        },
+        {
+          "ts": 1752777300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757533560000,
+          "rating": "well"
+        },
+        {
+          "ts": 1760636460000,
+          "rating": "well"
+        },
+        {
+          "ts": 1763747460000,
+          "rating": "well"
+        },
+        {
+          "ts": 1766946000000,
+          "rating": "well"
+        },
+        {
+          "ts": 1770146220000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773428880000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 44.8505859375
+    },
+    "seed-user:seed-8": {
+      "userId": "seed-user",
+      "cardId": "seed-8",
+      "history": [
+        {
+          "ts": 1718051760000,
+          "rating": "again"
+        },
+        {
+          "ts": 1720460700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1727122440000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731349620000,
+          "rating": "again"
+        },
+        {
+          "ts": 1734538740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1737580740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1739908380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741892760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743537780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746200280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1748287620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750611300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753559040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758640500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762619220000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765305060000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1767298800000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769279700000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773864900000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775318580000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 5.90625
+    },
+    "seed-user:seed-9": {
+      "userId": "seed-user",
+      "cardId": "seed-9",
+      "history": [
+        {
+          "ts": 1717533300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1720471320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1723998720000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1726769340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1730654820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1737495780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741196040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743710160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746907800000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751042040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1756663080000,
+          "rating": "well"
+        },
+        {
+          "ts": 1759938420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764101400000,
+          "rating": "well"
+        },
+        {
+          "ts": 1768505520000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771009020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773176880000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774815420000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 35.4375
+    },
+    "seed-user:seed-10": {
+      "userId": "seed-user",
+      "cardId": "seed-10",
+      "history": [
+        {
+          "ts": 1725639960000,
+          "rating": "again"
+        },
+        {
+          "ts": 1727122080000,
+          "rating": "again"
+        },
+        {
+          "ts": 1730065260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731787920000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1733248320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1735236060000,
+          "rating": "well"
+        },
+        {
+          "ts": 1738617780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740676620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1742152080000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1744907640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747428060000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750434120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753977960000,
+          "rating": "well"
+        },
+        {
+          "ts": 1755709680000,
+          "rating": "well"
+        },
+        {
+          "ts": 1757085180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762888020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764348960000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1767638280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770927300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773777420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775071080000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 8.859375
+    },
+    "seed-user:seed-11": {
+      "userId": "seed-user",
+      "cardId": "seed-11",
+      "history": [
+        {
+          "ts": 1753726320000,
+          "rating": "again"
+        },
+        {
+          "ts": 1756567740000,
+          "rating": "again"
+        },
+        {
+          "ts": 1759956780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762457100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764702660000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1766339040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1767891000000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769107500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771357080000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 1.75
+    },
+    "seed-user:seed-12": {
+      "userId": "seed-user",
+      "cardId": "seed-12",
+      "history": [
+        {
+          "ts": 1752785640000,
+          "rating": "again"
+        },
+        {
+          "ts": 1755116460000,
+          "rating": "again"
+        },
+        {
+          "ts": 1757271240000,
+          "rating": "again"
+        },
+        {
+          "ts": 1759762920000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762024800000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764102180000,
+          "rating": "again"
+        },
+        {
+          "ts": 1766952120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769969760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771961100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773948420000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 0.5
+    },
+    "seed-user:seed-13": {
+      "userId": "seed-user",
+      "cardId": "seed-13",
+      "history": [
+        {
+          "ts": 1751048700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753207380000,
+          "rating": "again"
+        },
+        {
+          "ts": 1758474960000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762376460000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764795720000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769537700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771957200000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774288620000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 7.875
+    },
+    "seed-user:seed-14": {
+      "userId": "seed-user",
+      "cardId": "seed-14",
+      "history": [
+        {
+          "ts": 1746719160000,
+          "rating": "again"
+        },
+        {
+          "ts": 1750105560000,
+          "rating": "again"
+        },
+        {
+          "ts": 1751645580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753475820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755981960000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1759168740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761414300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765997160000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767815340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769284380000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772648340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774112760000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775503860000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 8.859375
+    },
+    "seed-user:seed-15": {
+      "userId": "seed-user",
+      "cardId": "seed-15",
+      "history": [
+        {
+          "ts": 1749742200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1754500320000,
+          "rating": "again"
+        },
+        {
+          "ts": 1759173060000,
+          "rating": "again"
+        },
+        {
+          "ts": 1762804320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1766172660000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770323160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772554020000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 2.625
+    },
+    "seed-user:seed-16": {
+      "userId": "seed-user",
+      "cardId": "seed-16",
+      "history": [
+        {
+          "ts": 1748724000000,
+          "rating": "again"
+        },
+        {
+          "ts": 1751903880000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753296360000,
+          "rating": "again"
+        },
+        {
+          "ts": 1756313460000,
+          "rating": "again"
+        },
+        {
+          "ts": 1758652380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761590580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765302120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768762020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770833520000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773692580000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 0.875
+    },
+    "seed-user:seed-17": {
+      "userId": "seed-user",
+      "cardId": "seed-17",
+      "history": [
+        {
+          "ts": 1751564700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753722780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1760820780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764359100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1767130020000,
+          "rating": "well"
+        },
+        {
+          "ts": 1768686840000,
+          "rating": "well"
+        },
+        {
+          "ts": 1770322800000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773694260000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775153760000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 35.4375
+    },
+    "seed-user:seed-18": {
+      "userId": "seed-user",
+      "cardId": "seed-18",
+      "history": [
+        {
+          "ts": 1750697280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752075360000,
+          "rating": "again"
+        },
+        {
+          "ts": 1754339760000,
+          "rating": "again"
+        },
+        {
+          "ts": 1757438700000,
+          "rating": "again"
+        },
+        {
+          "ts": 1758728640000,
+          "rating": "again"
+        },
+        {
+          "ts": 1762115400000,
+          "rating": "again"
+        },
+        {
+          "ts": 1764013260000,
+          "rating": "again"
+        },
+        {
+          "ts": 1766687640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768931580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770150780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773348000000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 0.75
+    },
+    "seed-user:seed-19": {
+      "userId": "seed-user",
+      "cardId": "seed-19",
+      "history": [
+        {
+          "ts": 1738691460000,
+          "rating": "again"
+        },
+        {
+          "ts": 1740597480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741981380000,
+          "rating": "again"
+        },
+        {
+          "ts": 1743703020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1745689500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749485460000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752777660000,
+          "rating": "again"
+        },
+        {
+          "ts": 1755975360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757957160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1759424820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761324180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764364800000,
+          "rating": "well"
+        },
+        {
+          "ts": 1766520480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769884620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771430820000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 1.96875
+    },
+    "seed-user:seed-20": {
+      "userId": "seed-user",
+      "cardId": "seed-20",
+      "history": [
+        {
+          "ts": 1740074760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741984980000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746040260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1748033520000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749574860000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750872840000,
+          "rating": "well"
+        },
+        {
+          "ts": 1751744580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752869400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1754080200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755792240000,
+          "rating": "well"
+        },
+        {
+          "ts": 1759518300000,
+          "rating": "well"
+        },
+        {
+          "ts": 1761939120000,
+          "rating": "well"
+        },
+        {
+          "ts": 1765913460000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767372420000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769628600000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771694220000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774129260000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775492280000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 365
+    },
+    "seed-user:seed-21": {
+      "userId": "seed-user",
+      "cardId": "seed-21",
+      "history": [
+        {
+          "ts": 1732552920000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1734548580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1737139380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1738945260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740936480000,
+          "rating": "well"
+        },
+        {
+          "ts": 1742748120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1744921620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747151820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749757080000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752171780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755361200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757696880000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1760815560000,
+          "rating": "well"
+        },
+        {
+          "ts": 1763491140000,
+          "rating": "well"
+        },
+        {
+          "ts": 1766771160000,
+          "rating": "well"
+        },
+        {
+          "ts": 1770492540000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773429120000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 79.734375
+    },
+    "seed-user:seed-22": {
+      "userId": "seed-user",
+      "cardId": "seed-22",
+      "history": [
+        {
+          "ts": 1739557560000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1742504220000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1745439000000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746736020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1748798220000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751126700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752265140000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1754927040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757090640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1759866480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764098700000,
+          "rating": "well"
+        },
+        {
+          "ts": 1768686060000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769791920000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772308200000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775576460000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 35.4375
+    },
+    "seed-user:seed-23": {
+      "userId": "seed-user",
+      "cardId": "seed-23",
+      "history": [
+        {
+          "ts": 1741363500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749487320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751986860000,
+          "rating": "well"
+        },
+        {
+          "ts": 1754508360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758818100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1760546700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765311120000,
+          "rating": "well"
+        },
+        {
+          "ts": 1770056880000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772044920000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774630740000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 53.15625
+    },
+    "seed-user:seed-24": {
+      "userId": "seed-user",
+      "cardId": "seed-24",
+      "history": [
+        {
+          "ts": 1736890680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740335400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741896540000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1745855400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747850580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751050320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1754928900000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1756497480000,
+          "rating": "well"
+        },
+        {
+          "ts": 1765215900000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767558840000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769117640000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771276080000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774896060000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 53.15625
+    },
+    "seed-user:seed-25": {
+      "userId": "seed-user",
+      "cardId": "seed-25",
+      "history": [
+        {
+          "ts": 1734638520000,
+          "rating": "again"
+        },
+        {
+          "ts": 1736797800000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740772620000,
+          "rating": "again"
+        },
+        {
+          "ts": 1744746120000,
+          "rating": "again"
+        },
+        {
+          "ts": 1746478740000,
+          "rating": "again"
+        },
+        {
+          "ts": 1748029080000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750880520000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753200600000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1754670720000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1756753020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758305940000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1760284440000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762021680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764187260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765471920000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1767804960000,
+          "rating": "well"
+        },
+        {
+          "ts": 1770147420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771263180000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773001560000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774371780000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 2.53125
+    },
+    "seed-user:seed-26": {
+      "userId": "seed-user",
+      "cardId": "seed-26",
+      "history": [
+        {
+          "ts": 1742229420000,
+          "rating": "again"
+        },
+        {
+          "ts": 1744392180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746725280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749412200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751139480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1753980420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755194280000,
+          "rating": "well"
+        },
+        {
+          "ts": 1757009220000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758053640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1759337280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1760457840000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761667620000,
+          "rating": "well"
+        },
+        {
+          "ts": 1763143920000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764184260000,
+          "rating": "well"
+        },
+        {
+          "ts": 1765226400000,
+          "rating": "well"
+        },
+        {
+          "ts": 1766693160000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769620620000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771793640000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 59.80078125
+    },
+    "seed-user:seed-27": {
+      "userId": "seed-user",
+      "cardId": "seed-27",
+      "history": [
+        {
+          "ts": 1731448200000,
+          "rating": "again"
+        },
+        {
+          "ts": 1733590260000,
+          "rating": "again"
+        },
+        {
+          "ts": 1734637860000,
+          "rating": "again"
+        },
+        {
+          "ts": 1736364420000,
+          "rating": "again"
+        },
+        {
+          "ts": 1738602120000,
+          "rating": "again"
+        },
+        {
+          "ts": 1740242880000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743187260000,
+          "rating": "again"
+        },
+        {
+          "ts": 1744401300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746736680000,
+          "rating": "again"
+        },
+        {
+          "ts": 1749064980000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751397300000,
+          "rating": "again"
+        },
+        {
+          "ts": 1754237160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755375480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757963040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1759770840000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761860580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1763395680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764621780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1766512380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768840320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770065340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772381100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773942060000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 0.75
+    },
+    "seed-user:seed-28": {
+      "userId": "seed-user",
+      "cardId": "seed-28",
+      "history": [
+        {
+          "ts": 1767820680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768768740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769532180000,
+          "rating": "again"
+        },
+        {
+          "ts": 1770932100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771621260000,
+          "rating": "again"
+        },
+        {
+          "ts": 1772468100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773609120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774543860000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775061120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775674680000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 1.75
+    },
+    "seed-user:seed-29": {
+      "userId": "seed-user",
+      "cardId": "seed-29",
+      "history": [
+        {
+          "ts": 1768669140000,
+          "rating": "again"
+        },
+        {
+          "ts": 1770669540000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772128500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775763900000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 3.5
+    },
+    "seed-user:seed-30": {
+      "userId": "seed-user",
+      "cardId": "seed-30",
+      "history": [
+        {
+          "ts": 1769453700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771863180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774462320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775937420000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 10.5
+    },
+    "seed-user:seed-31": {
+      "userId": "seed-user",
+      "cardId": "seed-31",
+      "history": [
+        {
+          "ts": 1767902160000,
+          "rating": "again"
+        },
+        {
+          "ts": 1768509720000,
+          "rating": "again"
+        },
+        {
+          "ts": 1769718900000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770394920000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771606680000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772471400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773251280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773954660000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774724280000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 2.625
+    },
+    "seed-user:seed-32": {
+      "userId": "seed-user",
+      "cardId": "seed-32",
+      "history": [
+        {
+          "ts": 1766609100000,
+          "rating": "again"
+        },
+        {
+          "ts": 1767646500000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769457300000,
+          "rating": "again"
+        },
+        {
+          "ts": 1770749160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772044620000,
+          "rating": "again"
+        },
+        {
+          "ts": 1773865260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775157000000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 0.875
+    },
+    "seed-user:seed-33": {
+      "userId": "seed-user",
+      "cardId": "seed-33",
+      "history": [
+        {
+          "ts": 1769808480000,
+          "rating": "again"
+        },
+        {
+          "ts": 1770739800000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771439100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771958040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772726460000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773611400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774978320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775756940000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 5.25
+    },
+    "seed-user:seed-34": {
+      "userId": "seed-user",
+      "cardId": "seed-34",
+      "history": [
+        {
+          "ts": 1768252920000,
+          "rating": "again"
+        },
+        {
+          "ts": 1769978340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772818320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1774629360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775414820000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 3.5
+    },
+    "seed-user:seed-35": {
+      "userId": "seed-user",
+      "cardId": "seed-35",
+      "history": [
+        {
+          "ts": 1717600860000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1721331600000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1722870420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1724692500000,
+          "rating": "well"
+        },
+        {
+          "ts": 1726506600000,
+          "rating": "well"
+        },
+        {
+          "ts": 1729188300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731084600000,
+          "rating": "well"
+        },
+        {
+          "ts": 1733768820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1738174620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1742319480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1745941080000,
+          "rating": "well"
+        },
+        {
+          "ts": 1751643420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755632460000,
+          "rating": "well"
+        },
+        {
+          "ts": 1758477540000,
+          "rating": "well"
+        },
+        {
+          "ts": 1762965420000,
+          "rating": "well"
+        },
+        {
+          "ts": 1765907340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1768249680000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772229360000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775582160000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 365
+    },
+    "seed-user:seed-36": {
+      "userId": "seed-user",
+      "cardId": "seed-36",
+      "history": [
+        {
+          "ts": 1717355160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1718553360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1720555560000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1722193920000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1725566400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1727032380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1728501840000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1730842140000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1733349000000,
+          "rating": "well"
+        },
+        {
+          "ts": 1734810120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1738264440000,
+          "rating": "well"
+        },
+        {
+          "ts": 1740943260000,
+          "rating": "well"
+        },
+        {
+          "ts": 1742248140000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743969120000,
+          "rating": "well"
+        },
+        {
+          "ts": 1747330500000,
+          "rating": "well"
+        },
+        {
+          "ts": 1748977560000,
+          "rating": "well"
+        },
+        {
+          "ts": 1750970820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752593760000,
+          "rating": "well"
+        },
+        {
+          "ts": 1754420160000,
+          "rating": "well"
+        },
+        {
+          "ts": 1757520120000,
+          "rating": "well"
+        },
+        {
+          "ts": 1760385600000,
+          "rating": "well"
+        },
+        {
+          "ts": 1761928980000,
+          "rating": "well"
+        },
+        {
+          "ts": 1765050720000,
+          "rating": "well"
+        },
+        {
+          "ts": 1766438340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769618700000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772813520000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 365
+    },
+    "seed-user:seed-37": {
+      "userId": "seed-user",
+      "cardId": "seed-37",
+      "history": [
+        {
+          "ts": 1718045640000,
+          "rating": "again"
+        },
+        {
+          "ts": 1720890660000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1722192000000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1725814740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1730408760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1733598360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1735579260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1739204160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743958260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747582860000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749227640000,
+          "rating": "well"
+        },
+        {
+          "ts": 1752250980000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1754167740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755794400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757534280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761251340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1764619260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768161960000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769981640000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773525060000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775503680000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 39.8671875
+    },
+    "seed-user:seed-38": {
+      "userId": "seed-user",
+      "cardId": "seed-38",
+      "history": [
+        {
+          "ts": 1723309080000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1724696280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1726602120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1728852060000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1729868820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731270300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1734204780000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1736018940000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1737392700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1739132640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1742931060000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1745951160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747249860000,
+          "rating": "well"
+        },
+        {
+          "ts": 1748551620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1751484180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755373620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761856440000,
+          "rating": "well"
+        },
+        {
+          "ts": 1764538200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1766604660000,
+          "rating": "well"
+        },
+        {
+          "ts": 1768590900000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771531140000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774296180000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 79.734375
+    },
+    "seed-user:seed-39": {
+      "userId": "seed-user",
+      "cardId": "seed-39",
+      "history": [
+        {
+          "ts": 1725043800000,
+          "rating": "again"
+        },
+        {
+          "ts": 1729023720000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731083820000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1734367020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1739211360000,
+          "rating": "well"
+        },
+        {
+          "ts": 1742248380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1745420400000,
+          "rating": "well"
+        },
+        {
+          "ts": 1748272020000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752593580000,
+          "rating": "well"
+        },
+        {
+          "ts": 1755880320000,
+          "rating": "well"
+        },
+        {
+          "ts": 1758035220000,
+          "rating": "well"
+        },
+        {
+          "ts": 1761248280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1763149800000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773345300000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 59.80078125
+    },
+    "seed-user:seed-40": {
+      "userId": "seed-user",
+      "cardId": "seed-40",
+      "history": [
+        {
+          "ts": 1718816280000,
+          "rating": "again"
+        },
+        {
+          "ts": 1722438960000,
+          "rating": "again"
+        },
+        {
+          "ts": 1724700240000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1727979960000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1730919600000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1733510580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1738442520000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743091260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749751320000,
+          "rating": "well"
+        },
+        {
+          "ts": 1754326860000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1758050100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762449780000,
+          "rating": "well"
+        },
+        {
+          "ts": 1765737960000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767562860000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771864140000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775233620000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 19.93359375
+    },
+    "seed-user:seed-41": {
+      "userId": "seed-user",
+      "cardId": "seed-41",
+      "history": [
+        {
+          "ts": 1721144340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1722880980000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1724267760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1726599000000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1728922080000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1731085560000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1733772120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1736197560000,
+          "rating": "well"
+        },
+        {
+          "ts": 1738859100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1743454560000,
+          "rating": "well"
+        },
+        {
+          "ts": 1746804120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750279140000,
+          "rating": "well"
+        },
+        {
+          "ts": 1755111300000,
+          "rating": "well"
+        },
+        {
+          "ts": 1758401280000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761758340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1763668860000,
+          "rating": "well"
+        },
+        {
+          "ts": 1766076660000,
+          "rating": "well"
+        },
+        {
+          "ts": 1768061340000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771101180000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772474820000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774368480000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 365
+    },
+    "seed-user:seed-42": {
+      "userId": "seed-user",
+      "cardId": "seed-42",
+      "history": [
+        {
+          "ts": 1726346700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1730304900000,
+          "rating": "again"
+        },
+        {
+          "ts": 1734558840000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1736531160000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1739465100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741718460000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1748549280000,
+          "rating": "well"
+        },
+        {
+          "ts": 1752696600000,
+          "rating": "well"
+        },
+        {
+          "ts": 1754593260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757264940000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761071760000,
+          "rating": "well"
+        },
+        {
+          "ts": 1763136900000,
+          "rating": "well"
+        },
+        {
+          "ts": 1764965940000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772556840000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775073720000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 26.578125
+    },
+    "seed-user:seed-43": {
+      "userId": "seed-user",
+      "cardId": "seed-43",
+      "history": [
+        {
+          "ts": 1767206160000,
+          "rating": "again"
+        },
+        {
+          "ts": 1769012760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1770840240000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775593620000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 3.5
+    },
+    "seed-user:seed-44": {
+      "userId": "seed-user",
+      "cardId": "seed-44",
+      "history": [
+        {
+          "ts": 1770309120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771612140000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772828760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775062200000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 10.5
+    },
+    "seed-user:seed-45": {
+      "userId": "seed-user",
+      "cardId": "seed-45",
+      "history": [
+        {
+          "ts": 1762885320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765820100000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1767116400000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771184220000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1773165780000,
+          "rating": "well"
+        },
+        {
+          "ts": 1774560840000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 10.5
+    },
+    "seed-user:seed-46": {
+      "userId": "seed-user",
+      "cardId": "seed-46",
+      "history": [
+        {
+          "ts": 1765212540000,
+          "rating": "again"
+        },
+        {
+          "ts": 1769717940000,
+          "rating": "again"
+        },
+        {
+          "ts": 1774040520000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 1.75
+    },
+    "seed-user:seed-47": {
+      "userId": "seed-user",
+      "cardId": "seed-47",
+      "history": [
+        {
+          "ts": 1762967460000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1764451380000,
+          "rating": "again"
+        },
+        {
+          "ts": 1768063200000,
+          "rating": "again"
+        },
+        {
+          "ts": 1771347660000,
+          "rating": "again"
+        },
+        {
+          "ts": 1775240520000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 0.875
+    },
+    "seed-user:seed-48": {
+      "userId": "seed-user",
+      "cardId": "seed-48",
+      "history": [
+        {
+          "ts": 1762621020000,
+          "rating": "again"
+        },
+        {
+          "ts": 1767994320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769102340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771522620000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1772738760000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1775147220000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 3.5
+    },
+    "seed-user:seed-49": {
+      "userId": "seed-user",
+      "cardId": "seed-49",
+      "history": [
+        {
+          "ts": 1740858840000,
+          "rating": "again"
+        },
+        {
+          "ts": 1742400840000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1744297980000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746202620000,
+          "rating": "again"
+        },
+        {
+          "ts": 1747943700000,
+          "rating": "again"
+        },
+        {
+          "ts": 1749752340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752164460000,
+          "rating": "again"
+        },
+        {
+          "ts": 1753889580000,
+          "rating": "again"
+        },
+        {
+          "ts": 1756657260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757872440000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1760119800000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762378800000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1763405580000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765138260000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1766952660000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769112480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771271580000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773680040000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775845680000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 2.53125
+    },
+    "seed-user:seed-50": {
+      "userId": "seed-user",
+      "cardId": "seed-50",
+      "history": [
+        {
+          "ts": 1746131760000,
+          "rating": "again"
+        },
+        {
+          "ts": 1751042040000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757602860000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762361340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765744200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769630520000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 5.25
+    },
+    "seed-user:seed-51": {
+      "userId": "seed-user",
+      "cardId": "seed-51",
+      "history": [
+        {
+          "ts": 1726337520000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1728834600000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1732212060000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1737148320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1741801980000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1744746480000,
+          "rating": "well"
+        },
+        {
+          "ts": 1748618700000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752169500000,
+          "rating": "well"
+        },
+        {
+          "ts": 1755617880000,
+          "rating": "well"
+        },
+        {
+          "ts": 1760297520000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762890540000,
+          "rating": "well"
+        },
+        {
+          "ts": 1766425740000,
+          "rating": "well"
+        },
+        {
+          "ts": 1770413400000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772400660000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 119.6015625
+    },
+    "seed-user:seed-52": {
+      "userId": "seed-user",
+      "cardId": "seed-52",
+      "history": [
+        {
+          "ts": 1731344460000,
+          "rating": "again"
+        },
+        {
+          "ts": 1733935380000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1736613360000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1738776420000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1740678300000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1742592480000,
+          "rating": "well"
+        },
+        {
+          "ts": 1744744680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1748886180000,
+          "rating": "well"
+        },
+        {
+          "ts": 1752767100000,
+          "rating": "well"
+        },
+        {
+          "ts": 1756146000000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757536080000,
+          "rating": "well"
+        },
+        {
+          "ts": 1761161580000,
+          "rating": "well"
+        },
+        {
+          "ts": 1764106380000,
+          "rating": "well"
+        },
+        {
+          "ts": 1767289560000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768768680000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1771096860000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 59.80078125
+    },
+    "seed-user:seed-53": {
+      "userId": "seed-user",
+      "cardId": "seed-53",
+      "history": [
+        {
+          "ts": 1736973120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1738774080000,
+          "rating": "again"
+        },
+        {
+          "ts": 1740171540000,
+          "rating": "again"
+        },
+        {
+          "ts": 1743008940000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1746377340000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1747846200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750876740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1752770640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1757520960000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1759863120000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1761079320000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1763397660000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1765661220000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1768510380000,
+          "rating": "well"
+        },
+        {
+          "ts": 1769964180000,
+          "rating": "well"
+        },
+        {
+          "ts": 1771875960000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775145540000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 5.90625
+    },
+    "seed-user:seed-54": {
+      "userId": "seed-user",
+      "cardId": "seed-54",
+      "history": [
+        {
+          "ts": 1739308980000,
+          "rating": "again"
+        },
+        {
+          "ts": 1745254200000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1750785180000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1756932480000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1763574600000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1769017260000,
+          "rating": "well"
+        },
+        {
+          "ts": 1773606600000,
+          "rating": "well"
+        }
+      ],
+      "halfLifeDays": 7.875
+    },
+    "seed-user:seed-55": {
+      "userId": "seed-user",
+      "cardId": "seed-55",
+      "history": [
+        {
+          "ts": 1734367440000,
+          "rating": "again"
+        },
+        {
+          "ts": 1739462640000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1744141860000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1749223140000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1755964740000,
+          "rating": "ok"
+        },
+        {
+          "ts": 1762799040000,
+          "rating": "well"
+        },
+        {
+          "ts": 1765472400000,
+          "rating": "well"
+        },
+        {
+          "ts": 1772301540000,
+          "rating": "well"
+        },
+        {
+          "ts": 1775496300000,
+          "rating": "ok"
+        }
+      ],
+      "halfLifeDays": 11.8125
+    }
+  },
+  "folders": {
+    "seed-65": {
+      "userId": "seed-user",
+      "id": "seed-65",
+      "name": "Languages",
+      "folderIds": [],
+      "deckIds": [
+        "seed-56",
+        "seed-57"
+      ]
+    },
+    "seed-66": {
+      "userId": "seed-user",
+      "id": "seed-66",
+      "name": "Programming",
+      "folderIds": [],
+      "deckIds": [
+        "seed-58",
+        "seed-59"
+      ]
+    },
+    "seed-64": {
+      "userId": "seed-user",
+      "id": "seed-64",
+      "name": "Sciences",
+      "folderIds": [
+        "seed-63"
+      ],
+      "deckIds": [
+        "seed-60"
+      ]
+    },
+    "seed-63": {
+      "userId": "seed-user",
+      "id": "seed-63",
+      "name": "Physics",
+      "folderIds": [],
+      "deckIds": [
+        "seed-61"
+      ]
+    }
+  },
+  "rootFolderIds": [
+    "seed-65",
+    "seed-66",
+    "seed-64"
+  ],
+  "rootDeckIds": [
+    "seed-62"
+  ]
+}
