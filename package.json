@@ -5,7 +5,7 @@
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack serve --mode development",
-    "deploy": "npm run build && git add dist && (git diff --cached --quiet && echo 'Nothing new to deploy.' || git commit -m \"deploy\") && git push"
+    "deploy": "git add . && (git diff --cached --quiet && echo 'Nothing to commit.' || git commit -m \"${npm_config_msg:-deploy}\") && git push"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.0",
