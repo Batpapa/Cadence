@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+}
+
+@layer components {
+  .btn        { @apply px-3 py-1.5 text-sm font-medium rounded transition-colors cursor-pointer; }
+  .btn-ghost  { @apply btn text-muted hover:text-primary hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted disabled:hover:bg-transparent; }
+  .btn-primary { @apply btn bg-accent hover:bg-accent-hover text-white; }
+  .btn-danger { @apply btn bg-danger/10 hover:bg-danger/20 text-danger; }
+  .input      { @apply w-full bg-bg border border-border rounded px-3 py-2 text-sm text-primary
+                       placeholder-dim focus:outline-none focus:border-accent transition-colors; }
+  .label      { @apply block text-xs font-medium text-muted uppercase tracking-wider mb-1; }
+  .card-block { @apply bg-elevated border border-border rounded-lg p-4; }
+  .section-title { @apply text-xs font-semibold text-muted uppercase tracking-widest; }
+  .view-enter { animation: fadeSlideIn 0.15s ease-out; }
+  .knowledge-bar { @apply h-1.5 rounded-full bg-border overflow-hidden; }
+  .knowledge-fill { @apply h-full rounded-full transition-all duration-500; }
+  .card-checkbox { accent-color: theme('colors.accent'); @apply w-3.5 h-3.5 rounded cursor-pointer; }
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Markdown */
+.markdown h1 { @apply text-xl font-bold text-primary mb-3 mt-4; }
+.markdown h2 { @apply text-lg font-semibold text-primary mb-2 mt-4; }
+.markdown h3 { @apply text-base font-semibold text-primary mb-2 mt-3; }
+.markdown h4 { @apply text-sm font-semibold text-primary mb-1 mt-3; }
+.markdown h5 { @apply text-xs font-semibold text-muted mb-1 mt-2 uppercase tracking-wide; }
+.markdown p  { @apply text-sm text-primary/90 mb-3 leading-relaxed; }
+.markdown a  { @apply text-accent underline hover:text-accent-hover; }
+.markdown ul { @apply list-disc list-inside text-sm text-primary/90 mb-3 space-y-1; }
+.markdown ol { @apply list-decimal list-inside text-sm text-primary/90 mb-3 space-y-1; }
+.markdown li input[type="checkbox"] { @apply mr-1 accent-accent; }
+.markdown code { @apply font-mono text-xs bg-elevated px-1.5 py-0.5 rounded text-accent; }
+.markdown pre { @apply bg-bg border border-border rounded p-3 mb-3 overflow-x-auto; }
+.markdown pre code { @apply bg-transparent p-0 text-primary/90 text-xs rounded-none; }
+.markdown blockquote { @apply border-l-2 border-accent/40 pl-3 text-muted italic mb-3; }
+.markdown strong { @apply font-semibold text-primary; }
+.markdown em { @apply italic; }
+.markdown hr { @apply border-border my-4; }
+.markdown table { @apply w-full text-sm mb-3 border-collapse; }
+.markdown thead { @apply border-b border-border; }
+.markdown th { @apply text-left text-xs font-semibold text-muted uppercase tracking-wide px-3 py-2; }
+.markdown td { @apply px-3 py-2 text-primary/90 border-b border-border/50; }
+.markdown tbody tr:hover { @apply bg-elevated/50; }
+
+/* ABC notation audio controls */
+.abcjs-inline-audio .abcjs-midi-tempo { color: #000; }
+
+/* Drag & drop indicators */
+.drop-before { box-shadow: inset 0 2px 0 0 #8b7cf8; }
+.drop-after  { box-shadow: inset 0 -2px 0 0 #8b7cf8; }
+.drop-into   { background-color: rgba(139, 124, 248, 0.15) !important; }

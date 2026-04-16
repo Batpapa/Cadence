@@ -1,0 +1,30 @@
+{
+  "name": "cadence",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack serve --mode development",
+    "deploy": "npm run build && git add dist && (git diff --cached --quiet && echo 'Nothing new to deploy.' || git commit -m \"deploy\") && git push"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.0",
+    "css-loader": "^7.1.0",
+    "html-webpack-plugin": "^5.6.0",
+    "mini-css-extract-plugin": "^2.9.0",
+    "postcss": "^8.4.0",
+    "postcss-loader": "^8.1.0",
+    "style-loader": "^3.3.0",
+    "tailwindcss": "^3.4.0",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.4.0",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.0",
+    "webpack-dev-server": "^5.0.0"
+  },
+  "dependencies": {
+    "abcjs": "^6.6.2",
+    "idb": "^8.0.3",
+    "marked": "^18.0.0"
+  }
+}
