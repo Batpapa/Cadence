@@ -58,6 +58,49 @@
 /* ABC notation audio controls */
 .abcjs-inline-audio .abcjs-midi-tempo { color: #000; }
 
+/* Portrait mode overlay */
+#rotate-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #0d0d0d;
+  color: #e0e0e0;
+  align-items: center;
+  justify-content: center;
+}
+#rotate-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  padding: 32px;
+}
+#rotate-content svg {
+  width: 64px;
+  height: 64px;
+  color: #888;
+  animation: rotate-hint 2s ease-in-out infinite;
+}
+#rotate-content p {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+}
+#rotate-content span {
+  font-size: 0.875rem;
+  color: #888;
+}
+@keyframes rotate-hint {
+  0%, 100% { transform: rotate(0deg); }
+  40%       { transform: rotate(90deg); }
+  60%       { transform: rotate(90deg); }
+}
+@media (max-width: 768px) and (orientation: portrait) {
+  #rotate-overlay { display: flex; }
+}
+
 /* Drag & drop indicators */
 .drop-before { box-shadow: inset 0 2px 0 0 #8b7cf8; }
 .drop-after  { box-shadow: inset 0 -2px 0 0 #8b7cf8; }
