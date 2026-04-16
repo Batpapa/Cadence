@@ -1,29 +1,24 @@
 # Cadence
 
-A spaced repetition app for learning Irish traditional music tunes.
+A spaced repetition app for building and maintaining a long-term repertoire of anything.
 
-Cadence helps you build and maintain a repertoire by scheduling tune reviews at the right moment — just before you'd forget them. It uses the [FSRS v4.5](https://github.com/open-spaced-repetition/fsrs4anki) algorithm, the current state of the art in spaced repetition research.
+When you sit down to practice, Cadence helps you make the most of your session by choosing what to review first — prioritising items that are about to be forgotten. It uses the [FSRS v4.5](https://github.com/open-spaced-repetition/fsrs4anki) algorithm, the current state of the art in spaced repetition research.
 
-**[→ Open the app](https://YOUR_USERNAME.github.io/cadence/)**
+**[→ Open the app](https://batpapa.github.io/cadence/)**
 
 ---
 
 ## Features
 
-- **Import tunes from TheSession** — search by name, import with all settings (keys, modes) as playable ABC notation files
-- **ABC notation viewer** — rendered sheet music with audio playback and tempo control
-- **Spaced repetition study** — FSRS-based scheduling with four rating levels (Again / Hard / Good / Easy)
-- **Deck organisation** — group tunes into decks (by style, set, difficulty…), nest decks in folders
+- **Flashcard-based study** — rate each card after review (Again / Hard / Good / Easy), FSRS tracks how well you know each item and prioritises accordingly
+- **Deck organisation** — group cards into decks, nest decks in folders
 - **Knowledge tracking** — per-card and per-deck retention scores, weighted by importance
+- **Rich cards** — attach notes, images, sheet music, audio files, or any document to a card
 - **Works offline** — everything is stored locally in your browser (IndexedDB), nothing is sent to a server
 
-## How to use
+## TheSession integration
 
-1. Open the app in your browser
-2. Create a deck (e.g. *Reels I'm learning*)
-3. Add cards — either manually or by importing from TheSession
-4. Hit **Study** and rate each tune after playing it: how well did you remember it?
-5. Come back regularly — Cadence will show you the tunes that need attention
+Cadence includes built-in support for [TheSession.org](https://thesession.org), a community library of folk and traditional music. You can search and import any tune directly by name — all available settings (keys and modes) are imported as ABC notation files, rendered as sheet music with audio playback and tempo control inside the app.
 
 ## Tech stack
 
@@ -36,4 +31,5 @@ npm install
 npm run dev      # dev server at localhost:8080
 npm run build    # production build → dist/
 npm run deploy   # build + push to GitHub Pages
+npm run deploy --msg="your message"   # with a custom commit message
 ```
