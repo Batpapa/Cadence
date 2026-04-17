@@ -21,6 +21,7 @@ let status: DriveStatus = localStorage.getItem(LS_CONNECTED) === '1' ? 'connecte
 const listeners: Array<(s: DriveStatus) => void> = [];
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingState: AppState | null = null;
+let flushInProgress = false;
 
 function setStatus(s: DriveStatus): void {
   status = s;
@@ -153,8 +154,10 @@ export function disconnectDrive(): void {
 }
 
 async function flushSync(): Promise<void> {
-  if (!fileId || !pendingState) return;
+  if (!fileId || !pendingState || flushInProgress) return;
+  flushInProgress = true;
   const state = pendingState;
+  pendingState = null;
   setStatus('syncing');
   try {
     const ts = Date.now();
@@ -171,11 +174,12 @@ async function flushSync(): Promise<void> {
       `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
       { method: 'PATCH', body: form }
     );
-    pendingState = null;
     localStorage.setItem(LS_LOCAL_TS, String(ts));
-    setStatus('connected');
+    setStatus(pendingState ? 'pending' : 'connected');
   } catch {
     setStatus('error');
+  } finally {
+    flushInProgress = false;
   }
 }
 
@@ -184,7 +188,7 @@ export function syncToCloud(state: AppState): void {
   pendingState = state;
   setStatus('pending');
   if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => { void flushSync(); }, 30_000);
+  syncTimer = setTimeout(() => { syncTimer = null; void flushSync(); }, 30_000);
 }
 
 export async function manualSync(): Promise<void> {
