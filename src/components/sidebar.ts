@@ -456,10 +456,21 @@ function showSettingsModal(ctx: AppContext): void {
     return p;
   };
 
+  const legalRow = document.createElement('p');
+  legalRow.className = 'text-xs text-muted flex gap-3';
+  const privacyLink = document.createElement('a');
+  privacyLink.href = './privacy.html'; privacyLink.target = '_blank'; privacyLink.rel = 'noopener';
+  privacyLink.className = 'text-accent hover:underline'; privacyLink.textContent = t('settings.aboutPrivacy');
+  const termsLink = document.createElement('a');
+  termsLink.href = './terms.html'; termsLink.target = '_blank'; termsLink.rel = 'noopener';
+  termsLink.className = 'text-accent hover:underline'; termsLink.textContent = t('settings.aboutTerms');
+  legalRow.append(privacyLink, termsLink);
+
   aboutBlock.append(
     mkAboutLine('settings.aboutLine1'),
     mkAboutLine('settings.aboutLine2'),
     mkAboutLine('settings.aboutLine3', 'https://github.com/Batpapa/Cadence'),
+    legalRow,
   );
   body.append(aboutTitle, aboutBlock);
 

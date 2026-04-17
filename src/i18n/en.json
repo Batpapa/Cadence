@@ -228,6 +228,8 @@
   "settings.aboutLine1": "Cadence — open-source spaced repetition app",
   "settings.aboutLine2": "Author: Antoine Lucat — antl@hotmail.fr",
   "settings.aboutLine3": "github.com/Batpapa/Cadence",
+  "settings.aboutPrivacy": "Privacy Policy",
+  "settings.aboutTerms": "Terms of Service",
   "settings.import.title": "Import backup",
   "settings.import.message": "This will replace all current data. Are you sure?",
   "settings.import.confirm": "Replace",
