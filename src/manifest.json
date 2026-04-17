@@ -4,7 +4,7 @@
   "description": "Spaced repetition for your music repertoire",
   "start_url": "./",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "landscape",
   "background_color": "#0d0d0d",
   "theme_color": "#0d0d0d",
