@@ -83,6 +83,8 @@
   "dashboard.period.1y": "1a",
   "dashboard.decksToReview": "Paquets à revoir",
   "dashboard.cardMap": "Carte des cartes",
+  "dashboard.filterAll": "tout",
+  "dashboard.filterNone": "aucun",
   "dashboard.session": "{count} session",
   "dashboard.sessions": "{count} sessions",
 

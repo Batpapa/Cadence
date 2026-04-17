@@ -83,6 +83,8 @@
   "dashboard.period.1y": "1y",
   "dashboard.decksToReview": "Decks to review",
   "dashboard.cardMap": "Card Map",
+  "dashboard.filterAll": "all",
+  "dashboard.filterNone": "none",
   "dashboard.session": "{count} session",
   "dashboard.sessions": "{count} sessions",
 
