@@ -1,5 +1,5 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
-import { generateId, emptyState } from '../utils';
+import { generateId, emptyState, renderKnowledgeBar } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from './modal';
 import { getCurrentUser, updateUser, ensureCurrentUser } from '../services/userService';
 import { findParentFolder } from '../services/deckService';
@@ -205,16 +205,7 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   // Mini knowledge distribution bar (weighted by card importance)
   const user = getCurrentUser(ctx.state);
   const { buckets, total } = deckKnowledgeBuckets(user, deck, ctx.state.cards, ctx.state.cardWorks, user.weightByImportance ?? true);
-  const miniBar = document.createElement('div');
-  miniBar.className = 'flex h-1 w-10 rounded overflow-hidden shrink-0 opacity-60 group-hover:opacity-100 transition-opacity bg-border';
-  if (total > 0) {
-    for (const [i, cls] of (['bg-danger', 'bg-warn', 'bg-success/60', 'bg-success'] as const).entries()) {
-      const w = buckets[i]! / total;
-      if (w === 0) continue;
-      const s = document.createElement('div'); s.className = cls; s.style.width = `${w * 100}%`;
-      miniBar.appendChild(s);
-    }
-  }
+  const miniBar = renderKnowledgeBar(buckets, total, 'flex h-1 w-10 rounded overflow-hidden shrink-0 opacity-60 group-hover:opacity-100 transition-opacity bg-border');
 
   el.append(icon, name, miniBar);
   el.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });

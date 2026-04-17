@@ -67,6 +67,59 @@ export function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+export function renderKnowledgeBar(
+  buckets: [number, number, number, number],
+  total: number,
+  className: string
+): HTMLDivElement {
+  const bar = document.createElement('div');
+  bar.className = className;
+  if (total > 0) {
+    for (const [i, cls] of (['bg-danger', 'bg-warn', 'bg-success/60', 'bg-success'] as const).entries()) {
+      const w = buckets[i]! / total;
+      if (w === 0) continue;
+      const seg = document.createElement('div'); seg.className = cls; seg.style.width = `${w * 100}%`;
+      bar.appendChild(seg);
+    }
+  }
+  return bar;
+}
+
+export function makeInlineEditable(el: HTMLElement, currentValue: string, onSave: (val: string) => void): void {
+  el.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors';
+  el.title = 'Click to rename';
+  el.onclick = () => {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = currentValue;
+    inp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary w-full';
+    el.replaceWith(inp); inp.focus(); inp.select();
+    const commit = () => {
+      const val = inp.value.trim();
+      if (val && val !== currentValue) { onSave(val); }
+      else { inp.replaceWith(el); }
+    };
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      if (e.key === 'Escape') { inp.replaceWith(el); }
+    });
+  };
+}
+
+export function unlinkIcon(size = 11): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.innerHTML = '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/>';
+  return svg;
+}
+
 export function trashIcon(size = 14): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 16 16');

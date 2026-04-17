@@ -1,5 +1,5 @@
 import type { AppContext, Card, DeckEntry } from '../types';
-import { pct, timeAgo, knowledgeColor, trashIcon } from '../utils';
+import { pct, timeAgo, knowledgeColor, trashIcon, renderKnowledgeBar, makeInlineEditable, unlinkIcon } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { findParentFolder, decksContainingCard } from '../services/deckService';
@@ -30,24 +30,8 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   const titleWrap = document.createElement('div');
   const title = document.createElement('h1');
-  title.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors';
-  title.textContent = deck.name; title.title = 'Click to rename';
-  title.onclick = () => {
-    const inp = document.createElement('input');
-    inp.type = 'text'; inp.value = deck.name;
-    inp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary w-full';
-    title.replaceWith(inp); inp.focus(); inp.select();
-    const commit = () => {
-      const val = inp.value.trim();
-      if (val && val !== deck.name) { ctx.mutate(s => { s.decks[deckId]!.name = val; }); }
-      else { inp.replaceWith(title); }
-    };
-    inp.addEventListener('blur', commit);
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-      if (e.key === 'Escape') { inp.replaceWith(title); }
-    });
-  };
+  title.textContent = deck.name;
+  makeInlineEditable(title, deck.name, val => ctx.mutate(s => { s.decks[deckId]!.name = val; }));
   titleWrap.appendChild(title);
 
   const headerActions = document.createElement('div'); headerActions.className = 'flex gap-2 shrink-0';
@@ -75,15 +59,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   const knLabel = document.createElement('div'); knLabel.className = 'section-title'; knLabel.textContent = 'Knowledge';
   const knVal = document.createElement('div'); knVal.className = 'text-2xl font-mono font-semibold text-primary'; knVal.textContent = pct(dk);
   const { buckets: knBuckets, total: knTotal } = deckKnowledgeBuckets(user, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
-  const knBar = document.createElement('div'); knBar.className = 'flex h-1.5 rounded overflow-hidden bg-border';
-  if (knTotal > 0) {
-    for (const [i, cls] of (['bg-danger', 'bg-warn', 'bg-success/60', 'bg-success'] as const).entries()) {
-      const w = knBuckets[i]! / knTotal;
-      if (w === 0) continue;
-      const s = document.createElement('div'); s.className = cls; s.style.width = `${w * 100}%`;
-      knBar.appendChild(s);
-    }
-  }
+  const knBar = renderKnowledgeBar(knBuckets, knTotal, 'flex h-1.5 rounded overflow-hidden bg-border');
   knBox.append(knLabel, knVal, knBar);
 
   // Mastered
@@ -201,7 +177,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
       const rowActions = document.createElement('div'); rowActions.className = 'hidden group-hover:flex gap-2';
 
       const unlinkBtn = document.createElement('button'); unlinkBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer'; unlinkBtn.title = 'Remove from deck';
-      unlinkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+      unlinkBtn.appendChild(unlinkIcon());
       unlinkBtn.onclick = () => { ctx.mutate(s => { s.decks[deckId]!.entries = s.decks[deckId]!.entries.filter(e => e.cardId !== card.id); }); };
 
       rowActions.append(unlinkBtn);

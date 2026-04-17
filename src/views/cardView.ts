@@ -1,8 +1,8 @@
 import type { AppContext } from '../types';
-import { pct, timeAgo, trashIcon } from '../utils';
+import { pct, timeAgo, trashIcon, makeInlineEditable, unlinkIcon } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes, renderFiles } from '../components/fileViewer';
-import { decksContainingCard } from '../services/deckService';
+import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardKnowledge, masteryWindowDays, replayFSRS } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 
@@ -24,24 +24,8 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
   const titleWrap = document.createElement('div');
   const title = document.createElement('h1');
-  title.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors';
-  title.textContent = card.name; title.title = 'Click to rename';
-  title.onclick = () => {
-    const inp = document.createElement('input');
-    inp.type = 'text'; inp.value = card.name;
-    inp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary w-full';
-    title.replaceWith(inp); inp.focus(); inp.select();
-    const commit = () => {
-      const val = inp.value.trim();
-      if (val && val !== card.name) { ctx.mutate(s => { s.cards[cardId]!.name = val; }); }
-      else { inp.replaceWith(title); }
-    };
-    inp.addEventListener('blur', commit);
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-      if (e.key === 'Escape') { inp.replaceWith(title); }
-    });
-  };
+  title.textContent = card.name;
+  makeInlineEditable(title, card.name, val => ctx.mutate(s => { s.cards[cardId]!.name = val; }));
 
   // Deck tags
   const deckIds = decksContainingCard(cardId, state);
@@ -53,12 +37,13 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
     const nameEl = document.createElement('span');
     nameEl.className = 'cursor-pointer'; nameEl.textContent = deck.name;
+    nameEl.title = deckPath(dId, state);
     nameEl.onclick = () => ctx.navigate({ view: 'deck', deckId: dId });
 
     const unlinkBtn = document.createElement('button');
     unlinkBtn.className = 'opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-danger leading-none';
     unlinkBtn.title = 'Remove from deck';
-    unlinkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+    unlinkBtn.appendChild(unlinkIcon(10));
     unlinkBtn.onclick = (e) => {
       e.stopPropagation();
       ctx.mutate(s => { const d = s.decks[dId]; if (d) d.entries = d.entries.filter(e => e.cardId !== cardId); });
