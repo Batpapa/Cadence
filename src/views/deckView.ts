@@ -161,7 +161,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
       const meta = document.createElement('span');
       meta.className = 'text-xs font-mono text-dim shrink-0';
-      meta.textContent = lastTs ? timeAgo(lastTs) : 'never';
+      meta.textContent = lastTs ? timeAgo(lastTs) : t('card.neverReviewed');
 
       const impBadge = document.createElement('span');
       impBadge.className = 'text-xs font-mono shrink-0 w-6 text-right cursor-pointer hover:text-accent transition-colors';
