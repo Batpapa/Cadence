@@ -1,5 +1,6 @@
 import type { AppContext, StudyStrategy, DeckEntry } from '../types';
 import { renderNotes, renderFiles } from '../components/fileViewer';
+import { renderEmbeds } from '../components/embedViewer';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { cardKnowledge, deckKnowledge } from '../services/knowledgeService';
 import type { SessionRating } from '../types';
@@ -175,6 +176,11 @@ export function renderStudyView(
 
   if (card.content.files.length > 0) {
     cardWrap.appendChild(renderFiles({ files: card.content.files, editable: false }));
+  }
+
+  const embeds = card.content.embeds ?? [];
+  if (embeds.length > 0) {
+    cardWrap.appendChild(renderEmbeds({ embeds, editable: false }));
   }
 
   content.appendChild(cardWrap);
