@@ -38,9 +38,19 @@ function linkCardToDeck(s: AppState, cardId: string, deckId: string): void {
 
 export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId?: string): HTMLElement {
   let activeTab: 'id' | 'search' | 'member' = 'search';
+  let onlyFirstSetting = true;
 
   const wrap = document.createElement('div');
   wrap.className = 'space-y-3';
+
+  // ── Option: only most popular setting ─────────────────────────────────────
+  const optRow = document.createElement('label');
+  optRow.className = 'flex items-center gap-2 cursor-pointer select-none';
+  const optChk = document.createElement('input'); optChk.type = 'checkbox'; optChk.className = 'card-checkbox'; optChk.checked = true;
+  optChk.onchange = () => { onlyFirstSetting = optChk.checked; };
+  const optLbl = document.createElement('span'); optLbl.className = 'text-xs text-muted'; optLbl.textContent = 'Most popular setting only';
+  optRow.append(optChk, optLbl);
+  wrap.appendChild(optRow);
 
   const tabBar = document.createElement('div');
   tabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg';
@@ -103,7 +113,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
           status.textContent = `"${tune.name}" is already in your library${deckId ? ' — linked to this deck.' : '.'}`;
           inp.value = ''; preview.textContent = '';
         } else {
-          const card = tuneResultToCard(tune);
+          const card = tuneResultToCard(tune, { onlyFirstSetting });
           await ctx.mutate(s => { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); });
           status.textContent = `✓ "${card.name}" imported.`;
           inp.value = ''; preview.textContent = '';
@@ -145,7 +155,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
               if (deckId) await ctx.mutate(s => { linkCardToDeck(s, existing.id, deckId!); });
               status.textContent = `"${fullTune.name}" is already in your library${deckId ? ' — linked to this deck.' : '.'}`;
             } else {
-              const card = tuneResultToCard(fullTune);
+              const card = tuneResultToCard(fullTune, { onlyFirstSetting });
               await ctx.mutate(s => { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); });
               status.textContent = `✓ "${card.name}" imported.`;
             }
@@ -219,7 +229,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
         const existingCards = tunes.map(t => findByExternalId(`thesession:${t.id}`, ctx.state.cards));
         const newTunes = tunes.filter((_, i) => !existingCards[i]);
         const alreadyExisting = tunes.filter((_, i) => !!existingCards[i]);
-        const newCards = newTunes.map(tuneResultToCard);
+        const newCards = newTunes.map(t => tuneResultToCard(t, { onlyFirstSetting }));
         await ctx.mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); }
           if (deckId) { for (const t of alreadyExisting) { const c = findByExternalId(`thesession:${t.id}`, s.cards); if (c) linkCardToDeck(s, c.id, deckId); } }

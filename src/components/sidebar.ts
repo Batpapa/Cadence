@@ -252,19 +252,7 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
   const addDeckBtn = mkIconBtn('+D', 'Add deck');
   addDeckBtn.onclick = (e) => { e.stopPropagation(); showCreateDeckModal(ctx, folder.id); };
 
-  const renameBtn = mkIconBtn('✎', 'Rename');
-  renameBtn.onclick = (e) => { e.stopPropagation(); promptModal('Rename', 'New name', folder.name, n => { ctx.mutate(s => { s.folders[folder.id]!.name = n; }); }); };
-
-  const deleteBtn = mkIconBtn('✕', 'Delete');
-  deleteBtn.onclick = (e) => {
-    e.stopPropagation();
-    confirmModal('Delete Folder', `Delete "${folder.name}" and all its contents?`, 'Delete', () => {
-      ctx.mutate(s => deleteFolderRecursive(s, folder.id));
-      ctx.navigate({ view: 'folder', folderId: null });
-    });
-  };
-
-  actions.append(addFolderBtn, addDeckBtn, renameBtn, deleteBtn);
+  actions.append(addFolderBtn, addDeckBtn);
   row.append(toggle, name, actions);
   row.onclick = () => ctx.navigate({ view: 'folder', folderId: folder.id });
 
@@ -281,15 +269,6 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
   return wrap;
 }
 
-function deleteFolderRecursive(s: AppState, folderId: string): void {
-  const folder = s.folders[folderId];
-  if (!folder) return;
-  for (const subId of folder.folderIds) deleteFolderRecursive(s, subId);
-  for (const deckId of folder.deckIds) delete s.decks[deckId];
-  delete s.folders[folderId];
-  s.rootFolderIds = s.rootFolderIds.filter((id: string) => id !== folderId);
-  for (const f of Object.values(s.folders) as Folder[]) f.folderIds = f.folderIds.filter((id: string) => id !== folderId);
-}
 
 export function showCreateDeckModal(ctx: AppContext, parentFolderId: string | null): void {
   promptModal('New Deck', 'Deck name', '', name => {
@@ -302,10 +281,13 @@ export function showCreateDeckModal(ctx: AppContext, parentFolderId: string | nu
   });
 }
 
-function showUserSettings(ctx: AppContext): void {
+function showSettingsModal(ctx: AppContext): void {
   const user = getCurrentUser(ctx.state);
+  const body = document.createElement('div'); body.className = 'space-y-5';
 
-  const body = document.createElement('div'); body.className = 'space-y-4';
+  // ── Profile ──
+  const profileTitle = document.createElement('div'); profileTitle.className = 'section-title'; profileTitle.textContent = 'Profile';
+  body.appendChild(profileTitle);
 
   const mkField = (label: string, hint: string, inputFn: (inp: HTMLInputElement) => void): HTMLInputElement => {
     const wrap = document.createElement('div'); wrap.className = 'space-y-1';
@@ -319,14 +301,12 @@ function showUserSettings(ctx: AppContext): void {
   };
 
   const nameInp = mkField('Name', '', inp => { inp.type = 'text'; inp.value = user.name; });
-
   const mastInp = mkField(
     'Mastery threshold (%)',
     'Cards above this knowledge score are considered mastered and skipped during study sessions.',
     inp => { inp.type = 'number'; inp.min = '0'; inp.max = '100'; inp.step = '1'; inp.value = String(Math.round(user.masteryThreshold * 100)); }
   );
 
-  // Weight by importance toggle
   const weightWrap = document.createElement('div'); weightWrap.className = 'space-y-1';
   const weightLbl = document.createElement('label'); weightLbl.className = 'flex items-center gap-2 cursor-pointer';
   const weightChk = document.createElement('input'); weightChk.type = 'checkbox'; weightChk.className = 'card-checkbox'; weightChk.checked = user.weightByImportance ?? true;
@@ -337,7 +317,65 @@ function showUserSettings(ctx: AppContext): void {
   weightWrap.append(weightLbl, weightHint);
   body.appendChild(weightWrap);
 
-  const confirm = () => {
+  // ── Divider ──
+  const divider = document.createElement('hr'); divider.className = 'border-border';
+  body.appendChild(divider);
+
+  // ── Data ──
+  const dataTitle = document.createElement('div'); dataTitle.className = 'section-title'; dataTitle.textContent = 'Data';
+  body.appendChild(dataTitle);
+
+  const dataGrid = document.createElement('div'); dataGrid.className = 'grid grid-cols-2 gap-2';
+
+  const mkDataBtn = (label: string, hint: string, cls: string, onClick: () => void): HTMLButtonElement => {
+    const btn = document.createElement('button');
+    btn.className = `${cls} text-xs py-2 px-3 rounded text-left space-y-0.5`;
+    const l = document.createElement('div'); l.className = 'font-medium'; l.textContent = label;
+    const h = document.createElement('div'); h.className = 'text-[10px] opacity-60 font-normal'; h.textContent = hint;
+    btn.append(l, h); btn.onclick = onClick;
+    return btn;
+  };
+
+  dataGrid.appendChild(mkDataBtn('↑ Export full', 'All data incl. history', 'btn-ghost', () => exportFull(ctx.state)));
+  dataGrid.appendChild(mkDataBtn('↑ Export lite', 'Cards & decks only', 'btn-ghost', () => exportContent(ctx.state)));
+
+  const importLabel = document.createElement('label');
+  importLabel.className = 'btn-ghost text-xs py-2 px-3 rounded cursor-pointer space-y-0.5';
+  const importLabelTitle = document.createElement('div'); importLabelTitle.className = 'font-medium'; importLabelTitle.textContent = '↓ Import';
+  const importLabelHint = document.createElement('div'); importLabelHint.className = 'text-[10px] opacity-60'; importLabelHint.textContent = 'Replace all data';
+  const importInput = document.createElement('input');
+  importInput.type = 'file'; importInput.accept = 'application/json'; importInput.className = 'hidden';
+  importInput.onchange = async () => {
+    const file = importInput.files?.[0];
+    if (!file) return;
+    try {
+      const newState = await parseImport(file);
+      confirmModal('Import backup', 'This will replace all current data. Are you sure?', 'Replace', async () => {
+        ensureCurrentUser(newState);
+        closeModal();
+        await ctx.mutate(s => { Object.assign(s, newState); });
+        ctx.navigate({ view: 'folder', folderId: null });
+      });
+    } catch (e) { alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`); }
+    importInput.value = '';
+  };
+  importLabel.append(importLabelTitle, importLabelHint, importInput);
+  dataGrid.appendChild(importLabel);
+
+  dataGrid.appendChild(mkDataBtn('Reset', 'Delete all, keep profile', 'btn-ghost text-danger hover:bg-danger/10 hover:text-danger', () => {
+    confirmModal('Reset database', 'This will permanently delete all cards, decks, folders and study history. Your user profile will be kept. This cannot be undone.', 'Reset', async () => {
+      const u = ctx.state.users[ctx.state.currentUserId];
+      const fresh = emptyState();
+      if (u) { fresh.users[u.id] = u; fresh.currentUserId = u.id; }
+      closeModal();
+      await ctx.mutate(s => { Object.assign(s, fresh); });
+      ctx.navigate({ view: 'folder', folderId: null });
+    });
+  }));
+
+  body.appendChild(dataGrid);
+
+  const saveProfile = () => {
     const masteryPct = parseFloat(mastInp.value);
     if (isNaN(masteryPct) || masteryPct < 0 || masteryPct > 100) return;
     closeModal();
@@ -349,12 +387,12 @@ function showUserSettings(ctx: AppContext): void {
   };
 
   [nameInp, mastInp].forEach(inp => {
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') closeModal(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveProfile(); if (e.key === 'Escape') closeModal(); });
   });
 
-  showModal('Profile settings', body, [
+  showModal('Settings', body, [
     { label: 'Cancel', onClick: closeModal },
-    { label: 'Save', primary: true, onClick: confirm },
+    { label: 'Save', primary: true, onClick: saveProfile },
   ]);
   setTimeout(() => nameInp.focus(), 30);
 }
@@ -375,23 +413,33 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   logo.className = 'font-mono text-xs font-semibold tracking-[0.25em] text-muted uppercase select-none';
   logo.textContent = 'Cadence';
 
-  const user = getCurrentUser(ctx.state);
-  const userBtn = document.createElement('button');
-  userBtn.className = 'text-xs text-dim hover:text-primary transition-colors cursor-pointer truncate max-w-[80px]';
-  userBtn.textContent = user.name;
-  userBtn.title = 'Profile settings';
-  userBtn.onclick = () => showUserSettings(ctx);
+  const settingsBtn = document.createElement('button');
+  settingsBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
+  settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+  settingsBtn.title = 'Settings';
+  settingsBtn.onclick = () => showSettingsModal(ctx);
   const searchBtn = document.createElement('button');
   searchBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
   searchBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
   searchBtn.title = 'Search [Ctrl+K]';
   searchBtn.onclick = () => showCommandPalette(() => ctx);
 
-  const logoGroup = document.createElement('div');
-  logoGroup.className = 'flex items-center gap-2';
-  logoGroup.append(logo, searchBtn);
+  const mkNavBtn = (arrow: string, title: string, enabled: boolean, onClick: () => void) => {
+    const btn = document.createElement('button');
+    btn.className = `inline-flex items-center text-xs transition-colors cursor-pointer shrink-0 ${enabled ? 'text-dim hover:text-primary' : 'text-border cursor-default'}`;
+    btn.textContent = arrow; btn.title = title;
+    if (enabled) btn.onclick = onClick;
+    return btn;
+  };
 
-  top.append(logoGroup, userBtn);
+  const backBtn  = mkNavBtn('←', 'Back [Alt+←]',    ctx.canGoBack,    () => ctx.back());
+  const fwdBtn   = mkNavBtn('→', 'Forward [Alt+→]', ctx.canGoForward, () => ctx.forward());
+
+  const iconGroup = document.createElement('div');
+  iconGroup.className = 'flex items-center gap-2';
+  iconGroup.append(backBtn, fwdBtn, searchBtn, settingsBtn);
+
+  top.append(logo, iconGroup);
 
   // Nav links
   const nav = document.createElement('div');
@@ -418,62 +466,13 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const bottom = document.createElement('div');
   bottom.className = 'border-t border-border shrink-0 space-y-1 p-2';
 
-  // Create row
   const createRow = document.createElement('div'); createRow.className = 'grid grid-cols-2 gap-1';
   const addFolderBtn = document.createElement('button'); addFolderBtn.className = 'btn-ghost text-xs'; addFolderBtn.textContent = '+ Folder';
   addFolderBtn.onclick = () => promptModal('New Folder', 'Name', '', name => { ctx.mutate(s => { const id = generateId(); s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] }; s.rootFolderIds.push(id); }); });
   const addDeckBtn = document.createElement('button'); addDeckBtn.className = 'btn-ghost text-xs'; addDeckBtn.textContent = '+ Deck';
   addDeckBtn.onclick = () => showCreateDeckModal(ctx, null);
   createRow.append(addFolderBtn, addDeckBtn);
-
-  // Data row
-  const dataRow = document.createElement('div'); dataRow.className = 'flex gap-1';
-
-  const exportFullBtn = document.createElement('button');
-  exportFullBtn.className = 'btn-ghost text-[10px] flex-1'; exportFullBtn.textContent = '↓ Full';
-  exportFullBtn.title = 'Export full backup'; exportFullBtn.onclick = () => exportFull(ctx.state);
-
-  const exportContentBtn = document.createElement('button');
-  exportContentBtn.className = 'btn-ghost text-[10px] flex-1'; exportContentBtn.textContent = '↓ Lite';
-  exportContentBtn.title = 'Export cards & decks without personal data'; exportContentBtn.onclick = () => exportContent(ctx.state);
-
-  const importLabel = document.createElement('label');
-  importLabel.className = 'btn-ghost text-[10px] flex-1 cursor-pointer text-center'; importLabel.textContent = '↑ Import';
-  importLabel.title = 'Import backup';
-  const importInput = document.createElement('input');
-  importInput.type = 'file'; importInput.accept = 'application/json'; importInput.className = 'hidden';
-  importInput.onchange = async () => {
-    const file = importInput.files?.[0];
-    if (!file) return;
-    try {
-      const newState = await parseImport(file);
-      confirmModal('Import backup', 'This will replace all current data. Are you sure?', 'Replace', async () => {
-        ensureCurrentUser(newState);
-        await ctx.mutate(s => { Object.assign(s, newState); });
-        ctx.navigate({ view: 'folder', folderId: null });
-      });
-    } catch (e) {
-      alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-    importInput.value = '';
-  };
-  importLabel.appendChild(importInput);
-
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'btn-ghost text-[10px] text-danger hover:bg-danger/10 hover:text-danger flex-1';
-  resetBtn.textContent = 'Reset'; resetBtn.title = 'Reset database (keeps user profile)';
-  resetBtn.onclick = () => {
-    confirmModal('Reset database', 'This will permanently delete all cards, decks, folders and study history. Your user profile will be kept. This cannot be undone.', 'Reset', async () => {
-      const user = ctx.state.users[ctx.state.currentUserId];
-      const fresh = emptyState();
-      if (user) { fresh.users[user.id] = user; fresh.currentUserId = user.id; }
-      await ctx.mutate(s => { Object.assign(s, fresh); });
-      ctx.navigate({ view: 'folder', folderId: null });
-    });
-  };
-
-  dataRow.append(exportFullBtn, exportContentBtn, importLabel, resetBtn);
-  bottom.append(createRow, dataRow);
+  bottom.append(createRow);
   aside.append(top, nav, tree, bottom);
   return aside;
 }

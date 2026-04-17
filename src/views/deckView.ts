@@ -1,5 +1,5 @@
 import type { AppContext, Card, DeckEntry } from '../types';
-import { pct, timeAgo, knowledgeColor } from '../utils';
+import { pct, timeAgo, knowledgeColor, trashIcon } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { findParentFolder, decksContainingCard } from '../services/deckService';
@@ -29,15 +29,30 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   header.className = 'flex items-start justify-between gap-4';
 
   const titleWrap = document.createElement('div');
-  const title = document.createElement('h1'); title.className = 'text-xl font-semibold text-primary'; title.textContent = deck.name;
+  const title = document.createElement('h1');
+  title.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors';
+  title.textContent = deck.name; title.title = 'Click to rename';
+  title.onclick = () => {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = deck.name;
+    inp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary w-full';
+    title.replaceWith(inp); inp.focus(); inp.select();
+    const commit = () => {
+      const val = inp.value.trim();
+      if (val && val !== deck.name) { ctx.mutate(s => { s.decks[deckId]!.name = val; }); }
+      else { inp.replaceWith(title); }
+    };
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      if (e.key === 'Escape') { inp.replaceWith(title); }
+    });
+  };
   titleWrap.appendChild(title);
 
   const headerActions = document.createElement('div'); headerActions.className = 'flex gap-2 shrink-0';
 
-  const renameBtn = document.createElement('button'); renameBtn.className = 'btn-ghost'; renameBtn.textContent = 'Rename';
-  renameBtn.onclick = () => promptModal('Rename Deck', 'New name', deck.name, n => { ctx.mutate(s => { s.decks[deckId]!.name = n; }); });
-
-  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger'; deleteBtn.textContent = 'Delete';
+  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = 'Delete deck'; deleteBtn.appendChild(trashIcon());
   deleteBtn.onclick = () => confirmModal('Delete Deck', `Delete "${deck.name}"? Cards will not be deleted.`, 'Delete', () => {
     const parent = findParentFolder(deckId, 'deck', state);
     ctx.mutate(s => {
@@ -48,7 +63,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
     ctx.navigate({ view: 'folder', folderId: findParentFolder(deckId, 'deck', state) });
   });
 
-  headerActions.append(renameBtn, deleteBtn);
+  headerActions.append(deleteBtn);
   header.append(titleWrap, headerActions);
   wrap.appendChild(header);
 

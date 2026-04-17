@@ -1,5 +1,5 @@
 import type { AppContext, Card } from '../types';
-import { pct, knowledgeColor } from '../utils';
+import { pct, knowledgeColor, trashIcon } from '../utils';
 import { confirmModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard } from '../services/deckService';
@@ -63,7 +63,9 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
 
   const selectAllBtn = document.createElement('button'); selectAllBtn.className = 'btn-ghost text-xs'; selectAllBtn.textContent = 'Select all';
   const deselectBtn = document.createElement('button'); deselectBtn.className = 'btn-ghost text-xs'; deselectBtn.textContent = 'Deselect all';
-  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger text-xs';
+  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger text-xs flex items-center gap-1.5';
+  deleteBtn.title = 'Delete selected'; deleteBtn.appendChild(trashIcon(12));
+  const deleteLbl = document.createElement('span'); deleteBtn.appendChild(deleteLbl);
 
   const updateSelBar = (filtered: Card[]) => {
     selectAllBtn.onclick = () => { for (const c of filtered) selected.add(c.id); renderList(); };
@@ -74,7 +76,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
     } else {
       selLabel.textContent = `${selected.size} selected`;
       deselectBtn.classList.remove('hidden');
-      deleteBtn.textContent = `Delete ${selected.size}`;
+      deleteLbl.textContent = String(selected.size);
       deleteBtn.classList.remove('hidden');
     }
   };

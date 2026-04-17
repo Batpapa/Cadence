@@ -37,13 +37,13 @@ module.exports = (env, argv) => {
     plugins: [
       new HtmlWebpackPlugin({ template: './src/index.html' }),
       ...(!isDev ? [new MiniCssExtractPlugin({ filename: 'styles.[contenthash].css' })] : []),
-      new CopyPlugin({
+      ...(!isDev ? [new CopyPlugin({
         patterns: [
-          { from: 'src/icons',        to: 'icons' },
+          { from: 'src/icons',         to: 'icons' },
           { from: 'src/manifest.json', to: 'manifest.json' },
           { from: 'src/sw.js',         to: 'sw.js' },
         ],
-      }),
+      })] : []),
     ],
     devServer: {
       port: 3002,
