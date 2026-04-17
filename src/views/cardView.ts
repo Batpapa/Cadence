@@ -3,7 +3,7 @@ import { pct, timeAgo, trashIcon } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes, renderFiles } from '../components/fileViewer';
 import { decksContainingCard } from '../services/deckService';
-import { cardKnowledge, masteryWindowDays } from '../services/knowledgeService';
+import { cardKnowledge, masteryWindowDays, replayFSRS } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 
 export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
@@ -49,8 +49,22 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   for (const dId of deckIds) {
     const deck = state.decks[dId]; if (!deck) continue;
     const tag = document.createElement('span');
-    tag.className = 'text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent cursor-pointer hover:bg-accent/20 transition-colors';
-    tag.textContent = deck.name; tag.onclick = () => ctx.navigate({ view: 'deck', deckId: dId });
+    tag.className = 'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent group transition-colors hover:bg-accent/20';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'cursor-pointer'; nameEl.textContent = deck.name;
+    nameEl.onclick = () => ctx.navigate({ view: 'deck', deckId: dId });
+
+    const unlinkBtn = document.createElement('button');
+    unlinkBtn.className = 'opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-danger leading-none';
+    unlinkBtn.title = 'Remove from deck';
+    unlinkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+    unlinkBtn.onclick = (e) => {
+      e.stopPropagation();
+      ctx.mutate(s => { const d = s.decks[dId]; if (d) d.entries = d.entries.filter(e => e.cardId !== cardId); });
+    };
+
+    tag.append(nameEl, unlinkBtn);
     tags.appendChild(tag);
   }
   const addToDeckChip = document.createElement('span');
@@ -148,8 +162,8 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   impBox.append(impLabel, impRow);
 
   // Mastery window (FSRS)
-  const S = work?.stability;
-  const mw = S !== undefined ? masteryWindowDays(S, user.masteryThreshold) : undefined;
+  const fsrsState = work ? replayFSRS(work.history) : undefined;
+  const mw = fsrsState ? masteryWindowDays(fsrsState.stability, user.masteryThreshold) : undefined;
   const hlBox = document.createElement('div'); hlBox.className = 'card-block space-y-1';
   const hlLabel = document.createElement('div'); hlLabel.className = 'section-title'; hlLabel.textContent = 'Mastery window';
   const hlVal = document.createElement('div'); hlVal.className = 'text-lg font-mono font-semibold text-primary';
@@ -270,8 +284,10 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
     const ratingIcon: Record<string, string>  = { again: '✗', hard: '△', good: '○', easy: '✓' };
     const ratingColor: Record<string, string> = { again: 'text-danger', hard: 'text-warn', good: 'text-accent', easy: 'text-success' };
-    const sorted = work ? [...work.history].sort((a, b) => b.ts - a.ts) : [];
-    for (const entry of sorted) {
+    const sorted = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
+    for (let i = 0; i < sorted.length; i++) {
+      const entry = sorted[i]!;
+      const originalIndex = work!.history.indexOf(entry);
       const badge = document.createElement('span');
       badge.className = 'inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 bg-elevated rounded text-muted group';
       const dateLabel = document.createElement('span'); dateLabel.textContent = new Date(entry.ts).toLocaleString();
@@ -285,7 +301,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
       const rmBtn = document.createElement('button');
       rmBtn.className = 'opacity-0 group-hover:opacity-100 text-dim hover:text-danger transition-all cursor-pointer leading-none';
       rmBtn.textContent = '✕';
-      rmBtn.onclick = () => { ctx.mutate(s => { const w = s.cardWorks[`${s.currentUserId}:${cardId}`]; if (w) w.history = w.history.filter(e => e.ts !== entry.ts); }); };
+      rmBtn.onclick = () => { ctx.mutate(s => { const w = s.cardWorks[`${s.currentUserId}:${cardId}`]; if (w) w.history.splice(originalIndex, 1); }); };
       badge.appendChild(rmBtn); list.appendChild(badge);
     }
 

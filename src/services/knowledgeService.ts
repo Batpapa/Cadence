@@ -1,4 +1,4 @@
-import type { User, Card, DeckEntry, Deck, CardWork, SessionRating } from '../types';
+import type { User, Card, DeckEntry, Deck, CardWork, SessionRating, SessionEntry } from '../types';
 
 // ── FSRS v4.5 ────────────────────────────────────────────────────────────────
 // Reference: https://github.com/open-spaced-repetition/fsrs4anki
@@ -107,11 +107,29 @@ export function effectiveImportance(card: Card, entry: DeckEntry): number {
   return entry.importanceOverride ?? card.importance;
 }
 
+/** Replay the full review history to compute current FSRS state on-the-fly. */
+export function replayFSRS(history: SessionEntry[]): { stability: number; difficulty: number; lastTs: number } | undefined {
+  const sorted = [...history].filter(e => e.rating).sort((a, b) => a.ts - b.ts);
+  if (sorted.length === 0) return undefined;
+  let stability: number | undefined;
+  let difficulty: number | undefined;
+  let lastTs: number | undefined;
+  for (const entry of sorted) {
+    const result = applyFSRS(stability, difficulty, lastTs, entry.rating!, entry.ts);
+    stability = result.stability;
+    difficulty = result.difficulty;
+    lastTs = entry.ts;
+  }
+  return { stability: stability!, difficulty: difficulty!, lastTs: lastTs! };
+}
+
 /** Retrievability of a card right now (0 = never reviewed, → 1 = just reviewed). */
 export function cardKnowledge(_user: User, cardWork: CardWork | undefined): number {
-  if (!cardWork || cardWork.history.length === 0 || !cardWork.stability) return 0;
-  const elapsedDays = (Date.now() - cardWork.history.at(-1)!.ts) / 86400000;
-  return fsrsRetrievability(elapsedDays, cardWork.stability);
+  if (!cardWork || cardWork.history.length === 0) return 0;
+  const fsrs = replayFSRS(cardWork.history);
+  if (!fsrs) return 0;
+  const elapsedDays = (Date.now() - fsrs.lastTs) / 86400000;
+  return fsrsRetrievability(elapsedDays, fsrs.stability);
 }
 
 /** True when the card's current retrievability meets the user's mastery threshold. */
