@@ -570,35 +570,49 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
 
   const driveStatus = getDriveStatus();
   if (isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting') {
+    const syncWrap = document.createElement('div');
+    syncWrap.className = 'relative shrink-0';
+
     const syncBtn = document.createElement('button');
-    syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0';
+    syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer';
     const cloudUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`;
     syncBtn.innerHTML = cloudUpSvg;
+
+    const tooltipEl = document.createElement('div');
+    tooltipEl.className = 'absolute right-0 top-full mt-1.5 px-2 py-1 text-xs bg-elevated border border-border rounded whitespace-nowrap pointer-events-none z-50 opacity-0 transition-opacity';
+
+    syncBtn.addEventListener('mouseenter', () => tooltipEl.classList.add('opacity-100'));
+    syncBtn.addEventListener('mouseleave', () => tooltipEl.classList.remove('opacity-100'));
 
     const applyStatus = (s: DriveStatus) => {
       switch (s) {
         case 'pending':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-accent';
-          syncBtn.title = t('sidebar.sync.pending'); syncBtn.onclick = () => { void manualSync(); };
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer text-yellow-400';
+          tooltipEl.textContent = t('sidebar.sync.pending');
+          syncBtn.onclick = () => { void manualSync(); };
           break;
         case 'syncing':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-default shrink-0 text-muted animate-pulse';
-          syncBtn.title = t('sidebar.sync.syncing'); syncBtn.onclick = null;
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-default text-accent animate-pulse';
+          tooltipEl.textContent = t('sidebar.sync.syncing');
+          syncBtn.onclick = null;
           break;
         case 'connected':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-default shrink-0 text-dim';
-          syncBtn.title = t('sidebar.sync.connected'); syncBtn.onclick = null;
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-default text-green-500';
+          tooltipEl.textContent = t('sidebar.sync.connected');
+          syncBtn.onclick = null;
           break;
         case 'error':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-danger';
-          syncBtn.title = t('sidebar.sync.error'); syncBtn.onclick = () => { void manualSync(); };
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer text-danger';
+          tooltipEl.textContent = t('sidebar.sync.error');
+          syncBtn.onclick = () => { void manualSync(); };
           break;
       }
     };
 
     applyStatus(driveStatus);
     const unsub = onStatusChange((s) => { if (!syncBtn.isConnected) { unsub(); return; } applyStatus(s); });
-    iconGroup.appendChild(syncBtn);
+    syncWrap.append(syncBtn, tooltipEl);
+    iconGroup.appendChild(syncWrap);
   }
 
   iconGroup.append(backBtn, fwdBtn, searchBtn, helpBtn, settingsBtn);
