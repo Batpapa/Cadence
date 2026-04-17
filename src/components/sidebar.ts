@@ -569,14 +569,18 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const iconGroup = document.createElement('div');
   iconGroup.className = 'flex items-center gap-2';
 
-  const driveStatus = getDriveStatus();
-  if (isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting') {
+  if (isDriveFeatureEnabled()) {
     const syncBtn = document.createElement('button');
-    syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0';
     const cloudUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`;
     syncBtn.innerHTML = cloudUpSvg;
 
     const applyStatus = (s: DriveStatus) => {
+      if (s === 'disconnected' || s === 'connecting') {
+        syncBtn.style.display = 'none';
+        syncBtn.onclick = null;
+        return;
+      }
+      syncBtn.style.display = '';
       switch (s) {
         case 'pending':
           syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-yellow-400';
@@ -602,7 +606,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
     };
 
     if (driveStatusUnsub) { driveStatusUnsub(); driveStatusUnsub = null; }
-    applyStatus(driveStatus);
+    applyStatus(getDriveStatus());
     driveStatusUnsub = onStatusChange(applyStatus);
     iconGroup.appendChild(syncBtn);
   }
