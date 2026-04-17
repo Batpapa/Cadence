@@ -187,6 +187,7 @@ export function tuneResultToCard(tune: TuneResult, opts: { onlyFirstSetting?: bo
     content: {
       notes: `[↗ TheSession](${tune.url || `https://thesession.org/tunes/${tune.id}`})`,
       files: settings.map(s => settingToAbcFile(s, tune)),
+      embeds: [],
     },
   };
 }

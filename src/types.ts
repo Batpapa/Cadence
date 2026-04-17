@@ -6,6 +6,13 @@ export interface FileEntry {
   mimeType: string;
 }
 
+export interface EmbedEntry {
+  id: string;
+  url: string;       // original URL as pasted by user
+  title?: string;    // fetched via oEmbed at add time
+  embedUrl?: string; // resolved iframe src, stored to avoid re-fetching
+}
+
 export interface Card {
   id: string;
   name: string;
@@ -15,6 +22,7 @@ export interface Card {
   content: {
     notes: string;
     files: FileEntry[];
+    embeds: EmbedEntry[];
   };
 }
 
