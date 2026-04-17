@@ -641,7 +641,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   createRow.append(addFolderBtn, addDeckBtn);
 
   const legalFooter = document.createElement('div');
-  legalFooter.className = 'flex gap-3 px-1 pt-1';
+  legalFooter.className = 'flex justify-between px-1 pt-1';
   const mkLegalLink = (text: string, href: string) => {
     const a = document.createElement('a');
     a.href = href; a.target = '_blank'; a.rel = 'noopener';
