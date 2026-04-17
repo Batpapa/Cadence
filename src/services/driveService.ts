@@ -36,6 +36,10 @@ export function isDriveConnected(): boolean {
   return !!localStorage.getItem(LS_FILE_ID);
 }
 
+export function hasCachedToken(): boolean {
+  return !!accessToken;
+}
+
 export function getDriveStatus(): DriveStatus { return status; }
 
 export function onStatusChange(cb: (s: DriveStatus) => void): () => void {
