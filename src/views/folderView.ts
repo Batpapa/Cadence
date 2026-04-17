@@ -1,5 +1,5 @@
 import type { AppContext, AppState, User, CardWork } from '../types';
-import { generateId, pct, timeAgo, trashIcon } from '../utils';
+import { generateId, pct, timeAgo, trashIcon, renderKnowledgeBar, makeInlineEditable } from '../utils';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder } from '../services/deckService';
@@ -213,15 +213,7 @@ function renderDashboard(ctx: AppContext): HTMLElement {
       row.className = 'flex items-center gap-2 cursor-pointer hover:bg-bg rounded px-2 py-1 -mx-2 transition-colors';
       row.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });
       const { buckets, total } = deckKnowledgeBuckets(user, deck, state.cards, allWorks, user.weightByImportance ?? true);
-      const barWrap = document.createElement('div'); barWrap.className = 'flex-1 flex h-1.5 rounded overflow-hidden bg-border';
-      if (total > 0) {
-        for (const [i, cls] of (['bg-danger', 'bg-warn', 'bg-success/60', 'bg-success'] as const).entries()) {
-          const w = buckets[i]! / total;
-          if (w === 0) continue;
-          const s = document.createElement('div'); s.className = cls; s.style.width = `${w * 100}%`;
-          barWrap.appendChild(s);
-        }
-      }
+      const barWrap = renderKnowledgeBar(buckets, total, 'flex-1 flex h-1.5 rounded overflow-hidden bg-border');
       const name = document.createElement('span'); name.className = 'text-sm text-primary w-32 truncate shrink-0'; name.textContent = deck.name;
       const pctEl = document.createElement('span'); pctEl.className = 'text-xs font-mono text-dim shrink-0 w-10 text-right'; pctEl.textContent = pct(k);
       row.append(name, barWrap, pctEl);
@@ -256,24 +248,7 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
   headerActions.className = 'flex gap-2';
 
   if (folder) {
-    title.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors';
-    title.title = 'Click to rename';
-    title.onclick = () => {
-      const inp = document.createElement('input');
-      inp.type = 'text'; inp.value = folder.name;
-      inp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary w-full';
-      title.replaceWith(inp); inp.focus(); inp.select();
-      const commit = () => {
-        const val = inp.value.trim();
-        if (val && val !== folder.name) { ctx.mutate(s => { s.folders[folderId!]!.name = val; }); }
-        else { inp.replaceWith(title); }
-      };
-      inp.addEventListener('blur', commit);
-      inp.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-        if (e.key === 'Escape') { inp.replaceWith(title); }
-      });
-    };
+    makeInlineEditable(title, folder.name, val => ctx.mutate(s => { s.folders[folderId!]!.name = val; }));
 
     const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = 'Delete folder'; deleteBtn.appendChild(trashIcon());
     deleteBtn.onclick = () => confirmModal('Delete Folder', `Delete "${folder.name}" and all its contents?`, 'Delete', () => {

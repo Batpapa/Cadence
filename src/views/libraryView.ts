@@ -2,7 +2,7 @@ import type { AppContext, Card } from '../types';
 import { pct, knowledgeColor, trashIcon } from '../utils';
 import { confirmModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
-import { decksContainingCard } from '../services/deckService';
+import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardKnowledge } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 
@@ -170,7 +170,11 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       const deckTagsWrap = document.createElement('div'); deckTagsWrap.className = 'hidden group-hover:flex gap-1';
       for (const dId of deckIds.slice(0, 2)) {
         const deck = state.decks[dId]; if (!deck) continue;
-        const tag = document.createElement('span'); tag.className = 'text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent'; tag.textContent = deck.name;
+        const tag = document.createElement('span');
+        tag.className = 'text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent cursor-pointer hover:bg-accent/20 transition-colors';
+        tag.textContent = deck.name;
+        tag.title = deckPath(dId, state);
+        tag.onclick = (e) => { e.stopPropagation(); ctx.navigate({ view: 'deck', deckId: dId }); };
         deckTagsWrap.appendChild(tag);
       }
       if (deckIds.length > 2) { const more = document.createElement('span'); more.className = 'text-xs text-dim'; more.textContent = `+${deckIds.length - 2}`; deckTagsWrap.appendChild(more); }

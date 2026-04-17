@@ -92,6 +92,21 @@ export function findParentFolder(
   return null;
 }
 
+/** Full breadcrumb path for a deck, e.g. "Folk / Reels / My deck". */
+export function deckPath(deckId: string, state: AppState): string {
+  const deck = state.decks[deckId];
+  if (!deck) return '';
+  const parts: string[] = [deck.name];
+  let folderId = findParentFolder(deckId, 'deck', state);
+  while (folderId) {
+    const folder = state.folders[folderId];
+    if (!folder) break;
+    parts.unshift(folder.name);
+    folderId = findParentFolder(folderId, 'folder', state);
+  }
+  return parts.join(' / ');
+}
+
 export function decksContainingCard(cardId: string, state: AppState): string[] {
   return Object.values(state.decks)
     .filter(d => d.entries.some(e => e.cardId === cardId))
