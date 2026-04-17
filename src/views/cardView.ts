@@ -4,7 +4,7 @@ import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes, renderFiles } from '../components/fileViewer';
 import { renderEmbeds } from '../components/embedViewer';
 import { decksContainingCard, deckPath } from '../services/deckService';
-import { cardKnowledge, masteryWindowDays, replayFSRS } from '../services/knowledgeService';
+import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 
@@ -18,7 +18,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
   const user = getCurrentUser(state);
   const work = state.cardWorks[`${user.id}:${cardId}`];
-  const k = cardKnowledge(user, work);
+  const k = cardAvailability(user, work);
 
   // ── Header ──
   const header = document.createElement('div');
@@ -114,21 +114,34 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   header.append(titleWrap, headerActions);
   wrap.appendChild(header);
 
-  // ── Knowledge, Mastery window & Importance ──
-  const statsRow = document.createElement('div'); statsRow.className = 'grid grid-cols-3 gap-3';
+  // ── Stats: Disponibilité | Ancrage | Aisance | Importance ──
+  const statsRow = document.createElement('div'); statsRow.className = 'grid grid-cols-4 gap-3';
 
-  // Knowledge
-  const knBox = document.createElement('div'); knBox.className = 'card-block space-y-1';
-  const knLabel = document.createElement('div'); knLabel.className = 'section-title'; knLabel.textContent = t('card.section.knowledge');
-  const knVal = document.createElement('div'); knVal.className = 'text-lg font-mono font-semibold text-primary'; knVal.textContent = pct(k);
-  const knSub = document.createElement('div'); knSub.className = 'text-xs text-muted';
-  if (work?.history.length) {
-    const count = work.history.length;
-    knSub.textContent = t(count > 1 ? 'card.knowledgeSubPlural' : 'card.knowledgeSub', { count, ago: timeAgo(work.history.at(-1)!.ts) });
-  } else {
-    knSub.textContent = t('card.neverReviewed');
-  }
-  knBox.append(knLabel, knVal, knSub);
+  const fsrsState = work ? replayFSRS(work.history) : undefined;
+
+  const mkStatBox = (label: string, value: string, valueClass = 'text-primary'): HTMLElement => {
+    const box = document.createElement('div'); box.className = 'card-block space-y-1';
+    const lbl = document.createElement('div'); lbl.className = 'section-title'; lbl.textContent = label;
+    const val = document.createElement('div'); val.className = `text-lg font-mono font-semibold ${valueClass}`; val.textContent = value;
+    box.append(lbl, val);
+    return box;
+  };
+
+  // Availability (R)
+  const rColor = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
+  statsRow.appendChild(mkStatBox(t('card.section.availability'), k > 0 ? pct(k) : '—', rColor));
+
+  // Stability
+  const S = fsrsState?.stability;
+  const stabWindow = S !== undefined ? retentionWindowDays(S, user.availabilityThreshold) : undefined;
+  const formatDays = (d: number) => d >= 365 ? `${(d / 365).toFixed(1)}y` : d >= 30 ? `${Math.round(d / 30)}mo` : d >= 1 ? `${Math.round(d)}d` : '<1d';
+  statsRow.appendChild(mkStatBox(t('card.section.stability'), stabWindow !== undefined ? formatDays(stabWindow) : '—'));
+
+  // Ease (inverse Difficulty)
+  const D = fsrsState?.difficulty;
+  const ease = D !== undefined ? (10 - D) / 9 : undefined;
+  const easeColor = ease === undefined ? 'text-dim' : ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : 'text-danger';
+  statsRow.appendChild(mkStatBox(t('card.section.ease'), ease !== undefined ? pct(ease) : '—', easeColor));
 
   // Importance
   const impBox = document.createElement('div'); impBox.className = 'card-block space-y-1';
@@ -152,19 +165,8 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   };
   impRow.append(impVal, impEditBtn);
   impBox.append(impLabel, impRow);
+  statsRow.appendChild(impBox);
 
-  // Mastery window (FSRS)
-  const fsrsState = work ? replayFSRS(work.history) : undefined;
-  const mw = fsrsState ? masteryWindowDays(fsrsState.stability, user.masteryThreshold) : undefined;
-  const hlBox = document.createElement('div'); hlBox.className = 'card-block space-y-1';
-  const hlLabel = document.createElement('div'); hlLabel.className = 'section-title'; hlLabel.textContent = t('card.section.masteryWindow');
-  const hlVal = document.createElement('div'); hlVal.className = 'text-lg font-mono font-semibold text-primary';
-  hlVal.textContent = mw === undefined ? '—' : mw >= 1 ? `${Math.round(mw)}d` : `${Math.round(mw * 24)}h`;
-  const hlSub = document.createElement('div'); hlSub.className = 'text-xs text-muted';
-  hlSub.textContent = mw === undefined ? t('card.masteryWindowNone') : t('card.masteryWindowDuration');
-  hlBox.append(hlLabel, hlVal, hlSub);
-
-  statsRow.append(knBox, hlBox, impBox);
   wrap.appendChild(statsRow);
 
   // ── Tags ──

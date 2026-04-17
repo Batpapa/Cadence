@@ -64,9 +64,9 @@ export function fsrsRetrievability(elapsedDays: number, stability: number): numb
   return Math.pow(1 + FACTOR * elapsedDays / stability, DECAY);
 }
 
-/** Days from a fresh review (R=1) until R drops to masteryThreshold. */
-export function masteryWindowDays(stability: number, masteryThreshold: number): number {
-  return stability * (Math.pow(masteryThreshold, 1 / DECAY) - 1) / FACTOR;
+/** Days from a fresh review (R=1) until R drops to availabilityThreshold. */
+export function retentionWindowDays(stability: number, availabilityThreshold: number): number {
+  return stability * (Math.pow(availabilityThreshold, 1 / DECAY) - 1) / FACTOR;
 }
 
 /** Apply a FSRS rating, returning updated stability (days) and difficulty (1–10). */
@@ -124,7 +124,7 @@ export function replayFSRS(history: SessionEntry[]): { stability: number; diffic
 }
 
 /** Retrievability of a card right now (0 = never reviewed, → 1 = just reviewed). */
-export function cardKnowledge(_user: User, cardWork: CardWork | undefined): number {
+export function cardAvailability(_user: User, cardWork: CardWork | undefined): number {
   if (!cardWork || cardWork.history.length === 0) return 0;
   const fsrs = replayFSRS(cardWork.history);
   if (!fsrs) return 0;
@@ -132,13 +132,13 @@ export function cardKnowledge(_user: User, cardWork: CardWork | undefined): numb
   return fsrsRetrievability(elapsedDays, fsrs.stability);
 }
 
-/** True when the card's current retrievability meets the user's mastery threshold. */
-export function isMastered(user: User, cardWork: CardWork | undefined): boolean {
-  return cardKnowledge(user, cardWork) >= user.masteryThreshold;
+/** True when the card's current retrievability meets the user's availability threshold. */
+export function isAvailable(user: User, cardWork: CardWork | undefined): boolean {
+  return cardAvailability(user, cardWork) >= user.availabilityThreshold;
 }
 
-/** Weighted knowledge of a full deck (0–1). */
-export function deckKnowledge(
+/** Weighted availability (avg R) of a full deck (0–1). */
+export function deckAvailability(
   user: User,
   deck: Deck,
   cards: Record<string, Card>,
@@ -146,16 +146,59 @@ export function deckKnowledge(
   weighted = true
 ): number {
   let totalWeight = 0;
-  let knowledge = 0;
+  let total = 0;
   for (const entry of deck.entries) {
-    const card = cards[entry.cardId];
-    if (!card) continue;
+    const card = cards[entry.cardId]; if (!card) continue;
     const w = weighted ? effectiveImportance(card, entry) : 1;
     const work = cardWorks[`${user.id}:${entry.cardId}`];
     totalWeight += w;
-    knowledge += w * cardKnowledge(user, work);
+    total += w * cardAvailability(user, work);
   }
-  return totalWeight === 0 ? 0 : knowledge / totalWeight;
+  return totalWeight === 0 ? 0 : total / totalWeight;
+}
+
+/** Weighted average stability (days) of a full deck. Only counts reviewed cards. */
+export function deckStability(
+  user: User,
+  deck: Deck,
+  cards: Record<string, Card>,
+  cardWorks: Record<string, CardWork>,
+  weighted = true
+): number {
+  let totalWeight = 0;
+  let total = 0;
+  for (const entry of deck.entries) {
+    const card = cards[entry.cardId]; if (!card) continue;
+    const work = cardWorks[`${user.id}:${entry.cardId}`];
+    const fsrs = work ? replayFSRS(work.history) : undefined;
+    if (!fsrs) continue;
+    const w = weighted ? effectiveImportance(card, entry) : 1;
+    totalWeight += w;
+    total += w * fsrs.stability;
+  }
+  return totalWeight === 0 ? 0 : total / totalWeight;
+}
+
+/** Weighted average ease ((10−D)/9) of a full deck. Only counts reviewed cards. */
+export function deckEase(
+  user: User,
+  deck: Deck,
+  cards: Record<string, Card>,
+  cardWorks: Record<string, CardWork>,
+  weighted = true
+): number {
+  let totalWeight = 0;
+  let total = 0;
+  for (const entry of deck.entries) {
+    const card = cards[entry.cardId]; if (!card) continue;
+    const work = cardWorks[`${user.id}:${entry.cardId}`];
+    const fsrs = work ? replayFSRS(work.history) : undefined;
+    if (!fsrs) continue;
+    const w = weighted ? effectiveImportance(card, entry) : 1;
+    totalWeight += w;
+    total += w * (10 - fsrs.difficulty) / 9;
+  }
+  return totalWeight === 0 ? 0 : total / totalWeight;
 }
 
 /** Marginal gain of reviewing a given card. */
@@ -169,13 +212,13 @@ export function cardGain(
 ): number {
   if (totalImportance === 0) return 0;
   const imp = weighted ? effectiveImportance(card, entry) : 1;
-  return (imp / totalImportance) * (1 - cardKnowledge(user, cardWork));
+  return (imp / totalImportance) * (1 - cardAvailability(user, cardWork));
 }
 
 // ── Deck-level helpers ────────────────────────────────────────────────────────
 
-/** Weighted knowledge distribution buckets (0–25%, 25–50%, 50–75%, 75–100%). */
-export function deckKnowledgeBuckets(
+/** Weighted availability distribution buckets (0–25%, 25–50%, 50–75%, 75–100%). */
+export function deckAvailabilityBuckets(
   user: User,
   deck: Deck,
   cards: Record<string, Card>,
@@ -185,10 +228,9 @@ export function deckKnowledgeBuckets(
   const buckets: [number, number, number, number] = [0, 0, 0, 0];
   let total = 0;
   for (const entry of deck.entries) {
-    const card = cards[entry.cardId];
-    if (!card) continue;
+    const card = cards[entry.cardId]; if (!card) continue;
     const w = cardWorks[`${user.id}:${entry.cardId}`];
-    const k = cardKnowledge(user, w);
+    const k = cardAvailability(user, w);
     const weight = weighted ? effectiveImportance(card, entry) : 1;
     buckets[Math.min(3, Math.floor(k * 4))] += weight;
     total += weight;
@@ -221,7 +263,7 @@ export function weakestEntry(
     const card = cards[entry.cardId];
     if (!card) continue;
     const work = cardWorks[`${user.id}:${entry.cardId}`];
-    const k = cardKnowledge(user, work);
+    const k = cardAvailability(user, work);
     if (k < bestK) { bestK = k; best = entry; }
   }
   return best;
