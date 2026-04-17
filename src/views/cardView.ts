@@ -134,7 +134,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   // Stability
   const S = fsrsState?.stability;
   const stabWindow = S !== undefined ? retentionWindowDays(S, user.availabilityThreshold) : undefined;
-  const formatDays = (d: number) => d >= 365 ? `${(d / 365).toFixed(1)}y` : d >= 30 ? `${Math.round(d / 30)}mo` : d >= 1 ? `${Math.round(d)}d` : '<1d';
+  const formatDays = (d: number) => d >= 365 ? t('common.durationYears', { n: (d / 365).toFixed(1) }) : d >= 30 ? t('common.durationMonths', { n: Math.round(d / 30) }) : d >= 1 ? t('common.durationDays', { n: Math.round(d) }) : t('common.durationLessThanDay');
   statsRow.appendChild(mkStatBox(t('card.section.stability'), stabWindow !== undefined ? formatDays(stabWindow) : '—'));
 
   // Ease (inverse Difficulty)

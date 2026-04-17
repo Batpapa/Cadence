@@ -66,7 +66,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   // Stability
   const stab = deckStability(user, deck, state.cards, state.cardWorks, w);
   const stabWindow = stab > 0 ? retentionWindowDays(stab, user.availabilityThreshold) : 0;
-  const formatDays = (d: number) => d >= 365 ? `${(d / 365).toFixed(1)}y` : d >= 30 ? `${Math.round(d / 30)}mo` : d >= 1 ? `${Math.round(d)}d` : '<1d';
+  const formatDays = (d: number) => d >= 365 ? t('common.durationYears', { n: (d / 365).toFixed(1) }) : d >= 30 ? t('common.durationMonths', { n: Math.round(d / 30) }) : d >= 1 ? t('common.durationDays', { n: Math.round(d) }) : t('common.durationLessThanDay');
   const stabBox = document.createElement('div'); stabBox.className = 'card-block space-y-2';
   const stabLabel = document.createElement('div'); stabLabel.className = 'section-title'; stabLabel.textContent = t('deck.section.stability');
   const stabVal = document.createElement('div'); stabVal.className = 'text-2xl font-mono font-semibold text-primary'; stabVal.textContent = stabWindow > 0 ? formatDays(stabWindow) : '—';

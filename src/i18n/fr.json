@@ -1,4 +1,8 @@
 {
+  "common.durationYears": "{n}a",
+  "common.durationMonths": "{n}m",
+  "common.durationDays": "{n}j",
+  "common.durationLessThanDay": "<1j",
   "common.cancel": "Annuler",
   "common.confirm": "Confirmer",
   "common.save": "Enregistrer",
