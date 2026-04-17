@@ -49,10 +49,7 @@ export function renderStudyView(
 
   const right = document.createElement('div'); right.className = 'flex items-center gap-4';
   const knBadge = document.createElement('span'); knBadge.className = 'text-xs font-mono text-muted'; knBadge.textContent = `Knowledge: ${pct(dk)}`;
-  const backBtn = document.createElement('button'); backBtn.className = 'btn-ghost text-xs'; backBtn.textContent = '← Back';
-  backBtn.title = 'Back to deck [Esc]';
-  backBtn.onclick = () => ctx.navigate({ view: 'deck', deckId });
-  right.append(knBadge, backBtn);
+  right.append(knBadge);
   topBar.append(left, right);
   wrap.appendChild(topBar);
 

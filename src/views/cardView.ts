@@ -1,5 +1,5 @@
 import type { AppContext } from '../types';
-import { pct, timeAgo } from '../utils';
+import { pct, timeAgo, trashIcon } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes, renderFiles } from '../components/fileViewer';
 import { decksContainingCard } from '../services/deckService';
@@ -53,67 +53,53 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
     tag.textContent = deck.name; tag.onclick = () => ctx.navigate({ view: 'deck', deckId: dId });
     tags.appendChild(tag);
   }
-  if (deckIds.length === 0) { const nd = document.createElement('span'); nd.className = 'text-xs text-dim italic'; nd.textContent = 'Not in any deck'; tags.appendChild(nd); }
+  const addToDeckChip = document.createElement('span');
+  addToDeckChip.className = 'text-xs px-2 py-0.5 rounded-full border border-dashed border-border text-dim cursor-pointer hover:text-primary hover:border-muted transition-colors';
+  addToDeckChip.textContent = '+'; addToDeckChip.title = 'Add to deck';
+  addToDeckChip.onclick = () => {
+    const available = Object.values(state.decks)
+      .filter(d => !d.entries.some(e => e.cardId === cardId))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (available.length === 0) {
+      const p = document.createElement('p'); p.className = 'text-sm text-muted';
+      p.textContent = 'This card is already in all existing decks.';
+      showModal('Add to deck', p, [{ label: 'Close', onClick: closeModal }]);
+      return;
+    }
+
+    const selected = new Set<string>();
+    const body = document.createElement('div'); body.className = 'space-y-1 max-h-64 overflow-y-auto';
+
+    for (const deck of available) {
+      const row = document.createElement('label');
+      row.className = 'flex items-center gap-3 px-2 py-2 rounded cursor-pointer hover:bg-elevated transition-colors';
+      const chk = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'card-checkbox';
+      chk.onchange = () => { if (chk.checked) selected.add(deck.id); else selected.delete(deck.id); };
+      const name = document.createElement('span'); name.className = 'text-sm text-primary'; name.textContent = deck.name;
+      row.append(chk, name);
+      body.appendChild(row);
+    }
+
+    showModal('Add to deck', body, [
+      { label: 'Cancel', onClick: closeModal },
+      { label: 'Add', primary: true, onClick: () => {
+        if (selected.size === 0) return;
+        closeModal();
+        ctx.mutate(s => {
+          for (const dId of selected) {
+            const d = s.decks[dId]; if (d) d.entries.push({ cardId });
+          }
+        });
+      }},
+    ]);
+  };
+  tags.appendChild(addToDeckChip);
   titleWrap.append(title, tags);
 
   const headerActions = document.createElement('div'); headerActions.className = 'flex gap-2 shrink-0';
 
-  const logBtn = document.createElement('button'); logBtn.className = 'btn-ghost'; logBtn.textContent = '+ Log session';
-  logBtn.onclick = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const defaultVal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-    let selectedRating: import('../types').SessionRating = 'good';
-
-    const body = document.createElement('div'); body.className = 'space-y-4';
-
-    const dtLbl = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = 'Date & time';
-    const inp = document.createElement('input'); inp.type = 'datetime-local'; inp.value = defaultVal; inp.className = 'input';
-
-    const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = 'Quality';
-    const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
-
-    const ratingDefs: Array<{ rating: import('../types').SessionRating; label: string; activeClass: string }> = [
-      { rating: 'again', label: '✗ Failed',    activeClass: 'bg-danger/20 text-danger border-danger/40' },
-      { rating: 'hard',  label: '△ Struggled', activeClass: 'bg-warn/20 text-warn border-warn/40' },
-      { rating: 'good',  label: '○ Got it',    activeClass: 'bg-accent/20 text-accent border-accent/40' },
-      { rating: 'easy',  label: '✓ Nailed it', activeClass: 'bg-success/20 text-success border-success/40' },
-    ];
-    const idleClass = 'btn border border-border text-muted hover:text-primary hover:bg-elevated text-xs py-1.5';
-
-    for (const def of ratingDefs) {
-      const btn = document.createElement('button');
-      btn.className = `${def.rating === 'good' ? `btn border text-xs py-1.5 transition-colors ${def.activeClass}` : `${idleClass} transition-colors`}`;
-      btn.textContent = def.label;
-      btn.onclick = () => {
-        selectedRating = def.rating;
-        ratingRow.querySelectorAll('button').forEach(b => { b.className = `${idleClass} transition-colors`; });
-        btn.className = `btn border text-xs py-1.5 transition-colors ${def.activeClass}`;
-      };
-      ratingRow.appendChild(btn);
-    }
-
-    body.append(dtLbl, inp, ratingLbl, ratingRow);
-
-    showModal('Log practice session', body, [
-      { label: 'Cancel', onClick: closeModal },
-      { label: 'Save', primary: true, onClick: () => {
-        const ts = inp.value ? new Date(inp.value).getTime() : Date.now();
-        if (isNaN(ts)) return;
-        closeModal();
-        ctx.mutate(s => {
-          const key = `${s.currentUserId}:${cardId}`;
-          if (!s.cardWorks[key]) s.cardWorks[key] = { userId: s.currentUserId, cardId, history: [] };
-          s.cardWorks[key]!.history.push({ ts, rating: selectedRating });
-          s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
-        });
-      }},
-    ]);
-    setTimeout(() => inp.focus(), 30);
-  };
-
-  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger'; deleteBtn.textContent = 'Delete card';
+  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = 'Delete card'; deleteBtn.appendChild(trashIcon());
   deleteBtn.onclick = () => confirmModal('Delete Card', `Permanently delete "${card.name}"? It will be removed from all decks.`, 'Delete', () => {
     ctx.mutate(s => {
       delete s.cards[cardId];
@@ -123,7 +109,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
     ctx.navigate({ view: 'folder', folderId: null });
   });
 
-  headerActions.append(logBtn, deleteBtn);
+  headerActions.append(deleteBtn);
   header.append(titleWrap, headerActions);
   wrap.appendChild(header);
 
@@ -189,7 +175,27 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
     for (const tag of (card.tags ?? [])) {
       const chip = document.createElement('span');
       chip.className = 'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-elevated border border-border text-muted group';
-      const label = document.createElement('span'); label.textContent = tag;
+      const label = document.createElement('span');
+      label.textContent = tag;
+      label.className = 'cursor-text hover:text-primary transition-colors';
+      label.title = 'Click to rename';
+      label.onclick = () => {
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.value = tag;
+        inp.className = 'text-xs bg-transparent border-none outline-none text-primary w-16';
+        label.replaceWith(inp); inp.focus(); inp.select();
+        const commit = () => {
+          const val = inp.value.trim().toLowerCase().replace(/,/g, '');
+          if (val && val !== tag && !(card.tags ?? []).includes(val)) {
+            ctx.mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.map(t => t === tag ? val : t); });
+          } else { inp.replaceWith(label); }
+        };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+          if (e.key === 'Escape') { inp.replaceWith(label); }
+        });
+      };
       const rm = document.createElement('button');
       rm.className = 'opacity-0 group-hover:opacity-100 text-dim hover:text-danger transition-all cursor-pointer leading-none';
       rm.textContent = '✕';
@@ -199,7 +205,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
     }
     // Add tag input
     const addInput = document.createElement('input');
-    addInput.type = 'text'; addInput.placeholder = '+ add tag'; addInput.className = 'text-xs bg-transparent border-none outline-none text-dim placeholder-dim w-20 focus:w-32 transition-all';
+    addInput.type = 'text'; addInput.placeholder = '+'; addInput.title = 'Add tag'; addInput.className = 'text-xs bg-transparent border-none outline-none text-dim placeholder-dim w-6 focus:w-24 transition-all';
     addInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ',') {
         e.preventDefault();
@@ -255,15 +261,16 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   }));
 
   // ── Review history ──
-  if (work && work.history.length > 0) {
+  {
     const histSection = document.createElement('div'); histSection.className = 'space-y-2';
     const histTitle = document.createElement('span'); histTitle.className = 'section-title';
-    histTitle.textContent = `Review history (${work.history.length} sessions)`;
+    histTitle.textContent = work?.history.length ? `Review history (${work.history.length} session${work.history.length > 1 ? 's' : ''})` : 'Review history';
     histSection.appendChild(histTitle);
     const list = document.createElement('div'); list.className = 'flex flex-wrap gap-1.5';
-    const ratingIcon: Record<string, string> = { again: '✗', ok: '~', well: '✓' };
-    const ratingColor: Record<string, string> = { again: 'text-warn', ok: 'text-accent', well: 'text-success' };
-    const sorted = [...work.history].sort((a, b) => b.ts - a.ts);
+
+    const ratingIcon: Record<string, string>  = { again: '✗', hard: '△', good: '○', easy: '✓' };
+    const ratingColor: Record<string, string> = { again: 'text-danger', hard: 'text-warn', good: 'text-accent', easy: 'text-success' };
+    const sorted = work ? [...work.history].sort((a, b) => b.ts - a.ts) : [];
     for (const entry of sorted) {
       const badge = document.createElement('span');
       badge.className = 'inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 bg-elevated rounded text-muted group';
@@ -281,6 +288,58 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
       rmBtn.onclick = () => { ctx.mutate(s => { const w = s.cardWorks[`${s.currentUserId}:${cardId}`]; if (w) w.history = w.history.filter(e => e.ts !== entry.ts); }); };
       badge.appendChild(rmBtn); list.appendChild(badge);
     }
+
+    // + chip to log a session
+    const addChip = document.createElement('span');
+    addChip.className = 'inline-flex items-center text-xs px-2 py-0.5 rounded-full border border-dashed border-border text-dim cursor-pointer hover:text-primary hover:border-muted transition-colors';
+    addChip.textContent = '+'; addChip.title = 'Log session';
+    addChip.onclick = () => {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const defaultVal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      let selectedRating: import('../types').SessionRating = 'good';
+      const body = document.createElement('div'); body.className = 'space-y-4';
+      const dtLbl = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = 'Date & time';
+      const inp = document.createElement('input'); inp.type = 'datetime-local'; inp.value = defaultVal; inp.className = 'input';
+      const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = 'Quality';
+      const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
+      const ratingDefs: Array<{ rating: import('../types').SessionRating; label: string; activeClass: string }> = [
+        { rating: 'again', label: '✗ Failed',    activeClass: 'bg-danger/20 text-danger border-danger/40' },
+        { rating: 'hard',  label: '△ Struggled', activeClass: 'bg-warn/20 text-warn border-warn/40' },
+        { rating: 'good',  label: '○ Got it',    activeClass: 'bg-accent/20 text-accent border-accent/40' },
+        { rating: 'easy',  label: '✓ Nailed it', activeClass: 'bg-success/20 text-success border-success/40' },
+      ];
+      const idleClass = 'btn border border-border text-muted hover:text-primary hover:bg-elevated text-xs py-1.5';
+      for (const def of ratingDefs) {
+        const btn = document.createElement('button');
+        btn.className = def.rating === 'good' ? `btn border text-xs py-1.5 transition-colors ${def.activeClass}` : `${idleClass} transition-colors`;
+        btn.textContent = def.label;
+        btn.onclick = () => {
+          selectedRating = def.rating;
+          ratingRow.querySelectorAll('button').forEach(b => { b.className = `${idleClass} transition-colors`; });
+          btn.className = `btn border text-xs py-1.5 transition-colors ${def.activeClass}`;
+        };
+        ratingRow.appendChild(btn);
+      }
+      body.append(dtLbl, inp, ratingLbl, ratingRow);
+      showModal('Log practice session', body, [
+        { label: 'Cancel', onClick: closeModal },
+        { label: 'Save', primary: true, onClick: () => {
+          const ts = inp.value ? new Date(inp.value).getTime() : Date.now();
+          if (isNaN(ts)) return;
+          closeModal();
+          ctx.mutate(s => {
+            const key = `${s.currentUserId}:${cardId}`;
+            if (!s.cardWorks[key]) s.cardWorks[key] = { userId: s.currentUserId, cardId, history: [] };
+            s.cardWorks[key]!.history.push({ ts, rating: selectedRating });
+            s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
+          });
+        }},
+      ]);
+      setTimeout(() => inp.focus(), 30);
+    };
+    list.appendChild(addChip);
+
     histSection.appendChild(list);
     wrap.appendChild(histSection);
   }

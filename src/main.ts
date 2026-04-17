@@ -12,13 +12,15 @@ import { renderLibraryView } from './views/libraryView';
 import { ensureCurrentUser } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
 }
 
 class App {
   private state: AppState;
   private route: Route = { view: 'folder', folderId: null };
+  private history: Route[] = [];
+  private future: Route[] = [];
   private sidebarEl!: HTMLElement;
   private contentEl!: HTMLElement;
 
@@ -31,13 +33,38 @@ class App {
       state: this.state,
       route: this.route,
       navigate: (route) => this.navigate(route),
+      back: () => this.back(),
+      forward: () => this.forward(),
+      canGoBack: this.history.length > 0,
+      canGoForward: this.future.length > 0,
       mutate: (fn) => this.mutate(fn),
       save: (fn) => this.save(fn),
     };
   }
 
   navigate(route: Route): void {
+    this.history.push(this.route);
+    if (this.history.length > 50) this.history.shift();
+    this.future = [];
     this.route = route;
+    this.renderSidebar();
+    this.renderContent();
+  }
+
+  back(): void {
+    const prev = this.history.pop();
+    if (!prev) return;
+    this.future.push(this.route);
+    this.route = prev;
+    this.renderSidebar();
+    this.renderContent();
+  }
+
+  forward(): void {
+    const next = this.future.pop();
+    if (!next) return;
+    this.history.push(this.route);
+    this.route = next;
     this.renderSidebar();
     this.renderContent();
   }
@@ -68,6 +95,11 @@ class App {
 
     layout.append(this.sidebarEl, this.contentEl);
     root.appendChild(layout);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.altKey && e.key === 'ArrowLeft')  { e.preventDefault(); this.back(); }
+      if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); this.forward(); }
+    });
 
     this.renderSidebar();
     this.renderContent();

@@ -1,5 +1,5 @@
 import type { AppContext, AppState, User, CardWork } from '../types';
-import { generateId, pct, timeAgo } from '../utils';
+import { generateId, pct, timeAgo, trashIcon } from '../utils';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder } from '../services/deckService';
@@ -249,7 +249,6 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
 
   const titleWrap = document.createElement('div');
   const title = document.createElement('h1');
-  title.className = 'text-xl font-semibold text-primary';
   title.textContent = folder ? folder.name : 'Home';
   titleWrap.appendChild(title);
 
@@ -257,16 +256,34 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
   headerActions.className = 'flex gap-2';
 
   if (folder) {
-    const renameBtn = document.createElement('button'); renameBtn.className = 'btn-ghost'; renameBtn.textContent = 'Rename';
-    renameBtn.onclick = () => promptModal('Rename', 'New name', folder.name, n => { ctx.mutate(s => { s.folders[folderId!]!.name = n; }); });
+    title.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors';
+    title.title = 'Click to rename';
+    title.onclick = () => {
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = folder.name;
+      inp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary w-full';
+      title.replaceWith(inp); inp.focus(); inp.select();
+      const commit = () => {
+        const val = inp.value.trim();
+        if (val && val !== folder.name) { ctx.mutate(s => { s.folders[folderId!]!.name = val; }); }
+        else { inp.replaceWith(title); }
+      };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { inp.replaceWith(title); }
+      });
+    };
 
-    const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger'; deleteBtn.textContent = 'Delete';
+    const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = 'Delete folder'; deleteBtn.appendChild(trashIcon());
     deleteBtn.onclick = () => confirmModal('Delete Folder', `Delete "${folder.name}" and all its contents?`, 'Delete', () => {
       const parent = findParentFolder(folderId!, 'folder', state);
       ctx.mutate(s => { deleteFolderRecursive(s, folderId!); });
       ctx.navigate({ view: 'folder', folderId: parent });
     });
-    headerActions.append(renameBtn, deleteBtn);
+    headerActions.append(deleteBtn);
+  } else {
+    title.className = 'text-xl font-semibold text-primary';
   }
 
   header.append(titleWrap, headerActions);

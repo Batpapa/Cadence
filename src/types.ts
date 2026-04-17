@@ -91,6 +91,10 @@ export interface AppContext {
   state: AppState;
   route: Route;
   navigate: (route: Route) => void;
+  back: () => void;
+  forward: () => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
   mutate: (fn: (state: AppState) => void) => Promise<void>;
   save: (fn: (state: AppState) => void) => Promise<void>;
 }

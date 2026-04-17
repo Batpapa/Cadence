@@ -173,10 +173,11 @@ function mostCommonKey(settings: Array<{ key: string }>): string | null {
   return best || null;
 }
 
-export function tuneResultToCard(tune: TuneResult): Card {
+export function tuneResultToCard(tune: TuneResult, opts: { onlyFirstSetting?: boolean } = {}): Card {
   const tags: string[] = ['thesession'];
   if (tune.type) tags.push(tune.type.toLowerCase());
   if (tune.topKey) tags.push(tune.topKey.toLowerCase());
+  const settings = (opts.onlyFirstSetting ?? true) ? tune.settings.slice(0, 1) : tune.settings;
   return {
     id: generateId(),
     name: tune.name,
@@ -185,7 +186,7 @@ export function tuneResultToCard(tune: TuneResult): Card {
     externalId: `thesession:${tune.id}`,
     content: {
       notes: `[View on TheSession](${tune.url || `https://thesession.org/tunes/${tune.id}`})`,
-      files: tune.settings.map(s => settingToAbcFile(s, tune)),
+      files: settings.map(s => settingToAbcFile(s, tune)),
     },
   };
 }
