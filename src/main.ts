@@ -13,6 +13,7 @@ import { ensureCurrentUser, getCurrentUser } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
+import { initDriveClient, isDriveConnected, loadFromCloud, syncToCloud, getLocalTimestamp } from './services/driveService';
 
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
@@ -74,6 +75,7 @@ class App {
   async mutate(fn: (state: AppState) => void): Promise<void> {
     fn(this.state);
     await saveState(this.state);
+    syncToCloud(this.state);
     this.renderSidebar();
     this.renderContent();
   }
@@ -81,6 +83,7 @@ class App {
   async save(fn: (state: AppState) => void): Promise<void> {
     fn(this.state);
     await saveState(this.state);
+    syncToCloud(this.state);
   }
 
   mount(root: HTMLElement): void {
@@ -139,6 +142,17 @@ class App {
     setLanguage(getCurrentUser(state).language ?? 'en');
     await saveState(state); // persist ensured user
     initPWA();
+    void initDriveClient().then(async () => {
+      if (!isDriveConnected()) return;
+      try {
+        const driveData = await loadFromCloud();
+        if (driveData && (driveData._lastModified ?? 0) > getLocalTimestamp()) {
+          const { _lastModified: _, ...clean } = driveData as AppState & { _lastModified?: number };
+          Object.assign(state, clean);
+          await saveState(state);
+        }
+      } catch { /* silently fall back to local data */ }
+    });
     const app = new App(state);
     app.mount(document.getElementById('app')!);
     registerCommandPalette(() => app.context);

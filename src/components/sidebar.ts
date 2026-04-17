@@ -9,6 +9,7 @@ import { showHelpModal } from './help';
 import { exportFull, exportContent, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
+import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
 
 const expanded = new Set<string>();
@@ -378,6 +379,62 @@ function showSettingsModal(ctx: AppContext): void {
   }));
 
   body.appendChild(dataGrid);
+
+  // ── Google Drive Sync ──
+  if (isDriveFeatureEnabled()) {
+    const dividerSync = document.createElement('hr'); dividerSync.className = 'border-border';
+    body.appendChild(dividerSync);
+    const syncTitle = document.createElement('div'); syncTitle.className = 'section-title'; syncTitle.textContent = t('settings.sync');
+    body.appendChild(syncTitle);
+
+    const driveRow = document.createElement('div'); driveRow.className = 'flex items-center gap-2';
+    const driveLabel = document.createElement('span'); driveLabel.className = 'text-xs text-muted flex-1'; driveLabel.textContent = 'Google Drive';
+    const driveStatusEl = document.createElement('span'); driveStatusEl.className = 'text-xs';
+    const driveBtn = document.createElement('button'); driveBtn.className = 'btn-ghost text-xs shrink-0';
+
+    const updateDriveUI = (s: DriveStatus) => {
+      switch (s) {
+        case 'disconnected':
+          driveStatusEl.textContent = '';
+          driveBtn.textContent = t('settings.sync.connect');
+          driveBtn.className = 'btn-primary text-xs shrink-0';
+          driveBtn.disabled = false;
+          driveBtn.onclick = () => { void connectDrive().catch(() => {}); };
+          break;
+        case 'connecting':
+          driveStatusEl.textContent = t('settings.sync.connecting');
+          driveStatusEl.className = 'text-xs text-muted';
+          driveBtn.textContent = ''; driveBtn.disabled = true;
+          break;
+        case 'connected':
+          driveStatusEl.textContent = '● ' + t('settings.sync.connected');
+          driveStatusEl.className = 'text-xs text-green-500';
+          driveBtn.textContent = t('settings.sync.disconnect');
+          driveBtn.className = 'btn-ghost text-xs shrink-0';
+          driveBtn.disabled = false;
+          driveBtn.onclick = () => disconnectDrive();
+          break;
+        case 'syncing':
+          driveStatusEl.textContent = '○ ' + t('settings.sync.syncing');
+          driveStatusEl.className = 'text-xs text-muted';
+          driveBtn.disabled = true;
+          break;
+        case 'error':
+          driveStatusEl.textContent = '✕ ' + t('settings.sync.error');
+          driveStatusEl.className = 'text-xs text-danger';
+          driveBtn.textContent = t('settings.sync.reconnect');
+          driveBtn.className = 'btn-ghost text-xs shrink-0';
+          driveBtn.disabled = false;
+          driveBtn.onclick = () => { void connectDrive().catch(() => {}); };
+          break;
+      }
+    };
+
+    updateDriveUI(getDriveStatus());
+    onStatusChange(updateDriveUI);
+    driveRow.append(driveLabel, driveStatusEl, driveBtn);
+    body.appendChild(driveRow);
+  }
 
   // ── About ──
   const divider2 = document.createElement('hr'); divider2.className = 'border-border';
