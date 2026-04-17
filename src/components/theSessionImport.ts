@@ -37,6 +37,23 @@ function linkCardToDeck(s: AppState, cardId: string, deckId: string): void {
 
 // ── TheSession body builder ───────────────────────────────────────────────────
 
+function mkPreviewInput(placeholder: string) {
+  const wrap = document.createElement('div');
+  wrap.className = 'flex-1 min-w-0 flex items-center gap-2 bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent';
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.placeholder = placeholder;
+  inp.className = 'flex-1 min-w-0 bg-transparent border-0 outline-none text-sm text-primary placeholder-dim';
+  const previewEl = document.createElement('span');
+  previewEl.className = 'hidden text-xs shrink-0 truncate max-w-[75%]';
+  wrap.append(inp, previewEl);
+  const setPreview = (text: string, isError = false) => {
+    if (!text) { previewEl.textContent = ''; previewEl.className = 'hidden text-xs shrink-0 truncate max-w-[75%]'; return; }
+    previewEl.textContent = text;
+    previewEl.className = `text-xs shrink-0 truncate max-w-[75%] ${isError ? 'text-red-400' : 'text-muted'}`;
+  };
+  return { wrap, inp, setPreview };
+}
+
 export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId?: string): HTMLElement {
   let activeTab: 'id' | 'search' | 'member' = 'search';
   let onlyFirstSetting = true;
@@ -87,19 +104,18 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
   const renderByIdTab = () => {
     const row = document.createElement('div'); row.className = 'flex gap-2';
-    const inp = document.createElement('input'); inp.type = 'number'; inp.placeholder = t('theSession.id.placeholder'); inp.className = 'input flex-1';
+    const { wrap: inputWrap, inp, setPreview } = mkPreviewInput(t('theSession.id.placeholder'));
     const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.id.import');
-    const preview = document.createElement('p'); preview.className = 'text-xs text-muted min-h-[1.25rem]';
 
     let previewId = -1;
     const doPreview = debounce(async (val: string) => {
       const id = parseInt(val);
-      if (isNaN(id)) { preview.textContent = ''; return; }
+      if (isNaN(id)) { setPreview(''); return; }
       previewId = id;
       try {
         const tune = await fetchTuneById(id);
-        if (previewId === id) preview.textContent = `${tune.name} · ${tune.type}`;
-      } catch { if (previewId === id) preview.textContent = t('theSession.id.notFound'); }
+        if (previewId === id) setPreview(`${tune.name} · ${tune.type}`);
+      } catch { if (previewId === id) setPreview(t('theSession.id.notFound'), true); }
     }, 400);
 
     btn.onclick = async () => {
@@ -114,12 +130,12 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
           status.textContent = deckId
             ? t('theSession.status.alreadyInLibraryLinked', { name: tune.name })
             : t('theSession.status.alreadyInLibrary', { name: tune.name });
-          inp.value = ''; preview.textContent = '';
+          inp.value = ''; setPreview('');
         } else {
           const card = tuneResultToCard(tune, { onlyFirstSetting });
           await ctx.mutate(s => { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); });
           status.textContent = t('theSession.status.imported', { name: card.name });
-          inp.value = ''; preview.textContent = '';
+          inp.value = ''; setPreview('');
         }
       } catch (e) {
         status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
@@ -127,8 +143,8 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
     };
     inp.addEventListener('input', () => doPreview(inp.value));
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
-    row.append(inp, btn);
-    content.append(row, preview);
+    row.append(inputWrap, btn);
+    content.append(row);
     focusIfDesktop(inp);
   };
 
@@ -195,19 +211,18 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
   const renderMemberTab = () => {
     const row = document.createElement('div'); row.className = 'flex gap-2';
-    const inp = document.createElement('input'); inp.type = 'number'; inp.placeholder = t('theSession.member.placeholder'); inp.className = 'input flex-1';
+    const { wrap: inputWrap, inp, setPreview } = mkPreviewInput(t('theSession.member.placeholder'));
     const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.member.importAll');
-    const preview = document.createElement('p'); preview.className = 'text-xs text-muted min-h-[1.25rem]';
 
     let previewId = -1;
     const doPreview = debounce(async (val: string) => {
       const id = parseInt(val);
-      if (isNaN(id)) { preview.textContent = ''; return; }
+      if (isNaN(id)) { setPreview(''); return; }
       previewId = id;
       try {
         const info = await fetchMemberInfo(id);
-        if (previewId === id) preview.textContent = t(info.total !== 1 ? 'theSession.member.previewPlural' : 'theSession.member.preview', { name: info.name, count: info.total });
-      } catch { if (previewId === id) preview.textContent = t('theSession.member.notFound'); }
+        if (previewId === id) setPreview(t(info.total !== 1 ? 'theSession.member.previewPlural' : 'theSession.member.preview', { name: info.name, count: info.total }));
+      } catch { if (previewId === id) setPreview(t('theSession.member.notFound'), true); }
     }, 400);
 
     inp.addEventListener('input', () => doPreview(inp.value));
@@ -254,8 +269,8 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
     };
 
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
-    row.append(inp, btn);
-    content.append(row, preview, progressWrap);
+    row.append(inputWrap, btn);
+    content.append(row, progressWrap);
     focusIfDesktop(inp);
   };
 

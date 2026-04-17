@@ -6,6 +6,9 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   /* Prevent double-tap zoom on interactive elements (major cause of keyboard flicker on Android) */
   button, input, select, textarea, a, label, [role="button"] { touch-action: manipulation; }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   /* Suppress native drag UI on draggable elements — our touch handlers take over */
   [draggable="true"] { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
