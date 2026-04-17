@@ -1,5 +1,13 @@
 import type { AppState, User } from '../types';
+import type { Lang } from './i18nService';
 import { generateId } from '../utils';
+
+const SUPPORTED_LANGS: Lang[] = ['en', 'fr'];
+
+function detectLanguage(): Lang {
+  const code = (navigator.language ?? 'en').split('-')[0]!.toLowerCase();
+  return (SUPPORTED_LANGS.includes(code as Lang) ? code : 'en') as Lang;
+}
 
 const DEFAULT_USER: Omit<User, 'id'> = {
   name: 'Moi',
@@ -12,7 +20,7 @@ export function ensureCurrentUser(state: AppState): void {
   const ids = Object.keys(state.users);
   if (ids.length === 0) {
     const id = generateId();
-    state.users[id] = { id, ...DEFAULT_USER };
+    state.users[id] = { id, ...DEFAULT_USER, language: detectLanguage() };
     state.currentUserId = id;
   } else if (!state.currentUserId || !state.users[state.currentUserId]) {
     state.currentUserId = ids[0]!;
