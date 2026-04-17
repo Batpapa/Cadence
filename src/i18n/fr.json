@@ -36,6 +36,10 @@
   "sidebar.help": "Aide",
   "sidebar.addSubfolder": "Ajouter un sous-dossier",
   "sidebar.addDeck": "Ajouter un paquet",
+  "sidebar.sync.pending": "Modifications non synchronisées — cliquer pour synchroniser",
+  "sidebar.sync.syncing": "Synchronisation…",
+  "sidebar.sync.connected": "Synchronisé avec Google Drive",
+  "sidebar.sync.error": "Erreur de sync — cliquer pour réessayer",
   "sidebar.newFolder": "+ Dossier",
   "sidebar.newDeck": "+ Paquet",
 

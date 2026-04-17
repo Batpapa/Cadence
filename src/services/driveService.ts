@@ -1,13 +1,14 @@
 import type { AppState } from '../types';
 import { GOOGLE_CLIENT_ID } from '../config';
 
-export type DriveStatus = 'disconnected' | 'connecting' | 'syncing' | 'connected' | 'error';
+export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' | 'connected' | 'error';
 
 const FILE_NAME = 'cadence-data.json';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const LS_FILE_ID = 'cadence_drive_file_id';
 const LS_CONNECTED = 'cadence_drive_connected';
 const LS_LOCAL_TS = 'cadence_local_modified';
+const LS_HINT = 'cadence_drive_hint';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Gis = any;
@@ -80,7 +81,8 @@ function requestToken(prompt = ''): Promise<string> {
       cleanup();
       reject(new Error(err.type ?? 'popup_closed'));
     };
-    tokenClient.requestAccessToken({ prompt });
+    const hint = localStorage.getItem(LS_HINT) ?? undefined;
+    tokenClient.requestAccessToken({ prompt, ...(hint ? { hint } : {}) });
   });
 }
 
@@ -120,7 +122,13 @@ export async function connectDrive(): Promise<void> {
   if (!tokenClient) throw new Error('Drive client not ready');
   setStatus('connecting');
   try {
-    await requestToken('consent');
+    const token = await requestToken('consent');
+    // Store email hint for silent re-auth on future page loads
+    void fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => r.json()).then((d: Gis) => {
+      if (d.email) localStorage.setItem(LS_HINT, d.email as string);
+    }).catch(() => {});
     fileId = await findOrCreateFile();
     localStorage.setItem(LS_FILE_ID, fileId);
     localStorage.setItem(LS_CONNECTED, '1');
@@ -140,6 +148,7 @@ export function disconnectDrive(): void {
   fileId = null;
   localStorage.removeItem(LS_FILE_ID);
   localStorage.removeItem(LS_CONNECTED);
+  localStorage.removeItem(LS_HINT);
   setStatus('disconnected');
 }
 
@@ -173,8 +182,14 @@ async function flushSync(): Promise<void> {
 export function syncToCloud(state: AppState): void {
   if (!isDriveConnected()) return;
   pendingState = state;
+  setStatus('pending');
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => { void flushSync(); }, 30_000);
+}
+
+export async function manualSync(): Promise<void> {
+  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+  await flushSync();
 }
 
 export function initDriveVisibilitySync(): void {
