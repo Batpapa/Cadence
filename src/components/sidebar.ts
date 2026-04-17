@@ -576,7 +576,6 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
     syncBtn.innerHTML = cloudUpSvg;
 
     const applyStatus = (s: DriveStatus) => {
-      if (!syncBtn.isConnected) return;
       switch (s) {
         case 'pending':
           syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-accent';
@@ -598,7 +597,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
     };
 
     applyStatus(driveStatus);
-    const unsub = onStatusChange((s) => { applyStatus(s); if (!syncBtn.isConnected) unsub(); });
+    const unsub = onStatusChange((s) => { if (!syncBtn.isConnected) { unsub(); return; } applyStatus(s); });
     iconGroup.appendChild(syncBtn);
   }
 
