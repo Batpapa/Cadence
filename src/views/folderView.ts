@@ -1,8 +1,8 @@
-import type { AppContext, AppState, User, CardWork } from '../types';
-import { generateId, pct, trashIcon, makeInlineEditable, DAY_NAMES_KEYS } from '../utils';
+import type { AppContext, AppState, CardWork } from '../types';
+import { generateId, trashIcon, makeInlineEditable, DAY_NAMES_KEYS } from '../utils';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
-import { findParentFolder } from '../services/deckService';
+import { findParentFolder, deckPath } from '../services/deckService';
 import { replayFSRS, fsrsRetrievability, retentionWindowDays } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
@@ -96,7 +96,6 @@ function renderActivityBars(works: Record<string, CardWork>, period: ActivityPer
 
 function renderDashboard(ctx: AppContext): HTMLElement {
   const { state } = ctx;
-  const user = getCurrentUser(state);
   const allCards = Object.values(state.cards);
   const allWorks = state.cardWorks;
 
@@ -176,7 +175,18 @@ function renderCardMap(ctx: AppContext): HTMLElement {
   const H = 240;
   const padL = 38, padR = 14, padT = 12, padB = 30;
 
-  const points: Array<{ id: string; name: string; s: number; ease: number; k: number; imp: number }> = [];
+  // Reverse index: cardId → deck IDs
+  const cardToDecks = new Map<string, string[]>();
+  for (const deck of Object.values(state.decks)) {
+    for (const entry of deck.entries) {
+      const arr = cardToDecks.get(entry.cardId) ?? [];
+      arr.push(deck.id);
+      cardToDecks.set(entry.cardId, arr);
+    }
+  }
+
+  type Point = { id: string; name: string; s: number; ease: number; k: number; imp: number; deckIds: string[] };
+  const allPoints: Point[] = [];
   for (const card of Object.values(state.cards)) {
     const work = state.cardWorks[`${user.id}:${card.id}`];
     if (!work || work.history.length === 0) continue;
@@ -186,18 +196,39 @@ function renderCardMap(ctx: AppContext): HTMLElement {
     const elapsedDays = (Date.now() - fsrs.lastTs) / 86400000;
     const k = fsrsRetrievability(elapsedDays, fsrs.stability);
     const retWindow = retentionWindowDays(fsrs.stability, user.availabilityThreshold);
-    points.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.importance });
+    allPoints.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.importance, deckIds: cardToDecks.get(card.id) ?? [] });
   }
 
   const wrap = document.createElement('div'); wrap.className = 'space-y-2';
 
-  if (points.length === 0) {
+  if (allPoints.length === 0) {
     const empty = document.createElement('p'); empty.className = 'text-xs text-dim italic text-center py-4';
     empty.textContent = t('card.neverReviewed');
     wrap.appendChild(empty);
     return wrap;
   }
 
+  // Deck list — only decks that have at least one reviewed card
+  const pointDeckIds = new Set(allPoints.flatMap(p => p.deckIds));
+  const deckList = Object.values(state.decks)
+    .filter(d => pointDeckIds.has(d.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const selectedDecks = new Set(deckList.map(d => d.id));
+
+  const getVisible = (): Point[] => {
+    const seen = new Set<string>();
+    const result: Point[] = [];
+    for (const pt of allPoints) {
+      if (!seen.has(pt.id) && pt.deckIds.some(d => selectedDecks.has(d))) {
+        seen.add(pt.id);
+        result.push(pt);
+      }
+    }
+    return result;
+  };
+
+  // SVG helpers
   const ns = 'http://www.w3.org/2000/svg';
   const mkEl = (tag: string, attrs: Record<string, string>) => {
     const el = document.createElementNS(ns, tag);
@@ -210,14 +241,14 @@ function renderCardMap(ctx: AppContext): HTMLElement {
     return el;
   };
 
-  const rScale = (imp: number) => Math.max(1, Math.min(10, Math.log10(Math.max(1, imp))));
+  const rScale = (imp: number) => Math.sqrt(Math.max(1, Math.min(10, Math.log10(Math.max(1, imp)))));
   const dotColor = (k: number): string => k >= 0.75 ? '#4ade80' : k >= 0.4 ? '#fbbf24' : '#f87171';
   const xTicks: Array<{ val: number; label: string }> = [
     { val: 1, label: t('dashboard.period.1d') }, { val: 7, label: t('dashboard.period.7d') },
     { val: 30, label: t('dashboard.period.30d') }, { val: 180, label: t('dashboard.period.6mo') }, { val: 365, label: t('dashboard.period.1y') },
   ];
 
-  const buildSvg = (W: number): Element => {
+  const buildSvg = (W: number, pts: Point[]): Element => {
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const xMin = 0.5, xMax = 730;
     const logXMin = Math.log(xMin), logXMax = Math.log(xMax);
@@ -241,7 +272,7 @@ function renderCardMap(ctx: AppContext): HTMLElement {
 
     svg.appendChild(mkEl('rect', { x: String(padL), y: String(padT), width: String(plotW), height: String(plotH), fill: 'none', stroke: '#333333', 'stroke-width': '1' }));
 
-    for (const pt of [...points].sort((a, b) => b.imp - a.imp)) {
+    for (const pt of [...pts].sort((a, b) => b.imp - a.imp)) {
       const color = dotColor(pt.k);
       const circle = mkEl('circle', {
         cx: String(xScale(pt.s)), cy: String(yScale(pt.ease)), r: String(rScale(pt.imp)),
@@ -254,24 +285,81 @@ function renderCardMap(ctx: AppContext): HTMLElement {
       svg.appendChild(circle);
     }
 
-    svg.appendChild(mkText(padL + plotW / 2, H - 2, t('deck.section.stability'), 'middle', '7.5'));
-    const yAxisLabel = mkEl('text', { x: '0', y: '0', 'text-anchor': 'middle', 'font-size': '7.5', fill: '#555555', 'font-family': 'IBM Plex Mono, monospace', transform: `rotate(-90) translate(${-(padT + plotH / 2)}, 9)` });
+    svg.appendChild(mkText(padL + plotW / 2, H - 2, t('deck.section.stability'), 'middle', '10'));
+    const yAxisLabel = mkEl('text', { x: '0', y: '0', 'text-anchor': 'middle', 'font-size': '10', fill: '#555555', 'font-family': 'IBM Plex Mono, monospace', transform: `rotate(-90) translate(${-(padT + plotH / 2)}, 9)` });
     yAxisLabel.textContent = t('deck.section.ease');
     svg.appendChild(yAxisLabel);
 
     return svg;
   };
 
-  const svgWrap = document.createElement('div');
+  // ── Chip filter row ──
+  const chipActiveClass = 'text-xs px-2 py-0.5 rounded-full border bg-accent text-white border-accent cursor-pointer transition-colors';
+  const chipIdleClass   = 'text-xs px-2 py-0.5 rounded-full border border-border text-muted hover:border-accent hover:text-accent cursor-pointer transition-colors';
+
+  const chipsRow = document.createElement('div');
+  chipsRow.className = 'flex flex-wrap gap-1 items-center';
+
+  // All / None controls
+  const controlsWrap = document.createElement('div');
+  controlsWrap.className = 'flex gap-1 items-center border-r border-border pr-2 mr-0.5 shrink-0';
+  const mkCtrl = (label: string, fn: () => void) => {
+    const btn = document.createElement('button');
+    btn.className = 'text-[9px] text-dim hover:text-muted cursor-pointer transition-colors';
+    btn.textContent = label;
+    btn.onclick = fn;
+    return btn;
+  };
+
+  const chipEls = new Map<string, HTMLButtonElement>();
+
+  const updateChips = () => {
+    for (const [id, chip] of chipEls) {
+      chip.className = selectedDecks.has(id) ? chipActiveClass : chipIdleClass;
+    }
+  };
+
+  controlsWrap.append(
+    mkCtrl(t('dashboard.filterAll'),  () => { deckList.forEach(d => selectedDecks.add(d.id));    updateChips(); rebuildSvg(); }),
+    mkCtrl(t('dashboard.filterNone'), () => { selectedDecks.clear();                              updateChips(); rebuildSvg(); }),
+  );
+  chipsRow.appendChild(controlsWrap);
+
+  for (const deck of deckList) {
+    const chip = document.createElement('button');
+    chip.className = chipActiveClass;
+    chip.textContent = deck.name;
+    chip.title = deckPath(deck.id, state);
+    chip.onclick = () => {
+      if (selectedDecks.has(deck.id)) selectedDecks.delete(deck.id);
+      else selectedDecks.add(deck.id);
+      chip.className = selectedDecks.has(deck.id) ? chipActiveClass : chipIdleClass;
+      rebuildSvg();
+    };
+    chipEls.set(deck.id, chip);
+    chipsRow.appendChild(chip);
+  }
+  wrap.appendChild(chipsRow);
+
+  // ── SVG with ResizeObserver ──
+  let lastW = 0;
   let currentSvg: Element | null = null;
+  const svgWrap = document.createElement('div');
+
+  const rebuildSvg = () => {
+    if (lastW <= 0) return;
+    const newSvg = buildSvg(lastW, getVisible());
+    if (currentSvg) svgWrap.replaceChild(newSvg, currentSvg);
+    else svgWrap.appendChild(newSvg);
+    currentSvg = newSvg;
+  };
+
   const obs = new ResizeObserver(entries => {
     requestAnimationFrame(() => {
       const w = Math.floor(entries[0].contentRect.width);
       if (w <= 0) return;
-      const newSvg = buildSvg(w);
-      if (currentSvg) svgWrap.replaceChild(newSvg, currentSvg);
-      else svgWrap.appendChild(newSvg);
-      currentSvg = newSvg;
+      lastW = w;
+      rebuildSvg();
     });
   });
   obs.observe(svgWrap);
