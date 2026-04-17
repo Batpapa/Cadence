@@ -9,7 +9,7 @@ import { showHelpModal } from './help';
 import { exportFull, exportContent, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
-import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, type DriveStatus } from '../services/driveService';
+import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, manualSync, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
 
 const expanded = new Set<string>();
@@ -567,6 +567,41 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
 
   const iconGroup = document.createElement('div');
   iconGroup.className = 'flex items-center gap-2';
+
+  const driveStatus = getDriveStatus();
+  if (isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting') {
+    const syncBtn = document.createElement('button');
+    syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0';
+    const cloudUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`;
+    syncBtn.innerHTML = cloudUpSvg;
+
+    const applyStatus = (s: DriveStatus) => {
+      if (!syncBtn.isConnected) return;
+      switch (s) {
+        case 'pending':
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-accent';
+          syncBtn.title = t('sidebar.sync.pending'); syncBtn.onclick = () => { void manualSync(); };
+          break;
+        case 'syncing':
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-default shrink-0 text-muted animate-pulse';
+          syncBtn.title = t('sidebar.sync.syncing'); syncBtn.onclick = null;
+          break;
+        case 'connected':
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-dim';
+          syncBtn.title = t('sidebar.sync.connected'); syncBtn.onclick = () => { void manualSync(); };
+          break;
+        case 'error':
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-danger';
+          syncBtn.title = t('sidebar.sync.error'); syncBtn.onclick = () => { void manualSync(); };
+          break;
+      }
+    };
+
+    applyStatus(driveStatus);
+    const unsub = onStatusChange((s) => { applyStatus(s); if (!syncBtn.isConnected) unsub(); });
+    iconGroup.appendChild(syncBtn);
+  }
+
   iconGroup.append(backBtn, fwdBtn, searchBtn, helpBtn, settingsBtn);
 
   top.append(logo, iconGroup);

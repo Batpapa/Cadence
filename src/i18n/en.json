@@ -36,6 +36,10 @@
   "sidebar.help": "Help",
   "sidebar.addSubfolder": "Add subfolder",
   "sidebar.addDeck": "Add deck",
+  "sidebar.sync.pending": "Unsynced changes — click to sync now",
+  "sidebar.sync.syncing": "Syncing…",
+  "sidebar.sync.connected": "Synced with Google Drive",
+  "sidebar.sync.error": "Sync error — click to retry",
   "sidebar.newFolder": "+ Folder",
   "sidebar.newDeck": "+ Deck",
 
