@@ -640,18 +640,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   addDeckBtn.onclick = () => showCreateDeckModal(ctx, null);
   createRow.append(addFolderBtn, addDeckBtn);
 
-  const legalFooter = document.createElement('div');
-  legalFooter.className = 'flex justify-between px-1 pt-1';
-  const mkLegalLink = (text: string, href: string) => {
-    const a = document.createElement('a');
-    a.href = href; a.target = '_blank'; a.rel = 'noopener';
-    a.className = 'text-[10px] text-dim hover:text-muted transition-colors';
-    a.textContent = text;
-    return a;
-  };
-  legalFooter.append(mkLegalLink(t('settings.aboutPrivacy'), './privacy.html'), mkLegalLink(t('settings.aboutTerms'), './terms.html'));
-
-  bottom.append(createRow, legalFooter);
+  bottom.append(createRow);
   aside.append(top, nav, tree, bottom);
   return aside;
 }
