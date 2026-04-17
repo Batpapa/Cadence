@@ -44,6 +44,7 @@ module.exports = (env, argv) => {
           { from: 'src/manifest.json', to: 'manifest.json' },
           { from: 'src/sw.js',         to: 'sw.js' },
           { from: 'src/privacy.html',  to: 'privacy.html' },
+          { from: 'src/terms.html',    to: 'terms.html' },
         ],
       })] : []),
     ],
