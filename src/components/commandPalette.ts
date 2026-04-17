@@ -1,5 +1,6 @@
 import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
+import { focusIfDesktop } from '../utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -195,7 +196,7 @@ export function showCommandPalette(getCtx: () => AppContext): void {
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
   render();
-  setTimeout(() => input.focus(), 10);
+  focusIfDesktop(input);
 }
 
 // ── Global shortcut registration ──────────────────────────────────────────────

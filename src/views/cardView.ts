@@ -1,5 +1,5 @@
 import type { AppContext } from '../types';
-import { pct, timeAgo, trashIcon, makeInlineEditable, unlinkIcon } from '../utils';
+import { pct, timeAgo, trashIcon, makeInlineEditable, unlinkIcon, focusIfDesktop } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes, renderFiles } from '../components/fileViewer';
 import { renderEmbeds } from '../components/embedViewer';
@@ -148,7 +148,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
         if (!isNaN(val) && val > 0) { closeModal(); ctx.mutate(s => { s.cards[cardId]!.importance = val; }); }
       }},
     ]);
-    setTimeout(() => inp.focus(), 30);
+    focusIfDesktop(inp);
   };
   impRow.append(impVal, impEditBtn);
   impBox.append(impLabel, impRow);
@@ -247,7 +247,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
       ta.addEventListener('input', () => { notesDraft = ta.value; });
       ta.addEventListener('blur', () => { ctx.save(s => { s.cards[cardId]!.content.notes = notesDraft; }); });
       notesContent.appendChild(ta);
-      setTimeout(() => ta.focus(), 30);
+      focusIfDesktop(ta);
     } else {
       ctx.save(s => { s.cards[cardId]!.content.notes = notesDraft; });
       notesContent.appendChild(renderNotes(notesDraft));
@@ -354,7 +354,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
           });
         }},
       ]);
-      setTimeout(() => inp.focus(), 30);
+      focusIfDesktop(inp);
     };
     list.appendChild(addChip);
 

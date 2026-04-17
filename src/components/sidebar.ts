@@ -7,7 +7,7 @@ import { deckKnowledgeBuckets } from '../services/knowledgeService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { exportFull, exportContent, parseImport } from '../services/importExport';
-import { t, setLanguage, getLanguage } from '../services/i18nService';
+import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import type { Lang } from '../services/i18nService';
 
@@ -45,7 +45,7 @@ function getDropZone(e: DragEvent, el: HTMLElement, isFolder: boolean): 'before'
 
 // ── Drag & Drop mutation helpers ──────────────────────────────────────────────
 
-function removeFromParent(s: AppState, type: 'folder' | 'deck', id: string): void {
+function removeFromParent(s: AppState, _type: 'folder' | 'deck', id: string): void {
   s.rootFolderIds = s.rootFolderIds.filter((x: string) => x !== id);
   s.rootDeckIds   = s.rootDeckIds.filter((x: string) => x !== id);
   for (const f of Object.values(s.folders) as Folder[]) {
@@ -462,7 +462,6 @@ function showSettingsModal(ctx: AppContext): void {
   showModal(t('settings.title'), body, [
     { label: t('common.close'), onClick: closeModal },
   ]);
-  setTimeout(() => nameInp.focus(), 30);
 }
 
 export function renderSidebar(ctx: AppContext): HTMLElement {

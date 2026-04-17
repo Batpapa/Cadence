@@ -1,5 +1,5 @@
 import type { EmbedEntry } from '../types';
-import { generateId } from '../utils';
+import { generateId, focusIfDesktop } from '../utils';
 import { resolveEmbed, detectPlatform, PLATFORM_ICONS, IFRAME_DIMS } from '../services/embedService';
 import { showModal, closeModal } from './modal';
 import { t } from '../services/i18nService';
@@ -150,7 +150,7 @@ export function renderEmbeds(options: {
         { label: t('common.cancel'), onClick: closeModal },
         { label: t('common.add'), primary: true, onClick: () => { void doAdd(); } },
       ]);
-      setTimeout(() => inp.focus(), 30);
+      focusIfDesktop(inp);
     };
 
     header.appendChild(addBtn);
