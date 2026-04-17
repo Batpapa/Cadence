@@ -13,7 +13,7 @@ import { ensureCurrentUser, getCurrentUser } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, loadFromCloud, syncToCloud, getLocalTimestamp } from './services/driveService';
+import { initDriveClient, isDriveConnected, loadFromCloud, syncToCloud, getLocalTimestamp, initDriveVisibilitySync } from './services/driveService';
 
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
@@ -142,6 +142,7 @@ class App {
     setLanguage(getCurrentUser(state).language ?? 'en');
     await saveState(state); // persist ensured user
     initPWA();
+    initDriveVisibilitySync();
     void initDriveClient().then(async () => {
       if (!isDriveConnected()) return;
       try {
