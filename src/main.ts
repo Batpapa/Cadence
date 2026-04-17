@@ -12,6 +12,7 @@ import { renderLibraryView } from './views/libraryView';
 import { ensureCurrentUser, getCurrentUser } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
+import { initPWA } from './services/pwaService';
 
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
@@ -137,6 +138,7 @@ class App {
     ensureCurrentUser(state);
     setLanguage(getCurrentUser(state).language ?? 'en');
     await saveState(state); // persist ensured user
+    initPWA();
     const app = new App(state);
     app.mount(document.getElementById('app')!);
     registerCommandPalette(() => app.context);
