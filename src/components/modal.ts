@@ -1,4 +1,5 @@
 import { t } from '../services/i18nService';
+import { focusIfDesktop } from '../utils';
 
 export interface ModalAction {
   label: string;
@@ -73,7 +74,7 @@ export function promptModal(title: string, label: string, defaultValue: string, 
   const confirm = () => { const val = input.value.trim(); if (!val) return; closeModal(); onConfirm(val); };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') closeModal(); });
   showModal(title, body, [{ label: t('common.cancel'), onClick: closeModal }, { label: t('common.confirm'), primary: true, onClick: confirm }]);
-  setTimeout(() => input.focus(), 30);
+  focusIfDesktop(input);
 }
 
 export function confirmModal(title: string, message: string, confirmLabel: string, onConfirm: () => void): void {
@@ -121,5 +122,5 @@ export function formModal(
     i.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') closeModal(); });
   });
   showModal(title, body, [{ label: t('common.cancel'), onClick: closeModal }, { label: t('common.confirm'), primary: true, onClick: confirm }]);
-  setTimeout(() => Object.values(inputs)[0]?.focus(), 30);
+  const firstInput = Object.values(inputs)[0]; if (firstInput) focusIfDesktop(firstInput);
 }

@@ -1,5 +1,5 @@
 import type { AppContext, Card, DeckEntry } from '../types';
-import { pct, timeAgo, knowledgeColor, trashIcon, renderKnowledgeBar, makeInlineEditable, unlinkIcon, addTouchDragSupport } from '../utils';
+import { pct, timeAgo, knowledgeColor, trashIcon, renderKnowledgeBar, makeInlineEditable, unlinkIcon, addTouchDragSupport, focusIfDesktop } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { findParentFolder, decksContainingCard } from '../services/deckService';
@@ -296,7 +296,7 @@ function showImportanceModal(ctx: AppContext, deckId: string, entry: DeckEntry, 
       });
     }},
   ]);
-  setTimeout(() => input.focus(), 30);
+  focusIfDesktop(input);
 }
 
 function showLinkCardModal(ctx: AppContext, deckId: string): void {
@@ -350,5 +350,5 @@ function showLinkCardModal(ctx: AppContext, deckId: string): void {
       renderList();
     }},
   ]);
-  setTimeout(() => searchInput.focus(), 30);
+  focusIfDesktop(searchInput);
 }

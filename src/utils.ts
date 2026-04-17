@@ -5,6 +5,13 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+/** Focus an input only on desktop (mouse+hover device). Prevents keyboard popup on mobile. */
+export function focusIfDesktop(el: HTMLElement): void {
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    setTimeout(() => el.focus(), 30);
+  }
+}
+
 export function toDateStr(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');

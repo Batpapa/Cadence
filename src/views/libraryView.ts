@@ -1,5 +1,5 @@
 import type { AppContext, Card } from '../types';
-import { pct, knowledgeColor, trashIcon } from '../utils';
+import { pct, knowledgeColor, trashIcon, focusIfDesktop } from '../utils';
 import { confirmModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
@@ -188,6 +188,6 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
   renderList();
   searchInput.addEventListener('input', () => renderList());
   wrap.appendChild(listWrap);
-  setTimeout(() => searchInput.focus(), 30);
+  focusIfDesktop(searchInput);
   return wrap;
 }

@@ -1,5 +1,5 @@
 import type { AppContext, AppState } from '../types';
-import { generateId } from '../utils';
+import { generateId, focusIfDesktop } from '../utils';
 import { showModal, closeModal } from './modal';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo,
@@ -129,6 +129,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
     row.append(inp, btn);
     content.append(row, preview);
+    focusIfDesktop(inp);
   };
 
   // ── Tab: Search ───────────────────────────────────────────────────────────
@@ -187,7 +188,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
     inp.addEventListener('input', () => doSearch(inp.value));
     content.append(inp, suggestions);
-    setTimeout(() => inp.focus(), 30);
+    focusIfDesktop(inp);
   };
 
   // ── Tab: By member ────────────────────────────────────────────────────────
@@ -255,6 +256,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
     row.append(inp, btn);
     content.append(row, preview, progressWrap);
+    focusIfDesktop(inp);
   };
 
   renderTabs();
@@ -317,7 +319,7 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
       createBtn.onclick = () => { void doCreate(); };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') { void doCreate(); } });
       outerContent.append(lbl, inp, createBtn);
-      setTimeout(() => inp.focus(), 30);
+      focusIfDesktop(inp);
     } else {
       outerContent.appendChild(buildTheSessionBody(ctx, status, deckId));
     }
