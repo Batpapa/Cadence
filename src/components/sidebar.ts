@@ -1,10 +1,11 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
-import { generateId, emptyState, renderKnowledgeBar } from '../utils';
+import { generateId, emptyState, renderKnowledgeBar, helpIcon } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from './modal';
 import { getCurrentUser, updateUser, ensureCurrentUser } from '../services/userService';
 import { findParentFolder } from '../services/deckService';
 import { deckKnowledgeBuckets } from '../services/knowledgeService';
 import { showCommandPalette } from './commandPalette';
+import { showHelpModal } from './help';
 import { exportFull, exportContent, parseImport } from '../services/importExport';
 
 const expanded = new Set<string>();
@@ -366,6 +367,32 @@ function showSettingsModal(ctx: AppContext): void {
 
   body.appendChild(dataGrid);
 
+  // ── About ──
+  const divider2 = document.createElement('hr'); divider2.className = 'border-border';
+  body.appendChild(divider2);
+
+  const aboutTitle = document.createElement('div'); aboutTitle.className = 'section-title'; aboutTitle.textContent = 'About';
+  const aboutBlock = document.createElement('div'); aboutBlock.className = 'space-y-1';
+
+  const mkAboutLine = (text: string, href?: string) => {
+    const p = document.createElement('p'); p.className = 'text-xs text-muted';
+    if (href) {
+      const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'text-accent hover:underline'; a.textContent = text;
+      p.appendChild(a);
+    } else {
+      p.textContent = text;
+    }
+    return p;
+  };
+
+  aboutBlock.append(
+    mkAboutLine('Cadence — open-source spaced repetition app'),
+    mkAboutLine('Author: Antoine Lucat — antl@hotmail.fr'),
+    mkAboutLine('github.com/Batpapa/Cadence', 'https://github.com/Batpapa/Cadence'),
+  );
+  body.append(aboutTitle, aboutBlock);
+
   const saveProfile = () => {
     const masteryPct = parseFloat(mastInp.value);
     if (isNaN(masteryPct) || masteryPct < 0 || masteryPct > 100) return;
@@ -426,9 +453,15 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const backBtn  = mkNavBtn('←', 'Back [Alt+←]',    ctx.canGoBack,    () => ctx.back());
   const fwdBtn   = mkNavBtn('→', 'Forward [Alt+→]', ctx.canGoForward, () => ctx.forward());
 
+  const helpBtn = document.createElement('button');
+  helpBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
+  helpBtn.title = 'Help';
+  helpBtn.appendChild(helpIcon());
+  helpBtn.onclick = () => showHelpModal(ctx);
+
   const iconGroup = document.createElement('div');
   iconGroup.className = 'flex items-center gap-2';
-  iconGroup.append(backBtn, fwdBtn, searchBtn, settingsBtn);
+  iconGroup.append(backBtn, fwdBtn, searchBtn, helpBtn, settingsBtn);
 
   top.append(logo, iconGroup);
 
