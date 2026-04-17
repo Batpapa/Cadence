@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy – Cadence</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 48px auto; padding: 0 24px; color: #1a1a1a; line-height: 1.7; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    p, li { font-size: 0.95rem; color: #333; }
+    a { color: #4f6ef7; }
+    .updated { font-size: 0.85rem; color: #888; margin-bottom: 2.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: April 2025</p>
+
+  <p>Cadence is a personal flashcard application. This policy explains how Cadence handles your data.</p>
+
+  <h2>Data Storage</h2>
+  <p>All your flashcard data (decks, cards, study history) is stored locally in your browser's IndexedDB. No data is sent to any Cadence server, because there is none.</p>
+
+  <h2>Google Drive Integration (Optional)</h2>
+  <p>Cadence offers an optional Google Drive sync feature. If you choose to enable it:</p>
+  <ul>
+    <li>Cadence requests access to a single file it creates in your Google Drive (<code>cadence-data.json</code>), using the <code>drive.file</code> scope.</li>
+    <li>This file contains only your Cadence flashcard data.</li>
+    <li>Cadence does not access any other files in your Drive.</li>
+    <li>Your data is never sent to any third-party server — it travels directly between your browser and Google Drive.</li>
+    <li>You can revoke access at any time from your <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account settings</a>.</li>
+  </ul>
+
+  <h2>Google API Limited Use Disclosure</h2>
+  <p>Cadence's use of information received from Google APIs adheres to the
+  <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>,
+  including the Limited Use requirements. Cadence only uses Google Drive data to provide and improve the sync feature within the app. It does not use this data for advertising, profiling, or any purpose unrelated to syncing your flashcards.</p>
+
+  <h2>Data We Do Not Collect</h2>
+  <p>Cadence does not collect, store, or transmit:</p>
+  <ul>
+    <li>Your name, email address, or any account information</li>
+    <li>Usage analytics or telemetry</li>
+    <li>Any data to external servers</li>
+  </ul>
+
+  <h2>Third-Party Services</h2>
+  <p>When Google Drive sync is enabled, your data is subject to <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</p>
+
+  <h2>Contact</h2>
+  <p>For any privacy-related questions, please open an issue on the <a href="https://github.com/Batpapa/Cadence" target="_blank" rel="noopener">Cadence GitHub repository</a>.</p>
+</body>
+</html>

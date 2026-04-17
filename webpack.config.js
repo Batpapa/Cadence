@@ -43,6 +43,7 @@ module.exports = (env, argv) => {
           { from: 'src/icons',         to: 'icons' },
           { from: 'src/manifest.json', to: 'manifest.json' },
           { from: 'src/sw.js',         to: 'sw.js' },
+          { from: 'src/privacy.html',  to: 'privacy.html' },
         ],
       })] : []),
     ],
