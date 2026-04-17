@@ -7,6 +7,7 @@ module.exports = (env, argv) => {
   const isDev = argv.mode === 'development';
 
   return {
+    name: 'cadence',
     entry: './src/main.ts',
     output: {
       path:       path.resolve(__dirname, 'dist'),
@@ -49,6 +50,6 @@ module.exports = (env, argv) => {
       port: 3002,
       hot: true,
     },
-    devtool: isDev ? 'source-map' : false,
+    devtool: isDev ? 'eval-source-map' : false,
   };
 };

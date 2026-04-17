@@ -50,9 +50,6 @@ export interface CardWork {
   userId: string;
   cardId: string;
   history: SessionEntry[];
-  // FSRS state (undefined until first review)
-  stability?: number;   // days to 90% retention
-  difficulty?: number;  // 1–10, intrinsic difficulty
 }
 
 export interface Folder {

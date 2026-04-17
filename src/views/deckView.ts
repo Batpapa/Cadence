@@ -192,20 +192,19 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
       meta.textContent = lastTs ? timeAgo(lastTs) : 'never';
 
       const impBadge = document.createElement('span');
-      impBadge.className = 'text-xs font-mono text-dim shrink-0 w-6 text-right';
+      impBadge.className = 'text-xs font-mono shrink-0 w-6 text-right cursor-pointer hover:text-accent transition-colors';
       impBadge.textContent = `×${imp}`;
-      impBadge.title = entry.importanceOverride !== undefined ? 'Override active' : 'Default importance';
-      if (entry.importanceOverride !== undefined) impBadge.classList.replace('text-dim', 'text-accent');
+      impBadge.title = entry.importanceOverride !== undefined ? 'Override active — click to edit' : 'Click to edit importance';
+      if (entry.importanceOverride !== undefined) impBadge.classList.add('text-accent'); else impBadge.classList.add('text-dim');
+      impBadge.onclick = () => showImportanceModal(ctx, deckId, entry, card.importance);
 
       const rowActions = document.createElement('div'); rowActions.className = 'hidden group-hover:flex gap-2';
 
-      const impBtn = document.createElement('button'); impBtn.className = 'text-xs text-muted hover:text-accent transition-colors cursor-pointer'; impBtn.textContent = 'Weight';
-      impBtn.onclick = () => showImportanceModal(ctx, deckId, entry, card.importance);
-
-      const unlinkBtn = document.createElement('button'); unlinkBtn.className = 'text-xs text-muted hover:text-danger transition-colors cursor-pointer'; unlinkBtn.textContent = 'Unlink';
+      const unlinkBtn = document.createElement('button'); unlinkBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer'; unlinkBtn.title = 'Remove from deck';
+      unlinkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
       unlinkBtn.onclick = () => { ctx.mutate(s => { s.decks[deckId]!.entries = s.decks[deckId]!.entries.filter(e => e.cardId !== card.id); }); };
 
-      rowActions.append(impBtn, unlinkBtn);
+      rowActions.append(unlinkBtn);
       row.append(handle, dot, name, meta, impBadge, rowActions);
 
       // Drag events

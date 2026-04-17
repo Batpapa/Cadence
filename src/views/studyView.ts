@@ -1,7 +1,7 @@
 import type { AppContext, StudyStrategy, DeckEntry } from '../types';
 import { renderNotes, renderFiles } from '../components/fileViewer';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
-import { cardKnowledge, deckKnowledge, applyFSRS } from '../services/knowledgeService';
+import { cardKnowledge, deckKnowledge } from '../services/knowledgeService';
 import type { SessionRating } from '../types';
 import { getCurrentUser } from '../services/userService';
 import { pct, timeAgo } from '../utils';
@@ -123,12 +123,7 @@ export function renderStudyView(
     ctx.mutate(s => {
       const key = `${s.currentUserId}:${cardId}`;
       if (!s.cardWorks[key]) s.cardWorks[key] = { userId: s.currentUserId, cardId: cardId!, history: [] };
-      const w = s.cardWorks[key]!;
-      const lastTs = w.history.at(-1)?.ts;
-      const fsrs = applyFSRS(w.stability, w.difficulty, lastTs, rating, ts);
-      w.stability  = fsrs.stability;
-      w.difficulty = fsrs.difficulty;
-      w.history.push({ ts, rating });
+      s.cardWorks[key]!.history.push({ ts, rating });
     }).then(goNext);
   };
 
