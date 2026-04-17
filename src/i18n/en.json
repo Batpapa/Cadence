@@ -260,6 +260,18 @@
   "commandPalette.deckCount": "{count} card",
   "commandPalette.deckCountPlural": "{count} cards",
 
+  "embed.section": "Links",
+  "embed.add": "+ Add",
+  "embed.addTitle": "Add a link",
+  "embed.placeholder": "Paste a YouTube, Spotify, Deezer or SoundCloud URL…",
+  "embed.play": "Expand",
+  "embed.collapse": "Collapse",
+  "embed.loading": "…",
+  "embed.error": "Could not load this link",
+  "embed.unsupported": "Unsupported platform (YouTube, Spotify, Deezer, SoundCloud only)",
+  "embed.checking": "Checking…",
+  "embed.remove": "Remove",
+
   "fileViewer.attachments": "Attachments",
   "fileViewer.attachmentsCount": "Attachments ({count})",
   "fileViewer.add": "+ Add",

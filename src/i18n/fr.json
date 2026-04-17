@@ -260,6 +260,18 @@
   "commandPalette.deckCount": "{count} carte",
   "commandPalette.deckCountPlural": "{count} cartes",
 
+  "embed.section": "Liens",
+  "embed.add": "+ Ajouter",
+  "embed.addTitle": "Ajouter un lien",
+  "embed.placeholder": "Coller un lien YouTube, Spotify, Deezer ou SoundCloud…",
+  "embed.play": "Déplier",
+  "embed.collapse": "Replier",
+  "embed.loading": "…",
+  "embed.error": "Impossible de charger ce lien",
+  "embed.unsupported": "Plateforme non supportée (YouTube, Spotify, Deezer, SoundCloud uniquement)",
+  "embed.checking": "Vérification…",
+  "embed.remove": "Supprimer",
+
   "fileViewer.attachments": "Pièces jointes",
   "fileViewer.attachmentsCount": "Pièces jointes ({count})",
   "fileViewer.add": "+ Ajouter",

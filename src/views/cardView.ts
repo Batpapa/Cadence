@@ -2,6 +2,7 @@ import type { AppContext } from '../types';
 import { pct, timeAgo, trashIcon, makeInlineEditable, unlinkIcon } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes, renderFiles } from '../components/fileViewer';
+import { renderEmbeds } from '../components/embedViewer';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardKnowledge, masteryWindowDays, replayFSRS } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
@@ -262,6 +263,14 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
     files: card.content.files, editable: true,
     onAdd:    (e) => ctx.mutate(s => { s.cards[cardId]!.content.files.push(e); }),
     onRemove: (i) => ctx.mutate(s => { s.cards[cardId]!.content.files.splice(i, 1); }),
+  }));
+
+  // ── Embeds ──
+  const embeds = card.content.embeds ?? [];
+  wrap.appendChild(renderEmbeds({
+    embeds, editable: true,
+    onAdd:    (e) => ctx.mutate(s => { const c = s.cards[cardId]!; c.content.embeds = [...(c.content.embeds ?? []), e]; }),
+    onRemove: (i) => ctx.mutate(s => { const c = s.cards[cardId]!; (c.content.embeds ?? []).splice(i, 1); }),
   }));
 
   // ── Review history ──
