@@ -19,6 +19,7 @@ let fileId: string | null = localStorage.getItem(LS_FILE_ID);
 let status: DriveStatus = localStorage.getItem(LS_CONNECTED) === '1' ? 'connected' : 'disconnected';
 const listeners: Array<(s: DriveStatus) => void> = [];
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingState: AppState | null = null;
 
 function setStatus(s: DriveStatus): void {
   status = s;
@@ -68,10 +69,16 @@ export function initDriveClient(): Promise<void> {
 
 function requestToken(prompt = ''): Promise<string> {
   return new Promise((resolve, reject) => {
+    const cleanup = () => { tokenClient.error_callback = null; };
     tokenClient.callback = (resp: Gis) => {
+      cleanup();
       if (resp.error) { reject(new Error(resp.error_description ?? resp.error)); return; }
       accessToken = resp.access_token as string;
       resolve(accessToken);
+    };
+    tokenClient.error_callback = (err: Gis) => {
+      cleanup();
+      reject(new Error(err.type ?? 'popup_closed'));
     };
     tokenClient.requestAccessToken({ prompt });
   });
@@ -119,7 +126,8 @@ export async function connectDrive(): Promise<void> {
     localStorage.setItem(LS_CONNECTED, '1');
     setStatus('connected');
   } catch (e) {
-    setStatus('error');
+    const msg = e instanceof Error ? e.message : String(e);
+    setStatus(msg.includes('popup_closed') || msg.includes('access_denied') ? 'disconnected' : 'error');
     throw e;
   }
 }
@@ -135,35 +143,47 @@ export function disconnectDrive(): void {
   setStatus('disconnected');
 }
 
+async function flushSync(): Promise<void> {
+  if (!fileId || !pendingState) return;
+  const state = pendingState;
+  setStatus('syncing');
+  try {
+    const ts = Date.now();
+    const payload = JSON.stringify({ ...state, _lastModified: ts });
+    const blob = new Blob([payload], { type: 'application/json' });
+    const meta = new Blob(
+      [JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })],
+      { type: 'application/json' }
+    );
+    const form = new FormData();
+    form.append('metadata', meta);
+    form.append('file', blob);
+    await driveRequest(
+      `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
+      { method: 'PATCH', body: form }
+    );
+    pendingState = null;
+    localStorage.setItem(LS_LOCAL_TS, String(ts));
+    setStatus('connected');
+  } catch {
+    setStatus('error');
+  }
+}
+
 export function syncToCloud(state: AppState): void {
   if (!isDriveConnected()) return;
+  pendingState = state;
   if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => {
-    void (async () => {
-      if (!fileId) return;
-      setStatus('syncing');
-      try {
-        const ts = Date.now();
-        const payload = JSON.stringify({ ...state, _lastModified: ts });
-        const blob = new Blob([payload], { type: 'application/json' });
-        const meta = new Blob(
-          [JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })],
-          { type: 'application/json' }
-        );
-        const form = new FormData();
-        form.append('metadata', meta);
-        form.append('file', blob);
-        await driveRequest(
-          `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
-          { method: 'PATCH', body: form }
-        );
-        localStorage.setItem(LS_LOCAL_TS, String(ts));
-        setStatus('connected');
-      } catch {
-        setStatus('error');
-      }
-    })();
-  }, 2000);
+  syncTimer = setTimeout(() => { void flushSync(); }, 30_000);
+}
+
+export function initDriveVisibilitySync(): void {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && pendingState) {
+      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+      void flushSync();
+    }
+  });
 }
 
 export async function loadFromCloud(): Promise<(AppState & { _lastModified?: number }) | null> {
