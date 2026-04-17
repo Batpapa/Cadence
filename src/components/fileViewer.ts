@@ -1,5 +1,6 @@
 import type { FileEntry } from '../types';
 import { fileToEntry, entryToObjectUrl } from '../utils';
+import { t } from '../services/i18nService';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
@@ -58,7 +59,6 @@ function showPreviewModal(entry: FileEntry): void {
   dialog.style.maxHeight = '90vh';
   dialog.style.width = modalWidth(entry);
 
-  // Header
   const header = document.createElement('div');
   header.className = 'flex items-center justify-between px-5 py-3 border-b border-border shrink-0';
   const titleEl = document.createElement('span');
@@ -67,13 +67,11 @@ function showPreviewModal(entry: FileEntry): void {
   closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0 ml-4';
   let stopAudio: () => void = () => {};
   const closeModal = () => { stopAudio(); overlay.remove(); document.removeEventListener('keydown', onKey); };
-  // onKey declared below — hoisted via var-like closure; assigned after dialog.append
   let onKey: (e: KeyboardEvent) => void;
 
   closeBtn.textContent = '✕'; closeBtn.onclick = closeModal;
   header.append(titleEl, closeBtn);
 
-  // Body
   const body = document.createElement('div');
   body.className = 'flex-1 overflow-auto p-4 flex items-center justify-center';
 
@@ -107,12 +105,10 @@ function showPreviewModal(entry: FileEntry): void {
     const container = document.createElement('div');
     container.className = 'w-full space-y-3';
 
-    // Playback controls area
     const controls = document.createElement('div');
     controls.id = `abc-controls-${Date.now()}`;
     container.appendChild(controls);
 
-    // Notation area
     const notation = document.createElement('div');
     notation.className = 'w-full bg-white rounded p-2';
     notation.style.pointerEvents = 'none';
@@ -145,7 +141,7 @@ function showPreviewModal(entry: FileEntry): void {
     }).catch(() => {
       const err = document.createElement('p');
       err.className = 'text-sm text-dim italic';
-      err.textContent = 'Could not render ABC notation.';
+      err.textContent = t('fileViewer.abcError');
       body.appendChild(err);
     });
 
@@ -203,14 +199,14 @@ function renderFileEntry(entry: FileEntry, onRemove: () => void, editable: boole
   const dl = document.createElement('a');
   dl.href = entryToObjectUrl(entry); dl.download = entry.name;
   dl.className = 'text-xs text-dim hover:text-accent transition-colors shrink-0 opacity-0 group-hover:opacity-100';
-  dl.textContent = '↓'; dl.title = 'Download';
+  dl.textContent = '↓'; dl.title = t('fileViewer.download');
 
   wrap.append(icon, name, dl);
 
   if (editable) {
     const rm = document.createElement('button');
     rm.className = 'text-dim hover:text-danger text-xs transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
-    rm.textContent = '✕'; rm.title = 'Remove'; rm.onclick = onRemove;
+    rm.textContent = '✕'; rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
     wrap.appendChild(rm);
   }
 
@@ -232,12 +228,12 @@ export function renderFiles(options: {
 
   const header = document.createElement('div'); header.className = 'flex items-center justify-between';
   const titleEl = document.createElement('span'); titleEl.className = 'section-title';
-  titleEl.textContent = files.length > 0 ? `Attachments (${files.length})` : 'Attachments';
+  titleEl.textContent = files.length > 0 ? t('fileViewer.attachmentsCount', { count: files.length }) : t('fileViewer.attachments');
   header.appendChild(titleEl);
 
   if (editable) {
     const addBtn = document.createElement('label');
-    addBtn.className = 'btn-ghost text-xs cursor-pointer'; addBtn.textContent = '+ Add';
+    addBtn.className = 'btn-ghost text-xs cursor-pointer'; addBtn.textContent = t('fileViewer.add');
     const fileInput = document.createElement('input');
     fileInput.type = 'file'; fileInput.className = 'hidden'; fileInput.multiple = true;
     fileInput.onchange = async () => {
@@ -262,7 +258,7 @@ export function renderFiles(options: {
 export function renderNotes(notes: string): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'markdown text-sm leading-relaxed';
-  if (!notes.trim()) { wrap.innerHTML = '<p class="text-dim italic">No notes.</p>'; return wrap; }
+  if (!notes.trim()) { wrap.innerHTML = `<p class="text-dim italic">${t('fileViewer.noNotes')}</p>`; return wrap; }
   import('marked').then(({ marked }) => {
     wrap.innerHTML = marked.parse(notes) as string;
     wrap.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });

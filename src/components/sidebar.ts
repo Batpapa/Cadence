@@ -7,6 +7,8 @@ import { deckKnowledgeBuckets } from '../services/knowledgeService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { exportFull, exportContent, parseImport } from '../services/importExport';
+import { t, setLanguage, getLanguage } from '../services/i18nService';
+import type { Lang } from '../services/i18nService';
 
 const expanded = new Set<string>();
 
@@ -83,7 +85,6 @@ function insertItem(
   };
 
   if (drag.type === target.type) {
-    // Same type: insert into the same array as the target
     const rootArr = drag.type === 'folder' ? s.rootFolderIds : s.rootDeckIds;
     if (!tryInsertInto(rootArr, target.id, drag.id, before)) {
       for (const f of Object.values(s.folders) as Folder[]) {
@@ -92,7 +93,6 @@ function insertItem(
       }
     }
   } else {
-    // Cross-type: add to the same parent container as the target
     const parentId = findParentFolder(target.id, target.type, s);
     if (drag.type === 'folder') {
       if (parentId) s.folders[parentId]!.folderIds.push(drag.id);
@@ -111,7 +111,6 @@ function moveSidebarItem(
   zone: 'before' | 'after' | 'into'
 ): void {
   if (drag.id === target.id) return;
-  // Cycle guard: can't drop a folder into one of its descendants
   if (drag.type === 'folder' && target.type === 'folder') {
     if (isFolderDescendant(s, drag.id, target.id)) return;
   }
@@ -171,7 +170,6 @@ function addDragHandlers(
 
 // ── Expand / active helpers ───────────────────────────────────────────────────
 
-/** Expand all ancestor folders of a deck so it's visible in the tree. */
 function expandAncestors(deckId: string, state: AppState): void {
   let current: string | null = findParentFolder(deckId, 'deck', state);
   while (current) {
@@ -203,7 +201,6 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   const icon = document.createElement('span'); icon.className = 'text-xs opacity-60 shrink-0'; icon.textContent = '▪';
   const name = document.createElement('span'); name.className = 'truncate flex-1'; name.textContent = deck.name;
 
-  // Mini knowledge distribution bar (weighted by card importance)
   const user = getCurrentUser(ctx.state);
   const { buckets, total } = deckKnowledgeBuckets(user, deck, ctx.state.cards, ctx.state.cardWorks, user.weightByImportance ?? true);
   const miniBar = renderKnowledgeBar(buckets, total, 'flex h-1 w-10 rounded overflow-hidden shrink-0 opacity-60 group-hover:opacity-100 transition-opacity bg-border');
@@ -238,10 +235,10 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
 
   const actions = document.createElement('div'); actions.className = 'hidden group-hover:flex items-center gap-0.5 shrink-0';
 
-  const addFolderBtn = mkIconBtn('+F', 'Add subfolder');
-  addFolderBtn.onclick = (e) => { e.stopPropagation(); promptModal('New Subfolder', 'Name', '', n => { ctx.mutate(s => { const id = generateId(); s.folders[id] = { userId: s.currentUserId, id, name: n, folderIds: [], deckIds: [] }; s.folders[folder.id]!.folderIds.push(id); }); }); };
+  const addFolderBtn = mkIconBtn('+F', t('sidebar.addSubfolder'));
+  addFolderBtn.onclick = (e) => { e.stopPropagation(); promptModal(t('modal.newSubfolder.title'), t('modal.newFolder.label'), '', n => { ctx.mutate(s => { const id = generateId(); s.folders[id] = { userId: s.currentUserId, id, name: n, folderIds: [], deckIds: [] }; s.folders[folder.id]!.folderIds.push(id); }); }); };
 
-  const addDeckBtn = mkIconBtn('+D', 'Add deck');
+  const addDeckBtn = mkIconBtn('+D', t('sidebar.addDeck'));
   addDeckBtn.onclick = (e) => { e.stopPropagation(); showCreateDeckModal(ctx, folder.id); };
 
   actions.append(addFolderBtn, addDeckBtn);
@@ -263,7 +260,7 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
 
 
 export function showCreateDeckModal(ctx: AppContext, parentFolderId: string | null): void {
-  promptModal('New Deck', 'Deck name', '', name => {
+  promptModal(t('modal.newDeck.title'), t('modal.newDeck.label'), '', name => {
     const id = generateId();
     ctx.mutate(s => {
       s.decks[id] = { id, name, entries: [] };
@@ -278,7 +275,7 @@ function showSettingsModal(ctx: AppContext): void {
   const body = document.createElement('div'); body.className = 'space-y-5';
 
   // ── Profile ──
-  const profileTitle = document.createElement('div'); profileTitle.className = 'section-title'; profileTitle.textContent = 'Profile';
+  const profileTitle = document.createElement('div'); profileTitle.className = 'section-title'; profileTitle.textContent = t('settings.profile');
   body.appendChild(profileTitle);
 
   const mkField = (label: string, hint: string, inputFn: (inp: HTMLInputElement) => void): HTMLInputElement => {
@@ -292,29 +289,41 @@ function showSettingsModal(ctx: AppContext): void {
     return inp;
   };
 
-  const nameInp = mkField('Name', '', inp => { inp.type = 'text'; inp.value = user.name; });
+  const nameInp = mkField(t('settings.name'), '', inp => { inp.type = 'text'; inp.value = user.name; });
   const mastInp = mkField(
-    'Mastery threshold (%)',
-    'Cards above this knowledge score are considered mastered and skipped during study sessions.',
+    t('settings.masteryThreshold'),
+    t('settings.masteryThresholdHint'),
     inp => { inp.type = 'number'; inp.min = '0'; inp.max = '100'; inp.step = '1'; inp.value = String(Math.round(user.masteryThreshold * 100)); }
   );
 
   const weightWrap = document.createElement('div'); weightWrap.className = 'space-y-1';
   const weightLbl = document.createElement('label'); weightLbl.className = 'flex items-center gap-2 cursor-pointer';
   const weightChk = document.createElement('input'); weightChk.type = 'checkbox'; weightChk.className = 'card-checkbox'; weightChk.checked = user.weightByImportance ?? true;
-  const weightText = document.createElement('span'); weightText.className = 'label mb-0'; weightText.textContent = 'Weight by importance';
+  const weightText = document.createElement('span'); weightText.className = 'label mb-0'; weightText.textContent = t('settings.weightByImportance');
   weightLbl.append(weightChk, weightText);
   const weightHint = document.createElement('p'); weightHint.className = 'text-xs text-dim leading-relaxed';
-  weightHint.textContent = 'When enabled, a card contributes to deck knowledge proportionally to its importance rather than equally.';
+  weightHint.textContent = t('settings.weightByImportanceHint');
   weightWrap.append(weightLbl, weightHint);
   body.appendChild(weightWrap);
+
+  // ── Language ──
+  const langWrap = document.createElement('div'); langWrap.className = 'space-y-1';
+  const langLbl = document.createElement('label'); langLbl.className = 'label'; langLbl.textContent = t('settings.language');
+  const langSel = document.createElement('select'); langSel.className = 'input';
+  [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }].forEach(({ value, label }) => {
+    const opt = document.createElement('option'); opt.value = value; opt.textContent = label;
+    if ((user.language ?? 'en') === value) opt.selected = true;
+    langSel.appendChild(opt);
+  });
+  langWrap.append(langLbl, langSel);
+  body.appendChild(langWrap);
 
   // ── Divider ──
   const divider = document.createElement('hr'); divider.className = 'border-border';
   body.appendChild(divider);
 
   // ── Data ──
-  const dataTitle = document.createElement('div'); dataTitle.className = 'section-title'; dataTitle.textContent = 'Data';
+  const dataTitle = document.createElement('div'); dataTitle.className = 'section-title'; dataTitle.textContent = t('settings.data');
   body.appendChild(dataTitle);
 
   const dataGrid = document.createElement('div'); dataGrid.className = 'grid grid-cols-2 gap-2';
@@ -328,13 +337,13 @@ function showSettingsModal(ctx: AppContext): void {
     return btn;
   };
 
-  dataGrid.appendChild(mkDataBtn('↑ Export full', 'All data incl. history', 'btn-ghost', () => exportFull(ctx.state)));
-  dataGrid.appendChild(mkDataBtn('↑ Export lite', 'Cards & decks only', 'btn-ghost', () => exportContent(ctx.state)));
+  dataGrid.appendChild(mkDataBtn(t('settings.exportFull'), t('settings.exportFullHint'), 'btn-ghost', () => exportFull(ctx.state)));
+  dataGrid.appendChild(mkDataBtn(t('settings.exportLite'), t('settings.exportLiteHint'), 'btn-ghost', () => exportContent(ctx.state)));
 
   const importLabel = document.createElement('label');
   importLabel.className = 'btn-ghost text-xs py-2 px-3 rounded cursor-pointer space-y-0.5';
-  const importLabelTitle = document.createElement('div'); importLabelTitle.className = 'font-medium'; importLabelTitle.textContent = '↓ Import';
-  const importLabelHint = document.createElement('div'); importLabelHint.className = 'text-[10px] opacity-60'; importLabelHint.textContent = 'Replace all data';
+  const importLabelTitle = document.createElement('div'); importLabelTitle.className = 'font-medium'; importLabelTitle.textContent = t('settings.importLabel');
+  const importLabelHint = document.createElement('div'); importLabelHint.className = 'text-[10px] opacity-60'; importLabelHint.textContent = t('settings.importHint');
   const importInput = document.createElement('input');
   importInput.type = 'file'; importInput.accept = 'application/json'; importInput.className = 'hidden';
   importInput.onchange = async () => {
@@ -342,7 +351,7 @@ function showSettingsModal(ctx: AppContext): void {
     if (!file) return;
     try {
       const newState = await parseImport(file);
-      confirmModal('Import backup', 'This will replace all current data. Are you sure?', 'Replace', async () => {
+      confirmModal(t('settings.import.title'), t('settings.import.message'), t('settings.import.confirm'), async () => {
         ensureCurrentUser(newState);
         closeModal();
         await ctx.mutate(s => { Object.assign(s, newState); });
@@ -354,8 +363,8 @@ function showSettingsModal(ctx: AppContext): void {
   importLabel.append(importLabelTitle, importLabelHint, importInput);
   dataGrid.appendChild(importLabel);
 
-  dataGrid.appendChild(mkDataBtn('Reset', 'Delete all, keep profile', 'btn-ghost text-danger hover:bg-danger/10 hover:text-danger', () => {
-    confirmModal('Reset database', 'This will permanently delete all cards, decks, folders and study history. Your user profile will be kept. This cannot be undone.', 'Reset', async () => {
+  dataGrid.appendChild(mkDataBtn(t('settings.reset'), t('settings.resetHint'), 'btn-ghost text-danger hover:bg-danger/10 hover:text-danger', () => {
+    confirmModal(t('settings.reset.title'), t('settings.reset.message'), t('settings.reset.confirm'), async () => {
       const u = ctx.state.users[ctx.state.currentUserId];
       const fresh = emptyState();
       if (u) { fresh.users[u.id] = u; fresh.currentUserId = u.id; }
@@ -371,46 +380,64 @@ function showSettingsModal(ctx: AppContext): void {
   const divider2 = document.createElement('hr'); divider2.className = 'border-border';
   body.appendChild(divider2);
 
-  const aboutTitle = document.createElement('div'); aboutTitle.className = 'section-title'; aboutTitle.textContent = 'About';
+  const aboutTitle = document.createElement('div'); aboutTitle.className = 'section-title'; aboutTitle.textContent = t('settings.about');
   const aboutBlock = document.createElement('div'); aboutBlock.className = 'space-y-1';
 
-  const mkAboutLine = (text: string, href?: string) => {
+  const mkAboutLine = (textKey: string, href?: string) => {
     const p = document.createElement('p'); p.className = 'text-xs text-muted';
     if (href) {
       const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener';
-      a.className = 'text-accent hover:underline'; a.textContent = text;
+      a.className = 'text-accent hover:underline'; a.textContent = t(textKey);
       p.appendChild(a);
     } else {
-      p.textContent = text;
+      p.textContent = t(textKey);
     }
     return p;
   };
 
   aboutBlock.append(
-    mkAboutLine('Cadence — open-source spaced repetition app'),
-    mkAboutLine('Author: Antoine Lucat — antl@hotmail.fr'),
-    mkAboutLine('github.com/Batpapa/Cadence', 'https://github.com/Batpapa/Cadence'),
+    mkAboutLine('settings.aboutLine1'),
+    mkAboutLine('settings.aboutLine2'),
+    mkAboutLine('settings.aboutLine3', 'https://github.com/Batpapa/Cadence'),
   );
   body.append(aboutTitle, aboutBlock);
 
-  const saveProfile = () => {
-    const masteryPct = parseFloat(mastInp.value);
-    if (isNaN(masteryPct) || masteryPct < 0 || masteryPct > 100) return;
-    closeModal();
-    ctx.mutate(s => updateUser(s, {
-      name: nameInp.value.trim() || user.name,
-      masteryThreshold: masteryPct / 100,
-      weightByImportance: weightChk.checked,
-    }));
+  const saveField = (patch: Partial<Omit<typeof user, 'id'>>) => {
+    ctx.mutate(s => updateUser(s, patch));
   };
 
-  [nameInp, mastInp].forEach(inp => {
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveProfile(); if (e.key === 'Escape') closeModal(); });
+  nameInp.addEventListener('blur', () => {
+    const name = nameInp.value.trim();
+    if (name) saveField({ name });
+    else nameInp.value = user.name;
+  });
+  nameInp.addEventListener('keydown', e => { if (e.key === 'Enter') nameInp.blur(); if (e.key === 'Escape') closeModal(); });
+
+  mastInp.addEventListener('blur', () => {
+    const pct = parseFloat(mastInp.value);
+    if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+      mastInp.classList.remove('border-danger');
+      saveField({ masteryThreshold: pct / 100 });
+    } else {
+      mastInp.classList.add('border-danger');
+      mastInp.value = String(Math.round(user.masteryThreshold * 100));
+      mastInp.classList.remove('border-danger');
+    }
+  });
+  mastInp.addEventListener('keydown', e => { if (e.key === 'Enter') mastInp.blur(); if (e.key === 'Escape') closeModal(); });
+
+  weightChk.addEventListener('change', () => saveField({ weightByImportance: weightChk.checked }));
+
+  langSel.addEventListener('change', () => {
+    const newLang = langSel.value as Lang;
+    setLanguage(newLang);
+    void ctx.mutate(s => updateUser(s, { language: newLang }));
+    closeModal();
+    showSettingsModal(ctx);
   });
 
-  showModal('Settings', body, [
-    { label: 'Cancel', onClick: closeModal },
-    { label: 'Save', primary: true, onClick: saveProfile },
+  showModal(t('settings.title'), body, [
+    { label: t('common.close'), onClick: closeModal },
   ]);
   setTimeout(() => nameInp.focus(), 30);
 }
@@ -424,22 +451,22 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const aside = document.createElement('aside');
   aside.className = 'flex flex-col h-full bg-surface border-r border-border w-56 shrink-0 overflow-hidden';
 
-  // Logo + user
   const top = document.createElement('div');
   top.className = 'px-4 py-3 border-b border-border shrink-0 flex items-center justify-between';
   const logo = document.createElement('span');
   logo.className = 'font-mono text-xs font-semibold tracking-[0.25em] text-muted uppercase select-none';
-  logo.textContent = 'Cadence';
+  logo.textContent = t('sidebar.logo');
 
   const settingsBtn = document.createElement('button');
   settingsBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
   settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
-  settingsBtn.title = 'Settings';
+  settingsBtn.title = t('sidebar.settings');
   settingsBtn.onclick = () => showSettingsModal(ctx);
+
   const searchBtn = document.createElement('button');
   searchBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
   searchBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
-  searchBtn.title = 'Search [Ctrl+K]';
+  searchBtn.title = t('sidebar.search');
   searchBtn.onclick = () => showCommandPalette(() => ctx);
 
   const mkNavBtn = (arrow: string, title: string, enabled: boolean, onClick: () => void) => {
@@ -450,12 +477,12 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
     return btn;
   };
 
-  const backBtn  = mkNavBtn('←', 'Back [Alt+←]',    ctx.canGoBack,    () => ctx.back());
-  const fwdBtn   = mkNavBtn('→', 'Forward [Alt+→]', ctx.canGoForward, () => ctx.forward());
+  const backBtn = mkNavBtn('←', t('sidebar.back'),    ctx.canGoBack,    () => ctx.back());
+  const fwdBtn  = mkNavBtn('→', t('sidebar.forward'), ctx.canGoForward, () => ctx.forward());
 
   const helpBtn = document.createElement('button');
   helpBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
-  helpBtn.title = 'Help';
+  helpBtn.title = t('sidebar.help');
   helpBtn.appendChild(helpIcon());
   helpBtn.onclick = () => showHelpModal(ctx);
 
@@ -465,7 +492,6 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
 
   top.append(logo, iconGroup);
 
-  // Nav links
   const nav = document.createElement('div');
   nav.className = 'px-2 mt-2 space-y-0.5 shrink-0';
 
@@ -477,23 +503,21 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
     return row;
   };
 
-  nav.appendChild(mkRow('⌂', 'Home', isActive(ctx.route, 'folder', null), () => ctx.navigate({ view: 'folder', folderId: null })));
-  nav.appendChild(mkRow('≡', 'All cards', isActive(ctx.route, 'library'), () => ctx.navigate({ view: 'library' })));
+  nav.appendChild(mkRow('⌂', t('sidebar.home'), isActive(ctx.route, 'folder', null), () => ctx.navigate({ view: 'folder', folderId: null })));
+  nav.appendChild(mkRow('≡', t('sidebar.allCards'), isActive(ctx.route, 'library'), () => ctx.navigate({ view: 'library' })));
 
-  // Tree
   const tree = document.createElement('div');
   tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5';
   for (const folderId of state.rootFolderIds) { const folder = state.folders[folderId]; if (folder) tree.appendChild(renderFolderItem(ctx, folder, 0)); }
   for (const deckId of state.rootDeckIds) { const deck = state.decks[deckId]; if (deck) tree.appendChild(renderDeckItem(ctx, deck, 0)); }
 
-  // Bottom
   const bottom = document.createElement('div');
   bottom.className = 'border-t border-border shrink-0 space-y-1 p-2';
 
   const createRow = document.createElement('div'); createRow.className = 'grid grid-cols-2 gap-1';
-  const addFolderBtn = document.createElement('button'); addFolderBtn.className = 'btn-ghost text-xs'; addFolderBtn.textContent = '+ Folder';
-  addFolderBtn.onclick = () => promptModal('New Folder', 'Name', '', name => { ctx.mutate(s => { const id = generateId(); s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] }; s.rootFolderIds.push(id); }); });
-  const addDeckBtn = document.createElement('button'); addDeckBtn.className = 'btn-ghost text-xs'; addDeckBtn.textContent = '+ Deck';
+  const addFolderBtn = document.createElement('button'); addFolderBtn.className = 'btn-ghost text-xs'; addFolderBtn.textContent = t('sidebar.newFolder');
+  addFolderBtn.onclick = () => promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => { ctx.mutate(s => { const id = generateId(); s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] }; s.rootFolderIds.push(id); }); });
+  const addDeckBtn = document.createElement('button'); addDeckBtn.className = 'btn-ghost text-xs'; addDeckBtn.textContent = t('sidebar.newDeck');
   addDeckBtn.onclick = () => showCreateDeckModal(ctx, null);
   createRow.append(addFolderBtn, addDeckBtn);
   bottom.append(createRow);

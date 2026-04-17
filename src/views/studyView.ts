@@ -5,9 +5,10 @@ import { cardKnowledge, deckKnowledge } from '../services/knowledgeService';
 import type { SessionRating } from '../types';
 import { getCurrentUser } from '../services/userService';
 import { pct, timeAgo } from '../utils';
+import { t } from '../services/i18nService';
 
-const STRATEGY_LABELS: Record<StudyStrategy, string> = {
-  random: 'Random', optimal: 'Optimal', stochastic: 'Stochastic',
+const STRATEGY_LABEL_KEYS: Record<StudyStrategy, string> = {
+  random: 'study.strategy.random', optimal: 'study.strategy.optimal', stochastic: 'study.strategy.stochastic',
 };
 
 function pickNext(ctx: AppContext, deckId: string, strategy: StudyStrategy): DeckEntry | null {
@@ -33,7 +34,7 @@ export function renderStudyView(
 
   const { state } = ctx;
   const deck = state.decks[deckId];
-  if (!deck) { wrap.textContent = 'Deck not found.'; return wrap; }
+  if (!deck) { wrap.textContent = t('study.notFound'); return wrap; }
 
   const user = getCurrentUser(state);
   const dk = deckKnowledge(user, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
@@ -43,12 +44,12 @@ export function renderStudyView(
   topBar.className = 'flex items-center justify-between px-6 py-3 border-b border-border bg-surface shrink-0';
 
   const left = document.createElement('div'); left.className = 'flex items-center gap-3';
-  const deckName = document.createElement('span'); deckName.className = 'text-xs font-semibold text-muted uppercase tracking-widest'; deckName.textContent = `Study · ${deck.name}`;
-  const stratBadge = document.createElement('span'); stratBadge.className = 'text-xs px-2 py-0.5 rounded bg-accent/10 text-accent font-mono'; stratBadge.textContent = STRATEGY_LABELS[strategy];
+  const deckName = document.createElement('span'); deckName.className = 'text-xs font-semibold text-muted uppercase tracking-widest'; deckName.textContent = t('study.header', { deck: deck.name });
+  const stratBadge = document.createElement('span'); stratBadge.className = 'text-xs px-2 py-0.5 rounded bg-accent/10 text-accent font-mono'; stratBadge.textContent = t(STRATEGY_LABEL_KEYS[strategy]);
   left.append(deckName, stratBadge);
 
   const right = document.createElement('div'); right.className = 'flex items-center gap-4';
-  const knBadge = document.createElement('span'); knBadge.className = 'text-xs font-mono text-muted'; knBadge.textContent = `Knowledge: ${pct(dk)}`;
+  const knBadge = document.createElement('span'); knBadge.className = 'text-xs font-mono text-muted'; knBadge.textContent = t('study.knowledge', { pct: pct(dk) });
   right.append(knBadge);
   topBar.append(left, right);
   wrap.appendChild(topBar);
@@ -59,13 +60,12 @@ export function renderStudyView(
 
   const cardId = currentCardId ?? pickNext(ctx, deckId, strategy)?.cardId;
 
-  // Null = explicitly done (all shown) or empty deck
   if (currentCardId === null) {
     const done = document.createElement('div'); done.className = 'flex flex-col items-center justify-center h-full gap-4 text-center';
     const icon = document.createElement('div'); icon.className = 'text-5xl'; icon.textContent = '✓';
-    const msg = document.createElement('h2'); msg.className = 'text-xl font-semibold text-success'; msg.textContent = 'Session complete!';
-    const sub = document.createElement('p'); sub.className = 'text-sm text-muted'; sub.textContent = `Deck knowledge: ${pct(dk)}`;
-    const btn2 = document.createElement('button'); btn2.className = 'btn-primary mt-2'; btn2.textContent = 'Back to deck'; btn2.onclick = () => ctx.navigate({ view: 'deck', deckId });
+    const msg = document.createElement('h2'); msg.className = 'text-xl font-semibold text-success'; msg.textContent = t('study.complete.title');
+    const sub = document.createElement('p'); sub.className = 'text-sm text-muted'; sub.textContent = t('study.complete.sub', { pct: pct(dk) });
+    const btn2 = document.createElement('button'); btn2.className = 'btn-primary mt-2'; btn2.textContent = t('study.complete.back'); btn2.onclick = () => ctx.navigate({ view: 'deck', deckId });
     done.append(icon, msg, sub, btn2);
     content.appendChild(done);
     wrap.appendChild(content);
@@ -76,9 +76,9 @@ export function renderStudyView(
   if (!card) {
     const done = document.createElement('div'); done.className = 'flex flex-col items-center justify-center h-full gap-4 text-center';
     const icon = document.createElement('div'); icon.className = 'text-5xl'; icon.textContent = '★';
-    const msg = document.createElement('h2'); msg.className = 'text-xl font-semibold text-success'; msg.textContent = 'All cards in this deck are mastered!';
-    const sub = document.createElement('p'); sub.className = 'text-sm text-muted'; sub.textContent = `Deck knowledge: ${pct(dk)}`;
-    const btn2 = document.createElement('button'); btn2.className = 'btn-primary mt-2'; btn2.textContent = 'Back to deck'; btn2.onclick = () => ctx.navigate({ view: 'deck', deckId });
+    const msg = document.createElement('h2'); msg.className = 'text-xl font-semibold text-success'; msg.textContent = t('study.mastered.title');
+    const sub = document.createElement('p'); sub.className = 'text-sm text-muted'; sub.textContent = t('study.complete.sub', { pct: pct(dk) });
+    const btn2 = document.createElement('button'); btn2.className = 'btn-primary mt-2'; btn2.textContent = t('study.mastered.back'); btn2.onclick = () => ctx.navigate({ view: 'deck', deckId });
     done.append(icon, msg, sub, btn2);
     content.appendChild(done); wrap.appendChild(content); return wrap;
   }
@@ -88,26 +88,24 @@ export function renderStudyView(
 
   const cardWrap = document.createElement('div'); cardWrap.className = 'max-w-3xl mx-auto space-y-6';
 
-  // Card title + actions
   const cardHeader = document.createElement('div'); cardHeader.className = 'flex items-center justify-between';
   const cardTitle = document.createElement('h2'); cardTitle.className = 'text-2xl font-semibold text-primary'; cardTitle.textContent = card.name;
-  const viewCardBtn = document.createElement('button'); viewCardBtn.className = 'btn-ghost text-xs'; viewCardBtn.textContent = 'View card ↗';
+  const viewCardBtn = document.createElement('button'); viewCardBtn.className = 'btn-ghost text-xs'; viewCardBtn.textContent = t('study.viewCard');
   viewCardBtn.onclick = () => ctx.navigate({ view: 'card', cardId: card.id });
   cardHeader.append(cardTitle, viewCardBtn);
   cardWrap.appendChild(cardHeader);
 
-  // Knowledge indicator
   const knRow = document.createElement('div'); knRow.className = 'flex items-center gap-3';
-  const knLabel = document.createElement('span'); knLabel.className = 'text-xs text-muted'; knLabel.textContent = 'Current knowledge:';
+  const knLabel = document.createElement('span'); knLabel.className = 'text-xs text-muted'; knLabel.textContent = t('study.currentKnowledge');
   const knVal = document.createElement('span'); knVal.className = 'text-xs font-mono text-primary font-semibold'; knVal.textContent = pct(k);
   const knLast = document.createElement('span'); knLast.className = 'text-xs text-dim';
-  knLast.textContent = work?.history.length ? `· last ${timeAgo(work.history.at(-1)!.ts)}` : '· never reviewed';
+  knLast.textContent = work?.history.length
+    ? t('study.lastReview', { ago: timeAgo(work.history.at(-1)!.ts) })
+    : t('study.neverReviewed');
   knRow.append(knLabel, knVal, knLast);
   cardWrap.appendChild(knRow);
 
-  // Rating + Skip row
   const actionRow = document.createElement('div'); actionRow.className = 'space-y-2';
-
   const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
 
   const goNext = () => {
@@ -127,15 +125,15 @@ export function renderStudyView(
     }).then(goNext);
   };
 
-  const ratings: Array<{ rating: SessionRating; label: string; className: string; key: string }> = [
-    { rating: 'again', label: '✗ Failed',    className: 'btn py-2.5 text-sm font-semibold bg-danger/10 hover:bg-danger/20 text-danger',   key: '1' },
-    { rating: 'hard',  label: '△ Struggled', className: 'btn py-2.5 text-sm font-semibold bg-warn/10 hover:bg-warn/20 text-warn',          key: '2' },
-    { rating: 'good',  label: '○ Got it',    className: 'btn py-2.5 text-sm font-semibold bg-accent/10 hover:bg-accent/20 text-accent',    key: '3' },
-    { rating: 'easy',  label: '✓ Nailed it', className: 'btn py-2.5 text-sm font-semibold bg-success/10 hover:bg-success/20 text-success', key: '4' },
+  const ratings: Array<{ rating: SessionRating; key: string; className: string; shortcut: string }> = [
+    { rating: 'again', key: 'rating.again', className: 'btn py-2.5 text-sm font-semibold bg-danger/10 hover:bg-danger/20 text-danger',   shortcut: '1' },
+    { rating: 'hard',  key: 'rating.hard',  className: 'btn py-2.5 text-sm font-semibold bg-warn/10 hover:bg-warn/20 text-warn',          shortcut: '2' },
+    { rating: 'good',  key: 'rating.good',  className: 'btn py-2.5 text-sm font-semibold bg-accent/10 hover:bg-accent/20 text-accent',    shortcut: '3' },
+    { rating: 'easy',  key: 'rating.easy',  className: 'btn py-2.5 text-sm font-semibold bg-success/10 hover:bg-success/20 text-success', shortcut: '4' },
   ];
-  for (const { rating, label, className, key } of ratings) {
-    const btn = document.createElement('button'); btn.className = className; btn.textContent = label;
-    btn.title = `${label} [${key}]`;
+  for (const { rating, key, className, shortcut } of ratings) {
+    const btn = document.createElement('button'); btn.className = className; btn.textContent = t(key);
+    btn.title = `${t(key)} [${shortcut}]`;
     btn.onclick = () => logRating(rating);
     ratingRow.appendChild(btn);
   }
@@ -144,9 +142,9 @@ export function renderStudyView(
     const w = state.cardWorks[`${user.id}:${e.cardId}`];
     return cardKnowledge(user, w) < user.masteryThreshold;
   }).length;
-  const skipBtn = document.createElement('button'); skipBtn.className = 'btn-ghost py-1.5 text-xs w-full'; skipBtn.textContent = 'Skip (no rating)';
+  const skipBtn = document.createElement('button'); skipBtn.className = 'btn-ghost py-1.5 text-xs w-full'; skipBtn.textContent = t('study.skip');
   skipBtn.disabled = candidateCount <= 1;
-  skipBtn.title = 'Skip (no rating) [Tab]';
+  skipBtn.title = t('study.skipTitle');
   skipBtn.onclick = () => {
     let next = pickNext(ctx, deckId, strategy);
     if (next?.cardId === cardId && deck.entries.length > 1) next = pickNext(ctx, deckId, strategy);
@@ -156,7 +154,6 @@ export function renderStudyView(
   actionRow.append(ratingRow, skipBtn);
   cardWrap.appendChild(actionRow);
 
-  // ── Keyboard shortcuts ──
   const onKey = (e: KeyboardEvent) => {
     if (!wrap.isConnected) { document.removeEventListener('keydown', onKey); return; }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -169,15 +166,13 @@ export function renderStudyView(
   };
   document.addEventListener('keydown', onKey);
 
-  // Notes
   if (card.content.notes.trim()) {
     const notesWrap = document.createElement('div'); notesWrap.className = 'card-block space-y-2';
-    const notesTitle = document.createElement('div'); notesTitle.className = 'section-title'; notesTitle.textContent = 'Notes';
+    const notesTitle = document.createElement('div'); notesTitle.className = 'section-title'; notesTitle.textContent = t('study.notes');
     notesWrap.append(notesTitle, renderNotes(card.content.notes));
     cardWrap.appendChild(notesWrap);
   }
 
-  // Files
   if (card.content.files.length > 0) {
     cardWrap.appendChild(renderFiles({ files: card.content.files, editable: false }));
   }

@@ -1,4 +1,5 @@
 import type { AppContext } from '../types';
+import { t } from '../services/i18nService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   for (const card of Object.values(ctx.state.cards)) {
     const s = Math.max(
       score(card.name, q),
-      ...(card.tags ?? []).map(t => score(t, q) * 0.5),
+      ...(card.tags ?? []).map(tg => score(tg, q) * 0.5),
     );
     if (s > 0) items.push({
       label: card.name,
@@ -42,7 +43,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
     const s = score(deck.name, q);
     if (s > 0) items.push({
       label: deck.name,
-      sublabel: `${deck.entries.length} card${deck.entries.length !== 1 ? 's' : ''}`,
+      sublabel: t(deck.entries.length !== 1 ? 'commandPalette.deckCountPlural' : 'commandPalette.deckCount', { count: deck.entries.length }),
       kind: 'deck',
       onSelect: (c) => c.navigate({ view: 'deck', deckId: deck.id }),
     });
@@ -57,7 +58,6 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
     });
   }
 
-  // Sort by score descending, then alphabetically
   items.sort((a, b) => {
     const sa = Math.max(score(a.label, q), 0);
     const sb = Math.max(score(b.label, q), 0);
@@ -78,7 +78,6 @@ const KIND_STYLE: Record<PaletteItem['kind'], string> = {
 // ── Palette UI ────────────────────────────────────────────────────────────────
 
 export function showCommandPalette(getCtx: () => AppContext): void {
-  // Prevent duplicates
   if (document.getElementById('cmd-palette')) return;
 
   const overlay = document.createElement('div');
@@ -88,7 +87,6 @@ export function showCommandPalette(getCtx: () => AppContext): void {
   const dialog = document.createElement('div');
   dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col';
 
-  // Input row
   const inputRow = document.createElement('div');
   inputRow.className = 'flex items-center gap-3 px-4 py-3 border-b border-border';
   const searchIcon = document.createElement('span');
@@ -96,7 +94,7 @@ export function showCommandPalette(getCtx: () => AppContext): void {
   searchIcon.textContent = '⌕';
   const input = document.createElement('input');
   input.type = 'text';
-  input.placeholder = 'Search cards, decks, folders…';
+  input.placeholder = t('commandPalette.placeholder');
   input.className = 'flex-1 bg-transparent outline-none text-sm text-primary placeholder-dim';
   const hint = document.createElement('span');
   hint.className = 'text-[10px] text-dim font-mono shrink-0';
@@ -104,7 +102,6 @@ export function showCommandPalette(getCtx: () => AppContext): void {
   inputRow.append(searchIcon, input, hint);
   dialog.appendChild(inputRow);
 
-  // Results list
   const list = document.createElement('div');
   list.className = 'max-h-72 overflow-y-auto py-1';
   dialog.appendChild(list);
@@ -126,7 +123,7 @@ export function showCommandPalette(getCtx: () => AppContext): void {
     if (!input.value.trim()) {
       const empty = document.createElement('p');
       empty.className = 'text-xs text-dim text-center py-6';
-      empty.textContent = 'Type to search…';
+      empty.textContent = t('commandPalette.typeToSearch');
       list.appendChild(empty);
       return;
     }
@@ -134,7 +131,7 @@ export function showCommandPalette(getCtx: () => AppContext): void {
     if (items.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'text-xs text-dim text-center py-6';
-      empty.textContent = 'No results.';
+      empty.textContent = t('commandPalette.noResults');
       list.appendChild(empty);
       return;
     }
@@ -146,7 +143,7 @@ export function showCommandPalette(getCtx: () => AppContext): void {
 
       const badge = document.createElement('span');
       badge.className = `text-[10px] font-medium px-1.5 py-0.5 rounded ${KIND_STYLE[item.kind]} shrink-0 w-12 text-center`;
-      badge.textContent = item.kind;
+      badge.textContent = t(`commandPalette.kind.${item.kind}`);
 
       const labelWrap = document.createElement('div');
       labelWrap.className = 'flex-1 min-w-0';

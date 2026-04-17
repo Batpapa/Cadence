@@ -6,6 +6,7 @@ import {
   tuneResultToCard, findByExternalId,
   type TuneSearchResult,
 } from '../services/theSessionService';
+import { t } from '../services/i18nService';
 
 // ── Debounce ─────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
   optRow.className = 'flex items-center gap-2 cursor-pointer select-none';
   const optChk = document.createElement('input'); optChk.type = 'checkbox'; optChk.className = 'card-checkbox'; optChk.checked = true;
   optChk.onchange = () => { onlyFirstSetting = optChk.checked; };
-  const optLbl = document.createElement('span'); optLbl.className = 'text-xs text-muted'; optLbl.textContent = 'Most popular setting only';
+  const optLbl = document.createElement('span'); optLbl.className = 'text-xs text-muted'; optLbl.textContent = t('theSession.onlyFirstSetting');
   optRow.append(optChk, optLbl);
   wrap.appendChild(optRow);
 
@@ -60,13 +61,13 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
   const renderTabs = () => {
     tabBar.innerHTML = '';
-    const tabs: Array<{ id: typeof activeTab; label: string }> = [
-      { id: 'search', label: 'Search' },
-      { id: 'id',     label: 'By ID' },
-      { id: 'member', label: 'By member' },
+    const tabs: Array<{ id: typeof activeTab; labelKey: string }> = [
+      { id: 'search', labelKey: 'theSession.search' },
+      { id: 'id',     labelKey: 'theSession.byId' },
+      { id: 'member', labelKey: 'theSession.byMember' },
     ];
     for (const tab of tabs) {
-      tabBar.appendChild(mkTab(tab.label, activeTab === tab.id, () => {
+      tabBar.appendChild(mkTab(t(tab.labelKey), activeTab === tab.id, () => {
         activeTab = tab.id;
         renderTabs();
         renderContent();
@@ -86,8 +87,8 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
   const renderByIdTab = () => {
     const row = document.createElement('div'); row.className = 'flex gap-2';
-    const inp = document.createElement('input'); inp.type = 'number'; inp.placeholder = 'Tune ID…'; inp.className = 'input flex-1';
-    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = 'Import';
+    const inp = document.createElement('input'); inp.type = 'number'; inp.placeholder = t('theSession.id.placeholder'); inp.className = 'input flex-1';
+    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.id.import');
     const preview = document.createElement('p'); preview.className = 'text-xs text-muted min-h-[1.25rem]';
 
     let previewId = -1;
@@ -98,28 +99,30 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
       try {
         const tune = await fetchTuneById(id);
         if (previewId === id) preview.textContent = `${tune.name} · ${tune.type}`;
-      } catch { if (previewId === id) preview.textContent = 'Tune not found.'; }
+      } catch { if (previewId === id) preview.textContent = t('theSession.id.notFound'); }
     }, 400);
 
     btn.onclick = async () => {
       const id = parseInt(inp.value);
       if (isNaN(id)) return;
-      btn.disabled = true; status.textContent = 'Fetching…';
+      btn.disabled = true; status.textContent = t('theSession.status.fetching');
       try {
         const tune = await fetchTuneById(id);
         const existing = findByExternalId(`thesession:${tune.id}`, ctx.state.cards);
         if (existing) {
           if (deckId) await ctx.mutate(s => { linkCardToDeck(s, existing.id, deckId!); });
-          status.textContent = `"${tune.name}" is already in your library${deckId ? ' — linked to this deck.' : '.'}`;
+          status.textContent = deckId
+            ? t('theSession.status.alreadyInLibraryLinked', { name: tune.name })
+            : t('theSession.status.alreadyInLibrary', { name: tune.name });
           inp.value = ''; preview.textContent = '';
         } else {
           const card = tuneResultToCard(tune, { onlyFirstSetting });
           await ctx.mutate(s => { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); });
-          status.textContent = `✓ "${card.name}" imported.`;
+          status.textContent = t('theSession.status.imported', { name: card.name });
           inp.value = ''; preview.textContent = '';
         }
       } catch (e) {
-        status.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
       } finally { btn.disabled = false; }
     };
     inp.addEventListener('input', () => doPreview(inp.value));
@@ -131,7 +134,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
   // ── Tab: Search ───────────────────────────────────────────────────────────
 
   const renderSearchTab = () => {
-    const inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = 'Tune name…'; inp.className = 'input';
+    const inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = t('theSession.search') + '…'; inp.className = 'input';
     const suggestions = document.createElement('div'); suggestions.className = 'space-y-1 max-h-48 overflow-y-auto';
 
     const renderSuggestions = (tunes: TuneSearchResult[]) => {
@@ -145,22 +148,24 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
         left.append(name, meta);
         const importBtn = document.createElement('button');
         importBtn.className = 'btn-primary text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity';
-        importBtn.textContent = 'Import';
+        importBtn.textContent = t('theSession.id.import');
         importBtn.onclick = async () => {
-          importBtn.disabled = true; status.textContent = 'Importing…';
+          importBtn.disabled = true; status.textContent = t('theSession.status.importing');
           try {
             const fullTune = await fetchTuneById(tune.id);
             const existing = findByExternalId(`thesession:${fullTune.id}`, ctx.state.cards);
             if (existing) {
               if (deckId) await ctx.mutate(s => { linkCardToDeck(s, existing.id, deckId!); });
-              status.textContent = `"${fullTune.name}" is already in your library${deckId ? ' — linked to this deck.' : '.'}`;
+              status.textContent = deckId
+                ? t('theSession.status.alreadyInLibraryLinked', { name: fullTune.name })
+                : t('theSession.status.alreadyInLibrary', { name: fullTune.name });
             } else {
               const card = tuneResultToCard(fullTune, { onlyFirstSetting });
               await ctx.mutate(s => { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); });
-              status.textContent = `✓ "${card.name}" imported.`;
+              status.textContent = t('theSession.status.imported', { name: card.name });
             }
           } catch (e) {
-            status.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+            status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
           } finally { importBtn.disabled = false; }
         };
         row.append(left, importBtn);
@@ -170,13 +175,13 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
     const doSearch = debounce(async (q: string) => {
       if (!q.trim()) { suggestions.innerHTML = ''; return; }
-      status.textContent = 'Searching…';
+      status.textContent = t('theSession.status.searching');
       try {
         const tunes = await searchTunes(q);
         renderSuggestions(tunes);
-        status.textContent = tunes.length ? '' : 'No results.';
+        status.textContent = tunes.length ? '' : t('theSession.noResults');
       } catch (e) {
-        status.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
       }
     }, 300);
 
@@ -189,8 +194,8 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
   const renderMemberTab = () => {
     const row = document.createElement('div'); row.className = 'flex gap-2';
-    const inp = document.createElement('input'); inp.type = 'number'; inp.placeholder = 'Member ID…'; inp.className = 'input flex-1';
-    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = 'Import all';
+    const inp = document.createElement('input'); inp.type = 'number'; inp.placeholder = t('theSession.member.placeholder'); inp.className = 'input flex-1';
+    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.member.importAll');
     const preview = document.createElement('p'); preview.className = 'text-xs text-muted min-h-[1.25rem]';
 
     let previewId = -1;
@@ -200,8 +205,8 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
       previewId = id;
       try {
         const info = await fetchMemberInfo(id);
-        if (previewId === id) preview.textContent = `${info.name} · ${info.total} tune${info.total !== 1 ? 's' : ''}`;
-      } catch { if (previewId === id) preview.textContent = 'Member not found.'; }
+        if (previewId === id) preview.textContent = t(info.total !== 1 ? 'theSession.member.previewPlural' : 'theSession.member.preview', { name: info.name, count: info.total });
+      } catch { if (previewId === id) preview.textContent = t('theSession.member.notFound'); }
     }, 400);
 
     inp.addEventListener('input', () => doPreview(inp.value));
@@ -218,28 +223,30 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
       btn.disabled = true; inp.disabled = true;
       progressWrap.classList.remove('hidden');
       progressFill.style.width = '0%';
-      status.textContent = 'Fetching page 1…';
+      status.textContent = t('theSession.status.fetchingPage');
       try {
         const tunes = await fetchMemberTunes(memberId, (loaded, total, phase) => {
           progressFill.style.width = `${Math.round((loaded / total) * 100)}%`;
           status.textContent = phase === 'pages'
-            ? `Collecting IDs — page ${loaded}/${total}…`
-            : `Fetching tunes — ${loaded}/${total}…`;
+            ? t('theSession.status.collectingIds', { loaded, total })
+            : t('theSession.status.fetchingTunes', { loaded, total });
         });
         const existingCards = tunes.map(t => findByExternalId(`thesession:${t.id}`, ctx.state.cards));
         const newTunes = tunes.filter((_, i) => !existingCards[i]);
         const alreadyExisting = tunes.filter((_, i) => !!existingCards[i]);
-        const newCards = newTunes.map(t => tuneResultToCard(t, { onlyFirstSetting }));
+        const newCards = newTunes.map(tune => tuneResultToCard(tune, { onlyFirstSetting }));
         await ctx.mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); }
-          if (deckId) { for (const t of alreadyExisting) { const c = findByExternalId(`thesession:${t.id}`, s.cards); if (c) linkCardToDeck(s, c.id, deckId); } }
+          if (deckId) { for (const tune of alreadyExisting) { const c = findByExternalId(`thesession:${tune.id}`, s.cards); if (c) linkCardToDeck(s, c.id, deckId); } }
         });
         progressFill.style.width = '100%';
         const linked = deckId ? alreadyExisting.length : 0;
-        const summary = `✓ ${newCards.length} imported${linked > 0 ? `, ${linked} already in library linked to deck` : alreadyExisting.length > 0 ? `, ${alreadyExisting.length} already in library skipped` : ''}`;
-        status.textContent = `${summary}.`;
+        let summary = t('theSession.status.batchDone', { count: newCards.length });
+        if (linked > 0) summary = summary.replace('.', '') + t('theSession.status.batchLinked', { linked }) + '.';
+        else if (alreadyExisting.length > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: alreadyExisting.length }) + '.';
+        status.textContent = summary;
       } catch (e) {
-        status.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
       } finally {
         btn.disabled = false; inp.disabled = false;
       }
@@ -276,12 +283,12 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
 
   const renderTabs = () => {
     outerTabBar.innerHTML = '';
-    const tabs: Array<{ id: ActiveTab; label: string }> = [
-      { id: 'create',     label: 'Create' },
-      { id: 'thesession', label: 'TheSession' },
+    const tabs: Array<{ id: ActiveTab; labelKey: string }> = [
+      { id: 'create',     labelKey: 'newCard.tabCreate' },
+      { id: 'thesession', labelKey: 'newCard.tabTheSession' },
     ];
     for (const tab of tabs) {
-      outerTabBar.appendChild(mkTab(tab.label, activeTab === tab.id, () => {
+      outerTabBar.appendChild(mkTab(t(tab.labelKey), activeTab === tab.id, () => {
         activeTab = tab.id;
         renderTabs();
         renderContent();
@@ -294,9 +301,9 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
     status.textContent = '';
 
     if (activeTab === 'create') {
-      const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = 'Card name';
-      const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'input'; inp.placeholder = 'Card name…';
-      const createBtn = document.createElement('button'); createBtn.className = 'btn-primary w-full mt-1'; createBtn.textContent = 'Create';
+      const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = t('newCard.nameLabel');
+      const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'input'; inp.placeholder = t('newCard.namePlaceholder');
+      const createBtn = document.createElement('button'); createBtn.className = 'btn-primary w-full mt-1'; createBtn.textContent = t('newCard.createBtn');
       const doCreate = async () => {
         const name = inp.value.trim();
         if (!name) { inp.focus(); return; }
@@ -320,5 +327,5 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
   renderContent();
   body.append(outerTabBar, outerContent, status);
 
-  showModal('New Card', body, [{ label: 'Close', onClick: closeModal }]);
+  showModal(t('newCard.title'), body, [{ label: t('common.close'), onClick: closeModal }]);
 }

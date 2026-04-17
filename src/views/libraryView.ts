@@ -5,6 +5,7 @@ import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardKnowledge } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
+import { t } from '../services/i18nService';
 
 
 export function renderLibraryView(ctx: AppContext): HTMLElement {
@@ -15,17 +16,17 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
   const user = getCurrentUser(state);
   const allCards = Object.values(state.cards) as Card[];
 
-  // ── Selection state ──
   const selected = new Set<string>();
 
   // ── Header ──
   const header = document.createElement('div'); header.className = 'flex items-center justify-between px-6 pt-6 pb-4 shrink-0';
   const titleWrap = document.createElement('div');
-  const title = document.createElement('h1'); title.className = 'text-xl font-semibold text-primary'; title.textContent = 'Card library';
-  const sub = document.createElement('p'); sub.className = 'text-xs text-muted mt-0.5'; sub.textContent = `${allCards.length} card${allCards.length !== 1 ? 's' : ''}`;
+  const title = document.createElement('h1'); title.className = 'text-xl font-semibold text-primary'; title.textContent = t('library.title');
+  const sub = document.createElement('p'); sub.className = 'text-xs text-muted mt-0.5';
+  sub.textContent = t(allCards.length !== 1 ? 'library.cardCountPlural' : 'library.cardCount', { count: allCards.length });
   titleWrap.append(title, sub);
   const headerBtns = document.createElement('div'); headerBtns.className = 'flex gap-2';
-  const newCardBtn = document.createElement('button'); newCardBtn.className = 'btn-primary'; newCardBtn.textContent = '+ New card';
+  const newCardBtn = document.createElement('button'); newCardBtn.className = 'btn-primary'; newCardBtn.textContent = t('library.newCard');
   newCardBtn.onclick = () => showNewCardModal(ctx);
   headerBtns.append(newCardBtn);
   header.append(titleWrap, headerBtns);
@@ -33,7 +34,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
 
   // ── Search + tag filter ──
   const filterBar = document.createElement('div'); filterBar.className = 'px-6 pb-3 shrink-0 space-y-2';
-  const searchInput = document.createElement('input'); searchInput.type = 'text'; searchInput.placeholder = 'Search cards…'; searchInput.className = 'input';
+  const searchInput = document.createElement('input'); searchInput.type = 'text'; searchInput.placeholder = t('library.search'); searchInput.className = 'input';
 
   const allTags = [...new Set(allCards.flatMap(c => c.tags ?? []))].sort();
   const activeTags = new Set<string>();
@@ -54,17 +55,17 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
   filterBar.append(searchInput, tagRow);
   wrap.appendChild(filterBar);
 
-  // ── Selection toolbar (always visible) ──
+  // ── Selection toolbar ──
   const selBar = document.createElement('div');
   selBar.className = 'flex items-center justify-between px-6 py-1.5 shrink-0';
 
   const selLabel = document.createElement('span'); selLabel.className = 'text-xs text-dim';
   const selActions = document.createElement('div'); selActions.className = 'flex gap-1';
 
-  const selectAllBtn = document.createElement('button'); selectAllBtn.className = 'btn-ghost text-xs'; selectAllBtn.textContent = 'Select all';
-  const deselectBtn = document.createElement('button'); deselectBtn.className = 'btn-ghost text-xs'; deselectBtn.textContent = 'Deselect all';
+  const selectAllBtn = document.createElement('button'); selectAllBtn.className = 'btn-ghost text-xs'; selectAllBtn.textContent = t('library.selectAll');
+  const deselectBtn = document.createElement('button'); deselectBtn.className = 'btn-ghost text-xs'; deselectBtn.textContent = t('library.deselectAll');
   const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger text-xs flex items-center gap-1.5';
-  deleteBtn.title = 'Delete selected'; deleteBtn.appendChild(trashIcon(12));
+  deleteBtn.title = t('library.deleteSelected'); deleteBtn.appendChild(trashIcon(12));
   const deleteLbl = document.createElement('span'); deleteBtn.appendChild(deleteLbl);
 
   const updateSelBar = (filtered: Card[]) => {
@@ -74,7 +75,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       deselectBtn.classList.add('hidden');
       deleteBtn.classList.add('hidden');
     } else {
-      selLabel.textContent = `${selected.size} selected`;
+      selLabel.textContent = t('library.selected', { count: selected.size });
       deselectBtn.classList.remove('hidden');
       deleteLbl.textContent = String(selected.size);
       deleteBtn.classList.remove('hidden');
@@ -84,15 +85,20 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
   deselectBtn.onclick = () => { selected.clear(); renderList(); };
   deleteBtn.onclick = () => {
     const count = selected.size;
-    confirmModal('Delete cards', `Permanently delete ${count} card${count !== 1 ? 's' : ''}? They will be removed from all decks.`, 'Delete', () => {
-      ctx.mutate(s => {
-        for (const cardId of selected) {
-          delete s.cards[cardId];
-          for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
-          delete s.cardWorks[`${s.currentUserId}:${cardId}`];
-        }
-      });
-    });
+    confirmModal(
+      t('library.delete.title'),
+      t(count !== 1 ? 'library.delete.messagePlural' : 'library.delete.message', { count }),
+      t('common.delete'),
+      () => {
+        ctx.mutate(s => {
+          for (const cardId of selected) {
+            delete s.cards[cardId];
+            for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
+            delete s.cardWorks[`${s.currentUserId}:${cardId}`];
+          }
+        });
+      }
+    );
   };
 
   deselectBtn.classList.add('hidden');
@@ -110,7 +116,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
     const filtered = allCards
       .filter(c => {
         const tags = c.tags ?? [];
-        const matchesText = !q || c.name.toLowerCase().includes(q) || tags.some(t => t.toLowerCase().includes(q));
+        const matchesText = !q || c.name.toLowerCase().includes(q) || tags.some(tg => tg.toLowerCase().includes(q));
         const matchesTag = activeTags.size === 0 || [...activeTags].every(at => tags.includes(at));
         return matchesText && matchesTag;
       })
@@ -120,7 +126,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
 
     if (filtered.length === 0) {
       const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic';
-      empty.textContent = (q || activeTags.size > 0) ? 'No cards match.' : 'No cards yet.';
+      empty.textContent = (q || activeTags.size > 0) ? t('library.noMatch') : t('library.empty');
       listWrap.appendChild(empty); return;
     }
 
@@ -134,7 +140,6 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       const row = document.createElement('div');
       row.className = `flex items-center gap-3 px-3 py-2.5 rounded transition-colors group cursor-pointer ${isSelected ? 'bg-elevated' : 'hover:bg-elevated'}`;
 
-      // Checkbox
       const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = isSelected;
       checkbox.className = `card-checkbox shrink-0 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`;
       checkbox.onclick = (e) => {
@@ -143,30 +148,22 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
         renderList();
       };
 
-      // Knowledge dot
       const dot = document.createElement('span'); dot.className = `w-2 h-2 rounded-full shrink-0 ${knowledgeColor(k)}`; dot.title = pct(k);
-
       const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary flex-1 truncate'; nameEl.textContent = card.name;
-
       const meta = document.createElement('div'); meta.className = 'flex items-center gap-3 shrink-0';
 
-      // Card tags
       if ((card.tags ?? []).length > 0) {
         const cardTagsWrap = document.createElement('div'); cardTagsWrap.className = 'flex gap-1';
-        for (const t of (card.tags ?? []).slice(0, 3)) {
-          const tb = document.createElement('span'); tb.className = 'text-xs px-1.5 py-0.5 rounded bg-border text-dim'; tb.textContent = t;
+        for (const tg of (card.tags ?? []).slice(0, 3)) {
+          const tb = document.createElement('span'); tb.className = 'text-xs px-1.5 py-0.5 rounded bg-border text-dim'; tb.textContent = tg;
           cardTagsWrap.appendChild(tb);
         }
         meta.appendChild(cardTagsWrap);
       }
 
-      // Importance
-      const impBadge = document.createElement('span'); impBadge.className = 'text-xs font-mono text-dim'; impBadge.textContent = `×${card.importance}`; impBadge.title = 'Base importance';
-
-      // Knowledge %
+      const impBadge = document.createElement('span'); impBadge.className = 'text-xs font-mono text-dim'; impBadge.textContent = `×${card.importance}`; impBadge.title = t('library.baseImportance');
       const knBadge = document.createElement('span'); knBadge.className = 'text-xs font-mono text-muted w-10 text-right'; knBadge.textContent = pct(k);
 
-      // Deck tags (on hover)
       const deckTagsWrap = document.createElement('div'); deckTagsWrap.className = 'hidden group-hover:flex gap-1';
       for (const dId of deckIds.slice(0, 2)) {
         const deck = state.decks[dId]; if (!deck) continue;

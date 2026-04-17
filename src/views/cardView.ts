@@ -5,6 +5,7 @@ import { renderNotes, renderFiles } from '../components/fileViewer';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardKnowledge, masteryWindowDays, replayFSRS } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
+import { t } from '../services/i18nService';
 
 export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   const wrap = document.createElement('div');
@@ -12,7 +13,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
   const { state } = ctx;
   const card = state.cards[cardId];
-  if (!card) { wrap.textContent = 'Card not found.'; return wrap; }
+  if (!card) { wrap.textContent = t('card.notFound'); return wrap; }
 
   const user = getCurrentUser(state);
   const work = state.cardWorks[`${user.id}:${cardId}`];
@@ -42,7 +43,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
     const unlinkBtn = document.createElement('button');
     unlinkBtn.className = 'opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-danger leading-none';
-    unlinkBtn.title = 'Remove from deck';
+    unlinkBtn.title = t('card.removeFromDeck');
     unlinkBtn.appendChild(unlinkIcon(10));
     unlinkBtn.onclick = (e) => {
       e.stopPropagation();
@@ -54,7 +55,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   }
   const addToDeckChip = document.createElement('span');
   addToDeckChip.className = 'text-xs px-2 py-0.5 rounded-full border border-dashed border-border text-dim cursor-pointer hover:text-primary hover:border-muted transition-colors';
-  addToDeckChip.textContent = '+'; addToDeckChip.title = 'Add to deck';
+  addToDeckChip.textContent = '+'; addToDeckChip.title = t('card.addToDeck');
   addToDeckChip.onclick = () => {
     const available = Object.values(state.decks)
       .filter(d => !d.entries.some(e => e.cardId === cardId))
@@ -62,8 +63,8 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
     if (available.length === 0) {
       const p = document.createElement('p'); p.className = 'text-sm text-muted';
-      p.textContent = 'This card is already in all existing decks.';
-      showModal('Add to deck', p, [{ label: 'Close', onClick: closeModal }]);
+      p.textContent = t('card.allDecks');
+      showModal(t('card.addToDeck.title'), p, [{ label: t('common.close'), onClick: closeModal }]);
       return;
     }
 
@@ -80,9 +81,9 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
       body.appendChild(row);
     }
 
-    showModal('Add to deck', body, [
-      { label: 'Cancel', onClick: closeModal },
-      { label: 'Add', primary: true, onClick: () => {
+    showModal(t('card.addToDeck.title'), body, [
+      { label: t('common.cancel'), onClick: closeModal },
+      { label: t('common.add'), primary: true, onClick: () => {
         if (selected.size === 0) return;
         closeModal();
         ctx.mutate(s => {
@@ -98,8 +99,8 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
 
   const headerActions = document.createElement('div'); headerActions.className = 'flex gap-2 shrink-0';
 
-  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = 'Delete card'; deleteBtn.appendChild(trashIcon());
-  deleteBtn.onclick = () => confirmModal('Delete Card', `Permanently delete "${card.name}"? It will be removed from all decks.`, 'Delete', () => {
+  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = t('card.deleteTitle'); deleteBtn.appendChild(trashIcon());
+  deleteBtn.onclick = () => confirmModal(t('card.delete.title'), t('card.delete.message', { name: card.name }), t('common.delete'), () => {
     ctx.mutate(s => {
       delete s.cards[cardId];
       for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
@@ -112,31 +113,36 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   header.append(titleWrap, headerActions);
   wrap.appendChild(header);
 
-  // ── Knowledge, Half-life & Importance ──
+  // ── Knowledge, Mastery window & Importance ──
   const statsRow = document.createElement('div'); statsRow.className = 'grid grid-cols-3 gap-3';
 
   // Knowledge
   const knBox = document.createElement('div'); knBox.className = 'card-block space-y-1';
-  const knLabel = document.createElement('div'); knLabel.className = 'section-title'; knLabel.textContent = 'Knowledge';
+  const knLabel = document.createElement('div'); knLabel.className = 'section-title'; knLabel.textContent = t('card.section.knowledge');
   const knVal = document.createElement('div'); knVal.className = 'text-lg font-mono font-semibold text-primary'; knVal.textContent = pct(k);
   const knSub = document.createElement('div'); knSub.className = 'text-xs text-muted';
-  knSub.textContent = work?.history.length ? `${work.history.length} session${work.history.length > 1 ? 's' : ''} · last ${timeAgo(work.history.at(-1)!.ts)}` : 'Never reviewed';
+  if (work?.history.length) {
+    const count = work.history.length;
+    knSub.textContent = t(count > 1 ? 'card.knowledgeSubPlural' : 'card.knowledgeSub', { count, ago: timeAgo(work.history.at(-1)!.ts) });
+  } else {
+    knSub.textContent = t('card.neverReviewed');
+  }
   knBox.append(knLabel, knVal, knSub);
 
   // Importance
   const impBox = document.createElement('div'); impBox.className = 'card-block space-y-1';
-  const impLabel = document.createElement('div'); impLabel.className = 'section-title'; impLabel.textContent = 'Importance';
+  const impLabel = document.createElement('div'); impLabel.className = 'section-title'; impLabel.textContent = t('card.section.importance');
   const impRow = document.createElement('div'); impRow.className = 'flex items-center gap-2';
   const impVal = document.createElement('span'); impVal.className = 'text-lg font-mono font-semibold text-primary'; impVal.textContent = `×${card.importance}`;
-  const impEditBtn = document.createElement('button'); impEditBtn.className = 'text-xs text-dim hover:text-accent cursor-pointer transition-colors'; impEditBtn.textContent = 'Edit';
+  const impEditBtn = document.createElement('button'); impEditBtn.className = 'text-xs text-dim hover:text-accent cursor-pointer transition-colors'; impEditBtn.textContent = t('card.edit');
   impEditBtn.onclick = () => {
     const b = document.createElement('div'); b.className = 'space-y-2';
-    const l = document.createElement('label'); l.className = 'label'; l.textContent = 'Base importance (>0)';
+    const l = document.createElement('label'); l.className = 'label'; l.textContent = t('card.importance.label');
     const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0.1'; inp.step = '0.1'; inp.value = String(card.importance); inp.className = 'input';
     b.append(l, inp);
-    showModal('Importance', b, [
-      { label: 'Cancel', onClick: closeModal },
-      { label: 'Save', primary: true, onClick: () => {
+    showModal(t('card.importance.title'), b, [
+      { label: t('common.cancel'), onClick: closeModal },
+      { label: t('common.save'), primary: true, onClick: () => {
         const val = parseFloat(inp.value);
         if (!isNaN(val) && val > 0) { closeModal(); ctx.mutate(s => { s.cards[cardId]!.importance = val; }); }
       }},
@@ -150,11 +156,11 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   const fsrsState = work ? replayFSRS(work.history) : undefined;
   const mw = fsrsState ? masteryWindowDays(fsrsState.stability, user.masteryThreshold) : undefined;
   const hlBox = document.createElement('div'); hlBox.className = 'card-block space-y-1';
-  const hlLabel = document.createElement('div'); hlLabel.className = 'section-title'; hlLabel.textContent = 'Mastery window';
+  const hlLabel = document.createElement('div'); hlLabel.className = 'section-title'; hlLabel.textContent = t('card.section.masteryWindow');
   const hlVal = document.createElement('div'); hlVal.className = 'text-lg font-mono font-semibold text-primary';
   hlVal.textContent = mw === undefined ? '—' : mw >= 1 ? `${Math.round(mw)}d` : `${Math.round(mw * 24)}h`;
   const hlSub = document.createElement('div'); hlSub.className = 'text-xs text-muted';
-  hlSub.textContent = mw === undefined ? 'not yet reviewed' : 'from review until next needed';
+  hlSub.textContent = mw === undefined ? t('card.masteryWindowNone') : t('card.masteryWindowDuration');
   hlBox.append(hlLabel, hlVal, hlSub);
 
   statsRow.append(knBox, hlBox, impBox);
@@ -163,7 +169,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   // ── Tags ──
   const tagsSection = document.createElement('div'); tagsSection.className = 'space-y-2';
   const tagsHeader = document.createElement('div'); tagsHeader.className = 'flex items-center justify-between';
-  const tagsTitle = document.createElement('span'); tagsTitle.className = 'section-title'; tagsTitle.textContent = 'Tags';
+  const tagsTitle = document.createElement('span'); tagsTitle.className = 'section-title'; tagsTitle.textContent = t('card.section.tags');
   tagsHeader.appendChild(tagsTitle);
   tagsSection.appendChild(tagsHeader);
 
@@ -177,7 +183,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
       const label = document.createElement('span');
       label.textContent = tag;
       label.className = 'cursor-text hover:text-primary transition-colors';
-      label.title = 'Click to rename';
+      label.title = t('card.renameTag');
       label.onclick = () => {
         const inp = document.createElement('input');
         inp.type = 'text'; inp.value = tag;
@@ -202,9 +208,8 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
       chip.append(label, rm);
       tagsBody.appendChild(chip);
     }
-    // Add tag input
     const addInput = document.createElement('input');
-    addInput.type = 'text'; addInput.placeholder = '+'; addInput.title = 'Add tag'; addInput.className = 'text-xs bg-transparent border-none outline-none text-dim placeholder-dim w-6 focus:w-24 transition-all';
+    addInput.type = 'text'; addInput.placeholder = '+'; addInput.title = t('card.addToDeck'); addInput.className = 'text-xs bg-transparent border-none outline-none text-dim placeholder-dim w-6 focus:w-24 transition-all';
     addInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ',') {
         e.preventDefault();
@@ -225,16 +230,16 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   // ── Notes ──
   const notesSection = document.createElement('div'); notesSection.className = 'space-y-2';
   const notesHeader = document.createElement('div'); notesHeader.className = 'flex items-center justify-between';
-  const notesTitle = document.createElement('span'); notesTitle.className = 'section-title'; notesTitle.textContent = 'Notes';
+  const notesTitle = document.createElement('span'); notesTitle.className = 'section-title'; notesTitle.textContent = t('card.section.notes');
   let editingNotes = false;
   let notesDraft = card.content.notes;
 
-  const toggleEditBtn = document.createElement('button'); toggleEditBtn.className = 'btn-ghost text-xs'; toggleEditBtn.textContent = 'Edit';
+  const toggleEditBtn = document.createElement('button'); toggleEditBtn.className = 'btn-ghost text-xs'; toggleEditBtn.textContent = t('card.edit');
   const notesContent = document.createElement('div'); notesContent.appendChild(renderNotes(card.content.notes));
 
   toggleEditBtn.onclick = () => {
     editingNotes = !editingNotes;
-    toggleEditBtn.textContent = editingNotes ? 'Preview' : 'Edit';
+    toggleEditBtn.textContent = editingNotes ? t('card.preview') : t('card.edit');
     notesContent.innerHTML = '';
     if (editingNotes) {
       const ta = document.createElement('textarea'); ta.value = notesDraft; ta.className = 'input w-full font-mono text-xs resize-none'; ta.rows = 12;
@@ -262,8 +267,11 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   // ── Review history ──
   {
     const histSection = document.createElement('div'); histSection.className = 'space-y-2';
+    const count = work?.history.length ?? 0;
     const histTitle = document.createElement('span'); histTitle.className = 'section-title';
-    histTitle.textContent = work?.history.length ? `Review history (${work.history.length} session${work.history.length > 1 ? 's' : ''})` : 'Review history';
+    histTitle.textContent = count > 0
+      ? t(count > 1 ? 'card.section.reviewHistoryCountPlural' : 'card.section.reviewHistoryCount', { count })
+      : t('card.section.reviewHistory');
     histSection.appendChild(histTitle);
     const list = document.createElement('div'); list.className = 'flex flex-wrap gap-1.5';
 
@@ -293,28 +301,28 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
     // + chip to log a session
     const addChip = document.createElement('span');
     addChip.className = 'inline-flex items-center text-xs px-2 py-0.5 rounded-full border border-dashed border-border text-dim cursor-pointer hover:text-primary hover:border-muted transition-colors';
-    addChip.textContent = '+'; addChip.title = 'Log session';
+    addChip.textContent = '+'; addChip.title = t('card.logSession.chip');
     addChip.onclick = () => {
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
       const defaultVal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
       let selectedRating: import('../types').SessionRating = 'good';
       const body = document.createElement('div'); body.className = 'space-y-4';
-      const dtLbl = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = 'Date & time';
+      const dtLbl = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = t('card.logSession.dateLabel');
       const inp = document.createElement('input'); inp.type = 'datetime-local'; inp.value = defaultVal; inp.className = 'input';
-      const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = 'Quality';
+      const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = t('card.logSession.qualityLabel');
       const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
-      const ratingDefs: Array<{ rating: import('../types').SessionRating; label: string; activeClass: string }> = [
-        { rating: 'again', label: '✗ Failed',    activeClass: 'bg-danger/20 text-danger border-danger/40' },
-        { rating: 'hard',  label: '△ Struggled', activeClass: 'bg-warn/20 text-warn border-warn/40' },
-        { rating: 'good',  label: '○ Got it',    activeClass: 'bg-accent/20 text-accent border-accent/40' },
-        { rating: 'easy',  label: '✓ Nailed it', activeClass: 'bg-success/20 text-success border-success/40' },
+      const ratingDefs: Array<{ rating: import('../types').SessionRating; key: string; activeClass: string }> = [
+        { rating: 'again', key: 'rating.again', activeClass: 'bg-danger/20 text-danger border-danger/40' },
+        { rating: 'hard',  key: 'rating.hard',  activeClass: 'bg-warn/20 text-warn border-warn/40' },
+        { rating: 'good',  key: 'rating.good',  activeClass: 'bg-accent/20 text-accent border-accent/40' },
+        { rating: 'easy',  key: 'rating.easy',  activeClass: 'bg-success/20 text-success border-success/40' },
       ];
       const idleClass = 'btn border border-border text-muted hover:text-primary hover:bg-elevated text-xs py-1.5';
       for (const def of ratingDefs) {
         const btn = document.createElement('button');
         btn.className = def.rating === 'good' ? `btn border text-xs py-1.5 transition-colors ${def.activeClass}` : `${idleClass} transition-colors`;
-        btn.textContent = def.label;
+        btn.textContent = t(def.key);
         btn.onclick = () => {
           selectedRating = def.rating;
           ratingRow.querySelectorAll('button').forEach(b => { b.className = `${idleClass} transition-colors`; });
@@ -323,9 +331,9 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
         ratingRow.appendChild(btn);
       }
       body.append(dtLbl, inp, ratingLbl, ratingRow);
-      showModal('Log practice session', body, [
-        { label: 'Cancel', onClick: closeModal },
-        { label: 'Save', primary: true, onClick: () => {
+      showModal(t('card.logSession.title'), body, [
+        { label: t('common.cancel'), onClick: closeModal },
+        { label: t('common.save'), primary: true, onClick: () => {
           const ts = inp.value ? new Date(inp.value).getTime() : Date.now();
           if (isNaN(ts)) return;
           closeModal();
