@@ -211,6 +211,15 @@
   "settings.installIOS": "Tap the Share button in Safari, then \"Add to Home Screen\"",
   "settings.alreadyInstalled": "App already installed",
 
+  "settings.sync": "Sync",
+  "settings.sync.connect": "Connect",
+  "settings.sync.disconnect": "Disconnect",
+  "settings.sync.reconnect": "Reconnect",
+  "settings.sync.connected": "Connected",
+  "settings.sync.connecting": "Connecting…",
+  "settings.sync.syncing": "Syncing…",
+  "settings.sync.error": "Sync error",
+
   "settings.about": "About",
   "settings.aboutLine1": "Cadence — open-source spaced repetition app",
   "settings.aboutLine2": "Author: Antoine Lucat — antl@hotmail.fr",
