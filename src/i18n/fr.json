@@ -228,8 +228,6 @@
   "settings.aboutLine1": "Cadence — application de répétition espacée open-source",
   "settings.aboutLine2": "Auteur : Antoine Lucat — antl@hotmail.fr",
   "settings.aboutLine3": "github.com/Batpapa/Cadence",
-  "settings.aboutPrivacy": "Politique de confidentialité",
-  "settings.aboutTerms": "Conditions d'utilisation",
   "settings.import.title": "Importer une sauvegarde",
   "settings.import.message": "Cela remplacera toutes les données actuelles. Êtes-vous sûr ?",
   "settings.import.confirm": "Remplacer",
