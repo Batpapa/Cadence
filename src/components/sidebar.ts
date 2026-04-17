@@ -8,6 +8,7 @@ import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { exportFull, exportContent, parseImport } from '../services/importExport';
 import { t, setLanguage, getLanguage } from '../services/i18nService';
+import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import type { Lang } from '../services/i18nService';
 
 const expanded = new Set<string>();
@@ -403,6 +404,26 @@ function showSettingsModal(ctx: AppContext): void {
     mkAboutLine('settings.aboutLine3', 'https://github.com/Batpapa/Cadence'),
   );
   body.append(aboutTitle, aboutBlock);
+
+  // ── Install ──
+  if (!isStandalone()) {
+    const divider3 = document.createElement('hr'); divider3.className = 'border-border';
+    body.appendChild(divider3);
+    const installWrap = document.createElement('div'); installWrap.className = 'space-y-1';
+    if (isIOS()) {
+      const iosHint = document.createElement('p'); iosHint.className = 'text-xs text-muted leading-relaxed';
+      iosHint.textContent = t('settings.installIOS');
+      installWrap.appendChild(iosHint);
+    } else if (canInstall()) {
+      const installBtn = document.createElement('button'); installBtn.className = 'btn-primary w-full text-sm';
+      installBtn.textContent = t('settings.install');
+      installBtn.onclick = () => { void triggerInstall(); closeModal(); };
+      const installHint = document.createElement('p'); installHint.className = 'text-xs text-dim';
+      installHint.textContent = t('settings.installHint');
+      installWrap.append(installBtn, installHint);
+    }
+    if (installWrap.childElementCount > 0) body.appendChild(installWrap);
+  }
 
   const saveField = (patch: Partial<Omit<typeof user, 'id'>>) => {
     ctx.mutate(s => updateUser(s, patch));

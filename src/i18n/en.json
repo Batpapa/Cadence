@@ -206,6 +206,11 @@
   "settings.importHint": "Replace all data",
   "settings.reset": "Reset",
   "settings.resetHint": "Delete all, keep profile",
+  "settings.install": "Install App",
+  "settings.installHint": "Add to your home screen for the best experience",
+  "settings.installIOS": "Tap the Share button in Safari, then \"Add to Home Screen\"",
+  "settings.alreadyInstalled": "App already installed",
+
   "settings.about": "About",
   "settings.aboutLine1": "Cadence — open-source spaced repetition app",
   "settings.aboutLine2": "Author: Antoine Lucat — antl@hotmail.fr",

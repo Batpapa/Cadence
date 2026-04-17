@@ -206,6 +206,11 @@
   "settings.importHint": "Remplacer toutes les données",
   "settings.reset": "Réinitialiser",
   "settings.resetHint": "Tout supprimer, garder le profil",
+  "settings.install": "Installer l'app",
+  "settings.installHint": "Ajoutez à l'écran d'accueil pour la meilleure expérience",
+  "settings.installIOS": "Appuyez sur le bouton Partager dans Safari, puis « Sur l'écran d'accueil »",
+  "settings.alreadyInstalled": "Application déjà installée",
+
   "settings.about": "À propos",
   "settings.aboutLine1": "Cadence — application de répétition espacée open-source",
   "settings.aboutLine2": "Auteur : Antoine Lucat — antl@hotmail.fr",

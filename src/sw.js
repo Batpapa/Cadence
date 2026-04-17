@@ -16,6 +16,9 @@ self.addEventListener('fetch', e => {
 
   const url = new URL(e.request.url);
 
+  // Never intercept cross-origin requests (API calls to TheSession, YouTube oEmbed, etc.)
+  if (url.origin !== self.location.origin) return;
+
   // Always fetch HTML fresh so updates are picked up immediately
   if (url.pathname.endsWith('/') || url.pathname.endsWith('.html')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
