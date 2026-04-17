@@ -587,8 +587,8 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
           syncBtn.title = t('sidebar.sync.syncing'); syncBtn.onclick = null;
           break;
         case 'connected':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-dim';
-          syncBtn.title = t('sidebar.sync.connected'); syncBtn.onclick = () => { void manualSync(); };
+          syncBtn.className = 'inline-flex items-center transition-colors cursor-default shrink-0 text-dim';
+          syncBtn.title = t('sidebar.sync.connected'); syncBtn.onclick = null;
           break;
         case 'error':
           syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-danger';
