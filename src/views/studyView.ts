@@ -2,10 +2,10 @@ import type { AppContext, StudyStrategy, DeckEntry } from '../types';
 import { renderNotes, renderFiles } from '../components/fileViewer';
 import { renderEmbeds } from '../components/embedViewer';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
-import { cardKnowledge, deckKnowledge } from '../services/knowledgeService';
+import { deckAvailability, isAvailable } from '../services/knowledgeService';
 import type { SessionRating } from '../types';
 import { getCurrentUser } from '../services/userService';
-import { pct, timeAgo } from '../utils';
+import { pct } from '../utils';
 import { t } from '../services/i18nService';
 
 const STRATEGY_LABEL_KEYS: Record<StudyStrategy, string> = {
@@ -38,7 +38,7 @@ export function renderStudyView(
   if (!deck) { wrap.textContent = t('study.notFound'); return wrap; }
 
   const user = getCurrentUser(state);
-  const dk = deckKnowledge(user, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
+  const dk = deckAvailability(user, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
 
   // ── Top bar ──
   const topBar = document.createElement('div');
@@ -50,7 +50,7 @@ export function renderStudyView(
   left.append(deckName, stratBadge);
 
   const right = document.createElement('div'); right.className = 'flex items-center gap-4';
-  const knBadge = document.createElement('span'); knBadge.className = 'text-xs font-mono text-muted'; knBadge.textContent = t('study.knowledge', { pct: pct(dk) });
+  const knBadge = document.createElement('span'); knBadge.className = 'text-xs font-mono text-muted'; knBadge.textContent = t('study.availability', { pct: pct(dk) });
   right.append(knBadge);
   topBar.append(left, right);
   wrap.appendChild(topBar);
@@ -85,7 +85,6 @@ export function renderStudyView(
   }
 
   const work = state.cardWorks[`${user.id}:${cardId}`];
-  const k = cardKnowledge(user, work);
 
   const cardWrap = document.createElement('div'); cardWrap.className = 'max-w-3xl mx-auto space-y-6';
 
@@ -95,16 +94,6 @@ export function renderStudyView(
   viewCardBtn.onclick = () => ctx.navigate({ view: 'card', cardId: card.id });
   cardHeader.append(cardTitle, viewCardBtn);
   cardWrap.appendChild(cardHeader);
-
-  const knRow = document.createElement('div'); knRow.className = 'flex items-center gap-3';
-  const knLabel = document.createElement('span'); knLabel.className = 'text-xs text-muted'; knLabel.textContent = t('study.currentKnowledge');
-  const knVal = document.createElement('span'); knVal.className = 'text-xs font-mono text-primary font-semibold'; knVal.textContent = pct(k);
-  const knLast = document.createElement('span'); knLast.className = 'text-xs text-dim';
-  knLast.textContent = work?.history.length
-    ? t('study.lastReview', { ago: timeAgo(work.history.at(-1)!.ts) })
-    : t('study.neverReviewed');
-  knRow.append(knLabel, knVal, knLast);
-  cardWrap.appendChild(knRow);
 
   const actionRow = document.createElement('div'); actionRow.className = 'space-y-2';
   const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
@@ -141,7 +130,7 @@ export function renderStudyView(
 
   const candidateCount = deck.entries.filter(e => {
     const w = state.cardWorks[`${user.id}:${e.cardId}`];
-    return cardKnowledge(user, w) < user.masteryThreshold;
+    return !isAvailable(user, w);
   }).length;
   const skipBtn = document.createElement('button'); skipBtn.className = 'btn-ghost py-1.5 text-xs w-full'; skipBtn.textContent = t('study.skip');
   skipBtn.disabled = candidateCount <= 1;

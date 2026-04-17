@@ -11,7 +11,7 @@ function detectLanguage(): Lang {
 
 const DEFAULT_USER: Omit<User, 'id'> = {
   name: 'Moi',
-  masteryThreshold: 0.9,
+  availabilityThreshold: 0.9,
   weightByImportance: true,
 };
 

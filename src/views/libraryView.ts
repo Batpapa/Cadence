@@ -1,9 +1,9 @@
 import type { AppContext, Card } from '../types';
-import { pct, knowledgeColor, trashIcon, focusIfDesktop } from '../utils';
+import { pct, availabilityColor, trashIcon, focusIfDesktop } from '../utils';
 import { confirmModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
-import { cardKnowledge } from '../services/knowledgeService';
+import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 
@@ -133,7 +133,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
     const list = document.createElement('div'); list.className = 'space-y-1';
     for (const card of filtered) {
       const work = state.cardWorks[`${user.id}:${card.id}`];
-      const k = cardKnowledge(user, work);
+      const k = cardAvailability(user, work);
       const deckIds = decksContainingCard(card.id, state);
       const isSelected = selected.has(card.id);
 
@@ -148,7 +148,12 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
         renderList();
       };
 
-      const dot = document.createElement('span'); dot.className = `w-2 h-2 rounded-full shrink-0 ${knowledgeColor(k)}`; dot.title = pct(k);
+      const fsrs = work ? replayFSRS(work.history) : undefined;
+      const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
+      const dotsWrap = document.createElement('span'); dotsWrap.className = 'flex gap-0.5 items-center shrink-0';
+      const dot1 = document.createElement('span'); dot1.className = `w-2 h-2 rounded-full ${availabilityColor(k)}`; dot1.title = `R: ${pct(k)}`;
+      const dot2 = document.createElement('span'); dot2.className = `w-2 h-2 rounded-full ${cardEase === undefined ? 'bg-border' : cardEase >= 0.6 ? 'bg-success' : cardEase >= 0.35 ? 'bg-warn' : 'bg-danger'}`; dot2.title = cardEase !== undefined ? `Ease: ${pct(cardEase)}` : 'Never reviewed';
+      dotsWrap.append(dot1, dot2);
       const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary flex-1 truncate'; nameEl.textContent = card.name;
       const meta = document.createElement('div'); meta.className = 'flex items-center gap-3 shrink-0';
 
@@ -162,7 +167,6 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       }
 
       const impBadge = document.createElement('span'); impBadge.className = 'text-xs font-mono text-dim'; impBadge.textContent = `×${card.importance}`; impBadge.title = t('library.baseImportance');
-      const knBadge = document.createElement('span'); knBadge.className = 'text-xs font-mono text-muted w-10 text-right'; knBadge.textContent = pct(k);
 
       const deckTagsWrap = document.createElement('div'); deckTagsWrap.className = 'hidden group-hover:flex gap-1';
       for (const dId of deckIds.slice(0, 2)) {
@@ -176,8 +180,8 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       }
       if (deckIds.length > 2) { const more = document.createElement('span'); more.className = 'text-xs text-dim'; more.textContent = `+${deckIds.length - 2}`; deckTagsWrap.appendChild(more); }
 
-      meta.append(impBadge, knBadge, deckTagsWrap);
-      row.append(checkbox, dot, nameEl, meta);
+      meta.append(impBadge, deckTagsWrap);
+      row.append(checkbox, dotsWrap, nameEl, meta);
       row.onclick = () => ctx.navigate({ view: 'card', cardId: card.id });
       list.appendChild(row);
     }

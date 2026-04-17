@@ -19,7 +19,7 @@ export function toDateStr(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-export function knowledgeColor(k: number): string {
+export function availabilityColor(k: number): string {
   if (k >= 0.75) return 'bg-success';
   if (k >= 0.4)  return 'bg-warn';
   return 'bg-danger';
@@ -80,7 +80,7 @@ export function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-export function renderKnowledgeBar(
+export function renderAvailabilityBar(
   buckets: [number, number, number, number],
   total: number,
   className: string

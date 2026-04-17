@@ -1,9 +1,9 @@
 import type { AppContext, AppState, User, CardWork } from '../types';
-import { generateId, pct, trashIcon, renderKnowledgeBar, makeInlineEditable, DAY_NAMES_KEYS } from '../utils';
+import { generateId, pct, trashIcon, makeInlineEditable, DAY_NAMES_KEYS } from '../utils';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder } from '../services/deckService';
-import { cardKnowledge, deckKnowledge, deckKnowledgeBuckets } from '../services/knowledgeService';
+import { replayFSRS, fsrsRetrievability, retentionWindowDays } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 
@@ -127,41 +127,6 @@ function renderDashboard(ctx: AppContext): HTMLElement {
   );
   dash.appendChild(statsRow);
 
-  // ── Knowledge distribution ──
-  const buckets = [0, 0, 0, 0];
-  for (const card of allCards) {
-    const w = allWorks[`${user.id}:${card.id}`];
-    const k = cardKnowledge(user, w);
-    buckets[Math.min(3, Math.floor(k * 4))]++;
-  }
-  const total = allCards.length || 1;
-
-  if (allCards.length > 0) {
-    const distBox = document.createElement('div'); distBox.className = 'card-block space-y-2';
-    const distLabel = document.createElement('div'); distLabel.className = 'section-title'; distLabel.textContent = t('dashboard.knowledgeDist');
-
-    const bar = document.createElement('div'); bar.className = 'flex h-3 rounded overflow-hidden';
-    const segments = [
-      { pct: buckets[0]! / total, cls: 'bg-danger',     label: t('dashboard.unknown',  { count: buckets[0]! }) },
-      { pct: buckets[1]! / total, cls: 'bg-warn',       label: t('dashboard.learning', { count: buckets[1]! }) },
-      { pct: buckets[2]! / total, cls: 'bg-success/60', label: t('dashboard.good',     { count: buckets[2]! }) },
-      { pct: buckets[3]! / total, cls: 'bg-success',    label: t('dashboard.mastered', { count: buckets[3]! }) },
-    ];
-    for (const seg of segments) {
-      if (seg.pct === 0) continue;
-      const s = document.createElement('div'); s.className = seg.cls; s.style.width = `${seg.pct * 100}%`; bar.appendChild(s);
-    }
-
-    const legend = document.createElement('div'); legend.className = 'flex gap-3 flex-wrap';
-    for (const seg of segments) {
-      const dot = document.createElement('span'); dot.className = `inline-flex items-center gap-1 text-xs text-dim`;
-      dot.innerHTML = `<span class="w-2 h-2 rounded-full ${seg.cls} inline-block"></span>${seg.label}`;
-      legend.appendChild(dot);
-    }
-    distBox.append(distLabel, bar, legend);
-    dash.appendChild(distBox);
-  }
-
   // ── Activity chart ──
   const actBox = document.createElement('div'); actBox.className = 'card-block space-y-2';
 
@@ -195,33 +160,124 @@ function renderDashboard(ctx: AppContext): HTMLElement {
   actBox.append(actHeader, actChart);
   dash.appendChild(actBox);
 
-  // ── Most neglected decks ──
-  const deckList = Object.values(state.decks)
-    .filter(d => d.entries.length > 0)
-    .map(deck => ({ deck, k: deckKnowledge(user, deck, state.cards, allWorks, user.weightByImportance ?? true) }))
-    .sort((a, b) => a.k - b.k)
-    .slice(0, 3);
-
-  if (deckList.length > 0) {
-    const neglBox = document.createElement('div'); neglBox.className = 'card-block space-y-2';
-    const neglLabel = document.createElement('div'); neglLabel.className = 'section-title'; neglLabel.textContent = t('dashboard.decksToReview');
-    const neglList = document.createElement('div'); neglList.className = 'space-y-1';
-    for (const { deck, k } of deckList) {
-      const row = document.createElement('div');
-      row.className = 'flex items-center gap-2 cursor-pointer hover:bg-bg rounded px-2 py-1 -mx-2 transition-colors';
-      row.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });
-      const { buckets, total } = deckKnowledgeBuckets(user, deck, state.cards, allWorks, user.weightByImportance ?? true);
-      const barWrap = renderKnowledgeBar(buckets, total, 'flex-1 flex h-1.5 rounded overflow-hidden bg-border');
-      const name = document.createElement('span'); name.className = 'text-sm text-primary w-32 truncate shrink-0'; name.textContent = deck.name;
-      const pctEl = document.createElement('span'); pctEl.className = 'text-xs font-mono text-dim shrink-0 w-10 text-right'; pctEl.textContent = pct(k);
-      row.append(name, barWrap, pctEl);
-      neglList.appendChild(row);
-    }
-    neglBox.append(neglLabel, neglList);
-    dash.appendChild(neglBox);
-  }
+  // ── Card map ──
+  const mapBox = document.createElement('div'); mapBox.className = 'card-block space-y-3';
+  const mapLabel = document.createElement('div'); mapLabel.className = 'section-title'; mapLabel.textContent = t('dashboard.cardMap');
+  mapBox.append(mapLabel, renderCardMap(ctx));
+  dash.appendChild(mapBox);
 
   return dash;
+}
+
+function renderCardMap(ctx: AppContext): HTMLElement {
+  const { state } = ctx;
+  const user = getCurrentUser(state);
+
+  const H = 240;
+  const padL = 38, padR = 14, padT = 12, padB = 30;
+
+  const points: Array<{ id: string; name: string; s: number; ease: number; k: number; imp: number }> = [];
+  for (const card of Object.values(state.cards)) {
+    const work = state.cardWorks[`${user.id}:${card.id}`];
+    if (!work || work.history.length === 0) continue;
+    const fsrs = replayFSRS(work.history);
+    if (!fsrs) continue;
+    const ease = (10 - fsrs.difficulty) / 9;
+    const elapsedDays = (Date.now() - fsrs.lastTs) / 86400000;
+    const k = fsrsRetrievability(elapsedDays, fsrs.stability);
+    const retWindow = retentionWindowDays(fsrs.stability, user.availabilityThreshold);
+    points.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.importance });
+  }
+
+  const wrap = document.createElement('div'); wrap.className = 'space-y-2';
+
+  if (points.length === 0) {
+    const empty = document.createElement('p'); empty.className = 'text-xs text-dim italic text-center py-4';
+    empty.textContent = t('card.neverReviewed');
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const mkEl = (tag: string, attrs: Record<string, string>) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  };
+  const mkText = (x: number, y: number, content: string, anchor: string, size = '8') => {
+    const el = mkEl('text', { x: String(x), y: String(y), 'text-anchor': anchor, 'font-size': size, fill: '#555555', 'font-family': 'IBM Plex Mono, monospace' });
+    el.textContent = content;
+    return el;
+  };
+
+  const rScale = (imp: number) => Math.max(1, Math.min(10, Math.log10(Math.max(1, imp))));
+  const dotColor = (k: number): string => k >= 0.75 ? '#4ade80' : k >= 0.4 ? '#fbbf24' : '#f87171';
+  const xTicks: Array<{ val: number; label: string }> = [
+    { val: 1, label: t('dashboard.period.1d') }, { val: 7, label: t('dashboard.period.7d') },
+    { val: 30, label: t('dashboard.period.30d') }, { val: 180, label: t('dashboard.period.6mo') }, { val: 365, label: t('dashboard.period.1y') },
+  ];
+
+  const buildSvg = (W: number): Element => {
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const xMin = 0.5, xMax = 730;
+    const logXMin = Math.log(xMin), logXMax = Math.log(xMax);
+    const xScale = (s: number) => padL + (Math.log(Math.max(xMin, Math.min(xMax, s))) - logXMin) / (logXMax - logXMin) * plotW;
+    const yScale = (e: number) => padT + plotH * (1 - Math.max(0, Math.min(1, e)));
+
+    const svg = mkEl('svg', { width: String(W), height: String(H) });
+    (svg as SVGElement & { style: CSSStyleDeclaration }).style.display = 'block';
+
+    for (const tick of [0, 0.25, 0.5, 0.75, 1.0]) {
+      const y = yScale(tick);
+      svg.appendChild(mkEl('line', { x1: String(padL), x2: String(W - padR), y1: String(y), y2: String(y), stroke: '#252525', 'stroke-width': '1' }));
+      svg.appendChild(mkText(padL - 5, y + 3.5, `${Math.round(tick * 100)}%`, 'end'));
+    }
+
+    for (const { val, label } of xTicks) {
+      const x = xScale(val);
+      svg.appendChild(mkEl('line', { x1: String(x), x2: String(x), y1: String(padT), y2: String(padT + plotH), stroke: '#252525', 'stroke-width': '1' }));
+      svg.appendChild(mkText(x, H - padB + 12, label, 'middle'));
+    }
+
+    svg.appendChild(mkEl('rect', { x: String(padL), y: String(padT), width: String(plotW), height: String(plotH), fill: 'none', stroke: '#333333', 'stroke-width': '1' }));
+
+    for (const pt of [...points].sort((a, b) => b.imp - a.imp)) {
+      const color = dotColor(pt.k);
+      const circle = mkEl('circle', {
+        cx: String(xScale(pt.s)), cy: String(yScale(pt.ease)), r: String(rScale(pt.imp)),
+        fill: color, 'fill-opacity': '0.7', stroke: color, 'stroke-opacity': '0.35', 'stroke-width': '1.5',
+      });
+      (circle as SVGElement & { style: CSSStyleDeclaration }).style.cursor = 'pointer';
+      const title = document.createElementNS(ns, 'title'); title.textContent = pt.name;
+      circle.appendChild(title);
+      circle.addEventListener('click', () => ctx.navigate({ view: 'card', cardId: pt.id }));
+      svg.appendChild(circle);
+    }
+
+    svg.appendChild(mkText(padL + plotW / 2, H - 2, t('deck.section.stability'), 'middle', '7.5'));
+    const yAxisLabel = mkEl('text', { x: '0', y: '0', 'text-anchor': 'middle', 'font-size': '7.5', fill: '#555555', 'font-family': 'IBM Plex Mono, monospace', transform: `rotate(-90) translate(${-(padT + plotH / 2)}, 9)` });
+    yAxisLabel.textContent = t('deck.section.ease');
+    svg.appendChild(yAxisLabel);
+
+    return svg;
+  };
+
+  const svgWrap = document.createElement('div');
+  let currentSvg: Element | null = null;
+  const obs = new ResizeObserver(entries => {
+    requestAnimationFrame(() => {
+      const w = Math.floor(entries[0].contentRect.width);
+      if (w <= 0) return;
+      const newSvg = buildSvg(w);
+      if (currentSvg) svgWrap.replaceChild(newSvg, currentSvg);
+      else svgWrap.appendChild(newSvg);
+      currentSvg = newSvg;
+    });
+  });
+  obs.observe(svgWrap);
+  wrap.appendChild(svgWrap);
+
+  return wrap;
 }
 
 // ── Folder view ───────────────────────────────────────────────────────────────

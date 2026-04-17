@@ -1,9 +1,8 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
-import { generateId, emptyState, renderKnowledgeBar, helpIcon, addTouchDragSupport } from '../utils';
+import { generateId, emptyState, helpIcon, addTouchDragSupport } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from './modal';
 import { getCurrentUser, updateUser, ensureCurrentUser } from '../services/userService';
 import { findParentFolder } from '../services/deckService';
-import { deckKnowledgeBuckets } from '../services/knowledgeService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { exportFull, exportContent, parseImport } from '../services/importExport';
@@ -204,11 +203,7 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   const icon = document.createElement('span'); icon.className = 'text-xs opacity-60 shrink-0'; icon.textContent = '▪';
   const name = document.createElement('span'); name.className = 'truncate flex-1'; name.textContent = deck.name;
 
-  const user = getCurrentUser(ctx.state);
-  const { buckets, total } = deckKnowledgeBuckets(user, deck, ctx.state.cards, ctx.state.cardWorks, user.weightByImportance ?? true);
-  const miniBar = renderKnowledgeBar(buckets, total, 'flex h-1 w-10 rounded overflow-hidden shrink-0 opacity-60 group-hover:opacity-100 transition-opacity bg-border');
-
-  el.append(icon, name, miniBar);
+  el.append(icon, name);
   el.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });
 
   addDragHandlers(el, 'deck', deck.id, false, ctx);
@@ -296,9 +291,9 @@ function showSettingsModal(ctx: AppContext): void {
 
   const nameInp = mkField(t('settings.name'), '', inp => { inp.type = 'text'; inp.value = user.name; });
   const mastInp = mkField(
-    t('settings.masteryThreshold'),
-    t('settings.masteryThresholdHint'),
-    inp => { inp.type = 'number'; inp.min = '0'; inp.max = '100'; inp.step = '1'; inp.value = String(Math.round(user.masteryThreshold * 100)); }
+    t('settings.availabilityThreshold'),
+    t('settings.availabilityThresholdHint'),
+    inp => { inp.type = 'number'; inp.min = '0'; inp.max = '100'; inp.step = '1'; inp.value = String(Math.round(user.availabilityThreshold * 100)); }
   );
 
   const weightWrap = document.createElement('div'); weightWrap.className = 'space-y-1';
@@ -498,10 +493,10 @@ function showSettingsModal(ctx: AppContext): void {
     const pct = parseFloat(mastInp.value);
     if (!isNaN(pct) && pct >= 0 && pct <= 100) {
       mastInp.classList.remove('border-danger');
-      saveField({ masteryThreshold: pct / 100 });
+      saveField({ availabilityThreshold: pct / 100 });
     } else {
       mastInp.classList.add('border-danger');
-      mastInp.value = String(Math.round(user.masteryThreshold * 100));
+      mastInp.value = String(Math.round(user.availabilityThreshold * 100));
       mastInp.classList.remove('border-danger');
     }
   });

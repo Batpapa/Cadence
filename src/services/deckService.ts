@@ -1,6 +1,6 @@
 import type { User, Card, Deck, DeckEntry, CardWork, AppState } from '../types';
 import {
-  cardGain, effectiveImportance, totalDeckImportance, isMastered,
+  cardGain, effectiveImportance, totalDeckImportance, isAvailable,
 } from './knowledgeService';
 
 // ── Picking strategies ────────────────────────────────────────────────────────
@@ -13,7 +13,7 @@ function candidateEntries(
 ): DeckEntry[] {
   return deck.entries.filter(entry => {
     const work = cardWorks[`${user.id}:${entry.cardId}`];
-    return !isMastered(user, work);
+    return !isAvailable(user, work);
   });
 }
 

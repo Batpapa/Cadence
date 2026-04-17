@@ -42,7 +42,7 @@ export interface Deck {
 export interface User {
   id: string;
   name: string;
-  masteryThreshold: number;    // default: 0.9 — cards above this R are excluded from study
+  availabilityThreshold: number; // default: 0.9 — cards above this R are excluded from study
   weightByImportance: boolean; // default: true — weight deck knowledge bars by card importance
   language?: 'en' | 'fr';     // default: 'en'
 }

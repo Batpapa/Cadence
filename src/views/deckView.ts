@@ -1,12 +1,13 @@
 import type { AppContext, Card, DeckEntry } from '../types';
-import { pct, timeAgo, knowledgeColor, trashIcon, renderKnowledgeBar, makeInlineEditable, unlinkIcon, addTouchDragSupport, focusIfDesktop } from '../utils';
+import { pct, timeAgo, availabilityColor, trashIcon, renderAvailabilityBar, makeInlineEditable, unlinkIcon, addTouchDragSupport, focusIfDesktop } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { findParentFolder, decksContainingCard } from '../services/deckService';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import {
-  deckKnowledge, cardKnowledge, effectiveImportance,
-  mostUrgentEntry, totalDeckImportance, isMastered, deckKnowledgeBuckets,
+  deckAvailability, cardAvailability, effectiveImportance,
+  mostUrgentEntry, totalDeckImportance, isAvailable,
+  deckStability, deckEase, replayFSRS, retentionWindowDays,
 } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
@@ -22,7 +23,6 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   const user = getCurrentUser(state);
   const w = user.weightByImportance ?? true;
-  const dk = deckKnowledge(user, deck, state.cards, state.cardWorks, w);
   const urgent = mostUrgentEntry(user, deck, state.cards, state.cardWorks, w);
 
   // ── Header ──
@@ -55,40 +55,38 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   // ── Metrics ──
   const metricsRow = document.createElement('div'); metricsRow.className = 'grid grid-cols-3 gap-3';
 
-  const knBox = document.createElement('div'); knBox.className = 'card-block space-y-2';
-  const knLabel = document.createElement('div'); knLabel.className = 'section-title'; knLabel.textContent = t('deck.section.knowledge');
-  const knVal = document.createElement('div'); knVal.className = 'text-2xl font-mono font-semibold text-primary'; knVal.textContent = pct(dk);
-  const { buckets: knBuckets, total: knTotal } = deckKnowledgeBuckets(user, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
-  const knBar = renderKnowledgeBar(knBuckets, knTotal, 'flex h-1.5 rounded overflow-hidden bg-border');
-  knBox.append(knLabel, knVal, knBar);
+  // Availability
+  const avail = deckAvailability(user, deck, state.cards, state.cardWorks, w);
+  const availColor = avail >= 0.75 ? 'text-success' : avail >= 0.4 ? 'text-warn' : avail > 0 ? 'text-danger' : 'text-primary';
+  const availBox = document.createElement('div'); availBox.className = 'card-block space-y-2';
+  const availLabel = document.createElement('div'); availLabel.className = 'section-title'; availLabel.textContent = t('deck.section.availability');
+  const availVal = document.createElement('div'); availVal.className = `text-2xl font-mono font-semibold ${availColor}`; availVal.textContent = pct(avail);
+  availBox.append(availLabel, availVal);
 
-  const masteredCount = deck.entries.filter(e => isMastered(user, state.cardWorks[`${user.id}:${e.cardId}`])).length;
-  const totalCount = deck.entries.length;
-  const mastBox = document.createElement('div'); mastBox.className = 'card-block space-y-2';
-  const mastLabel = document.createElement('div'); mastLabel.className = 'section-title'; mastLabel.textContent = t('deck.section.mastered');
-  const mastVal = document.createElement('div'); mastVal.className = 'text-2xl font-mono font-semibold text-primary';
-  mastVal.textContent = totalCount > 0 ? `${masteredCount} / ${totalCount}` : '—';
-  const mastBar = document.createElement('div'); mastBar.className = 'knowledge-bar';
-  const mastFill = document.createElement('div'); mastFill.className = 'knowledge-fill bg-success';
-  mastFill.style.width = totalCount > 0 ? `${Math.round((masteredCount / totalCount) * 100)}%` : '0%';
-  mastBar.appendChild(mastFill); mastBox.append(mastLabel, mastVal, mastBar);
+  // Stability
+  const stab = deckStability(user, deck, state.cards, state.cardWorks, w);
+  const stabWindow = stab > 0 ? retentionWindowDays(stab, user.availabilityThreshold) : 0;
+  const formatDays = (d: number) => d >= 365 ? `${(d / 365).toFixed(1)}y` : d >= 30 ? `${Math.round(d / 30)}mo` : d >= 1 ? `${Math.round(d)}d` : '<1d';
+  const stabBox = document.createElement('div'); stabBox.className = 'card-block space-y-2';
+  const stabLabel = document.createElement('div'); stabLabel.className = 'section-title'; stabLabel.textContent = t('deck.section.stability');
+  const stabVal = document.createElement('div'); stabVal.className = 'text-2xl font-mono font-semibold text-primary'; stabVal.textContent = stabWindow > 0 ? formatDays(stabWindow) : '—';
+  stabBox.append(stabLabel, stabVal);
 
-  const urgCard = urgent ? state.cards[urgent.cardId] : null;
-  const urgWork = urgent ? state.cardWorks[`${user.id}:${urgent.cardId}`] : undefined;
-  const urgBox = document.createElement('div'); urgBox.className = 'card-block space-y-1 cursor-pointer hover:border-accent/40 transition-colors';
-  if (urgCard) urgBox.onclick = () => ctx.navigate({ view: 'card', cardId: urgCard.id });
-  const urgLabel = document.createElement('div'); urgLabel.className = 'section-title'; urgLabel.textContent = t('deck.section.mostUrgent');
-  const urgName = document.createElement('div'); urgName.className = 'text-sm text-primary truncate font-medium'; urgName.textContent = urgCard?.name ?? '—';
-  const urgKn = document.createElement('div'); urgKn.className = 'text-xs font-mono text-muted'; urgKn.textContent = urgCard ? pct(cardKnowledge(user, urgWork)) : '';
-  urgBox.append(urgLabel, urgName, urgKn);
+  // Ease
+  const ease = deckEase(user, deck, state.cards, state.cardWorks, w);
+  const easeColor = ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : ease > 0 ? 'text-danger' : 'text-primary';
+  const easeBox = document.createElement('div'); easeBox.className = 'card-block space-y-2';
+  const easeLabel = document.createElement('div'); easeLabel.className = 'section-title'; easeLabel.textContent = t('deck.section.ease');
+  const easeVal = document.createElement('div'); easeVal.className = `text-2xl font-mono font-semibold ${easeColor}`; easeVal.textContent = ease > 0 ? pct(ease) : '—';
+  easeBox.append(easeLabel, easeVal);
 
-  metricsRow.append(knBox, mastBox, urgBox);
+  metricsRow.append(availBox, stabBox, easeBox);
   wrap.appendChild(metricsRow);
 
   // ── Study button ──
   const candidateCount = deck.entries.filter(e => {
     const w = state.cardWorks[`${user.id}:${e.cardId}`];
-    return cardKnowledge(user, w) < user.masteryThreshold;
+    return !isAvailable(user, w);
   }).length;
 
   const studyBtn = document.createElement('button');
@@ -97,7 +95,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   studyBtn.className = (noCards || allMastered)
     ? 'btn w-full py-3 text-base font-semibold bg-elevated text-dim cursor-default'
     : 'btn-primary w-full py-3 text-base font-semibold';
-  studyBtn.textContent = noCards ? t('deck.noCards') : allMastered ? t('deck.allMastered') : t('deck.study');
+  studyBtn.textContent = noCards ? t('deck.noCards') : allMastered ? t('deck.allAvailable') : t('deck.study');
   if (!noCards && !allMastered) {
     studyBtn.onclick = () => showStrategyModal(ctx, deckId);
   }
@@ -138,7 +136,9 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
     for (const entry of deck.entries) {
       const card = state.cards[entry.cardId]; if (!card) continue;
       const work = state.cardWorks[`${user.id}:${entry.cardId}`];
-      const k = cardKnowledge(user, work);
+      const k = cardAvailability(user, work);
+      const fsrs = work ? replayFSRS(work.history) : undefined;
+      const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
       const imp = effectiveImportance(card, entry);
       const lastTs = work?.history.at(-1)?.ts;
 
@@ -150,9 +150,10 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
       handle.className = 'text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity';
       handle.textContent = '⠿';
 
-      const dot = document.createElement('span');
-      dot.className = `w-2 h-2 rounded-full shrink-0 ${knowledgeColor(k)}`;
-      dot.title = pct(k);
+      const dotsWrap = document.createElement('span'); dotsWrap.className = 'flex gap-0.5 items-center shrink-0';
+      const dot1 = document.createElement('span'); dot1.className = `w-2 h-2 rounded-full ${availabilityColor(k)}`; dot1.title = `R: ${pct(k)}`;
+      const dot2 = document.createElement('span'); dot2.className = `w-2 h-2 rounded-full ${cardEase === undefined ? 'bg-border' : cardEase >= 0.6 ? 'bg-success' : cardEase >= 0.35 ? 'bg-warn' : 'bg-danger'}`; dot2.title = cardEase !== undefined ? `Ease: ${pct(cardEase)}` : 'Never reviewed';
+      dotsWrap.append(dot1, dot2);
 
       const name = document.createElement('span');
       name.className = 'text-sm text-primary flex-1 truncate cursor-pointer hover:text-accent';
@@ -177,7 +178,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
       unlinkBtn.onclick = () => { ctx.mutate(s => { s.decks[deckId]!.entries = s.decks[deckId]!.entries.filter(e => e.cardId !== card.id); }); };
 
       rowActions.append(unlinkBtn);
-      row.append(handle, dot, name, meta, impBadge, rowActions);
+      row.append(handle, dotsWrap, name, meta, impBadge, rowActions);
 
       const cardId = card.id;
       row.addEventListener('dragstart', (e) => {
