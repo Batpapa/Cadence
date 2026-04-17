@@ -154,3 +154,82 @@ export function trashIcon(size = 14): SVGSVGElement {
   return svg;
 }
 
+// ── Touch drag & drop support ─────────────────────────────────────────────────
+// Translates touchstart/touchmove/touchend into synthetic DragEvents so that
+// existing dragstart/dragover/drop handlers work on mobile without changes.
+
+export function addTouchDragSupport(el: HTMLElement): void {
+  const LONG_PRESS_MS = 250;
+  const MOVE_CANCEL_PX = 8;
+
+  let pressTimer: ReturnType<typeof setTimeout> | null = null;
+  let startX = 0, startY = 0;
+  let dragging = false;
+  let ghost: HTMLElement | null = null;
+  let lastDragTarget: Element | null = null;
+
+  const dispatchDrag = (type: string, target: Element, clientX: number, clientY: number) =>
+    target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX, clientY }));
+
+  const activate = (touch: Touch) => {
+    dragging = true;
+    dispatchDrag('dragstart', el, touch.clientX, touch.clientY);
+    const rect = el.getBoundingClientRect();
+    ghost = el.cloneNode(true) as HTMLElement;
+    Object.assign(ghost.style, {
+      position: 'fixed', pointerEvents: 'none', zIndex: '9999',
+      opacity: '0.75', margin: '0', boxSizing: 'border-box',
+      width: rect.width + 'px', height: rect.height + 'px',
+      left: rect.left + 'px', top: rect.top + 'px',
+    });
+    document.body.appendChild(ghost);
+  };
+
+  const cleanup = () => {
+    ghost?.remove(); ghost = null;
+    dragging = false; lastDragTarget = null;
+  };
+
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0]!;
+    startX = touch.clientX; startY = touch.clientY;
+    pressTimer = setTimeout(() => activate(touch), LONG_PRESS_MS);
+  }, { passive: true });
+
+  el.addEventListener('touchmove', (e) => {
+    const touch = e.touches[0]!;
+    if (!dragging) {
+      if (Math.hypot(touch.clientX - startX, touch.clientY - startY) > MOVE_CANCEL_PX) {
+        clearTimeout(pressTimer!); pressTimer = null;
+      }
+      return;
+    }
+    e.preventDefault();
+    if (ghost) {
+      ghost.style.left = touch.clientX - el.offsetWidth / 2 + 'px';
+      ghost.style.top  = touch.clientY - el.offsetHeight / 2 + 'px';
+      ghost.style.visibility = 'hidden';
+    }
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (ghost) ghost.style.visibility = '';
+    if (target !== lastDragTarget) {
+      if (lastDragTarget) dispatchDrag('dragleave', lastDragTarget, touch.clientX, touch.clientY);
+      lastDragTarget = target;
+    }
+    if (target) dispatchDrag('dragover', target, touch.clientX, touch.clientY);
+  }, { passive: false });
+
+  const endDrag = (clientX: number, clientY: number) => {
+    clearTimeout(pressTimer!); pressTimer = null;
+    if (!dragging) return;
+    if (ghost) ghost.style.visibility = 'hidden';
+    const target = document.elementFromPoint(clientX, clientY);
+    cleanup();
+    if (target) dispatchDrag('drop', target, clientX, clientY);
+    dispatchDrag('dragend', el, clientX, clientY);
+  };
+
+  el.addEventListener('touchend',    (e) => { const tc = e.changedTouches[0]!; endDrag(tc.clientX, tc.clientY); });
+  el.addEventListener('touchcancel', (e) => { const tc = e.changedTouches[0]!; endDrag(tc.clientX, tc.clientY); });
+}

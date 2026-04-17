@@ -1,5 +1,5 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
-import { generateId, emptyState, renderKnowledgeBar, helpIcon } from '../utils';
+import { generateId, emptyState, renderKnowledgeBar, helpIcon, addTouchDragSupport } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from './modal';
 import { getCurrentUser, updateUser, ensureCurrentUser } from '../services/userService';
 import { findParentFolder } from '../services/deckService';
@@ -209,6 +209,7 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   el.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });
 
   addDragHandlers(el, 'deck', deck.id, false, ctx);
+  addTouchDragSupport(el);
   return el;
 }
 
@@ -246,6 +247,7 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
   row.onclick = () => ctx.navigate({ view: 'folder', folderId: folder.id });
 
   addDragHandlers(row, 'folder', folder.id, true, ctx);
+  addTouchDragSupport(row);
 
   wrap.appendChild(row);
 

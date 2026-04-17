@@ -1,5 +1,5 @@
 import type { AppContext, Card, DeckEntry } from '../types';
-import { pct, timeAgo, knowledgeColor, trashIcon, renderKnowledgeBar, makeInlineEditable, unlinkIcon } from '../utils';
+import { pct, timeAgo, knowledgeColor, trashIcon, renderKnowledgeBar, makeInlineEditable, unlinkIcon, addTouchDragSupport } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { findParentFolder, decksContainingCard } from '../services/deckService';
@@ -222,6 +222,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
           entries.splice(before ? to : to + 1, 0, moved);
         });
       });
+      addTouchDragSupport(row);
 
       list.appendChild(row);
     }
