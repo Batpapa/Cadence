@@ -13,6 +13,7 @@ import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, di
 import type { Lang } from '../services/i18nService';
 
 const expanded = new Set<string>();
+let driveStatusUnsub: (() => void) | null = null;
 
 // ── Drag & Drop state ─────────────────────────────────────────────────────────
 
@@ -600,8 +601,9 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
       }
     };
 
+    if (driveStatusUnsub) { driveStatusUnsub(); driveStatusUnsub = null; }
     applyStatus(driveStatus);
-    const unsub = onStatusChange((s) => { if (!syncBtn.isConnected) { unsub(); return; } applyStatus(s); });
+    driveStatusUnsub = onStatusChange(applyStatus);
     iconGroup.appendChild(syncBtn);
   }
 
