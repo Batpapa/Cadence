@@ -9,13 +9,14 @@ const LS_FILE_ID = 'cadence_drive_file_id';
 const LS_CONNECTED = 'cadence_drive_connected';
 const LS_LOCAL_TS = 'cadence_local_modified';
 const LS_HINT = 'cadence_drive_hint';
+const SS_TOKEN = 'cadence_access_token';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Gis = any;
 
 let tokenClient: Gis = null;
 let driveReady: Promise<void> | null = null;
-let accessToken: string | null = null;
+let accessToken: string | null = sessionStorage.getItem(SS_TOKEN);
 let fileId: string | null = localStorage.getItem(LS_FILE_ID);
 let status: DriveStatus = localStorage.getItem(LS_CONNECTED) === '1' ? 'connected' : 'disconnected';
 const listeners: Array<(s: DriveStatus) => void> = [];
@@ -80,6 +81,7 @@ function requestToken(prompt = ''): Promise<string> {
       cleanup();
       if (resp.error) { reject(new Error(resp.error_description ?? resp.error)); return; }
       accessToken = resp.access_token as string;
+      sessionStorage.setItem(SS_TOKEN, accessToken);
       resolve(accessToken);
     };
     tokenClient.error_callback = (err: Gis) => {
@@ -103,7 +105,7 @@ async function driveRequest(url: string, options: RequestInit = {}): Promise<Res
     headers: { ...(options.headers as Record<string, string> ?? {}), Authorization: `Bearer ${tok}` },
   });
   const resp = await doFetch(await getToken());
-  if (resp.status === 401) { accessToken = null; return doFetch(await requestToken('')); }
+  if (resp.status === 401) { accessToken = null; sessionStorage.removeItem(SS_TOKEN); return doFetch(await requestToken('')); }
   return resp;
 }
 
@@ -149,6 +151,7 @@ export function disconnectDrive(): void {
   if (accessToken) {
     (window as Gis).google?.accounts?.oauth2?.revoke(accessToken, () => {});
     accessToken = null;
+    sessionStorage.removeItem(SS_TOKEN);
   }
   fileId = null;
   localStorage.removeItem(LS_FILE_ID);
