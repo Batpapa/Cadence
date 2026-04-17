@@ -1,10 +1,11 @@
 import type { AppContext, AppState, User, CardWork } from '../types';
-import { generateId, pct, timeAgo, trashIcon, renderKnowledgeBar, makeInlineEditable } from '../utils';
+import { generateId, pct, trashIcon, renderKnowledgeBar, makeInlineEditable, DAY_NAMES_KEYS } from '../utils';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder } from '../services/deckService';
 import { cardKnowledge, deckKnowledge, deckKnowledgeBuckets } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
+import { t } from '../services/i18nService';
 
 // ── Dashboard helpers ─────────────────────────────────────────────────────────
 
@@ -15,7 +16,6 @@ function studyStreak(works: Record<string, CardWork>): number {
   }
   let streak = 0;
   const d = new Date();
-  // Allow today OR yesterday as the most recent active day (so streak survives the morning)
   if (!days.has(d.toDateString())) { d.setDate(d.getDate() - 1); }
   while (days.has(d.toDateString())) { streak++; d.setDate(d.getDate() - 1); }
   return streak;
@@ -46,7 +46,6 @@ function sessionsLastNWeeks(works: Record<string, CardWork>, n: number): number[
 }
 
 type ActivityPeriod = '7d' | '30d' | '1y';
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function renderActivityBars(works: Record<string, CardWork>, period: ActivityPeriod): HTMLElement {
   const row = document.createElement('div');
@@ -62,8 +61,8 @@ function renderActivityBars(works: Record<string, CardWork>, period: ActivityPer
       const fill = document.createElement('div');
       fill.className = `rounded-sm w-full ${count === 0 ? 'bg-border' : 'bg-accent'}`;
       fill.style.height = `${Math.max(4, Math.round((count / max) * 40))}px`;
-      fill.title = `${count} session${count !== 1 ? 's' : ''}`;
-      const lbl = document.createElement('div'); lbl.className = 'text-[9px] text-dim'; lbl.textContent = DAY_NAMES[d.getDay()]!;
+      fill.title = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
+      const lbl = document.createElement('div'); lbl.className = 'text-[9px] text-dim'; lbl.textContent = t(DAY_NAMES_KEYS[d.getDay()]!);
       col.append(fill, lbl); row.appendChild(col);
     }
   } else if (period === '30d') {
@@ -71,12 +70,11 @@ function renderActivityBars(works: Record<string, CardWork>, period: ActivityPer
     const max = Math.max(...data, 1);
     for (let i = 0; i < 30; i++) {
       const count = data[i] ?? 0;
-      const d = new Date(); d.setDate(d.getDate() - (29 - i));
       const col = document.createElement('div'); col.className = 'flex flex-col items-center gap-1 flex-1';
       const fill = document.createElement('div');
       fill.className = `rounded-sm w-full ${count === 0 ? 'bg-border' : 'bg-accent'}`;
       fill.style.height = `${Math.max(4, Math.round((count / max) * 40))}px`;
-      fill.title = `${count} session${count !== 1 ? 's' : ''}`;
+      fill.title = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
       col.appendChild(fill); row.appendChild(col);
     }
   } else {
@@ -84,12 +82,11 @@ function renderActivityBars(works: Record<string, CardWork>, period: ActivityPer
     const max = Math.max(...data, 1);
     for (let i = 0; i < 52; i++) {
       const count = data[i] ?? 0;
-      const d = new Date(); d.setDate(d.getDate() - (51 - i) * 7);
       const col = document.createElement('div'); col.className = 'flex flex-col items-center gap-1 flex-1';
       const fill = document.createElement('div');
       fill.className = `rounded-sm w-full ${count === 0 ? 'bg-border' : 'bg-accent'}`;
       fill.style.height = `${Math.max(2, Math.round((count / max) * 40))}px`;
-      fill.title = `${count} session${count !== 1 ? 's' : ''}`;
+      fill.title = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
       col.appendChild(fill); row.appendChild(col);
     }
   }
@@ -112,6 +109,7 @@ function renderDashboard(ctx: AppContext): HTMLElement {
   const totalSessions = Object.values(allWorks).reduce((sum, w) => sum + w.history.length, 0);
   const sessionsThisWeek = sessionsLastNDays(allWorks, 7).reduce((a, b) => a + b, 0);
   const streak = studyStreak(allWorks);
+  const deckCount = Object.keys(state.decks).length;
 
   const mkStat = (label: string, value: string, sub?: string) => {
     const box = document.createElement('div'); box.className = 'card-block space-y-0.5';
@@ -123,14 +121,14 @@ function renderDashboard(ctx: AppContext): HTMLElement {
   };
 
   statsRow.append(
-    mkStat('Cards', String(allCards.length), `${Object.keys(state.decks).length} deck${Object.keys(state.decks).length !== 1 ? 's' : ''}`),
-    mkStat('This week', String(sessionsThisWeek), `${totalSessions} total sessions`),
-    mkStat('Streak', `${streak}d`, streak > 0 ? 'keep it up!' : 'start today'),
+    mkStat(t('dashboard.cards'), String(allCards.length), t(deckCount !== 1 ? 'dashboard.decks' : 'dashboard.deck', { count: deckCount })),
+    mkStat(t('dashboard.thisWeek'), String(sessionsThisWeek), t('dashboard.totalSessions', { count: totalSessions })),
+    mkStat(t('dashboard.streak'), `${streak}d`, streak > 0 ? t('dashboard.streakKeep') : t('dashboard.streakStart')),
   );
   dash.appendChild(statsRow);
 
   // ── Knowledge distribution ──
-  const buckets = [0, 0, 0, 0]; // 0-25, 25-50, 50-75, 75-100
+  const buckets = [0, 0, 0, 0];
   for (const card of allCards) {
     const w = allWorks[`${user.id}:${card.id}`];
     const k = cardKnowledge(user, w);
@@ -140,14 +138,14 @@ function renderDashboard(ctx: AppContext): HTMLElement {
 
   if (allCards.length > 0) {
     const distBox = document.createElement('div'); distBox.className = 'card-block space-y-2';
-    const distLabel = document.createElement('div'); distLabel.className = 'section-title'; distLabel.textContent = 'Knowledge distribution';
+    const distLabel = document.createElement('div'); distLabel.className = 'section-title'; distLabel.textContent = t('dashboard.knowledgeDist');
 
     const bar = document.createElement('div'); bar.className = 'flex h-3 rounded overflow-hidden';
     const segments = [
-      { pct: buckets[0]! / total, cls: 'bg-danger', label: `${buckets[0]} unknown` },
-      { pct: buckets[1]! / total, cls: 'bg-warn',   label: `${buckets[1]} learning` },
-      { pct: buckets[2]! / total, cls: 'bg-success/60', label: `${buckets[2]} good` },
-      { pct: buckets[3]! / total, cls: 'bg-success', label: `${buckets[3]} mastered` },
+      { pct: buckets[0]! / total, cls: 'bg-danger',     label: t('dashboard.unknown',  { count: buckets[0]! }) },
+      { pct: buckets[1]! / total, cls: 'bg-warn',       label: t('dashboard.learning', { count: buckets[1]! }) },
+      { pct: buckets[2]! / total, cls: 'bg-success/60', label: t('dashboard.good',     { count: buckets[2]! }) },
+      { pct: buckets[3]! / total, cls: 'bg-success',    label: t('dashboard.mastered', { count: buckets[3]! }) },
     ];
     for (const seg of segments) {
       if (seg.pct === 0) continue;
@@ -168,7 +166,7 @@ function renderDashboard(ctx: AppContext): HTMLElement {
   const actBox = document.createElement('div'); actBox.className = 'card-block space-y-2';
 
   const actHeader = document.createElement('div'); actHeader.className = 'flex items-center justify-between';
-  const actLabel = document.createElement('div'); actLabel.className = 'section-title'; actLabel.textContent = 'Activity';
+  const actLabel = document.createElement('div'); actLabel.className = 'section-title'; actLabel.textContent = t('dashboard.activity');
 
   let actPeriod: ActivityPeriod = '7d';
   const periodBtns = document.createElement('div'); periodBtns.className = 'flex gap-1';
@@ -190,7 +188,7 @@ function renderDashboard(ctx: AppContext): HTMLElement {
     return btn;
   };
 
-  periodBtns.append(mkPeriodBtn('7d', '7d'), mkPeriodBtn('30d', '1m'), mkPeriodBtn('1y', '1y'));
+  periodBtns.append(mkPeriodBtn('7d', t('dashboard.period.7d')), mkPeriodBtn('30d', t('dashboard.period.30d')), mkPeriodBtn('1y', t('dashboard.period.1y')));
   actHeader.append(actLabel, periodBtns);
 
   let actChart = renderActivityBars(allWorks, actPeriod);
@@ -206,7 +204,7 @@ function renderDashboard(ctx: AppContext): HTMLElement {
 
   if (deckList.length > 0) {
     const neglBox = document.createElement('div'); neglBox.className = 'card-block space-y-2';
-    const neglLabel = document.createElement('div'); neglLabel.className = 'section-title'; neglLabel.textContent = 'Decks to review';
+    const neglLabel = document.createElement('div'); neglLabel.className = 'section-title'; neglLabel.textContent = t('dashboard.decksToReview');
     const neglList = document.createElement('div'); neglList.className = 'space-y-1';
     for (const { deck, k } of deckList) {
       const row = document.createElement('div');
@@ -241,7 +239,7 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
 
   const titleWrap = document.createElement('div');
   const title = document.createElement('h1');
-  title.textContent = folder ? folder.name : 'Home';
+  title.textContent = folder ? folder.name : t('folder.title.home');
   titleWrap.appendChild(title);
 
   const headerActions = document.createElement('div');
@@ -250,8 +248,8 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
   if (folder) {
     makeInlineEditable(title, folder.name, val => ctx.mutate(s => { s.folders[folderId!]!.name = val; }));
 
-    const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = 'Delete folder'; deleteBtn.appendChild(trashIcon());
-    deleteBtn.onclick = () => confirmModal('Delete Folder', `Delete "${folder.name}" and all its contents?`, 'Delete', () => {
+    const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = t('folder.deleteFolder'); deleteBtn.appendChild(trashIcon());
+    deleteBtn.onclick = () => confirmModal(t('folder.delete.title'), t('folder.delete.message', { name: folder.name }), t('common.delete'), () => {
       const parent = findParentFolder(folderId!, 'folder', state);
       ctx.mutate(s => { deleteFolderRecursive(s, folderId!); });
       ctx.navigate({ view: 'folder', folderId: parent });
@@ -277,10 +275,10 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
   const foldersHeader = document.createElement('div');
   foldersHeader.className = 'flex items-center justify-between';
   const foldersTitle = document.createElement('span');
-  foldersTitle.className = 'section-title'; foldersTitle.textContent = 'Folders';
+  foldersTitle.className = 'section-title'; foldersTitle.textContent = t('folder.section.folders');
   const addFolderBtn = document.createElement('button');
-  addFolderBtn.className = 'btn-ghost text-xs'; addFolderBtn.textContent = '+ New folder';
-  addFolderBtn.onclick = () => promptModal('New Folder', 'Name', '', name => {
+  addFolderBtn.className = 'btn-ghost text-xs'; addFolderBtn.textContent = t('folder.newFolder');
+  addFolderBtn.onclick = () => promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
     ctx.mutate(s => {
       const id = generateId();
       s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] };
@@ -292,7 +290,7 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
   foldersSection.appendChild(foldersHeader);
 
   if (folderIds.length === 0) {
-    const empty = document.createElement('p'); empty.className = 'text-xs text-dim italic'; empty.textContent = 'No subfolders';
+    const empty = document.createElement('p'); empty.className = 'text-xs text-dim italic'; empty.textContent = t('folder.empty.folders');
     foldersSection.appendChild(empty);
   } else {
     const grid = document.createElement('div'); grid.className = 'grid grid-cols-3 gap-2';
@@ -303,7 +301,8 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
       card.onclick = () => ctx.navigate({ view: 'folder', folderId: subId });
       const icon = document.createElement('div'); icon.className = 'text-2xl mb-1'; icon.textContent = '▤';
       const name = document.createElement('div'); name.className = 'text-sm font-medium text-primary truncate'; name.textContent = sub.name;
-      const meta = document.createElement('div'); meta.className = 'text-xs text-muted mt-0.5'; meta.textContent = `${sub.folderIds.length} folders · ${sub.deckIds.length} decks`;
+      const meta = document.createElement('div'); meta.className = 'text-xs text-muted mt-0.5';
+      meta.textContent = t('folder.meta', { folders: sub.folderIds.length, decks: sub.deckIds.length });
       card.append(icon, name, meta); grid.appendChild(card);
     }
     foldersSection.appendChild(grid);
@@ -316,15 +315,15 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
 
   const decksHeader = document.createElement('div');
   decksHeader.className = 'flex items-center justify-between';
-  const decksTitle = document.createElement('span'); decksTitle.className = 'section-title'; decksTitle.textContent = 'Decks';
+  const decksTitle = document.createElement('span'); decksTitle.className = 'section-title'; decksTitle.textContent = t('folder.section.decks');
   const addDeckBtn = document.createElement('button');
-  addDeckBtn.className = 'btn-ghost text-xs'; addDeckBtn.textContent = '+ New deck';
+  addDeckBtn.className = 'btn-ghost text-xs'; addDeckBtn.textContent = t('folder.newDeck');
   addDeckBtn.onclick = () => showCreateDeckModal(ctx, folderId);
   decksHeader.append(decksTitle, addDeckBtn);
   decksSection.appendChild(decksHeader);
 
   if (deckIds.length === 0) {
-    const empty = document.createElement('p'); empty.className = 'text-xs text-dim italic'; empty.textContent = 'No decks';
+    const empty = document.createElement('p'); empty.className = 'text-xs text-dim italic'; empty.textContent = t('folder.empty.decks');
     decksSection.appendChild(empty);
   } else {
     const grid = document.createElement('div'); grid.className = 'grid grid-cols-3 gap-2';
@@ -335,7 +334,7 @@ export function renderFolderView(ctx: AppContext, folderId: string | null): HTML
       card.onclick = () => ctx.navigate({ view: 'deck', deckId });
       const icon = document.createElement('div'); icon.className = 'text-2xl mb-1'; icon.textContent = '⊞';
       const name = document.createElement('div'); name.className = 'text-sm font-medium text-primary truncate'; name.textContent = deck.name;
-      const meta = document.createElement('div'); meta.className = 'text-xs text-muted mt-0.5'; meta.textContent = `${deck.entries.length} cards`;
+      const meta = document.createElement('div'); meta.className = 'text-xs text-muted mt-0.5'; meta.textContent = t('folder.deckMeta', { count: deck.entries.length });
       card.append(icon, name, meta); grid.appendChild(card);
     }
     decksSection.appendChild(grid);

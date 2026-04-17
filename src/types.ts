@@ -36,6 +36,7 @@ export interface User {
   name: string;
   masteryThreshold: number;    // default: 0.9 — cards above this R are excluded from study
   weightByImportance: boolean; // default: true — weight deck knowledge bars by card importance
+  language?: 'en' | 'fr';     // default: 'en'
 }
 
 /** Maps directly to FSRS grades: 1=Again · 2=Hard · 3=Good · 4=Easy */

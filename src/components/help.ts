@@ -1,5 +1,6 @@
 import type { AppContext, Route } from '../types';
 import { showModal, closeModal } from './modal';
+import { t } from '../services/i18nService';
 
 type HelpSection = { heading: string; items: string[] };
 
@@ -8,39 +9,39 @@ function getHelpContent(route: Route): { title: string; sections: HelpSection[] 
 
     case 'folder':
       return {
-        title: route.folderId ? 'Folder' : 'Home',
+        title: route.folderId ? t('help.context.folder') : t('help.context.home'),
         sections: [
           ...(!route.folderId ? [{
-            heading: 'Welcome to Cadence',
+            heading: t('help.home.welcome.heading'),
             items: [
-              'Cadence is a spaced repetition app — it helps you organise your practice sessions and track what you know.',
-              'Create cards for the things you want to learn, organise them into decks, and study regularly.',
-              'The more you practise, the better Cadence understands what you know — and surfaces what you\'re most likely to have forgotten.',
-              'Works for any learning topic. A dedicated module makes it easy to import tunes directly from TheSession.',
+              t('help.home.welcome.1'),
+              t('help.home.welcome.2'),
+              t('help.home.welcome.3'),
+              t('help.home.welcome.4'),
             ],
           }] : []),
           {
-            heading: 'Navigation',
+            heading: t('help.home.nav.heading'),
             items: [
-              'Click a folder or deck to open it.',
-              'Drag & drop folders and decks in the sidebar to reorganise them.',
-              '← → in the top bar (or Alt+← / Alt+→) to navigate history.',
+              t('help.home.nav.1'),
+              t('help.home.nav.2'),
+              t('help.home.nav.3'),
             ],
           },
           {
-            heading: 'Creating content',
+            heading: t('help.home.create.heading'),
             items: [
-              '+ Folder / + Deck at the bottom of the sidebar to create at the root.',
-              'Use the "+ New folder" and "+ New deck" buttons inside a folder.',
-              'Click a folder or deck name directly to rename it.',
+              t('help.home.create.1'),
+              t('help.home.create.2'),
+              t('help.home.create.3'),
             ],
           },
           {
-            heading: 'Dashboard (Home only)',
+            heading: t('help.home.dashboard.heading'),
             items: [
-              'The dashboard shows your global study streak, sessions this week, and knowledge distribution.',
-              '"Decks to review" highlights the decks with the lowest retention.',
-              'Switch the activity chart between 7 days, 1 month, and 1 year.',
+              t('help.home.dashboard.1'),
+              t('help.home.dashboard.2'),
+              t('help.home.dashboard.3'),
             ],
           },
         ],
@@ -48,125 +49,114 @@ function getHelpContent(route: Route): { title: string; sections: HelpSection[] 
 
     case 'library':
       return {
-        title: 'Card library',
+        title: t('help.context.library'),
         sections: [
           {
-            heading: 'Browsing',
+            heading: t('help.library.browse.heading'),
             items: [
-              'Search by name or tag using the search bar.',
-              'Click a tag pill to filter by that tag — multiple tags are combined (AND).',
-              'The coloured dot shows current retention: red < 40%, yellow < 75%, green ≥ 75%.',
-              'Hover a row to see which decks the card belongs to — click a deck chip to navigate.',
+              t('help.library.browse.1'),
+              t('help.library.browse.2'),
+              t('help.library.browse.3'),
+              t('help.library.browse.4'),
             ],
           },
           {
-            heading: 'Selection & deletion',
+            heading: t('help.library.selection.heading'),
             items: [
-              'Tick the checkbox on a row (appears on hover) to select it.',
-              '"Select all" selects all currently filtered cards.',
-              'The trash button deletes all selected cards from the library and all decks.',
+              t('help.library.selection.1'),
+              t('help.library.selection.2'),
+              t('help.library.selection.3'),
             ],
           },
           {
-            heading: 'Adding cards',
-            items: [
-              '"+ New card" opens the creation modal — create a blank card or import from TheSession.',
-            ],
+            heading: t('help.library.add.heading'),
+            items: [t('help.library.add.1')],
           },
         ],
       };
 
     case 'deck':
       return {
-        title: 'Deck',
+        title: t('help.context.deck'),
         sections: [
           {
-            heading: 'Studying',
+            heading: t('help.deck.study.heading'),
             items: [
-              '"Study" opens a session with the chosen strategy.',
-              'Random — picks any non-mastered card at random.',
-              'Optimal — picks the card with the highest urgency (importance × forgetting).',
-              'Stochastic — weighted random, balancing urgency and variety.',
+              t('help.deck.study.1'),
+              t('help.deck.study.2'),
+              t('help.deck.study.3'),
+              t('help.deck.study.4'),
             ],
           },
           {
-            heading: 'Managing cards',
+            heading: t('help.deck.manage.heading'),
             items: [
-              'Drag a card row to reorder it in the deck.',
-              'Click the ×N importance badge to override a card\'s weight for this deck.',
-              'Click the broken-link icon to remove a card from the deck (card is not deleted).',
-              'Click a card name to open its detail view.',
+              t('help.deck.manage.1'),
+              t('help.deck.manage.2'),
+              t('help.deck.manage.3'),
+              t('help.deck.manage.4'),
             ],
           },
           {
-            heading: 'Knowledge bar',
-            items: [
-              'Red = not yet learned, yellow = learning, light green = good, green = mastered.',
-              'A card is considered mastered when its retention exceeds your mastery threshold.',
-            ],
+            heading: t('help.deck.bar.heading'),
+            items: [t('help.deck.bar.1'), t('help.deck.bar.2')],
           },
         ],
       };
 
     case 'card':
       return {
-        title: 'Card',
+        title: t('help.context.card'),
         sections: [
           {
-            heading: 'Editing',
+            heading: t('help.card.edit.heading'),
             items: [
-              'Click the card name to rename it inline.',
-              'Click a tag to rename it; hover a tag and click ✕ to remove it.',
-              'Type in the "+" input to add a new tag (Enter or comma to confirm).',
-              'Click the broken-link icon on a deck chip to remove the card from that deck.',
-              'Click "+" next to the deck chips to add the card to another deck.',
+              t('help.card.edit.1'),
+              t('help.card.edit.2'),
+              t('help.card.edit.3'),
+              t('help.card.edit.4'),
+              t('help.card.edit.5'),
             ],
           },
           {
-            heading: 'FSRS — Mastery window',
-            items: [
-              'The mastery window shows how long after a review the card stays above your mastery threshold.',
-              'A longer mastery window means the card is solidly learned.',
-            ],
+            heading: t('help.card.fsrs.heading'),
+            items: [t('help.card.fsrs.1'), t('help.card.fsrs.2')],
           },
           {
-            heading: 'Review history',
-            items: [
-              'Click "+" in the review history to manually log a past session.',
-              'Hover an entry and click ✕ to remove it.'
-            ],
+            heading: t('help.card.history.heading'),
+            items: [t('help.card.history.1'), t('help.card.history.2')],
           },
         ],
       };
 
     case 'study':
       return {
-        title: 'Study session',
+        title: t('help.context.study'),
         sections: [
           {
-            heading: 'Rating a card',
+            heading: t('help.study.rating.heading'),
             items: [
-              '✗ Failed (1) — you did not remember it at all.',
-              '△ Struggled (2) — you recalled it with difficulty.',
-              '○ Got it (3) — correct recall with some effort.',
-              '✓ Nailed it (4) — perfect, effortless recall.',
+              t('help.study.rating.1'),
+              t('help.study.rating.2'),
+              t('help.study.rating.3'),
+              t('help.study.rating.4'),
             ],
           },
           {
-            heading: 'Keyboard shortcuts',
+            heading: t('help.study.shortcuts.heading'),
             items: [
-              '1 / 2 / 3 / 4 — rate the card.',
-              'Tab — skip without rating (disabled when only one card remains).',
-              'Esc — exit the session and return to the deck.',
+              t('help.study.shortcuts.1'),
+              t('help.study.shortcuts.2'),
+              t('help.study.shortcuts.3'),
             ],
           },
           {
-            heading: 'FSRS algorithm',
+            heading: t('help.study.fsrs.heading'),
             items: [
-              'Each rating updates the card\'s Stability (S) and Difficulty (D).',
-              'Higher grades increase stability — the card will be shown less often.',
-              '"Failed" triggers a forgetting reset, strongly reducing stability.',
-              'Cards above your mastery threshold are skipped automatically.',
+              t('help.study.fsrs.1'),
+              t('help.study.fsrs.2'),
+              t('help.study.fsrs.3'),
+              t('help.study.fsrs.4'),
             ],
           },
         ],
@@ -206,7 +196,7 @@ function buildHelpBody(sections: HelpSection[]): HTMLElement {
 
 export function showHelpModal(ctx: AppContext): void {
   const { title, sections } = getHelpContent(ctx.route);
-  showModal(`Help — ${title}`, buildHelpBody(sections), [
-    { label: 'Close', onClick: closeModal },
+  showModal(t('help.title', { context: title }), buildHelpBody(sections), [
+    { label: t('common.close'), onClick: closeModal },
   ]);
 }

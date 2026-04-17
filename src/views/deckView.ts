@@ -9,6 +9,7 @@ import {
   mostUrgentEntry, totalDeckImportance, isMastered, deckKnowledgeBuckets,
 } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
+import { t } from '../services/i18nService';
 
 
 export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
@@ -17,7 +18,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   const { state } = ctx;
   const deck = state.decks[deckId];
-  if (!deck) { wrap.textContent = 'Deck not found.'; return wrap; }
+  if (!deck) { wrap.textContent = t('deck.notFound'); return wrap; }
 
   const user = getCurrentUser(state);
   const w = user.weightByImportance ?? true;
@@ -36,8 +37,8 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   const headerActions = document.createElement('div'); headerActions.className = 'flex gap-2 shrink-0';
 
-  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = 'Delete deck'; deleteBtn.appendChild(trashIcon());
-  deleteBtn.onclick = () => confirmModal('Delete Deck', `Delete "${deck.name}"? Cards will not be deleted.`, 'Delete', () => {
+  const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger px-2'; deleteBtn.title = t('deck.deleteTitle'); deleteBtn.appendChild(trashIcon());
+  deleteBtn.onclick = () => confirmModal(t('deck.delete.title'), t('deck.delete.message', { name: deck.name }), t('common.delete'), () => {
     const parent = findParentFolder(deckId, 'deck', state);
     ctx.mutate(s => {
       delete s.decks[deckId];
@@ -54,19 +55,17 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   // ── Metrics ──
   const metricsRow = document.createElement('div'); metricsRow.className = 'grid grid-cols-3 gap-3';
 
-  // Global knowledge
   const knBox = document.createElement('div'); knBox.className = 'card-block space-y-2';
-  const knLabel = document.createElement('div'); knLabel.className = 'section-title'; knLabel.textContent = 'Knowledge';
+  const knLabel = document.createElement('div'); knLabel.className = 'section-title'; knLabel.textContent = t('deck.section.knowledge');
   const knVal = document.createElement('div'); knVal.className = 'text-2xl font-mono font-semibold text-primary'; knVal.textContent = pct(dk);
   const { buckets: knBuckets, total: knTotal } = deckKnowledgeBuckets(user, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
   const knBar = renderKnowledgeBar(knBuckets, knTotal, 'flex h-1.5 rounded overflow-hidden bg-border');
   knBox.append(knLabel, knVal, knBar);
 
-  // Mastered
   const masteredCount = deck.entries.filter(e => isMastered(user, state.cardWorks[`${user.id}:${e.cardId}`])).length;
   const totalCount = deck.entries.length;
   const mastBox = document.createElement('div'); mastBox.className = 'card-block space-y-2';
-  const mastLabel = document.createElement('div'); mastLabel.className = 'section-title'; mastLabel.textContent = 'Mastered';
+  const mastLabel = document.createElement('div'); mastLabel.className = 'section-title'; mastLabel.textContent = t('deck.section.mastered');
   const mastVal = document.createElement('div'); mastVal.className = 'text-2xl font-mono font-semibold text-primary';
   mastVal.textContent = totalCount > 0 ? `${masteredCount} / ${totalCount}` : '—';
   const mastBar = document.createElement('div'); mastBar.className = 'knowledge-bar';
@@ -74,12 +73,11 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   mastFill.style.width = totalCount > 0 ? `${Math.round((masteredCount / totalCount) * 100)}%` : '0%';
   mastBar.appendChild(mastFill); mastBox.append(mastLabel, mastVal, mastBar);
 
-  // Most urgent
   const urgCard = urgent ? state.cards[urgent.cardId] : null;
   const urgWork = urgent ? state.cardWorks[`${user.id}:${urgent.cardId}`] : undefined;
   const urgBox = document.createElement('div'); urgBox.className = 'card-block space-y-1 cursor-pointer hover:border-accent/40 transition-colors';
   if (urgCard) urgBox.onclick = () => ctx.navigate({ view: 'card', cardId: urgCard.id });
-  const urgLabel = document.createElement('div'); urgLabel.className = 'section-title'; urgLabel.textContent = 'Most urgent';
+  const urgLabel = document.createElement('div'); urgLabel.className = 'section-title'; urgLabel.textContent = t('deck.section.mostUrgent');
   const urgName = document.createElement('div'); urgName.className = 'text-sm text-primary truncate font-medium'; urgName.textContent = urgCard?.name ?? '—';
   const urgKn = document.createElement('div'); urgKn.className = 'text-xs font-mono text-muted'; urgKn.textContent = urgCard ? pct(cardKnowledge(user, urgWork)) : '';
   urgBox.append(urgLabel, urgName, urgKn);
@@ -99,7 +97,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   studyBtn.className = (noCards || allMastered)
     ? 'btn w-full py-3 text-base font-semibold bg-elevated text-dim cursor-default'
     : 'btn-primary w-full py-3 text-base font-semibold';
-  studyBtn.textContent = noCards ? 'No cards to study' : allMastered ? '★  All cards mastered' : '▶  Study this deck';
+  studyBtn.textContent = noCards ? t('deck.noCards') : allMastered ? t('deck.allMastered') : t('deck.study');
   if (!noCards && !allMastered) {
     studyBtn.onclick = () => showStrategyModal(ctx, deckId);
   }
@@ -109,13 +107,13 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   const cardsSection = document.createElement('div'); cardsSection.className = 'space-y-3';
 
   const cardsHeader = document.createElement('div'); cardsHeader.className = 'flex items-center justify-between';
-  const cardsTitle = document.createElement('span'); cardsTitle.className = 'section-title'; cardsTitle.textContent = `Cards (${deck.entries.length})`;
+  const cardsTitle = document.createElement('span'); cardsTitle.className = 'section-title'; cardsTitle.textContent = t('deck.section.cards', { count: deck.entries.length });
   const cardActions = document.createElement('div'); cardActions.className = 'flex gap-2';
 
-  const newCardBtn = document.createElement('button'); newCardBtn.className = 'btn-ghost text-xs'; newCardBtn.textContent = '+ New card';
+  const newCardBtn = document.createElement('button'); newCardBtn.className = 'btn-ghost text-xs'; newCardBtn.textContent = t('deck.newCard');
   newCardBtn.onclick = () => showNewCardModal(ctx, deckId);
 
-  const linkCardBtn = document.createElement('button'); linkCardBtn.className = 'btn-ghost text-xs'; linkCardBtn.textContent = '+ Link existing';
+  const linkCardBtn = document.createElement('button'); linkCardBtn.className = 'btn-ghost text-xs'; linkCardBtn.textContent = t('deck.linkExisting');
   linkCardBtn.onclick = () => showLinkCardModal(ctx, deckId);
 
   cardActions.append(newCardBtn, linkCardBtn);
@@ -123,7 +121,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   cardsSection.appendChild(cardsHeader);
 
   if (deck.entries.length === 0) {
-    const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic'; empty.textContent = 'No cards in this deck yet.';
+    const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic'; empty.textContent = t('deck.empty');
     cardsSection.appendChild(empty);
   } else {
     const list = document.createElement('div'); list.className = 'space-y-1';
@@ -148,12 +146,10 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
       row.className = 'flex items-center gap-3 px-3 py-2 rounded hover:bg-elevated transition-colors group';
       row.draggable = true;
 
-      // Drag handle
       const handle = document.createElement('span');
       handle.className = 'text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity';
       handle.textContent = '⠿';
 
-      // Knowledge dot
       const dot = document.createElement('span');
       dot.className = `w-2 h-2 rounded-full shrink-0 ${knowledgeColor(k)}`;
       dot.title = pct(k);
@@ -170,20 +166,19 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
       const impBadge = document.createElement('span');
       impBadge.className = 'text-xs font-mono shrink-0 w-6 text-right cursor-pointer hover:text-accent transition-colors';
       impBadge.textContent = `×${imp}`;
-      impBadge.title = entry.importanceOverride !== undefined ? 'Override active — click to edit' : 'Click to edit importance';
+      impBadge.title = entry.importanceOverride !== undefined ? t('deck.importanceTitleOverride') : t('deck.importanceTitleDefault');
       if (entry.importanceOverride !== undefined) impBadge.classList.add('text-accent'); else impBadge.classList.add('text-dim');
       impBadge.onclick = () => showImportanceModal(ctx, deckId, entry, card.importance);
 
       const rowActions = document.createElement('div'); rowActions.className = 'hidden group-hover:flex gap-2';
 
-      const unlinkBtn = document.createElement('button'); unlinkBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer'; unlinkBtn.title = 'Remove from deck';
+      const unlinkBtn = document.createElement('button'); unlinkBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer'; unlinkBtn.title = t('deck.removeFromDeck');
       unlinkBtn.appendChild(unlinkIcon());
       unlinkBtn.onclick = () => { ctx.mutate(s => { s.decks[deckId]!.entries = s.decks[deckId]!.entries.filter(e => e.cardId !== card.id); }); };
 
       rowActions.append(unlinkBtn);
       row.append(handle, dot, name, meta, impBadge, rowActions);
 
-      // Drag events
       const cardId = card.id;
       row.addEventListener('dragstart', (e) => {
         draggedCardId = cardId;
@@ -242,19 +237,19 @@ function showStrategyModal(ctx: AppContext, deckId: string): void {
   body.className = 'space-y-2';
 
   const desc = document.createElement('p'); desc.className = 'text-sm text-muted mb-4';
-  desc.textContent = 'Choose how the next card is picked during the session.';
+  desc.textContent = t('deck.strategy.desc');
   body.appendChild(desc);
 
-  const strategies: Array<{ id: import('../types').StudyStrategy; label: string; sub: string }> = [
-    { id: 'random',     label: 'Random',              sub: 'Uniform draw — all cards equally likely' },
-    { id: 'optimal',    label: 'Optimal',             sub: 'Always the card with highest learning gain' },
-    { id: 'stochastic', label: 'Optimal stochastic',  sub: 'Weighted random draw by learning gain' },
+  const strategies: Array<{ id: import('../types').StudyStrategy; labelKey: string; subKey: string }> = [
+    { id: 'random',     labelKey: 'deck.strategy.random',     subKey: 'deck.strategy.random.sub' },
+    { id: 'optimal',    labelKey: 'deck.strategy.optimal',    subKey: 'deck.strategy.optimal.sub' },
+    { id: 'stochastic', labelKey: 'deck.strategy.stochastic', subKey: 'deck.strategy.stochastic.sub' },
   ];
 
   for (const s of strategies) {
     const btn = document.createElement('button');
     btn.className = 'w-full text-left card-block hover:border-accent/60 transition-colors cursor-pointer';
-    btn.innerHTML = `<div class="text-sm font-medium text-primary">${s.label}</div><div class="text-xs text-muted mt-0.5">${s.sub}</div>`;
+    btn.innerHTML = `<div class="text-sm font-medium text-primary">${t(s.labelKey)}</div><div class="text-xs text-muted mt-0.5">${t(s.subKey)}</div>`;
     btn.onclick = () => {
       closeModal();
       const { state } = ctx;
@@ -272,24 +267,24 @@ function showStrategyModal(ctx: AppContext, deckId: string): void {
     body.appendChild(btn);
   }
 
-  showModal('Study strategy', body, [{ label: 'Cancel', onClick: closeModal }]);
+  showModal(t('deck.strategy.title'), body, [{ label: t('common.cancel'), onClick: closeModal }]);
 }
 
 function showImportanceModal(ctx: AppContext, deckId: string, entry: DeckEntry, baseImportance: number): void {
   const body = document.createElement('div'); body.className = 'space-y-3';
 
   const info = document.createElement('p'); info.className = 'text-xs text-muted';
-  info.textContent = `Card base importance: ×${baseImportance}. Set an override for this deck only.`;
+  info.textContent = t('deck.weight.info', { base: baseImportance });
   body.appendChild(info);
 
-  const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = 'Override (leave empty to clear)';
+  const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = t('deck.weight.label');
   const input = document.createElement('input'); input.type = 'number'; input.min = '0.1'; input.step = '0.1'; input.className = 'input';
   if (entry.importanceOverride !== undefined) input.value = String(entry.importanceOverride);
   body.append(lbl, input);
 
-  showModal('Card weight', body, [
-    { label: 'Cancel', onClick: closeModal },
-    { label: 'Apply', primary: true, onClick: () => {
+  showModal(t('deck.weight.title'), body, [
+    { label: t('common.cancel'), onClick: closeModal },
+    { label: t('common.apply'), primary: true, onClick: () => {
       const val = parseFloat(input.value);
       closeModal();
       ctx.mutate(s => {
@@ -309,14 +304,14 @@ function showLinkCardModal(ctx: AppContext, deckId: string): void {
 
   const body = document.createElement('div'); body.className = 'space-y-2';
   if (candidates.length === 0) {
-    const msg = document.createElement('p'); msg.className = 'text-sm text-muted'; msg.textContent = 'All existing cards are already linked to this deck.';
+    const msg = document.createElement('p'); msg.className = 'text-sm text-muted'; msg.textContent = t('deck.link.allLinked');
     body.appendChild(msg);
-    showModal('Link Existing Card', body, [{ label: 'Close', onClick: closeModal }]);
+    showModal(t('deck.link.title'), body, [{ label: t('common.close'), onClick: closeModal }]);
     return;
   }
 
   const linkedThisSession = new Set<string>();
-  const searchInput = document.createElement('input'); searchInput.type = 'text'; searchInput.placeholder = 'Search…'; searchInput.className = 'input mb-2';
+  const searchInput = document.createElement('input'); searchInput.type = 'text'; searchInput.placeholder = t('deck.link.search'); searchInput.className = 'input mb-2';
   const list = document.createElement('div'); list.className = 'space-y-1 max-h-60 overflow-y-auto';
 
   const renderList = () => {
@@ -325,13 +320,13 @@ function showLinkCardModal(ctx: AppContext, deckId: string): void {
     const visible = candidates.filter(c => !linkedThisSession.has(c.id) && c.name.toLowerCase().includes(filter));
     if (visible.length === 0) {
       const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic';
-      empty.textContent = filter ? 'No matches.' : 'All cards linked!';
+      empty.textContent = filter ? t('deck.link.noMatches') : t('deck.link.allCardsLinked');
       list.appendChild(empty); return;
     }
     for (const card of visible) {
       const row = document.createElement('div'); row.className = 'flex items-center justify-between px-3 py-2 rounded hover:bg-surface cursor-pointer transition-colors';
       const name = document.createElement('span'); name.className = 'text-sm text-primary'; name.textContent = card.name;
-      const linkBtn = document.createElement('button'); linkBtn.className = 'text-xs btn-primary'; linkBtn.textContent = 'Link';
+      const linkBtn = document.createElement('button'); linkBtn.className = 'text-xs btn-primary'; linkBtn.textContent = t('common.link');
       linkBtn.onclick = () => {
         linkedThisSession.add(card.id);
         ctx.mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); });
@@ -344,9 +339,9 @@ function showLinkCardModal(ctx: AppContext, deckId: string): void {
   renderList();
   searchInput.oninput = () => renderList();
   body.append(searchInput, list);
-  showModal('Link Existing Card', body, [
-    { label: 'Done', onClick: closeModal },
-    { label: 'Link all', primary: true, onClick: () => {
+  showModal(t('deck.link.title'), body, [
+    { label: t('deck.link.done'), onClick: closeModal },
+    { label: t('deck.link.linkAll'), primary: true, onClick: () => {
       const filter = searchInput.value.toLowerCase();
       const toLink = candidates.filter(c => !linkedThisSession.has(c.id) && c.name.toLowerCase().includes(filter));
       for (const card of toLink) linkedThisSession.add(card.id);

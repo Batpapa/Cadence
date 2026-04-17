@@ -1,4 +1,5 @@
 import type { AppState, FileEntry } from './types';
+import { t } from './services/i18nService';
 
 export function generateId(): string {
   return crypto.randomUUID();
@@ -22,12 +23,17 @@ export function timeAgo(timestamp: number): string {
   const days = Math.floor(diff / 86400000);
   const hours = Math.floor(diff / 3600000);
   const minutes = Math.floor(diff / 60000);
-  if (days > 30) return `${Math.floor(days / 30)}mo ago`;
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (minutes > 0) return `${minutes}m ago`;
-  return 'just now';
+  if (days > 30) return t('time.ago.months', { n: Math.floor(days / 30) });
+  if (days > 0)  return t('time.ago.days',   { n: days });
+  if (hours > 0) return t('time.ago.hours',  { n: hours });
+  if (minutes > 0) return t('time.ago.minutes', { n: minutes });
+  return t('time.ago.justNow');
 }
+
+export const DAY_NAMES_KEYS = [
+  'time.days.sun', 'time.days.mon', 'time.days.tue', 'time.days.wed',
+  'time.days.thu', 'time.days.fri', 'time.days.sat',
+] as const;
 
 export function fileToEntry(file: File): Promise<FileEntry> {
   return new Promise((resolve, reject) => {

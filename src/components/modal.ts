@@ -1,3 +1,5 @@
+import { t } from '../services/i18nService';
+
 export interface ModalAction {
   label: string;
   primary?: boolean;
@@ -70,7 +72,7 @@ export function promptModal(title: string, label: string, defaultValue: string, 
   body.append(lbl, input);
   const confirm = () => { const val = input.value.trim(); if (!val) return; closeModal(); onConfirm(val); };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') closeModal(); });
-  showModal(title, body, [{ label: 'Cancel', onClick: closeModal }, { label: 'Confirm', primary: true, onClick: confirm }]);
+  showModal(title, body, [{ label: t('common.cancel'), onClick: closeModal }, { label: t('common.confirm'), primary: true, onClick: confirm }]);
   setTimeout(() => input.focus(), 30);
 }
 
@@ -79,7 +81,7 @@ export function confirmModal(title: string, message: string, confirmLabel: strin
   body.className = 'text-sm text-muted leading-relaxed';
   body.textContent = message;
   showModal(title, body, [
-    { label: 'Cancel', onClick: closeModal },
+    { label: t('common.cancel'), onClick: closeModal },
     { label: confirmLabel, danger: true, onClick: () => { closeModal(); onConfirm(); } },
   ]);
 }
@@ -118,6 +120,6 @@ export function formModal(
   Object.values(inputs).forEach(i => {
     i.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') closeModal(); });
   });
-  showModal(title, body, [{ label: 'Cancel', onClick: closeModal }, { label: 'Confirm', primary: true, onClick: confirm }]);
+  showModal(title, body, [{ label: t('common.cancel'), onClick: closeModal }, { label: t('common.confirm'), primary: true, onClick: confirm }]);
   setTimeout(() => Object.values(inputs)[0]?.focus(), 30);
 }
