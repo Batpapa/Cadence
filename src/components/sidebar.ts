@@ -456,21 +456,10 @@ function showSettingsModal(ctx: AppContext): void {
     return p;
   };
 
-  const legalRow = document.createElement('p');
-  legalRow.className = 'text-xs text-muted flex gap-3';
-  const privacyLink = document.createElement('a');
-  privacyLink.href = './privacy.html'; privacyLink.target = '_blank'; privacyLink.rel = 'noopener';
-  privacyLink.className = 'text-accent hover:underline'; privacyLink.textContent = t('settings.aboutPrivacy');
-  const termsLink = document.createElement('a');
-  termsLink.href = './terms.html'; termsLink.target = '_blank'; termsLink.rel = 'noopener';
-  termsLink.className = 'text-accent hover:underline'; termsLink.textContent = t('settings.aboutTerms');
-  legalRow.append(privacyLink, termsLink);
-
   aboutBlock.append(
     mkAboutLine('settings.aboutLine1'),
     mkAboutLine('settings.aboutLine2'),
     mkAboutLine('settings.aboutLine3', 'https://github.com/Batpapa/Cadence'),
-    legalRow,
   );
   body.append(aboutTitle, aboutBlock);
 
@@ -650,7 +639,19 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const addDeckBtn = document.createElement('button'); addDeckBtn.className = 'btn-ghost text-xs'; addDeckBtn.textContent = t('sidebar.newDeck');
   addDeckBtn.onclick = () => showCreateDeckModal(ctx, null);
   createRow.append(addFolderBtn, addDeckBtn);
-  bottom.append(createRow);
+
+  const legalFooter = document.createElement('div');
+  legalFooter.className = 'flex gap-3 px-1 pt-1';
+  const mkLegalLink = (text: string, href: string) => {
+    const a = document.createElement('a');
+    a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    a.className = 'text-[10px] text-dim hover:text-muted transition-colors';
+    a.textContent = text;
+    return a;
+  };
+  legalFooter.append(mkLegalLink(t('settings.aboutPrivacy'), './privacy.html'), mkLegalLink(t('settings.aboutTerms'), './terms.html'));
+
+  bottom.append(createRow, legalFooter);
   aside.append(top, nav, tree, bottom);
   return aside;
 }
