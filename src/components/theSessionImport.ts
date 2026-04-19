@@ -1,5 +1,6 @@
 import type { AppContext, AppState } from '../types';
 import { generateId, focusIfDesktop } from '../utils';
+import { parseCardPackage } from '../services/importExport';
 import { showModal, closeModal } from './modal';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo,
@@ -283,7 +284,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 // ── New Card modal (Create + TheSession tabs) ─────────────────────────────────
 
 export function showNewCardModal(ctx: AppContext, deckId?: string): void {
-  type ActiveTab = 'create' | 'thesession';
+  type ActiveTab = 'create' | 'import' | 'thesession';
   let activeTab: ActiveTab = 'create';
 
   const body = document.createElement('div');
@@ -302,6 +303,7 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
     outerTabBar.innerHTML = '';
     const tabs: Array<{ id: ActiveTab; labelKey: string }> = [
       { id: 'create',     labelKey: 'newCard.tabCreate' },
+      { id: 'import',     labelKey: 'newCard.tabImport' },
       { id: 'thesession', labelKey: 'newCard.tabTheSession' },
     ];
     for (const tab of tabs) {
@@ -316,7 +318,6 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
   const renderContent = () => {
     outerContent.innerHTML = '';
     status.textContent = '';
-
     if (activeTab === 'create') {
       const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = t('newCard.nameLabel');
       const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'input'; inp.placeholder = t('newCard.namePlaceholder');
@@ -335,6 +336,28 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') { void doCreate(); } });
       outerContent.append(lbl, inp, createBtn);
       focusIfDesktop(inp);
+    } else if (activeTab === 'import') {
+      const pickBtn = document.createElement('button');
+      pickBtn.className = 'btn-primary w-full text-sm'; pickBtn.textContent = t('newCard.import.pick');
+      pickBtn.onclick = () => {
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+        inp.onchange = async () => {
+          const file = inp.files?.[0]; if (!file) return;
+          pickBtn.disabled = true; status.textContent = t('newCard.import.importing');
+          try {
+            const cards = await parseCardPackage(file);
+            let imported = 0;
+            await ctx.mutate(s => {
+              for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; imported++; } }
+            });
+            status.textContent = t('newCard.import.done', { count: imported });
+          } catch (e) {
+            status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+          } finally { pickBtn.disabled = false; }
+        };
+        inp.click();
+      };
+      outerContent.appendChild(pickBtn);
     } else {
       outerContent.appendChild(buildTheSessionBody(ctx, status, deckId));
     }
