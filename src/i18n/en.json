@@ -301,7 +301,8 @@
 
   "fileViewer.attachments": "Attachments",
   "fileViewer.attachmentsCount": "Attachments ({count})",
-  "fileViewer.add": "+ Add",
+  "fileViewer.addFile": "+ File",
+  "fileViewer.addLink": "+ Link",
   "fileViewer.download": "Download",
   "fileViewer.remove": "Remove",
   "fileViewer.noNotes": "No notes.",

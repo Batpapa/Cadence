@@ -1,8 +1,8 @@
 import type { AppContext } from '../types';
 import { pct, trashIcon, makeInlineEditable, unlinkIcon, focusIfDesktop } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
-import { renderNotes, renderFiles } from '../components/fileViewer';
-import { renderEmbeds } from '../components/embedViewer';
+import { renderNotes } from '../components/fileViewer';
+import { renderAttachmentList } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
@@ -260,19 +260,16 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   notesSection.append(notesHeader, notesContent);
   wrap.appendChild(notesSection);
 
-  // ── Files ──
-  wrap.appendChild(renderFiles({
-    files: card.content.files, editable: true,
-    onAdd:    (e) => ctx.mutate(s => { s.cards[cardId]!.content.files.push(e); }),
-    onRemove: (i) => ctx.mutate(s => { s.cards[cardId]!.content.files.splice(i, 1); }),
-  }));
-
-  // ── Embeds ──
-  const embeds = card.content.embeds ?? [];
-  wrap.appendChild(renderEmbeds({
-    embeds, editable: true,
-    onAdd:    (e) => ctx.mutate(s => { const c = s.cards[cardId]!; c.content.embeds = [...(c.content.embeds ?? []), e]; }),
-    onRemove: (i) => ctx.mutate(s => { const c = s.cards[cardId]!; (c.content.embeds ?? []).splice(i, 1); }),
+  // ── Attachments ──
+  wrap.appendChild(renderAttachmentList({
+    attachments: card.content.attachments, editable: true,
+    onAdd:     (a) => ctx.mutate(s => { s.cards[cardId]!.content.attachments.push(a); }),
+    onRemove:  (i) => ctx.mutate(s => { s.cards[cardId]!.content.attachments.splice(i, 1); }),
+    onReorder: (from, insertBefore) => ctx.mutate(s => {
+      const atts = s.cards[cardId]!.content.attachments;
+      const [moved] = atts.splice(from, 1);
+      atts.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
+    }),
   }));
 
   // ── Review history ──

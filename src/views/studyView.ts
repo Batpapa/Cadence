@@ -1,6 +1,6 @@
 import type { AppContext, StudyStrategy, DeckEntry } from '../types';
-import { renderNotes, renderFiles } from '../components/fileViewer';
-import { renderEmbeds } from '../components/embedViewer';
+import { renderNotes } from '../components/fileViewer';
+import { renderAttachmentList } from '../components/attachmentList';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { deckAvailability, isAvailable } from '../services/knowledgeService';
 import type { SessionRating } from '../types';
@@ -161,13 +161,8 @@ export function renderStudyView(
     cardWrap.appendChild(notesWrap);
   }
 
-  if (card.content.files.length > 0) {
-    cardWrap.appendChild(renderFiles({ files: card.content.files, editable: false }));
-  }
-
-  const embeds = card.content.embeds ?? [];
-  if (embeds.length > 0) {
-    cardWrap.appendChild(renderEmbeds({ embeds, editable: false }));
+  if (card.content.attachments.length > 0) {
+    cardWrap.appendChild(renderAttachmentList({ attachments: card.content.attachments, editable: false }));
   }
 
   content.appendChild(cardWrap);

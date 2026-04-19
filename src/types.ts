@@ -13,6 +13,10 @@ export interface EmbedEntry {
   embedUrl?: string; // resolved iframe src, stored to avoid re-fetching
 }
 
+export type Attachment =
+  | ({ type: 'file' } & FileEntry)
+  | ({ type: 'embed' } & EmbedEntry);
+
 export interface Card {
   id: string;
   name: string;
@@ -21,8 +25,7 @@ export interface Card {
   externalId?: string; // e.g. "thesession:1197"
   content: {
     notes: string;
-    files: FileEntry[];
-    embeds: EmbedEntry[];
+    attachments: Attachment[];
   };
 }
 

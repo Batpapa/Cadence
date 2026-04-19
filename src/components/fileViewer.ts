@@ -1,5 +1,5 @@
 import type { FileEntry } from '../types';
-import { fileToEntry, entryToObjectUrl } from '../utils';
+import { entryToObjectUrl } from '../utils';
 import { t } from '../services/i18nService';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
@@ -17,22 +17,6 @@ function isAbc(entry: FileEntry): boolean {
   return entry.name.endsWith('.abc') || entry.mimeType === 'text/vnd.abc';
 }
 
-function isPreviewable(entry: FileEntry): boolean {
-  const m = entry.mimeType;
-  return m.startsWith('audio/') || m.startsWith('image/') || m.startsWith('video/') ||
-    m === 'application/pdf' || isText(entry) || isAbc(entry);
-}
-
-function mimeIcon(entry: FileEntry): string {
-  const m = entry.mimeType;
-  if (isAbc(entry))            return '𝄞';
-  if (m.startsWith('audio/'))  return '♫';
-  if (m.startsWith('video/'))  return '▶';
-  if (m.startsWith('image/'))  return '▣';
-  if (m === 'application/pdf') return '≣';
-  if (isText(entry))           return '¶';
-  return '◈';
-}
 
 function decodeText(entry: FileEntry): string {
   const bytes = atob(entry.data);
@@ -49,7 +33,7 @@ function modalWidth(entry: FileEntry): string {
   return '860px';
 }
 
-function showPreviewModal(entry: FileEntry): void {
+export function showPreviewModal(entry: FileEntry): void {
   const overlay = document.createElement('div');
   overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm';
 
@@ -176,84 +160,7 @@ function showPreviewModal(entry: FileEntry): void {
   document.body.appendChild(overlay);
 }
 
-// ── File entry row ────────────────────────────────────────────────────────────
-
-function renderFileEntry(entry: FileEntry, onRemove: () => void, editable: boolean): HTMLElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'flex items-center gap-2 px-3 py-1.5 rounded border border-border group';
-
-  const icon = document.createElement('span');
-  icon.className = 'text-[11px] text-dim shrink-0 w-4 text-center font-mono';
-  icon.textContent = mimeIcon(entry);
-
-  const name = document.createElement('span');
-  name.className = 'text-xs font-mono truncate flex-1';
-  if (isPreviewable(entry)) {
-    name.className += ' text-muted hover:text-primary cursor-pointer transition-colors';
-    name.onclick = () => showPreviewModal(entry);
-  } else {
-    name.className += ' text-dim';
-  }
-  name.textContent = entry.name;
-
-  const dl = document.createElement('a');
-  dl.href = entryToObjectUrl(entry); dl.download = entry.name;
-  dl.className = 'text-xs text-dim hover:text-accent transition-colors shrink-0 opacity-0 group-hover:opacity-100';
-  dl.textContent = '↓'; dl.title = t('fileViewer.download');
-
-  wrap.append(icon, name, dl);
-
-  if (editable) {
-    const rm = document.createElement('button');
-    rm.className = 'text-dim hover:text-danger text-xs transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
-    rm.textContent = '✕'; rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
-    wrap.appendChild(rm);
-  }
-
-  return wrap;
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
-
-export function renderFiles(options: {
-  files: FileEntry[]; editable: boolean;
-  onAdd?: (e: FileEntry) => void;
-  onRemove?: (i: number) => void;
-}): HTMLElement {
-  const { files, editable } = options;
-  const onAdd = options.onAdd ?? (() => {});
-  const onRemove = options.onRemove ?? (() => {});
-
-  const wrap = document.createElement('div'); wrap.className = 'space-y-2';
-
-  const header = document.createElement('div'); header.className = 'flex items-center justify-between';
-  const titleEl = document.createElement('span'); titleEl.className = 'section-title';
-  titleEl.textContent = files.length > 0 ? t('fileViewer.attachmentsCount', { count: files.length }) : t('fileViewer.attachments');
-  header.appendChild(titleEl);
-
-  if (editable) {
-    const addBtn = document.createElement('label');
-    addBtn.className = 'btn-ghost text-xs cursor-pointer'; addBtn.textContent = t('fileViewer.add');
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file'; fileInput.className = 'hidden'; fileInput.multiple = true;
-    fileInput.onchange = async () => {
-      if (!fileInput.files) return;
-      for (const file of Array.from(fileInput.files)) { onAdd(await fileToEntry(file)); }
-      fileInput.value = '';
-    };
-    addBtn.appendChild(fileInput);
-    header.appendChild(addBtn);
-  }
-  wrap.appendChild(header);
-
-  if (files.length > 0) {
-    const list = document.createElement('div'); list.className = 'space-y-1';
-    files.forEach((entry, i) => list.appendChild(renderFileEntry(entry, () => onRemove(i), editable)));
-    wrap.appendChild(list);
-  }
-
-  return wrap;
-}
 
 export function renderNotes(notes: string): HTMLElement {
   const wrap = document.createElement('div');
