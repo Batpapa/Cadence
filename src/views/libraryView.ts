@@ -1,5 +1,6 @@
 import type { AppContext, Card } from '../types';
 import { pct, availabilityColor, trashIcon, focusIfDesktop } from '../utils';
+import { exportCards } from '../services/importExport';
 import { confirmModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
@@ -64,19 +65,24 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
 
   const selectAllBtn = document.createElement('button'); selectAllBtn.className = 'btn-ghost text-xs'; selectAllBtn.textContent = t('library.selectAll');
   const deselectBtn = document.createElement('button'); deselectBtn.className = 'btn-ghost text-xs'; deselectBtn.textContent = t('library.deselectAll');
+  const exportBtn = document.createElement('button'); exportBtn.className = 'btn-ghost text-xs hidden'; exportBtn.textContent = t('library.exportSelected');
   const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger text-xs flex items-center gap-1.5';
   deleteBtn.title = t('library.deleteSelected'); deleteBtn.appendChild(trashIcon(12));
   const deleteLbl = document.createElement('span'); deleteBtn.appendChild(deleteLbl);
+
+  exportBtn.onclick = () => exportCards(allCards.filter(c => selected.has(c.id)));
 
   const updateSelBar = (filtered: Card[]) => {
     selectAllBtn.onclick = () => { for (const c of filtered) selected.add(c.id); renderList(); };
     if (selected.size === 0) {
       selLabel.textContent = '';
       deselectBtn.classList.add('hidden');
+      exportBtn.classList.add('hidden');
       deleteBtn.classList.add('hidden');
     } else {
       selLabel.textContent = t('library.selected', { count: selected.size });
       deselectBtn.classList.remove('hidden');
+      exportBtn.classList.remove('hidden');
       deleteLbl.textContent = String(selected.size);
       deleteBtn.classList.remove('hidden');
     }
@@ -103,7 +109,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
 
   deselectBtn.classList.add('hidden');
   deleteBtn.classList.add('hidden');
-  selActions.append(selectAllBtn, deselectBtn, deleteBtn);
+  selActions.append(selectAllBtn, deselectBtn, exportBtn, deleteBtn);
   selBar.append(selLabel, selActions);
   wrap.appendChild(selBar);
 
