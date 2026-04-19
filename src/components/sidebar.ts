@@ -5,7 +5,7 @@ import { getCurrentUser, updateUser, ensureCurrentUser } from '../services/userS
 import { findParentFolder } from '../services/deckService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
-import { exportFull, parseImport } from '../services/importExport';
+import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, manualSync, type DriveStatus } from '../services/driveService';
@@ -331,7 +331,7 @@ function showSettingsModal(ctx: AppContext): void {
   const exportBtn = document.createElement('button');
   exportBtn.className = 'btn-ghost text-xs flex-1';
   exportBtn.textContent = t('settings.export');
-  exportBtn.onclick = () => exportFull(ctx.state);
+  exportBtn.onclick = () => exportBackup(ctx.state);
   dataRow.appendChild(exportBtn);
 
   // Import
