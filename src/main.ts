@@ -14,6 +14,7 @@ import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { initDriveClient, isDriveConnected, loadFromCloud, syncToCloud, getLocalTimestamp, initDriveVisibilitySync } from './services/driveService';
+import { migrateState } from './services/migration';
 
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
@@ -138,9 +139,10 @@ class App {
     await initDb();
     const savedState = await loadState();
     const state: AppState = savedState ?? emptyState();
+    migrateState(state);
     ensureCurrentUser(state);
-    setLanguage(getCurrentUser(state).language ?? 'en');
-    await saveState(state); // persist ensured user
+    setLanguage(getCurrentUser(state).language);
+    await saveState(state); // persist migration + ensured user
     initPWA();
     initDriveVisibilitySync();
     void initDriveClient().then(async () => {
@@ -149,6 +151,7 @@ class App {
         const driveData = await loadFromCloud();
         if (driveData && (driveData._lastModified ?? 0) > getLocalTimestamp()) {
           const { _lastModified: _, ...clean } = driveData as AppState & { _lastModified?: number };
+          migrateState(clean as AppState);
           Object.assign(state, clean);
           await saveState(state);
         }

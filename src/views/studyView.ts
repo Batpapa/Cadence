@@ -84,8 +84,6 @@ export function renderStudyView(
     content.appendChild(done); wrap.appendChild(content); return wrap;
   }
 
-  const work = state.cardWorks[`${user.id}:${cardId}`];
-
   const cardWrap = document.createElement('div'); cardWrap.className = 'max-w-3xl mx-auto space-y-6';
 
   const cardHeader = document.createElement('div'); cardHeader.className = 'flex items-center justify-between';

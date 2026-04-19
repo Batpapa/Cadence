@@ -115,7 +115,7 @@ export function replayFSRS(history: SessionEntry[]): { stability: number; diffic
   let difficulty: number | undefined;
   let lastTs: number | undefined;
   for (const entry of sorted) {
-    const result = applyFSRS(stability, difficulty, lastTs, entry.rating!, entry.ts);
+    const result = applyFSRS(stability, difficulty, lastTs, entry.rating, entry.ts);
     stability = result.stability;
     difficulty = result.difficulty;
     lastTs = entry.ts;

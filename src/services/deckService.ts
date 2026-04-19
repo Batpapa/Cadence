@@ -1,6 +1,6 @@
 import type { User, Card, Deck, DeckEntry, CardWork, AppState } from '../types';
 import {
-  cardGain, effectiveImportance, totalDeckImportance, isAvailable,
+  cardGain, totalDeckImportance, isAvailable,
 } from './knowledgeService';
 
 // ── Picking strategies ────────────────────────────────────────────────────────

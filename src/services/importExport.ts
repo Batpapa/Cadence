@@ -1,5 +1,6 @@
 import type { AppState } from '../types';
 import { toDateStr } from '../utils';
+import { migrateState } from './migration';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -19,14 +20,8 @@ function isAppState(data: unknown): data is AppState {
 }
 
 /** Full backup — all AppState including personal data. */
-export function exportFull(state: AppState): void {
-  download(JSON.stringify(state, null, 2), `cadence-full-${toDateStr(new Date())}.json`);
-}
-
-/** Content-only export — cards and decks, no personal data. */
-export function exportContent(state: AppState): void {
-  const payload = { cards: state.cards, decks: state.decks };
-  download(JSON.stringify(payload, null, 2), `cadence-content-${toDateStr(new Date())}.json`);
+export function exportBackup(state: AppState): void {
+  download(JSON.stringify(state, null, 2), `cadence-backup-${toDateStr(new Date())}.json`);
 }
 
 export async function parseImport(file: File): Promise<AppState> {
@@ -34,6 +29,7 @@ export async function parseImport(file: File): Promise<AppState> {
   let data: unknown;
   try { data = JSON.parse(text); } catch { throw new Error('Invalid JSON file'); }
   if (!isAppState(data)) throw new Error('File is not a valid Cadence backup');
+  migrateState(data);
   return data;
 }
 

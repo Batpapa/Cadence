@@ -1,5 +1,6 @@
 import type { AppState, FileEntry } from './types';
 import { t } from './services/i18nService';
+import { SCHEMA_VERSION } from './services/migration';
 
 export function generateId(): string {
   return crypto.randomUUID();
@@ -65,6 +66,7 @@ export function entryToObjectUrl(entry: FileEntry): string {
 
 export function emptyState(): AppState {
   return {
+    schemaVersion: SCHEMA_VERSION,
     users: {},
     currentUserId: '',
     cards: {},
