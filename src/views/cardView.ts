@@ -1,5 +1,5 @@
 import type { AppContext } from '../types';
-import { pct, timeAgo, trashIcon, makeInlineEditable, unlinkIcon, focusIfDesktop } from '../utils';
+import { pct, trashIcon, makeInlineEditable, unlinkIcon, focusIfDesktop } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes, renderFiles } from '../components/fileViewer';
 import { renderEmbeds } from '../components/embedViewer';
@@ -295,12 +295,10 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
       const badge = document.createElement('span');
       badge.className = 'inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 bg-elevated rounded text-muted group';
       const dateLabel = document.createElement('span'); dateLabel.textContent = new Date(entry.ts).toLocaleString();
-      if (entry.rating) {
-        const rIcon = document.createElement('span');
-        rIcon.className = `text-[10px] ${ratingColor[entry.rating] ?? ''}`;
-        rIcon.textContent = ratingIcon[entry.rating] ?? '';
-        badge.appendChild(rIcon);
-      }
+      const rIcon = document.createElement('span');
+      rIcon.className = `text-[10px] ${ratingColor[entry.rating] ?? ''}`;
+      rIcon.textContent = ratingIcon[entry.rating] ?? '';
+      badge.appendChild(rIcon);
       badge.appendChild(dateLabel);
       const rmBtn = document.createElement('button');
       rmBtn.className = 'opacity-0 group-hover:opacity-100 text-dim hover:text-danger transition-all cursor-pointer leading-none';

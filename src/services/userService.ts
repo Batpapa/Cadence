@@ -9,8 +9,7 @@ function detectLanguage(): Lang {
   return (SUPPORTED_LANGS.includes(code as Lang) ? code : 'en') as Lang;
 }
 
-const DEFAULT_USER: Omit<User, 'id'> = {
-  name: 'Moi',
+const DEFAULT_USER: Omit<User, 'id' | 'language'> = {
   availabilityThreshold: 0.9,
   weightByImportance: true,
 };

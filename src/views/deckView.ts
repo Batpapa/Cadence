@@ -1,14 +1,10 @@
-import type { AppContext, Card, DeckEntry } from '../types';
-import { pct, timeAgo, availabilityColor, trashIcon, renderAvailabilityBar, makeInlineEditable, unlinkIcon, addTouchDragSupport, focusIfDesktop } from '../utils';
-import { promptModal, confirmModal, showModal, closeModal } from '../components/modal';
+import type { AppContext, DeckEntry } from '../types';
+import { pct, timeAgo, availabilityColor, trashIcon, makeInlineEditable, unlinkIcon, addTouchDragSupport, focusIfDesktop } from '../utils';
+import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
-import { findParentFolder, decksContainingCard } from '../services/deckService';
+import { findParentFolder } from '../services/deckService';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
-import {
-  deckAvailability, cardAvailability, effectiveImportance,
-  mostUrgentEntry, totalDeckImportance, isAvailable,
-  deckStability, deckEase, replayFSRS, retentionWindowDays,
-} from '../services/knowledgeService';
+import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 
@@ -23,7 +19,6 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   const user = getCurrentUser(state);
   const w = user.weightByImportance ?? true;
-  const urgent = mostUrgentEntry(user, deck, state.cards, state.cardWorks, w);
 
   // ── Header ──
   const header = document.createElement('div');
@@ -123,7 +118,6 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
     cardsSection.appendChild(empty);
   } else {
     const list = document.createElement('div'); list.className = 'space-y-1';
-    const total = totalDeckImportance(deck, state.cards);
 
     let draggedCardId: string | null = null;
     let dropIndicator: HTMLElement | null = null;

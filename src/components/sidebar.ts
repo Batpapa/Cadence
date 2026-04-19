@@ -5,7 +5,7 @@ import { getCurrentUser, updateUser, ensureCurrentUser } from '../services/userS
 import { findParentFolder } from '../services/deckService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
-import { exportFull, exportContent, parseImport } from '../services/importExport';
+import { exportFull, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, manualSync, type DriveStatus } from '../services/driveService';
@@ -289,7 +289,6 @@ function showSettingsModal(ctx: AppContext): void {
     return inp;
   };
 
-  const nameInp = mkField(t('settings.name'), '', inp => { inp.type = 'text'; inp.value = user.name; });
   const mastInp = mkField(
     t('settings.availabilityThreshold'),
     t('settings.availabilityThresholdHint'),
@@ -312,7 +311,7 @@ function showSettingsModal(ctx: AppContext): void {
   const langSel = document.createElement('select'); langSel.className = 'input';
   [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }].forEach(({ value, label }) => {
     const opt = document.createElement('option'); opt.value = value; opt.textContent = label;
-    if ((user.language ?? 'en') === value) opt.selected = true;
+    if (user.language === value) opt.selected = true;
     langSel.appendChild(opt);
   });
   langWrap.append(langLbl, langSel);
@@ -326,24 +325,19 @@ function showSettingsModal(ctx: AppContext): void {
   const dataTitle = document.createElement('div'); dataTitle.className = 'section-title'; dataTitle.textContent = t('settings.data');
   body.appendChild(dataTitle);
 
-  const dataGrid = document.createElement('div'); dataGrid.className = 'grid grid-cols-2 gap-2';
+  const dataRow = document.createElement('div'); dataRow.className = 'flex gap-2';
 
-  const mkDataBtn = (label: string, hint: string, cls: string, onClick: () => void): HTMLButtonElement => {
-    const btn = document.createElement('button');
-    btn.className = `${cls} text-xs py-2 px-3 rounded text-left space-y-0.5`;
-    const l = document.createElement('div'); l.className = 'font-medium'; l.textContent = label;
-    const h = document.createElement('div'); h.className = 'text-[10px] opacity-60 font-normal'; h.textContent = hint;
-    btn.append(l, h); btn.onclick = onClick;
-    return btn;
-  };
+  // Export
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'btn-ghost text-xs flex-1';
+  exportBtn.textContent = t('settings.export');
+  exportBtn.onclick = () => exportFull(ctx.state);
+  dataRow.appendChild(exportBtn);
 
-  dataGrid.appendChild(mkDataBtn(t('settings.exportFull'), t('settings.exportFullHint'), 'btn-ghost', () => exportFull(ctx.state)));
-  dataGrid.appendChild(mkDataBtn(t('settings.exportLite'), t('settings.exportLiteHint'), 'btn-ghost', () => exportContent(ctx.state)));
-
+  // Import
   const importLabel = document.createElement('label');
-  importLabel.className = 'btn-ghost text-xs py-2 px-3 rounded cursor-pointer space-y-0.5';
-  const importLabelTitle = document.createElement('div'); importLabelTitle.className = 'font-medium'; importLabelTitle.textContent = t('settings.importLabel');
-  const importLabelHint = document.createElement('div'); importLabelHint.className = 'text-[10px] opacity-60'; importLabelHint.textContent = t('settings.importHint');
+  importLabel.className = 'btn-ghost text-xs flex-1 text-center cursor-pointer';
+  importLabel.textContent = t('settings.import');
   const importInput = document.createElement('input');
   importInput.type = 'file'; importInput.accept = 'application/json'; importInput.className = 'hidden';
   importInput.onchange = async () => {
@@ -360,21 +354,25 @@ function showSettingsModal(ctx: AppContext): void {
     } catch (e) { alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`); }
     importInput.value = '';
   };
-  importLabel.append(importLabelTitle, importLabelHint, importInput);
-  dataGrid.appendChild(importLabel);
+  importLabel.appendChild(importInput);
+  dataRow.appendChild(importLabel);
 
-  dataGrid.appendChild(mkDataBtn(t('settings.reset'), t('settings.resetHint'), 'btn-ghost text-danger hover:bg-danger/10 hover:text-danger', () => {
+  // Reset
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn-ghost text-xs flex-1 text-danger hover:bg-danger/10 hover:text-danger';
+  resetBtn.textContent = t('settings.reset');
+  resetBtn.onclick = () => {
     confirmModal(t('settings.reset.title'), t('settings.reset.message'), t('settings.reset.confirm'), async () => {
-      const u = ctx.state.users[ctx.state.currentUserId];
       const fresh = emptyState();
-      if (u) { fresh.users[u.id] = u; fresh.currentUserId = u.id; }
+      ensureCurrentUser(fresh);
       closeModal();
       await ctx.mutate(s => { Object.assign(s, fresh); });
       ctx.navigate({ view: 'folder', folderId: null });
     });
-  }));
+  };
+  dataRow.appendChild(resetBtn);
 
-  body.appendChild(dataGrid);
+  body.appendChild(dataRow);
 
   // ── Google Drive Sync ──
   if (isDriveFeatureEnabled()) {
@@ -481,13 +479,6 @@ function showSettingsModal(ctx: AppContext): void {
   const saveField = (patch: Partial<Omit<typeof user, 'id'>>) => {
     ctx.mutate(s => updateUser(s, patch));
   };
-
-  nameInp.addEventListener('blur', () => {
-    const name = nameInp.value.trim();
-    if (name) saveField({ name });
-    else nameInp.value = user.name;
-  });
-  nameInp.addEventListener('keydown', e => { if (e.key === 'Enter') nameInp.blur(); if (e.key === 'Escape') closeModal(); });
 
   mastInp.addEventListener('blur', () => {
     const pct = parseFloat(mastInp.value);

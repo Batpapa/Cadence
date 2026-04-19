@@ -9,8 +9,8 @@
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; appearance: textfield; }
-  /* Suppress native drag UI on draggable elements — our touch handlers take over */
-  [draggable="true"] { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+  /* Prevent text selection on draggable elements */
+  [draggable="true"] { user-select: none; -webkit-user-select: none; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
