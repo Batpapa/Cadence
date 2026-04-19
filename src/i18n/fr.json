@@ -301,7 +301,8 @@
 
   "fileViewer.attachments": "Pièces jointes",
   "fileViewer.attachmentsCount": "Pièces jointes ({count})",
-  "fileViewer.add": "+ Ajouter",
+  "fileViewer.addFile": "+ Fichier",
+  "fileViewer.addLink": "+ Lien",
   "fileViewer.download": "Télécharger",
   "fileViewer.remove": "Supprimer",
   "fileViewer.noNotes": "Aucune note.",

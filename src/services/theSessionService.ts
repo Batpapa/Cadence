@@ -1,4 +1,4 @@
-import type { Card, FileEntry } from '../types';
+import type { Card, FileEntry, Attachment } from '../types';
 import { generateId } from '../utils';
 
 const BASE = 'https://thesession.org';
@@ -186,8 +186,7 @@ export function tuneResultToCard(tune: TuneResult, opts: { onlyFirstSetting?: bo
     externalId: `thesession:${tune.id}`,
     content: {
       notes: `[↗ TheSession](${tune.url || `https://thesession.org/tunes/${tune.id}`})`,
-      files: settings.map(s => settingToAbcFile(s, tune)),
-      embeds: [],
+      attachments: settings.map(s => ({ type: 'file' as const, ...settingToAbcFile(s, tune) })) as Attachment[],
     },
   };
 }
