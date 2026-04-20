@@ -138,7 +138,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
 
     const list = document.createElement('div'); list.className = 'space-y-1';
     for (const card of filtered) {
-      const work = state.cardWorks[`${user.id}:${card.id}`];
+      const work = state.cardWorks[`${state.currentProfileId}:${card.id}`];
       const k = cardAvailability(user, work);
       const deckIds = decksContainingCard(card.id, state);
       const isSelected = selected.has(card.id);

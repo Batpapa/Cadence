@@ -17,10 +17,11 @@ function pickNext(ctx: AppContext, deckId: string, strategy: StudyStrategy): Dec
   const deck = state.decks[deckId];
   if (!deck) return null;
   const user = getCurrentUser(state);
+  const profileId = state.currentProfileId;
   const w = user.weightByImportance ?? true;
-  if (strategy === 'random')     return pickRandom(user, deck, state.cardWorks);
-  if (strategy === 'optimal')    return pickOptimal(user, deck, state.cards, state.cardWorks, w);
-  if (strategy === 'stochastic') return pickStochastic(user, deck, state.cards, state.cardWorks, w);
+  if (strategy === 'random')     return pickRandom(user, profileId, deck, state.cardWorks);
+  if (strategy === 'optimal')    return pickOptimal(user, profileId, deck, state.cards, state.cardWorks, w);
+  if (strategy === 'stochastic') return pickStochastic(user, profileId, deck, state.cards, state.cardWorks, w);
   return null;
 }
 
@@ -38,7 +39,7 @@ export function renderStudyView(
   if (!deck) { wrap.textContent = t('study.notFound'); return wrap; }
 
   const user = getCurrentUser(state);
-  const dk = deckAvailability(user, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
+  const dk = deckAvailability(user, state.currentProfileId, deck, state.cards, state.cardWorks, user.weightByImportance ?? true);
 
   // ── Top bar ──
   const topBar = document.createElement('div');
@@ -107,8 +108,8 @@ export function renderStudyView(
   const logRating = (rating: SessionRating) => {
     const ts = Date.now();
     ctx.mutate(s => {
-      const key = `${s.currentUserId}:${cardId}`;
-      if (!s.cardWorks[key]) s.cardWorks[key] = { userId: s.currentUserId, cardId: cardId!, history: [] };
+      const key = `${s.currentProfileId}:${cardId}`;
+      if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId: cardId!, history: [] };
       s.cardWorks[key]!.history.push({ ts, rating });
     }).then(goNext);
   };
@@ -127,7 +128,7 @@ export function renderStudyView(
   }
 
   const candidateCount = deck.entries.filter(e => {
-    const w = state.cardWorks[`${user.id}:${e.cardId}`];
+    const w = state.cardWorks[`${state.currentProfileId}:${e.cardId}`];
     return !isAvailable(user, w);
   }).length;
   const skipBtn = document.createElement('button'); skipBtn.className = 'btn-ghost py-1.5 text-xs w-full'; skipBtn.textContent = t('study.skip');

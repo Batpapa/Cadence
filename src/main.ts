@@ -9,7 +9,7 @@ import { renderDeckView } from './views/deckView';
 import { renderCardView } from './views/cardView';
 import { renderStudyView } from './views/studyView';
 import { renderLibraryView } from './views/libraryView';
-import { ensureCurrentUser, getCurrentUser } from './services/userService';
+import { ensureCurrentUser, ensureCurrentProfile, getCurrentUser } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
@@ -141,6 +141,7 @@ class App {
     const state: AppState = savedState ?? emptyState();
     migrateState(state);
     ensureCurrentUser(state);
+    ensureCurrentProfile(state);
     setLanguage(getCurrentUser(state).language);
     await saveState(state); // persist migration + ensured user
     initPWA();

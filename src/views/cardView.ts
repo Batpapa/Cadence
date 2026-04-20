@@ -17,7 +17,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   if (!card) { wrap.textContent = t('card.notFound'); return wrap; }
 
   const user = getCurrentUser(state);
-  const work = state.cardWorks[`${user.id}:${cardId}`];
+  const work = state.cardWorks[`${state.currentProfileId}:${cardId}`];
   const k = cardAvailability(user, work);
 
   // ── Header ──
@@ -344,8 +344,8 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
           if (isNaN(ts)) return;
           closeModal();
           ctx.mutate(s => {
-            const key = `${s.currentUserId}:${cardId}`;
-            if (!s.cardWorks[key]) s.cardWorks[key] = { userId: s.currentUserId, cardId, history: [] };
+            const key = `${s.currentProfileId}:${cardId}`;
+            if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
             s.cardWorks[key]!.history.push({ ts, rating: selectedRating });
             s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
           });

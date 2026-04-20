@@ -1,7 +1,7 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
-import { generateId, emptyState, helpIcon, addTouchDragSupport } from '../utils';
+import { generateId, emptyState, helpIcon, trashIcon, addTouchDragSupport } from '../utils';
 import { promptModal, confirmModal, showModal, closeModal } from './modal';
-import { getCurrentUser, updateUser, ensureCurrentUser } from '../services/userService';
+import { getCurrentUser, updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { findParentFolder } from '../services/deckService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
@@ -317,6 +317,90 @@ function showSettingsModal(ctx: AppContext): void {
   langWrap.append(langLbl, langSel);
   body.appendChild(langWrap);
 
+  // ── Profiles ──
+  const dividerProf = document.createElement('hr'); dividerProf.className = 'border-border';
+  body.appendChild(dividerProf);
+
+  const profilesTitle = document.createElement('div'); profilesTitle.className = 'section-title'; profilesTitle.textContent = t('settings.profiles');
+  body.appendChild(profilesTitle);
+
+  const profList = document.createElement('div'); profList.className = 'space-y-0.5';
+
+  const renderProfilesList = () => {
+    profList.innerHTML = '';
+    const currentUser = getCurrentUser(ctx.state);
+    const canDelete = (currentUser.profileIds?.length ?? 0) > 1;
+    for (const pid of currentUser.profileIds ?? []) {
+      const profile = ctx.state.profiles[pid];
+      if (!profile) continue;
+      const isActive = pid === ctx.state.currentProfileId;
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2 px-1 py-1';
+
+      const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'active-profile';
+      radio.checked = isActive; radio.className = 'cursor-pointer accent-[var(--color-accent)]';
+      radio.onchange = () => {
+        ctx.mutate(s => { s.currentProfileId = pid; }).then(() => {
+          if (ctx.route.view === 'study') {
+            ctx.navigate({ view: 'study', deckId: ctx.route.deckId, strategy: ctx.route.strategy });
+          }
+          renderProfilesList();
+        });
+      };
+
+      const nameEl = document.createElement('span');
+      nameEl.className = `text-sm flex-1 truncate cursor-text ${isActive ? 'text-accent font-medium' : 'text-primary'}`;
+      nameEl.textContent = profile.name;
+      nameEl.title = t('settings.profiles.clickToRename');
+      nameEl.onclick = () => {
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.value = profile.name;
+        inp.className = 'text-sm bg-transparent border-b border-accent outline-none flex-1 min-w-0';
+        nameEl.replaceWith(inp); inp.focus(); inp.select();
+        const commit = () => {
+          const val = inp.value.trim();
+          if (val && val !== profile.name) ctx.mutate(s => { s.profiles[pid]!.name = val; }).then(renderProfilesList);
+          else renderProfilesList();
+        };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } if (e.key === 'Escape') renderProfilesList(); });
+      };
+
+      row.append(radio, nameEl);
+
+      if (canDelete) {
+        const delBtn = document.createElement('button'); delBtn.className = 'btn-danger px-2 shrink-0'; delBtn.title = t('settings.profiles.delete.title');
+        delBtn.appendChild(trashIcon(12));
+        delBtn.onclick = () => confirmModal(t('settings.profiles.delete.title'), t('settings.profiles.delete.message', { name: profile.name }), t('common.delete'), () => {
+          ctx.mutate(s => {
+            const u = s.users[s.currentUserId]!;
+            u.profileIds = (u.profileIds ?? []).filter(id => id !== pid);
+            if (s.currentProfileId === pid) s.currentProfileId = u.profileIds[0] ?? '';
+            for (const key of Object.keys(s.cardWorks)) { if (key.startsWith(`${pid}:`)) delete s.cardWorks[key]; }
+            delete s.profiles[pid];
+          }).then(renderProfilesList);
+        });
+        row.appendChild(delBtn);
+      }
+      profList.appendChild(row);
+    }
+  };
+  renderProfilesList();
+  body.appendChild(profList);
+
+  const addProfileBtn = document.createElement('button'); addProfileBtn.className = 'btn-ghost text-xs w-full mt-1'; addProfileBtn.textContent = t('settings.profiles.add');
+  addProfileBtn.onclick = () => promptModal(t('settings.profiles.new'), t('settings.profiles.nameLabel'), '', name => {
+    const pid = generateId();
+    ctx.mutate(s => {
+      s.profiles[pid] = { id: pid, name };
+      const u = s.users[s.currentUserId]!;
+      if (!u.profileIds) u.profileIds = [];
+      u.profileIds.push(pid);
+    }).then(renderProfilesList);
+  });
+  body.appendChild(addProfileBtn);
+
   // ── Divider ──
   const divider = document.createElement('hr'); divider.className = 'border-border';
   body.appendChild(divider);
@@ -347,6 +431,7 @@ function showSettingsModal(ctx: AppContext): void {
       const newState = await parseImport(file);
       confirmModal(t('settings.import.title'), t('settings.import.message'), t('settings.import.confirm'), async () => {
         ensureCurrentUser(newState);
+        ensureCurrentProfile(newState);
         closeModal();
         await ctx.mutate(s => { Object.assign(s, newState); });
         ctx.navigate({ view: 'folder', folderId: null });
@@ -365,6 +450,7 @@ function showSettingsModal(ctx: AppContext): void {
     confirmModal(t('settings.reset.title'), t('settings.reset.message'), t('settings.reset.confirm'), async () => {
       const fresh = emptyState();
       ensureCurrentUser(fresh);
+      ensureCurrentProfile(fresh);
       closeModal();
       await ctx.mutate(s => { Object.assign(s, fresh); });
       ctx.navigate({ view: 'folder', folderId: null });

@@ -18,6 +18,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   if (!deck) { wrap.textContent = t('deck.notFound'); return wrap; }
 
   const user = getCurrentUser(state);
+  const profileId = state.currentProfileId;
   const w = user.weightByImportance ?? true;
 
   // ── Header ──
@@ -51,7 +52,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   const metricsRow = document.createElement('div'); metricsRow.className = 'grid grid-cols-3 gap-3';
 
   // Availability
-  const avail = deckAvailability(user, deck, state.cards, state.cardWorks, w);
+  const avail = deckAvailability(user, profileId, deck, state.cards, state.cardWorks, w);
   const availColor = avail >= 0.75 ? 'text-success' : avail >= 0.4 ? 'text-warn' : avail > 0 ? 'text-danger' : 'text-primary';
   const availBox = document.createElement('div'); availBox.className = 'card-block space-y-2';
   const availLabel = document.createElement('div'); availLabel.className = 'section-title'; availLabel.textContent = t('deck.section.availability');
@@ -59,7 +60,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   availBox.append(availLabel, availVal);
 
   // Stability
-  const stab = deckStability(user, deck, state.cards, state.cardWorks, w);
+  const stab = deckStability(profileId, deck, state.cards, state.cardWorks, w);
   const stabWindow = stab > 0 ? retentionWindowDays(stab, user.availabilityThreshold) : 0;
   const formatDays = (d: number) => d >= 365 ? t('common.durationYears', { n: (d / 365).toFixed(1) }) : d >= 30 ? t('common.durationMonths', { n: Math.round(d / 30) }) : d >= 1 ? t('common.durationDays', { n: Math.round(d) }) : t('common.durationLessThanDay');
   const stabBox = document.createElement('div'); stabBox.className = 'card-block space-y-2';
@@ -68,7 +69,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   stabBox.append(stabLabel, stabVal);
 
   // Ease
-  const ease = deckEase(user, deck, state.cards, state.cardWorks, w);
+  const ease = deckEase(profileId, deck, state.cards, state.cardWorks, w);
   const easeColor = ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : ease > 0 ? 'text-danger' : 'text-primary';
   const easeBox = document.createElement('div'); easeBox.className = 'card-block space-y-2';
   const easeLabel = document.createElement('div'); easeLabel.className = 'section-title'; easeLabel.textContent = t('deck.section.ease');
@@ -80,7 +81,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   // ── Study button ──
   const candidateCount = deck.entries.filter(e => {
-    const w = state.cardWorks[`${user.id}:${e.cardId}`];
+    const w = state.cardWorks[`${profileId}:${e.cardId}`];
     return !isAvailable(user, w);
   }).length;
 
@@ -129,7 +130,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
     for (const entry of deck.entries) {
       const card = state.cards[entry.cardId]; if (!card) continue;
-      const work = state.cardWorks[`${user.id}:${entry.cardId}`];
+      const work = state.cardWorks[`${profileId}:${entry.cardId}`];
       const k = cardAvailability(user, work);
       const fsrs = work ? replayFSRS(work.history) : undefined;
       const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
@@ -251,11 +252,12 @@ function showStrategyModal(ctx: AppContext, deckId: string): void {
       const { state } = ctx;
       const deck = state.decks[deckId]!;
       const user = getCurrentUser(state);
+      const pid = state.currentProfileId;
       const weighted = user.weightByImportance ?? true;
       const pickers = {
-        random:     () => pickRandom(user, deck, state.cardWorks),
-        optimal:    () => pickOptimal(user, deck, state.cards, state.cardWorks, weighted),
-        stochastic: () => pickStochastic(user, deck, state.cards, state.cardWorks, weighted),
+        random:     () => pickRandom(user, pid, deck, state.cardWorks),
+        optimal:    () => pickOptimal(user, pid, deck, state.cards, state.cardWorks, weighted),
+        stochastic: () => pickStochastic(user, pid, deck, state.cards, state.cardWorks, weighted),
       };
       const entry: DeckEntry | null = pickers[s.id]?.() ?? null;
       ctx.navigate({ view: 'study', deckId, strategy: s.id, currentCardId: entry?.cardId ?? null });

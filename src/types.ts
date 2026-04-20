@@ -47,6 +47,7 @@ export interface User {
   availabilityThreshold: number; // default: 0.9 — cards above this R are excluded from study
   weightByImportance: boolean; // default: true — weight deck knowledge bars by card importance
   language: 'en' | 'fr';     // default: 'en'
+  profileIds: string[];       // ordered list of profile IDs belonging to this user
 }
 
 /** Maps directly to FSRS grades: 1=Again · 2=Hard · 3=Good · 4=Easy */
@@ -57,8 +58,13 @@ export interface SessionEntry {
   rating: SessionRating;
 }
 
+export interface Profile {
+  id: string;
+  name: string;
+}
+
 export interface CardWork {
-  userId: string;
+  profileId: string;
   cardId: string;
   history: SessionEntry[];
 }
@@ -77,6 +83,8 @@ export interface AppState {
   schemaVersion?: number;
   users: Record<string, User>;
   currentUserId: string;
+  profiles: Record<string, Profile>;
+  currentProfileId: string;
   cards: Record<string, Card>;
   decks: Record<string, Deck>;
   cardWorks: Record<string, CardWork>; // key: `${userId}:${cardId}`

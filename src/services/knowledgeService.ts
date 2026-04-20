@@ -140,6 +140,7 @@ export function isAvailable(user: User, cardWork: CardWork | undefined): boolean
 /** Weighted availability (avg R) of a full deck (0–1). */
 export function deckAvailability(
   user: User,
+  profileId: string,
   deck: Deck,
   cards: Record<string, Card>,
   cardWorks: Record<string, CardWork>,
@@ -150,7 +151,7 @@ export function deckAvailability(
   for (const entry of deck.entries) {
     const card = cards[entry.cardId]; if (!card) continue;
     const w = weighted ? effectiveImportance(card, entry) : 1;
-    const work = cardWorks[`${user.id}:${entry.cardId}`];
+    const work = cardWorks[`${profileId}:${entry.cardId}`];
     totalWeight += w;
     total += w * cardAvailability(user, work);
   }
@@ -159,7 +160,7 @@ export function deckAvailability(
 
 /** Weighted average stability (days) of a full deck. Only counts reviewed cards. */
 export function deckStability(
-  user: User,
+  profileId: string,
   deck: Deck,
   cards: Record<string, Card>,
   cardWorks: Record<string, CardWork>,
@@ -169,7 +170,7 @@ export function deckStability(
   let total = 0;
   for (const entry of deck.entries) {
     const card = cards[entry.cardId]; if (!card) continue;
-    const work = cardWorks[`${user.id}:${entry.cardId}`];
+    const work = cardWorks[`${profileId}:${entry.cardId}`];
     const fsrs = work ? replayFSRS(work.history) : undefined;
     if (!fsrs) continue;
     const w = weighted ? effectiveImportance(card, entry) : 1;
@@ -181,7 +182,7 @@ export function deckStability(
 
 /** Weighted average ease ((10−D)/9) of a full deck. Only counts reviewed cards. */
 export function deckEase(
-  user: User,
+  profileId: string,
   deck: Deck,
   cards: Record<string, Card>,
   cardWorks: Record<string, CardWork>,
@@ -191,7 +192,7 @@ export function deckEase(
   let total = 0;
   for (const entry of deck.entries) {
     const card = cards[entry.cardId]; if (!card) continue;
-    const work = cardWorks[`${user.id}:${entry.cardId}`];
+    const work = cardWorks[`${profileId}:${entry.cardId}`];
     const fsrs = work ? replayFSRS(work.history) : undefined;
     if (!fsrs) continue;
     const w = weighted ? effectiveImportance(card, entry) : 1;
@@ -217,26 +218,6 @@ export function cardGain(
 
 // ── Deck-level helpers ────────────────────────────────────────────────────────
 
-/** Weighted availability distribution buckets (0–25%, 25–50%, 50–75%, 75–100%). */
-export function deckAvailabilityBuckets(
-  user: User,
-  deck: Deck,
-  cards: Record<string, Card>,
-  cardWorks: Record<string, CardWork>,
-  weighted = true
-): { buckets: [number, number, number, number]; total: number } {
-  const buckets: [number, number, number, number] = [0, 0, 0, 0];
-  let total = 0;
-  for (const entry of deck.entries) {
-    const card = cards[entry.cardId]; if (!card) continue;
-    const w = cardWorks[`${user.id}:${entry.cardId}`];
-    const k = cardAvailability(user, w);
-    const weight = weighted ? effectiveImportance(card, entry) : 1;
-    buckets[Math.min(3, Math.floor(k * 4))] += weight;
-    total += weight;
-  }
-  return { buckets, total };
-}
 
 export function totalDeckImportance(
   deck: Deck,
@@ -250,42 +231,4 @@ export function totalDeckImportance(
   }, 0);
 }
 
-/** Entry with lowest raw knowledge (most forgotten card, regardless of importance). */
-export function weakestEntry(
-  user: User,
-  deck: Deck,
-  cards: Record<string, Card>,
-  cardWorks: Record<string, CardWork>
-): DeckEntry | null {
-  let best: DeckEntry | null = null;
-  let bestK = Infinity;
-  for (const entry of deck.entries) {
-    const card = cards[entry.cardId];
-    if (!card) continue;
-    const work = cardWorks[`${user.id}:${entry.cardId}`];
-    const k = cardAvailability(user, work);
-    if (k < bestK) { bestK = k; best = entry; }
-  }
-  return best;
-}
 
-/** Entry with highest marginal gain (most urgent to review). */
-export function mostUrgentEntry(
-  user: User,
-  deck: Deck,
-  cards: Record<string, Card>,
-  cardWorks: Record<string, CardWork>,
-  weighted = true
-): DeckEntry | null {
-  const total = totalDeckImportance(deck, cards, weighted);
-  let best: DeckEntry | null = null;
-  let bestGain = -Infinity;
-  for (const entry of deck.entries) {
-    const card = cards[entry.cardId];
-    if (!card) continue;
-    const work = cardWorks[`${user.id}:${entry.cardId}`];
-    const g = cardGain(user, card, entry, total, work, weighted);
-    if (g > bestGain) { bestGain = g; best = entry; }
-  }
-  return best;
-}
