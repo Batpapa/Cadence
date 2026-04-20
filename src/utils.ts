@@ -69,6 +69,8 @@ export function emptyState(): AppState {
     schemaVersion: SCHEMA_VERSION,
     users: {},
     currentUserId: '',
+    profiles: {},
+    currentProfileId: '',
     cards: {},
     decks: {},
     cardWorks: {},
@@ -80,24 +82,6 @@ export function emptyState(): AppState {
 
 export function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
-}
-
-export function renderAvailabilityBar(
-  buckets: [number, number, number, number],
-  total: number,
-  className: string
-): HTMLDivElement {
-  const bar = document.createElement('div');
-  bar.className = className;
-  if (total > 0) {
-    for (const [i, cls] of (['bg-danger', 'bg-warn', 'bg-success/60', 'bg-success'] as const).entries()) {
-      const w = buckets[i]! / total;
-      if (w === 0) continue;
-      const seg = document.createElement('div'); seg.className = cls; seg.style.width = `${w * 100}%`;
-      bar.appendChild(seg);
-    }
-  }
-  return bar;
 }
 
 export function makeInlineEditable(el: HTMLElement, currentValue: string, onSave: (val: string) => void): void {

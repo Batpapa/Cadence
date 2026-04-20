@@ -8,11 +8,12 @@ import {
 /** Cards not yet mastered by the user — the only ones eligible for study. */
 function candidateEntries(
   user: User,
+  profileId: string,
   deck: Deck,
   cardWorks: Record<string, CardWork>
 ): DeckEntry[] {
   return deck.entries.filter(entry => {
-    const work = cardWorks[`${user.id}:${entry.cardId}`];
+    const work = cardWorks[`${profileId}:${entry.cardId}`];
     return !isAvailable(user, work);
   });
 }
@@ -20,10 +21,11 @@ function candidateEntries(
 /** Uniform random pick, excluding mastered cards. */
 export function pickRandom(
   user: User,
+  profileId: string,
   deck: Deck,
   cardWorks: Record<string, CardWork>
 ): DeckEntry | null {
-  const candidates = candidateEntries(user, deck, cardWorks);
+  const candidates = candidateEntries(user, profileId, deck, cardWorks);
   if (candidates.length === 0) return null;
   return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
 }
@@ -31,12 +33,13 @@ export function pickRandom(
 /** Deterministic: entry with highest marginal gain, excluding mastered cards. */
 export function pickOptimal(
   user: User,
+  profileId: string,
   deck: Deck,
   cards: Record<string, Card>,
   cardWorks: Record<string, CardWork>,
   weighted = true
 ): DeckEntry | null {
-  const candidates = candidateEntries(user, deck, cardWorks);
+  const candidates = candidateEntries(user, profileId, deck, cardWorks);
   if (candidates.length === 0) return null;
   const total = totalDeckImportance(deck, cards, weighted);
   let best: DeckEntry | null = null;
@@ -44,7 +47,7 @@ export function pickOptimal(
   for (const entry of candidates) {
     const card = cards[entry.cardId];
     if (!card) continue;
-    const work = cardWorks[`${user.id}:${entry.cardId}`];
+    const work = cardWorks[`${profileId}:${entry.cardId}`];
     const g = cardGain(user, card, entry, total, work, weighted);
     if (g > bestGain) { bestGain = g; best = entry; }
   }
@@ -54,18 +57,19 @@ export function pickOptimal(
 /** Weighted random by marginal gain, excluding mastered cards. */
 export function pickStochastic(
   user: User,
+  profileId: string,
   deck: Deck,
   cards: Record<string, Card>,
   cardWorks: Record<string, CardWork>,
   weighted = true
 ): DeckEntry | null {
-  const candidates = candidateEntries(user, deck, cardWorks);
+  const candidates = candidateEntries(user, profileId, deck, cardWorks);
   if (candidates.length === 0) return null;
   const total = totalDeckImportance(deck, cards, weighted);
   const gains = candidates.map(e => {
     const card = cards[e.cardId];
     if (!card) return 0;
-    const work = cardWorks[`${user.id}:${e.cardId}`];
+    const work = cardWorks[`${profileId}:${e.cardId}`];
     return Math.max(0, cardGain(user, card, e, total, work, weighted));
   });
   const totalGain = gains.reduce((s, g) => s + g, 0);

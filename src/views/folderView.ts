@@ -188,7 +188,7 @@ function renderCardMap(ctx: AppContext): HTMLElement {
   type Point = { id: string; name: string; s: number; ease: number; k: number; imp: number; deckIds: string[] };
   const allPoints: Point[] = [];
   for (const card of Object.values(state.cards)) {
-    const work = state.cardWorks[`${user.id}:${card.id}`];
+    const work = state.cardWorks[`${state.currentProfileId}:${card.id}`];
     if (!work || work.history.length === 0) continue;
     const fsrs = replayFSRS(work.history);
     if (!fsrs) continue;
