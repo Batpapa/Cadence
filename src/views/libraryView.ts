@@ -33,27 +33,104 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
   header.append(titleWrap, headerBtns);
   wrap.appendChild(header);
 
-  // ── Search + tag filter ──
-  const filterBar = document.createElement('div'); filterBar.className = 'px-6 pb-3 shrink-0 space-y-2';
+  // ── Search + filters ──
+  const filterBar = document.createElement('div'); filterBar.className = 'px-6 pb-2 shrink-0 space-y-1';
   const searchInput = document.createElement('input'); searchInput.type = 'text'; searchInput.placeholder = t('library.search'); searchInput.className = 'input';
+  filterBar.appendChild(searchInput);
 
   const allTags = [...new Set(allCards.flatMap(c => c.tags ?? []))].sort();
   const activeTags = new Set<string>();
 
-  const tagRow = document.createElement('div'); tagRow.className = 'flex flex-wrap gap-1.5';
-  const renderTagRow = () => {
-    tagRow.innerHTML = '';
-    for (const tag of allTags) {
-      const btn = document.createElement('button');
-      const isActive = activeTags.has(tag);
-      btn.className = `text-xs px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${isActive ? 'bg-accent text-white border-accent' : 'border-border text-muted hover:border-accent hover:text-accent'}`;
-      btn.textContent = tag;
-      btn.onclick = () => { if (isActive) activeTags.delete(tag); else activeTags.add(tag); renderTagRow(); renderList(); };
-      tagRow.appendChild(btn);
-    }
+  const NO_DECK = '__no_deck__';
+  const allDecks = Object.values(state.decks)
+    .filter(d => d.entries.some(e => state.cards[e.cardId]))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const hasOrphanCards = allCards.some(c => decksContainingCard(c.id, state).length === 0);
+  const activeDecks = new Set<string>();
+
+  type FilterSection = { el: HTMLElement; updateAvailable: (available: Set<string>) => void };
+
+  const mkFilterSection = (
+    labelKey: string,
+    items: string[],
+    activeSet: Set<string>,
+    labelOf: (id: string) => string,
+    titleOf: (id: string) => string,
+    onToggle: () => void,
+  ): FilterSection => {
+    let open = false;
+    let available = new Set(items);
+    const section = document.createElement('div');
+
+    const headerBtn = document.createElement('button');
+    headerBtn.className = 'flex items-center gap-1.5 text-xs text-dim hover:text-primary transition-colors py-0.5';
+
+    const arrow = document.createElement('span'); arrow.className = 'text-[10px]'; arrow.textContent = '▶';
+    const labelEl = document.createElement('span'); labelEl.textContent = t(labelKey);
+
+    const chips = document.createElement('div'); chips.className = 'flex flex-wrap gap-1.5 pt-1 hidden';
+
+    const renderChips = () => {
+      chips.innerHTML = '';
+      for (const id of items) {
+        const isActive = activeSet.has(id);
+        const isAvailable = isActive || available.has(id);
+        const btn = document.createElement('button');
+        btn.className = `text-xs px-2 py-0.5 rounded-full border transition-colors
+          ${isActive ? 'bg-accent text-white border-accent cursor-pointer'
+            : isAvailable ? 'border-border text-muted hover:border-accent hover:text-accent cursor-pointer'
+            : 'border-border text-muted opacity-30 cursor-not-allowed'}`;
+        btn.textContent = labelOf(id);
+        btn.title = titleOf(id);
+        btn.disabled = !isAvailable;
+        btn.onclick = () => { if (isActive) activeSet.delete(id); else activeSet.add(id); renderChips(); onToggle(); };
+        chips.appendChild(btn);
+      }
+    };
+
+    headerBtn.onclick = () => {
+      open = !open;
+      arrow.textContent = open ? '▾' : '▶';
+      chips.classList.toggle('hidden', !open);
+      if (open) renderChips();
+    };
+
+    headerBtn.append(arrow, labelEl);
+    section.append(headerBtn, chips);
+
+    const updateAvailable = (newAvailable: Set<string>) => {
+      available = newAvailable;
+      if (open) renderChips();
+    };
+
+    return { el: section, updateAvailable };
   };
 
-  filterBar.append(searchInput, tagRow);
+  let tagSection: FilterSection | null = null;
+  let deckSection: FilterSection | null = null;
+
+  if (allTags.length > 0) {
+    tagSection = mkFilterSection(
+      'library.filterTags', allTags, activeTags,
+      tag => tag, tag => tag,
+      () => renderList(),
+    );
+    filterBar.appendChild(tagSection.el);
+  }
+  if (allDecks.length > 0 || hasOrphanCards) {
+    const deckItems = [
+      ...(hasOrphanCards ? [NO_DECK] : []),
+      ...allDecks.map(d => d.id),
+    ];
+    deckSection = mkFilterSection(
+      'library.filterDecks', deckItems, activeDecks,
+      id => id === NO_DECK ? t('library.filterNoDecks') : (state.decks[id]?.name ?? id),
+      id => id === NO_DECK ? '' : deckPath(id, state),
+      () => renderList(),
+    );
+    filterBar.appendChild(deckSection.el);
+  }
+
   wrap.appendChild(filterBar);
 
   // ── Selection toolbar ──
@@ -100,7 +177,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
           for (const cardId of selected) {
             delete s.cards[cardId];
             for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
-            delete s.cardWorks[`${s.currentUserId}:${cardId}`];
+            delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
           }
         });
       }
@@ -124,15 +201,25 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
         const tags = c.tags ?? [];
         const matchesText = !q || c.name.toLowerCase().includes(q) || tags.some(tg => tg.toLowerCase().includes(q));
         const matchesTag = activeTags.size === 0 || [...activeTags].every(at => tags.includes(at));
-        return matchesText && matchesTag;
+        const cardDeckIds = decksContainingCard(c.id, state);
+        const matchesDeck = activeDecks.size === 0
+          || [...activeDecks].every(id => id === NO_DECK ? cardDeckIds.length === 0 : cardDeckIds.includes(id));
+        return matchesText && matchesTag && matchesDeck;
       })
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Update which chips are available given the current result set
+    const filteredTags = new Set(filtered.flatMap(c => c.tags ?? []));
+    const filteredDecks = new Set(filtered.flatMap(c => decksContainingCard(c.id, state)));
+    if (filtered.some(c => decksContainingCard(c.id, state).length === 0)) filteredDecks.add(NO_DECK);
+    tagSection?.updateAvailable(filteredTags);
+    deckSection?.updateAvailable(filteredDecks);
 
     updateSelBar(filtered);
 
     if (filtered.length === 0) {
       const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic';
-      empty.textContent = (q || activeTags.size > 0) ? t('library.noMatch') : t('library.empty');
+      empty.textContent = (q || activeTags.size > 0 || activeDecks.size > 0) ? t('library.noMatch') : t('library.empty');
       listWrap.appendChild(empty); return;
     }
 
@@ -194,7 +281,6 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
     listWrap.appendChild(list);
   };
 
-  renderTagRow();
   renderList();
   searchInput.addEventListener('input', () => renderList());
   wrap.appendChild(listWrap);
