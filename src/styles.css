@@ -30,7 +30,17 @@
   .view-enter { animation: fadeSlideIn 0.15s ease-out; }
   .knowledge-bar { @apply h-1.5 rounded-full bg-border overflow-hidden; }
   .knowledge-fill { @apply h-full rounded-full transition-all duration-500; }
-  .card-checkbox { accent-color: theme('colors.accent'); @apply w-3.5 h-3.5 rounded cursor-pointer; }
+  .card-checkbox {
+    appearance: none; -webkit-appearance: none;
+    @apply w-3.5 h-3.5 rounded cursor-pointer shrink-0 relative border border-muted bg-transparent transition-colors;
+    &:checked { @apply bg-accent border-accent; }
+    &:checked::after {
+      content: '';
+      position: absolute; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4l3 3 5-6' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: center; background-size: 75%;
+    }
+  }
 }
 
 @keyframes fadeSlideIn {

@@ -106,17 +106,9 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
     return { el: section, updateAvailable };
   };
 
-  let tagSection: FilterSection | null = null;
   let deckSection: FilterSection | null = null;
+  let tagSection: FilterSection | null = null;
 
-  if (allTags.length > 0) {
-    tagSection = mkFilterSection(
-      'library.filterTags', allTags, activeTags,
-      tag => tag, tag => tag,
-      () => renderList(),
-    );
-    filterBar.appendChild(tagSection.el);
-  }
   if (allDecks.length > 0 || hasOrphanCards) {
     const deckItems = [
       ...(hasOrphanCards ? [NO_DECK] : []),
@@ -129,6 +121,14 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       () => renderList(),
     );
     filterBar.appendChild(deckSection.el);
+  }
+  if (allTags.length > 0) {
+    tagSection = mkFilterSection(
+      'library.filterTags', allTags, activeTags,
+      tag => tag, tag => tag,
+      () => renderList(),
+    );
+    filterBar.appendChild(tagSection.el);
   }
 
   wrap.appendChild(filterBar);
@@ -320,7 +320,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       row.className = `flex items-center gap-3 px-3 py-2.5 rounded transition-colors group cursor-pointer ${isSelected ? 'bg-elevated' : 'hover:bg-elevated'}`;
 
       const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = isSelected;
-      checkbox.className = `card-checkbox shrink-0 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`;
+      checkbox.className = `card-checkbox shrink-0 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'}`;
       checkbox.onclick = (e) => {
         e.stopPropagation();
         if (checkbox.checked) selected.add(card.id); else selected.delete(card.id);
