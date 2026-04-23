@@ -1,5 +1,5 @@
 import type { Attachment, FileEntry, EmbedEntry } from '../types';
-import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport } from '../utils';
+import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, trashIcon } from '../utils';
 import { showPreviewModal } from './fileViewer';
 import { showEmbedModal } from './embedViewer';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
@@ -56,8 +56,9 @@ function renderFileRow(entry: FileEntry, onRemove: () => void, editable: boolean
 
   if (editable) {
     const rm = document.createElement('button');
-    rm.className = 'text-dim hover:text-danger text-xs transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
-    rm.textContent = '✕'; rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
+    rm.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
+    rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
+    rm.appendChild(trashIcon(11));
     wrap.appendChild(rm);
   }
 
@@ -97,8 +98,9 @@ function renderEmbedRow(entry: EmbedEntry, onRemove: () => void, editable: boole
 
   if (editable) {
     const rm = document.createElement('button');
-    rm.className = 'text-dim hover:text-danger text-xs transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
-    rm.textContent = '✕'; rm.title = t('embed.remove'); rm.onclick = onRemove;
+    rm.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
+    rm.title = t('embed.remove'); rm.onclick = onRemove;
+    rm.appendChild(trashIcon(11));
     row.appendChild(rm);
   }
 
