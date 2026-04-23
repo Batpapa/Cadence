@@ -10,7 +10,10 @@ import { t } from '../services/i18nService';
 
 export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   const wrap = document.createElement('div');
-  wrap.className = 'p-6 space-y-6 view-enter overflow-y-auto h-full';
+  wrap.className = 'flex flex-col h-full view-enter';
+
+  const top = document.createElement('div');
+  top.className = 'shrink-0 px-6 pt-6 pb-4 space-y-6';
 
   const { state } = ctx;
   const deck = state.decks[deckId];
@@ -45,7 +48,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   headerActions.append(deleteBtn);
   header.append(titleWrap, headerActions);
-  wrap.appendChild(header);
+  top.appendChild(header);
 
   // ── Metrics ──
   const metricsRow = document.createElement('div'); metricsRow.className = 'grid grid-cols-3 gap-3';
@@ -76,7 +79,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   easeBox.append(easeLabel, easeVal);
 
   metricsRow.append(availBox, stabBox, easeBox);
-  wrap.appendChild(metricsRow);
+  top.appendChild(metricsRow);
 
   // ── Study button ──
   const candidateCount = deck.entries.filter(e => {
@@ -94,15 +97,17 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   if (!noCards && !allMastered) {
     studyBtn.onclick = () => showStrategyModal(ctx, deckId);
   }
-  wrap.appendChild(studyBtn);
+  top.appendChild(studyBtn);
+  wrap.appendChild(top);
 
   // ── Cards list ──
-  const cardsSection = document.createElement('div'); cardsSection.className = 'space-y-3';
-
-  const cardsHeader = document.createElement('div'); cardsHeader.className = 'flex items-center justify-between';
+  const cardsHeader = document.createElement('div'); cardsHeader.className = 'shrink-0 flex items-center justify-between px-6 pb-2';
   const cardsTitle = document.createElement('span'); cardsTitle.className = 'section-title'; cardsTitle.textContent = t('deck.section.cards', { count: deck.entries.length });
   cardsHeader.append(cardsTitle);
-  cardsSection.appendChild(cardsHeader);
+  wrap.appendChild(cardsHeader);
+
+  const cardsWrap = document.createElement('div'); cardsWrap.className = 'flex-1 overflow-y-auto px-6 pb-6';
+  const cardsSection = document.createElement('div'); cardsSection.className = 'space-y-3';
 
   if (deck.entries.length === 0) {
     const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic'; empty.textContent = t('deck.empty');
@@ -216,12 +221,12 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   }
 
   // ── Quick-link input ──
-  const linkWrap = document.createElement('div'); linkWrap.className = 'relative';
+  const linkWrap = document.createElement('div'); linkWrap.className = 'relative w-44';
 
   const linkInput = document.createElement('input');
   linkInput.type = 'text';
   linkInput.placeholder = t('deck.quickLink.placeholder');
-  linkInput.className = 'w-full text-sm bg-transparent text-dim placeholder:text-dim/50 outline-none py-1 px-3 border border-dashed border-border rounded hover:border-accent/50 focus:border-accent transition-colors';
+  linkInput.className = 'w-full text-xs bg-transparent text-dim placeholder:text-dim/50 outline-none py-0.5 px-2 border border-dashed border-border rounded hover:border-accent/50 focus:border-accent transition-colors';
 
   const dropdown = document.createElement('div');
   dropdown.className = 'absolute z-10 left-0 right-0 top-full mt-1 bg-surface border border-border rounded shadow-lg max-h-52 overflow-y-auto hidden';
@@ -265,9 +270,10 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
   linkInput.addEventListener('blur', () => setTimeout(closeDropdown, 100));
 
   linkWrap.append(linkInput, dropdown);
-  cardsSection.appendChild(linkWrap);
+  cardsHeader.append(linkWrap);
 
-  wrap.appendChild(cardsSection);
+  cardsWrap.appendChild(cardsSection);
+  wrap.appendChild(cardsWrap);
   return wrap;
 }
 
