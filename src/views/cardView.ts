@@ -275,59 +275,37 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
   // ── Review history ──
   {
     const histSection = document.createElement('div'); histSection.className = 'space-y-2';
-    const count = work?.history.length ?? 0;
+    const histHeader = document.createElement('div'); histHeader.className = 'flex items-center justify-between';
     const histTitle = document.createElement('span'); histTitle.className = 'section-title';
-    histTitle.textContent = count > 0
-      ? t(count > 1 ? 'card.section.reviewHistoryCountPlural' : 'card.section.reviewHistoryCount', { count })
-      : t('card.section.reviewHistory');
-    histSection.appendChild(histTitle);
-    const list = document.createElement('div'); list.className = 'flex flex-wrap gap-1.5';
+    histTitle.textContent = t('card.section.reviewHistory');
+    const logBtn = document.createElement('button'); logBtn.className = 'btn-ghost text-xs'; logBtn.textContent = t('card.logSession.chip');
+    histHeader.append(histTitle, logBtn);
+    histSection.appendChild(histHeader);
+    const list = document.createElement('div'); list.className = 'space-y-2';
 
-    const ratingIcon: Record<string, string>  = { again: '✗', hard: '△', good: '○', easy: '✓' };
-    const ratingColor: Record<string, string> = { again: 'text-danger', hard: 'text-warn', good: 'text-accent', easy: 'text-success' };
-    const sorted = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
-    for (let i = 0; i < sorted.length; i++) {
-      const entry = sorted[i]!;
-      const originalIndex = work!.history.indexOf(entry);
-      const badge = document.createElement('span');
-      badge.className = 'inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 bg-elevated rounded text-muted group';
-      const dateLabel = document.createElement('span'); dateLabel.textContent = new Date(entry.ts).toLocaleString();
-      const rIcon = document.createElement('span');
-      rIcon.className = `text-[10px] ${ratingColor[entry.rating] ?? ''}`;
-      rIcon.textContent = ratingIcon[entry.rating] ?? '';
-      badge.appendChild(rIcon);
-      badge.appendChild(dateLabel);
-      const rmBtn = document.createElement('button');
-      rmBtn.className = 'opacity-0 group-hover:opacity-100 text-dim hover:text-danger transition-all cursor-pointer leading-none';
-      rmBtn.textContent = '✕';
-      rmBtn.onclick = () => { ctx.mutate(s => { const w = s.cardWorks[`${s.currentUserId}:${cardId}`]; if (w) w.history.splice(originalIndex, 1); }); };
-      badge.appendChild(rmBtn); list.appendChild(badge);
-    }
+    type SessionRating = import('../types').SessionRating;
+    const ratingColors: Record<string, string> = { again: '#f87171', hard: '#fbbf24', good: '#8b7cf8', easy: '#4ade80' };
+    const ratingLabels: Record<string, string> = { again: 'Again', hard: 'Hard', good: 'Good', easy: 'Easy' };
+    const ratingDefs: Array<{ rating: SessionRating; key: string; activeClass: string }> = [
+      { rating: 'again', key: 'rating.again', activeClass: 'bg-danger/20 text-danger border-danger/40' },
+      { rating: 'hard',  key: 'rating.hard',  activeClass: 'bg-warn/20 text-warn border-warn/40' },
+      { rating: 'good',  key: 'rating.good',  activeClass: 'bg-accent/20 text-accent border-accent/40' },
+      { rating: 'easy',  key: 'rating.easy',  activeClass: 'bg-success/20 text-success border-success/40' },
+    ];
+    const idleClass = 'btn border border-border text-muted hover:text-primary hover:bg-elevated text-xs py-1.5';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toInputVal = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
-    // + chip to log a session
-    const addChip = document.createElement('span');
-    addChip.className = 'inline-flex items-center text-xs px-2 py-0.5 rounded-full border border-dashed border-border text-dim cursor-pointer hover:text-primary hover:border-muted transition-colors';
-    addChip.textContent = '+'; addChip.title = t('card.logSession.chip');
-    addChip.onclick = () => {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const defaultVal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      let selectedRating: import('../types').SessionRating = 'good';
+    const mkSessionForm = (defaultTs: number, defaultRating: SessionRating) => {
+      let selectedRating: SessionRating = defaultRating;
       const body = document.createElement('div'); body.className = 'space-y-4';
       const dtLbl = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = t('card.logSession.dateLabel');
-      const inp = document.createElement('input'); inp.type = 'datetime-local'; inp.value = defaultVal; inp.className = 'input';
+      const inp = document.createElement('input'); inp.type = 'datetime-local'; inp.value = toInputVal(defaultTs); inp.className = 'input';
       const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = t('card.logSession.qualityLabel');
       const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
-      const ratingDefs: Array<{ rating: import('../types').SessionRating; key: string; activeClass: string }> = [
-        { rating: 'again', key: 'rating.again', activeClass: 'bg-danger/20 text-danger border-danger/40' },
-        { rating: 'hard',  key: 'rating.hard',  activeClass: 'bg-warn/20 text-warn border-warn/40' },
-        { rating: 'good',  key: 'rating.good',  activeClass: 'bg-accent/20 text-accent border-accent/40' },
-        { rating: 'easy',  key: 'rating.easy',  activeClass: 'bg-success/20 text-success border-success/40' },
-      ];
-      const idleClass = 'btn border border-border text-muted hover:text-primary hover:bg-elevated text-xs py-1.5';
       for (const def of ratingDefs) {
         const btn = document.createElement('button');
-        btn.className = def.rating === 'good' ? `btn border text-xs py-1.5 transition-colors ${def.activeClass}` : `${idleClass} transition-colors`;
+        btn.className = def.rating === defaultRating ? `btn border text-xs py-1.5 transition-colors ${def.activeClass}` : `${idleClass} transition-colors`;
         btn.textContent = t(def.key);
         btn.onclick = () => {
           selectedRating = def.rating;
@@ -337,23 +315,51 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
         ratingRow.appendChild(btn);
       }
       body.append(dtLbl, inp, ratingLbl, ratingRow);
-      showModal(t('card.logSession.title'), body, [
+      return { body, inp, getRating: () => selectedRating };
+    };
+
+    const openSessionModal = (defaultTs: number, defaultRating: SessionRating, onSave: (ts: number, rating: SessionRating) => void, onDelete?: () => void) => {
+      const { body, inp, getRating } = mkSessionForm(defaultTs, defaultRating);
+      showModal(onDelete ? t('card.logSession.editTitle') : t('card.logSession.title'), body, [
+        ...(onDelete ? [{ label: '', icon: trashIcon(), danger: true, align: 'start' as const, onClick: () => { closeModal(); onDelete(); } }] : []),
         { label: t('common.cancel'), onClick: closeModal },
         { label: t('common.save'), primary: true, onClick: () => {
-          const ts = inp.value ? new Date(inp.value).getTime() : Date.now();
+          const ts = inp.value ? new Date(inp.value).getTime() : defaultTs;
           if (isNaN(ts)) return;
-          closeModal();
-          ctx.mutate(s => {
-            const key = `${s.currentProfileId}:${cardId}`;
-            if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
-            s.cardWorks[key]!.history.push({ ts, rating: selectedRating });
-            s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
-          });
+          closeModal(); onSave(ts, getRating());
         }},
       ]);
       focusIfDesktop(inp);
     };
-    list.appendChild(addChip);
+
+    logBtn.onclick = () => openSessionModal(Date.now(), 'good', (ts, rating) => {
+      ctx.mutate(s => {
+        const key = `${s.currentProfileId}:${cardId}`;
+        if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
+        s.cardWorks[key]!.history.push({ ts, rating });
+        s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
+      });
+    });
+
+    const sorted = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
+    if (sorted.length > 0) {
+      const grid = document.createElement('div'); grid.className = 'flex flex-wrap gap-[3px]';
+      for (const entry of sorted) {
+        const originalIndex = work!.history.findIndex(e => e.ts === entry.ts && e.rating === entry.rating);
+        const dot = document.createElement('div');
+        dot.style.cssText = `width:10px;height:10px;border-radius:2px;background:${ratingColors[entry.rating] ?? '#555'};opacity:0.75;cursor:pointer;flex-shrink:0;`;
+        dot.title = `${new Date(entry.ts).toLocaleDateString()} — ${ratingLabels[entry.rating] ?? entry.rating}`;
+        dot.onclick = () => openSessionModal(entry.ts, entry.rating,
+          (ts, rating) => ctx.mutate(s => {
+            const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
+            if (h) { h.splice(originalIndex, 1, { ts, rating }); h.sort((a, b) => a.ts - b.ts); }
+          }),
+          () => ctx.mutate(s => { s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history.splice(originalIndex, 1); }),
+        );
+        grid.appendChild(dot);
+      }
+      list.appendChild(grid);
+    }
 
     histSection.appendChild(list);
     wrap.appendChild(histSection);

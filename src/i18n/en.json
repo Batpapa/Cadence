@@ -165,9 +165,10 @@
   "card.delete.message": "Permanently delete \"{name}\"? It will be removed from all decks.",
   "card.addToDeck.title": "Add to deck",
   "card.logSession.title": "Log practice session",
+  "card.logSession.editTitle": "Edit session",
   "card.logSession.dateLabel": "Date & time",
   "card.logSession.qualityLabel": "Quality",
-  "card.logSession.chip": "Log session",
+  "card.logSession.chip": "+ Log session",
 
   "rating.again": "✗ Failed",
   "rating.hard": "△ Struggled",
