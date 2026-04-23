@@ -1,7 +1,6 @@
 import type { AppContext, DeckEntry } from '../types';
 import { pct, timeAgo, availabilityColor, trashIcon, makeInlineEditable, unlinkIcon, addTouchDragSupport, focusIfDesktop } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
-import { showNewCardModal } from '../components/theSessionImport';
 import { findParentFolder } from '../services/deckService';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
@@ -102,16 +101,7 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
 
   const cardsHeader = document.createElement('div'); cardsHeader.className = 'flex items-center justify-between';
   const cardsTitle = document.createElement('span'); cardsTitle.className = 'section-title'; cardsTitle.textContent = t('deck.section.cards', { count: deck.entries.length });
-  const cardActions = document.createElement('div'); cardActions.className = 'flex gap-2';
-
-  const newCardBtn = document.createElement('button'); newCardBtn.className = 'btn-ghost text-xs'; newCardBtn.textContent = t('deck.newCard');
-  newCardBtn.onclick = () => showNewCardModal(ctx, deckId);
-
-  const linkCardBtn = document.createElement('button'); linkCardBtn.className = 'btn-ghost text-xs'; linkCardBtn.textContent = t('deck.linkExisting');
-  linkCardBtn.onclick = () => showLinkCardModal(ctx, deckId);
-
-  cardActions.append(newCardBtn, linkCardBtn);
-  cardsHeader.append(cardsTitle, cardActions);
+  cardsHeader.append(cardsTitle);
   cardsSection.appendChild(cardsHeader);
 
   if (deck.entries.length === 0) {
@@ -225,6 +215,58 @@ export function renderDeckView(ctx: AppContext, deckId: string): HTMLElement {
     cardsSection.appendChild(list);
   }
 
+  // ── Quick-link input ──
+  const linkWrap = document.createElement('div'); linkWrap.className = 'relative';
+
+  const linkInput = document.createElement('input');
+  linkInput.type = 'text';
+  linkInput.placeholder = t('deck.quickLink.placeholder');
+  linkInput.className = 'w-full text-sm bg-transparent text-dim placeholder:text-dim/50 outline-none py-1 px-3 border border-dashed border-border rounded hover:border-accent/50 focus:border-accent transition-colors';
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'absolute z-10 left-0 right-0 top-full mt-1 bg-surface border border-border rounded shadow-lg max-h-52 overflow-y-auto hidden';
+
+  const alreadyInDeck = new Set(deck.entries.map(e => e.cardId));
+
+  const closeDropdown = () => { dropdown.classList.add('hidden'); linkInput.value = ''; };
+
+  const renderDropdown = () => {
+    const q = linkInput.value.trim().toLowerCase();
+    dropdown.innerHTML = '';
+    if (!q) { dropdown.classList.add('hidden'); return; }
+
+    const matches = Object.values(state.cards)
+      .filter(c => !alreadyInDeck.has(c.id) && c.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 12);
+
+    if (matches.length === 0) {
+      const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic px-3 py-2'; empty.textContent = t('deck.quickLink.noMatch');
+      dropdown.appendChild(empty);
+    } else {
+      for (const card of matches) {
+        const item = document.createElement('div');
+        item.className = 'px-3 py-2 text-sm text-primary hover:bg-elevated cursor-pointer transition-colors truncate';
+        item.textContent = card.name;
+        item.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // keep focus on input, avoid blur firing first
+          alreadyInDeck.add(card.id);
+          ctx.mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); });
+          closeDropdown();
+        });
+        dropdown.appendChild(item);
+      }
+    }
+    dropdown.classList.remove('hidden');
+  };
+
+  linkInput.addEventListener('input', renderDropdown);
+  linkInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDropdown(); });
+  linkInput.addEventListener('blur', () => setTimeout(closeDropdown, 100));
+
+  linkWrap.append(linkInput, dropdown);
+  cardsSection.appendChild(linkWrap);
+
   wrap.appendChild(cardsSection);
   return wrap;
 }
@@ -296,56 +338,3 @@ function showImportanceModal(ctx: AppContext, deckId: string, entry: DeckEntry, 
   focusIfDesktop(input);
 }
 
-function showLinkCardModal(ctx: AppContext, deckId: string): void {
-  const alreadyLinked = new Set(ctx.state.decks[deckId]!.entries.map(e => e.cardId));
-  const candidates = Object.values(ctx.state.cards).filter(c => !alreadyLinked.has(c.id));
-
-  const body = document.createElement('div'); body.className = 'space-y-2';
-  if (candidates.length === 0) {
-    const msg = document.createElement('p'); msg.className = 'text-sm text-muted'; msg.textContent = t('deck.link.allLinked');
-    body.appendChild(msg);
-    showModal(t('deck.link.title'), body, [{ label: t('common.close'), onClick: closeModal }]);
-    return;
-  }
-
-  const linkedThisSession = new Set<string>();
-  const searchInput = document.createElement('input'); searchInput.type = 'text'; searchInput.placeholder = t('deck.link.search'); searchInput.className = 'input mb-2';
-  const list = document.createElement('div'); list.className = 'space-y-1 max-h-60 overflow-y-auto';
-
-  const renderList = () => {
-    list.innerHTML = '';
-    const filter = searchInput.value.toLowerCase();
-    const visible = candidates.filter(c => !linkedThisSession.has(c.id) && c.name.toLowerCase().includes(filter));
-    if (visible.length === 0) {
-      const empty = document.createElement('p'); empty.className = 'text-sm text-dim italic';
-      empty.textContent = filter ? t('deck.link.noMatches') : t('deck.link.allCardsLinked');
-      list.appendChild(empty); return;
-    }
-    for (const card of visible) {
-      const row = document.createElement('div'); row.className = 'flex items-center justify-between px-3 py-2 rounded hover:bg-surface cursor-pointer transition-colors';
-      const name = document.createElement('span'); name.className = 'text-sm text-primary'; name.textContent = card.name;
-      const linkBtn = document.createElement('button'); linkBtn.className = 'text-xs btn-primary'; linkBtn.textContent = t('common.link');
-      linkBtn.onclick = () => {
-        linkedThisSession.add(card.id);
-        ctx.mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); });
-        renderList();
-      };
-      row.append(name, linkBtn); list.appendChild(row);
-    }
-  };
-
-  renderList();
-  searchInput.oninput = () => renderList();
-  body.append(searchInput, list);
-  showModal(t('deck.link.title'), body, [
-    { label: t('deck.link.done'), onClick: closeModal },
-    { label: t('deck.link.linkAll'), primary: true, onClick: () => {
-      const filter = searchInput.value.toLowerCase();
-      const toLink = candidates.filter(c => !linkedThisSession.has(c.id) && c.name.toLowerCase().includes(filter));
-      for (const card of toLink) linkedThisSession.add(card.id);
-      ctx.mutate(s => { for (const card of toLink) s.decks[deckId]!.entries.push({ cardId: card.id }); });
-      renderList();
-    }},
-  ]);
-  focusIfDesktop(searchInput);
-}

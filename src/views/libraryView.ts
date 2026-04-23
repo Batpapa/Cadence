@@ -1,7 +1,7 @@
 import type { AppContext, Card } from '../types';
 import { pct, availabilityColor, trashIcon, focusIfDesktop } from '../utils';
 import { exportCards } from '../services/importExport';
-import { confirmModal } from '../components/modal';
+import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
@@ -143,11 +143,41 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
   const selectAllBtn = document.createElement('button'); selectAllBtn.className = 'btn-ghost text-xs'; selectAllBtn.textContent = t('library.selectAll');
   const deselectBtn = document.createElement('button'); deselectBtn.className = 'btn-ghost text-xs'; deselectBtn.textContent = t('library.deselectAll');
   const exportBtn = document.createElement('button'); exportBtn.className = 'btn-ghost text-xs hidden'; exportBtn.textContent = t('library.exportSelected');
+  const addToDeckBtn = document.createElement('button'); addToDeckBtn.className = 'btn-ghost text-xs hidden'; addToDeckBtn.textContent = t('library.addToDecks');
+  const removeFromDeckBtn = document.createElement('button'); removeFromDeckBtn.className = 'btn-ghost text-xs hidden'; removeFromDeckBtn.textContent = t('library.removeFromDecks');
   const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger text-xs flex items-center gap-1.5';
   deleteBtn.title = t('library.deleteSelected'); deleteBtn.appendChild(trashIcon(12));
   const deleteLbl = document.createElement('span'); deleteBtn.appendChild(deleteLbl);
 
   exportBtn.onclick = () => exportCards(allCards.filter(c => selected.has(c.id)));
+
+  const showDeckPickerModal = (
+    titleKey: string,
+    confirmKey: string,
+    eligibleDecks: { id: string; info: string }[],
+    onConfirm: (deckIds: string[]) => void,
+  ) => {
+    const body = document.createElement('div'); body.className = 'space-y-1';
+    const checks = new Map<string, HTMLInputElement>();
+    for (const { id, info } of eligibleDecks) {
+      const deck = state.decks[id]; if (!deck) continue;
+      const row = document.createElement('label'); row.className = 'flex items-center gap-2 px-2 py-1.5 rounded hover:bg-elevated cursor-pointer';
+      const chk = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'card-checkbox'; chk.checked = true;
+      checks.set(id, chk);
+      const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary flex-1 truncate'; nameEl.textContent = deck.name;
+      const infoEl = document.createElement('span'); infoEl.className = 'text-xs text-dim shrink-0'; infoEl.textContent = info;
+      row.append(chk, nameEl, infoEl);
+      body.appendChild(row);
+    }
+    showModal(t(titleKey), body, [
+      { label: t('common.cancel'), onClick: closeModal },
+      { label: t(confirmKey), primary: true, onClick: () => {
+        const chosen = [...checks.entries()].filter(([, chk]) => chk.checked).map(([id]) => id);
+        if (chosen.length > 0) onConfirm(chosen);
+        closeModal();
+      }},
+    ]);
+  };
 
   const updateSelBar = (filtered: Card[]) => {
     selectAllBtn.onclick = () => { for (const c of filtered) selected.add(c.id); renderList(); };
@@ -155,13 +185,69 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       selLabel.textContent = '';
       deselectBtn.classList.add('hidden');
       exportBtn.classList.add('hidden');
+      addToDeckBtn.classList.add('hidden');
+      removeFromDeckBtn.classList.add('hidden');
       deleteBtn.classList.add('hidden');
+      return;
+    }
+
+    selLabel.textContent = t('library.selected', { count: selected.size });
+    deselectBtn.classList.remove('hidden');
+    exportBtn.classList.remove('hidden');
+    deleteLbl.textContent = String(selected.size);
+    deleteBtn.classList.remove('hidden');
+
+    const selectedCards = [...selected];
+
+    // Decks eligible for "add": at least one selected card is not yet in the deck
+    const addEligible = Object.values(state.decks)
+      .filter(d => selectedCards.some(cId => !d.entries.some(e => e.cardId === cId)))
+      .map(d => {
+        const alreadyIn = selectedCards.filter(cId => d.entries.some(e => e.cardId === cId)).length;
+        const toAdd = selectedCards.length - alreadyIn;
+        return { id: d.id, info: t('library.deckInfo.add', { n: toAdd }) };
+      })
+      .sort((a, b) => (state.decks[a.id]?.name ?? '').localeCompare(state.decks[b.id]?.name ?? ''));
+
+    if (addEligible.length > 0) {
+      addToDeckBtn.classList.remove('hidden');
+      addToDeckBtn.onclick = () => showDeckPickerModal(
+        'library.addToDecks.title', 'library.addToDecks.confirm', addEligible,
+        (deckIds) => ctx.mutate(s => {
+          for (const deckId of deckIds) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            for (const cardId of selectedCards) {
+              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+            }
+          }
+        }),
+      );
     } else {
-      selLabel.textContent = t('library.selected', { count: selected.size });
-      deselectBtn.classList.remove('hidden');
-      exportBtn.classList.remove('hidden');
-      deleteLbl.textContent = String(selected.size);
-      deleteBtn.classList.remove('hidden');
+      addToDeckBtn.classList.add('hidden');
+    }
+
+    // Decks eligible for "remove": contains at least one selected card
+    const removeEligible = Object.values(state.decks)
+      .filter(d => selectedCards.some(cId => d.entries.some(e => e.cardId === cId)))
+      .map(d => {
+        const toRemove = selectedCards.filter(cId => d.entries.some(e => e.cardId === cId)).length;
+        return { id: d.id, info: t('library.deckInfo.remove', { n: toRemove }) };
+      })
+      .sort((a, b) => (state.decks[a.id]?.name ?? '').localeCompare(state.decks[b.id]?.name ?? ''));
+
+    if (removeEligible.length > 0) {
+      removeFromDeckBtn.classList.remove('hidden');
+      removeFromDeckBtn.onclick = () => showDeckPickerModal(
+        'library.removeFromDecks.title', 'library.removeFromDecks.confirm', removeEligible,
+        (deckIds) => ctx.mutate(s => {
+          for (const deckId of deckIds) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            deck.entries = deck.entries.filter(e => !selectedCards.includes(e.cardId));
+          }
+        }),
+      );
+    } else {
+      removeFromDeckBtn.classList.add('hidden');
     }
   };
 
@@ -186,7 +272,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
 
   deselectBtn.classList.add('hidden');
   deleteBtn.classList.add('hidden');
-  selActions.append(selectAllBtn, deselectBtn, exportBtn, deleteBtn);
+  selActions.append(selectAllBtn, deselectBtn, exportBtn, addToDeckBtn, removeFromDeckBtn, deleteBtn);
   selBar.append(selLabel, selActions);
   wrap.appendChild(selBar);
 

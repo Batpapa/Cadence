@@ -1,4 +1,4 @@
-import type { AppContext, AppState } from '../types';
+import type { AppContext } from '../types';
 import { generateId, focusIfDesktop } from '../utils';
 import { parseCardPackage } from '../services/importExport';
 import { showModal, closeModal } from './modal';
@@ -28,14 +28,6 @@ function mkTab(label: string, active: boolean, onClick: () => void): HTMLButtonE
   return btn;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function linkCardToDeck(s: AppState, cardId: string, deckId: string): void {
-  if (s.decks[deckId] && !s.decks[deckId]!.entries.some(e => e.cardId === cardId)) {
-    s.decks[deckId]!.entries.push({ cardId });
-  }
-}
-
 // ── TheSession body builder ───────────────────────────────────────────────────
 
 function mkPreviewInput(placeholder: string) {
@@ -55,7 +47,7 @@ function mkPreviewInput(placeholder: string) {
   return { wrap, inp, setPreview };
 }
 
-export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId?: string): HTMLElement {
+export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLElement {
   let activeTab: 'id' | 'search' | 'member' = 'search';
   let onlyFirstSetting = true;
 
@@ -127,14 +119,11 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
         const tune = await fetchTuneById(id);
         const existing = findByExternalId(`thesession:${tune.id}`, ctx.state.cards);
         if (existing) {
-          if (deckId) await ctx.mutate(s => { linkCardToDeck(s, existing.id, deckId!); });
-          status.textContent = deckId
-            ? t('theSession.status.alreadyInLibraryLinked', { name: tune.name })
-            : t('theSession.status.alreadyInLibrary', { name: tune.name });
+          status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
           inp.value = ''; setPreview('');
         } else {
           const card = tuneResultToCard(tune, { onlyFirstSetting });
-          await ctx.mutate(s => { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); });
+          await ctx.mutate(s => { s.cards[card.id] = card; });
           status.textContent = t('theSession.status.imported', { name: card.name });
           inp.value = ''; setPreview('');
         }
@@ -173,13 +162,10 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
             const fullTune = await fetchTuneById(tune.id);
             const existing = findByExternalId(`thesession:${fullTune.id}`, ctx.state.cards);
             if (existing) {
-              if (deckId) await ctx.mutate(s => { linkCardToDeck(s, existing.id, deckId!); });
-              status.textContent = deckId
-                ? t('theSession.status.alreadyInLibraryLinked', { name: fullTune.name })
-                : t('theSession.status.alreadyInLibrary', { name: fullTune.name });
+              status.textContent = t('theSession.status.alreadyInLibrary', { name: fullTune.name });
             } else {
               const card = tuneResultToCard(fullTune, { onlyFirstSetting });
-              await ctx.mutate(s => { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); });
+              await ctx.mutate(s => { s.cards[card.id] = card; });
               status.textContent = t('theSession.status.imported', { name: card.name });
             }
           } catch (e) {
@@ -253,11 +239,10 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
         const alreadyExisting = tunes.filter((_, i) => !!existingCards[i]);
         const newCards = newTunes.map(tune => tuneResultToCard(tune, { onlyFirstSetting }));
         await ctx.mutate(s => {
-          for (const card of newCards) { s.cards[card.id] = card; if (deckId) linkCardToDeck(s, card.id, deckId); }
-          if (deckId) { for (const tune of alreadyExisting) { const c = findByExternalId(`thesession:${tune.id}`, s.cards); if (c) linkCardToDeck(s, c.id, deckId); } }
+          for (const card of newCards) { s.cards[card.id] = card; }
         });
         progressFill.style.width = '100%';
-        const linked = deckId ? alreadyExisting.length : 0;
+        const linked = 0;
         let summary = t('theSession.status.batchDone', { count: newCards.length });
         if (linked > 0) summary = summary.replace('.', '') + t('theSession.status.batchLinked', { linked }) + '.';
         else if (alreadyExisting.length > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: alreadyExisting.length }) + '.';
@@ -283,7 +268,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, deckId
 
 // ── New Card modal (Create + TheSession tabs) ─────────────────────────────────
 
-export function showNewCardModal(ctx: AppContext, deckId?: string): void {
+export function showNewCardModal(ctx: AppContext): void {
   type ActiveTab = 'create' | 'import' | 'thesession';
   let activeTab: ActiveTab = 'create';
 
@@ -328,7 +313,6 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
         await ctx.mutate(s => {
           const id = generateId();
           s.cards[id] = { id, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
-          if (deckId) s.decks[deckId]!.entries.push({ cardId: id });
         });
         closeModal();
       };
@@ -359,7 +343,7 @@ export function showNewCardModal(ctx: AppContext, deckId?: string): void {
       };
       outerContent.appendChild(pickBtn);
     } else {
-      outerContent.appendChild(buildTheSessionBody(ctx, status, deckId));
+      outerContent.appendChild(buildTheSessionBody(ctx, status));
     }
   };
 
