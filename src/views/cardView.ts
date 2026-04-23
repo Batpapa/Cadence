@@ -43,7 +43,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
     nameEl.onclick = () => ctx.navigate({ view: 'deck', deckId: dId });
 
     const unlinkBtn = document.createElement('button');
-    unlinkBtn.className = 'opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-danger leading-none';
+    unlinkBtn.className = 'hidden group-hover:inline-flex items-center cursor-pointer hover:text-danger leading-none';
     unlinkBtn.title = t('card.removeFromDeck');
     unlinkBtn.appendChild(unlinkIcon(10));
     unlinkBtn.onclick = (e) => {
@@ -205,7 +205,7 @@ export function renderCardView(ctx: AppContext, cardId: string): HTMLElement {
         });
       };
       const rm = document.createElement('button');
-      rm.className = 'opacity-0 group-hover:opacity-100 text-dim hover:text-danger transition-all cursor-pointer leading-none';
+      rm.className = 'hidden group-hover:inline-flex items-center text-dim hover:text-danger cursor-pointer leading-none';
       rm.textContent = '✕';
       rm.onclick = () => { ctx.mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.filter(t => t !== tag); }); };
       chip.append(label, rm);
