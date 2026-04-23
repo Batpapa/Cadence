@@ -1,5 +1,5 @@
 import type { AppContext, AppState, CardWork } from '../types';
-import { generateId, trashIcon, makeInlineEditable, DAY_NAMES_KEYS } from '../utils';
+import { generateId, trashIcon, makeInlineEditable, DAY_NAMES_KEYS, timeAgo, pct } from '../utils';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder, deckPath } from '../services/deckService';
@@ -209,21 +209,24 @@ function renderCardMap(ctx: AppContext): HTMLElement {
   }
 
   // Deck list — only decks that have at least one reviewed card
+  const NO_DECK = '__no_deck__';
   const pointDeckIds = new Set(allPoints.flatMap(p => p.deckIds));
   const deckList = Object.values(state.decks)
     .filter(d => pointDeckIds.has(d.id))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const hasOrphans = allPoints.some(p => p.deckIds.length === 0);
 
-  const selectedDecks = new Set(deckList.map(d => d.id));
+  const selectedDecks = new Set([...deckList.map(d => d.id), ...(hasOrphans ? [NO_DECK] : [])]);
 
   const getVisible = (): Point[] => {
     const seen = new Set<string>();
     const result: Point[] = [];
     for (const pt of allPoints) {
-      if (!seen.has(pt.id) && pt.deckIds.some(d => selectedDecks.has(d))) {
-        seen.add(pt.id);
-        result.push(pt);
-      }
+      if (seen.has(pt.id)) continue;
+      const visible = pt.deckIds.length === 0
+        ? selectedDecks.has(NO_DECK)
+        : pt.deckIds.some(d => selectedDecks.has(d));
+      if (visible) { seen.add(pt.id); result.push(pt); }
     }
     return result;
   };
@@ -248,7 +251,9 @@ function renderCardMap(ctx: AppContext): HTMLElement {
     { val: 30, label: t('dashboard.period.30d') }, { val: 180, label: t('dashboard.period.6mo') }, { val: 365, label: t('dashboard.period.1y') },
   ];
 
-  const buildSvg = (W: number, pts: Point[]): Element => {
+  const formatDays = (d: number) => d >= 365 ? t('common.durationYears', { n: (d / 365).toFixed(1) }) : d >= 30 ? t('common.durationMonths', { n: Math.round(d / 30) }) : d >= 1 ? t('common.durationDays', { n: Math.round(d) }) : t('common.durationLessThanDay');
+
+  const buildSvg = (W: number, pts: Point[], onHover: (pt: Point, x: number, y: number, svgW: number) => void, onLeave: () => void): Element => {
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const xMin = 0.5, xMax = 730;
     const logXMin = Math.log(xMin), logXMax = Math.log(xMax);
@@ -279,8 +284,12 @@ function renderCardMap(ctx: AppContext): HTMLElement {
         fill: color, 'fill-opacity': '0.7', stroke: color, 'stroke-opacity': '0.35', 'stroke-width': '1.5',
       });
       (circle as SVGElement & { style: CSSStyleDeclaration }).style.cursor = 'pointer';
-      const title = document.createElementNS(ns, 'title'); title.textContent = pt.name;
-      circle.appendChild(title);
+      circle.addEventListener('mouseenter', () => {
+        const cx = parseFloat(circle.getAttribute('cx') ?? '0');
+        const cy = parseFloat(circle.getAttribute('cy') ?? '0');
+        onHover(pt, cx, cy, W);
+      });
+      circle.addEventListener('mouseleave', onLeave);
       circle.addEventListener('click', () => ctx.navigate({ view: 'card', cardId: pt.id }));
       svg.appendChild(circle);
     }
@@ -289,6 +298,7 @@ function renderCardMap(ctx: AppContext): HTMLElement {
     const yAxisLabel = mkEl('text', { x: '0', y: '0', 'text-anchor': 'middle', 'font-size': '10', fill: '#555555', 'font-family': 'IBM Plex Mono, monospace', transform: `rotate(-90) translate(${-(padT + plotH / 2)}, 9)` });
     yAxisLabel.textContent = t('deck.section.ease');
     svg.appendChild(yAxisLabel);
+    (svg as SVGElement & { addEventListener: HTMLElement['addEventListener'] }).addEventListener('mouseleave', onLeave);
 
     return svg;
   };
@@ -320,10 +330,23 @@ function renderCardMap(ctx: AppContext): HTMLElement {
   };
 
   controlsWrap.append(
-    mkCtrl(t('dashboard.filterAll'),  () => { deckList.forEach(d => selectedDecks.add(d.id));    updateChips(); rebuildSvg(); }),
-    mkCtrl(t('dashboard.filterNone'), () => { selectedDecks.clear();                              updateChips(); rebuildSvg(); }),
+    mkCtrl(t('dashboard.filterAll'),  () => { deckList.forEach(d => selectedDecks.add(d.id)); if (hasOrphans) selectedDecks.add(NO_DECK); updateChips(); rebuildSvg(); }),
+    mkCtrl(t('dashboard.filterNone'), () => { selectedDecks.clear();                           updateChips(); rebuildSvg(); }),
   );
   chipsRow.appendChild(controlsWrap);
+
+  if (hasOrphans) {
+    const chip = document.createElement('button');
+    chip.className = chipActiveClass;
+    chip.textContent = t('library.filterNoDecks');
+    chip.onclick = () => {
+      if (selectedDecks.has(NO_DECK)) selectedDecks.delete(NO_DECK); else selectedDecks.add(NO_DECK);
+      chip.className = selectedDecks.has(NO_DECK) ? chipActiveClass : chipIdleClass;
+      rebuildSvg();
+    };
+    chipEls.set(NO_DECK, chip);
+    chipsRow.appendChild(chip);
+  }
 
   for (const deck of deckList) {
     const chip = document.createElement('button');
@@ -345,10 +368,54 @@ function renderCardMap(ctx: AppContext): HTMLElement {
   let lastW = 0;
   let currentSvg: Element | null = null;
   const svgWrap = document.createElement('div');
+  svgWrap.style.position = 'relative';
+
+  // Tooltip
+  const tooltip = document.createElement('div');
+  tooltip.style.cssText = `position:absolute;display:none;pointer-events:none;z-index:20;width:176px;background:#1a1a1a;border:1px solid #2e2e2e;border-radius:8px;padding:10px 12px;box-shadow:0 4px 24px rgba(0,0,0,0.6);font-family:'IBM Plex Sans',system-ui,sans-serif;`;
+  svgWrap.appendChild(tooltip);
+
+  const rColor = (k: number) => k >= 0.75 ? '#4ade80' : k >= 0.4 ? '#fbbf24' : '#f87171';
+  const eColor = (e: number) => e >= 0.6  ? '#4ade80' : e >= 0.35 ? '#fbbf24' : '#f87171';
+
+  const showTooltip = (pt: Point, dotX: number, dotY: number, svgW: number) => {
+    const flip = dotX > svgW * 0.6;
+    tooltip.style.left = flip ? `${dotX - 188}px` : `${dotX + 12}px`;
+    tooltip.style.top  = `${Math.max(0, dotY - 10)}px`;
+    tooltip.style.display = 'block';
+    const deckNames = pt.deckIds.map(id => state.decks[id]?.name).filter(Boolean).join(', ');
+    const lastWork = state.cardWorks[`${state.currentProfileId}:${pt.id}`];
+    const lastTs   = lastWork?.history.at(-1)?.ts;
+    const lastAgo  = lastTs ? timeAgo(lastTs) : t('card.neverReviewed');
+    tooltip.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:#e8e8e8;margin-bottom:4px;line-height:1.3">${pt.name}</div>
+      <div style="font-size:10px;color:#555;margin-bottom:8px">${deckNames ? deckNames + ' · ' : ''}${lastAgo}</div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Retention</span>
+          <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:${rColor(pt.k)};font-weight:500">${pct(pt.k)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Stability</span>
+          <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:#e8e8e8;font-weight:500">${formatDays(pt.s)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Ease</span>
+          <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:${eColor(pt.ease)};font-weight:500">${pct(pt.ease)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Weight</span>
+          <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:#e8e8e8;font-weight:500">×${pt.imp}</span>
+        </div>
+      </div>`;
+  };
+
+  const hideTooltip = () => { tooltip.style.display = 'none'; };
 
   const rebuildSvg = () => {
     if (lastW <= 0) return;
-    const newSvg = buildSvg(lastW, getVisible());
+    hideTooltip();
+    const newSvg = buildSvg(lastW, getVisible(), showTooltip, hideTooltip);
     if (currentSvg) svgWrap.replaceChild(newSvg, currentSvg);
     else svgWrap.appendChild(newSvg);
     currentSvg = newSvg;
