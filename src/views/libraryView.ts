@@ -333,7 +333,7 @@ export function renderLibraryView(ctx: AppContext): HTMLElement {
       const dot1 = document.createElement('span'); dot1.className = `w-2 h-2 rounded-full ${availabilityColor(k)}`; dot1.title = `R: ${pct(k)}`;
       const dot2 = document.createElement('span'); dot2.className = `w-2 h-2 rounded-full ${cardEase === undefined ? 'bg-border' : cardEase >= 0.6 ? 'bg-success' : cardEase >= 0.35 ? 'bg-warn' : 'bg-danger'}`; dot2.title = cardEase !== undefined ? `Ease: ${pct(cardEase)}` : 'Never reviewed';
       dotsWrap.append(dot1, dot2);
-      const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary flex-1 truncate'; nameEl.textContent = card.name;
+      const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary flex-1 truncate hover:text-accent transition-colors'; nameEl.textContent = card.name;
       const meta = document.createElement('div'); meta.className = 'flex items-center gap-3 shrink-0';
 
       if ((card.tags ?? []).length > 0) {

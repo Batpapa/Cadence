@@ -5,6 +5,8 @@ export interface ModalAction {
   label: string;
   primary?: boolean;
   danger?: boolean;
+  icon?: SVGSVGElement;
+  align?: 'start';
   onClick: () => void | Promise<void>;
 }
 
@@ -41,12 +43,18 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
   bodyWrap.appendChild(body);
 
   const footer = document.createElement('div');
-  footer.className = 'flex justify-end gap-2 px-5 py-4 border-t border-border shrink-0';
+  footer.className = 'flex items-center gap-2 px-5 py-4 border-t border-border shrink-0';
 
   for (const action of actions) {
     const btn = document.createElement('button');
-    btn.textContent = action.label;
-    btn.className = action.primary ? 'btn-primary' : action.danger ? 'btn-danger' : 'btn-ghost';
+    btn.className = (action.primary ? 'btn-primary' : action.danger ? 'btn-danger px-2' : 'btn-ghost')
+      + (action.align === 'start' ? ' mr-auto' : '');
+    if (action.icon) {
+      btn.appendChild(action.icon);
+      if (action.label) { const lbl = document.createElement('span'); lbl.textContent = action.label; btn.appendChild(lbl); }
+    } else {
+      btn.textContent = action.label;
+    }
     btn.onclick = async () => { await action.onClick(); };
     footer.appendChild(btn);
   }

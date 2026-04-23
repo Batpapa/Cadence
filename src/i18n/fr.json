@@ -165,9 +165,10 @@
   "card.delete.message": "Supprimer définitivement « {name} » ? Elle sera retirée de tous les paquets.",
   "card.addToDeck.title": "Ajouter à un paquet",
   "card.logSession.title": "Enregistrer une session",
+  "card.logSession.editTitle": "Modifier la session",
   "card.logSession.dateLabel": "Date et heure",
   "card.logSession.qualityLabel": "Qualité",
-  "card.logSession.chip": "Enregistrer",
+  "card.logSession.chip": "+ Enregistrer",
 
   "rating.again": "✗ Raté",
   "rating.hard": "△ Difficile",

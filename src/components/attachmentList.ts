@@ -127,9 +127,7 @@ export function renderAttachmentList(options: {
 
   const titleEl = document.createElement('span');
   titleEl.className = 'section-title';
-  titleEl.textContent = attachments.length > 0
-    ? t('fileViewer.attachmentsCount', { count: attachments.length })
-    : t('fileViewer.attachments');
+  titleEl.textContent = t('fileViewer.attachments');
   header.appendChild(titleEl);
 
   if (editable) {
