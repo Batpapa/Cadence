@@ -25,9 +25,11 @@
     "webpack-dev-server": "^5.0.0"
   },
   "dependencies": {
+    "@preact/signals": "^2.9.0",
     "@soundtouchjs/audio-worklet": "^1.0.10",
     "abcjs": "^6.6.2",
     "idb": "^8.0.3",
-    "marked": "^18.0.0"
+    "marked": "^18.0.0",
+    "preact": "^10.29.1"
   }
 }
