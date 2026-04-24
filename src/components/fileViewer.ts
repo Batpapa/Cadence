@@ -62,9 +62,11 @@ export function showPreviewModal(entry: FileEntry): void {
   const m = entry.mimeType;
 
   if (m.startsWith('audio/')) {
-    const audio = document.createElement('audio'); audio.controls = true; audio.className = 'w-full';
-    audio.src = entryToObjectUrl(entry);
-    body.appendChild(audio);
+    body.classList.replace('items-center', 'items-start');
+    import('./audioPlayer').then(({ renderAudioPlayer, stopCurrentAudio }) => {
+      body.appendChild(renderAudioPlayer(entry));
+      stopAudio = stopCurrentAudio;
+    });
 
   } else if (m.startsWith('video/')) {
     const video = document.createElement('video'); video.controls = true; video.className = 'max-w-full max-h-full rounded';
