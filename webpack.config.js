@@ -34,12 +34,12 @@ module.exports = (env, argv) => {
       publicPath: isDev ? undefined : '',
     },
     resolve: {
-      extensions: ['.ts', '.js'],
+      extensions: ['.tsx', '.ts', '.js'],
     },
     module: {
       rules: [
         {
-          test: /\.ts$/,
+          test: /\.tsx?$/,
           use: 'ts-loader',
           exclude: /node_modules/,
         },

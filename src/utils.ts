@@ -84,26 +84,6 @@ export function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-export function makeInlineEditable(el: HTMLElement, currentValue: string, onSave: (val: string) => void): void {
-  el.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors';
-  el.title = 'Click to rename';
-  el.onclick = () => {
-    const inp = document.createElement('input');
-    inp.type = 'text'; inp.value = currentValue;
-    inp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary w-full';
-    el.replaceWith(inp); inp.focus(); inp.select();
-    const commit = () => {
-      const val = inp.value.trim();
-      if (val && val !== currentValue) { onSave(val); }
-      else { inp.replaceWith(el); }
-    };
-    inp.addEventListener('blur', commit);
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-      if (e.key === 'Escape') { inp.replaceWith(el); }
-    });
-  };
-}
 
 export function unlinkIcon(size = 11): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

@@ -10,6 +10,7 @@ import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, manualSync, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
+import { getContext } from '../store';
 
 const expanded = new Set<string>();
 let driveStatusUnsub: (() => void) | null = null;
@@ -266,7 +267,7 @@ export function showCreateDeckModal(ctx: AppContext, parentFolderId: string | nu
       s.decks[id] = { id, name, entries: [] };
       if (parentFolderId) s.folders[parentFolderId]!.deckIds.push(id);
       else s.rootDeckIds.push(id);
-    }).then(() => ctx.navigate({ view: 'deck', deckId: id }));
+    });
   });
 }
 
@@ -328,12 +329,13 @@ function showSettingsModal(ctx: AppContext): void {
 
   const renderProfilesList = () => {
     profList.innerHTML = '';
-    const currentUser = getCurrentUser(ctx.state);
+    const freshState = getContext().state;
+    const currentUser = getCurrentUser(freshState);
     const canDelete = (currentUser.profileIds?.length ?? 0) > 1;
     for (const pid of currentUser.profileIds ?? []) {
-      const profile = ctx.state.profiles[pid];
+      const profile = freshState.profiles[pid];
       if (!profile) continue;
-      const isActive = pid === ctx.state.currentProfileId;
+      const isActive = pid === freshState.currentProfileId;
 
       const row = document.createElement('div');
       row.className = 'flex items-center gap-2 px-1 py-1';
@@ -342,8 +344,9 @@ function showSettingsModal(ctx: AppContext): void {
       radio.checked = isActive; radio.className = 'cursor-pointer accent-[var(--color-accent)]';
       radio.onchange = () => {
         ctx.mutate(s => { s.currentProfileId = pid; }).then(() => {
-          if (ctx.route.view === 'study') {
-            ctx.navigate({ view: 'study', deckId: ctx.route.deckId, strategy: ctx.route.strategy });
+          const freshCtx = getContext();
+          if (freshCtx.route.view === 'study') {
+            freshCtx.navigate({ view: 'study', deckId: freshCtx.route.deckId, strategy: freshCtx.route.strategy });
           }
           renderProfilesList();
         });
@@ -389,8 +392,17 @@ function showSettingsModal(ctx: AppContext): void {
   renderProfilesList();
   body.appendChild(profList);
 
-  const addProfileBtn = document.createElement('button'); addProfileBtn.className = 'btn-ghost text-xs w-full mt-1'; addProfileBtn.textContent = t('settings.profiles.add');
-  addProfileBtn.onclick = () => promptModal(t('settings.profiles.new'), t('settings.profiles.nameLabel'), '', name => {
+  const addRow = document.createElement('div'); addRow.className = 'mt-1';
+
+  const addBtn = document.createElement('button'); addBtn.className = 'btn-ghost text-xs w-full'; addBtn.textContent = t('settings.profiles.add');
+  const addInp = document.createElement('input'); addInp.type = 'text'; addInp.placeholder = t('settings.profiles.nameLabel'); addInp.className = 'input text-xs w-full hidden';
+
+  const commitAdd = () => {
+    const name = addInp.value.trim();
+    addInp.value = '';
+    addInp.classList.add('hidden');
+    addBtn.classList.remove('hidden');
+    if (!name) return;
     const pid = generateId();
     ctx.mutate(s => {
       s.profiles[pid] = { id: pid, name };
@@ -398,8 +410,21 @@ function showSettingsModal(ctx: AppContext): void {
       if (!u.profileIds) u.profileIds = [];
       u.profileIds.push(pid);
     }).then(renderProfilesList);
+  };
+
+  addBtn.onclick = () => {
+    addBtn.classList.add('hidden');
+    addInp.classList.remove('hidden');
+    addInp.focus();
+  };
+  addInp.addEventListener('blur', commitAdd);
+  addInp.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); commitAdd(); }
+    if (e.key === 'Escape') { addInp.value = ''; addInp.blur(); }
   });
-  body.appendChild(addProfileBtn);
+
+  addRow.append(addBtn, addInp);
+  body.appendChild(addRow);
 
   // ── Divider ──
   const divider = document.createElement('hr'); divider.className = 'border-border';
@@ -586,7 +611,7 @@ function showSettingsModal(ctx: AppContext): void {
     setLanguage(newLang);
     void ctx.mutate(s => updateUser(s, { language: newLang }));
     closeModal();
-    showSettingsModal(ctx);
+    showSettingsModal(getContext());
   });
 
   showModal(t('settings.title'), body, [
