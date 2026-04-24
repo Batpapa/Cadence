@@ -266,7 +266,8 @@ function CardMapSection({ state }: { state: AppState }) {
         rebuildRef.current();
       });
     });
-    obs.observe(svgRef.current!);
+    if (!svgRef.current) return;
+    obs.observe(svgRef.current);
     return () => obs.disconnect();
   }, []);
 
