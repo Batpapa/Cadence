@@ -306,6 +306,11 @@
   "newCard.nameLabel": "Card name",
   "newCard.namePlaceholder": "Card name…",
   "newCard.createBtn": "Create",
+  "newCard.createDesc": "Start from scratch with a blank card",
+  "newCard.importDesc": "From TheSession or a .json file",
+  "newCard.theSessionDesc": "Search and import folk & traditional tunes",
+  "newCard.tabImportJson": ".json file",
+  "newCard.importJsonDesc": "Restore cards from a previous export",
 
   "commandPalette.placeholder": "Search cards, decks, folders…",
   "commandPalette.typeToSearch": "Type to search…",
