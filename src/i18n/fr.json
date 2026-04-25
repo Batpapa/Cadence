@@ -224,6 +224,8 @@
 
   "settings.title": "Paramètres",
   "settings.profile": "Profil",
+  "settings.study": "Révision",
+  "settings.user": "Utilisateur",
   "settings.name": "Nom",
   "settings.availabilityThreshold": "Seuil de disponibilité (%)",
   "settings.availabilityThresholdHint": "Les cartes au-dessus de ce seuil de disponibilité sont ignorées pendant les sessions d'étude.",

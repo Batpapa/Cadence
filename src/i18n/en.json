@@ -224,6 +224,8 @@
 
   "settings.title": "Settings",
   "settings.profile": "Profile",
+  "settings.study": "Study",
+  "settings.user": "User",
   "settings.name": "Name",
   "settings.availabilityThreshold": "Availability threshold (%)",
   "settings.availabilityThresholdHint": "Cards above this availability score are considered available and skipped during study sessions.",
