@@ -306,6 +306,11 @@
   "newCard.nameLabel": "Nom de la carte",
   "newCard.namePlaceholder": "Nom de la carte…",
   "newCard.createBtn": "Créer",
+  "newCard.createDesc": "Commencer avec une carte vierge",
+  "newCard.importDesc": "Depuis TheSession ou un fichier .json",
+  "newCard.theSessionDesc": "Rechercher et importer des airs folk et traditionnels",
+  "newCard.tabImportJson": "Fichier .json",
+  "newCard.importJsonDesc": "Restaurer des cartes depuis un export précédent",
 
   "commandPalette.placeholder": "Rechercher des cartes, paquets, dossiers…",
   "commandPalette.typeToSearch": "Tapez pour rechercher…",

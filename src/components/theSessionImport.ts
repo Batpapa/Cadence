@@ -1,7 +1,6 @@
 import type { AppContext } from '../types';
 import { generateId, focusIfDesktop } from '../utils';
 import { parseCardPackage } from '../services/importExport';
-import { showModal, closeModal } from './modal';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo,
   tuneResultToCard, findByExternalId,
@@ -120,12 +119,10 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLE
         const existing = findByExternalId(`thesession:${tune.id}`, ctx.state.cards);
         if (existing) {
           status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
-          inp.value = ''; setPreview('');
         } else {
           const card = tuneResultToCard(tune, { onlyFirstSetting });
           await ctx.mutate(s => { s.cards[card.id] = card; });
           status.textContent = t('theSession.status.imported', { name: card.name });
-          inp.value = ''; setPreview('');
         }
       } catch (e) {
         status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
@@ -141,44 +138,60 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLE
   // ── Tab: Search ───────────────────────────────────────────────────────────
 
   const renderSearchTab = () => {
-    const inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = t('theSession.search') + '…'; inp.className = 'input';
-    const suggestions = document.createElement('div'); suggestions.className = 'space-y-1 max-h-48 overflow-y-auto';
+    let selectedTune: TuneSearchResult | null = null;
+
+    const outerWrap = document.createElement('div');
+    const row = document.createElement('div'); row.className = 'flex gap-2';
+    const { wrap: inputWrap, inp, setPreview } = mkPreviewInput(t('theSession.search') + '…');
+    inp.type = 'text';
+    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.id.import'); btn.disabled = true;
+    row.append(inputWrap, btn);
+    outerWrap.append(row);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-y-auto hidden';
+    dropdown.style.maxHeight = '220px';
+    document.body.appendChild(dropdown);
+
+    const positionDropdown = () => {
+      const rect = inputWrap.getBoundingClientRect();
+      dropdown.style.top   = `${rect.bottom + 4}px`;
+      dropdown.style.left  = `${rect.left}px`;
+      dropdown.style.width = `${rect.width}px`;
+    };
+    const showDropdown = () => { positionDropdown(); dropdown.classList.remove('hidden'); };
+    const hideDropdown = () => dropdown.classList.add('hidden');
+
+    const obs = new MutationObserver(() => { if (!inp.isConnected) { dropdown.remove(); obs.disconnect(); } });
+    obs.observe(document.body, { childList: true, subtree: true });
+
+    const selectTune = (tune: TuneSearchResult) => {
+      selectedTune = tune;
+      inp.value = tune.name;
+      setPreview(`${tune.id} · ${tune.type}`);
+      btn.disabled = false;
+      dropdown.innerHTML = ''; hideDropdown();
+    };
 
     const renderSuggestions = (tunes: TuneSearchResult[]) => {
-      suggestions.innerHTML = '';
+      dropdown.innerHTML = '';
+      if (!tunes.length) { hideDropdown(); return; }
       for (const tune of tunes) {
-        const row = document.createElement('div');
-        row.className = 'flex items-center justify-between gap-3 px-3 py-2 rounded hover:bg-elevated cursor-pointer group';
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between gap-3 px-3 py-2 hover:bg-bg cursor-pointer';
         const left = document.createElement('div'); left.className = 'flex-1 min-w-0';
         const name = document.createElement('span'); name.className = 'text-sm text-primary truncate block'; name.textContent = tune.name;
         const meta = document.createElement('span'); meta.className = 'text-xs text-dim'; meta.textContent = tune.type;
         left.append(name, meta);
-        const importBtn = document.createElement('button');
-        importBtn.className = 'btn-primary text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity';
-        importBtn.textContent = t('theSession.id.import');
-        importBtn.onclick = async () => {
-          importBtn.disabled = true; status.textContent = t('theSession.status.importing');
-          try {
-            const fullTune = await fetchTuneById(tune.id);
-            const existing = findByExternalId(`thesession:${fullTune.id}`, ctx.state.cards);
-            if (existing) {
-              status.textContent = t('theSession.status.alreadyInLibrary', { name: fullTune.name });
-            } else {
-              const card = tuneResultToCard(fullTune, { onlyFirstSetting });
-              await ctx.mutate(s => { s.cards[card.id] = card; });
-              status.textContent = t('theSession.status.imported', { name: card.name });
-            }
-          } catch (e) {
-            status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
-          } finally { importBtn.disabled = false; }
-        };
-        row.append(left, importBtn);
-        suggestions.appendChild(row);
+        item.appendChild(left);
+        item.addEventListener('mousedown', e => { e.preventDefault(); selectTune(tune); });
+        dropdown.appendChild(item);
       }
+      showDropdown();
     };
 
     const doSearch = debounce(async (q: string) => {
-      if (!q.trim()) { suggestions.innerHTML = ''; return; }
+      if (!q.trim()) { dropdown.innerHTML = ''; hideDropdown(); return; }
       status.textContent = t('theSession.status.searching');
       try {
         const tunes = await searchTunes(q);
@@ -189,8 +202,34 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLE
       }
     }, 300);
 
-    inp.addEventListener('input', () => doSearch(inp.value));
-    content.append(inp, suggestions);
+    inp.addEventListener('input', () => { selectedTune = null; btn.disabled = true; setPreview(''); doSearch(inp.value); });
+    inp.addEventListener('blur',  () => { setTimeout(hideDropdown, 150); });
+    inp.addEventListener('focus', () => { if (dropdown.children.length) showDropdown(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Escape') hideDropdown(); if (e.key === 'Enter' && selectedTune) btn.click(); });
+
+    btn.onclick = async () => {
+      if (!selectedTune) return;
+      const tune = selectedTune;
+      btn.disabled = true; status.textContent = t('theSession.status.fetching');
+      try {
+        const fullTune = await fetchTuneById(tune.id);
+        const existing = findByExternalId(`thesession:${fullTune.id}`, ctx.state.cards);
+        if (existing) {
+          status.textContent = t('theSession.status.alreadyInLibrary', { name: fullTune.name });
+          btn.disabled = false;
+        } else {
+          const card = tuneResultToCard(fullTune, { onlyFirstSetting });
+          await ctx.mutate(s => { s.cards[card.id] = card; });
+          status.textContent = t('theSession.status.imported', { name: card.name });
+          inp.value = ''; setPreview(''); selectedTune = null;
+        }
+      } catch (e) {
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+        btn.disabled = false;
+      }
+    };
+
+    content.append(outerWrap);
     focusIfDesktop(inp);
   };
 
@@ -266,90 +305,164 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLE
   return wrap;
 }
 
-// ── New Card modal (Create + TheSession tabs) ─────────────────────────────────
+// ── New Card modal (hierarchical flow) ───────────────────────────────────────
 
 export function showNewCardModal(ctx: AppContext): void {
-  type ActiveTab = 'create' | 'import' | 'thesession';
-  let activeTab: ActiveTab = 'create';
+  type Step = 'root' | 'create' | 'import' | 'thesession' | 'json';
+  let currentStep: Step = 'root';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col';
+  dialog.style.cssText = 'max-width:440px; max-height:85vh;';
+
+  const header = document.createElement('div');
+  header.className = 'flex items-center justify-between px-5 py-4 border-b border-border shrink-0';
+  const headerLeft = document.createElement('div');
+  headerLeft.className = 'flex items-center gap-2 min-w-0';
+  const backBtn = document.createElement('button');
+  backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0 hidden';
+  backBtn.textContent = '←';
+  const titleEl = document.createElement('h2');
+  titleEl.className = 'text-sm font-semibold text-primary truncate';
+  headerLeft.append(backBtn, titleEl);
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0';
+  closeBtn.textContent = '✕';
+  header.append(headerLeft, closeBtn);
 
   const body = document.createElement('div');
-  body.className = 'space-y-4';
+  body.className = 'px-5 py-4 flex flex-col gap-3 overflow-y-auto';
 
-  const outerTabBar = document.createElement('div');
-  outerTabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg';
+  dialog.append(header, body);
+  overlay.appendChild(dialog);
 
-  const outerContent = document.createElement('div');
-  outerContent.className = 'space-y-3';
-
-  const status = document.createElement('p');
-  status.className = 'text-xs text-muted min-h-[1.25rem]';
-
-  const renderTabs = () => {
-    outerTabBar.innerHTML = '';
-    const tabs: Array<{ id: ActiveTab; labelKey: string }> = [
-      { id: 'create',     labelKey: 'newCard.tabCreate' },
-      { id: 'import',     labelKey: 'newCard.tabImport' },
-      { id: 'thesession', labelKey: 'newCard.tabTheSession' },
-    ];
-    for (const tab of tabs) {
-      outerTabBar.appendChild(mkTab(t(tab.labelKey), activeTab === tab.id, () => {
-        activeTab = tab.id;
-        renderTabs();
-        renderContent();
-      }));
-    }
+  const TITLES: Record<Step, string> = {
+    root:       t('newCard.title'),
+    create:     t('newCard.tabCreate'),
+    import:     t('newCard.tabImport'),
+    thesession: t('newCard.tabTheSession'),
+    json:       t('newCard.tabImportJson'),
   };
 
-  const renderContent = () => {
-    outerContent.innerHTML = '';
-    status.textContent = '';
-    if (activeTab === 'create') {
-      const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = t('newCard.nameLabel');
-      const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'input'; inp.placeholder = t('newCard.namePlaceholder');
-      const createBtn = document.createElement('button'); createBtn.className = 'btn-primary w-full mt-1'; createBtn.textContent = t('newCard.createBtn');
-      const doCreate = async () => {
-        const name = inp.value.trim();
-        if (!name) { inp.focus(); return; }
-        await ctx.mutate(s => {
-          const id = generateId();
-          s.cards[id] = { id, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
-        });
-        closeModal();
-      };
-      createBtn.onclick = () => { void doCreate(); };
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { void doCreate(); } });
-      outerContent.append(lbl, inp, createBtn);
-      focusIfDesktop(inp);
-    } else if (activeTab === 'import') {
-      const pickBtn = document.createElement('button');
-      pickBtn.className = 'btn-primary w-full text-sm'; pickBtn.textContent = t('newCard.import.pick');
-      pickBtn.onclick = () => {
-        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
-        inp.onchange = async () => {
-          const file = inp.files?.[0]; if (!file) return;
-          pickBtn.disabled = true; status.textContent = t('newCard.import.importing');
-          try {
-            const cards = await parseCardPackage(file);
-            let imported = 0;
-            await ctx.mutate(s => {
-              for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; imported++; } }
-            });
-            status.textContent = t('newCard.import.done', { count: imported });
-          } catch (e) {
-            status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
-          } finally { pickBtn.disabled = false; }
-        };
-        inp.click();
-      };
-      outerContent.appendChild(pickBtn);
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  closeBtn.onclick = close;
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
+
+  const mkChoiceCard = (icon: string, label: string, desc: string, accentColor: string, onClick: () => void): HTMLElement => {
+    const btn = document.createElement('button');
+    btn.className = 'flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer';
+    btn.style.cssText = 'transition: border-color 0.15s, background 0.15s;';
+    const iconWrap = document.createElement('span');
+    iconWrap.style.color = accentColor;
+    iconWrap.className = 'shrink-0 flex items-center';
+    iconWrap.innerHTML = icon;
+    const textWrap = document.createElement('div'); textWrap.className = 'flex-1';
+    const labelEl = document.createElement('div'); labelEl.className = 'text-sm font-medium text-primary'; labelEl.textContent = label;
+    const descEl  = document.createElement('div'); descEl.className = 'text-xs text-dim mt-0.5'; descEl.textContent = desc;
+    textWrap.append(labelEl, descEl);
+    const arrow = document.createElement('span'); arrow.className = 'text-dim text-base leading-none shrink-0'; arrow.textContent = '›';
+    btn.append(iconWrap, textWrap, arrow);
+    btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
+    btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
+    btn.onclick = onClick;
+    return btn;
+  };
+
+  const navigate = (step: Step) => {
+    currentStep = step;
+    titleEl.textContent = TITLES[step];
+    if (step === 'root') {
+      backBtn.classList.add('hidden');
+      backBtn.onclick = null;
     } else {
-      outerContent.appendChild(buildTheSessionBody(ctx, status));
+      const backParent: Step = (step === 'thesession' || step === 'json') ? 'import' : 'root';
+      backBtn.classList.remove('hidden');
+      backBtn.onclick = () => navigate(backParent);
     }
+    renderBody();
   };
 
-  renderTabs();
-  renderContent();
-  body.append(outerTabBar, outerContent, status);
+  const renderBody = () => {
+    body.innerHTML = '';
 
-  showModal(t('newCard.title'), body, [{ label: t('common.close'), onClick: closeModal }]);
+    if (currentStep === 'root')            renderRoot();
+    else if (currentStep === 'create')     renderCreate();
+    else if (currentStep === 'import')     renderImport();
+    else if (currentStep === 'thesession') renderTheSession();
+    else if (currentStep === 'json')       renderJson();
+  };
+
+  const renderRoot = () => {
+    const iconCreate = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+    const iconImport = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+    body.appendChild(mkChoiceCard(iconCreate, t('newCard.tabCreate'), t('newCard.createDesc'), '#8b7cf8', () => navigate('create')));
+    body.appendChild(mkChoiceCard(iconImport, t('newCard.tabImport'), t('newCard.importDesc'), '#fbbf24', () => navigate('import')));
+  };
+
+  const renderCreate = () => {
+    const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = t('newCard.nameLabel');
+    const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'input'; inp.placeholder = t('newCard.namePlaceholder');
+    const createBtn = document.createElement('button'); createBtn.className = 'btn-primary w-full mt-1'; createBtn.textContent = t('newCard.createBtn');
+    const doCreate = async () => {
+      const name = inp.value.trim();
+      if (!name) { inp.focus(); return; }
+      await ctx.mutate(s => {
+        const id = generateId();
+        s.cards[id] = { id, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
+      });
+      close();
+    };
+    createBtn.onclick = () => { void doCreate(); };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') void doCreate(); });
+    body.append(lbl, inp, createBtn);
+    inp.focus();
+  };
+
+  const renderImport = () => {
+    const iconTs   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+    const iconJson = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+    body.appendChild(mkChoiceCard(iconTs,   t('newCard.tabTheSession'), t('newCard.theSessionDesc'), '#4ade80', () => navigate('thesession')));
+    body.appendChild(mkChoiceCard(iconJson, t('newCard.tabImportJson'), t('newCard.importJsonDesc'), '#fbbf24', () => navigate('json')));
+  };
+
+  const renderTheSession = () => {
+    const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
+    body.append(buildTheSessionBody(ctx, status), status);
+  };
+
+  const renderJson = () => {
+    const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
+    const pickBtn = document.createElement('button');
+    pickBtn.className = 'btn-primary w-full text-sm'; pickBtn.textContent = t('newCard.import.pick');
+    pickBtn.onclick = () => {
+      const fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.json,application/json';
+      fileInp.onchange = async () => {
+        const file = fileInp.files?.[0]; if (!file) return;
+        pickBtn.disabled = true; status.textContent = t('newCard.import.importing');
+        try {
+          const cards = await parseCardPackage(file);
+          let imported = 0;
+          await ctx.mutate(s => {
+            for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; imported++; } }
+          });
+          status.textContent = t('newCard.import.done', { count: imported });
+        } catch (e) {
+          status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+        } finally { pickBtn.disabled = false; }
+      };
+      fileInp.click();
+    };
+    body.append(pickBtn, status);
+  };
+
+  document.body.appendChild(overlay);
+  navigate('root');
 }
