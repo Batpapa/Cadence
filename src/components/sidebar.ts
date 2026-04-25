@@ -321,10 +321,26 @@ function showSettingsModal(ctx: AppContext): void {
 
   // ── Sections definition ───────────────────────────────────────────────────────
   const SECTIONS: Array<{ id: SectionId; icon: string; labelKey: string }> = [
-    { id: 'study', icon: '🕮', labelKey: 'settings.study' },
-    { id: 'user',  icon: '◯', labelKey: 'settings.user' },
-    { id: 'data',  icon: '⊟', labelKey: 'settings.data' },
-    { id: 'about', icon: 'ⓘ', labelKey: 'settings.about' },
+    {
+      id: 'study',
+      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
+      labelKey: 'settings.study',
+    },
+    {
+      id: 'user',
+      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+      labelKey: 'settings.user',
+    },
+    {
+      id: 'data',
+      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
+      labelKey: 'settings.data',
+    },
+    {
+      id: 'about',
+      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
+      labelKey: 'settings.about',
+    },
   ];
 
   let activeSection: SectionId = 'study';
@@ -337,7 +353,9 @@ function showSettingsModal(ctx: AppContext): void {
       btn.className = `flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer ${
         isActive ? 'bg-accent/10 text-accent' : 'text-muted hover:bg-elevated hover:text-primary'
       }`;
-      const iconEl = document.createElement('span'); iconEl.className = 'text-xs font-mono shrink-0'; iconEl.textContent = sec.icon;
+      const iconEl = document.createElement('span');
+      iconEl.className = 'shrink-0 flex items-center';
+      iconEl.innerHTML = sec.icon;
       const labelEl = document.createElement('span'); labelEl.className = `text-sm ${isActive ? 'font-medium' : ''}`; labelEl.textContent = t(sec.labelKey);
       btn.append(iconEl, labelEl);
       btn.onclick = () => { activeSection = sec.id; renderNav(); renderContent(); };
