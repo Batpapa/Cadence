@@ -306,7 +306,6 @@ export function LibraryView() {
               )}
             >
               <SvgIcon icon={trashIcon(12)} />
-              <span>{selected.size}</span>
             </button>
           </>}
         </div>
