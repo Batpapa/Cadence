@@ -16,7 +16,7 @@ export function closeModal(): void {
   if (activeModal) { activeModal.remove(); activeModal = null; }
 }
 
-export function showModal(title: string, body: HTMLElement, actions: ModalAction[]): void {
+export function showModal(title: string, body: HTMLElement, actions: ModalAction[], dismissable = true): void {
   closeModal();
 
   const overlay = document.createElement('div');
@@ -32,11 +32,15 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
   titleEl.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
   titleEl.textContent = title;
 
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer';
-  closeBtn.textContent = '✕';
-  closeBtn.onclick = closeModal;
-  header.append(titleEl, closeBtn);
+  if (dismissable) {
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = closeModal;
+    header.append(titleEl, closeBtn);
+  } else {
+    header.appendChild(titleEl);
+  }
 
   const bodyWrap = document.createElement('div');
   bodyWrap.className = 'px-5 py-4 overflow-y-auto flex-1';
@@ -61,9 +65,11 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
 
   dialog.append(header, bodyWrap, footer);
   overlay.appendChild(dialog);
-  let mouseDownOnOverlay = false;
-  overlay.addEventListener('mousedown', (e) => { mouseDownOnOverlay = e.target === overlay; });
-  overlay.onclick = (e) => { if (e.target === overlay && mouseDownOnOverlay) closeModal(); };
+  if (dismissable) {
+    let mouseDownOnOverlay = false;
+    overlay.addEventListener('mousedown', (e) => { mouseDownOnOverlay = e.target === overlay; });
+    overlay.onclick = (e) => { if (e.target === overlay && mouseDownOnOverlay) closeModal(); };
+  }
   document.body.appendChild(overlay);
   activeModal = overlay;
 }
