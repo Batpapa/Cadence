@@ -174,8 +174,8 @@ function addDragHandlers(
 
 // ── Expand / active helpers ───────────────────────────────────────────────────
 
-function expandAncestors(deckId: string, state: AppState): void {
-  let current: string | null = findParentFolder(deckId, 'deck', state);
+function expandAncestors(id: string, type: 'deck' | 'folder', state: AppState): void {
+  let current: string | null = findParentFolder(id, type, state);
   while (current) {
     expanded.add(current);
     current = findParentFolder(current, 'folder', state);
@@ -202,10 +202,15 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   el.style.paddingLeft = `${depth * 12 + 8}px`;
   el.className = `flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer group transition-colors text-sm
     ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
-  const icon = document.createElement('span'); icon.className = 'opacity-50 shrink-0 flex items-center'; icon.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
+  const spacer = document.createElement('span');
+  spacer.className = 'shrink-0';
+  spacer.style.width = '9px';
+  const icon = document.createElement('span');
+  icon.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim opacity-70'}`;
+  icon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
   const name = document.createElement('span'); name.className = 'truncate flex-1'; name.textContent = deck.name;
 
-  el.append(icon, name);
+  el.append(spacer, icon, name);
   el.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });
 
   addDragHandlers(el, 'deck', deck.id, false, ctx);
@@ -220,17 +225,27 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
   const row = document.createElement('div');
   row.style.paddingLeft = `${depth * 12 + 8}px`;
   row.className = `flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer group transition-colors text-sm
-    ${active ? 'bg-elevated text-primary' : 'text-muted hover:text-primary hover:bg-elevated'}`;
+    ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
 
+  const isEmpty = folder.folderIds.length === 0 && folder.deckIds.length === 0;
   const toggle = document.createElement('span');
-  toggle.className = 'text-xs shrink-0'; toggle.textContent = isOpen ? '▾' : '▸';
+  toggle.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'}`;
+  toggle.style.width = '9px';
+  if (!isEmpty) {
+    toggle.innerHTML = isOpen
+      ? `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`
+      : `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const toggleExpand = () => {
+      if (expanded.has(folder.id)) expanded.delete(folder.id); else expanded.add(folder.id);
+      const sidebar = wrap.closest('aside');
+      if (sidebar) sidebar.replaceWith(renderSidebar(ctx));
+    };
+    toggle.onclick = (e) => { e.stopPropagation(); toggleExpand(); };
+  }
 
-  const toggleExpand = () => {
-    if (expanded.has(folder.id)) expanded.delete(folder.id); else expanded.add(folder.id);
-    const sidebar = wrap.closest('aside');
-    if (sidebar) sidebar.replaceWith(renderSidebar(ctx));
-  };
-  toggle.onclick = (e) => { e.stopPropagation(); toggleExpand(); };
+  const folderIcon = document.createElement('span');
+  folderIcon.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'}`;
+  folderIcon.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
 
   const name = document.createElement('span'); name.className = 'truncate flex-1 font-medium'; name.textContent = folder.name;
 
@@ -243,7 +258,7 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
   addDeckBtn.onclick = (e) => { e.stopPropagation(); showCreateDeckModal(ctx, folder.id); };
 
   actions.append(addFolderBtn, addDeckBtn);
-  row.append(toggle, name, actions);
+  row.append(toggle, folderIcon, name, actions);
   row.onclick = () => ctx.navigate({ view: 'folder', folderId: folder.id });
 
   addDragHandlers(row, 'folder', folder.id, true, ctx);
@@ -632,7 +647,11 @@ function showSettingsModal(ctx: AppContext): void {
 export function renderSidebar(ctx: AppContext): HTMLElement {
   const { route, state } = ctx;
   if ((route.view === 'deck' || route.view === 'study') && 'deckId' in route) {
-    expandAncestors(route.deckId, state);
+    expandAncestors(route.deckId, 'deck', state);
+  }
+  if (route.view === 'folder' && route.folderId) {
+    expanded.add(route.folderId);
+    expandAncestors(route.folderId, 'folder', state);
   }
 
   const aside = document.createElement('aside');
@@ -723,35 +742,65 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   top.append(logo, iconGroup);
 
   const nav = document.createElement('div');
-  nav.className = 'px-2 mt-2 space-y-0.5 shrink-0';
+  nav.className = 'px-2 mt-2 mb-2 space-y-0.5 shrink-0';
 
-  const mkRow = (icon: string, label: string, active: boolean, onClick: () => void) => {
+  const mkRow = (iconSvg: string, label: string, active: boolean, onClick: () => void) => {
     const row = document.createElement('div');
-    row.className = `flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-sm transition-colors ${active ? 'bg-elevated text-primary' : 'text-muted hover:text-primary hover:bg-elevated'}`;
-    row.innerHTML = `<span class="text-xs">${icon}</span><span>${label}</span>`;
+    row.className = `flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-sm transition-colors ${active ? 'bg-accent/10 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
+    const iconEl = document.createElement('span');
+    iconEl.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'}`;
+    iconEl.innerHTML = iconSvg;
+    const labelEl = document.createElement('span'); labelEl.textContent = label;
+    row.append(iconEl, labelEl);
     row.onclick = onClick;
     return row;
   };
 
-  nav.appendChild(mkRow('⌂', t('sidebar.home'), isActive(ctx.route, 'folder', null), () => ctx.navigate({ view: 'folder', folderId: null })));
-  nav.appendChild(mkRow('≡', t('sidebar.allCards'), isActive(ctx.route, 'library'), () => ctx.navigate({ view: 'library' })));
+  const svgHome = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`;
+  const svgLib  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`;
+
+  nav.appendChild(mkRow(svgHome, t('sidebar.home'),     isActive(ctx.route, 'folder', null), () => ctx.navigate({ view: 'folder', folderId: null })));
+  nav.appendChild(mkRow(svgLib,  t('sidebar.allCards'), isActive(ctx.route, 'library'),       () => ctx.navigate({ view: 'library' })));
 
   const tree = document.createElement('div');
-  tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5';
+  tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5 border-t border-border';
   for (const folderId of state.rootFolderIds) { const folder = state.folders[folderId]; if (folder) tree.appendChild(renderFolderItem(ctx, folder, 0)); }
   for (const deckId of state.rootDeckIds) { const deck = state.decks[deckId]; if (deck) tree.appendChild(renderDeckItem(ctx, deck, 0)); }
 
   const bottom = document.createElement('div');
-  bottom.className = 'border-t border-border shrink-0 space-y-1 p-2';
+  bottom.className = 'border-t border-border shrink-0 px-3 py-2 flex items-center justify-between';
 
-  const createRow = document.createElement('div'); createRow.className = 'grid grid-cols-2 gap-1';
-  const addFolderBtn = document.createElement('button'); addFolderBtn.className = 'btn-ghost text-xs'; addFolderBtn.textContent = t('sidebar.newFolder');
-  addFolderBtn.onclick = () => promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => { ctx.mutate(s => { const id = generateId(); s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] }; s.rootFolderIds.push(id); }); });
-  const addDeckBtn = document.createElement('button'); addDeckBtn.className = 'btn-ghost text-xs'; addDeckBtn.textContent = t('sidebar.newDeck');
-  addDeckBtn.onclick = () => showCreateDeckModal(ctx, null);
-  createRow.append(addFolderBtn, addDeckBtn);
+  const newLabel = document.createElement('span');
+  newLabel.className = 'text-[10px] text-dim select-none';
+  newLabel.textContent = t('sidebar.new');
 
-  bottom.append(createRow);
+  const newBtns = document.createElement('div');
+  newBtns.className = 'flex items-center gap-1';
+
+  const mkBottomIconBtn = (svgString: string, title: string, onClick: () => void) => {
+    const btn = document.createElement('button');
+    btn.className = 'w-6 h-6 flex items-center justify-center rounded text-dim hover:text-primary hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent';
+    btn.title = title;
+    btn.innerHTML = svgString;
+    btn.onclick = onClick;
+    return btn;
+  };
+
+  const svgFolder = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+  const svgDeck   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
+
+  newBtns.appendChild(mkBottomIconBtn(svgFolder, t('sidebar.newFolder'), () =>
+    promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
+      ctx.mutate(s => {
+        const id = generateId();
+        s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] };
+        s.rootFolderIds.push(id);
+      });
+    })
+  ));
+  newBtns.appendChild(mkBottomIconBtn(svgDeck, t('sidebar.newDeck'), () => showCreateDeckModal(ctx, null)));
+
+  bottom.append(newLabel, newBtns);
   aside.append(top, nav, tree, bottom);
   return aside;
 }
