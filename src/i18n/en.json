@@ -251,6 +251,10 @@
   "settings.sync.connecting": "Connecting…",
   "settings.sync.syncing": "Syncing…",
   "settings.sync.error": "Sync error",
+  "settings.sync.conflict.title": "Data conflict",
+  "settings.sync.conflict.message": "Drive contains data from another device. Your local data and the Drive data cannot be merged automatically — you must choose one.",
+  "settings.sync.conflict.keepLocal": "Keep local",
+  "settings.sync.conflict.useDrive": "Use Drive",
 
   "settings.about": "About",
   "settings.aboutLine1": "Cadence — open-source spaced repetition app",

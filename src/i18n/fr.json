@@ -251,6 +251,10 @@
   "settings.sync.connecting": "Connexion…",
   "settings.sync.syncing": "Synchronisation…",
   "settings.sync.error": "Erreur de sync",
+  "settings.sync.conflict.title": "Conflit de données",
+  "settings.sync.conflict.message": "Le Drive contient des données d'un autre appareil. Les données locales et celles du Drive ne peuvent pas être fusionnées automatiquement — vous devez choisir l'une des deux.",
+  "settings.sync.conflict.keepLocal": "Garder local",
+  "settings.sync.conflict.useDrive": "Utiliser Drive",
 
   "settings.about": "À propos",
   "settings.aboutLine1": "Cadence — application de répétition espacée open-source",

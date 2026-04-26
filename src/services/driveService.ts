@@ -5,11 +5,23 @@ export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' 
 
 const FILE_NAME = 'cadence-data.json';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const LS_FILE_ID = 'cadence_drive_file_id';
-const LS_CONNECTED = 'cadence_drive_connected';
-const LS_LOCAL_TS = 'cadence_local_modified';
-const LS_HINT = 'cadence_drive_hint';
-const SS_TOKEN = 'cadence_access_token';
+const LS_FILE_ID    = 'cadence_drive_file_id';
+const LS_CONNECTED  = 'cadence_drive_connected';
+const LS_LOCAL_TS   = 'cadence_local_modified';
+const LS_HINT       = 'cadence_drive_hint';
+const LS_DEVICE_ID  = 'cadence_device_id';
+const SS_TOKEN      = 'cadence_access_token';
+
+export type ConnectResult =
+  | { action: 'none' }
+  | { action: 'apply';    state: AppState }
+  | { action: 'conflict'; state: AppState };
+
+export function getDeviceId(): string {
+  let id = localStorage.getItem(LS_DEVICE_ID);
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(LS_DEVICE_ID, id); }
+  return id;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Gis = any;
@@ -120,13 +132,12 @@ async function findOrCreateFile(): Promise<string> {
   return ((await create.json()) as { id: string }).id;
 }
 
-export async function connectDrive(): Promise<void> {
+export async function connectDrive(): Promise<ConnectResult> {
   await initDriveClient();
   if (!tokenClient) throw new Error('Drive client not ready');
   setStatus('connecting');
   try {
     const token = await requestToken('consent');
-    // Store email hint for silent re-auth on future page loads
     void fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${token}` },
     }).then(r => r.json()).then((d: Gis) => {
@@ -135,7 +146,40 @@ export async function connectDrive(): Promise<void> {
     fileId = await findOrCreateFile();
     localStorage.setItem(LS_FILE_ID, fileId);
     localStorage.setItem(LS_CONNECTED, '1');
+
+    const driveData = await loadFromCloud();
     setStatus('connected');
+
+    if (!driveData) return { action: 'none' };
+
+    const driveTs      = driveData._lastModified ?? 0;
+    const driveDevice  = driveData._deviceId;
+    const localTs      = getLocalTimestamp();
+    const myDevice     = getDeviceId();
+    const { _lastModified: _a, _deviceId: _b, ...clean } = driveData;
+    const cleanState   = clean as AppState;
+    const sameDevice   = driveDevice === myDevice;
+    const localHasData = localTs > 0;
+
+    if (sameDevice) {
+      // My own data coming back — apply if Drive is newer, nothing otherwise.
+      if (driveTs > localTs) {
+        localStorage.setItem(LS_LOCAL_TS, String(driveTs));
+        return { action: 'apply', state: cleanState };
+      }
+      return { action: 'none' };
+    }
+
+    // Different device.
+    if (!localHasData) {
+      // Fresh install, no local data — silently apply Drive.
+      localStorage.setItem(LS_LOCAL_TS, String(driveTs));
+      return { action: 'apply', state: cleanState };
+    }
+
+    // Both local and Drive have data from different devices — let user decide.
+    return { action: 'conflict', state: cleanState };
+
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     setStatus(msg.includes('popup_closed') || msg.includes('access_denied') ? 'disconnected' : 'error');
@@ -164,7 +208,7 @@ async function flushSync(): Promise<void> {
   setStatus('syncing');
   try {
     const ts = Date.now();
-    const payload = JSON.stringify({ ...state, _lastModified: ts });
+    const payload = JSON.stringify({ ...state, _lastModified: ts, _deviceId: getDeviceId() });
     const blob = new Blob([payload], { type: 'application/json' });
     const meta = new Blob(
       [JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })],
@@ -187,6 +231,9 @@ async function flushSync(): Promise<void> {
 }
 
 export function syncToCloud(state: AppState): void {
+  // Always stamp local modification time so connectDrive() can compare
+  // against Drive even on devices that have never uploaded.
+  localStorage.setItem(LS_LOCAL_TS, String(Date.now()));
   if (!isDriveConnected()) return;
   pendingState = state;
   setStatus('pending');
@@ -208,12 +255,12 @@ export function initDriveVisibilitySync(): void {
   });
 }
 
-export async function loadFromCloud(): Promise<(AppState & { _lastModified?: number }) | null> {
+export async function loadFromCloud(): Promise<(AppState & { _lastModified?: number; _deviceId?: string }) | null> {
   if (!fileId) return null;
   try {
     const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
     if (!resp.ok) return null;
-    return resp.json() as Promise<AppState & { _lastModified?: number }>;
+    return resp.json() as Promise<AppState & { _lastModified?: number; _deviceId?: string }>;
   } catch {
     return null;
   }
