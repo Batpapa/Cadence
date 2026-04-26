@@ -3,7 +3,6 @@ import { appState, navigate, mutate } from '../store';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { deckAvailability, isAvailable } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
-import { pct } from '../utils';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
@@ -54,9 +53,11 @@ export function StudyView({ deckId, strategy, currentCardId }: {
   const cardId = currentCardId ?? pickNextCard(state, deckId, strategy)?.cardId;
   const card   = (cardId && currentCardId !== null) ? state.cards[cardId] : undefined;
 
+  const total         = deck?.entries.length ?? 0;
   const candidateCount = deck ? deck.entries.filter(e =>
     !isAvailable(user, state.cardWorks[`${profileId}:${e.cardId}`])
   ).length : 0;
+  const mastered = total - candidateCount;
   const canSkip = candidateCount > 1;
 
   const goNext = () => {
@@ -109,7 +110,7 @@ export function StudyView({ deckId, strategy, currentCardId }: {
         <span class="text-xs font-semibold text-muted uppercase tracking-widest">{t('study.header', { deck: deck.name })}</span>
         <span class="text-xs px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">{t(STRATEGY_LABEL_KEYS[strategy])}</span>
       </div>
-      <span class="text-xs font-mono text-muted">{t('study.availability', { pct: pct(dk) })}</span>
+      <span class="text-xs font-mono text-muted">{mastered}/{total}</span>
     </div>
   );
 
@@ -121,7 +122,6 @@ export function StudyView({ deckId, strategy, currentCardId }: {
           <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
             <div class="text-5xl">✓</div>
             <h2 class="text-xl font-semibold text-success">{t('study.complete.title')}</h2>
-            <p class="text-sm text-muted">{t('study.complete.sub', { pct: pct(dk) })}</p>
             <button class="btn-primary mt-2" onClick={() => navigate({ view: 'deck', deckId })}>{t('study.complete.back')}</button>
           </div>
         </div>
@@ -137,7 +137,6 @@ export function StudyView({ deckId, strategy, currentCardId }: {
           <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
             <div class="text-5xl">★</div>
             <h2 class="text-xl font-semibold text-success">{t('study.mastered.title')}</h2>
-            <p class="text-sm text-muted">{t('study.complete.sub', { pct: pct(dk) })}</p>
             <button class="btn-primary mt-2" onClick={() => navigate({ view: 'deck', deckId })}>{t('study.mastered.back')}</button>
           </div>
         </div>
