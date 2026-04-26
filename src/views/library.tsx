@@ -313,7 +313,7 @@ export function LibraryView() {
                 <div
                   key={card.id}
                   class={`flex items-center gap-3 px-3 py-2.5 rounded transition-colors group cursor-pointer ${isSel ? 'bg-elevated' : 'hover:bg-elevated'}`}
-                  onClick={() => navigate({ view: 'card', cardId: card.id })}
+                  onClick={() => { if (selected.size === 0) navigate({ view: 'card', cardId: card.id }); }}
                 >
                   <input
                     type="checkbox"
@@ -335,7 +335,7 @@ export function LibraryView() {
                     />
                   </span>
 
-                  <span class="text-sm text-primary flex-1 truncate hover:text-accent transition-colors">
+                  <span class={`text-sm text-primary flex-1 truncate ${selected.size === 0 ? 'hover:text-accent transition-colors' : ''}`}>
                     {card.name}
                   </span>
 
