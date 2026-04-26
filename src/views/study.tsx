@@ -109,7 +109,7 @@ export function StudyView({ deckId, strategy, currentCardId }: {
         <span class="text-xs font-semibold text-muted uppercase tracking-widest">{t('study.header', { deck: deck.name })}</span>
         <span class="text-xs px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">{t(STRATEGY_LABEL_KEYS[strategy])}</span>
       </div>
-      <span class="text-xs font-mono text-muted">{mastered}/{total}</span>
+      <span class="text-xs font-mono text-muted">{t('study.mastery')}: {mastered}/{total}</span>
     </div>
   );
 
