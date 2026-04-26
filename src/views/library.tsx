@@ -153,6 +153,17 @@ export function LibraryView() {
   // ── Selection toolbar data ────────────────────────────────────────────────────
   const selectedArr   = [...selected];
   const hasSelection  = selected.size > 0;
+  const masterRef     = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (masterRef.current) masterRef.current.indeterminate = selected.size > 0 && selected.size < filtered.length;
+  });
+
+  useEffect(() => {
+    if (selected.size === 0) return;
+    const visible = new Set(filtered.map(c => c.id));
+    const next = new Set([...selected].filter(id => visible.has(id)));
+    if (next.size !== selected.size) setSelected(next);
+  }, [q, activeTags, activeDecks]);
 
   const addEligible = Object.values(state.decks)
     .filter(d => selectedArr.some(cId => !d.entries.some(e => e.cardId === cId)))
@@ -225,23 +236,31 @@ export function LibraryView() {
       </div>
 
       {/* ── Selection toolbar ── */}
-      <div class="flex items-center justify-between px-6 py-1.5 shrink-0">
-        <span class="text-xs text-dim">
-          {hasSelection ? t('library.selected', { count: selected.size }) : ''}
-        </span>
-        <div class="flex gap-1 items-center flex-wrap">
-          <button class="btn-ghost text-xs" onClick={() => setSelected(new Set(filtered.map(c => c.id)))}>
-            {t('library.selectAll')}
-          </button>
+      <div class="flex items-center justify-between px-6 h-9 shrink-0">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            class="card-checkbox"
+            checked={filtered.length > 0 && selected.size === filtered.length}
+            ref={masterRef}
+            onChange={() => {
+              if (selected.size === filtered.length && filtered.length > 0) setSelected(new Set());
+              else setSelected(new Set(filtered.map(c => c.id)));
+            }}
+          />
+          <span class="text-xs text-dim">
+            {hasSelection
+              ? t('library.masterSelected', { count: selected.size, total: filtered.length })
+              : t('library.masterSelectAll', { count: filtered.length })}
+          </span>
+        </label>
+        <div class="flex gap-1 items-center">
           {hasSelection && <>
-            <button class="btn-ghost text-xs" onClick={() => setSelected(new Set())}>
-              {t('library.deselectAll')}
-            </button>
             <button class="btn-ghost text-xs" onClick={() => exportCards(allCards.filter(c => selected.has(c.id)))}>
               {t('library.exportSelected')}
             </button>
             {addEligible.length > 0 && (
-              <button class="btn-ghost text-xs" onClick={() => showDeckPickerModal(
+              <button class="btn-ghost text-xs flex items-center gap-1" title={t('library.addToDecks')} onClick={() => showDeckPickerModal(
                 'library.addToDecks.title', 'library.addToDecks.confirm', addEligible,
                 (deckIds) => mutate(s => {
                   for (const deckId of deckIds) {
@@ -251,11 +270,12 @@ export function LibraryView() {
                   }
                 }),
               )}>
-                {t('library.addToDecks')}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
               </button>
             )}
             {removeEligible.length > 0 && (
-              <button class="btn-ghost text-xs" onClick={() => showDeckPickerModal(
+              <button class="btn-ghost text-xs flex items-center gap-1" title={t('library.removeFromDecks')} onClick={() => showDeckPickerModal(
                 'library.removeFromDecks.title', 'library.removeFromDecks.confirm', removeEligible,
                 (deckIds) => mutate(s => {
                   for (const deckId of deckIds) {
@@ -264,7 +284,8 @@ export function LibraryView() {
                   }
                 }),
               )}>
-                {t('library.removeFromDecks')}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
               </button>
             )}
             <button

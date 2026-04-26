@@ -512,7 +512,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               const deck = state.decks[deckId]; if (!deck) return null;
               return (
                 <div key={deckId} class="card-block cursor-pointer hover:border-accent/40 transition-colors" onClick={() => navigate({ view: 'deck', deckId })}>
-                  <div class="text-2xl mb-1">⊞</div>
+                  <div class="mb-1 text-muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
                   <div class="text-sm font-medium text-primary truncate">{deck.name}</div>
                   <div class="text-xs text-muted mt-0.5">{t('folder.deckMeta', { count: deck.entries.length })}</div>
                 </div>
