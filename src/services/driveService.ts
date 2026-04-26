@@ -33,6 +33,7 @@ let fileId: string | null = localStorage.getItem(LS_FILE_ID);
 let status: DriveStatus = localStorage.getItem(LS_CONNECTED) === '1' ? 'connected' : 'disconnected';
 const listeners: Array<(s: DriveStatus) => void> = [];
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingState: AppState | null = null;
 let flushInProgress = false;
 
@@ -188,6 +189,7 @@ export async function connectDrive(): Promise<ConnectResult> {
 }
 
 export function disconnectDrive(): void {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   if (accessToken) {
     (window as Gis).google?.accounts?.oauth2?.revoke(accessToken, () => {});
     accessToken = null;
@@ -202,6 +204,7 @@ export function disconnectDrive(): void {
 
 async function flushSync(): Promise<void> {
   if (!fileId || !pendingState || flushInProgress) return;
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   flushInProgress = true;
   const state = pendingState;
   pendingState = null;
@@ -224,7 +227,9 @@ async function flushSync(): Promise<void> {
     localStorage.setItem(LS_LOCAL_TS, String(ts));
     setStatus(pendingState ? 'pending' : 'connected');
   } catch {
+    pendingState = pendingState ?? state;
     setStatus('error');
+    retryTimer = setTimeout(() => { retryTimer = null; void flushSync(); }, 30_000);
   } finally {
     flushInProgress = false;
   }
@@ -242,7 +247,8 @@ export function syncToCloud(state: AppState): void {
 }
 
 export async function manualSync(): Promise<void> {
-  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+  if (syncTimer)  { clearTimeout(syncTimer);  syncTimer  = null; }
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   await flushSync();
 }
 
