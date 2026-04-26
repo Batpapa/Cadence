@@ -256,8 +256,8 @@ export function LibraryView() {
         </label>
         <div class="flex gap-1 items-center">
           {hasSelection && <>
-            <button class="btn-ghost text-xs" onClick={() => exportCards(allCards.filter(c => selected.has(c.id)))}>
-              {t('library.exportSelected')}
+            <button class="btn-ghost text-xs inline-flex items-center justify-center" title={t('library.exportSelected')} onClick={() => exportCards(allCards.filter(c => selected.has(c.id)))}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
             {addEligible.length > 0 && (
               <button class="btn-ghost text-xs flex items-center gap-1" title={t('library.addToDecks')} onClick={() => showDeckPickerModal(

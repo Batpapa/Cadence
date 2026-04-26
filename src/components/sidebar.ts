@@ -522,9 +522,11 @@ function showSettingsModal(ctx: AppContext): void {
     // ── Data ──
     } else if (activeSection === 'data') {
       const dataRow = document.createElement('div'); dataRow.className = 'grid grid-cols-3 gap-2';
-      const exportBtn = document.createElement('button'); exportBtn.className = 'btn-ghost text-xs'; exportBtn.textContent = t('settings.export');
+      const exportSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+      const importSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+      const exportBtn = document.createElement('button'); exportBtn.className = 'btn-ghost text-xs inline-flex items-center justify-center gap-1.5'; exportBtn.innerHTML = `${exportSvg}${t('settings.export')}`;
       exportBtn.onclick = () => exportBackup(getContext().state);
-      const importLabel = document.createElement('label'); importLabel.className = 'btn-ghost text-xs text-center cursor-pointer'; importLabel.textContent = t('settings.import');
+      const importLabel = document.createElement('label'); importLabel.className = 'btn-ghost text-xs cursor-pointer inline-flex items-center justify-center gap-1.5'; importLabel.innerHTML = `${importSvg}${t('settings.import')}`;
       const importInput = document.createElement('input'); importInput.type = 'file'; importInput.accept = 'application/json'; importInput.className = 'hidden';
       importInput.onchange = async () => {
         const file = importInput.files?.[0]; if (!file) return;
