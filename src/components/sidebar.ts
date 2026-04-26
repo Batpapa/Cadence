@@ -577,7 +577,7 @@ function showSettingsModal(ctx: AppContext): void {
               showModal(t('settings.sync.conflict.title'), body, [
                 { label: t('settings.sync.conflict.keepLocal'), onClick: closeModal },
                 { label: t('settings.sync.conflict.useDrive'),  onClick: async () => { closeModal(); await applyDriveState(result.state); } },
-              ]);
+              ], false);
             }
           } catch {}
         };
