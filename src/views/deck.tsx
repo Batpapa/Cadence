@@ -221,7 +221,7 @@ export function DeckView({ deckId }: { deckId: string }) {
         </div>
 
         {/* Metrics */}
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-4 gap-3">
           <div class="card-block space-y-2">
             <div class="section-title">{t('deck.section.availability')}</div>
             <div class={`text-2xl font-mono font-semibold ${avail >= 0.75 ? 'text-success' : avail >= 0.4 ? 'text-warn' : avail > 0 ? 'text-danger' : 'text-primary'}`}>
@@ -238,6 +238,12 @@ export function DeckView({ deckId }: { deckId: string }) {
             <div class="section-title">{t('deck.section.ease')}</div>
             <div class={`text-2xl font-mono font-semibold ${ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : ease > 0 ? 'text-danger' : 'text-primary'}`}>
               {ease > 0 ? pct(ease) : '—'}
+            </div>
+          </div>
+          <div class="card-block space-y-2">
+            <div class="section-title">{t('deck.section.mastery')}</div>
+            <div class={`text-2xl font-mono font-semibold ${allMastered ? 'text-success' : 'text-primary'}`}>
+              {noCards ? '—' : `${deck.entries.length - candidates}/${deck.entries.length}`}
             </div>
           </div>
         </div>
