@@ -201,7 +201,7 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   el.style.paddingLeft = `${depth * 12 + 8}px`;
   el.className = `flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer group transition-colors text-sm
     ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
-  const icon = document.createElement('span'); icon.className = 'text-xs opacity-60 shrink-0'; icon.textContent = '▪';
+  const icon = document.createElement('span'); icon.className = 'opacity-50 shrink-0 flex items-center'; icon.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
   const name = document.createElement('span'); name.className = 'truncate flex-1'; name.textContent = deck.name;
 
   el.append(icon, name);

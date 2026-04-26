@@ -46,7 +46,7 @@ function mkPreviewInput(placeholder: string) {
   return { wrap, inp, setPreview };
 }
 
-export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLElement {
+export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>): HTMLElement {
   let activeTab: 'id' | 'search' | 'member' = 'search';
   let onlyFirstSetting = true;
 
@@ -121,7 +121,13 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLE
           status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
         } else {
           const card = tuneResultToCard(tune, { onlyFirstSetting });
-          await ctx.mutate(s => { s.cards[card.id] = card; });
+          await ctx.mutate(s => {
+            s.cards[card.id] = card;
+            for (const deckId of (getTargetDeckIds?.() ?? [])) {
+              const deck = s.decks[deckId];
+              if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+            }
+          });
           status.textContent = t('theSession.status.imported', { name: card.name });
         }
       } catch (e) {
@@ -219,7 +225,13 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLE
           btn.disabled = false;
         } else {
           const card = tuneResultToCard(fullTune, { onlyFirstSetting });
-          await ctx.mutate(s => { s.cards[card.id] = card; });
+          await ctx.mutate(s => {
+            s.cards[card.id] = card;
+            for (const deckId of (getTargetDeckIds?.() ?? [])) {
+              const deck = s.decks[deckId];
+              if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+            }
+          });
           status.textContent = t('theSession.status.imported', { name: card.name });
           inp.value = ''; setPreview(''); selectedTune = null;
         }
@@ -279,6 +291,13 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement): HTMLE
         const newCards = newTunes.map(tune => tuneResultToCard(tune, { onlyFirstSetting }));
         await ctx.mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; }
+          for (const deckId of (getTargetDeckIds?.() ?? [])) {
+            const deck = s.decks[deckId];
+            if (!deck) continue;
+            for (const card of newCards) {
+              if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+            }
+          }
         });
         progressFill.style.width = '100%';
         const linked = 0;
@@ -331,7 +350,21 @@ export function showNewCardModal(ctx: AppContext): void {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0';
   closeBtn.textContent = '✕';
-  header.append(headerLeft, closeBtn);
+  const selectedDeckIds = new Set<string>();
+  const deckIconSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
+  const linkIconSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+  const deckBtn = document.createElement('button');
+  const updateDeckBtn = () => {
+    const n = selectedDeckIds.size;
+    deckBtn.innerHTML = `${linkIconSvg}${deckIconSvg}${n > 0 ? ` (${n})` : ''}`;
+    deckBtn.className = `inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${n > 0 ? 'text-accent' : 'text-dim hover:text-primary'}`;
+    deckBtn.title = t('newCard.selectDecks');
+  };
+  updateDeckBtn();
+  const headerRight = document.createElement('div');
+  headerRight.className = 'flex items-center gap-3 shrink-0';
+  headerRight.append(deckBtn, closeBtn);
+  header.append(headerLeft, headerRight);
 
   const body = document.createElement('div');
   body.className = 'px-5 py-4 flex flex-col gap-3 overflow-y-auto';
@@ -347,12 +380,49 @@ export function showNewCardModal(ctx: AppContext): void {
     json:       t('newCard.tabImportJson'),
   };
 
+  let deckSelectorOpen = false;
+  const showDeckSelector = () => {
+    deckSelectorOpen = true;
+    const selOverlay = document.createElement('div');
+    selOverlay.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/60';
+    const selDialog = document.createElement('div');
+    selDialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 flex flex-col overflow-hidden';
+    selDialog.style.cssText = 'max-width:360px; max-height:65vh;';
+    const selHeader = document.createElement('div');
+    selHeader.className = 'flex items-center justify-between px-4 py-3 border-b border-border shrink-0';
+    const selTitle = document.createElement('span'); selTitle.className = 'text-sm font-semibold text-primary'; selTitle.textContent = t('newCard.selectDecks');
+    const selClose = document.createElement('button'); selClose.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer'; selClose.textContent = '✕';
+    selHeader.append(selTitle, selClose);
+    const selBody = document.createElement('div'); selBody.className = 'overflow-y-auto flex-1 py-2';
+    const decks = Object.values(ctx.state.decks).sort((a, b) => a.name.localeCompare(b.name));
+    if (decks.length === 0) {
+      const empty = document.createElement('p'); empty.className = 'text-xs text-muted px-4 py-3'; empty.textContent = t('newCard.noDecks'); selBody.appendChild(empty);
+    } else {
+      for (const deck of decks) {
+        const row = document.createElement('label'); row.className = 'flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-bg transition-colors';
+        const chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = selectedDeckIds.has(deck.id); chk.className = 'card-checkbox shrink-0';
+        chk.onchange = () => { if (chk.checked) selectedDeckIds.add(deck.id); else selectedDeckIds.delete(deck.id); updateDeckBtn(); };
+        const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary truncate'; nameEl.textContent = deck.name;
+        row.append(chk, nameEl); selBody.appendChild(row);
+      }
+    }
+    const closeSelector = () => { deckSelectorOpen = false; document.removeEventListener('keydown', selOnKey); selOverlay.remove(); };
+    const selOnKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeSelector(); };
+    document.addEventListener('keydown', selOnKey);
+    selClose.onclick = closeSelector;
+    selOverlay.addEventListener('mousedown', e => { if (e.target === selOverlay) closeSelector(); });
+    selDialog.append(selHeader, selBody);
+    selOverlay.appendChild(selDialog);
+    document.body.appendChild(selOverlay);
+  };
+  deckBtn.onclick = showDeckSelector;
+
   const close = () => {
     overlay.remove();
     document.removeEventListener('keydown', onKey);
   };
   closeBtn.onclick = close;
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !deckSelectorOpen) close(); };
   document.addEventListener('keydown', onKey);
   overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
 
@@ -417,6 +487,10 @@ export function showNewCardModal(ctx: AppContext): void {
       await ctx.mutate(s => {
         const id = generateId();
         s.cards[id] = { id, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
+        for (const deckId of selectedDeckIds) {
+          const deck = s.decks[deckId];
+          if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
+        }
       });
       close();
     };
@@ -435,7 +509,7 @@ export function showNewCardModal(ctx: AppContext): void {
 
   const renderTheSession = () => {
     const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
-    body.append(buildTheSessionBody(ctx, status), status);
+    body.append(buildTheSessionBody(ctx, status, () => selectedDeckIds), status);
   };
 
   const renderJson = () => {
@@ -450,8 +524,16 @@ export function showNewCardModal(ctx: AppContext): void {
         try {
           const cards = await parseCardPackage(file);
           let imported = 0;
+          const newCards: typeof cards = [];
           await ctx.mutate(s => {
-            for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; imported++; } }
+            for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; newCards.push(card); imported++; } }
+            for (const deckId of selectedDeckIds) {
+              const deck = s.decks[deckId];
+              if (!deck) continue;
+              for (const card of newCards) {
+                if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+              }
+            }
           });
           status.textContent = t('newCard.import.done', { count: imported });
         } catch (e) {
