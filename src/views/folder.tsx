@@ -486,7 +486,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               const sub = state.folders[subId]; if (!sub) return null;
               return (
                 <div key={subId} class="card-block cursor-pointer hover:border-accent/40 transition-colors" onClick={() => navigate({ view: 'folder', folderId: subId })}>
-                  <div class="text-2xl mb-1">▤</div>
+                  <div class="mb-1 text-muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
                   <div class="text-sm font-medium text-primary truncate">{sub.name}</div>
                   <div class="text-xs text-muted mt-0.5">{t('folder.meta', { folders: sub.folderIds.length, decks: sub.deckIds.length })}</div>
                 </div>

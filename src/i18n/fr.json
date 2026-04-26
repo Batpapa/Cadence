@@ -44,6 +44,7 @@
   "sidebar.sync.syncing": "Synchronisation…",
   "sidebar.sync.connected": "Synchronisé avec Google Drive",
   "sidebar.sync.error": "Erreur de sync — cliquer pour réessayer",
+  "sidebar.new": "Nouveau…",
   "sidebar.newFolder": "+ Dossier",
   "sidebar.newDeck": "+ Paquet",
 
