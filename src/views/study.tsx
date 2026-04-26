@@ -1,7 +1,7 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
-import { deckAvailability, isAvailable } from '../services/knowledgeService';
+import { isAvailable } from '../services/knowledgeService';
 import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
@@ -47,7 +47,6 @@ export function StudyView({ deckId, strategy, currentCardId }: {
   const deck      = state.decks[deckId];
   const user      = getCurrentUser(state);
   const profileId = state.currentProfileId;
-  const dk        = deck ? deckAvailability(user, profileId, deck, state.cards, state.cardWorks, user.weightByImportance ?? true) : 0;
 
   // null means "deck complete" screen; undefined means "pick next card".
   const cardId = currentCardId ?? pickNextCard(state, deckId, strategy)?.cardId;
