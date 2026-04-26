@@ -208,9 +208,7 @@
 
   "study.notFound": "Paquet introuvable.",
   "study.header": "Étude · {deck}",
-  "study.availability": "Disponibilité : {pct}",
   "study.complete.title": "Session terminée !",
-  "study.complete.sub": "Disponibilité du paquet : {pct}",
   "study.complete.back": "Retour au paquet",
   "study.mastered.title": "Toutes les cartes de ce paquet dépassent le seuil — rien à réviser !",
   "study.mastered.back": "Retour au paquet",
@@ -221,6 +219,7 @@
   "study.skip": "Passer (sans noter)",
   "study.skipTitle": "Passer (sans noter) [Tab]",
   "study.notes": "Notes",
+  "study.mastery": "Maîtrise",
   "study.strategy.random": "Aléatoire",
   "study.strategy.optimal": "Optimal",
   "study.strategy.stochastic": "Stochastique",

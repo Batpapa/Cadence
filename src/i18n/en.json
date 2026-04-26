@@ -208,9 +208,7 @@
 
   "study.notFound": "Deck not found.",
   "study.header": "Study · {deck}",
-  "study.availability": "Availability: {pct}",
   "study.complete.title": "Session complete!",
-  "study.complete.sub": "Deck availability: {pct}",
   "study.complete.back": "Back to deck",
   "study.mastered.title": "All cards in this deck are above the threshold — nothing to review!",
   "study.mastered.back": "Back to deck",
@@ -221,6 +219,7 @@
   "study.skip": "Skip (no rating)",
   "study.skipTitle": "Skip (no rating) [Tab]",
   "study.notes": "Notes",
+  "study.mastery": "Mastery",
   "study.strategy.random": "Random",
   "study.strategy.optimal": "Optimal",
   "study.strategy.stochastic": "Stochastic",
