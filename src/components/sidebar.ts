@@ -1,6 +1,6 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
 import { generateId, emptyState, helpIcon, trashIcon, addTouchDragSupport } from '../utils';
-import { promptModal, confirmModal, closeModal } from './modal';
+import { promptModal, confirmModal, closeModal, showModal } from './modal';
 import { getCurrentUser, updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { findParentFolder } from '../services/deckService';
 import { showCommandPalette } from './commandPalette';
@@ -10,7 +10,8 @@ import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, manualSync, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
-import { getContext } from '../store';
+import { getContext, mutate } from '../store';
+import { migrateState } from '../services/migration';
 
 const expanded = new Set<string>();
 let driveStatusUnsub: (() => void) | null = null;
@@ -559,13 +560,35 @@ function showSettingsModal(ctx: AppContext): void {
         const driveControl = document.createElement('div'); driveControl.className = 'flex items-center gap-2';
         driveControl.append(driveStatusEl, driveBtn);
 
+        const applyDriveState = async (state: AppState) => {
+          migrateState(state);
+          await mutate(s => Object.assign(s, state));
+        };
+
+        const handleConnect = async () => {
+          try {
+            const result = await connectDrive();
+            if (result.action === 'apply') {
+              await applyDriveState(result.state);
+            } else if (result.action === 'conflict') {
+              const body = document.createElement('p');
+              body.className = 'text-sm text-muted leading-relaxed';
+              body.textContent = t('settings.sync.conflict.message');
+              showModal(t('settings.sync.conflict.title'), body, [
+                { label: t('settings.sync.conflict.keepLocal'), onClick: closeModal },
+                { label: t('settings.sync.conflict.useDrive'),  onClick: async () => { closeModal(); await applyDriveState(result.state); } },
+              ]);
+            }
+          } catch {}
+        };
+
         const updateDriveUI = (s: DriveStatus) => {
           switch (s) {
-            case 'disconnected': driveStatusEl.textContent = ''; driveBtn.textContent = t('settings.sync.connect'); driveBtn.className = 'btn-primary text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => { void connectDrive().catch(() => {}); }; break;
+            case 'disconnected': driveStatusEl.textContent = ''; driveBtn.textContent = t('settings.sync.connect'); driveBtn.className = 'btn-primary text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => { void handleConnect(); }; break;
             case 'connecting':   driveStatusEl.textContent = t('settings.sync.connecting'); driveStatusEl.className = 'text-xs text-muted'; driveBtn.textContent = ''; driveBtn.disabled = true; break;
             case 'connected':    driveStatusEl.textContent = '● ' + t('settings.sync.connected'); driveStatusEl.className = 'text-xs text-green-500'; driveBtn.textContent = t('settings.sync.disconnect'); driveBtn.className = 'btn-ghost text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => disconnectDrive(); break;
             case 'syncing':      driveStatusEl.textContent = '○ ' + t('settings.sync.syncing'); driveStatusEl.className = 'text-xs text-muted'; driveBtn.disabled = true; break;
-            case 'error':        driveStatusEl.textContent = '✕ ' + t('settings.sync.error'); driveStatusEl.className = 'text-xs text-danger'; driveBtn.textContent = t('settings.sync.reconnect'); driveBtn.className = 'btn-ghost text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => { void connectDrive().catch(() => {}); }; break;
+            case 'error':        driveStatusEl.textContent = '✕ ' + t('settings.sync.error'); driveStatusEl.className = 'text-xs text-danger'; driveBtn.textContent = t('settings.sync.reconnect'); driveBtn.className = 'btn-ghost text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => { void handleConnect(); }; break;
           }
         };
 
