@@ -1,6 +1,7 @@
 import type { AppContext } from '../types';
 import { generateId, focusIfDesktop } from '../utils';
 import { parseCardPackage } from '../services/importExport';
+import { mutate } from '../store';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo,
   tuneResultToCard, findByExternalId,
@@ -118,10 +119,16 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
         const tune = await fetchTuneById(id);
         const existing = findByExternalId(`thesession:${tune.id}`, ctx.state.cards);
         if (existing) {
+          await mutate(s => {
+            for (const deckId of (getTargetDeckIds?.() ?? [])) {
+              const deck = s.decks[deckId];
+              if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
+            }
+          });
           status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
         } else {
           const card = tuneResultToCard(tune, { onlyFirstSetting });
-          await ctx.mutate(s => {
+          await mutate(s => {
             s.cards[card.id] = card;
             for (const deckId of (getTargetDeckIds?.() ?? [])) {
               const deck = s.decks[deckId];
@@ -221,11 +228,17 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
         const fullTune = await fetchTuneById(tune.id);
         const existing = findByExternalId(`thesession:${fullTune.id}`, ctx.state.cards);
         if (existing) {
+          await mutate(s => {
+            for (const deckId of (getTargetDeckIds?.() ?? [])) {
+              const deck = s.decks[deckId];
+              if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
+            }
+          });
           status.textContent = t('theSession.status.alreadyInLibrary', { name: fullTune.name });
           btn.disabled = false;
         } else {
           const card = tuneResultToCard(fullTune, { onlyFirstSetting });
-          await ctx.mutate(s => {
+          await mutate(s => {
             s.cards[card.id] = card;
             for (const deckId of (getTargetDeckIds?.() ?? [])) {
               const deck = s.decks[deckId];
@@ -288,13 +301,14 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
         const existingCards = tunes.map(t => findByExternalId(`thesession:${t.id}`, ctx.state.cards));
         const newTunes = tunes.filter((_, i) => !existingCards[i]);
         const alreadyExisting = tunes.filter((_, i) => !!existingCards[i]);
+        const existingCardObjs = existingCards.flatMap(c => c ? [c] : []);
         const newCards = newTunes.map(tune => tuneResultToCard(tune, { onlyFirstSetting }));
-        await ctx.mutate(s => {
+        await mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; }
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
             const deck = s.decks[deckId];
             if (!deck) continue;
-            for (const card of newCards) {
+            for (const card of [...newCards, ...existingCardObjs]) {
               if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
             }
           }
@@ -484,7 +498,7 @@ export function showNewCardModal(ctx: AppContext): void {
     const doCreate = async () => {
       const name = inp.value.trim();
       if (!name) { inp.focus(); return; }
-      await ctx.mutate(s => {
+      await mutate(s => {
         const id = generateId();
         s.cards[id] = { id, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
         for (const deckId of selectedDeckIds) {
@@ -525,17 +539,20 @@ export function showNewCardModal(ctx: AppContext): void {
           const cards = await parseCardPackage(file);
           let imported = 0;
           const newCards: typeof cards = [];
-          await ctx.mutate(s => {
+          await mutate(s => {
             for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; newCards.push(card); imported++; } }
             for (const deckId of selectedDeckIds) {
               const deck = s.decks[deckId];
               if (!deck) continue;
-              for (const card of newCards) {
+              for (const card of cards) {
                 if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
               }
             }
           });
-          status.textContent = t('newCard.import.done', { count: imported });
+          const skipped = cards.length - imported;
+          let summary = t('theSession.status.batchDone', { count: imported });
+          if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';
+          status.textContent = summary;
         } catch (e) {
           status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
         } finally { pickBtn.disabled = false; }
