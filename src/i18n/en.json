@@ -32,7 +32,7 @@
 
   "sidebar.logo": "Cadence",
   "sidebar.home": "Home",
-  "sidebar.allCards": "All cards",
+  "sidebar.library": "Cards",
   "sidebar.settings": "Settings",
   "sidebar.search": "Search [Ctrl+K]",
   "sidebar.back": "Back [Alt+←]",
