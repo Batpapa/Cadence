@@ -189,12 +189,6 @@ function isActive(route: Route, type: 'folder' | 'deck' | 'library', id: string 
   return (route.view === 'deck' || route.view === 'study') && 'deckId' in route && route.deckId === id;
 }
 
-function mkIconBtn(text: string, title: string): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.className = 'px-1 py-0.5 text-[10px] text-dim hover:text-primary transition-colors cursor-pointer rounded hover:bg-border';
-  btn.textContent = text; btn.title = title; return btn;
-}
-
 // ── Tree item renderers ───────────────────────────────────────────────────────
 
 function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement {
@@ -222,7 +216,7 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
   const wrap = document.createElement('div');
   const row = document.createElement('div');
   row.style.paddingLeft = `${depth * 12 + 8}px`;
-  row.className = `flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer group transition-colors text-sm
+  row.className = `flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer transition-colors text-sm
     ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
 
   const isEmpty = folder.folderIds.length === 0 && folder.deckIds.length === 0;
@@ -247,14 +241,7 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
 
   const actions = document.createElement('div'); actions.className = 'hidden group-hover:flex items-center gap-0.5 shrink-0';
 
-  const addFolderBtn = mkIconBtn('+F', t('sidebar.addSubfolder'));
-  addFolderBtn.onclick = (e) => { e.stopPropagation(); promptModal(t('modal.newSubfolder.title'), t('modal.newFolder.label'), '', n => { ctx.mutate(s => { const id = generateId(); s.folders[id] = { userId: s.currentUserId, id, name: n, folderIds: [], deckIds: [] }; s.folders[folder.id]!.folderIds.push(id); }); }); };
-
-  const addDeckBtn = mkIconBtn('+D', t('sidebar.addDeck'));
-  addDeckBtn.onclick = (e) => { e.stopPropagation(); showCreateDeckModal(ctx, folder.id); };
-
-  actions.append(addFolderBtn, addDeckBtn);
-  row.append(folderIcon, name, actions);
+  row.append(folderIcon, name);
   row.onclick = () => ctx.navigate({ view: 'folder', folderId: folder.id });
 
   addDragHandlers(row, 'folder', folder.id, true, ctx);
