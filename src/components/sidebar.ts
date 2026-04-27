@@ -203,15 +203,12 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   el.style.paddingLeft = `${depth * 12 + 8}px`;
   el.className = `flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer group transition-colors text-sm
     ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
-  const spacer = document.createElement('span');
-  spacer.className = 'shrink-0';
-  spacer.style.width = '9px';
   const icon = document.createElement('span');
   icon.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim opacity-70'}`;
   icon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
   const name = document.createElement('span'); name.className = 'truncate flex-1'; name.textContent = deck.name;
 
-  el.append(spacer, icon, name);
+  el.append(icon, name);
   el.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });
 
   addDragHandlers(el, 'deck', deck.id, false, ctx);
@@ -229,24 +226,22 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
     ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
 
   const isEmpty = folder.folderIds.length === 0 && folder.deckIds.length === 0;
-  const toggle = document.createElement('span');
-  toggle.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'}`;
-  toggle.style.width = '9px';
+
+  const svgFolderClosed = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+  const svgFolderOpen  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`;
+
+  const folderIcon = document.createElement('span');
+  folderIcon.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'} ${!isEmpty ? 'cursor-pointer' : ''}`;
+  folderIcon.innerHTML = isOpen ? svgFolderOpen : svgFolderClosed;
+
   if (!isEmpty) {
-    toggle.innerHTML = isOpen
-      ? `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`
-      : `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-    const toggleExpand = () => {
+    folderIcon.onclick = (e) => {
+      e.stopPropagation();
       if (expanded.has(folder.id)) expanded.delete(folder.id); else expanded.add(folder.id);
       const sidebar = wrap.closest('aside');
       if (sidebar) sidebar.replaceWith(renderSidebar(ctx));
     };
-    toggle.onclick = (e) => { e.stopPropagation(); toggleExpand(); };
   }
-
-  const folderIcon = document.createElement('span');
-  folderIcon.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'}`;
-  folderIcon.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
 
   const name = document.createElement('span'); name.className = 'truncate flex-1 font-medium'; name.textContent = folder.name;
 
@@ -259,7 +254,7 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
   addDeckBtn.onclick = (e) => { e.stopPropagation(); showCreateDeckModal(ctx, folder.id); };
 
   actions.append(addFolderBtn, addDeckBtn);
-  row.append(toggle, folderIcon, name, actions);
+  row.append(folderIcon, name, actions);
   row.onclick = () => ctx.navigate({ view: 'folder', folderId: folder.id });
 
   addDragHandlers(row, 'folder', folder.id, true, ctx);
@@ -654,6 +649,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
       expandAncestors(route.deckId, 'deck', state);
     }
     if (route.view === 'folder' && route.folderId) {
+      expanded.add(route.folderId);
       expandAncestors(route.folderId, 'folder', state);
     }
   }
