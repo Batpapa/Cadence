@@ -365,12 +365,11 @@ export function showNewCardModal(ctx: AppContext): void {
   closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0';
   closeBtn.textContent = '✕';
   const selectedDeckIds = new Set<string>();
-  const deckIconSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
   const linkIconSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
   const deckBtn = document.createElement('button');
   const updateDeckBtn = () => {
     const n = selectedDeckIds.size;
-    deckBtn.innerHTML = `${linkIconSvg}${deckIconSvg}${n > 0 ? ` (${n})` : ''}`;
+    deckBtn.innerHTML = `${linkIconSvg}${n > 0 ? ` (${n})` : ''}`;
     deckBtn.className = `inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${n > 0 ? 'text-accent' : 'text-dim hover:text-primary'}`;
     deckBtn.title = t('newCard.selectDecks');
   };
