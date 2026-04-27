@@ -14,6 +14,7 @@ import { getContext, mutate } from '../store';
 import { migrateState } from '../services/migration';
 
 const expanded = new Set<string>();
+let lastAutoExpandedRoute: string | null = null;
 let driveStatusUnsub: (() => void) | null = null;
 
 // ── Drag & Drop state ─────────────────────────────────────────────────────────
@@ -646,12 +647,15 @@ function showSettingsModal(ctx: AppContext): void {
 
 export function renderSidebar(ctx: AppContext): HTMLElement {
   const { route, state } = ctx;
-  if ((route.view === 'deck' || route.view === 'study') && 'deckId' in route) {
-    expandAncestors(route.deckId, 'deck', state);
-  }
-  if (route.view === 'folder' && route.folderId) {
-    expanded.add(route.folderId);
-    expandAncestors(route.folderId, 'folder', state);
+  const routeKey = JSON.stringify(route);
+  if (routeKey !== lastAutoExpandedRoute) {
+    lastAutoExpandedRoute = routeKey;
+    if ((route.view === 'deck' || route.view === 'study') && 'deckId' in route) {
+      expandAncestors(route.deckId, 'deck', state);
+    }
+    if (route.view === 'folder' && route.folderId) {
+      expandAncestors(route.folderId, 'folder', state);
+    }
   }
 
   const aside = document.createElement('aside');
