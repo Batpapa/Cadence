@@ -760,7 +760,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const svgLib  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`;
 
   nav.appendChild(mkRow(svgHome, t('sidebar.home'),     isActive(ctx.route, 'folder', null), () => ctx.navigate({ view: 'folder', folderId: null })));
-  nav.appendChild(mkRow(svgLib,  t('sidebar.allCards'), isActive(ctx.route, 'library'),       () => ctx.navigate({ view: 'library' })));
+  nav.appendChild(mkRow(svgLib,  t('sidebar.library'),  isActive(ctx.route, 'library'),      () => ctx.navigate({ view: 'library' })));
 
   const tree = document.createElement('div');
   tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5 border-t border-border';

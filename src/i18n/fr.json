@@ -32,7 +32,7 @@
 
   "sidebar.logo": "Cadence",
   "sidebar.home": "Accueil",
-  "sidebar.allCards": "Toutes les cartes",
+  "sidebar.library": "Cartes",
   "sidebar.settings": "Paramètres",
   "sidebar.search": "Rechercher [Ctrl+K]",
   "sidebar.back": "Retour [Alt+←]",
