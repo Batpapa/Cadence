@@ -155,6 +155,7 @@ export function StudyView({ deckId, strategy, currentCardId }: {
           </div>
 
           <div class="space-y-2">
+            <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>
             <div class="grid grid-cols-4 gap-2">
               {RATINGS.map(({ rating, key, cls, shortcut }) => (
                 <button key={rating} class={cls} title={`${t(key)} [${shortcut}]`} onClick={() => logRating(rating)}>
