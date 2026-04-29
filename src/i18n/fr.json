@@ -234,6 +234,7 @@
   "settings.availabilityThresholdHint": "Les cartes au-dessus de ce seuil de disponibilité sont ignorées pendant les sessions d'étude.",
   "settings.weightByImportance": "Pondérer par importance",
   "settings.weightByImportanceHint": "Lorsque cette option est activée, une carte contribue à la connaissance du paquet proportionnellement à son importance plutôt qu'à parts égales.",
+  "settings.zoom": "Zoom",
   "settings.language": "Langue",
   "settings.data": "Données",
   "settings.export": "Exporter",
