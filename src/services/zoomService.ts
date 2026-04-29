@@ -29,3 +29,11 @@ export function canZoomOut(): boolean { return getZoom() > ZOOM_LEVELS[0]!; }
 export function applyZoom(): void {
   document.documentElement.style.zoom = `${getZoom()}%`;
 }
+
+export function modalMaxH(pct = 0.9): string {
+  return `${Math.floor(window.innerHeight * pct / (getZoom() / 100))}px`;
+}
+
+export function modalMaxW(pct = 0.9): string {
+  return `${Math.floor(window.innerWidth * pct / (getZoom() / 100))}px`;
+}

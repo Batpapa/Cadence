@@ -346,10 +346,10 @@ export function LibraryView() {
                   />
 
                   <span class="flex gap-0.5 items-center shrink-0">
-                    <span class={`w-2 h-2 rounded-full ${availabilityColor(k)}`} title={`R: ${pct(k)}`} />
+                    <span class={`w-2 h-2 rounded-full ${availabilityColor(k)}`} title={t('card.dot.recall', { pct: pct(k) })} />
                     <span
                       class={`w-2 h-2 rounded-full ${cardEase === undefined ? 'bg-border' : cardEase >= 0.6 ? 'bg-success' : cardEase >= 0.35 ? 'bg-warn' : 'bg-danger'}`}
-                      title={cardEase !== undefined ? `Ease: ${pct(cardEase)}` : 'Never reviewed'}
+                      title={cardEase !== undefined ? t('card.dot.ease', { pct: pct(cardEase) }) : t('card.neverReviewed')}
                     />
                   </span>
 

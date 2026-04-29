@@ -1,6 +1,7 @@
 import type { EmbedEntry } from '../types';
 import { detectPlatform, IFRAME_DIMS } from '../services/embedService';
 import { t } from '../services/i18nService';
+import { modalMaxH, modalMaxW } from '../services/zoomService';
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
 
@@ -13,8 +14,8 @@ export function showEmbedModal(entry: EmbedEntry): void {
 
   const dialog = document.createElement('div');
   dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden mx-4';
-  dialog.style.maxWidth = '90vw';
-  dialog.style.maxHeight = '90vh';
+  dialog.style.maxWidth = modalMaxW(0.9);
+  dialog.style.maxHeight = modalMaxH(0.9);
   dialog.style.width = dims.width;
 
   const header = document.createElement('div');

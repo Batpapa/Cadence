@@ -1,7 +1,7 @@
 import type { AppContext, AppState } from '../types';
 import { generateId, emptyState, trashIcon } from '../utils';
 import { confirmModal, closeModal, showModal } from './modal';
-import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut } from '../services/zoomService';
+import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
 import { getCurrentUser, updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
@@ -19,7 +19,7 @@ export function showSettingsModal(ctx: AppContext): void {
 
   const dialog = document.createElement('div');
   dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden';
-  dialog.style.cssText = 'width:560px; max-width:90vw; height:520px; max-height:90vh;';
+  dialog.style.cssText = `width:560px; max-width:${modalMaxW(0.9)}; height:520px; max-height:${modalMaxH(0.9)};`;
 
   let driveUnsub: (() => void) | null = null;
 
