@@ -1,5 +1,6 @@
 import { t } from '../services/i18nService';
 import { focusIfDesktop } from '../utils';
+import { modalMaxH, modalMaxW } from '../services/zoomService';
 
 export interface ModalAction {
   label: string;
@@ -23,7 +24,9 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
   overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm';
 
   const dialog = document.createElement('div');
-  dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col max-h-[85vh]';
+  dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col';
+  dialog.style.maxWidth = `min(${modalMaxW(0.9)}, 28rem)`;
+  dialog.style.maxHeight = modalMaxH(0.85);
 
   const header = document.createElement('div');
   header.className = 'flex items-center justify-between px-5 py-4 border-b border-border shrink-0';

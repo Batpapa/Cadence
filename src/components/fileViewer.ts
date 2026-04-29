@@ -1,6 +1,7 @@
 import type { FileEntry } from '../types';
 import { entryToObjectUrl } from '../utils';
 import { t } from '../services/i18nService';
+import { modalMaxH, modalMaxW } from '../services/zoomService';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
@@ -54,8 +55,8 @@ export function showPreviewModal(entry: FileEntry): void {
 
   const dialog = document.createElement('div');
   dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden mx-4';
-  dialog.style.maxWidth = '90vw';
-  dialog.style.maxHeight = '90vh';
+  dialog.style.maxWidth = modalMaxW(0.9);
+  dialog.style.maxHeight = modalMaxH(0.9);
   dialog.style.width = modalWidth(entry);
 
   const header = document.createElement('div');

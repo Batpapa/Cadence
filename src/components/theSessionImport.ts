@@ -8,6 +8,7 @@ import {
   type TuneSearchResult,
 } from '../services/theSessionService';
 import { t } from '../services/i18nService';
+import { modalMaxH, modalMaxW } from '../services/zoomService';
 
 // ── Debounce ─────────────────────────────────────────────────────────────────
 
@@ -349,7 +350,7 @@ export function showNewCardModal(ctx: AppContext): void {
 
   const dialog = document.createElement('div');
   dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col';
-  dialog.style.cssText = 'max-width:440px; max-height:85vh;';
+  dialog.style.cssText = `max-width:min(440px, ${modalMaxW(0.9)}); max-height:${modalMaxH(0.85)};`;
 
   const header = document.createElement('div');
   header.className = 'flex items-center justify-between px-5 py-4 border-b border-border shrink-0';
@@ -400,7 +401,7 @@ export function showNewCardModal(ctx: AppContext): void {
     selOverlay.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/60';
     const selDialog = document.createElement('div');
     selDialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 flex flex-col overflow-hidden';
-    selDialog.style.cssText = 'max-width:360px; max-height:65vh;';
+    selDialog.style.cssText = `max-width:min(360px, ${modalMaxW(0.9)}); max-height:${modalMaxH(0.65)};`;
     const selHeader = document.createElement('div');
     selHeader.className = 'flex items-center justify-between px-4 py-3 border-b border-border shrink-0';
     const selTitle = document.createElement('span'); selTitle.className = 'text-sm font-semibold text-primary'; selTitle.textContent = t('newCard.selectDecks');
