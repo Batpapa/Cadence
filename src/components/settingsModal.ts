@@ -1,6 +1,7 @@
 import type { AppContext, AppState } from '../types';
 import { generateId, emptyState, trashIcon } from '../utils';
 import { confirmModal, closeModal, showModal } from './modal';
+import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut } from '../services/zoomService';
 import { getCurrentUser, updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
@@ -235,6 +236,23 @@ export function showSettingsModal(ctx: AppContext): void {
 
     // ── User ──
     } else if (activeSection === 'user') {
+      const zoomControl = document.createElement('div');
+      zoomControl.className = 'flex items-center gap-1';
+      const zoomDec = document.createElement('button'); zoomDec.className = 'btn-ghost px-2 py-0.5 text-sm'; zoomDec.textContent = '−';
+      const zoomVal = document.createElement('span'); zoomVal.className = 'text-sm font-mono w-12 text-center tabular-nums';
+      const zoomInc = document.createElement('button'); zoomInc.className = 'btn-ghost px-2 py-0.5 text-sm'; zoomInc.textContent = '+';
+      const updateZoomUI = () => {
+        zoomVal.textContent = `${getZoom()}%`;
+        zoomDec.disabled = !canZoomOut();
+        zoomInc.disabled = !canZoomIn();
+      };
+      zoomDec.onclick = () => { zoomOut(); updateZoomUI(); };
+      zoomInc.onclick = () => { zoomIn(); updateZoomUI(); };
+      updateZoomUI();
+      zoomControl.append(zoomDec, zoomVal, zoomInc);
+      content.appendChild(mkRow(t('settings.zoom'), null, zoomControl));
+      const sepZoom = document.createElement('hr'); sepZoom.className = 'border-border'; content.appendChild(sepZoom);
+
       const langSel = document.createElement('select'); langSel.className = 'input text-sm w-32';
       [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }].forEach(({ value, label }) => {
         const opt = document.createElement('option'); opt.value = value; opt.textContent = label;

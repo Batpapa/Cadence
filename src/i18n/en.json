@@ -234,6 +234,7 @@
   "settings.availabilityThresholdHint": "Cards above this availability score are considered available and skipped during study sessions.",
   "settings.weightByImportance": "Weight by importance",
   "settings.weightByImportanceHint": "When enabled, a card contributes to deck knowledge proportionally to its importance rather than equally.",
+  "settings.zoom": "Zoom",
   "settings.language": "Language",
   "settings.data": "Data",
   "settings.export": "Export",
