@@ -140,10 +140,10 @@ function tuneTypeToMeter(type: string): string {
   return map[type.toLowerCase()] ?? '4/4';
 }
 
-function settingToAbcFile(setting: TuneSetting, tune: TuneResult): FileEntry {
+function settingToAbcBlock(setting: TuneSetting, tune: TuneResult, index: number): string {
   const key = theSessionKeyToAbc(setting.key);
-  const abc = [
-    `X: ${setting.id}`,
+  return [
+    `X: ${index}`,
     `T: ${tune.name}`,
     `Z: ${setting.member.name}`,
     `S: ${setting.url}`,
@@ -153,12 +153,27 @@ function settingToAbcFile(setting: TuneSetting, tune: TuneResult): FileEntry {
     `K: ${key}`,
     setting.abc.replace(/!/g, '\n'),
   ].join('\n');
-  // encode UTF-8 → base64
-  const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(abc)));
+}
+
+function toBase64(text: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+}
+
+function settingToAbcFile(setting: TuneSetting, tune: TuneResult): FileEntry {
+  const key = theSessionKeyToAbc(setting.key);
   return {
     name: `${tune.name} - Setting ${setting.id} (${key}).abc`,
     mimeType: 'text/plain',
-    data: b64,
+    data: toBase64(settingToAbcBlock(setting, tune, setting.id)),
+  };
+}
+
+function settingsToMergedAbcFile(settings: TuneSetting[], tune: TuneResult): FileEntry {
+  const abc = settings.map((s, i) => settingToAbcBlock(s, tune, i + 1)).join('\n\n');
+  return {
+    name: `${tune.name}.abc`,
+    mimeType: 'text/plain',
+    data: toBase64(abc),
   };
 }
 
@@ -173,11 +188,15 @@ function mostCommonKey(settings: Array<{ key: string }>): string | null {
   return best || null;
 }
 
-export function tuneResultToCard(tune: TuneResult, opts: { onlyFirstSetting?: boolean } = {}): Card {
+export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boolean } = {}): Card {
   const tags: string[] = ['thesession'];
   if (tune.type) tags.push(tune.type.toLowerCase());
   if (tune.topKey) tags.push(tune.topKey.toLowerCase());
-  const settings = (opts.onlyFirstSetting ?? true) ? tune.settings.slice(0, 1) : tune.settings;
+  const settings = tune.settings;
+  const merge = (opts.mergeSettings ?? true) && settings.length > 1;
+  const attachments: Attachment[] = merge
+    ? [{ type: 'file' as const, ...settingsToMergedAbcFile(settings, tune) }]
+    : settings.map(s => ({ type: 'file' as const, ...settingToAbcFile(s, tune) })) as Attachment[];
   return {
     id: generateId(),
     name: tune.name,
@@ -186,7 +205,7 @@ export function tuneResultToCard(tune: TuneResult, opts: { onlyFirstSetting?: bo
     externalId: `thesession:${tune.id}`,
     content: {
       notes: `[↗ TheSession](${tune.url || `https://thesession.org/tunes/${tune.id}`})`,
-      attachments: settings.map(s => ({ type: 'file' as const, ...settingToAbcFile(s, tune) })) as Attachment[],
+      attachments,
     },
   };
 }

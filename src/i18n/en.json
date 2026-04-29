@@ -279,7 +279,7 @@
   "theSession.search": "Search",
   "theSession.byId": "By ID",
   "theSession.byMember": "By member",
-  "theSession.onlyFirstSetting": "Most popular setting only",
+  "theSession.mergeSettings": "Merge all settings into one file",
   "theSession.id.placeholder": "Tune ID…",
   "theSession.id.import": "Import",
   "theSession.id.notFound": "Tune not found.",
