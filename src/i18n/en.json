@@ -219,6 +219,7 @@
   "study.currentAvailability": "Current availability:",
   "study.neverReviewed": "· never reviewed",
   "study.lastReview": "· last {ago}",
+  "study.ratingHint": "How easily did you recall this?",
   "study.skip": "Skip (no rating)",
   "study.skipTitle": "Skip (no rating) [Tab]",
   "study.notes": "Notes",

@@ -219,6 +219,7 @@
   "study.currentAvailability": "Disponibilité actuelle :",
   "study.neverReviewed": "· jamais révisé",
   "study.lastReview": "· {ago}",
+  "study.ratingHint": "À quel point vous en êtes-vous souvenu ?",
   "study.skip": "Passer (sans noter)",
   "study.skipTitle": "Passer (sans noter) [Tab]",
   "study.notes": "Notes",
