@@ -8,7 +8,7 @@ export function getZoom(): number {
 
 export function setZoom(pct: number): void {
   localStorage.setItem(LS_ZOOM, String(pct));
-  document.documentElement.style.zoom = `${pct}%`;
+  applyZoom();
 }
 
 export function zoomIn(): void {
@@ -27,7 +27,10 @@ export function canZoomIn(): boolean  { return getZoom() < ZOOM_LEVELS[ZOOM_LEVE
 export function canZoomOut(): boolean { return getZoom() > ZOOM_LEVELS[0]!; }
 
 export function applyZoom(): void {
-  document.documentElement.style.zoom = `${getZoom()}%`;
+  const z = getZoom();
+  document.documentElement.style.zoom = `${z}%`;
+  const app = document.getElementById('app');
+  if (app) app.style.height = `${Math.floor(window.innerHeight / (z / 100))}px`;
 }
 
 export function modalMaxH(pct = 0.9): string {

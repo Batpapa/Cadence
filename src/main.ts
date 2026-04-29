@@ -31,6 +31,7 @@ if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
     appState.value = state;
 
     applyZoom();
+    window.addEventListener('resize', applyZoom);
     initPWA();
     initDriveVisibilitySync();
 
