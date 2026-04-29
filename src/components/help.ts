@@ -34,6 +34,7 @@ function getHelpContent(route: Route): { title: string; sections: HelpSection[] 
               t('help.home.create.1'),
               t('help.home.create.2'),
               t('help.home.create.3'),
+              t('help.home.create.4'),
             ],
           },
           {
@@ -99,7 +100,7 @@ function getHelpContent(route: Route): { title: string; sections: HelpSection[] 
           },
           {
             heading: t('help.deck.bar.heading'),
-            items: [t('help.deck.bar.1'), t('help.deck.bar.2')],
+            items: [t('help.deck.bar.1'), t('help.deck.bar.2'), t('help.deck.bar.3')],
           },
         ],
       };
@@ -121,6 +122,10 @@ function getHelpContent(route: Route): { title: string; sections: HelpSection[] 
           {
             heading: t('help.card.fsrs.heading'),
             items: [t('help.card.fsrs.1'), t('help.card.fsrs.2')],
+          },
+          {
+            heading: t('help.card.abc.heading'),
+            items: [t('help.card.abc.1'), t('help.card.abc.2')],
           },
           {
             heading: t('help.card.history.heading'),

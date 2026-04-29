@@ -385,12 +385,13 @@
   "help.home.nav.2": "Glissez-déposez les dossiers et paquets dans la barre latérale pour les réorganiser.",
   "help.home.nav.3": "← → dans la barre supérieure (ou Alt+← / Alt+→) pour naviguer dans l'historique.",
   "help.home.create.heading": "Créer du contenu",
-  "help.home.create.1": "+ Dossier / + Paquet en bas de la barre latérale pour créer à la racine.",
-  "help.home.create.2": "Utilisez les boutons « + Nouveau dossier » et « + Nouveau paquet » dans un dossier.",
+  "help.home.create.1": "Utilisez les icônes dossier et paquet en bas de la barre latérale pour créer à la racine.",
+  "help.home.create.2": "Utilisez les boutons « + Nouveau dossier » et « + Nouveau paquet » dans la vue d'un dossier.",
   "help.home.create.3": "Cliquez directement sur le nom d'un dossier ou d'un paquet pour le renommer.",
+  "help.home.create.4": "Cliquez sur l'icône dossier dans la barre latérale pour le déplier ou le replier.",
   "help.home.dashboard.heading": "Tableau de bord (accueil uniquement)",
   "help.home.dashboard.1": "Le tableau de bord affiche votre série d'étude, les sessions de la semaine et une carte des cartes.",
-  "help.home.dashboard.2": "La carte des cartes représente chaque carte selon sa stabilité (X) et son aisance (Y) — la couleur indique la disponibilité. Filtrez par paquet avec les puces au-dessus du graphique.",
+  "help.home.dashboard.2": "La carte des cartes représente chaque carte selon sa stabilité (X) et son aisance (Y) — la couleur indique le score de rappel. Filtrez par paquet avec les puces au-dessus du graphique.",
   "help.home.dashboard.3": "Changez le graphique d'activité entre 7 jours, 1 mois et 1 an.",
 
   "help.library.browse.heading": "Parcourir",
@@ -407,7 +408,7 @@
 
   "help.deck.study.heading": "Étudier",
   "help.deck.study.1": "« Étudier » ouvre une session avec la stratégie choisie.",
-  "help.deck.study.2": "Aléatoire — pioche n'importe quelle carte non disponible au hasard.",
+  "help.deck.study.2": "Aléatoire — pioche n'importe quelle carte à revoir au hasard.",
   "help.deck.study.3": "Optimal — pioche toujours la carte avec l'urgence la plus élevée (importance × oubli).",
   "help.deck.study.4": "Stochastique — tirage aléatoire pondéré, équilibrant urgence et variété.",
   "help.deck.manage.heading": "Gérer les cartes",
@@ -418,6 +419,7 @@
   "help.deck.bar.heading": "Métriques du paquet",
   "help.deck.bar.1": "Disponibilité (R) : rouge < 40 %, jaune < 75 %, vert ≥ 75 %. Ancrage : fenêtre de rétention en jours. Aisance : facilité naturelle de rappel.",
   "help.deck.bar.2": "Une carte est ignorée pendant l'étude quand son score de rappel dépasse votre seuil de rappel (Paramètres).",
+  "help.deck.bar.3": "La maîtrise indique combien de cartes ne sont pas à revoir sur le total (X/Y).",
 
   "help.card.edit.heading": "Modifier",
   "help.card.edit.1": "Cliquez sur le nom de la carte pour le renommer directement.",
@@ -428,6 +430,9 @@
   "help.card.fsrs.heading": "FSRS — Fenêtre de rappel",
   "help.card.fsrs.1": "La fenêtre de rappel indique combien de temps après une révision la carte reste au-dessus du seuil de rappel.",
   "help.card.fsrs.2": "Une fenêtre de rappel plus longue signifie que la carte est solidement apprise.",
+  "help.card.abc.heading": "Fichiers ABC",
+  "help.card.abc.1": "Cliquez sur une pièce jointe .abc pour ouvrir le visualiseur avec les contrôles de lecture.",
+  "help.card.abc.2": "Si le fichier contient plusieurs versions, utilisez ← → dans la barre du lecteur pour naviguer entre elles.",
   "help.card.history.heading": "Historique des révisions",
   "help.card.history.1": "Cliquez sur « + » dans l'historique pour enregistrer manuellement une session passée.",
   "help.card.history.2": "Survolez une entrée et cliquez ✕ pour la supprimer.",
@@ -444,6 +449,6 @@
   "help.study.fsrs.heading": "Algorithme FSRS",
   "help.study.fsrs.1": "Chaque évaluation met à jour la Stabilité (S) et la Difficulté (D) de la carte.",
   "help.study.fsrs.2": "Des évaluations élevées augmentent la stabilité — la carte sera moins souvent proposée.",
-  "help.study.fsrs.3": "« Raté » déclenche une réinitialisation de l'oubli, réduisant fortement la stabilité.",
+  "help.study.fsrs.3": "« À revoir » déclenche une réinitialisation de l'oubli, réduisant fortement la stabilité.",
   "help.study.fsrs.4": "Les cartes au-dessus de votre seuil de rappel sont automatiquement ignorées."
 }

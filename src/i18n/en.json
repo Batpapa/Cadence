@@ -385,12 +385,13 @@
   "help.home.nav.2": "Drag & drop folders and decks in the sidebar to reorganise them.",
   "help.home.nav.3": "← → in the top bar (or Alt+← / Alt+→) to navigate history.",
   "help.home.create.heading": "Creating content",
-  "help.home.create.1": "+ Folder / + Deck at the bottom of the sidebar to create at the root.",
-  "help.home.create.2": "Use the \"+ New folder\" and \"+ New deck\" buttons inside a folder.",
+  "help.home.create.1": "Use the folder and deck icons at the bottom of the sidebar to create at the root.",
+  "help.home.create.2": "Use the \"+ New folder\" and \"+ New deck\" buttons inside a folder view.",
   "help.home.create.3": "Click a folder or deck name directly to rename it.",
+  "help.home.create.4": "Click the folder icon in the sidebar to expand or collapse it.",
   "help.home.dashboard.heading": "Dashboard (Home only)",
   "help.home.dashboard.1": "The dashboard shows your global study streak, sessions this week, and a card map.",
-  "help.home.dashboard.2": "The card map plots each card by stability (X) and ease (Y) — colour shows availability. Filter by deck using the chips above the chart.",
+  "help.home.dashboard.2": "The card map plots each card by stability (X) and ease (Y) — colour shows recall score. Filter by deck using the chips above the chart.",
   "help.home.dashboard.3": "Switch the activity chart between 7 days, 1 month, and 1 year.",
 
   "help.library.browse.heading": "Browsing",
@@ -407,7 +408,7 @@
 
   "help.deck.study.heading": "Studying",
   "help.deck.study.1": "\"Study\" opens a session with the chosen strategy.",
-  "help.deck.study.2": "Random — picks any unavailable card at random.",
+  "help.deck.study.2": "Random — picks any card due for review at random.",
   "help.deck.study.3": "Optimal — picks the card with the highest urgency (importance × forgetting).",
   "help.deck.study.4": "Stochastic — weighted random, balancing urgency and variety.",
   "help.deck.manage.heading": "Managing cards",
@@ -418,6 +419,7 @@
   "help.deck.bar.heading": "Deck metrics",
   "help.deck.bar.1": "Recall (R): red < 40%, yellow < 75%, green ≥ 75%. Stability: retention window in days. Ease: how naturally the card is recalled.",
   "help.deck.bar.2": "A card is skipped during study when its recall score exceeds your recall threshold (Settings).",
+  "help.deck.bar.3": "Mastery shows how many cards are not due for review out of the total (X/Y).",
 
   "help.card.edit.heading": "Editing",
   "help.card.edit.1": "Click the card name to rename it inline.",
@@ -428,6 +430,9 @@
   "help.card.fsrs.heading": "FSRS — Recall window",
   "help.card.fsrs.1": "The recall window shows how long after a review the card stays above your recall threshold.",
   "help.card.fsrs.2": "A longer recall window means the card is solidly learned.",
+  "help.card.abc.heading": "ABC files",
+  "help.card.abc.1": "Click an .abc attachment to open the viewer with playback controls.",
+  "help.card.abc.2": "If the file contains multiple versions, use ← → in the player toolbar to navigate between them.",
   "help.card.history.heading": "Review history",
   "help.card.history.1": "Click \"+\" in the review history to manually log a past session.",
   "help.card.history.2": "Hover an entry and click ✕ to remove it.",
@@ -444,6 +449,6 @@
   "help.study.fsrs.heading": "FSRS algorithm",
   "help.study.fsrs.1": "Each rating updates the card's Stability (S) and Difficulty (D).",
   "help.study.fsrs.2": "Higher grades increase stability — the card will be shown less often.",
-  "help.study.fsrs.3": "\"Failed\" triggers a forgetting reset, strongly reducing stability.",
+  "help.study.fsrs.3": "\"Again\" triggers a forgetting reset, strongly reducing stability.",
   "help.study.fsrs.4": "Cards above your recall threshold are skipped automatically."
 }
