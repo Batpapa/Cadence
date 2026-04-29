@@ -18,6 +18,21 @@ function isAbc(entry: FileEntry): boolean {
 }
 
 
+function splitAbcTunes(abc: string): string[] {
+  const lines = abc.split('\n');
+  const tunes: string[] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    if (/^X:\s*\d+/.test(line) && current.length > 0) {
+      tunes.push(current.join('\n'));
+      current = [];
+    }
+    current.push(line);
+  }
+  if (current.length > 0) tunes.push(current.join('\n'));
+  return tunes.filter(t => t.trim());
+}
+
 function decodeText(entry: FileEntry): string {
   const bytes = atob(entry.data);
   const arr = new Uint8Array(bytes.length);
@@ -88,42 +103,90 @@ export function showPreviewModal(entry: FileEntry): void {
     body.classList.replace('items-center', 'items-start');
     const abcText = decodeText(entry);
 
+    const tunes = splitAbcTunes(abcText);
+    const versionCount = tunes.length;
+    let currentIndex = 0;
+
     const container = document.createElement('div');
     container.className = 'w-full space-y-3';
 
+    const uid = Date.now();
     const controls = document.createElement('div');
-    controls.id = `abc-controls-${Date.now()}`;
+    controls.id = `abc-controls-${uid}`;
     container.appendChild(controls);
 
     const notation = document.createElement('div');
     notation.className = 'w-full bg-white rounded p-2';
     notation.style.pointerEvents = 'none';
     notation.style.color = '#000';
-    notation.id = `abc-notation-${Date.now()}`;
+    notation.id = `abc-notation-${uid}`;
     container.appendChild(notation);
 
     body.appendChild(container);
 
     import('abcjs').then((abcjs) => {
-      const visualObj = abcjs.renderAbc(notation.id, abcText, {
-        responsive: 'resize',
-        add_classes: true,
-        paddingright: 0,
-        paddingleft: 0,
-        format: { gchordfont: 'Verdana 12', annotationfont: 'Verdana 12' },
-      });
-      if (visualObj && visualObj.length > 0) {
-        const synthControl = new abcjs.synth.SynthController();
-        stopAudio = () => { try { synthControl.pause(); } catch { /* ignore */ } };
-        synthControl.load(`#${controls.id}`, null, {
-          displayLoop: true,
-          displayRestart: true,
-          displayPlay: true,
-          displayProgress: true,
-          displayWarp: true,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let synthControl: any = null;
+      let prevBtn: HTMLButtonElement | null = null;
+      let nextBtn: HTMLButtonElement | null = null;
+      let versionLabel: HTMLSpanElement | null = null;
+
+      const renderTune = (index: number) => {
+        currentIndex = index;
+
+        if (prevBtn) { prevBtn.disabled = index === 0; prevBtn.style.opacity = index === 0 ? '0.3' : '0.8'; }
+        if (nextBtn) { nextBtn.disabled = index === versionCount - 1; nextBtn.style.opacity = index === versionCount - 1 ? '0.3' : '0.8'; }
+        if (versionLabel) versionLabel.textContent = `${index + 1}/${versionCount}`;
+
+        const visualObj = abcjs.renderAbc(notation.id, tunes[index]!, {
+          responsive: 'resize',
+          add_classes: true,
+          paddingright: 0,
+          paddingleft: 0,
+          format: { gchordfont: 'Verdana 12', annotationfont: 'Verdana 12' },
         });
-        synthControl.setTune(visualObj[0]!, false, {}).catch(() => {});
-      }
+
+        if (visualObj && visualObj.length > 0) {
+          if (!synthControl) {
+            synthControl = new abcjs.synth.SynthController();
+            stopAudio = () => { try { synthControl.pause(); } catch { /* ignore */ } };
+            synthControl.load(`#${controls.id}`, null, {
+              displayLoop: true,
+              displayRestart: true,
+              displayPlay: true,
+              displayProgress: true,
+              displayWarp: true,
+            });
+
+            const toolbar = controls.querySelector('.abcjs-inline-audio');
+            if (toolbar) {
+                const btnStyle = 'cursor:pointer; background:transparent; border:none; color:inherit; padding:0 6px; font-size:14px; opacity:0.8;';
+
+                prevBtn = document.createElement('button');
+                prevBtn.style.cssText = `${btnStyle} margin-left:auto;`;
+                prevBtn.textContent = '←';
+                prevBtn.onclick = () => renderTune(currentIndex - 1);
+
+                versionLabel = document.createElement('span');
+                versionLabel.style.cssText = 'font-size:11px; font-family:monospace; color:inherit; padding:0 2px;';
+
+                nextBtn = document.createElement('button');
+                nextBtn.style.cssText = btnStyle;
+                nextBtn.textContent = '→';
+                nextBtn.onclick = () => renderTune(currentIndex + 1);
+
+                toolbar.append(prevBtn, versionLabel, nextBtn);
+
+                prevBtn.disabled = index === 0; prevBtn.style.opacity = index === 0 ? '0.3' : '0.8';
+                nextBtn.disabled = index === versionCount - 1; nextBtn.style.opacity = index === versionCount - 1 ? '0.3' : '0.8';
+                versionLabel.textContent = `${index + 1}/${versionCount}`;
+              }
+          }
+          synthControl.setTune(visualObj[0]!, false, {}).catch(() => {});
+        }
+      };
+
+      renderTune(0);
     }).catch(() => {
       const err = document.createElement('p');
       err.className = 'text-sm text-dim italic';

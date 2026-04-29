@@ -49,19 +49,19 @@ function mkPreviewInput(placeholder: string) {
 
 export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>): HTMLElement {
   let activeTab: 'id' | 'search' | 'member' = 'search';
-  let onlyFirstSetting = true;
+  let mergeSettings = true;
 
   const wrap = document.createElement('div');
   wrap.className = 'space-y-3';
 
-  // ── Option: only most popular setting ─────────────────────────────────────
-  const optRow = document.createElement('label');
-  optRow.className = 'flex items-center gap-2 cursor-pointer select-none';
-  const optChk = document.createElement('input'); optChk.type = 'checkbox'; optChk.className = 'card-checkbox'; optChk.checked = true;
-  optChk.onchange = () => { onlyFirstSetting = optChk.checked; };
-  const optLbl = document.createElement('span'); optLbl.className = 'text-xs text-muted'; optLbl.textContent = t('theSession.onlyFirstSetting');
-  optRow.append(optChk, optLbl);
-  wrap.appendChild(optRow);
+  // ── Options ───────────────────────────────────────────────────────────────
+  const mergeRow = document.createElement('label');
+  mergeRow.className = 'flex items-center gap-2 cursor-pointer select-none';
+  const mergeChk = document.createElement('input'); mergeChk.type = 'checkbox'; mergeChk.className = 'card-checkbox'; mergeChk.checked = true;
+  const mergeLbl = document.createElement('span'); mergeLbl.className = 'text-xs text-muted'; mergeLbl.textContent = t('theSession.mergeSettings');
+  mergeChk.onchange = () => { mergeSettings = mergeChk.checked; };
+  mergeRow.append(mergeChk, mergeLbl);
+  wrap.appendChild(mergeRow);
 
   const tabBar = document.createElement('div');
   tabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg';
@@ -127,7 +127,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
           });
           status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
         } else {
-          const card = tuneResultToCard(tune, { onlyFirstSetting });
+          const card = tuneResultToCard(tune, { mergeSettings });
           await mutate(s => {
             s.cards[card.id] = card;
             for (const deckId of (getTargetDeckIds?.() ?? [])) {
@@ -237,7 +237,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
           status.textContent = t('theSession.status.alreadyInLibrary', { name: fullTune.name });
           btn.disabled = false;
         } else {
-          const card = tuneResultToCard(fullTune, { onlyFirstSetting });
+          const card = tuneResultToCard(fullTune, { mergeSettings });
           await mutate(s => {
             s.cards[card.id] = card;
             for (const deckId of (getTargetDeckIds?.() ?? [])) {
@@ -302,7 +302,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
         const newTunes = tunes.filter((_, i) => !existingCards[i]);
         const alreadyExisting = tunes.filter((_, i) => !!existingCards[i]);
         const existingCardObjs = existingCards.flatMap(c => c ? [c] : []);
-        const newCards = newTunes.map(tune => tuneResultToCard(tune, { onlyFirstSetting }));
+        const newCards = newTunes.map(tune => tuneResultToCard(tune, { mergeSettings }));
         await mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; }
           for (const deckId of (getTargetDeckIds?.() ?? [])) {

@@ -279,7 +279,7 @@
   "theSession.search": "Rechercher",
   "theSession.byId": "Par ID",
   "theSession.byMember": "Par membre",
-  "theSession.onlyFirstSetting": "Version la plus populaire uniquement",
+  "theSession.mergeSettings": "Fusionner tous les settings en un seul fichier",
   "theSession.id.placeholder": "ID du morceau…",
   "theSession.id.import": "Importer",
   "theSession.id.notFound": "Morceau introuvable.",
