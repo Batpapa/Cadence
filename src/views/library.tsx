@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
+﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
-import { pct, availabilityColor, trashIcon, focusIfDesktop } from '../utils';
+import { pct, availabilityColor, trashIcon, focusIfDesktop, sortByRelevance } from '../utils';
 import { exportCards } from '../services/importExport';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
@@ -125,19 +125,20 @@ export function LibraryView() {
   ];
 
   // ── Filtered list (recomputed every render) ───────────────────────────────────
-  const q        = searchQuery.toLowerCase();
-  const filtered = allCards
-    .filter(c => {
-      const tags       = c.tags ?? [];
-      const matchText  = !q || c.name.toLowerCase().includes(q) || tags.some(tg => tg.toLowerCase().includes(q));
-      const matchTags  = activeTags.size === 0 || [...activeTags].every(at => tags.includes(at));
-      const cardDecks  = decksContainingCard(c.id, state);
-      const matchDecks = activeDecks.size === 0 || [...activeDecks].every(id =>
-        id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id)
-      );
-      return matchText && matchTags && matchDecks;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const q = searchQuery.toLowerCase();
+  const filteredUnsorted = allCards.filter(c => {
+    const tags       = c.tags ?? [];
+    const matchText  = !q || c.name.toLowerCase().includes(q);
+    const matchTags  = activeTags.size === 0 || [...activeTags].every(at => tags.includes(at));
+    const cardDecks  = decksContainingCard(c.id, state);
+    const matchDecks = activeDecks.size === 0 || [...activeDecks].every(id =>
+      id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id)
+    );
+    return matchText && matchTags && matchDecks;
+  });
+  const filtered = q
+    ? sortByRelevance(filteredUnsorted, searchQuery)
+    : filteredUnsorted.sort((a, b) => a.name.localeCompare(b.name));
 
   // ── Available chips (derived from filtered) ───────────────────────────────────
   const availTags  = new Set(filtered.flatMap(c => c.tags ?? []));
