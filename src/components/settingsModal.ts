@@ -2,6 +2,7 @@ import type { AppContext, AppState } from '../types';
 import { generateId, emptyState, trashIcon } from '../utils';
 import { confirmModal, closeModal, showModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
+import { getTheme, setTheme } from '../services/themeService';
 import { getCurrentUser, updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
@@ -251,6 +252,24 @@ export function showSettingsModal(ctx: AppContext): void {
       updateZoomUI();
       zoomControl.append(zoomDec, zoomVal, zoomInc);
       content.appendChild(mkRow(t('settings.zoom'), null, zoomControl));
+
+      const themeControl = document.createElement('div');
+      themeControl.className = 'flex items-center gap-1';
+      const darkBtn  = document.createElement('button');
+      const lightBtn = document.createElement('button');
+      const updateThemeBtns = () => {
+        const isDark = getTheme() === 'dark';
+        darkBtn.className  = `text-xs px-2 py-0.5 rounded transition-colors ${isDark  ? 'bg-accent text-white' : 'btn-ghost'}`;
+        lightBtn.className = `text-xs px-2 py-0.5 rounded transition-colors ${!isDark ? 'bg-accent text-white' : 'btn-ghost'}`;
+      };
+      darkBtn.textContent  = t('settings.theme.dark');
+      lightBtn.textContent = t('settings.theme.light');
+      darkBtn.onclick  = () => { setTheme('dark');  updateThemeBtns(); };
+      lightBtn.onclick = () => { setTheme('light'); updateThemeBtns(); };
+      updateThemeBtns();
+      themeControl.append(darkBtn, lightBtn);
+      content.appendChild(mkRow(t('settings.theme'), null, themeControl));
+
       const sepZoom = document.createElement('hr'); sepZoom.className = 'border-border'; content.appendChild(sepZoom);
 
       const langSel = document.createElement('select'); langSel.className = 'input text-sm w-32';
