@@ -18,7 +18,7 @@
 }
 
 @layer components {
-  .btn        { @apply px-3 py-1.5 text-sm font-medium rounded transition-colors cursor-pointer; }
+  .btn        { @apply px-3 py-1.5 text-sm font-medium rounded transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed; }
   .btn-ghost  { @apply btn text-muted hover:text-primary hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted disabled:hover:bg-transparent; }
   .btn-primary { @apply btn bg-accent hover:bg-accent-hover text-white; }
   .btn-danger { @apply btn bg-danger/10 hover:bg-danger/20 text-danger; }

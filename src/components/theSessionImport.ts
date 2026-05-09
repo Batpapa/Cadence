@@ -3,19 +3,12 @@ import { generateId, focusIfDesktop } from '../utils';
 import { parseCardPackage } from '../services/importExport';
 import { mutate } from '../store';
 import {
-  searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo,
+  searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers,
   tuneResultToCard, findByExternalId,
-  type TuneSearchResult,
+  type TuneSearchResult, type MemberSearchResult,
 } from '../services/theSessionService';
 import { t } from '../services/i18nService';
-import { modalMaxH, modalMaxW } from '../services/zoomService';
-
-// ── Debounce ─────────────────────────────────────────────────────────────────
-
-function debounce<T extends (...args: Parameters<T>) => void>(fn: T, ms: number): T {
-  let timer: ReturnType<typeof setTimeout>;
-  return ((...args: Parameters<T>) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); }) as T;
-}
+import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 
 // ── Tab helpers ───────────────────────────────────────────────────────────────
 
@@ -29,27 +22,29 @@ function mkTab(label: string, active: boolean, onClick: () => void): HTMLButtonE
   return btn;
 }
 
-// ── TheSession body builder ───────────────────────────────────────────────────
+// ── Input wrapper that looks like .input but has an inline right-side info span ──
 
-function mkPreviewInput(placeholder: string) {
+function mkInputRow(placeholder: string): { wrap: HTMLDivElement; inp: HTMLInputElement; info: HTMLSpanElement } {
   const wrap = document.createElement('div');
-  wrap.className = 'flex-1 min-w-0 flex items-center gap-2 bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent';
+  wrap.className = 'flex-1 relative flex items-center bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent overflow-hidden';
+
   const inp = document.createElement('input');
-  inp.type = 'number'; inp.placeholder = placeholder;
-  inp.className = 'flex-1 min-w-0 bg-transparent border-0 outline-none text-sm text-primary placeholder-dim';
-  const previewEl = document.createElement('span');
-  previewEl.className = 'hidden text-xs shrink-0 truncate max-w-[75%]';
-  wrap.append(inp, previewEl);
-  const setPreview = (text: string, isError = false) => {
-    if (!text) { previewEl.textContent = ''; previewEl.className = 'hidden text-xs shrink-0 truncate max-w-[75%]'; return; }
-    previewEl.textContent = text;
-    previewEl.className = `text-xs shrink-0 truncate max-w-[75%] ${isError ? 'text-red-400' : 'text-muted'}`;
-  };
-  return { wrap, inp, setPreview };
+  inp.type = 'text';
+  inp.className = 'flex-1 min-w-0 bg-transparent outline-none text-sm text-primary placeholder:text-dim';
+  inp.placeholder = placeholder;
+
+  const info = document.createElement('span');
+  // absolute + bg-bg so it overlays input text without affecting wrapper size
+  info.className = 'absolute right-3 top-1/2 -translate-y-1/2 text-xs text-dim bg-bg pl-2 pointer-events-none whitespace-nowrap';
+
+  wrap.append(inp, info);
+  return { wrap, inp, info };
 }
 
+// ── TheSession body builder ───────────────────────────────────────────────────
+
 export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>): HTMLElement {
-  let activeTab: 'id' | 'search' | 'member' = 'search';
+  let activeTab: 'tune' | 'member' = 'tune';
   let mergeSettings = true;
 
   const wrap = document.createElement('div');
@@ -70,18 +65,49 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
   const content = document.createElement('div');
   content.className = 'space-y-3';
 
+  // ── Shared: import a single tune ──────────────────────────────────────────
+  const importTune = async (tuneId: number, onSuccess: () => void, btn: HTMLButtonElement) => {
+    btn.disabled = true;
+    status.textContent = t('theSession.status.fetching');
+    try {
+      const tune = await fetchTuneById(tuneId);
+      const existing = findByExternalId(`thesession:${tune.id}`, ctx.state.cards);
+      if (existing) {
+        await mutate(s => {
+          for (const deckId of (getTargetDeckIds?.() ?? [])) {
+            const deck = s.decks[deckId];
+            if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
+          }
+        });
+        status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
+        btn.disabled = false;
+      } else {
+        const card = tuneResultToCard(tune, { mergeSettings });
+        await mutate(s => {
+          s.cards[card.id] = card;
+          for (const deckId of (getTargetDeckIds?.() ?? [])) {
+            const deck = s.decks[deckId];
+            if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+          }
+        });
+        status.textContent = t('theSession.status.imported', { name: card.name });
+        onSuccess();
+      }
+    } catch (e) {
+      status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      btn.disabled = false;
+    }
+  };
+
   const renderTabs = () => {
     tabBar.innerHTML = '';
     const tabs: Array<{ id: typeof activeTab; labelKey: string }> = [
-      { id: 'search', labelKey: 'theSession.search' },
-      { id: 'id',     labelKey: 'theSession.byId' },
-      { id: 'member', labelKey: 'theSession.byMember' },
+      { id: 'tune',   labelKey: 'theSession.tabTune' },
+      { id: 'member', labelKey: 'theSession.tabMember' },
     ];
     for (const tab of tabs) {
       tabBar.appendChild(mkTab(t(tab.labelKey), activeTab === tab.id, () => {
-        activeTab = tab.id;
-        renderTabs();
-        renderContent();
+        activeTab = tab.id; renderTabs(); renderContent();
       }));
     }
   };
@@ -89,246 +115,212 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
   const renderContent = () => {
     content.innerHTML = '';
     status.textContent = '';
-    if (activeTab === 'id')     renderByIdTab();
-    if (activeTab === 'search') renderSearchTab();
+    if (activeTab === 'tune')   renderTuneTab();
     if (activeTab === 'member') renderMemberTab();
   };
 
-  // ── Tab: By ID ────────────────────────────────────────────────────────────
+  // ── Tab: Tune (ID or name search) ─────────────────────────────────────────
+  const renderTuneTab = () => {
+    const { wrap: inputWrap, inp, info: infoSpan } = mkInputRow(t('theSession.tune.placeholder'));
 
-  const renderByIdTab = () => {
-    const row = document.createElement('div'); row.className = 'flex gap-2';
-    const { wrap: inputWrap, inp, setPreview } = mkPreviewInput(t('theSession.id.placeholder'));
-    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.id.import');
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn-primary text-xs shrink-0';
+    importBtn.textContent = t('theSession.id.import');
+    importBtn.disabled = true;
 
-    let previewId = -1;
-    const doPreview = debounce(async (val: string) => {
-      const id = parseInt(val);
-      if (isNaN(id)) { setPreview(''); return; }
-      previewId = id;
-      try {
-        const tune = await fetchTuneById(id);
-        if (previewId === id) setPreview(`${tune.name} · ${tune.type}`);
-      } catch { if (previewId === id) setPreview(t('theSession.id.notFound'), true); }
-    }, 400);
+    const row = document.createElement('div');
+    row.className = 'flex gap-2';
+    row.append(inputWrap, importBtn);
 
-    btn.onclick = async () => {
-      const id = parseInt(inp.value);
-      if (isNaN(id)) return;
-      btn.disabled = true; status.textContent = t('theSession.status.fetching');
-      try {
-        const tune = await fetchTuneById(id);
-        const existing = findByExternalId(`thesession:${tune.id}`, ctx.state.cards);
-        if (existing) {
-          await mutate(s => {
-            for (const deckId of (getTargetDeckIds?.() ?? [])) {
-              const deck = s.decks[deckId];
-              if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
-            }
-          });
-          status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
-        } else {
-          const card = tuneResultToCard(tune, { mergeSettings });
-          await mutate(s => {
-            s.cards[card.id] = card;
-            for (const deckId of (getTargetDeckIds?.() ?? [])) {
-              const deck = s.decks[deckId];
-              if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
-            }
-          });
-          status.textContent = t('theSession.status.imported', { name: card.name });
-        }
-      } catch (e) {
-        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
-      } finally { btn.disabled = false; }
+    let pendingId: number | null = null;
+    const showResult = (name: string, type: string, id: number) => {
+      pendingId = id;
+      infoSpan.textContent = /^\d+$/.test(inp.value.trim()) ? `${name} · ${type}` : type;
+      importBtn.disabled = false;
     };
-    inp.addEventListener('input', () => doPreview(inp.value));
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
-    row.append(inputWrap, btn);
-    content.append(row);
-    focusIfDesktop(inp);
-  };
+    const clearResult = () => { pendingId = null; infoSpan.textContent = ''; importBtn.disabled = true; };
 
-  // ── Tab: Search ───────────────────────────────────────────────────────────
+    importBtn.onclick = () => {
+      if (pendingId === null) return;
+      void importTune(pendingId, () => { inp.value = ''; clearResult(); }, importBtn);
+    };
 
-  const renderSearchTab = () => {
-    let selectedTune: TuneSearchResult | null = null;
-
-    const outerWrap = document.createElement('div');
-    const row = document.createElement('div'); row.className = 'flex gap-2';
-    const { wrap: inputWrap, inp, setPreview } = mkPreviewInput(t('theSession.search') + '…');
-    inp.type = 'text';
-    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.id.import'); btn.disabled = true;
-    row.append(inputWrap, btn);
-    outerWrap.append(row);
-
+    // Floating dropdown — aligned to input wrapper width
     const dropdown = document.createElement('div');
     dropdown.className = 'fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-y-auto hidden';
     dropdown.style.maxHeight = '220px';
     document.body.appendChild(dropdown);
-
     const positionDropdown = () => {
+      const z = getZoom() / 100;
       const rect = inputWrap.getBoundingClientRect();
-      dropdown.style.top   = `${rect.bottom + 4}px`;
-      dropdown.style.left  = `${rect.left}px`;
-      dropdown.style.width = `${rect.width}px`;
+      dropdown.style.top = `${(rect.bottom + 4) / z}px`; dropdown.style.left = `${rect.left / z}px`; dropdown.style.width = `${rect.width / z}px`;
     };
     const showDropdown = () => { positionDropdown(); dropdown.classList.remove('hidden'); };
     const hideDropdown = () => dropdown.classList.add('hidden');
-
     const obs = new MutationObserver(() => { if (!inp.isConnected) { dropdown.remove(); obs.disconnect(); } });
     obs.observe(document.body, { childList: true, subtree: true });
-
-    const selectTune = (tune: TuneSearchResult) => {
-      selectedTune = tune;
-      inp.value = tune.name;
-      setPreview(`${tune.id} · ${tune.type}`);
-      btn.disabled = false;
-      dropdown.innerHTML = ''; hideDropdown();
-    };
 
     const renderSuggestions = (tunes: TuneSearchResult[]) => {
       dropdown.innerHTML = '';
       if (!tunes.length) { hideDropdown(); return; }
       for (const tune of tunes) {
         const item = document.createElement('div');
-        item.className = 'flex items-center justify-between gap-3 px-3 py-2 hover:bg-bg cursor-pointer';
+        item.className = 'flex items-center gap-3 px-3 py-2 hover:bg-bg cursor-pointer';
         const left = document.createElement('div'); left.className = 'flex-1 min-w-0';
         const name = document.createElement('span'); name.className = 'text-sm text-primary truncate block'; name.textContent = tune.name;
         const meta = document.createElement('span'); meta.className = 'text-xs text-dim'; meta.textContent = tune.type;
-        left.append(name, meta);
-        item.appendChild(left);
-        item.addEventListener('mousedown', e => { e.preventDefault(); selectTune(tune); });
+        left.append(name, meta); item.appendChild(left);
+        item.addEventListener('mousedown', e => { e.preventDefault(); inp.value = tune.name; dropdown.innerHTML = ''; hideDropdown(); showResult(tune.name, tune.type, tune.id); status.textContent = ''; });
         dropdown.appendChild(item);
       }
       showDropdown();
     };
 
-    const doSearch = debounce(async (q: string) => {
-      if (!q.trim()) { dropdown.innerHTML = ''; hideDropdown(); return; }
-      status.textContent = t('theSession.status.searching');
-      try {
-        const tunes = await searchTunes(q);
-        renderSuggestions(tunes);
-        status.textContent = tunes.length ? '' : t('theSession.noResults');
-      } catch (e) {
-        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+    let inputTimer: ReturnType<typeof setTimeout> | null = null;
+    inp.addEventListener('input', () => {
+      if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+      clearResult(); status.textContent = ''; dropdown.innerHTML = ''; hideDropdown();
+      const val = inp.value.trim(); if (!val) return;
+      if (/^\d+$/.test(val)) {
+        inputTimer = setTimeout(async () => {
+          inputTimer = null; status.textContent = t('theSession.status.fetching');
+          try { const tune = await fetchTuneById(parseInt(val)); showResult(tune.name, tune.type, tune.id); status.textContent = ''; }
+          catch { status.textContent = t('theSession.id.notFound'); }
+        }, 150);
+      } else if (val.length >= 2) {
+        inputTimer = setTimeout(async () => {
+          inputTimer = null; status.textContent = t('theSession.status.searching');
+          try { const tunes = await searchTunes(val); renderSuggestions(tunes); status.textContent = tunes.length ? '' : t('theSession.noResults'); }
+          catch (e) { status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) }); }
+        }, 300);
       }
-    }, 300);
-
-    inp.addEventListener('input', () => { selectedTune = null; btn.disabled = true; setPreview(''); doSearch(inp.value); });
+    });
     inp.addEventListener('blur',  () => { setTimeout(hideDropdown, 150); });
     inp.addEventListener('focus', () => { if (dropdown.children.length) showDropdown(); });
-    inp.addEventListener('keydown', e => { if (e.key === 'Escape') hideDropdown(); if (e.key === 'Enter' && selectedTune) btn.click(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Escape') hideDropdown(); if (e.key === 'Enter' && pendingId !== null) importBtn.click(); });
 
-    btn.onclick = async () => {
-      if (!selectedTune) return;
-      const tune = selectedTune;
-      btn.disabled = true; status.textContent = t('theSession.status.fetching');
-      try {
-        const fullTune = await fetchTuneById(tune.id);
-        const existing = findByExternalId(`thesession:${fullTune.id}`, ctx.state.cards);
-        if (existing) {
-          await mutate(s => {
-            for (const deckId of (getTargetDeckIds?.() ?? [])) {
-              const deck = s.decks[deckId];
-              if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
-            }
-          });
-          status.textContent = t('theSession.status.alreadyInLibrary', { name: fullTune.name });
-          btn.disabled = false;
-        } else {
-          const card = tuneResultToCard(fullTune, { mergeSettings });
-          await mutate(s => {
-            s.cards[card.id] = card;
-            for (const deckId of (getTargetDeckIds?.() ?? [])) {
-              const deck = s.decks[deckId];
-              if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
-            }
-          });
-          status.textContent = t('theSession.status.imported', { name: card.name });
-          inp.value = ''; setPreview(''); selectedTune = null;
-        }
-      } catch (e) {
-        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
-        btn.disabled = false;
-      }
-    };
-
-    content.append(outerWrap);
+    content.append(row);
     focusIfDesktop(inp);
   };
 
-  // ── Tab: By member ────────────────────────────────────────────────────────
-
+  // ── Tab: Member (ID or name search) ───────────────────────────────────────
   const renderMemberTab = () => {
-    const row = document.createElement('div'); row.className = 'flex gap-2';
-    const { wrap: inputWrap, inp, setPreview } = mkPreviewInput(t('theSession.member.placeholder'));
-    const btn = document.createElement('button'); btn.className = 'btn-primary shrink-0'; btn.textContent = t('theSession.member.importAll');
+    const { wrap: inputWrap, inp, info: infoSpan } = mkInputRow(t('theSession.member.placeholder'));
 
-    let previewId = -1;
-    const doPreview = debounce(async (val: string) => {
-      const id = parseInt(val);
-      if (isNaN(id)) { setPreview(''); return; }
-      previewId = id;
-      try {
-        const info = await fetchMemberInfo(id);
-        if (previewId === id) setPreview(t(info.total !== 1 ? 'theSession.member.previewPlural' : 'theSession.member.preview', { name: info.name, count: info.total }));
-      } catch { if (previewId === id) setPreview(t('theSession.member.notFound'), true); }
-    }, 400);
+    const importAllBtn = document.createElement('button');
+    importAllBtn.className = 'btn-primary text-xs shrink-0';
+    importAllBtn.textContent = t('theSession.member.importAll');
+    importAllBtn.disabled = true;
 
-    inp.addEventListener('input', () => doPreview(inp.value));
+    const row = document.createElement('div');
+    row.className = 'flex gap-2';
+    row.append(inputWrap, importAllBtn);
 
+    // Progress bar
     const progressWrap = document.createElement('div'); progressWrap.className = 'hidden space-y-1';
     const progressTrack = document.createElement('div'); progressTrack.className = 'knowledge-bar';
     const progressFill = document.createElement('div'); progressFill.className = 'knowledge-fill bg-accent'; progressFill.style.width = '0%';
-    progressTrack.appendChild(progressFill);
-    progressWrap.appendChild(progressTrack);
+    progressTrack.appendChild(progressFill); progressWrap.appendChild(progressTrack);
 
-    btn.onclick = async () => {
-      const memberId = parseInt(inp.value);
-      if (isNaN(memberId)) return;
-      btn.disabled = true; inp.disabled = true;
-      progressWrap.classList.remove('hidden');
-      progressFill.style.width = '0%';
+    // Floating dropdown — same pattern as tune tab
+    const dropdown = document.createElement('div');
+    dropdown.className = 'fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-y-auto hidden';
+    dropdown.style.maxHeight = '220px';
+    document.body.appendChild(dropdown);
+    const positionDropdown = () => {
+      const z = getZoom() / 100;
+      const rect = inputWrap.getBoundingClientRect();
+      dropdown.style.top = `${(rect.bottom + 4) / z}px`; dropdown.style.left = `${rect.left / z}px`; dropdown.style.width = `${rect.width / z}px`;
+    };
+    const showDropdown = () => { positionDropdown(); dropdown.classList.remove('hidden'); };
+    const hideDropdown = () => dropdown.classList.add('hidden');
+    const obs = new MutationObserver(() => { if (!inp.isConnected) { dropdown.remove(); obs.disconnect(); } });
+    obs.observe(document.body, { childList: true, subtree: true });
+
+    let selectedMemberId: number | null = null;
+
+    const showMemberPreview = async (memberId: number) => {
+      selectedMemberId = memberId; importAllBtn.disabled = true; infoSpan.textContent = '';
+      status.textContent = t('theSession.status.fetching');
+      try {
+        const info = await fetchMemberInfo(memberId);
+        const isIdSearch = /^\d+$/.test(inp.value.trim());
+        infoSpan.textContent = isIdSearch ? `${info.name} · ${info.total} tunes` : `${info.total} tunes`;
+        importAllBtn.disabled = false; status.textContent = '';
+      } catch { status.textContent = t('theSession.member.notFound'); selectedMemberId = null; }
+    };
+
+    const renderMemberSuggestions = (members: MemberSearchResult[]) => {
+      dropdown.innerHTML = '';
+      if (!members.length) { hideDropdown(); return; }
+      for (const m of members) {
+        const item = document.createElement('div');
+        item.className = 'flex items-center gap-3 px-3 py-2 hover:bg-bg cursor-pointer';
+        const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary truncate'; nameEl.textContent = m.name;
+        item.appendChild(nameEl);
+        item.addEventListener('mousedown', e => { e.preventDefault(); inp.value = m.name; hideDropdown(); void showMemberPreview(m.id); status.textContent = ''; });
+        dropdown.appendChild(item);
+      }
+      showDropdown();
+    };
+
+    importAllBtn.onclick = async () => {
+      if (selectedMemberId === null) return;
+      const memberId = selectedMemberId;
+      importAllBtn.disabled = true; inp.disabled = true;
+      progressWrap.classList.remove('hidden'); progressFill.style.width = '0%';
       status.textContent = t('theSession.status.fetchingPage');
       try {
-        const tunes = await fetchMemberTunes(memberId, (loaded, total, phase) => {
+        const existingTuneIds = new Set<number>();
+        for (const card of Object.values(ctx.state.cards)) {
+          if (card.externalId?.startsWith('thesession:')) {
+            const id = parseInt(card.externalId.slice('thesession:'.length));
+            if (!isNaN(id)) existingTuneIds.add(id);
+          }
+        }
+        const { tunes, skippedCount } = await fetchMemberTunes(memberId, (loaded, total, phase) => {
           progressFill.style.width = `${Math.round((loaded / total) * 100)}%`;
-          status.textContent = phase === 'pages'
-            ? t('theSession.status.collectingIds', { loaded, total })
-            : t('theSession.status.fetchingTunes', { loaded, total });
-        });
-        const existingCards = tunes.map(t => findByExternalId(`thesession:${t.id}`, ctx.state.cards));
-        const newTunes = tunes.filter((_, i) => !existingCards[i]);
-        const alreadyExisting = tunes.filter((_, i) => !!existingCards[i]);
-        const existingCardObjs = existingCards.flatMap(c => c ? [c] : []);
-        const newCards = newTunes.map(tune => tuneResultToCard(tune, { mergeSettings }));
+          status.textContent = phase === 'pages' ? t('theSession.status.collectingIds', { loaded, total }) : t('theSession.status.fetchingTunes', { loaded, total });
+        }, id => existingTuneIds.has(id));
+        const newCards = tunes.map(tune => tuneResultToCard(tune, { mergeSettings }));
         await mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; }
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId];
-            if (!deck) continue;
-            for (const card of [...newCards, ...existingCardObjs]) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            for (const card of newCards) {
               if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
             }
           }
         });
         progressFill.style.width = '100%';
-        const linked = 0;
         let summary = t('theSession.status.batchDone', { count: newCards.length });
-        if (linked > 0) summary = summary.replace('.', '') + t('theSession.status.batchLinked', { linked }) + '.';
-        else if (alreadyExisting.length > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: alreadyExisting.length }) + '.';
+        if (skippedCount > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skippedCount }) + '.';
         status.textContent = summary;
       } catch (e) {
         status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
-      } finally {
-        btn.disabled = false; inp.disabled = false;
-      }
+      } finally { importAllBtn.disabled = false; inp.disabled = false; }
     };
 
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
-    row.append(inputWrap, btn);
+    let inputTimer: ReturnType<typeof setTimeout> | null = null;
+    inp.addEventListener('input', () => {
+      if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
+      infoSpan.textContent = ''; importAllBtn.disabled = true; selectedMemberId = null;
+      dropdown.innerHTML = ''; hideDropdown(); status.textContent = '';
+      const val = inp.value.trim(); if (!val) return;
+      if (/^\d+$/.test(val)) {
+        void showMemberPreview(parseInt(val));
+      } else if (val.length >= 2) {
+        inputTimer = setTimeout(async () => {
+          inputTimer = null; status.textContent = t('theSession.status.searching');
+          try { const members = await searchMembers(val); renderMemberSuggestions(members); status.textContent = members.length ? '' : t('theSession.noResults'); }
+          catch (e) { status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) }); }
+        }, 300);
+      }
+    });
+    inp.addEventListener('blur',  () => { setTimeout(hideDropdown, 150); });
+    inp.addEventListener('focus', () => { if (dropdown.children.length) showDropdown(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Escape') hideDropdown(); if (e.key === 'Enter' && selectedMemberId !== null) importAllBtn.click(); });
+
     content.append(row, progressWrap);
     focusIfDesktop(inp);
   };
@@ -476,7 +468,6 @@ export function showNewCardModal(ctx: AppContext): void {
 
   const renderBody = () => {
     body.innerHTML = '';
-
     if (currentStep === 'root')            renderRoot();
     else if (currentStep === 'create')     renderCreate();
     else if (currentStep === 'import')     renderImport();
