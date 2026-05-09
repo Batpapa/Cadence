@@ -19,8 +19,8 @@ function injectSliderStyle(): void {
   s.id = 'cadence-audio-style';
   s.textContent = `
     .cad-range{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;width:100%}
-    .cad-range::-webkit-slider-runnable-track{height:3px;background:linear-gradient(to right,var(--thumb-color,#8b7cf8) var(--pct,50%),#252525 var(--pct,50%));border-radius:99px}
-    .cad-range::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--thumb-color,#8b7cf8);margin-top:-4.5px}
+    .cad-range::-webkit-slider-runnable-track{height:3px;background:linear-gradient(to right,var(--thumb-color,var(--color-accent)) var(--pct,50%),var(--color-border) var(--pct,50%));border-radius:99px}
+    .cad-range::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--thumb-color,var(--color-accent));margin-top:-4.5px}
   `;
   document.head.appendChild(s);
 }
@@ -88,7 +88,7 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   root.style.cssText = 'width:100%;padding:14px 16px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px';
 
   const loading = document.createElement('div');
-  loading.style.cssText = 'font-size:11px;color:#555;text-align:center;padding:20px 0';
+  loading.style.cssText = 'font-size:11px;color:var(--color-dim);text-align:center;padding:20px 0';
   loading.textContent = t('audioPlayer.loading');
   root.appendChild(loading);
 
@@ -104,17 +104,17 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   waveSvg.style.cssText = 'display:block;width:100%;pointer-events:none';
 
   const playhead = document.createElement('div');
-  playhead.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:#8b7cf8;pointer-events:none;z-index:3';
+  playhead.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:var(--color-accent);pointer-events:none;z-index:3';
 
   const startHandle = document.createElement('div');
-  startHandle.style.cssText = 'position:absolute;top:0;bottom:0;width:3px;background:#8b7cf8;cursor:ew-resize;z-index:4;transform:translateX(-1px)';
+  startHandle.style.cssText = 'position:absolute;top:0;bottom:0;width:3px;background:var(--color-accent);cursor:ew-resize;z-index:4;transform:translateX(-1px)';
   const endHandle = document.createElement('div');
-  endHandle.style.cssText = 'position:absolute;top:0;bottom:0;width:3px;background:#8b7cf8;cursor:ew-resize;z-index:4;transform:translateX(-1px)';
+  endHandle.style.cssText = 'position:absolute;top:0;bottom:0;width:3px;background:var(--color-accent);cursor:ew-resize;z-index:4;transform:translateX(-1px)';
 
   waveWrap.append(waveSvg, playhead, startHandle, endHandle);
 
   const timeRow = document.createElement('div');
-  timeRow.style.cssText = 'display:flex;justify-content:space-between;font-size:9px;color:#555;font-family:"IBM Plex Mono",monospace';
+  timeRow.style.cssText = 'display:flex;justify-content:space-between;font-size:9px;color:var(--color-dim);font-family:"IBM Plex Mono",monospace';
   const timeCurrent = document.createElement('span');
   const timeRegion  = document.createElement('span'); timeRegion.style.textAlign = 'center';
   const timeDur     = document.createElement('span');
@@ -128,17 +128,17 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   const mkBtn = (text: string, title: string): HTMLButtonElement => {
     const b = document.createElement('button');
     b.textContent = text; b.title = title;
-    b.style.cssText = 'padding:3px 8px;font-size:13px;background:transparent;border:1px solid #252525;border-radius:4px;color:#888;cursor:pointer;font-family:"IBM Plex Mono",monospace;line-height:1.4';
-    b.onmouseenter = () => { b.style.borderColor = '#8b7cf8'; b.style.color = '#e8e8e8'; };
-    b.onmouseleave = () => { if (b.dataset['active'] !== '1') { b.style.borderColor = '#252525'; b.style.color = '#888'; } };
+    b.style.cssText = 'padding:3px 8px;font-size:13px;background:transparent;border:1px solid var(--color-border);border-radius:4px;color:var(--color-muted);cursor:pointer;font-family:"IBM Plex Mono",monospace;line-height:1.4';
+    b.onmouseenter = () => { b.style.borderColor = 'var(--color-accent)'; b.style.color = 'var(--color-primary)'; };
+    b.onmouseleave = () => { if (b.dataset['active'] !== '1') { b.style.borderColor = 'var(--color-border)'; b.style.color = 'var(--color-muted)'; } };
     return b;
   };
   const mkSmall = (text: string, title: string): HTMLButtonElement => {
     const b = document.createElement('button');
     b.textContent = text; b.title = title;
-    b.style.cssText = 'padding:2px 6px;font-size:9px;font-family:"IBM Plex Mono",monospace;background:transparent;border:1px solid #252525;border-radius:3px;color:#555;cursor:pointer';
-    b.onmouseenter = () => { b.style.borderColor = '#555'; b.style.color = '#888'; };
-    b.onmouseleave = () => { b.style.borderColor = '#252525'; b.style.color = '#555'; };
+    b.style.cssText = 'padding:2px 6px;font-size:9px;font-family:"IBM Plex Mono",monospace;background:transparent;border:1px solid var(--color-border);border-radius:3px;color:var(--color-dim);cursor:pointer';
+    b.onmouseenter = () => { b.style.borderColor = 'var(--color-dim)'; b.style.color = 'var(--color-muted)'; };
+    b.onmouseleave = () => { b.style.borderColor = 'var(--color-border)'; b.style.color = 'var(--color-dim)'; };
     return b;
   };
 
@@ -149,15 +149,15 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   const setEndBtn   = mkSmall('→]', t('audioPlayer.setEnd.title'));
   const resetBtn    = mkSmall(t('audioPlayer.reset'), t('audioPlayer.reset.title'));
   repeatBtn.dataset['active'] = '1';
-  repeatBtn.style.borderColor = '#8b7cf8';
-  repeatBtn.style.color       = '#8b7cf8';
+  repeatBtn.style.borderColor = 'var(--color-accent)';
+  repeatBtn.style.color       = 'var(--color-accent)';
 
   const spacer = document.createElement('div'); spacer.style.flex = '1';
   transport.append(playBtn, stopBtn, repeatBtn, spacer, setStartBtn, setEndBtn, resetBtn);
 
   // Sliders
   const slidersSection = document.createElement('div');
-  slidersSection.style.cssText = 'display:none;border-top:1px solid #252525;padding-top:12px';
+  slidersSection.style.cssText = 'display:none;border-top:1px solid var(--color-border);padding-top:12px';
   const slidersGrid = document.createElement('div');
   slidersGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 16px';
 
@@ -167,7 +167,7 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   ): HTMLElement => {
     const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px';
     const hdr  = document.createElement('div');  hdr.style.cssText  = 'display:flex;justify-content:space-between;align-items:center';
-    const lbl  = document.createElement('span'); lbl.style.cssText  = 'font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em'; lbl.textContent = label;
+    const lbl  = document.createElement('span'); lbl.style.cssText  = 'font-size:9px;color:var(--color-dim);text-transform:uppercase;letter-spacing:0.08em'; lbl.textContent = label;
     const val  = document.createElement('span'); val.style.cssText  = `font-size:11px;font-family:'IBM Plex Mono',monospace;color:${color};font-weight:500`; val.textContent = fmt(def);
     const inp  = document.createElement('input'); inp.type = 'range'; inp.className = 'cad-range';
     inp.min = String(min); inp.max = String(max); inp.step = String(step); inp.value = String(def);
@@ -177,9 +177,9 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   };
 
   slidersGrid.append(
-    mkSlider(t('audioPlayer.tempo'),     30, 200,  1, 100, '#8b7cf8', v => `${v}%`,                v => { tempo     = v; applyEffects(); }),
-    mkSlider(t('audioPlayer.transpose'), -12, 12, 1,   0, '#fbbf24', v => `${v>=0?'+':''}${v} st`, v => { transpose = v; applyEffects(); }),
-    mkSlider(t('audioPlayer.pitch'),  -100, 100,  1,   0, '#4ade80', v => `${v>=0?'+':''}${v} ¢`,  v => { pitch     = v; applyEffects(); }),
+    mkSlider(t('audioPlayer.tempo'),     30, 200,  1, 100, 'var(--color-accent)',  v => `${v}%`,                v => { tempo     = v; applyEffects(); }),
+    mkSlider(t('audioPlayer.transpose'), -12, 12, 1,   0, 'var(--color-warn)',    v => `${v>=0?'+':''}${v} st`, v => { transpose = v; applyEffects(); }),
+    mkSlider(t('audioPlayer.pitch'),  -100, 100,  1,   0, 'var(--color-success)', v => `${v>=0?'+':''}${v} ¢`,  v => { pitch     = v; applyEffects(); }),
   );
   slidersSection.appendChild(slidersGrid);
   root.append(waveSection, transport, slidersSection);
@@ -200,7 +200,7 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
       const t = (i + 0.5) / n * duration;
       const inReg = t >= regionStart && t <= regionEnd;
       const played = t <= pos;
-      const fill = inReg && played ? '#8b7cf8' : inReg ? 'rgba(139,124,248,0.35)' : '#252525';
+      const fill = inReg && played ? 'var(--color-accent)' : inReg ? 'var(--color-accent-subtle)' : 'var(--color-border)';
       const h = Math.max(3, (waveData[i] ?? 0) * H * 0.8 + H * 0.08);
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       rect.setAttribute('x', String(i * gap)); rect.setAttribute('y', String((H - h) / 2));
@@ -317,8 +317,8 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   repeatBtn.onclick = () => {
     repeat = !repeat;
     repeatBtn.dataset['active'] = repeat ? '1' : '0';
-    repeatBtn.style.borderColor = repeat ? '#8b7cf8' : '#252525';
-    repeatBtn.style.color       = repeat ? '#8b7cf8' : '#888';
+    repeatBtn.style.borderColor = repeat ? 'var(--color-accent)' : 'var(--color-border)';
+    repeatBtn.style.color       = repeat ? 'var(--color-accent)' : 'var(--color-muted)';
   };
   setStartBtn.onclick = () => { regionStart = Math.min(getCurrentPos(), regionEnd - 0.5); seek(regionStart); updateUI(); };
   setEndBtn.onclick   = () => { regionEnd   = Math.max(getCurrentPos(), regionStart + 0.5); updateUI(); };

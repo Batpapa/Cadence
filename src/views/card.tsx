@@ -33,7 +33,7 @@ function formatDays(d: number): string {
   return t('common.durationLessThanDay');
 }
 
-const RATING_COLORS: Record<string, string> = { again: '#f87171', hard: '#fbbf24', good: '#8b7cf8', easy: '#4ade80' };
+const RATING_COLORS: Record<string, string> = { again: 'var(--color-danger)', hard: 'var(--color-warn)', good: 'var(--color-accent)', easy: 'var(--color-success)' };
 const RATING_LABELS: Record<string, string> = { again: 'Again', hard: 'Hard', good: 'Good', easy: 'Easy' };
 const RATING_DEFS: Array<{ rating: SessionRating; key: string; activeClass: string }> = [
   { rating: 'again', key: 'rating.again', activeClass: 'bg-danger/20 text-danger border-danger/40' },
@@ -408,7 +408,7 @@ export function CardView({ cardId }: { cardId: string }) {
               return (
                 <div
                   key={i}
-                  style={{ width: '10px', height: '10px', borderRadius: '2px', background: RATING_COLORS[entry.rating] ?? '#555', opacity: 0.75, cursor: 'pointer', flexShrink: 0 }}
+                  style={{ width: '10px', height: '10px', borderRadius: '2px', background: RATING_COLORS[entry.rating] ?? 'var(--color-dim)', opacity: 0.75, cursor: 'pointer', flexShrink: 0 }}
                   title={`${new Date(entry.ts).toLocaleDateString()} — ${RATING_LABELS[entry.rating] ?? entry.rating}`}
                   onClick={() => openSessionModal(entry.ts, entry.rating,
                     (ts, rating) => mutate(s => {
