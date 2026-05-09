@@ -41,6 +41,23 @@ function mkInputRow(placeholder: string): { wrap: HTMLDivElement; inp: HTMLInput
   return { wrap, inp, info };
 }
 
+// ── Relevance sort ────────────────────────────────────────────────────────────
+
+function sortByRelevance<T extends { name: string }>(items: T[], query: string): T[] {
+  const q = query.toLowerCase().trim();
+  const score = (name: string): number => {
+    const n = name.toLowerCase();
+    if (n === q) return 0;
+    if (n.startsWith(q + ' ')) return 1;
+    if (n.startsWith(q)) return 2;
+    return 3;
+  };
+  return [...items].sort((a, b) => {
+    const sd = score(a.name) - score(b.name);
+    return sd !== 0 ? sd : a.name.length - b.name.length || a.name.localeCompare(b.name);
+  });
+}
+
 // ── TheSession body builder ───────────────────────────────────────────────────
 
 export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>): HTMLElement {
@@ -190,7 +207,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
       } else if (val.length >= 2) {
         inputTimer = setTimeout(async () => {
           inputTimer = null; status.textContent = t('theSession.status.searching');
-          try { const tunes = await searchTunes(val); renderSuggestions(tunes); status.textContent = tunes.length ? '' : t('theSession.noResults'); }
+          try { const tunes = await searchTunes(val); renderSuggestions(sortByRelevance(tunes, val)); status.textContent = tunes.length ? '' : t('theSession.noResults'); }
           catch (e) { status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) }); }
         }, 300);
       }
@@ -312,7 +329,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
       } else if (val.length >= 2) {
         inputTimer = setTimeout(async () => {
           inputTimer = null; status.textContent = t('theSession.status.searching');
-          try { const members = await searchMembers(val); renderMemberSuggestions(members); status.textContent = members.length ? '' : t('theSession.noResults'); }
+          try { const members = await searchMembers(val); renderMemberSuggestions(sortByRelevance(members, val)); status.textContent = members.length ? '' : t('theSession.noResults'); }
           catch (e) { status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) }); }
         }, 300);
       }
