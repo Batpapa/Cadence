@@ -112,14 +112,14 @@ export function showSettingsModal(ctx: AppContext): void {
     const lbl = document.createElement('label');
     lbl.style.cssText = 'width:34px; height:18px; display:block; position:relative; cursor:pointer; flex-shrink:0;';
     const track = document.createElement('div');
-    track.style.cssText = `width:34px; height:18px; border-radius:99px; background:${checked ? '#8b7cf8' : '#252525'}; transition:background 0.15s;`;
+    track.style.cssText = `width:34px; height:18px; border-radius:99px; background:${checked ? 'var(--color-accent)' : 'var(--color-border)'}; transition:background 0.15s;`;
     const thumb = document.createElement('div');
     thumb.style.cssText = `position:absolute; top:2px; left:${checked ? '16px' : '2px'}; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.15s; box-shadow:0 1px 3px rgba(0,0,0,0.3);`;
     const inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = checked;
     inp.style.cssText = 'position:absolute; opacity:0; inset:0; cursor:pointer;';
     inp.onchange = () => {
       const v = inp.checked;
-      track.style.background = v ? '#8b7cf8' : '#252525';
+      track.style.background = v ? 'var(--color-accent)' : 'var(--color-border)';
       thumb.style.left = v ? '16px' : '2px';
       onChange(v);
     };

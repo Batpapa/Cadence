@@ -101,7 +101,7 @@ const mkEl = (tag: string, attrs: Record<string, string>) => {
   return el;
 };
 const mkText = (x: number, y: number, content: string, anchor: string, size = '8') => {
-  const el = mkEl('text', { x: String(x), y: String(y), 'text-anchor': anchor, 'font-size': size, fill: '#555555', 'font-family': 'IBM Plex Mono, monospace' });
+  const el = mkEl('text', { x: String(x), y: String(y), 'text-anchor': anchor, 'font-size': size, fill: 'var(--color-dim)', 'font-family': 'IBM Plex Mono, monospace' });
   el.textContent = content; return el;
 };
 
@@ -112,7 +112,7 @@ const padL = 38, padR = 14, padT = 12, padB = 30;
 const xMin = 0.5, xMax = 730;
 const logXMin = Math.log(xMin), logXMax = Math.log(xMax);
 const rScale  = (imp: number) => Math.sqrt(Math.max(1, Math.min(10, Math.log10(Math.max(1, imp)))));
-const dotColor = (k: number) => k >= 0.75 ? '#4ade80' : k >= 0.4 ? '#fbbf24' : '#f87171';
+const dotColor = (k: number) => k >= 0.75 ? 'var(--color-success)' : k >= 0.4 ? 'var(--color-warn)' : 'var(--color-danger)';
 const xTicks: Array<{ val: number; labelKey: string }> = [
   { val: 1,   labelKey: 'dashboard.period.1d'  },
   { val: 7,   labelKey: 'dashboard.period.7d'  },
@@ -135,15 +135,15 @@ function buildSvg(
 
   for (const tick of [0, 0.25, 0.5, 0.75, 1.0]) {
     const y = yScale(tick);
-    svg.append(mkEl('line', { x1: String(padL), x2: String(W - padR), y1: String(y), y2: String(y), stroke: '#252525', 'stroke-width': '1' }));
+    svg.append(mkEl('line', { x1: String(padL), x2: String(W - padR), y1: String(y), y2: String(y), stroke: 'var(--color-border)', 'stroke-width': '1' }));
     svg.append(mkText(padL - 5, y + 3.5, `${Math.round(tick * 100)}%`, 'end'));
   }
   for (const { val, labelKey } of xTicks) {
     const x = xScale(val);
-    svg.append(mkEl('line', { x1: String(x), x2: String(x), y1: String(padT), y2: String(padT + plotH), stroke: '#252525', 'stroke-width': '1' }));
+    svg.append(mkEl('line', { x1: String(x), x2: String(x), y1: String(padT), y2: String(padT + plotH), stroke: 'var(--color-border)', 'stroke-width': '1' }));
     svg.append(mkText(x, H - padB + 12, t(labelKey), 'middle'));
   }
-  svg.append(mkEl('rect', { x: String(padL), y: String(padT), width: String(plotW), height: String(plotH), fill: 'none', stroke: '#333333', 'stroke-width': '1' }));
+  svg.append(mkEl('rect', { x: String(padL), y: String(padT), width: String(plotW), height: String(plotH), fill: 'none', stroke: 'var(--color-border)', 'stroke-width': '1' }));
 
   for (const pt of [...pts].sort((a, b) => b.imp - a.imp)) {
     const color  = dotColor(pt.k);
@@ -159,7 +159,7 @@ function buildSvg(
   }
 
   svg.append(mkText(padL + plotW / 2, H - 2, t('deck.section.stability'), 'middle', '10'));
-  const yLbl = mkEl('text', { x: '0', y: '0', 'text-anchor': 'middle', 'font-size': '10', fill: '#555555', 'font-family': 'IBM Plex Mono, monospace', transform: `rotate(-90) translate(${-(padT + plotH / 2)}, 9)` });
+  const yLbl = mkEl('text', { x: '0', y: '0', 'text-anchor': 'middle', 'font-size': '10', fill: 'var(--color-dim)', 'font-family': 'IBM Plex Mono, monospace', transform: `rotate(-90) translate(${-(padT + plotH / 2)}, 9)` });
   yLbl.textContent = t('deck.section.ease');
   svg.append(yLbl);
   svg.addEventListener('mouseleave', onLeave);
@@ -211,8 +211,8 @@ function CardMapSection({ state }: { state: AppState }) {
   selectedRef.current = selectedDecks;
 
   // Tooltip helpers (vanilla — ref-controlled to avoid fighting Preact)
-  const rColor = (k: number) => k >= 0.75 ? '#4ade80' : k >= 0.4 ? '#fbbf24' : '#f87171';
-  const eColor = (e: number) => e >= 0.6  ? '#4ade80' : e >= 0.35 ? '#fbbf24' : '#f87171';
+  const rColor = (k: number) => k >= 0.75 ? 'var(--color-success)' : k >= 0.4 ? 'var(--color-warn)' : 'var(--color-danger)';
+  const eColor = (e: number) => e >= 0.6  ? 'var(--color-success)' : e >= 0.35 ? 'var(--color-warn)' : 'var(--color-danger)';
 
   const showTooltip = (pt: Point, dotX: number, dotY: number, svgW: number) => {
     const tip = tooltipRef.current; if (!tip) return;
@@ -223,13 +223,13 @@ function CardMapSection({ state }: { state: AppState }) {
     const lastWork  = state.cardWorks[`${state.currentProfileId}:${pt.id}`];
     const lastTs    = lastWork?.history.at(-1)?.ts;
     tip.innerHTML = `
-      <div style="font-size:12px;font-weight:600;color:#e8e8e8;margin-bottom:4px;line-height:1.3">${pt.name}</div>
-      <div style="font-size:10px;color:#555;margin-bottom:8px">${deckNames ? deckNames + ' · ' : ''}${lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}</div>
+      <div style="font-size:12px;font-weight:600;color:var(--color-primary);margin-bottom:4px;line-height:1.3">${pt.name}</div>
+      <div style="font-size:10px;color:var(--color-dim);margin-bottom:8px">${deckNames ? deckNames + ' · ' : ''}${lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}</div>
       <div style="display:flex;flex-direction:column;gap:3px">
-        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Retention</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:${rColor(pt.k)};font-weight:500">${pct(pt.k)}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Stability</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:#e8e8e8;font-weight:500">${formatDays(pt.s)}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Ease</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:${eColor(pt.ease)};font-weight:500">${pct(pt.ease)}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:#444;text-transform:uppercase;letter-spacing:0.08em">Weight</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:#e8e8e8;font-weight:500">×${pt.imp}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:var(--color-dim);text-transform:uppercase;letter-spacing:0.08em">Retention</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:${rColor(pt.k)};font-weight:500">${pct(pt.k)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:var(--color-dim);text-transform:uppercase;letter-spacing:0.08em">Stability</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--color-primary);font-weight:500">${formatDays(pt.s)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:var(--color-dim);text-transform:uppercase;letter-spacing:0.08em">Ease</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:${eColor(pt.ease)};font-weight:500">${pct(pt.ease)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="font-size:9px;color:var(--color-dim);text-transform:uppercase;letter-spacing:0.08em">Weight</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--color-primary);font-weight:500">×${pt.imp}</span></div>
       </div>`;
   };
   const hideTooltip = () => { const tip = tooltipRef.current; if (tip) tip.style.display = 'none'; };
@@ -310,7 +310,7 @@ function CardMapSection({ state }: { state: AppState }) {
 
       {/* SVG container — tooltip is ref-managed (not Preact-controlled) */}
       <div ref={svgRef} style="position:relative">
-        <div ref={tooltipRef} style="position:absolute;display:none;pointer-events:none;z-index:20;width:176px;background:#1a1a1a;border:1px solid #2e2e2e;border-radius:8px;padding:10px 12px;box-shadow:0 4px 24px rgba(0,0,0,0.6);font-family:'IBM Plex Sans',system-ui,sans-serif;" />
+        <div ref={tooltipRef} style="position:absolute;display:none;pointer-events:none;z-index:20;width:176px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;padding:10px 12px;box-shadow:0 4px 24px rgba(0,0,0,0.6);font-family:'IBM Plex Sans',system-ui,sans-serif;" />
       </div>
     </div>
   );
