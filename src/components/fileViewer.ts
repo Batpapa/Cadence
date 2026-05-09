@@ -19,6 +19,29 @@ function isAbc(entry: FileEntry): boolean {
 }
 
 
+const TUNE_TEMPOS: Record<string, string> = {
+  jig:          '3/8=120',
+  reel:         '1/4=190',
+  'slip jig':   '3/8=120',
+  hornpipe:     '1/4=190',
+  polka:        '1/4=150',
+  slide:        '3/8=135',
+  waltz:        '1/4=180',
+  barndance:    '1/4=190',
+  strathspey:   '1/4=190',
+  'three-two':  '1/4=105',
+  mazurka:      '1/4=180',
+  march:        '1/4=190',
+};
+
+function injectDefaultTempo(abc: string): string {
+  if (/^Q:/m.test(abc)) return abc;
+  const rMatch = abc.match(/^R:\s*(.+)/m);
+  const tempo = rMatch ? TUNE_TEMPOS[rMatch[1]!.trim().toLowerCase()] : undefined;
+  if (!tempo) return abc;
+  return abc.replace(/^(K:[^\n]*)/m, `$1\nQ: ${tempo}`);
+}
+
 function splitAbcTunes(abc: string): string[] {
   const lines = abc.split('\n');
   const tunes: string[] = [];
@@ -139,7 +162,7 @@ export function showPreviewModal(entry: FileEntry): void {
         if (nextBtn) { nextBtn.disabled = index === versionCount - 1; nextBtn.style.opacity = index === versionCount - 1 ? '0.3' : '0.8'; }
         if (versionLabel) versionLabel.textContent = `${index + 1}/${versionCount}`;
 
-        const visualObj = abcjs.renderAbc(notation.id, tunes[index]!, {
+        const visualObj = abcjs.renderAbc(notation.id, injectDefaultTempo(tunes[index]!), {
           responsive: 'resize',
           add_classes: true,
           paddingright: 0,
