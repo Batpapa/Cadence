@@ -10,6 +10,7 @@ import { initPWA } from './services/pwaService';
 import { initDriveClient, isDriveConnected, loadFromCloud, getLocalTimestamp, initDriveVisibilitySync } from './services/driveService';
 import { migrateState } from './services/migration';
 import { applyZoom } from './services/zoomService';
+import { applyTheme } from './services/themeService';
 import { mountApp } from './appRoot';
 import { getContext } from './store';
 import type { AppState } from './types';
@@ -30,6 +31,7 @@ if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
     await saveState(state);
     appState.value = state;
 
+    applyTheme();
     applyZoom();
     window.addEventListener('resize', applyZoom);
     initPWA();
