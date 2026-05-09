@@ -157,16 +157,17 @@ export function renderAttachmentList(options: {
       const inp = document.createElement('input');
       inp.type = 'url'; inp.placeholder = t('embed.placeholder');
       inp.className = 'input text-xs';
-      const errorEl = document.createElement('p'); errorEl.className = 'text-xs text-danger min-h-[1rem]';
+      const errorEl = document.createElement('p'); errorEl.className = 'text-xs text-danger'; errorEl.style.display = 'none';
+      const setError = (msg: string) => { errorEl.textContent = msg; errorEl.style.display = 'block'; };
       body.append(inp, errorEl);
 
       const doAdd = async () => {
         const url = inp.value.trim();
         if (!url) return;
-        if (!detectPlatform(url)) { errorEl.textContent = t('embed.unsupported'); return; }
-        errorEl.textContent = t('embed.checking');
+        if (!detectPlatform(url)) { setError(t('embed.unsupported')); return; }
+        setError(t('embed.checking'));
         const meta = await resolveEmbed(url);
-        if (!meta) { errorEl.textContent = t('embed.error'); return; }
+        if (!meta) { setError(t('embed.error')); return; }
         onAdd({ type: 'embed', id: generateId(), url, title: meta.title, embedUrl: meta.embedUrl });
         closeModal();
       };
