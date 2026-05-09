@@ -84,9 +84,10 @@ export async function fetchMemberInfo(memberId: number): Promise<{ name: string;
 
 export async function fetchMemberTunes(
   memberId: number,
-  onProgress: (loaded: number, total: number, phase: 'pages' | 'tunes') => void
-): Promise<TuneResult[]> {
-  // Phase 1 — collect unique tune IDs by paginating settings
+  onProgress: (loaded: number, total: number, phase: 'pages' | 'tunes') => void,
+  skipId?: (id: number) => boolean
+): Promise<{ tunes: TuneResult[]; skippedCount: number }> {
+  // Phase 1 — collect unique tune IDs by paginating tunebook
   const first = await fetch(`${BASE}/members/${memberId}/tunebook?format=json`);
   if (!first.ok) throw new Error(`TheSession member fetch failed: ${first.status}`);
   const firstData = (await first.json()) as MemberTunesResponse;
@@ -106,14 +107,15 @@ export async function fetchMemberTunes(
     onProgress(page, pages, 'pages');
   }
 
-  // Phase 2 — fetch each tune individually to get full data
-  const ids = [...seen];
+  // Phase 2 — fetch only tunes not already in the library
+  const ids = skipId ? [...seen].filter(id => !skipId(id)) : [...seen];
+  const skippedCount = seen.size - ids.length;
   const tunes: TuneResult[] = [];
   for (let i = 0; i < ids.length; i++) {
     tunes.push(await fetchTuneById(ids[i]!));
     onProgress(i + 1, ids.length, 'tunes');
   }
-  return tunes;
+  return { tunes, skippedCount };
 }
 
 // ── ABC generation ────────────────────────────────────────────────────────────
@@ -208,6 +210,20 @@ export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boole
       attachments,
     },
   };
+}
+
+export interface MemberSearchResult {
+  id: number;
+  name: string;
+  url: string;
+  bio: string;
+}
+
+export async function searchMembers(query: string): Promise<MemberSearchResult[]> {
+  const res = await fetch(`${BASE}/members/search?q=${encodeURIComponent(query)}&format=json`);
+  if (!res.ok) throw new Error(`Member search failed: ${res.status}`);
+  const data = (await res.json()) as { members?: MemberSearchResult[] };
+  return data.members ?? [];
 }
 
 /** Returns the existing card with this externalId, or undefined. */
