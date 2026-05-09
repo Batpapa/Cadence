@@ -1,5 +1,5 @@
 import type { AppContext } from '../types';
-import { generateId, focusIfDesktop } from '../utils';
+import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
 import { parseCardPackage } from '../services/importExport';
 import { mutate } from '../store';
 import {
@@ -39,23 +39,6 @@ function mkInputRow(placeholder: string): { wrap: HTMLDivElement; inp: HTMLInput
 
   wrap.append(inp, info);
   return { wrap, inp, info };
-}
-
-// ── Relevance sort ────────────────────────────────────────────────────────────
-
-function sortByRelevance<T extends { name: string }>(items: T[], query: string): T[] {
-  const q = query.toLowerCase().trim();
-  const score = (name: string): number => {
-    const n = name.toLowerCase();
-    if (n === q) return 0;
-    if (n.startsWith(q + ' ')) return 1;
-    if (n.startsWith(q)) return 2;
-    return 3;
-  };
-  return [...items].sort((a, b) => {
-    const sd = score(a.name) - score(b.name);
-    return sd !== 0 ? sd : a.name.length - b.name.length || a.name.localeCompare(b.name);
-  });
 }
 
 // ── TheSession body builder ───────────────────────────────────────────────────

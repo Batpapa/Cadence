@@ -84,6 +84,21 @@ export function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+export function sortByRelevance<T extends { name: string }>(items: T[], query: string): T[] {
+  const q = query.toLowerCase().trim();
+  const score = (name: string): number => {
+    const n = name.toLowerCase();
+    if (n === q) return 0;
+    if (n.startsWith(q + ' ')) return 1;
+    if (n.startsWith(q)) return 2;
+    return 3;
+  };
+  return [...items].sort((a, b) => {
+    const sd = score(a.name) - score(b.name);
+    return sd !== 0 ? sd : a.name.length - b.name.length || a.name.localeCompare(b.name);
+  });
+}
+
 
 export function unlinkIcon(size = 11): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
