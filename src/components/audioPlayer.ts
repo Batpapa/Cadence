@@ -166,14 +166,63 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
     color: string, fmt: (v: number) => string, onInput: (v: number) => void,
   ): HTMLElement => {
     const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px';
-    const hdr  = document.createElement('div');  hdr.style.cssText  = 'display:flex;justify-content:space-between;align-items:center';
-    const lbl  = document.createElement('span'); lbl.style.cssText  = 'font-size:9px;color:var(--color-dim);text-transform:uppercase;letter-spacing:0.08em'; lbl.textContent = label;
-    const val  = document.createElement('span'); val.style.cssText  = `font-size:11px;font-family:'IBM Plex Mono',monospace;color:${color};font-weight:500`; val.textContent = fmt(def);
-    const inp  = document.createElement('input'); inp.type = 'range'; inp.className = 'cad-range';
-    inp.min = String(min); inp.max = String(max); inp.step = String(step); inp.value = String(def);
-    setSliderStyle(inp, min, max, def, color);
-    inp.oninput = () => { const v = parseFloat(inp.value); val.textContent = fmt(v); setSliderStyle(inp, min, max, v, color); onInput(v); };
-    hdr.append(lbl, val); wrap.append(hdr, inp); return wrap;
+    const hdr  = document.createElement('div'); hdr.style.cssText  = 'display:flex;justify-content:space-between;align-items:center';
+    const lbl  = document.createElement('span'); lbl.style.cssText = 'font-size:9px;color:var(--color-dim);text-transform:uppercase;letter-spacing:0.08em'; lbl.textContent = label;
+
+    // Left side: label + reset button
+    const left = document.createElement('div'); left.style.cssText = 'display:inline-flex;align-items:center;gap:3px';
+
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = '↺'; resetBtn.title = 'Reset';
+    resetBtn.style.cssText = 'background:transparent;border:none;cursor:pointer;font-size:10px;color:var(--color-dim);padding:0;opacity:0;pointer-events:none;transition:opacity 0.15s;line-height:1';
+
+    left.append(lbl, resetBtn);
+
+    // Right side: value (editable on click)
+    const val = document.createElement('span');
+    val.style.cssText = `font-size:11px;font-family:'IBM Plex Mono',monospace;color:${color};font-weight:500;cursor:pointer;`;
+    val.textContent = fmt(def);
+
+    const editInp = document.createElement('input');
+    editInp.type = 'text';
+    editInp.style.cssText = `display:none;font-size:11px;font-family:'IBM Plex Mono',monospace;color:${color};font-weight:500;background:transparent;border:none;border-bottom:1px solid ${color};outline:none;width:38px;text-align:right;padding:0`;
+
+    const range = document.createElement('input'); range.type = 'range'; range.className = 'cad-range';
+    range.min = String(min); range.max = String(max); range.step = String(step); range.value = String(def);
+    setSliderStyle(range, min, max, def, color);
+
+    const update = (v: number) => {
+      val.textContent = fmt(v);
+      setSliderStyle(range, min, max, v, color);
+      resetBtn.style.opacity = v === def ? '0' : '1';
+      resetBtn.style.pointerEvents = v === def ? 'none' : 'auto';
+      onInput(v);
+    };
+
+    range.oninput = () => update(parseFloat(range.value));
+
+    resetBtn.onclick = () => { range.value = String(def); update(def); };
+
+    val.onclick = () => {
+      val.style.display = 'none'; editInp.style.display = 'inline';
+      editInp.value = range.value; editInp.focus(); editInp.select();
+    };
+    const commitEdit = () => {
+      const raw = parseFloat(editInp.value);
+      if (!isNaN(raw)) {
+        const clamped = Math.max(min, Math.min(max, Math.round(raw / step) * step));
+        range.value = String(clamped); update(clamped);
+      }
+      editInp.style.display = 'none'; val.style.display = 'inline';
+    };
+    editInp.addEventListener('input', () => { editInp.value = editInp.value.replace(/[^\d\-\.]/g, ''); });
+    editInp.addEventListener('blur', commitEdit);
+    editInp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+      if (e.key === 'Escape') { editInp.style.display = 'none'; val.style.display = 'inline'; }
+    });
+
+    hdr.append(left, val, editInp); wrap.append(hdr, range); return wrap;
   };
 
   slidersGrid.append(
