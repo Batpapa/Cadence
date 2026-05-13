@@ -371,6 +371,9 @@
   "fileViewer.abcError": "Impossible d'afficher la notation ABC.",
 
   "help.title": "Aide — {context}",
+  "help.tabInfo": "Infos",
+  "help.tabGuide": "Guide",
+  "help.guide.empty": "Le guide arrive bientôt.",
   "help.context.home": "Accueil",
   "help.context.folder": "Dossier",
   "help.context.library": "Bibliothèque de cartes",
