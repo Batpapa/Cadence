@@ -371,6 +371,9 @@
   "fileViewer.abcError": "Could not render ABC notation.",
 
   "help.title": "Help — {context}",
+  "help.tabInfo": "Info",
+  "help.tabGuide": "Guide",
+  "help.guide.empty": "The guide is coming soon.",
   "help.context.home": "Home",
   "help.context.folder": "Folder",
   "help.context.library": "Card library",

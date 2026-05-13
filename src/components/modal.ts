@@ -17,7 +17,7 @@ export function closeModal(): void {
   if (activeModal) { activeModal.remove(); activeModal = null; }
 }
 
-export function showModal(title: string, body: HTMLElement, actions: ModalAction[], dismissable = true): void {
+export function showModal(title: string, body: HTMLElement, actions: ModalAction[], dismissable = true, maxWidth = '28rem'): void {
   closeModal();
 
   const overlay = document.createElement('div');
@@ -25,7 +25,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
 
   const dialog = document.createElement('div');
   dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col';
-  dialog.style.maxWidth = `min(${modalMaxW(0.9)}, 28rem)`;
+  dialog.style.maxWidth = `min(${modalMaxW(0.9)}, ${maxWidth})`;
   dialog.style.maxHeight = modalMaxH(0.85);
 
   const header = document.createElement('div');
@@ -66,7 +66,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     footer.appendChild(btn);
   }
 
-  dialog.append(header, bodyWrap, footer);
+  dialog.append(header, bodyWrap, ...(actions.length ? [footer] : []));
   overlay.appendChild(dialog);
   if (dismissable) {
     let mouseDownOnOverlay = false;
