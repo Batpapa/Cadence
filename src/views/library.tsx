@@ -21,10 +21,12 @@ function SvgIcon({ icon }: { icon: SVGSVGElement }) {
 
 // ── Collapsible filter section ────────────────────────────────────────────────
 
-function FilterSection({ labelKey, items, activeSet, labelOf, titleOf, available, onToggle }: {
+type FilterState = 'include' | 'exclude';
+
+function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, available, onToggle }: {
   labelKey: string;
   items: string[];
-  activeSet: Set<string>;
+  activeMap: Map<string, FilterState>;
   labelOf: (id: string) => string;
   titleOf: (id: string) => string;
   available: Set<string>;
@@ -43,16 +45,17 @@ function FilterSection({ labelKey, items, activeSet, labelOf, titleOf, available
       {open && (
         <div class="flex flex-wrap gap-1.5 pt-1">
           {items.map(id => {
-            const isActive = activeSet.has(id);
-            const isAvail  = isActive || available.has(id);
+            const state   = activeMap.get(id);
+            const isAvail = state !== undefined || available.has(id);
             return (
               <button
                 key={id}
                 disabled={!isAvail}
                 class={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                  isActive ? 'bg-accent text-white border-accent cursor-pointer' :
-                  isAvail  ? 'border-border text-muted hover:border-accent hover:text-accent cursor-pointer' :
-                             'border-border text-muted opacity-30 cursor-not-allowed'
+                  state === 'include' ? 'bg-accent text-white border-accent cursor-pointer' :
+                  state === 'exclude' ? 'bg-danger/10 text-danger border-danger/50 line-through cursor-pointer' :
+                  isAvail             ? 'border-border text-muted hover:border-accent hover:text-accent cursor-pointer' :
+                                        'border-border text-muted opacity-30 cursor-not-allowed'
                 }`}
                 title={titleOf(id)}
                 onClick={() => onToggle(id)}
@@ -106,8 +109,8 @@ export function LibraryView() {
   const allCards = Object.values(state.cards) as Card[];
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTags,  setActiveTags]  = useState<Set<string>>(new Set());
-  const [activeDecks, setActiveDecks] = useState<Set<string>>(new Set());
+  const [activeTags,  setActiveTags]  = useState<Map<string, FilterState>>(new Map());
+  const [activeDecks, setActiveDecks] = useState<Map<string, FilterState>>(new Map());
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -129,11 +132,14 @@ export function LibraryView() {
   const filteredUnsorted = allCards.filter(c => {
     const tags       = c.tags ?? [];
     const matchText  = !q || c.name.toLowerCase().includes(q);
-    const matchTags  = activeTags.size === 0 || [...activeTags].every(at => tags.includes(at));
-    const cardDecks  = decksContainingCard(c.id, state);
-    const matchDecks = activeDecks.size === 0 || [...activeDecks].every(id =>
-      id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id)
+    const matchTags  = activeTags.size  === 0 || [...activeTags].every(([tag, s]) =>
+      s === 'include' ? tags.includes(tag) : !tags.includes(tag)
     );
+    const cardDecks  = decksContainingCard(c.id, state);
+    const matchDecks = activeDecks.size === 0 || [...activeDecks].every(([id, s]) => {
+      const has = id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id);
+      return s === 'include' ? has : !has;
+    });
     return matchText && matchTags && matchDecks;
   });
   const filtered = q
@@ -146,10 +152,16 @@ export function LibraryView() {
   if (filtered.some(c => decksContainingCard(c.id, state).length === 0)) availDecks.add(NO_DECK);
 
   // ── Toggle handlers ───────────────────────────────────────────────────────────
-  const toggleTag  = (tag: string) =>
-    setActiveTags(prev  => { const n = new Set(prev);  n.has(tag) ? n.delete(tag) : n.add(tag); return n; });
-  const toggleDeck = (id: string)  =>
-    setActiveDecks(prev => { const n = new Set(prev);  n.has(id)  ? n.delete(id)  : n.add(id);  return n; });
+  const cycle = (prev: Map<string, FilterState>, key: string): Map<string, FilterState> => {
+    const n = new Map(prev);
+    const s = n.get(key);
+    if (s === undefined)  n.set(key, 'include');
+    else if (s === 'include') n.set(key, 'exclude');
+    else n.delete(key);
+    return n;
+  };
+  const toggleTag  = (tag: string) => setActiveTags(prev  => cycle(prev, tag));
+  const toggleDeck = (id: string)  => setActiveDecks(prev => cycle(prev, id));
 
   // ── Selection toolbar data ────────────────────────────────────────────────────
   const selectedArr   = [...selected];
@@ -216,7 +228,7 @@ export function LibraryView() {
           <FilterSection
             labelKey="library.filterDecks"
             items={deckItems}
-            activeSet={activeDecks}
+            activeMap={activeDecks}
             labelOf={id => id === NO_DECK ? t('library.filterNoDecks') : (state.decks[id]?.name ?? id)}
             titleOf={id => id === NO_DECK ? '' : deckPath(id, state)}
             available={availDecks}
@@ -227,7 +239,7 @@ export function LibraryView() {
           <FilterSection
             labelKey="library.filterTags"
             items={allTags}
-            activeSet={activeTags}
+            activeMap={activeTags}
             labelOf={tag => tag}
             titleOf={tag => tag}
             available={availTags}
