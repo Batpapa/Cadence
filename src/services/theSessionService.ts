@@ -191,9 +191,9 @@ function mostCommonKey(settings: Array<{ key: string }>): string | null {
 }
 
 export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boolean } = {}): Card {
-  const tags: string[] = ['thesession'];
-  if (tune.type) tags.push(tune.type.toLowerCase());
-  if (tune.topKey) tags.push(tune.topKey.toLowerCase());
+  const tags: string[] = ['TheSession'];
+  if (tune.type) tags.push(tune.type);
+  if (tune.topKey) tags.push(tune.topKey);
   const settings = tune.settings;
   const merge = (opts.mergeSettings ?? true) && settings.length > 1;
   const attachments: Attachment[] = merge
