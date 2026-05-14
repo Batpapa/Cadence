@@ -131,6 +131,68 @@ function buildInfoBody(sections: HelpSection[]): HTMLElement {
   return body;
 }
 
+const STEP_COLORS = [
+  'var(--color-accent)',
+  'var(--color-success)',
+  'var(--color-warn)',
+];
+
+function buildGuideBody(steps: HelpSection[]): HTMLElement {
+  const body = document.createElement('div');
+  body.className = 'flex flex-col gap-3';
+
+  steps.forEach((step, i) => {
+    const color = STEP_COLORS[i % STEP_COLORS.length]!;
+
+    const card = document.createElement('div');
+    card.className = 'bg-bg border border-border rounded-lg p-3.5';
+    card.style.borderLeft = `3px solid ${color}`;
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center gap-2 mb-2';
+
+    const badge = document.createElement('span');
+    badge.className = 'shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold';
+    badge.style.cssText = `background:${color};color:#fff;`;
+    badge.textContent = String(i + 1);
+
+    const headingEl = document.createElement('span');
+    headingEl.className = 'text-sm font-semibold text-primary';
+    headingEl.textContent = step.heading;
+
+    header.append(badge, headingEl);
+    card.appendChild(header);
+
+    const list = document.createElement('ul');
+    list.className = 'flex flex-col gap-1.5 list-none';
+
+    for (const item of step.items) {
+      const li = document.createElement('li');
+      li.className = 'flex gap-2 text-xs leading-relaxed text-primary/75';
+      const dot = document.createElement('span'); dot.className = 'text-dim shrink-0 mt-0.5'; dot.textContent = '·';
+      const text = document.createElement('span'); text.textContent = item;
+      li.append(dot, text);
+      list.appendChild(li);
+    }
+
+    card.appendChild(list);
+    body.appendChild(card);
+  });
+
+  return body;
+}
+
+function getGuideSteps(): HelpSection[] {
+  return [
+    { heading: t('help.guide.step1.heading'), items: [t('help.guide.step1.1'), t('help.guide.step1.2'), t('help.guide.step1.3'), t('help.guide.step1.4')] },
+    { heading: t('help.guide.step2.heading'), items: [t('help.guide.step2.1'), t('help.guide.step2.2'), t('help.guide.step2.3')] },
+    { heading: t('help.guide.step3.heading'), items: [t('help.guide.step3.1'), t('help.guide.step3.2'), t('help.guide.step3.3'), t('help.guide.step3.4')] },
+    { heading: t('help.guide.step4.heading'), items: [t('help.guide.step4.1'), t('help.guide.step4.2'), t('help.guide.step4.3')] },
+    { heading: t('help.guide.step5.heading'), items: [t('help.guide.step5.1'), t('help.guide.step5.2'), t('help.guide.step5.3'), t('help.guide.step5.4')] },
+    { heading: t('help.guide.step6.heading'), items: [t('help.guide.step6.1'), t('help.guide.step6.2'), t('help.guide.step6.3')] },
+  ];
+}
+
 function mkTab(label: string, active: boolean, onClick: () => void): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.textContent = label;
@@ -154,7 +216,7 @@ export function showHelpModal(ctx: AppContext): void {
   tabBar.className = 'flex border-b border-border px-5';
 
   const content = document.createElement('div');
-  content.className = 'px-5';
+  content.className = 'px-5 pb-4';
 
   const renderTabs = () => {
     tabBar.innerHTML = '';
@@ -167,10 +229,7 @@ export function showHelpModal(ctx: AppContext): void {
     if (activeTab === 'info') {
       content.appendChild(buildInfoBody(sections));
     } else {
-      const empty = document.createElement('p');
-      empty.className = 'text-sm text-dim italic';
-      empty.textContent = t('help.guide.empty');
-      content.appendChild(empty);
+      content.appendChild(buildGuideBody(getGuideSteps()));
     }
   };
 
