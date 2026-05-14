@@ -338,7 +338,7 @@ function Dashboard({ state }: { state: AppState }) {
         {[
           { label: t('dashboard.cards'),    value: String(allCards.length),  sub: t(deckCount !== 1 ? 'dashboard.decks' : 'dashboard.deck', { count: deckCount }) },
           { label: t('dashboard.thisWeek'), value: String(weekSessions),     sub: t('dashboard.totalSessions', { count: totalSessions }) },
-          { label: t('dashboard.streak'),   value: `${streak}d`,             sub: streak > 0 ? t('dashboard.streakKeep') : t('dashboard.streakStart') },
+          { label: t('dashboard.streak'),   value: t('common.durationDays', { n: streak }), sub: streak > 0 ? t('dashboard.streakKeep') : t('dashboard.streakStart') },
         ].map(({ label, value, sub }) => (
           <div key={label} class="card-block space-y-0.5">
             <div class="text-2xl font-mono font-semibold text-primary">{value}</div>
