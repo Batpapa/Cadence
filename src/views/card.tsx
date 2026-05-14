@@ -297,7 +297,7 @@ export function CardView({ cardId }: { cardId: string }) {
                   class="text-xs bg-transparent border-none outline-none text-primary w-16"
                   onInput={(e) => setTagEditValue((e.target as HTMLInputElement).value)}
                   onBlur={() => {
-                    const val = tagEditValue.trim().toLowerCase().replace(/,/g, '');
+                    const val = tagEditValue.trim().replace(/,/g, '');
                     if (val && val !== tag && !(card.tags ?? []).includes(val))
                       mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.map(tg => tg === tag ? val : tg); });
                     setEditingTag(null);
@@ -333,7 +333,7 @@ export function CardView({ cardId }: { cardId: string }) {
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ',') {
                 e.preventDefault();
-                const val = newTag.trim().toLowerCase().replace(/,/g, '');
+                const val = newTag.trim().replace(/,/g, '');
                 if (val && !(card.tags ?? []).includes(val))
                   mutate(s => { const c = s.cards[cardId]; if (c) { if (!c.tags) c.tags = []; c.tags.push(val); } });
                 setNewTag('');
