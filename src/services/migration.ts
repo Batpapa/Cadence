@@ -1,6 +1,6 @@
 import type { AppState } from '../types';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 // Each entry migrates from version N to N+1.
 // Use `Record<string, unknown>` to handle partially-typed legacy shapes.
@@ -52,6 +52,28 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
       delete newWorks[newKey]['userId'];
     }
     s['cardWorks'] = newWorks;
+  },
+  // V3 → V4: fix TheSession card tags — "thesession" → "TheSession", capitalise key tags,
+  //           leave tune-type tags (reel, jig, etc.) untouched.
+  (s) => {
+    const TUNE_TYPES = new Set([
+      'jig', 'reel', 'slip jig', 'hornpipe', 'polka', 'slide',
+      'waltz', 'barndance', 'strathspey', 'three-two', 'mazurka', 'march',
+    ]);
+    const capitalise = (tag: string) => tag.charAt(0).toUpperCase() + tag.slice(1);
+
+    const cards = s['cards'] as Record<string, Record<string, unknown>>;
+    for (const card of Object.values(cards ?? {})) {
+      const externalId = card['externalId'] as string | undefined;
+      if (!externalId?.startsWith('thesession:')) continue;
+      const tags = card['tags'] as string[] | undefined;
+      if (!Array.isArray(tags)) continue;
+      card['tags'] = tags.map(tag => {
+        if (tag === 'thesession') return 'TheSession';
+        if (TUNE_TYPES.has(tag)) return tag;
+        return capitalise(tag);
+      });
+    }
   },
 ];
 
