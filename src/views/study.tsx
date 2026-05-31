@@ -147,7 +147,7 @@ export function StudyView({ deckId, strategy, currentCardId }: {
     <div class="flex flex-col h-full view-enter">
       {topBar}
       <div class="flex-1 overflow-y-auto p-6">
-        <div class="max-w-3xl mx-auto space-y-6">
+        <div class="space-y-6">
 
           <div class="flex items-center justify-between">
             <h2 class="text-2xl font-semibold text-primary">{card.name}</h2>
