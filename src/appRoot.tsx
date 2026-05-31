@@ -42,7 +42,7 @@ function AppRoot() {
 }
 
 export function mountApp(root: HTMLElement): void {
-  root.innerHTML = '';
+  render(null, root);
   render(<AppRoot />, root);
 }
 
@@ -158,6 +158,5 @@ export function mountUserSelector(
   onCreate: (name: string) => Promise<void>,
   onDelete: (id: string) => Promise<void>,
 ): void {
-  root.innerHTML = '';
   render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} onDelete={onDelete} />, root);
 }
