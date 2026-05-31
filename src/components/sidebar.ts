@@ -1,7 +1,9 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
-import { generateId, helpIcon, addTouchDragSupport } from '../utils';
+import { generateId, helpIcon, addTouchDragSupport, availabilityColor, pct } from '../utils';
 import { promptModal } from './modal';
 import { findParentFolder } from '../services/deckService';
+import { deckAvailability, deckEase } from '../services/knowledgeService';
+import { getCurrentUser } from '../services/userService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { t } from '../services/i18nService';
@@ -198,6 +200,24 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   const name = document.createElement('span'); name.className = 'truncate flex-1'; name.textContent = deck.name;
 
   el.append(icon, name);
+
+  if (deck.entries.length > 0) {
+    const user = getCurrentUser(ctx.state);
+    const profileId = ctx.state.currentProfileId;
+    const w = user.weightByImportance ?? true;
+    const avail = deckAvailability(user, profileId, deck, ctx.state.cards, ctx.state.cardWorks, w);
+    const ease  = deckEase(profileId, deck, ctx.state.cards, ctx.state.cardWorks, w);
+    const dots  = document.createElement('span');
+    dots.className = 'flex gap-0.5 items-center shrink-0';
+    const recallDot = document.createElement('span');
+    recallDot.className = `w-2 h-2 rounded-full ${availabilityColor(avail)}`;
+    recallDot.title = pct(avail);
+    const easeDot = document.createElement('span');
+    easeDot.className = `w-2 h-2 rounded-full ${ease === 0 ? 'bg-border' : ease >= 0.6 ? 'bg-success' : ease >= 0.35 ? 'bg-warn' : 'bg-danger'}`;
+    dots.append(recallDot, easeDot);
+    el.appendChild(dots);
+  }
+
   el.onclick = () => ctx.navigate({ view: 'deck', deckId: deck.id });
 
   addDragHandlers(el, 'deck', deck.id, false, ctx);
