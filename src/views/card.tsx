@@ -135,6 +135,9 @@ export function CardView({ cardId }: { cardId: string }) {
   const [editingTag,     setEditingTag]     = useState<string | null>(null);
   const [tagEditValue,   setTagEditValue]   = useState('');
   const [newTag,         setNewTag]         = useState('');
+  const [isEditingImportance, setIsEditingImportance] = useState(false);
+  const [importanceDraft,     setImportanceDraft]     = useState('');
+  const importanceRef = useRef<HTMLInputElement>(null);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesDraft,     setNotesDraft]     = useState(card?.content.notes ?? '');
   const notesRef = useRef<HTMLTextAreaElement>(null);
@@ -142,6 +145,13 @@ export function CardView({ cardId }: { cardId: string }) {
   useEffect(() => {
     if (isEditingNotes && notesRef.current) focusIfDesktop(notesRef.current);
   }, [isEditingNotes]);
+
+  useLayoutEffect(() => {
+    if (isEditingImportance && importanceRef.current) {
+      importanceRef.current.focus();
+      importanceRef.current.select();
+    }
+  }, [isEditingImportance]);
 
   if (!card) return <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">{t('card.notFound')}</div>;
 
@@ -258,27 +268,33 @@ export function CardView({ cardId }: { cardId: string }) {
         </div>
         <div class="card-block space-y-1">
           <div class="section-title">{t('card.section.importance')}</div>
-          <div class="flex items-center gap-2">
-            <span class="text-lg font-mono font-semibold text-primary">×{card.importance}</span>
-            <button
-              class="text-xs text-dim hover:text-accent cursor-pointer transition-colors"
-              onClick={() => {
-                const b   = document.createElement('div'); b.className = 'space-y-2';
-                const l   = document.createElement('label'); l.className = 'label'; l.textContent = t('card.importance.label');
-                const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0.1'; inp.step = '0.1'; inp.value = String(card.importance); inp.className = 'input';
-                b.append(l, inp);
-                showModal(t('card.importance.title'), b, [
-                  { label: t('common.cancel'), onClick: closeModal },
-                  { label: t('common.save'), primary: true, onClick: () => {
-                    const val = parseFloat(inp.value);
-                    if (!isNaN(val) && val > 0) { closeModal(); mutate(s => { s.cards[cardId]!.importance = val; }); }
-                  }},
-                ]);
-                focusIfDesktop(inp);
-              }}
-            >
-              {t('card.edit')}
-            </button>
+          <div class="h-7 flex items-center">
+            {isEditingImportance ? (
+              <input
+                ref={importanceRef}
+                type="number" min="0.1" step="0.1"
+                value={importanceDraft}
+                class="text-lg font-mono font-semibold bg-transparent border-b border-accent outline-none text-primary w-20 p-0 leading-none"
+                onInput={(e) => setImportanceDraft((e.target as HTMLInputElement).value)}
+                onBlur={() => {
+                  const val = parseFloat(importanceDraft);
+                  if (!isNaN(val) && val > 0) mutate(s => { s.cards[cardId]!.importance = val; });
+                  setIsEditingImportance(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter')  (e.target as HTMLInputElement).blur();
+                  if (e.key === 'Escape') setIsEditingImportance(false);
+                }}
+              />
+            ) : (
+              <span
+                class="text-lg font-mono font-semibold text-primary cursor-text hover:text-accent transition-colors"
+                onClick={() => { setImportanceDraft(String(card.importance)); setIsEditingImportance(true); }}
+                title={t('card.importance.label')}
+              >
+                ×{card.importance}
+              </span>
+            )}
           </div>
         </div>
       </div>

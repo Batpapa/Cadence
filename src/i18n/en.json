@@ -127,10 +127,6 @@
   "deck.strategy.stochastic": "Optimal stochastic",
   "deck.strategy.stochastic.sub": "Weighted random draw by learning gain",
 
-  "deck.weight.title": "Card weight",
-  "deck.weight.info": "Card base importance: ×{base}. Set an override for this deck only.",
-  "deck.weight.label": "Override (leave empty to clear)",
-
   "deck.link.title": "Link Existing Card",
   "deck.link.allLinked": "All existing cards are already linked to this deck.",
   "deck.link.search": "Search…",
