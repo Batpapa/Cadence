@@ -47,6 +47,8 @@
   "sidebar.new": "New…",
   "sidebar.newFolder": "+ Folder",
   "sidebar.newDeck": "+ Deck",
+  "sidebar.profileLabel": "Profile",
+  "sidebar.manageProfiles": "Manage profiles",
 
   "modal.newFolder.title": "New Folder",
   "modal.newFolder.label": "Name",
@@ -285,6 +287,7 @@
   "settings.profiles.clickToRename": "Click to rename",
   "settings.profiles.delete.title": "Delete profile",
   "settings.profiles.delete.message": "Delete profile \"{name}\"? All study history for this profile will be lost.",
+  "settings.profiles.modalTitle": "Profiles",
 
   "theSession.tabTune": "Tune",
   "theSession.tabMember": "Member",

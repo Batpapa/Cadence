@@ -8,7 +8,7 @@ import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { t } from '../services/i18nService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus } from '../services/driveService';
-import { showSettingsModal } from './settingsModal';
+import { showSettingsModal, showProfileModal } from './settingsModal';
 
 const expanded = new Set<string>();
 let lastAutoExpandedRoute: string | null = null;
@@ -301,7 +301,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   }
 
   const aside = document.createElement('aside');
-  aside.className = 'flex flex-col h-full bg-surface border-r border-border w-56 shrink-0 overflow-hidden';
+  aside.className = 'flex flex-col h-full bg-surface border-r border-border w-56 shrink-0';
 
   const top = document.createElement('div');
   top.className = 'px-4 py-3 border-b border-border shrink-0 flex items-center justify-between';
@@ -387,6 +387,121 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
 
   top.append(logo, iconGroup);
 
+  // ── Profile switcher ──────────────────────────────────────────────────────────
+  const currentProfile = state.profiles[state.currentProfileId];
+
+  const profileWrap = document.createElement('div');
+  profileWrap.className = 'relative border-b border-border shrink-0';
+
+  const initialsOf = (name: string) =>
+    name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
+
+  const profileBtn = document.createElement('button');
+  profileBtn.className = 'w-full flex items-center gap-2.5 px-3 py-2 hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'w-6 h-6 rounded-md flex items-center justify-center shrink-0';
+  avatar.style.background = 'rgb(var(--color-accent-ch) / 0.18)';
+  const avatarText = document.createElement('span');
+  avatarText.className = 'text-[10px] font-mono font-bold text-accent';
+  avatarText.textContent = initialsOf(currentProfile?.name ?? '—');
+  avatar.appendChild(avatarText);
+
+  const profileText = document.createElement('div');
+  profileText.className = 'flex-1 text-left overflow-hidden';
+  const profileKicker = document.createElement('div');
+  profileKicker.className = 'text-[9px] text-dim uppercase tracking-wider';
+  profileKicker.textContent = t('sidebar.profileLabel');
+  const profileName = document.createElement('div');
+  profileName.className = 'text-xs text-primary font-medium truncate';
+  profileName.textContent = currentProfile?.name ?? '—';
+  profileText.append(profileKicker, profileName);
+
+  const profileChevron = document.createElement('span');
+  profileChevron.className = 'shrink-0 flex items-center text-dim';
+  profileChevron.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+  profileBtn.append(avatar, profileText, profileChevron);
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'absolute top-full left-2 right-2 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 hidden';
+
+  let dropOpen = false;
+  const closeDropdown = () => {
+    dropOpen = false;
+    dropdown.classList.add('hidden');
+    document.removeEventListener('mousedown', onOutside);
+  };
+  const onOutside = (e: MouseEvent) => {
+    if (!profileWrap.contains(e.target as Node)) closeDropdown();
+  };
+
+  const renderDropdown = () => {
+    dropdown.innerHTML = '';
+    const user = getCurrentUser(state);
+    for (const pid of user.profileIds ?? []) {
+      const profile = state.profiles[pid]; if (!profile) continue;
+      const isActive = pid === state.currentProfileId;
+
+      const item = document.createElement('button');
+      item.className = `w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${
+        isActive ? 'text-accent' : 'text-muted hover:bg-surface'
+      }`;
+
+      const itemAvatar = document.createElement('div');
+      itemAvatar.className = 'w-5 h-5 rounded flex items-center justify-center shrink-0';
+      itemAvatar.style.background = isActive ? 'rgb(var(--color-accent-ch) / 0.2)' : 'var(--color-border)';
+      const itemAvatarText = document.createElement('span');
+      itemAvatarText.className = `text-[8px] font-mono font-bold ${isActive ? 'text-accent' : 'text-dim'}`;
+      itemAvatarText.textContent = initialsOf(profile.name);
+      itemAvatar.appendChild(itemAvatarText);
+
+      const itemName = document.createElement('span');
+      itemName.className = 'flex-1 truncate';
+      itemName.textContent = profile.name;
+
+      item.append(itemAvatar, itemName);
+
+      if (isActive) {
+        const check = document.createElement('span');
+        check.className = 'shrink-0 flex items-center text-accent';
+        check.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+        item.appendChild(check);
+      }
+
+      item.onclick = () => {
+        closeDropdown();
+        if (pid !== state.currentProfileId) ctx.mutate(s => { s.currentProfileId = pid; });
+      };
+      dropdown.appendChild(item);
+    }
+
+    const divider = document.createElement('div');
+    divider.className = 'h-px bg-border my-1';
+    dropdown.appendChild(divider);
+
+    const manageBtn = document.createElement('button');
+    manageBtn.className = 'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-dim hover:text-primary hover:bg-surface cursor-pointer border-none bg-transparent text-left transition-colors';
+    const manageIcon = document.createElement('span');
+    manageIcon.className = 'w-5 flex justify-center shrink-0';
+    manageIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+    const manageLabel = document.createElement('span');
+    manageLabel.textContent = t('sidebar.manageProfiles');
+    manageBtn.append(manageIcon, manageLabel);
+    manageBtn.onclick = () => { closeDropdown(); showProfileModal(ctx); };
+    dropdown.appendChild(manageBtn);
+  };
+
+  profileBtn.onclick = () => {
+    if (dropOpen) { closeDropdown(); return; }
+    dropOpen = true;
+    renderDropdown();
+    dropdown.classList.remove('hidden');
+    setTimeout(() => document.addEventListener('mousedown', onOutside), 0);
+  };
+
+  profileWrap.append(profileBtn, dropdown);
+
   const nav = document.createElement('div');
   nav.className = 'px-2 mt-2 mb-2 space-y-0.5 shrink-0';
 
@@ -447,6 +562,6 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   newBtns.appendChild(mkBottomIconBtn(svgDeck, t('sidebar.newDeck'), () => showCreateDeckModal(ctx, null)));
 
   bottom.append(newLabel, newBtns);
-  aside.append(top, nav, tree, bottom);
+  aside.append(top, profileWrap, nav, tree, bottom);
   return aside;
 }

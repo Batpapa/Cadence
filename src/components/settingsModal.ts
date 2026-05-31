@@ -12,6 +12,79 @@ import type { Lang } from '../services/i18nService';
 import { getContext, mutate } from '../store';
 import { migrateState } from '../services/migration';
 
+export function showProfileModal(ctx: AppContext): void {
+  const body = document.createElement('div');
+  body.className = 'space-y-1';
+
+  const renderList = () => {
+    body.innerHTML = '';
+    const ps = getContext().state;
+    const cu = getCurrentUser(ps);
+    const canDelete = (cu.profileIds?.length ?? 0) > 1;
+
+    for (const pid of cu.profileIds ?? []) {
+      const profile = ps.profiles[pid]; if (!profile) continue;
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-bg hover:border-muted transition-colors';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'text-sm flex-1 truncate cursor-text text-primary';
+      nameEl.textContent = profile.name; nameEl.title = t('settings.profiles.clickToRename');
+      nameEl.onclick = () => {
+        const inp = document.createElement('input'); inp.type = 'text'; inp.value = profile.name;
+        inp.className = 'text-sm bg-transparent border-b border-accent outline-none flex-1 min-w-0';
+        nameEl.replaceWith(inp); inp.focus(); inp.select();
+        const commit = () => {
+          const val = inp.value.trim();
+          if (val && val !== profile.name) ctx.mutate(s => { s.profiles[pid]!.name = val; }).then(renderList);
+          else renderList();
+        };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } if (e.key === 'Escape') renderList(); });
+      };
+      row.append(nameEl);
+      if (canDelete) {
+        const delBtn = document.createElement('button'); delBtn.className = 'btn-danger px-2 shrink-0'; delBtn.title = t('settings.profiles.delete.title');
+        delBtn.appendChild(trashIcon(12));
+        delBtn.onclick = () => confirmModal(t('settings.profiles.delete.title'), t('settings.profiles.delete.message', { name: profile.name }), t('common.delete'), () => {
+          ctx.mutate(s => {
+            const u = s.users[s.currentUserId]!;
+            u.profileIds = (u.profileIds ?? []).filter(id => id !== pid);
+            if (s.currentProfileId === pid) s.currentProfileId = u.profileIds[0] ?? '';
+            for (const key of Object.keys(s.cardWorks)) { if (key.startsWith(`${pid}:`)) delete s.cardWorks[key]; }
+            delete s.profiles[pid];
+          }).then(renderList);
+        });
+        row.appendChild(delBtn);
+      }
+      body.appendChild(row);
+    }
+
+    const addRow = document.createElement('div'); addRow.className = 'mt-2';
+    const addBtn = document.createElement('button'); addBtn.className = 'btn-ghost text-xs w-full'; addBtn.textContent = t('settings.profiles.add');
+    const addInp = document.createElement('input'); addInp.type = 'text'; addInp.placeholder = t('settings.profiles.nameLabel'); addInp.className = 'input text-xs w-full hidden';
+    const commitAdd = () => {
+      const name = addInp.value.trim();
+      addInp.value = ''; addInp.classList.add('hidden'); addBtn.classList.remove('hidden');
+      if (!name) return;
+      const pid = generateId();
+      ctx.mutate(s => {
+        s.profiles[pid] = { id: pid, name };
+        const u = s.users[s.currentUserId]!;
+        if (!u.profileIds) u.profileIds = [];
+        u.profileIds.push(pid);
+      }).then(renderList);
+    };
+    addBtn.onclick = () => { addBtn.classList.add('hidden'); addInp.classList.remove('hidden'); addInp.focus(); };
+    addInp.addEventListener('blur', commitAdd);
+    addInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commitAdd(); } if (e.key === 'Escape') { addInp.value = ''; addInp.blur(); } });
+    addRow.append(addBtn, addInp);
+    body.appendChild(addRow);
+  };
+
+  renderList();
+  showModal(t('settings.profiles.modalTitle'), body, []);
+}
+
 export function showSettingsModal(ctx: AppContext): void {
   type SectionId = 'study' | 'user' | 'data' | 'about';
 
@@ -147,93 +220,13 @@ export function showSettingsModal(ctx: AppContext): void {
       });
       threshInp.addEventListener('keydown', e => { if (e.key === 'Enter') threshInp.blur(); if (e.key === 'Escape') closeSettings(); });
       content.appendChild(mkRow(t('settings.availabilityThreshold'), t('settings.availabilityThresholdHint'), threshInp));
+      const sepStudy1 = document.createElement('hr'); sepStudy1.className = 'border-border'; content.appendChild(sepStudy1);
 
       content.appendChild(mkRow(
         t('settings.weightByImportance'), t('settings.weightByImportanceHint'),
         mkToggle(freshUser.weightByImportance ?? true, v => saveField({ weightByImportance: v })),
       ));
-
-      const sep = document.createElement('hr'); sep.className = 'border-border'; content.appendChild(sep);
-      const profList = document.createElement('div'); profList.className = 'space-y-1';
-
-      const renderProfilesList = () => {
-        profList.innerHTML = '';
-        const ps = getContext().state;
-        const cu = getCurrentUser(ps);
-        const canDelete = (cu.profileIds?.length ?? 0) > 1;
-        for (const pid of cu.profileIds ?? []) {
-          const profile = ps.profiles[pid]; if (!profile) continue;
-          const isActive = pid === ps.currentProfileId;
-          const row = document.createElement('div');
-          row.className = `flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors ${
-            isActive ? 'border-accent/25 bg-accent/5' : 'border-border bg-bg hover:border-muted'
-          }`;
-          const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'active-profile';
-          radio.checked = isActive; radio.className = 'cursor-pointer accent-[var(--color-accent)] shrink-0';
-          radio.onchange = () => {
-            ctx.mutate(s => { s.currentProfileId = pid; }).then(() => {
-              const freshCtx = getContext();
-              if (freshCtx.route.view === 'study') freshCtx.navigate({ view: 'study', deckId: freshCtx.route.deckId, strategy: freshCtx.route.strategy });
-              renderProfilesList();
-            });
-          };
-          const nameEl = document.createElement('span');
-          nameEl.className = `text-sm flex-1 truncate cursor-text ${isActive ? 'text-accent font-medium' : 'text-primary'}`;
-          nameEl.textContent = profile.name; nameEl.title = t('settings.profiles.clickToRename');
-          nameEl.onclick = () => {
-            const inp = document.createElement('input'); inp.type = 'text'; inp.value = profile.name;
-            inp.className = 'text-sm bg-transparent border-b border-accent outline-none flex-1 min-w-0';
-            nameEl.replaceWith(inp); inp.focus(); inp.select();
-            const commit = () => {
-              const val = inp.value.trim();
-              if (val && val !== profile.name) ctx.mutate(s => { s.profiles[pid]!.name = val; }).then(renderProfilesList);
-              else renderProfilesList();
-            };
-            inp.addEventListener('blur', commit);
-            inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } if (e.key === 'Escape') renderProfilesList(); });
-          };
-          row.append(radio, nameEl);
-          if (canDelete) {
-            const delBtn = document.createElement('button'); delBtn.className = 'btn-danger px-2 shrink-0'; delBtn.title = t('settings.profiles.delete.title');
-            delBtn.appendChild(trashIcon(12));
-            delBtn.onclick = () => confirmModal(t('settings.profiles.delete.title'), t('settings.profiles.delete.message', { name: profile.name }), t('common.delete'), () => {
-              ctx.mutate(s => {
-                const u = s.users[s.currentUserId]!;
-                u.profileIds = (u.profileIds ?? []).filter(id => id !== pid);
-                if (s.currentProfileId === pid) s.currentProfileId = u.profileIds[0] ?? '';
-                for (const key of Object.keys(s.cardWorks)) { if (key.startsWith(`${pid}:`)) delete s.cardWorks[key]; }
-                delete s.profiles[pid];
-              }).then(renderProfilesList);
-            });
-            row.appendChild(delBtn);
-          }
-          profList.appendChild(row);
-        }
-      };
-      renderProfilesList();
-      content.appendChild(profList);
-
-      const addRow2 = document.createElement('div'); addRow2.className = 'mt-2';
-      const addBtn2 = document.createElement('button'); addBtn2.className = 'btn-ghost text-xs w-full'; addBtn2.textContent = t('settings.profiles.add');
-      const addInp2 = document.createElement('input'); addInp2.type = 'text'; addInp2.placeholder = t('settings.profiles.nameLabel'); addInp2.className = 'input text-xs w-full hidden';
-      const commitAdd = () => {
-        const name = addInp2.value.trim();
-        addInp2.value = ''; addInp2.classList.add('hidden'); addBtn2.classList.remove('hidden');
-        if (!name) return;
-        const pid = generateId();
-        ctx.mutate(s => {
-          s.profiles[pid] = { id: pid, name };
-          const u = s.users[s.currentUserId]!;
-          if (!u.profileIds) u.profileIds = [];
-          u.profileIds.push(pid);
-        }).then(renderProfilesList);
-      };
-      addBtn2.onclick = () => { addBtn2.classList.add('hidden'); addInp2.classList.remove('hidden'); addInp2.focus(); };
-      addInp2.addEventListener('blur', commitAdd);
-      addInp2.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commitAdd(); } if (e.key === 'Escape') { addInp2.value = ''; addInp2.blur(); } });
-      addRow2.append(addBtn2, addInp2);
-      content.appendChild(addRow2);
-      const sepEnd = document.createElement('hr'); sepEnd.className = 'border-border'; content.appendChild(sepEnd);
+      const sepStudy2 = document.createElement('hr'); sepStudy2.className = 'border-border'; content.appendChild(sepStudy2);
 
     // ── User ──
     } else if (activeSection === 'user') {
@@ -252,6 +245,7 @@ export function showSettingsModal(ctx: AppContext): void {
       updateZoomUI();
       zoomControl.append(zoomDec, zoomVal, zoomInc);
       content.appendChild(mkRow(t('settings.zoom'), null, zoomControl));
+      const sepZoom = document.createElement('hr'); sepZoom.className = 'border-border'; content.appendChild(sepZoom);
 
       const themeControl = document.createElement('div');
       themeControl.className = 'flex items-center gap-1';
@@ -269,8 +263,7 @@ export function showSettingsModal(ctx: AppContext): void {
       updateThemeBtns();
       themeControl.append(darkBtn, lightBtn);
       content.appendChild(mkRow(t('settings.theme'), null, themeControl));
-
-      const sepZoom = document.createElement('hr'); sepZoom.className = 'border-border'; content.appendChild(sepZoom);
+      const sepTheme = document.createElement('hr'); sepTheme.className = 'border-border'; content.appendChild(sepTheme);
 
       const langSel = document.createElement('select'); langSel.className = 'input text-sm w-32';
       [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }].forEach(({ value, label }) => {
