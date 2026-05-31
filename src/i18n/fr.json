@@ -127,10 +127,6 @@
   "deck.strategy.stochastic": "Stochastique optimal",
   "deck.strategy.stochastic.sub": "Tirage aléatoire pondéré par le gain d'apprentissage",
 
-  "deck.weight.title": "Poids de la carte",
-  "deck.weight.info": "Importance de base de la carte : ×{base}. Définir une valeur pour ce paquet uniquement.",
-  "deck.weight.label": "Valeur personnalisée (vide pour effacer)",
-
   "deck.link.title": "Lier une carte existante",
   "deck.link.allLinked": "Toutes les cartes existantes sont déjà liées à ce paquet.",
   "deck.link.search": "Rechercher…",

@@ -1,6 +1,6 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
-import { pct, timeAgo, availabilityColor, trashIcon, unlinkIcon, addTouchDragSupport, focusIfDesktop } from '../utils';
+import { pct, timeAgo, availabilityColor, trashIcon, unlinkIcon, addTouchDragSupport } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { findParentFolder, pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
@@ -60,30 +60,6 @@ function showStrategyModal(deckId: string): void {
   showModal(t('deck.strategy.title'), body, [{ label: t('common.cancel'), onClick: closeModal }]);
 }
 
-function showImportanceModal(deckId: string, entry: DeckEntry, baseImportance: number): void {
-  const body = document.createElement('div'); body.className = 'space-y-3';
-  const info = document.createElement('p'); info.className = 'text-xs text-muted';
-  info.textContent = t('deck.weight.info', { base: baseImportance });
-  const lbl   = document.createElement('label'); lbl.className = 'label'; lbl.textContent = t('deck.weight.label');
-  const input = document.createElement('input'); input.type = 'number'; input.min = '0.1'; input.step = '0.1'; input.className = 'input';
-  if (entry.importanceOverride !== undefined) input.value = String(entry.importanceOverride);
-  body.append(info, lbl, input);
-
-  showModal(t('deck.weight.title'), body, [
-    { label: t('common.cancel'), onClick: closeModal },
-    { label: t('common.apply'), primary: true, onClick: () => {
-      const val = parseFloat(input.value);
-      closeModal();
-      mutate(s => {
-        const e = s.decks[deckId]!.entries.find(e => e.cardId === entry.cardId);
-        if (!e) return;
-        if (isNaN(val) || input.value.trim() === '') delete e.importanceOverride;
-        else e.importanceOverride = val;
-      });
-    }},
-  ]);
-  focusIfDesktop(input);
-}
 
 export function DeckView({ deckId }: { deckId: string }) {
   const state     = appState.value;
@@ -98,6 +74,17 @@ export function DeckView({ deckId }: { deckId: string }) {
 
   // Quick-link dropdown
   const [linkQuery, setLinkQuery] = useState('');
+
+  // Inline importance override editing
+  const [editingImportanceId, setEditingImportanceId] = useState<string | null>(null);
+  const [importanceOverrideDraft, setImportanceOverrideDraft] = useState('');
+  const importanceOverrideRef = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (editingImportanceId && importanceOverrideRef.current) {
+      importanceOverrideRef.current.focus();
+      importanceOverrideRef.current.select();
+    }
+  }, [editingImportanceId]);
 
   // Drag-and-drop — ref for active drag id (avoids re-renders on every dragover)
   const draggedId = useRef<string | null>(null);
@@ -302,7 +289,12 @@ export function DeckView({ deckId }: { deckId: string }) {
             <p class="text-sm text-dim italic">{t('deck.empty')}</p>
           ) : (
             <div class="space-y-1">
-              {deck.entries.map(entry => {
+              {(() => {
+                const impColWidth = Math.max(...deck.entries.map(e => {
+                  const c = state.cards[e.cardId]; if (!c) return 2;
+                  return String(`×${effectiveImportance(c, e)}`).length;
+                }));
+                return deck.entries.map(entry => {
                 const card   = state.cards[entry.cardId];
                 if (!card) return null;
                 const work     = state.cardWorks[`${profileId}:${entry.cardId}`];
@@ -351,13 +343,39 @@ export function DeckView({ deckId }: { deckId: string }) {
                       {lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}
                     </span>
 
-                    <span
-                      class={`text-xs font-mono shrink-0 w-6 text-right cursor-pointer hover:text-accent transition-colors ${entry.importanceOverride !== undefined ? 'text-accent' : 'text-dim'}`}
-                      title={entry.importanceOverride !== undefined ? t('deck.importanceTitleOverride') : t('deck.importanceTitleDefault')}
-                      onClick={() => showImportanceModal(deckId, entry, card.importance)}
-                    >
-                      ×{imp}
-                    </span>
+                    {editingImportanceId === entry.cardId ? (
+                      <input
+                        ref={importanceOverrideRef}
+                        type="number" min="0.1" step="0.1"
+                        value={importanceOverrideDraft}
+                        style={{ width: `${impColWidth}ch` }}
+                        class="text-xs font-mono text-right p-0 bg-transparent border-b border-accent outline-none text-primary shrink-0 leading-none"
+                        onInput={(e) => setImportanceOverrideDraft((e.target as HTMLInputElement).value)}
+                        onBlur={() => {
+                          const val = parseFloat(importanceOverrideDraft);
+                          mutate(s => {
+                            const e = s.decks[deckId]!.entries.find(e => e.cardId === entry.cardId);
+                            if (!e) return;
+                            if (isNaN(val) || importanceOverrideDraft.trim() === '') delete e.importanceOverride;
+                            else e.importanceOverride = val;
+                          });
+                          setEditingImportanceId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter')  (e.target as HTMLInputElement).blur();
+                          if (e.key === 'Escape') setEditingImportanceId(null);
+                        }}
+                      />
+                    ) : (
+                      <span
+                        style={{ width: `${impColWidth}ch` }}
+                        class={`text-xs font-mono shrink-0 text-right cursor-pointer hover:text-accent transition-colors ${entry.importanceOverride !== undefined ? 'text-accent' : 'text-dim'}`}
+                        title={entry.importanceOverride !== undefined ? t('deck.importanceTitleOverride') : t('deck.importanceTitleDefault')}
+                        onClick={() => { setImportanceOverrideDraft(entry.importanceOverride !== undefined ? String(entry.importanceOverride) : ''); setEditingImportanceId(entry.cardId); }}
+                      >
+                        ×{imp}
+                      </span>
+                    )}
 
                     <div class="hidden group-hover:flex gap-2">
                       <button
@@ -370,7 +388,8 @@ export function DeckView({ deckId }: { deckId: string }) {
                     </div>
                   </div>
                 );
-              })}
+              });
+              })()}
             </div>
           )}
         </div>
