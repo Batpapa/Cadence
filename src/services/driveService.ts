@@ -3,33 +3,27 @@ import { GOOGLE_CLIENT_ID } from '../config';
 
 export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' | 'connected' | 'error';
 
-const FILE_NAME = 'cadence-data.json';
-const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const LS_FILE_ID    = 'cadence_drive_file_id';
-const LS_CONNECTED  = 'cadence_drive_connected';
-const LS_LOCAL_TS   = 'cadence_local_modified';
-const LS_HINT       = 'cadence_drive_hint';
-const LS_DEVICE_ID  = 'cadence_device_id';
-const LS_DRIVE_USER = 'cadence_drive_user_id';
-const SS_TOKEN      = 'cadence_access_token';
-
-export function getDriveUserId(): string | null {
-  return localStorage.getItem(LS_DRIVE_USER);
-}
-
-export function setDriveUserId(userId: string): void {
-  localStorage.setItem(LS_DRIVE_USER, userId);
-}
-
 export type ConnectResult =
-  | { action: 'none';     googleId: string }
-  | { action: 'apply';    googleId: string; state: AppState }
-  | { action: 'conflict'; googleId: string; state: AppState };
+  | { action: 'none' }
+  | { action: 'apply';         state: AppState }
+  | { action: 'conflict';      state: AppState }
+  | { action: 'wrong_account'; existingEmail: string; newEmail: string };
 
-export function getDeviceId(): string {
-  let id = localStorage.getItem(LS_DEVICE_ID);
-  if (!id) { id = crypto.randomUUID(); localStorage.setItem(LS_DEVICE_ID, id); }
-  return id;
+const FILE_NAME    = 'cadence-data.json';
+const SCOPE        = 'https://www.googleapis.com/auth/drive.file';
+const LS_DEVICE_ID = 'cadence_device_id';
+const SS_TOKEN     = 'cadence_access_token';
+
+// Per-user localStorage keys — set via initDriveForUser()
+let _userId = '';
+const lsFileId    = () => `cadence_drive_file_id_${_userId}`;
+const lsConnected = () => `cadence_drive_connected_${_userId}`;
+const lsLocalTs   = () => `cadence_local_modified_${_userId}`;
+const lsHint      = () => `cadence_drive_hint_${_userId}`;
+const lsOwner     = () => `cadence_drive_owner_${_userId}`;
+
+export function clearDriveOwner(): void {
+  localStorage.removeItem(lsOwner());
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,8 +32,8 @@ type Gis = any;
 let tokenClient: Gis = null;
 let driveReady: Promise<void> | null = null;
 let accessToken: string | null = sessionStorage.getItem(SS_TOKEN);
-let fileId: string | null = localStorage.getItem(LS_FILE_ID);
-let status: DriveStatus = localStorage.getItem(LS_CONNECTED) === '1' ? 'connected' : 'disconnected';
+let fileId: string | null = null;
+let status: DriveStatus = 'disconnected';
 const listeners: Array<(s: DriveStatus) => void> = [];
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -51,23 +45,31 @@ function setStatus(s: DriveStatus): void {
   for (const cb of listeners) cb(s);
 }
 
-export function isDriveFeatureEnabled(): boolean {
-  return Boolean(GOOGLE_CLIENT_ID);
+/** Call once per user open, before finishBoot. Loads per-user Drive state. */
+export function initDriveForUser(userId: string): void {
+  _userId = userId;
+  fileId  = localStorage.getItem(lsFileId());
+  status  = localStorage.getItem(lsConnected()) === '1' ? 'connected' : 'disconnected';
+  if (syncTimer)  { clearTimeout(syncTimer);  syncTimer  = null; }
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  pendingState    = null;
+  flushInProgress = false;
 }
 
-export function isDriveConnected(): boolean {
-  return !!localStorage.getItem(LS_FILE_ID);
+export function getDeviceId(): string {
+  let id = localStorage.getItem(LS_DEVICE_ID);
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(LS_DEVICE_ID, id); }
+  return id;
 }
 
-export function getDriveStatus(): DriveStatus { return status; }
+export function isDriveFeatureEnabled(): boolean { return Boolean(GOOGLE_CLIENT_ID); }
+export function isDriveConnected(): boolean      { return !!localStorage.getItem(lsFileId()); }
+export function getDriveStatus(): DriveStatus    { return status; }
+export function getLocalTimestamp(): number      { return parseInt(localStorage.getItem(lsLocalTs()) ?? '0'); }
 
 export function onStatusChange(cb: (s: DriveStatus) => void): () => void {
   listeners.push(cb);
   return () => { const i = listeners.indexOf(cb); if (i !== -1) listeners.splice(i, 1); };
-}
-
-export function getLocalTimestamp(): number {
-  return parseInt(localStorage.getItem(LS_LOCAL_TS) ?? '0');
 }
 
 export function initDriveClient(): Promise<void> {
@@ -106,7 +108,7 @@ function requestToken(prompt = ''): Promise<string> {
       cleanup();
       reject(new Error(err.type ?? 'popup_closed'));
     };
-    const hint = localStorage.getItem(LS_HINT) ?? undefined;
+    const hint = localStorage.getItem(lsHint()) ?? undefined;
     tokenClient.requestAccessToken({ prompt, ...(hint ? { hint } : {}) });
   });
 }
@@ -149,45 +151,58 @@ export async function connectDrive(): Promise<ConnectResult> {
   try {
     const token = await requestToken('consent');
     let googleId = '';
+    let email    = '';
     try {
       const info = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${token}` },
       }).then(r => r.json()) as Gis;
-      if (info.email) localStorage.setItem(LS_HINT, info.email as string);
-      if (info.sub)   googleId = info.sub as string;
+      googleId = (info.sub   as string) ?? '';
+      email    = (info.email as string) ?? '';
     } catch { /* non-fatal */ }
+
+    const existingOwner = localStorage.getItem(lsOwner());
+    if (existingOwner && googleId && existingOwner !== googleId) {
+      accessToken = null;
+      sessionStorage.removeItem(SS_TOKEN);
+      setStatus('disconnected');
+      return { action: 'wrong_account', existingEmail: localStorage.getItem(lsHint()) ?? '', newEmail: email };
+    }
+
+    if (email)    localStorage.setItem(lsHint(), email);
+    if (googleId) localStorage.setItem(lsOwner(), googleId);
+
     fileId = await findOrCreateFile();
-    localStorage.setItem(LS_FILE_ID, fileId);
-    localStorage.setItem(LS_CONNECTED, '1');
+    localStorage.setItem(lsFileId(), fileId);
+    localStorage.setItem(lsConnected(), '1');
 
     const driveData = await loadFromCloud();
     setStatus('connected');
 
-    if (!driveData) return { action: 'none', googleId };
+    if (!driveData) return { action: 'none' };
 
-    const driveTs      = driveData._lastModified ?? 0;
-    const driveDevice  = driveData._deviceId;
-    const localTs      = getLocalTimestamp();
-    const myDevice     = getDeviceId();
+    const driveTs     = driveData._lastModified ?? 0;
+    const driveDevice = driveData._deviceId;
+    const localTs     = getLocalTimestamp();
+    const myDevice    = getDeviceId();
     const { _lastModified: _a, _deviceId: _b, ...clean } = driveData;
-    const cleanState   = clean as AppState;
-    const sameDevice   = driveDevice === myDevice;
+    const cleanState  = clean as AppState;
+    const sameDevice  = driveDevice === myDevice;
     const localHasData = localTs > 0;
 
     if (sameDevice) {
       if (driveTs > localTs) {
-        localStorage.setItem(LS_LOCAL_TS, String(driveTs));
-        return { action: 'apply', googleId, state: cleanState };
+        localStorage.setItem(lsLocalTs(), String(driveTs));
+        return { action: 'apply', state: cleanState };
       }
-      return { action: 'none', googleId };
+      return { action: 'none' };
     }
 
     if (!localHasData) {
-      localStorage.setItem(LS_LOCAL_TS, String(driveTs));
-      return { action: 'apply', googleId, state: cleanState };
+      localStorage.setItem(lsLocalTs(), String(driveTs));
+      return { action: 'apply', state: cleanState };
     }
 
-    return { action: 'conflict', googleId, state: cleanState };
+    return { action: 'conflict', state: cleanState };
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -206,10 +221,9 @@ export function disconnectDrive(): void {
     sessionStorage.removeItem(SS_TOKEN);
   }
   fileId = null;
-  localStorage.removeItem(LS_FILE_ID);
-  localStorage.removeItem(LS_CONNECTED);
-  localStorage.removeItem(LS_HINT);
-  localStorage.removeItem(LS_DRIVE_USER);
+  localStorage.removeItem(lsFileId());
+  localStorage.removeItem(lsConnected());
+  localStorage.removeItem(lsHint());
   setStatus('disconnected');
 }
 
@@ -236,7 +250,7 @@ async function flushSync(): Promise<void> {
       `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
       { method: 'PATCH', body: form }
     );
-    localStorage.setItem(LS_LOCAL_TS, String(ts));
+    localStorage.setItem(lsLocalTs(), String(ts));
     setStatus(pendingState ? 'pending' : 'connected');
   } catch {
     pendingState = pendingState ?? state;
@@ -248,9 +262,7 @@ async function flushSync(): Promise<void> {
 }
 
 export function syncToCloud(state: AppState): void {
-  // Always stamp local modification time so connectDrive() can compare
-  // against Drive even on devices that have never uploaded.
-  localStorage.setItem(LS_LOCAL_TS, String(Date.now()));
+  localStorage.setItem(lsLocalTs(), String(Date.now()));
   if (!isDriveConnected()) return;
   pendingState = state;
   setStatus('pending');

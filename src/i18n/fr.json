@@ -279,6 +279,9 @@
   "settings.sync.conflict.message": "Le Drive contient des données d'un autre appareil. Les données locales et celles du Drive ne peuvent pas être fusionnées automatiquement — vous devez choisir l'une des deux.",
   "settings.sync.conflict.keepLocal": "Garder local",
   "settings.sync.conflict.useDrive": "Utiliser Drive",
+  "settings.sync.wrongAccount.title": "Mauvais compte Google",
+  "settings.sync.wrongAccount.message": "Ce compte ({new}) est différent de celui précédemment associé à cet utilisateur ({existing}). La connexion liera vos données à un autre compte.",
+  "settings.sync.wrongAccount.switchAnyway": "Connecter quand même",
 
   "settings.about": "À propos",
   "settings.aboutLine1": "Cadence — application de répétition espacée open-source",

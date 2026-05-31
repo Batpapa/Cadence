@@ -8,7 +8,7 @@ import { applyExternalData } from '../services/migration';
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
-import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, setDriveUserId, manualSync, type DriveStatus } from '../services/driveService';
+import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, manualSync, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
 import { getContext, mutate } from '../store';
 import { clearLastUserId } from '../db';
@@ -311,14 +311,23 @@ export function showSettingsModal(ctx: AppContext): void {
         const handleConnect2 = async () => {
           try {
             const result = await connectDrive();
-            setDriveUserId(ctx.user.id);
-            if (result.googleId) await ctx.mutate(s => { s.ownerGoogleId = result.googleId; });
             if (result.action === 'apply') { await applyDriveState2(result.state); }
             else if (result.action === 'conflict') {
               const body2 = document.createElement('p'); body2.className = 'text-sm text-muted leading-relaxed'; body2.textContent = t('settings.sync.conflict.message');
               showModal(t('settings.sync.conflict.title'), body2, [
                 { label: t('settings.sync.conflict.keepLocal'), onClick: closeModal },
                 { label: t('settings.sync.conflict.useDrive'), onClick: async () => { closeModal(); await applyDriveState2(result.state); } },
+              ], false);
+            } else if (result.action === 'wrong_account') {
+              const body3 = document.createElement('p'); body3.className = 'text-sm text-muted leading-relaxed';
+              body3.textContent = t('settings.sync.wrongAccount.message', { existing: result.existingEmail || '?', new: result.newEmail || '?' });
+              showModal(t('settings.sync.wrongAccount.title'), body3, [
+                { label: t('common.cancel'), onClick: closeModal },
+                { label: t('settings.sync.wrongAccount.switchAnyway'), danger: true, onClick: async () => {
+                  closeModal();
+                  clearDriveOwner();
+                  await handleConnect2();
+                }},
               ], false);
             }
           } catch {}
