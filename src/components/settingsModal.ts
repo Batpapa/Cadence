@@ -7,8 +7,7 @@ import { getCurrentUser, updateUser, ensureCurrentUser, ensureCurrentProfile } f
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
-import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, getConnectedGoogleId, type DriveStatus } from '../services/driveService';
-import { upsertWorkspace } from '../services/metaService';
+import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
 import { getContext, mutate } from '../store';
 import { migrateState } from '../services/migration';
@@ -377,15 +376,6 @@ export function showSettingsModal(ctx: AppContext): void {
         const handleConnect = async () => {
           try {
             const result = await connectDrive();
-
-            // Stamp ownerGoogleId on the user and update the workspace descriptor.
-            const googleId = getConnectedGoogleId();
-            if (googleId) {
-              await mutate(s => { const u = s.users[s.currentUserId]; if (u) u.ownerGoogleId = googleId; });
-              const s = getContext().state;
-              upsertWorkspace({ id: s.currentUserId, name: 'Default', ownerGoogleId: googleId });
-            }
-
             if (result.action === 'apply') {
               await applyDriveState(result.state);
             } else if (result.action === 'conflict') {

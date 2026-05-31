@@ -1,8 +1,4 @@
 {
-  "workspace.selector.title": "Choisir un espace de travail",
-  "workspace.selector.new": "Nouvel espace de travail",
-  "workspace.selector.namePlaceholder": "Nom de l'espace de travail",
-
   "common.durationYears": "{n}a",
   "common.durationMonths": "{n}m",
   "common.durationDays": "{n}j",

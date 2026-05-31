@@ -48,7 +48,6 @@ export interface User {
   weightByImportance: boolean; // default: true — weight deck knowledge bars by card importance
   language: 'en' | 'fr';     // default: 'en'
   profileIds: string[];       // ordered list of profile IDs belonging to this user
-  ownerGoogleId?: string;     // Google account sub claim — set on first Drive connect
 }
 
 /** Maps directly to FSRS grades: 1=Again · 2=Hard · 3=Good · 4=Easy */
