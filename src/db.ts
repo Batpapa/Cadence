@@ -2,19 +2,22 @@ import { openDB, type IDBPDatabase } from 'idb';
 import type { User } from './types';
 
 const DB_NAME    = 'cadence';
-const DB_VERSION = 2;
-const USER_STORE = 'user';
-const LEGACY_STORE   = 'state';
-const LEGACY_KEY     = 'cadence-state';
-const LS_LAST_USER   = 'cadence_last_user_id';
+const DB_VERSION = 3;
+const USER_STORE   = 'user';
+const LEGACY_STORE = 'state';
+const LEGACY_KEY   = 'cadence-state';
+const LS_LAST_USER = 'cadence_last_user_id';
 
 let _db: IDBPDatabase;
 
 export async function initDb(): Promise<void> {
   _db = await openDB(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion) {
-      // LEGACY_STORE ('state') is only present on v1 databases — never create it on fresh installs.
       if (oldVersion < 2) db.createObjectStore(USER_STORE);
+      // v2→v3: drop empty legacy store if still present (migration already cleared its data)
+      if (oldVersion === 2 && db.objectStoreNames.contains(LEGACY_STORE)) {
+        db.deleteObjectStore(LEGACY_STORE);
+      }
     },
   });
 }
@@ -40,21 +43,15 @@ export async function loadLegacyState(): Promise<Record<string, unknown> | undef
   }
 }
 
-export async function deleteUser(id: string): Promise<void> {
-  await _db.delete(USER_STORE, id);
+/** Clear the legacy data entry after migration (store is dropped on next upgrade). */
+export async function deleteLegacyState(): Promise<void> {
+  try {
+    await _db.delete(LEGACY_STORE, LEGACY_KEY);
+  } catch { /* ignore */ }
 }
 
-/** Drop the legacy store entirely after migration. Closes and reopens the DB. */
-export async function dropLegacyStore(): Promise<void> {
-  const nextVersion = _db.version + 1;
-  _db.close();
-  _db = await openDB(DB_NAME, nextVersion, {
-    upgrade(db) {
-      if (db.objectStoreNames.contains(LEGACY_STORE)) {
-        db.deleteObjectStore(LEGACY_STORE);
-      }
-    },
-  });
+export async function deleteUser(id: string): Promise<void> {
+  await _db.delete(USER_STORE, id);
 }
 
 export function getLastUserId(): string | null {
@@ -69,8 +66,8 @@ export function clearLastUserId(): void {
   localStorage.removeItem(LS_LAST_USER);
 }
 
-export async function loadAllUsers(): Promise<import('./types').User[]> {
+export async function loadAllUsers(): Promise<User[]> {
   const ids = await getAllUserIds();
   const users = await Promise.all(ids.map(id => loadUser(id)));
-  return users.filter((u): u is import('./types').User => u !== undefined);
+  return users.filter((u): u is User => u !== undefined);
 }

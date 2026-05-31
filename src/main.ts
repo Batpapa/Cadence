@@ -1,6 +1,6 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
-import { initDb, loadUser, saveUser, getAllUserIds, loadLegacyState, dropLegacyStore, loadAllUsers, getLastUserId, setLastUserId, deleteUser } from './db';
+import { initDb, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser } from './db';
 import { emptyState } from './utils';
 import { appState, goBack, goForward } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
@@ -67,7 +67,7 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
       ensureCurrentUser(user);
       ensureCurrentProfile(user);
       await saveUser(user);
-      await dropLegacyStore();
+      await deleteLegacyState();
       setLastUserId(user.id);
       setLanguage(user.language);
       appState.value = user;
