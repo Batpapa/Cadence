@@ -1,4 +1,8 @@
 {
+  "workspace.selector.title": "Choose a workspace",
+  "workspace.selector.new": "New workspace",
+  "workspace.selector.namePlaceholder": "Workspace name",
+
   "common.durationYears": "{n}y",
   "common.durationMonths": "{n}mo",
   "common.durationDays": "{n}d",
