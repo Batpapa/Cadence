@@ -10,7 +10,16 @@ const LS_CONNECTED  = 'cadence_drive_connected';
 const LS_LOCAL_TS   = 'cadence_local_modified';
 const LS_HINT       = 'cadence_drive_hint';
 const LS_DEVICE_ID  = 'cadence_device_id';
+const LS_DRIVE_USER = 'cadence_drive_user_id';
 const SS_TOKEN      = 'cadence_access_token';
+
+export function getDriveUserId(): string | null {
+  return localStorage.getItem(LS_DRIVE_USER);
+}
+
+export function setDriveUserId(userId: string): void {
+  localStorage.setItem(LS_DRIVE_USER, userId);
+}
 
 export type ConnectResult =
   | { action: 'none' }
@@ -199,6 +208,7 @@ export function disconnectDrive(): void {
   localStorage.removeItem(LS_FILE_ID);
   localStorage.removeItem(LS_CONNECTED);
   localStorage.removeItem(LS_HINT);
+  localStorage.removeItem(LS_DRIVE_USER);
   setStatus('disconnected');
 }
 
