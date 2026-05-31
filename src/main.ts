@@ -7,7 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, loadFromCloud, getLocalTimestamp, initDriveVisibilitySync } from './services/driveService';
+import { initDriveClient, isDriveConnected, loadFromCloud, getLocalTimestamp, initDriveVisibilitySync, getDriveUserId, disconnectDrive } from './services/driveService';
 import { migrateState, migrateLegacyToUser, applyExternalData } from './services/migration';
 import { applyZoom } from './services/zoomService';
 import { applyTheme } from './services/themeService';
@@ -42,6 +42,9 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
 }
 
 export async function openUser(id: string, root: HTMLElement): Promise<void> {
+  const driveUserId = getDriveUserId();
+  if (driveUserId && driveUserId !== id) disconnectDrive();
+
   const saved = await loadUser(id);
   if (!saved) return;
   migrateState(saved);
