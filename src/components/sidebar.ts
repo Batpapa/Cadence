@@ -211,9 +211,10 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
     dots.className = 'flex gap-0.5 items-center shrink-0';
     const recallDot = document.createElement('span');
     recallDot.className = `w-2 h-2 rounded-full ${availabilityColor(avail)}`;
-    recallDot.title = pct(avail);
+    recallDot.title = t('deck.dot.recall', { pct: pct(avail) });
     const easeDot = document.createElement('span');
     easeDot.className = `w-2 h-2 rounded-full ${ease === 0 ? 'bg-border' : ease >= 0.6 ? 'bg-success' : ease >= 0.35 ? 'bg-warn' : 'bg-danger'}`;
+    easeDot.title = ease === 0 ? t('deck.neverReviewed') : t('deck.dot.ease', { pct: pct(ease) });
     dots.append(recallDot, easeDot);
     el.appendChild(dots);
   }

@@ -136,6 +136,9 @@
   "deck.link.allCardsLinked": "Toutes les cartes liées !",
   "deck.link.done": "Terminé",
   "deck.link.linkAll": "Tout lier",
+  "deck.dot.recall": "Rappel : {pct}",
+  "deck.dot.ease": "Aisance : {pct}",
+  "deck.neverReviewed": "Jamais révisé",
 
   "card.notFound": "Carte introuvable.",
   "card.section.availability": "Rappel",

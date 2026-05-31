@@ -136,6 +136,9 @@
   "deck.link.allCardsLinked": "All cards linked!",
   "deck.link.done": "Done",
   "deck.link.linkAll": "Link all",
+  "deck.dot.recall": "Recall: {pct}",
+  "deck.dot.ease": "Ease: {pct}",
+  "deck.neverReviewed": "Never reviewed",
 
   "card.notFound": "Card not found.",
   "card.section.availability": "Recall",
