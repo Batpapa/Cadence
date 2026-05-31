@@ -22,9 +22,9 @@ export function setDriveUserId(userId: string): void {
 }
 
 export type ConnectResult =
-  | { action: 'none' }
-  | { action: 'apply';    state: AppState }
-  | { action: 'conflict'; state: AppState };
+  | { action: 'none';     googleId: string }
+  | { action: 'apply';    googleId: string; state: AppState }
+  | { action: 'conflict'; googleId: string; state: AppState };
 
 export function getDeviceId(): string {
   let id = localStorage.getItem(LS_DEVICE_ID);
@@ -148,11 +148,14 @@ export async function connectDrive(): Promise<ConnectResult> {
   setStatus('connecting');
   try {
     const token = await requestToken('consent');
-    void fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then(r => r.json()).then((d: Gis) => {
-      if (d.email) localStorage.setItem(LS_HINT, d.email as string);
-    }).catch(() => {});
+    let googleId = '';
+    try {
+      const info = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(r => r.json()) as Gis;
+      if (info.email) localStorage.setItem(LS_HINT, info.email as string);
+      if (info.sub)   googleId = info.sub as string;
+    } catch { /* non-fatal */ }
     fileId = await findOrCreateFile();
     localStorage.setItem(LS_FILE_ID, fileId);
     localStorage.setItem(LS_CONNECTED, '1');
@@ -160,7 +163,7 @@ export async function connectDrive(): Promise<ConnectResult> {
     const driveData = await loadFromCloud();
     setStatus('connected');
 
-    if (!driveData) return { action: 'none' };
+    if (!driveData) return { action: 'none', googleId };
 
     const driveTs      = driveData._lastModified ?? 0;
     const driveDevice  = driveData._deviceId;
@@ -172,23 +175,19 @@ export async function connectDrive(): Promise<ConnectResult> {
     const localHasData = localTs > 0;
 
     if (sameDevice) {
-      // My own data coming back — apply if Drive is newer, nothing otherwise.
       if (driveTs > localTs) {
         localStorage.setItem(LS_LOCAL_TS, String(driveTs));
-        return { action: 'apply', state: cleanState };
+        return { action: 'apply', googleId, state: cleanState };
       }
-      return { action: 'none' };
+      return { action: 'none', googleId };
     }
 
-    // Different device.
     if (!localHasData) {
-      // Fresh install, no local data — silently apply Drive.
       localStorage.setItem(LS_LOCAL_TS, String(driveTs));
-      return { action: 'apply', state: cleanState };
+      return { action: 'apply', googleId, state: cleanState };
     }
 
-    // Both local and Drive have data from different devices — let user decide.
-    return { action: 'conflict', state: cleanState };
+    return { action: 'conflict', googleId, state: cleanState };
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

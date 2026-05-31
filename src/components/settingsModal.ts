@@ -312,6 +312,7 @@ export function showSettingsModal(ctx: AppContext): void {
           try {
             const result = await connectDrive();
             setDriveUserId(ctx.user.id);
+            if (result.googleId) await ctx.mutate(s => { s.ownerGoogleId = result.googleId; });
             if (result.action === 'apply') { await applyDriveState2(result.state); }
             else if (result.action === 'conflict') {
               const body2 = document.createElement('p'); body2.className = 'text-sm text-muted leading-relaxed'; body2.textContent = t('settings.sync.conflict.message');
