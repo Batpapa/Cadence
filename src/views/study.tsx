@@ -169,7 +169,7 @@ export function StudyView({ deckId, strategy, currentCardId }: {
           </div>
 
           {card.content.notes.trim() && (
-            <div class="card-block space-y-2">
+            <div class="space-y-2">
               <div class="section-title">{t('study.notes')}</div>
               <VanillaEl el={renderNotes(card.content.notes)} />
             </div>
@@ -178,6 +178,28 @@ export function StudyView({ deckId, strategy, currentCardId }: {
           {card.content.attachments.length > 0 && (
             <VanillaEl el={renderAttachmentList({ attachments: card.content.attachments, editable: false })} />
           )}
+
+          {(() => {
+            const work   = state.cardWorks[`${profileId}:${cardId}`];
+            const sorted = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
+            if (sorted.length === 0) return null;
+            const colors: Record<string, string> = { again: 'var(--color-danger)', hard: 'var(--color-warn)', good: 'var(--color-accent)', easy: 'var(--color-success)' };
+            const countKey = sorted.length === 1 ? 'card.section.reviewHistoryCount' : 'card.section.reviewHistoryCountPlural';
+            return (
+              <div class="space-y-2">
+                <div class="section-title">{t(countKey, { count: sorted.length })}</div>
+                <div class="flex flex-wrap gap-[3px]">
+                  {sorted.map((entry, i) => (
+                    <div
+                      key={i}
+                      style={{ width: '10px', height: '10px', borderRadius: '2px', background: colors[entry.rating] ?? 'var(--color-dim)', opacity: 0.75, flexShrink: 0 }}
+                      title={`${new Date(entry.ts).toLocaleDateString()} — ${entry.rating}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
         </div>
       </div>
