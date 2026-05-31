@@ -7,6 +7,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#0d0d0d" />
     <title>Cadence</title>
+    <script>
+      (function(){
+        var t=localStorage.getItem('cadence_theme')||'dark';
+        document.documentElement.dataset.theme=t;
+        document.documentElement.style.background=t==='light'?'#ffffff':'#0a0a0a';
+      })();
+    </script>
     <link rel="manifest" href="manifest.json" />
     <link rel="apple-touch-icon" href="icons/icon-180.png" />
     <link rel="icon" type="image/png" href="icons/icon-32.png" />
@@ -22,7 +29,7 @@
       &nbsp;·&nbsp;
       <a href="./terms.html" style="color:inherit;pointer-events:auto;" rel="noopener">Terms of Service</a>
     </footer>
-    <div id="rotate-overlay">
+    <div id="rotate-overlay" style="display:none">
       <div id="rotate-content">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="4" y="2" width="10" height="16" rx="2"/>
