@@ -27,7 +27,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
 
   const items: PaletteItem[] = [];
 
-  for (const card of Object.values(ctx.state.cards)) {
+  for (const card of Object.values(ctx.user.cards)) {
     const s = Math.max(
       score(card.name, q),
       ...(card.tags ?? []).map(tg => score(tg, q) * 0.5),
@@ -40,7 +40,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
     });
   }
 
-  for (const deck of Object.values(ctx.state.decks)) {
+  for (const deck of Object.values(ctx.user.decks)) {
     const s = score(deck.name, q);
     if (s > 0) items.push({
       label: deck.name,
@@ -50,7 +50,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
     });
   }
 
-  for (const folder of Object.values(ctx.state.folders)) {
+  for (const folder of Object.values(ctx.user.folders)) {
     const s = score(folder.name, q);
     if (s > 0) items.push({
       label: folder.name,

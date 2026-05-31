@@ -6,7 +6,6 @@ import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
-import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 import type { SessionRating } from '../types';
 
@@ -92,8 +91,8 @@ function openSessionModal(
 }
 
 function showAddToDeckModal(cardId: string) {
-  const state = appState.value;
-  const available = Object.values(state.decks)
+  const user = appState.value;
+  const available = Object.values(user.decks)
     .filter(d => !d.entries.some(e => e.cardId === cardId))
     .sort((a, b) => a.name.localeCompare(b.name));
   if (available.length === 0) {
@@ -124,10 +123,9 @@ function showAddToDeckModal(cardId: string) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function CardView({ cardId }: { cardId: string }) {
-  const state = appState.value;
-  const card  = state.cards[cardId];
-  const user  = getCurrentUser(state);
-  const work  = state.cardWorks[`${state.currentProfileId}:${cardId}`];
+  const user  = appState.value;
+  const card  = user.cards[cardId];
+  const work  = user.cardWorks[`${user.currentProfileId}:${cardId}`];
 
   // All hooks before conditional returns
   const [isEditingName,  setIsEditingName]  = useState(false);
@@ -160,7 +158,7 @@ export function CardView({ cardId }: { cardId: string }) {
   const fsrsState  = work ? replayFSRS(work.history) : undefined;
   const stabWindow = fsrsState?.stability !== undefined ? retentionWindowDays(fsrsState.stability, user.availabilityThreshold) : undefined;
   const ease       = fsrsState?.difficulty !== undefined ? (10 - fsrsState.difficulty) / 9 : undefined;
-  const deckIds    = decksContainingCard(cardId, state);
+  const deckIds    = decksContainingCard(cardId, user);
   const sorted     = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
 
   const rColor    = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
@@ -202,10 +200,10 @@ export function CardView({ cardId }: { cardId: string }) {
           {/* Deck chips */}
           <div class="flex flex-wrap gap-1.5 mt-1.5">
             {deckIds.map(dId => {
-              const deck = state.decks[dId]; if (!deck) return null;
+              const deck = user.decks[dId]; if (!deck) return null;
               return (
                 <span key={dId} class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent group transition-colors hover:bg-accent/20">
-                  <span class="cursor-pointer" title={deckPath(dId, state)} onClick={() => navigate({ view: 'deck', deckId: dId })}>
+                  <span class="cursor-pointer" title={deckPath(dId, user)} onClick={() => navigate({ view: 'deck', deckId: dId })}>
                     {deck.name}
                   </span>
                   <button
@@ -242,7 +240,7 @@ export function CardView({ cardId }: { cardId: string }) {
               void mutate(s => {
                 delete s.cards[cardId];
                 for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
-                delete s.cardWorks[`${s.currentProfileId}:${cardId}`]; // fix: was currentUserId
+                delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
               });
               navigate({ view: 'folder', folderId: null });
             },

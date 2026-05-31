@@ -4,7 +4,6 @@ import { pct, timeAgo, availabilityColor, trashIcon, unlinkIcon, addTouchDragSup
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { findParentFolder, pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
-import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 import type { DeckEntry, StudyStrategy } from '../types';
 
@@ -42,15 +41,14 @@ function showStrategyModal(deckId: string): void {
     btn.innerHTML = `<div class="text-sm font-medium text-primary">${t(s.labelKey)}</div><div class="text-xs text-muted mt-0.5">${t(s.subKey)}</div>`;
     btn.onclick = () => {
       closeModal();
-      const state = appState.value;
-      const deck = state.decks[deckId]!;
-      const user = getCurrentUser(state);
-      const pid  = state.currentProfileId;
+      const user = appState.value;
+      const deck = user.decks[deckId]!;
+      const pid  = user.currentProfileId;
       const w    = user.weightByImportance ?? true;
       const pickers: Record<StudyStrategy, () => DeckEntry | null> = {
-        random:     () => pickRandom(user, pid, deck, state.cardWorks),
-        optimal:    () => pickOptimal(user, pid, deck, state.cards, state.cardWorks, w),
-        stochastic: () => pickStochastic(user, pid, deck, state.cards, state.cardWorks, w),
+        random:     () => pickRandom(user, pid, deck, user.cardWorks),
+        optimal:    () => pickOptimal(user, pid, deck, user.cards, user.cardWorks, w),
+        stochastic: () => pickStochastic(user, pid, deck, user.cards, user.cardWorks, w),
       };
       const entry = pickers[s.id]();
       navigate({ view: 'study', deckId, strategy: s.id, currentCardId: entry?.cardId ?? null });
@@ -62,10 +60,9 @@ function showStrategyModal(deckId: string): void {
 
 
 export function DeckView({ deckId }: { deckId: string }) {
-  const state     = appState.value;
-  const deck      = state.decks[deckId];
-  const user      = getCurrentUser(state);
-  const profileId = state.currentProfileId;
+  const user      = appState.value;
+  const deck      = user.decks[deckId];
+  const profileId = user.currentProfileId;
   const w         = user.weightByImportance ?? true;
 
   // Inline name editing
@@ -94,18 +91,18 @@ export function DeckView({ deckId }: { deckId: string }) {
   if (!deck) return <div class="flex flex-col h-full view-enter">{t('deck.notFound')}</div>;
 
   // ── Metrics ──────────────────────────────────────────────────────────────────
-  const avail       = deckAvailability(user, profileId, deck, state.cards, state.cardWorks, w);
-  const stab        = deckStability(profileId, deck, state.cards, state.cardWorks, w);
-  const ease        = deckEase(profileId, deck, state.cards, state.cardWorks, w);
+  const avail       = deckAvailability(user, profileId, deck, user.cards, user.cardWorks, w);
+  const stab        = deckStability(profileId, deck, user.cards, user.cardWorks, w);
+  const ease        = deckEase(profileId, deck, user.cards, user.cardWorks, w);
   const stabWindow  = stab > 0 ? retentionWindowDays(stab, user.availabilityThreshold) : 0;
-  const candidates  = deck.entries.filter(e => !isAvailable(user, state.cardWorks[`${profileId}:${e.cardId}`])).length;
+  const candidates  = deck.entries.filter(e => !isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])).length;
   const noCards     = deck.entries.length === 0;
   const allMastered = !noCards && candidates === 0;
 
   // ── Quick-link matches ────────────────────────────────────────────────────────
   const alreadyInDeck = new Set(deck.entries.map(e => e.cardId));
   const linkMatches   = linkQuery
-    ? Object.values(state.cards)
+    ? Object.values(user.cards)
         .filter(c => !alreadyInDeck.has(c.id) && c.name.toLowerCase().includes(linkQuery.toLowerCase()))
         .sort((a, b) => a.name.localeCompare(b.name))
         .slice(0, 12)
@@ -192,13 +189,13 @@ export function DeckView({ deckId }: { deckId: string }) {
                 t('deck.delete.message', { name: deck.name }),
                 t('common.delete'),
                 () => {
-                  const parent = findParentFolder(deckId, 'deck', state);
+                  const parent = findParentFolder(deckId, 'deck', user);
                   mutate(s => {
                     delete s.decks[deckId];
                     if (parent) s.folders[parent]!.deckIds = s.folders[parent]!.deckIds.filter(id => id !== deckId);
                     else s.rootDeckIds = s.rootDeckIds.filter(id => id !== deckId);
                   });
-                  navigate({ view: 'folder', folderId: findParentFolder(deckId, 'deck', state) });
+                  navigate({ view: 'folder', folderId: findParentFolder(deckId, 'deck', user) });
                 }
               )}
             >
@@ -291,13 +288,13 @@ export function DeckView({ deckId }: { deckId: string }) {
             <div class="space-y-1">
               {(() => {
                 const impColWidth = Math.max(...deck.entries.map(e => {
-                  const c = state.cards[e.cardId]; if (!c) return 2;
+                  const c = user.cards[e.cardId]; if (!c) return 2;
                   return String(`×${effectiveImportance(c, e)}`).length;
                 }));
                 return deck.entries.map(entry => {
-                const card   = state.cards[entry.cardId];
+                const card   = user.cards[entry.cardId];
                 if (!card) return null;
-                const work     = state.cardWorks[`${profileId}:${entry.cardId}`];
+                const work     = user.cardWorks[`${profileId}:${entry.cardId}`];
                 const k        = cardAvailability(user, work);
                 const fsrs     = work ? replayFSRS(work.history) : undefined;
                 const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;

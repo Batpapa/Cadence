@@ -3,7 +3,6 @@ import { generateId, helpIcon, addTouchDragSupport, availabilityColor, pct } fro
 import { promptModal } from './modal';
 import { findParentFolder } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
-import { getCurrentUser } from '../services/userService';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { t } from '../services/i18nService';
@@ -172,11 +171,11 @@ function addDragHandlers(
 
 // ── Expand / active helpers ───────────────────────────────────────────────────
 
-function expandAncestors(id: string, type: 'deck' | 'folder', state: AppState): void {
-  let current: string | null = findParentFolder(id, type, state);
+function expandAncestors(id: string, type: 'deck' | 'folder', user: AppState): void {
+  let current: string | null = findParentFolder(id, type, user);
   while (current) {
     expanded.add(current);
-    current = findParentFolder(current, 'folder', state);
+    current = findParentFolder(current, 'folder', user);
   }
 }
 
@@ -202,11 +201,11 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
   el.append(icon, name);
 
   if (deck.entries.length > 0) {
-    const user = getCurrentUser(ctx.state);
-    const profileId = ctx.state.currentProfileId;
+    const user = ctx.user;
+    const profileId = ctx.user.currentProfileId;
     const w = user.weightByImportance ?? true;
-    const avail = deckAvailability(user, profileId, deck, ctx.state.cards, ctx.state.cardWorks, w);
-    const ease  = deckEase(profileId, deck, ctx.state.cards, ctx.state.cardWorks, w);
+    const avail = deckAvailability(user, profileId, deck, ctx.user.cards, ctx.user.cardWorks, w);
+    const ease  = deckEase(profileId, deck, ctx.user.cards, ctx.user.cardWorks, w);
     const dots  = document.createElement('span');
     dots.className = 'flex gap-0.5 items-center shrink-0';
     const recallDot = document.createElement('span');
@@ -267,8 +266,8 @@ function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLE
 
   if (isOpen) {
     const children = document.createElement('div');
-    for (const subId of folder.folderIds) { const sub = ctx.state.folders[subId]; if (sub) children.appendChild(renderFolderItem(ctx, sub, depth + 1)); }
-    for (const deckId of folder.deckIds) { const deck = ctx.state.decks[deckId]; if (deck) children.appendChild(renderDeckItem(ctx, deck, depth + 1)); }
+    for (const subId of folder.folderIds) { const sub = ctx.user.folders[subId]; if (sub) children.appendChild(renderFolderItem(ctx, sub, depth + 1)); }
+    for (const deckId of folder.deckIds) { const deck = ctx.user.decks[deckId]; if (deck) children.appendChild(renderDeckItem(ctx, deck, depth + 1)); }
     wrap.appendChild(children);
   }
   return wrap;
@@ -287,16 +286,16 @@ export function showCreateDeckModal(ctx: AppContext, parentFolderId: string | nu
 }
 
 export function renderSidebar(ctx: AppContext): HTMLElement {
-  const { route, state } = ctx;
+  const { route, user } = ctx;
   const routeKey = JSON.stringify(route);
   if (routeKey !== lastAutoExpandedRoute) {
     lastAutoExpandedRoute = routeKey;
     if ((route.view === 'deck' || route.view === 'study') && 'deckId' in route) {
-      expandAncestors(route.deckId, 'deck', state);
+      expandAncestors(route.deckId, 'deck', user);
     }
     if (route.view === 'folder' && route.folderId) {
       expanded.add(route.folderId);
-      expandAncestors(route.folderId, 'folder', state);
+      expandAncestors(route.folderId, 'folder', user);
     }
   }
 
@@ -388,7 +387,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   top.append(logo, iconGroup);
 
   // ── Profile switcher ──────────────────────────────────────────────────────────
-  const currentProfile = state.profiles[state.currentProfileId];
+  const currentProfile = user.profiles[user.currentProfileId];
 
   const profileWrap = document.createElement('div');
   profileWrap.className = 'relative border-b border-border shrink-0';
@@ -438,10 +437,9 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
 
   const renderDropdown = () => {
     dropdown.innerHTML = '';
-    const user = getCurrentUser(state);
     for (const pid of user.profileIds ?? []) {
-      const profile = state.profiles[pid]; if (!profile) continue;
-      const isActive = pid === state.currentProfileId;
+      const profile = user.profiles[pid]; if (!profile) continue;
+      const isActive = pid === user.currentProfileId;
 
       const item = document.createElement('button');
       item.className = `w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${
@@ -471,7 +469,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
 
       item.onclick = () => {
         closeDropdown();
-        if (pid !== state.currentProfileId) ctx.mutate(s => { s.currentProfileId = pid; });
+        if (pid !== user.currentProfileId) ctx.mutate(s => { s.currentProfileId = pid; });
       };
       dropdown.appendChild(item);
     }
@@ -525,8 +523,8 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
 
   const tree = document.createElement('div');
   tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5 border-t border-border';
-  for (const folderId of state.rootFolderIds) { const folder = state.folders[folderId]; if (folder) tree.appendChild(renderFolderItem(ctx, folder, 0)); }
-  for (const deckId of state.rootDeckIds) { const deck = state.decks[deckId]; if (deck) tree.appendChild(renderDeckItem(ctx, deck, 0)); }
+  for (const folderId of user.rootFolderIds) { const folder = user.folders[folderId]; if (folder) tree.appendChild(renderFolderItem(ctx, folder, 0)); }
+  for (const deckId of user.rootDeckIds) { const deck = user.decks[deckId]; if (deck) tree.appendChild(renderDeckItem(ctx, deck, 0)); }
 
   const bottom = document.createElement('div');
   bottom.className = 'border-t border-border shrink-0 px-3 py-2 flex items-center justify-between';
@@ -554,7 +552,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
     promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
       ctx.mutate(s => {
         const id = generateId();
-        s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] };
+        s.folders[id] = { id, name, folderIds: [], deckIds: [] };
         s.rootFolderIds.push(id);
       });
     })

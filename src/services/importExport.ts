@@ -1,27 +1,24 @@
 import type { AppState, Card } from '../types';
 import { toDateStr } from '../utils';
-import { migrateState, SCHEMA_VERSION } from './migration';
+import { SCHEMA_VERSION } from './migration';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function isAppState(data: unknown): data is AppState {
+function isValidBackup(data: unknown): data is Record<string, unknown> {
   if (!isRecord(data)) return false;
-  return (
-    isRecord(data['users']) &&
-    isRecord(data['cards']) &&
-    isRecord(data['decks']) &&
-    isRecord(data['cardWorks']) &&
-    isRecord(data['folders']) &&
-    Array.isArray(data['rootFolderIds']) &&
-    Array.isArray(data['rootDeckIds'])
-  );
+  // Old format: has users map + cards
+  const isOldFormat = isRecord(data['users']) && isRecord(data['cards']);
+  // New format: has cards + profiles directly (id may be absent — stripped on export)
+  const isNewFormat = isRecord(data['cards']) && isRecord(data['profiles']);
+  return isOldFormat || isNewFormat;
 }
 
-/** Full backup — all AppState including personal data. */
-export function exportBackup(state: AppState): void {
-  download(JSON.stringify(state, null, 2), `cadence-backup-${toDateStr(new Date())}.json`);
+/** Full backup — all user data except id (id is device-local). */
+export function exportBackup(user: AppState): void {
+  const { id: _id, ...data } = user;
+  download(JSON.stringify(data, null, 2), `cadence-backup-${toDateStr(new Date())}.json`);
 }
 
 /** Card-only export — no history, no decks, no personal data. */
@@ -63,12 +60,11 @@ export async function parseCardPackage(file: File): Promise<Card[]> {
   return data.cards as Card[];
 }
 
-export async function parseImport(file: File): Promise<AppState> {
+export async function parseImport(file: File): Promise<Record<string, unknown>> {
   const text = await file.text();
   let data: unknown;
   try { data = JSON.parse(text); } catch { throw new Error('Invalid JSON file'); }
-  if (!isAppState(data)) throw new Error('File is not a valid Cadence backup');
-  migrateState(data);
+  if (!isValidBackup(data)) throw new Error('File is not a valid Cadence backup');
   return data;
 }
 

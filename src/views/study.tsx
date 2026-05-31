@@ -2,7 +2,6 @@ import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { isAvailable } from '../services/knowledgeService';
-import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
@@ -19,15 +18,14 @@ const RATINGS: Array<{ rating: SessionRating; key: string; cls: string; shortcut
   { rating: 'easy',  key: 'rating.easy',  cls: 'btn py-2.5 text-sm font-semibold bg-success/10 hover:bg-success/20 text-success', shortcut: '4' },
 ];
 
-function pickNextCard(state: AppState, deckId: string, strategy: StudyStrategy): DeckEntry | null {
-  const deck = state.decks[deckId];
+function pickNextCard(user: AppState, deckId: string, strategy: StudyStrategy): DeckEntry | null {
+  const deck = user.decks[deckId];
   if (!deck) return null;
-  const user = getCurrentUser(state);
-  const profileId = state.currentProfileId;
+  const profileId = user.currentProfileId;
   const w = user.weightByImportance ?? true;
-  if (strategy === 'random')     return pickRandom(user, profileId, deck, state.cardWorks);
-  if (strategy === 'optimal')    return pickOptimal(user, profileId, deck, state.cards, state.cardWorks, w);
-  if (strategy === 'stochastic') return pickStochastic(user, profileId, deck, state.cards, state.cardWorks, w);
+  if (strategy === 'random')     return pickRandom(user, profileId, deck, user.cardWorks);
+  if (strategy === 'optimal')    return pickOptimal(user, profileId, deck, user.cards, user.cardWorks, w);
+  if (strategy === 'stochastic') return pickStochastic(user, profileId, deck, user.cards, user.cardWorks, w);
   return null;
 }
 
@@ -43,28 +41,27 @@ export function StudyView({ deckId, strategy, currentCardId }: {
   strategy: StudyStrategy;
   currentCardId?: string | null;
 }) {
-  const state     = appState.value;
-  const deck      = state.decks[deckId];
-  const user      = getCurrentUser(state);
-  const profileId = state.currentProfileId;
+  const user      = appState.value;
+  const deck      = user.decks[deckId];
+  const profileId = user.currentProfileId;
 
   // null means "deck complete" screen; undefined means "pick next card".
-  const cardId = currentCardId ?? pickNextCard(state, deckId, strategy)?.cardId;
-  const card   = (cardId && currentCardId !== null) ? state.cards[cardId] : undefined;
+  const cardId = currentCardId ?? pickNextCard(user, deckId, strategy)?.cardId;
+  const card   = (cardId && currentCardId !== null) ? user.cards[cardId] : undefined;
 
   const total         = deck?.entries.length ?? 0;
   const candidateCount = deck ? deck.entries.filter(e =>
-    !isAvailable(user, state.cardWorks[`${profileId}:${e.cardId}`])
+    !isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])
   ).length : 0;
   const mastered = total - candidateCount;
   const canSkip = candidateCount > 1;
 
   const goNext = () => {
-    const s    = appState.value;
-    const next = pickNextCard(s, deckId, strategy);
+    const u    = appState.value;
+    const next = pickNextCard(u, deckId, strategy);
     const nextId: string | null = (next?.cardId !== cardId || (deck?.entries.length ?? 0) <= 1)
       ? (next?.cardId ?? null)
-      : (pickNextCard(s, deckId, strategy)?.cardId ?? null);
+      : (pickNextCard(u, deckId, strategy)?.cardId ?? null);
     navigate({ view: 'study', deckId, strategy, currentCardId: nextId });
   };
 
@@ -78,9 +75,9 @@ export function StudyView({ deckId, strategy, currentCardId }: {
   };
 
   const skipCard = () => {
-    const s = appState.value;
-    let next = pickNextCard(s, deckId, strategy);
-    if (next?.cardId === cardId && (deck?.entries.length ?? 0) > 1) next = pickNextCard(s, deckId, strategy);
+    const u = appState.value;
+    let next = pickNextCard(u, deckId, strategy);
+    if (next?.cardId === cardId && (deck?.entries.length ?? 0) > 1) next = pickNextCard(u, deckId, strategy);
     navigate({ view: 'study', deckId, strategy, currentCardId: next?.cardId ?? null });
   };
 
@@ -180,7 +177,7 @@ export function StudyView({ deckId, strategy, currentCardId }: {
           )}
 
           {(() => {
-            const work   = state.cardWorks[`${profileId}:${cardId}`];
+            const work   = user.cardWorks[`${profileId}:${cardId}`];
             const sorted = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
             if (sorted.length === 0) return null;
             const colors: Record<string, string> = { again: 'var(--color-danger)', hard: 'var(--color-warn)', good: 'var(--color-accent)', easy: 'var(--color-success)' };

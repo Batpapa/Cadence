@@ -211,7 +211,8 @@ async function flushSync(): Promise<void> {
   setStatus('syncing');
   try {
     const ts = Date.now();
-    const payload = JSON.stringify({ ...state, _lastModified: ts, _deviceId: getDeviceId() });
+    const { id: _id, ...stateWithoutId } = state;
+    const payload = JSON.stringify({ ...stateWithoutId, _lastModified: ts, _deviceId: getDeviceId() });
     const blob = new Blob([payload], { type: 'application/json' });
     const meta = new Blob(
       [JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })],

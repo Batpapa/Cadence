@@ -71,7 +71,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
     status.textContent = t('theSession.status.fetching');
     try {
       const tune = await fetchTuneById(tuneId);
-      const existing = findByExternalId(`thesession:${tune.id}`, ctx.state.cards);
+      const existing = findByExternalId(`thesession:${tune.id}`, ctx.user.cards);
       if (existing) {
         await mutate(s => {
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
@@ -272,7 +272,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
       status.textContent = t('theSession.status.fetchingPage');
       try {
         const existingTuneIds = new Set<number>();
-        for (const card of Object.values(ctx.state.cards)) {
+        for (const card of Object.values(ctx.user.cards)) {
           if (card.externalId?.startsWith('thesession:')) {
             const id = parseInt(card.externalId.slice('thesession:'.length));
             if (!isNaN(id)) existingTuneIds.add(id);
@@ -400,7 +400,7 @@ export function showNewCardModal(ctx: AppContext): void {
     const selClose = document.createElement('button'); selClose.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer'; selClose.textContent = '✕';
     selHeader.append(selTitle, selClose);
     const selBody = document.createElement('div'); selBody.className = 'overflow-y-auto flex-1 py-2';
-    const decks = Object.values(ctx.state.decks).sort((a, b) => a.name.localeCompare(b.name));
+    const decks = Object.values(ctx.user.decks).sort((a, b) => a.name.localeCompare(b.name));
     if (decks.length === 0) {
       const empty = document.createElement('p'); empty.className = 'text-xs text-muted px-4 py-3'; empty.textContent = t('newCard.noDecks'); selBody.appendChild(empty);
     } else {

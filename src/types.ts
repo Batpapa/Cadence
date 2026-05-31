@@ -42,14 +42,6 @@ export interface Deck {
 
 // ── Personal data ────────────────────────────────────────────────────────────
 
-export interface User {
-  id: string;
-  availabilityThreshold: number; // default: 0.9 — cards above this R are excluded from study
-  weightByImportance: boolean; // default: true — weight deck knowledge bars by card importance
-  language: 'en' | 'fr';     // default: 'en'
-  profileIds: string[];       // ordered list of profile IDs belonging to this user
-}
-
 /** Maps directly to FSRS grades: 1=Again · 2=Hard · 3=Good · 4=Easy */
 export type SessionRating = 'again' | 'hard' | 'good' | 'easy';
 
@@ -70,28 +62,44 @@ export interface CardWork {
 }
 
 export interface Folder {
-  userId: string;
   id: string;
   name: string;
   folderIds: string[];
   deckIds: string[];
 }
 
-// ── App state ────────────────────────────────────────────────────────────────
+// ── User = entire state for one person ───────────────────────────────────────
 
-export interface AppState {
-  schemaVersion?: number;
-  users: Record<string, User>;
-  currentUserId: string;
-  profiles: Record<string, Profile>;
+export interface User {
+  // Identity
+  id: string;
+  name: string;
+  ownerGoogleId?: string;
+  language: 'en' | 'fr';
+
+  // Study settings
+  availabilityThreshold: number;
+  weightByImportance: boolean;
+
+  // Profiles
+  profileIds: string[];
   currentProfileId: string;
+  profiles: Record<string, Profile>;
+
+  // Content
   cards: Record<string, Card>;
   decks: Record<string, Deck>;
-  cardWorks: Record<string, CardWork>; // key: `${userId}:${cardId}`
+  cardWorks: Record<string, CardWork>; // key: `${profileId}:${cardId}`
   folders: Record<string, Folder>;
   rootFolderIds: string[];
   rootDeckIds: string[];
+
+  // Schema versioning
+  schemaVersion?: number;
 }
+
+/** AppState is the active User — kept as alias to minimise call-site changes. */
+export type AppState = User;
 
 // ── Routing ──────────────────────────────────────────────────────────────────
 
@@ -105,13 +113,13 @@ export type Route =
   | { view: 'study'; deckId: string; strategy: StudyStrategy; currentCardId?: string | null };
 
 export interface AppContext {
-  state: AppState;
+  user: AppState;
   route: Route;
   navigate: (route: Route) => void;
   back: () => void;
   forward: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
-  mutate: (fn: (state: AppState) => void) => Promise<void>;
-  save: (fn: (state: AppState) => void) => Promise<void>;
+  mutate: (fn: (user: AppState) => void) => Promise<void>;
+  save: (fn: (user: AppState) => void) => Promise<void>;
 }

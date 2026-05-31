@@ -66,17 +66,21 @@ export function entryToObjectUrl(entry: FileEntry): string {
 
 export function emptyState(): AppState {
   return {
-    schemaVersion: SCHEMA_VERSION,
-    users: {},
-    currentUserId: '',
-    profiles: {},
+    id: '',
+    name: 'Default',
+    language: 'en',
+    availabilityThreshold: 0.9,
+    weightByImportance: true,
+    profileIds: [],
     currentProfileId: '',
+    profiles: {},
     cards: {},
     decks: {},
     cardWorks: {},
     folders: {},
     rootFolderIds: [],
     rootDeckIds: [],
+    schemaVersion: SCHEMA_VERSION,
   };
 }
 

@@ -1,16 +1,17 @@
-import type { AppContext, AppState } from '../types';
+import type { AppContext } from '../types';
 import { generateId, emptyState, trashIcon } from '../utils';
 import { confirmModal, closeModal, showModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
 import { getTheme, setTheme } from '../services/themeService';
-import { getCurrentUser, updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
+import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
+import { applyExternalData } from '../services/migration';
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
 import { getContext, mutate } from '../store';
-import { migrateState } from '../services/migration';
+import { clearLastUserId } from '../db';
 
 export function showProfileModal(ctx: AppContext): void {
   const body = document.createElement('div');
@@ -21,12 +22,11 @@ export function showProfileModal(ctx: AppContext): void {
 
   const renderList = () => {
     body.innerHTML = '';
-    const ps = getContext().state;
-    const cu = getCurrentUser(ps);
-    const canDelete = (cu.profileIds?.length ?? 0) > 1;
+    const user = getContext().user;
+    const canDelete = (user.profileIds?.length ?? 0) > 1;
 
-    for (const pid of cu.profileIds ?? []) {
-      const profile = ps.profiles[pid]; if (!profile) continue;
+    for (const pid of user.profileIds ?? []) {
+      const profile = user.profiles[pid]; if (!profile) continue;
       const row = document.createElement('div');
       row.className = 'flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-bg hover:border-muted transition-colors';
 
@@ -59,9 +59,8 @@ export function showProfileModal(ctx: AppContext): void {
         delBtn.appendChild(trashIcon(12));
         delBtn.onclick = () => confirmModal(t('settings.profiles.delete.title'), t('settings.profiles.delete.message', { name: profile.name }), t('common.delete'), () => {
           ctx.mutate(s => {
-            const u = s.users[s.currentUserId]!;
-            u.profileIds = (u.profileIds ?? []).filter(id => id !== pid);
-            if (s.currentProfileId === pid) s.currentProfileId = u.profileIds[0] ?? '';
+            s.profileIds = (s.profileIds ?? []).filter(id => id !== pid);
+            if (s.currentProfileId === pid) s.currentProfileId = s.profileIds[0] ?? '';
             for (const key of Object.keys(s.cardWorks)) { if (key.startsWith(`${pid}:`)) delete s.cardWorks[key]; }
             delete s.profiles[pid];
           }).then(renderList);
@@ -111,9 +110,8 @@ export function showProfileModal(ctx: AppContext): void {
       const pid = generateId();
       ctx.mutate(s => {
         s.profiles[pid] = { id: pid, name };
-        const u = s.users[s.currentUserId]!;
-        if (!u.profileIds) u.profileIds = [];
-        u.profileIds.push(pid);
+        if (!s.profileIds) s.profileIds = [];
+        s.profileIds.push(pid);
       }).then(renderList);
     };
 
@@ -133,7 +131,7 @@ export function showProfileModal(ctx: AppContext): void {
 }
 
 export function showSettingsModal(ctx: AppContext): void {
-  type SectionId = 'study' | 'user' | 'data' | 'about';
+  type SectionId = 'study' | 'user' | 'display' | 'about';
 
   const overlay = document.createElement('div');
   overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm';
@@ -171,7 +169,7 @@ export function showSettingsModal(ctx: AppContext): void {
   navEl.style.width = '148px';
 
   const content = document.createElement('div');
-  content.className = 'flex-1 overflow-y-auto p-5 space-y-4';
+  content.className = 'flex-1 overflow-y-auto p-4 space-y-1';
 
   bodyEl.append(navEl, content);
   dialog.append(header, bodyEl);
@@ -189,9 +187,9 @@ export function showSettingsModal(ctx: AppContext): void {
       labelKey: 'settings.user',
     },
     {
-      id: 'data',
-      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
-      labelKey: 'settings.data',
+      id: 'display',
+      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
+      labelKey: 'settings.display',
     },
     {
       id: 'about',
@@ -218,11 +216,22 @@ export function showSettingsModal(ctx: AppContext): void {
       btn.onclick = () => { activeSection = sec.id; renderNav(); renderContent(); };
       navEl.appendChild(btn);
     }
+
+    const logoutNavBtn = document.createElement('button');
+    logoutNavBtn.className = 'flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer mt-auto text-muted hover:bg-elevated hover:text-danger';
+    const logoutIcon = document.createElement('span'); logoutIcon.className = 'shrink-0 flex items-center';
+    logoutIcon.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`;
+    const logoutLabel = document.createElement('span'); logoutLabel.className = 'text-sm'; logoutLabel.textContent = t('settings.logout');
+    logoutNavBtn.append(logoutIcon, logoutLabel);
+    logoutNavBtn.onclick = () => confirmModal(t('settings.logout'), t('settings.logout.message'), t('settings.logout.confirm'), () => {
+      closeModal(); closeSettings(); clearLastUserId(); location.reload();
+    });
+    navEl.appendChild(logoutNavBtn);
   };
 
   const mkRow = (label: string, hint: string | null, control: HTMLElement): HTMLElement => {
     const row = document.createElement('div');
-    row.className = 'flex items-center justify-between gap-4 py-2.5';
+    row.className = 'flex items-center justify-between gap-4 py-2';
     const left = document.createElement('div');
     const lbl = document.createElement('div'); lbl.className = 'text-sm text-primary'; lbl.textContent = label; left.appendChild(lbl);
     if (hint) { const h = document.createElement('div'); h.className = 'text-xs text-dim mt-0.5 leading-relaxed'; h.textContent = hint; left.appendChild(h); }
@@ -250,8 +259,7 @@ export function showSettingsModal(ctx: AppContext): void {
   const renderContent = () => {
     if (driveUnsub) { driveUnsub(); driveUnsub = null; }
     content.innerHTML = '';
-    const freshState = getContext().state;
-    const freshUser  = getCurrentUser(freshState);
+    const freshUser  = getContext().user;
     const saveField  = (patch: Parameters<typeof updateUser>[1]) => ctx.mutate(s => updateUser(s, patch));
 
     // ── Study ──
@@ -277,6 +285,97 @@ export function showSettingsModal(ctx: AppContext): void {
 
     // ── User ──
     } else if (activeSection === 'user') {
+
+      // 1. Nom d'utilisateur
+      const nameInp = document.createElement('input'); nameInp.type = 'text'; nameInp.className = 'input text-sm w-36';
+      nameInp.value = freshUser.name ?? '';
+      nameInp.addEventListener('blur', () => {
+        const val = nameInp.value.trim();
+        if (val && val !== freshUser.name) void ctx.mutate(s => { s.name = val; });
+        else nameInp.value = freshUser.name ?? '';
+      });
+      nameInp.addEventListener('keydown', e => { if (e.key === 'Enter') nameInp.blur(); if (e.key === 'Escape') { nameInp.value = freshUser.name ?? ''; nameInp.blur(); } });
+      content.appendChild(mkRow(t('settings.username'), null, nameInp));
+
+      // 2. Google Drive
+      if (isDriveFeatureEnabled()) {
+        content.appendChild(Object.assign(document.createElement('hr'), { className: 'border-border' }));
+        const driveStatusEl2 = document.createElement('span'); driveStatusEl2.className = 'text-xs';
+        const driveBtn2 = document.createElement('button'); driveBtn2.className = 'btn-ghost text-xs shrink-0';
+        const driveControl2 = document.createElement('div'); driveControl2.className = 'flex items-center gap-2';
+        driveControl2.append(driveStatusEl2, driveBtn2);
+        const applyDriveState2 = async (raw: unknown) => {
+          await mutate(s => { Object.assign(s, applyExternalData(raw as Record<string, unknown>, s.id)); });
+        };
+        const handleConnect2 = async () => {
+          try {
+            const result = await connectDrive();
+            if (result.action === 'apply') { await applyDriveState2(result.state); }
+            else if (result.action === 'conflict') {
+              const body2 = document.createElement('p'); body2.className = 'text-sm text-muted leading-relaxed'; body2.textContent = t('settings.sync.conflict.message');
+              showModal(t('settings.sync.conflict.title'), body2, [
+                { label: t('settings.sync.conflict.keepLocal'), onClick: closeModal },
+                { label: t('settings.sync.conflict.useDrive'), onClick: async () => { closeModal(); await applyDriveState2(result.state); } },
+              ], false);
+            }
+          } catch {}
+        };
+        const updateDriveUI2 = (s: DriveStatus) => {
+          switch (s) {
+            case 'disconnected': driveStatusEl2.textContent = ''; driveBtn2.textContent = t('settings.sync.connect'); driveBtn2.className = 'btn-primary text-xs shrink-0'; driveBtn2.disabled = false; driveBtn2.onclick = () => { void handleConnect2(); }; break;
+            case 'connecting':   driveStatusEl2.textContent = t('settings.sync.connecting'); driveStatusEl2.className = 'text-xs text-muted'; driveBtn2.textContent = ''; driveBtn2.disabled = true; break;
+            case 'connected':    driveStatusEl2.textContent = '● ' + t('settings.sync.connected'); driveStatusEl2.className = 'text-xs text-green-500'; driveBtn2.textContent = t('settings.sync.disconnect'); driveBtn2.className = 'btn-ghost text-xs shrink-0'; driveBtn2.disabled = false; driveBtn2.onclick = () => disconnectDrive(); break;
+            case 'syncing':      driveStatusEl2.textContent = '○ ' + t('settings.sync.syncing'); driveStatusEl2.className = 'text-xs text-muted'; driveBtn2.disabled = true; break;
+            case 'error':        driveStatusEl2.textContent = '✕ ' + t('settings.sync.error'); driveStatusEl2.className = 'text-xs text-danger'; driveBtn2.textContent = t('settings.sync.reconnect'); driveBtn2.className = 'btn-ghost text-xs shrink-0'; driveBtn2.disabled = false; driveBtn2.onclick = () => { void handleConnect2(); }; break;
+          }
+        };
+        updateDriveUI2(getDriveStatus());
+        driveUnsub = onStatusChange(updateDriveUI2);
+        content.appendChild(mkRow('Google Drive', null, driveControl2));
+      }
+
+      // 3. Sauvegarde — Exporter + Importer côte à côte
+      content.appendChild(Object.assign(document.createElement('hr'), { className: 'border-border' }));
+      const exportSvg2 = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+      const importSvg2 = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+      const backupControl = document.createElement('div'); backupControl.className = 'flex items-center gap-2 shrink-0';
+      const exportBtn2 = document.createElement('button'); exportBtn2.className = 'btn-ghost text-xs inline-flex items-center justify-center gap-1.5'; exportBtn2.innerHTML = `${exportSvg2}${t('settings.export')}`;
+      exportBtn2.onclick = () => exportBackup(getContext().user);
+      const importLabel2 = document.createElement('label'); importLabel2.className = 'btn-ghost text-xs cursor-pointer inline-flex items-center justify-center gap-1.5'; importLabel2.innerHTML = `${importSvg2}${t('settings.import')}`;
+      const importInput2 = document.createElement('input'); importInput2.type = 'file'; importInput2.accept = 'application/json'; importInput2.className = 'hidden';
+      importInput2.onchange = async () => {
+        const file = importInput2.files?.[0]; if (!file) return;
+        try {
+          const raw = await parseImport(file);
+          confirmModal(t('settings.import.title'), t('settings.import.message'), t('settings.import.confirm'), async () => {
+            closeModal(); closeSettings();
+            await ctx.mutate(s => { Object.assign(s, applyExternalData(raw, s.id)); });
+            ctx.navigate({ view: 'folder', folderId: null });
+          });
+        } catch (e) { alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`); }
+        importInput2.value = '';
+      };
+      importLabel2.appendChild(importInput2);
+      backupControl.append(exportBtn2, importLabel2);
+      content.appendChild(mkRow(t('settings.backup'), t('settings.backupHint'), backupControl));
+
+      // 4. Réinitialiser
+      content.appendChild(Object.assign(document.createElement('hr'), { className: 'border-border' }));
+      const resetBtn2 = document.createElement('button'); resetBtn2.className = 'btn-danger text-xs shrink-0'; resetBtn2.textContent = t('settings.reset');
+      resetBtn2.onclick = () => confirmModal(t('settings.reset.title'), t('settings.reset.message'), t('settings.reset.confirm'), async () => {
+        closeModal(); closeSettings();
+        await ctx.mutate(s => {
+          const fresh = emptyState(); fresh.id = s.id;
+          ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
+          Object.assign(s, fresh);
+        });
+        ctx.navigate({ view: 'folder', folderId: null });
+      });
+      content.appendChild(mkRow(t('settings.reset'), t('settings.resetHint'), resetBtn2));
+      content.appendChild(Object.assign(document.createElement('hr'), { className: 'border-border' }));
+
+    // ── Display ──
+    } else if (activeSection === 'display') {
       const zoomControl = document.createElement('div');
       zoomControl.className = 'flex items-center gap-1';
       const zoomDec = document.createElement('button'); zoomDec.className = 'btn-ghost px-2 py-0.5 text-sm'; zoomDec.textContent = '−';
@@ -327,84 +426,6 @@ export function showSettingsModal(ctx: AppContext): void {
       });
       content.appendChild(mkRow(t('settings.language'), null, langSel));
       const sepLang = document.createElement('hr'); sepLang.className = 'border-border'; content.appendChild(sepLang);
-
-    // ── Data ──
-    } else if (activeSection === 'data') {
-      const dataRow = document.createElement('div'); dataRow.className = 'grid grid-cols-3 gap-2';
-      const exportSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-      const importSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-      const exportBtn = document.createElement('button'); exportBtn.className = 'btn-ghost text-xs inline-flex items-center justify-center gap-1.5'; exportBtn.innerHTML = `${exportSvg}${t('settings.export')}`;
-      exportBtn.onclick = () => exportBackup(getContext().state);
-      const importLabel = document.createElement('label'); importLabel.className = 'btn-ghost text-xs cursor-pointer inline-flex items-center justify-center gap-1.5'; importLabel.innerHTML = `${importSvg}${t('settings.import')}`;
-      const importInput = document.createElement('input'); importInput.type = 'file'; importInput.accept = 'application/json'; importInput.className = 'hidden';
-      importInput.onchange = async () => {
-        const file = importInput.files?.[0]; if (!file) return;
-        try {
-          const newState = await parseImport(file);
-          confirmModal(t('settings.import.title'), t('settings.import.message'), t('settings.import.confirm'), async () => {
-            ensureCurrentUser(newState); ensureCurrentProfile(newState);
-            closeModal(); closeSettings();
-            await ctx.mutate(s => { Object.assign(s, newState); });
-            ctx.navigate({ view: 'folder', folderId: null });
-          });
-        } catch (e) { alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`); }
-        importInput.value = '';
-      };
-      const resetBtn = document.createElement('button'); resetBtn.className = 'btn-danger text-xs'; resetBtn.textContent = t('settings.reset');
-      resetBtn.onclick = () => confirmModal(t('settings.reset.title'), t('settings.reset.message'), t('settings.reset.confirm'), async () => {
-        const fresh = emptyState(); ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
-        closeModal(); closeSettings();
-        await ctx.mutate(s => { Object.assign(s, fresh); });
-        ctx.navigate({ view: 'folder', folderId: null });
-      });
-      importLabel.appendChild(importInput);
-      dataRow.append(exportBtn, importLabel, resetBtn);
-      content.appendChild(dataRow);
-
-      if (isDriveFeatureEnabled()) {
-        const driveSep = document.createElement('hr'); driveSep.className = 'border-border'; content.appendChild(driveSep);
-        const driveStatusEl = document.createElement('span'); driveStatusEl.className = 'text-xs';
-        const driveBtn = document.createElement('button'); driveBtn.className = 'btn-ghost text-xs shrink-0';
-        const driveControl = document.createElement('div'); driveControl.className = 'flex items-center gap-2';
-        driveControl.append(driveStatusEl, driveBtn);
-
-        const applyDriveState = async (state: AppState) => {
-          migrateState(state);
-          await mutate(s => Object.assign(s, state));
-        };
-
-        const handleConnect = async () => {
-          try {
-            const result = await connectDrive();
-            if (result.action === 'apply') {
-              await applyDriveState(result.state);
-            } else if (result.action === 'conflict') {
-              const body = document.createElement('p');
-              body.className = 'text-sm text-muted leading-relaxed';
-              body.textContent = t('settings.sync.conflict.message');
-              showModal(t('settings.sync.conflict.title'), body, [
-                { label: t('settings.sync.conflict.keepLocal'), onClick: closeModal },
-                { label: t('settings.sync.conflict.useDrive'),  onClick: async () => { closeModal(); await applyDriveState(result.state); } },
-              ], false);
-            }
-          } catch {}
-        };
-
-        const updateDriveUI = (s: DriveStatus) => {
-          switch (s) {
-            case 'disconnected': driveStatusEl.textContent = ''; driveBtn.textContent = t('settings.sync.connect'); driveBtn.className = 'btn-primary text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => { void handleConnect(); }; break;
-            case 'connecting':   driveStatusEl.textContent = t('settings.sync.connecting'); driveStatusEl.className = 'text-xs text-muted'; driveBtn.textContent = ''; driveBtn.disabled = true; break;
-            case 'connected':    driveStatusEl.textContent = '● ' + t('settings.sync.connected'); driveStatusEl.className = 'text-xs text-green-500'; driveBtn.textContent = t('settings.sync.disconnect'); driveBtn.className = 'btn-ghost text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => disconnectDrive(); break;
-            case 'syncing':      driveStatusEl.textContent = '○ ' + t('settings.sync.syncing'); driveStatusEl.className = 'text-xs text-muted'; driveBtn.disabled = true; break;
-            case 'error':        driveStatusEl.textContent = '✕ ' + t('settings.sync.error'); driveStatusEl.className = 'text-xs text-danger'; driveBtn.textContent = t('settings.sync.reconnect'); driveBtn.className = 'btn-ghost text-xs shrink-0'; driveBtn.disabled = false; driveBtn.onclick = () => { void handleConnect(); }; break;
-          }
-        };
-
-        updateDriveUI(getDriveStatus());
-        driveUnsub = onStatusChange(updateDriveUI);
-        content.appendChild(mkRow('Google Drive', null, driveControl));
-      }
-      const sepData = document.createElement('hr'); sepData.className = 'border-border'; content.appendChild(sepData);
 
     // ── About ──
     } else if (activeSection === 'about') {
