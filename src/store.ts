@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import type { AppState, AppContext, Route } from './types';
 import { emptyState } from './utils';
-import { saveState } from './db';
+import { saveUser } from './db';
 import { syncToCloud } from './services/driveService';
 
 export const appState    = signal<AppState>(emptyState());
@@ -39,25 +39,23 @@ export function goForward(): void {
   canGoForward.value = _future.length > 0;
 }
 
-export async function mutate(fn: (state: AppState) => void): Promise<void> {
+export async function mutate(fn: (user: AppState) => void): Promise<void> {
   const next = structuredClone(appState.value);
   fn(next);
   appState.value = next;
-  await saveState(next);
+  await saveUser(next);
   syncToCloud(next);
 }
 
-// Persists without triggering a re-render (same object reference → signal no-op).
-// Used for background saves where the view manages its own local state.
-export async function save(fn: (state: AppState) => void): Promise<void> {
+export async function save(fn: (user: AppState) => void): Promise<void> {
   fn(appState.value);
-  await saveState(appState.value);
+  await saveUser(appState.value);
   syncToCloud(appState.value);
 }
 
 export function getContext(): AppContext {
   return {
-    state:        appState.value,
+    user:         appState.value,
     route:        routeSignal.value,
     navigate,
     back:         goBack,

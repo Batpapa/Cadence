@@ -5,7 +5,6 @@ import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder, deckPath } from '../services/deckService';
 import { replayFSRS, fsrsRetrievability, retentionWindowDays } from '../services/knowledgeService';
-import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork } from '../types';
 
@@ -172,12 +171,11 @@ const CHIP_ACTIVE = 'text-xs px-2 py-0.5 rounded-full border bg-accent text-whit
 const CHIP_IDLE   = 'text-xs px-2 py-0.5 rounded-full border border-border text-muted hover:border-accent hover:text-accent cursor-pointer transition-colors';
 const NO_DECK     = '__no_deck__';
 
-function CardMapSection({ state }: { state: AppState }) {
-  const user = getCurrentUser(state);
+function CardMapSection({ user }: { user: AppState }) {
 
   // Compute all reviewable points
   const cardToDecks = new Map<string, string[]>();
-  for (const deck of Object.values(state.decks))
+  for (const deck of Object.values(user.decks))
     for (const entry of deck.entries) {
       const arr = cardToDecks.get(entry.cardId) ?? [];
       arr.push(deck.id);
@@ -185,8 +183,8 @@ function CardMapSection({ state }: { state: AppState }) {
     }
 
   const allPoints: Point[] = [];
-  for (const card of Object.values(state.cards)) {
-    const work = state.cardWorks[`${state.currentProfileId}:${card.id}`];
+  for (const card of Object.values(user.cards)) {
+    const work = user.cardWorks[`${user.currentProfileId}:${card.id}`];
     if (!work || work.history.length === 0) continue;
     const fsrs = replayFSRS(work.history);
     if (!fsrs) continue;
@@ -197,7 +195,7 @@ function CardMapSection({ state }: { state: AppState }) {
     allPoints.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.importance, deckIds: cardToDecks.get(card.id) ?? [] });
   }
 
-  const deckList   = Object.values(state.decks).filter(d => allPoints.some(p => p.deckIds.includes(d.id))).sort((a, b) => a.name.localeCompare(b.name));
+  const deckList   = Object.values(user.decks).filter(d => allPoints.some(p => p.deckIds.includes(d.id))).sort((a, b) => a.name.localeCompare(b.name));
   const hasOrphans = allPoints.some(p => p.deckIds.length === 0);
 
   const [selectedDecks, setSelectedDecks] = useState<Set<string>>(
@@ -219,8 +217,8 @@ function CardMapSection({ state }: { state: AppState }) {
     tip.style.left    = dotX > svgW * 0.6 ? `${dotX - 188}px` : `${dotX + 12}px`;
     tip.style.top     = `${Math.max(0, dotY - 10)}px`;
     tip.style.display = 'block';
-    const deckNames = pt.deckIds.map(id => state.decks[id]?.name).filter(Boolean).join(', ');
-    const lastWork  = state.cardWorks[`${state.currentProfileId}:${pt.id}`];
+    const deckNames = pt.deckIds.map(id => user.decks[id]?.name).filter(Boolean).join(', ');
+    const lastWork  = user.cardWorks[`${user.currentProfileId}:${pt.id}`];
     const lastTs    = lastWork?.history.at(-1)?.ts;
     tip.innerHTML = `
       <div style="font-size:12px;font-weight:600;color:var(--color-primary);margin-bottom:4px;line-height:1.3">${pt.name}</div>
@@ -302,7 +300,7 @@ function CardMapSection({ state }: { state: AppState }) {
           </button>
         )}
         {deckList.map(deck => (
-          <button key={deck.id} class={selectedDecks.has(deck.id) ? CHIP_ACTIVE : CHIP_IDLE} title={deckPath(deck.id, state)} onClick={() => toggleDeck(deck.id)}>
+          <button key={deck.id} class={selectedDecks.has(deck.id) ? CHIP_ACTIVE : CHIP_IDLE} title={deckPath(deck.id, user)} onClick={() => toggleDeck(deck.id)}>
             {deck.name}
           </button>
         ))}
@@ -318,14 +316,14 @@ function CardMapSection({ state }: { state: AppState }) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
-function Dashboard({ state }: { state: AppState }) {
+function Dashboard({ user }: { user: AppState }) {
   const [actPeriod, setActPeriod] = useState<ActivityPeriod>('7d');
 
-  const allCards       = Object.values(state.cards);
-  const totalSessions  = Object.values(state.cardWorks).reduce((s, w) => s + w.history.length, 0);
-  const weekSessions   = sessionsLastNDays(state.cardWorks, 7).reduce((a, b) => a + b, 0);
-  const streak         = studyStreak(state.cardWorks);
-  const deckCount      = Object.keys(state.decks).length;
+  const allCards       = Object.values(user.cards);
+  const totalSessions  = Object.values(user.cardWorks).reduce((s, w) => s + w.history.length, 0);
+  const weekSessions   = sessionsLastNDays(user.cardWorks, 7).reduce((a, b) => a + b, 0);
+  const streak         = studyStreak(user.cardWorks);
+  const deckCount      = Object.keys(user.decks).length;
 
   const PERIOD_LABELS: Record<ActivityPeriod, string> = {
     '7d': t('dashboard.period.7d'), '30d': t('dashboard.period.30d'), '1y': t('dashboard.period.1y'),
@@ -366,13 +364,13 @@ function Dashboard({ state }: { state: AppState }) {
             ))}
           </div>
         </div>
-        <ActivityBars works={state.cardWorks} period={actPeriod} />
+        <ActivityBars works={user.cardWorks} period={actPeriod} />
       </div>
 
       {/* Card map */}
       <div class="card-block space-y-3">
         <div class="section-title">{t('dashboard.cardMap')}</div>
-        <CardMapSection state={state} />
+        <CardMapSection user={user} />
       </div>
     </div>
   );
@@ -392,14 +390,14 @@ function deleteFolderRecursive(s: AppState, folderId: string): void {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function FolderView({ folderId }: { folderId: string | null }) {
-  const state  = appState.value;
-  const folder = folderId ? state.folders[folderId] : null;
+  const user   = appState.value;
+  const folder = folderId ? user.folders[folderId] : null;
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName,      setEditName]      = useState('');
 
-  const folderIds = folder ? folder.folderIds : state.rootFolderIds;
-  const deckIds   = folder ? folder.deckIds   : state.rootDeckIds;
+  const folderIds = folder ? folder.folderIds : user.rootFolderIds;
+  const deckIds   = folder ? folder.deckIds   : user.rootDeckIds;
 
   return (
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
@@ -447,8 +445,8 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               t('folder.delete.message', { name: folder.name }),
               t('common.delete'),
               () => {
-                const parent = findParentFolder(folderId!, 'folder', state);
-                void mutate(s => { deleteFolderRecursive(s, folderId!); });
+                const parent = findParentFolder(folderId!, 'folder', user);
+                void mutate(u => { deleteFolderRecursive(u, folderId!); });
                 navigate({ view: 'folder', folderId: parent });
               },
             )}
@@ -459,7 +457,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
       </div>
 
       {/* ── Dashboard (root only) ── */}
-      {!folderId && <Dashboard state={state} />}
+      {!folderId && <Dashboard user={user} />}
 
       {/* ── Sub-folders ── */}
       <div class="space-y-2">
@@ -469,7 +467,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
               mutate(s => {
                 const id = generateId();
-                s.folders[id] = { userId: s.currentUserId, id, name, folderIds: [], deckIds: [] };
+                s.folders[id] = { id, name, folderIds: [], deckIds: [] };
                 if (folderId) s.folders[folderId]!.folderIds.push(id);
                 else s.rootFolderIds.push(id);
               });
@@ -483,7 +481,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
         ) : (
           <div class="grid grid-cols-3 gap-2">
             {folderIds.map(subId => {
-              const sub = state.folders[subId]; if (!sub) return null;
+              const sub = user.folders[subId]; if (!sub) return null;
               return (
                 <div key={subId} class="card-block cursor-pointer hover:border-accent/40 transition-colors" onClick={() => navigate({ view: 'folder', folderId: subId })}>
                   <div class="mb-1 text-muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
@@ -509,7 +507,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
         ) : (
           <div class="grid grid-cols-3 gap-2">
             {deckIds.map(deckId => {
-              const deck = state.decks[deckId]; if (!deck) return null;
+              const deck = user.decks[deckId]; if (!deck) return null;
               return (
                 <div key={deckId} class="card-block cursor-pointer hover:border-accent/40 transition-colors" onClick={() => navigate({ view: 'deck', deckId })}>
                   <div class="mb-1 text-muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>

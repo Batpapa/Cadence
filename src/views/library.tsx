@@ -6,7 +6,6 @@ import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
-import { getCurrentUser } from '../services/userService';
 import { t } from '../services/i18nService';
 import type { Card } from '../types';
 
@@ -78,11 +77,11 @@ function showDeckPickerModal(
   eligibleDecks: { id: string; info: string }[],
   onConfirm: (deckIds: string[]) => void,
 ): void {
-  const state  = appState.value;
+  const user   = appState.value;
   const body   = document.createElement('div'); body.className = 'space-y-1';
   const checks = new Map<string, HTMLInputElement>();
   for (const { id, info } of eligibleDecks) {
-    const deck = state.decks[id]; if (!deck) continue;
+    const deck = user.decks[id]; if (!deck) continue;
     const row    = document.createElement('label'); row.className = 'flex items-center gap-2 px-2 py-1.5 rounded hover:bg-elevated cursor-pointer';
     const chk    = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'card-checkbox'; chk.checked = false;
     const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary flex-1 truncate'; nameEl.textContent = deck.name;
@@ -104,9 +103,8 @@ function showDeckPickerModal(
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function LibraryView() {
-  const state    = appState.value;
-  const user     = getCurrentUser(state);
-  const allCards = Object.values(state.cards) as Card[];
+  const user     = appState.value;
+  const allCards = Object.values(user.cards) as Card[];
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTags,  setActiveTags]  = useState<Map<string, FilterState>>(new Map());
@@ -118,11 +116,11 @@ export function LibraryView() {
 
   // ── Filter metadata ───────────────────────────────────────────────────────────
   const allTags    = [...new Set(allCards.flatMap(c => c.tags ?? []))].sort();
-  const hasOrphans = allCards.some(c => decksContainingCard(c.id, state).length === 0);
+  const hasOrphans = allCards.some(c => decksContainingCard(c.id, user).length === 0);
   const deckItems  = [
     ...(hasOrphans ? [NO_DECK] : []),
-    ...Object.values(state.decks)
-      .filter(d => d.entries.some(e => state.cards[e.cardId]))
+    ...Object.values(user.decks)
+      .filter(d => d.entries.some(e => user.cards[e.cardId]))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(d => d.id),
   ];
@@ -132,13 +130,13 @@ export function LibraryView() {
   const filteredUnsorted = allCards.filter(c => {
     const tags       = c.tags ?? [];
     const matchText  = !q || c.name.toLowerCase().includes(q);
-    const matchTags  = activeTags.size  === 0 || [...activeTags].every(([tag, s]) =>
-      s === 'include' ? tags.includes(tag) : !tags.includes(tag)
+    const matchTags  = activeTags.size  === 0 || [...activeTags].every(([tag, fs]) =>
+      fs === 'include' ? tags.includes(tag) : !tags.includes(tag)
     );
-    const cardDecks  = decksContainingCard(c.id, state);
-    const matchDecks = activeDecks.size === 0 || [...activeDecks].every(([id, s]) => {
+    const cardDecks  = decksContainingCard(c.id, user);
+    const matchDecks = activeDecks.size === 0 || [...activeDecks].every(([id, fs]) => {
       const has = id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id);
-      return s === 'include' ? has : !has;
+      return fs === 'include' ? has : !has;
     });
     return matchText && matchTags && matchDecks;
   });
@@ -148,8 +146,8 @@ export function LibraryView() {
 
   // ── Available chips (derived from filtered) ───────────────────────────────────
   const availTags  = new Set(filtered.flatMap(c => c.tags ?? []));
-  const availDecks = new Set<string>(filtered.flatMap(c => decksContainingCard(c.id, state)));
-  if (filtered.some(c => decksContainingCard(c.id, state).length === 0)) availDecks.add(NO_DECK);
+  const availDecks = new Set<string>(filtered.flatMap(c => decksContainingCard(c.id, user)));
+  if (filtered.some(c => decksContainingCard(c.id, user).length === 0)) availDecks.add(NO_DECK);
 
   // ── Toggle handlers ───────────────────────────────────────────────────────────
   const cycle = (prev: Map<string, FilterState>, key: string): Map<string, FilterState> => {
@@ -178,7 +176,7 @@ export function LibraryView() {
     if (next.size !== selected.size) setSelected(next);
   }, [q, activeTags, activeDecks]);
 
-  const addEligible = Object.values(state.decks)
+  const addEligible = Object.values(user.decks)
     .filter(d => selectedArr.some(cId => !d.entries.some(e => e.cardId === cId)))
     .map(d => ({
       id: d.id,
@@ -186,9 +184,9 @@ export function LibraryView() {
         n: selectedArr.length - selectedArr.filter(cId => d.entries.some(e => e.cardId === cId)).length,
       }),
     }))
-    .sort((a, b) => (state.decks[a.id]?.name ?? '').localeCompare(state.decks[b.id]?.name ?? ''));
+    .sort((a, b) => (user.decks[a.id]?.name ?? '').localeCompare(user.decks[b.id]?.name ?? ''));
 
-  const removeEligible = Object.values(state.decks)
+  const removeEligible = Object.values(user.decks)
     .filter(d => selectedArr.some(cId => d.entries.some(e => e.cardId === cId)))
     .map(d => ({
       id: d.id,
@@ -196,7 +194,7 @@ export function LibraryView() {
         n: selectedArr.filter(cId => d.entries.some(e => e.cardId === cId)).length,
       }),
     }))
-    .sort((a, b) => (state.decks[a.id]?.name ?? '').localeCompare(state.decks[b.id]?.name ?? ''));
+    .sort((a, b) => (user.decks[a.id]?.name ?? '').localeCompare(user.decks[b.id]?.name ?? ''));
 
   return (
     <div class="flex flex-col h-full view-enter">
@@ -229,8 +227,8 @@ export function LibraryView() {
             labelKey="library.filterDecks"
             items={deckItems}
             activeMap={activeDecks}
-            labelOf={id => id === NO_DECK ? t('library.filterNoDecks') : (state.decks[id]?.name ?? id)}
-            titleOf={id => id === NO_DECK ? '' : deckPath(id, state)}
+            labelOf={id => id === NO_DECK ? t('library.filterNoDecks') : (user.decks[id]?.name ?? id)}
+            titleOf={id => id === NO_DECK ? '' : deckPath(id, user)}
             available={availDecks}
             onToggle={toggleDeck}
           />
@@ -333,11 +331,11 @@ export function LibraryView() {
         ) : (
           <div class="space-y-1">
             {filtered.map(card => {
-              const work     = state.cardWorks[`${state.currentProfileId}:${card.id}`];
+              const work     = user.cardWorks[`${user.currentProfileId}:${card.id}`];
               const k        = cardAvailability(user, work);
               const fsrs     = work ? replayFSRS(work.history) : undefined;
               const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
-              const deckIds  = decksContainingCard(card.id, state);
+              const deckIds  = decksContainingCard(card.id, user);
               const isSel    = selected.has(card.id);
 
               return (
@@ -383,12 +381,12 @@ export function LibraryView() {
                     </span>
                     <div class="hidden group-hover:flex gap-1">
                       {deckIds.slice(0, 2).map(dId => {
-                        const deck = state.decks[dId]; if (!deck) return null;
+                        const deck = user.decks[dId]; if (!deck) return null;
                         return (
                           <span
                             key={dId}
                             class="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent cursor-pointer hover:bg-accent/20 transition-colors"
-                            title={deckPath(dId, state)}
+                            title={deckPath(dId, user)}
                             onClick={(e) => { e.stopPropagation(); navigate({ view: 'deck', deckId: dId }); }}
                           >
                             {deck.name}

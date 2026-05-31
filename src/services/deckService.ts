@@ -87,9 +87,9 @@ export function pickStochastic(
 export function findParentFolder(
   targetId: string,
   type: 'folder' | 'deck',
-  state: AppState
+  user: AppState
 ): string | null {
-  for (const folder of Object.values(state.folders)) {
+  for (const folder of Object.values(user.folders)) {
     const list = type === 'folder' ? folder.folderIds : folder.deckIds;
     if (list.includes(targetId)) return folder.id;
   }
@@ -97,22 +97,22 @@ export function findParentFolder(
 }
 
 /** Full breadcrumb path for a deck, e.g. "Folk / Reels / My deck". */
-export function deckPath(deckId: string, state: AppState): string {
-  const deck = state.decks[deckId];
+export function deckPath(deckId: string, user: AppState): string {
+  const deck = user.decks[deckId];
   if (!deck) return '';
   const parts: string[] = [deck.name];
-  let folderId = findParentFolder(deckId, 'deck', state);
+  let folderId = findParentFolder(deckId, 'deck', user);
   while (folderId) {
-    const folder = state.folders[folderId];
+    const folder = user.folders[folderId];
     if (!folder) break;
     parts.unshift(folder.name);
-    folderId = findParentFolder(folderId, 'folder', state);
+    folderId = findParentFolder(folderId, 'folder', user);
   }
   return parts.join(' / ');
 }
 
-export function decksContainingCard(cardId: string, state: AppState): string[] {
-  return Object.values(state.decks)
+export function decksContainingCard(cardId: string, user: AppState): string[] {
+  return Object.values(user.decks)
     .filter(d => d.entries.some(e => e.cardId === cardId))
     .map(d => d.id);
 }
