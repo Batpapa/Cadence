@@ -11,14 +11,14 @@ export interface ModalAction {
   onClick: () => void | Promise<void>;
 }
 
-let activeModal: HTMLElement | null = null;
+const modalStack: HTMLElement[] = [];
 
 export function closeModal(): void {
-  if (activeModal) { activeModal.remove(); activeModal = null; }
+  const top = modalStack.pop();
+  if (top) top.remove();
 }
 
 export function showModal(title: string, body: HTMLElement, actions: ModalAction[], dismissable = true, maxWidth = '28rem'): void {
-  closeModal();
 
   const overlay = document.createElement('div');
   overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm';
@@ -73,8 +73,8 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     overlay.addEventListener('mousedown', (e) => { mouseDownOnOverlay = e.target === overlay; });
     overlay.onclick = (e) => { if (e.target === overlay && mouseDownOnOverlay) closeModal(); };
   }
+  modalStack.push(overlay);
   document.body.appendChild(overlay);
-  activeModal = overlay;
 }
 
 export function promptModal(title: string, label: string, defaultValue: string, onConfirm: (value: string) => void): void {
