@@ -198,7 +198,9 @@ export async function connectDrive(): Promise<ConnectResult> {
 }
 
 export function disconnectDrive(): void {
+  if (syncTimer)  { clearTimeout(syncTimer);  syncTimer  = null; }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  pendingState = null;
   if (accessToken) {
     (window as Gis).google?.accounts?.oauth2?.revoke(accessToken, () => {});
     accessToken = null;

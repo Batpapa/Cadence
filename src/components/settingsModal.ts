@@ -8,7 +8,7 @@ import { applyExternalData } from '../services/migration';
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
-import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, setDriveUserId, type DriveStatus } from '../services/driveService';
+import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, setDriveUserId, manualSync, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
 import { getContext, mutate } from '../store';
 import { clearLastUserId } from '../db';
@@ -224,7 +224,8 @@ export function showSettingsModal(ctx: AppContext): void {
     const logoutLabel = document.createElement('span'); logoutLabel.className = 'text-sm'; logoutLabel.textContent = t('settings.logout');
     logoutNavBtn.append(logoutIcon, logoutLabel);
     logoutNavBtn.onclick = () => confirmModal(t('settings.logout'), t('settings.logout.message'), t('settings.logout.confirm'), () => {
-      closeModal(); closeSettings(); clearLastUserId(); location.reload();
+      closeModal(); closeSettings();
+      manualSync().finally(() => { clearLastUserId(); location.reload(); });
     });
     navEl.appendChild(logoutNavBtn);
   };
