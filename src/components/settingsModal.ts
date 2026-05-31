@@ -16,6 +16,9 @@ export function showProfileModal(ctx: AppContext): void {
   const body = document.createElement('div');
   body.className = 'space-y-1';
 
+  const initialsOf = (name: string) =>
+    name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
+
   const renderList = () => {
     body.innerHTML = '';
     const ps = getContext().state;
@@ -26,6 +29,15 @@ export function showProfileModal(ctx: AppContext): void {
       const profile = ps.profiles[pid]; if (!profile) continue;
       const row = document.createElement('div');
       row.className = 'flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-bg hover:border-muted transition-colors';
+
+      const avatar = document.createElement('div');
+      avatar.className = 'w-6 h-6 rounded-md flex items-center justify-center shrink-0';
+      avatar.style.background = 'rgb(var(--color-accent-ch) / 0.18)';
+      const avatarText = document.createElement('span');
+      avatarText.className = 'text-[10px] font-mono font-bold text-accent';
+      avatarText.textContent = initialsOf(profile.name);
+      avatar.appendChild(avatarText);
+
       const nameEl = document.createElement('span');
       nameEl.className = 'text-sm flex-1 truncate cursor-text text-primary';
       nameEl.textContent = profile.name; nameEl.title = t('settings.profiles.clickToRename');
@@ -41,7 +53,7 @@ export function showProfileModal(ctx: AppContext): void {
         inp.addEventListener('blur', commit);
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } if (e.key === 'Escape') renderList(); });
       };
-      row.append(nameEl);
+      row.append(avatar, nameEl);
       if (canDelete) {
         const delBtn = document.createElement('button'); delBtn.className = 'btn-danger px-2 shrink-0'; delBtn.title = t('settings.profiles.delete.title');
         delBtn.appendChild(trashIcon(12));
@@ -60,11 +72,41 @@ export function showProfileModal(ctx: AppContext): void {
     }
 
     const addRow = document.createElement('div'); addRow.className = 'mt-2';
-    const addBtn = document.createElement('button'); addBtn.className = 'btn-ghost text-xs w-full'; addBtn.textContent = t('settings.profiles.add');
-    const addInp = document.createElement('input'); addInp.type = 'text'; addInp.placeholder = t('settings.profiles.nameLabel'); addInp.className = 'input text-xs w-full hidden';
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-dashed border-border bg-transparent text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer';
+
+    const addBtnAvatar = document.createElement('div');
+    addBtnAvatar.className = 'w-6 h-6 rounded-md flex items-center justify-center shrink-0 bg-border text-sm font-bold';
+    addBtnAvatar.textContent = '+';
+
+    const addBtnLabel = document.createElement('span');
+    addBtnLabel.className = 'text-sm flex-1 text-left';
+    addBtnLabel.textContent = t('settings.profiles.new');
+
+    addBtn.append(addBtnAvatar, addBtnLabel);
+
+    const addEditor = document.createElement('div');
+    addEditor.className = 'flex items-center gap-3 px-3 py-2.5 rounded-lg border border-accent bg-bg hidden';
+
+    const addAvatar = document.createElement('div');
+    addAvatar.className = 'w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-dim bg-border';
+    addAvatar.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+
+    const addInp = document.createElement('input');
+    addInp.type = 'text';
+    addInp.placeholder = t('settings.profiles.nameLabel');
+    addInp.className = 'flex-1 min-w-0 bg-transparent border-none outline-none text-sm text-primary placeholder-dim';
+
+    addEditor.append(addAvatar, addInp);
+
+    const showButton = () => { addEditor.classList.add('hidden'); addBtn.classList.remove('hidden'); };
+    const showEditor = () => { addBtn.classList.add('hidden'); addEditor.classList.remove('hidden'); addInp.value = ''; addInp.focus(); };
+
     const commitAdd = () => {
       const name = addInp.value.trim();
-      addInp.value = ''; addInp.classList.add('hidden'); addBtn.classList.remove('hidden');
+      addInp.value = '';
+      showButton();
       if (!name) return;
       const pid = generateId();
       ctx.mutate(s => {
@@ -74,10 +116,15 @@ export function showProfileModal(ctx: AppContext): void {
         u.profileIds.push(pid);
       }).then(renderList);
     };
-    addBtn.onclick = () => { addBtn.classList.add('hidden'); addInp.classList.remove('hidden'); addInp.focus(); };
+
+    addBtn.onclick = showEditor;
     addInp.addEventListener('blur', commitAdd);
-    addInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commitAdd(); } if (e.key === 'Escape') { addInp.value = ''; addInp.blur(); } });
-    addRow.append(addBtn, addInp);
+    addInp.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); commitAdd(); }
+      if (e.key === 'Escape') { addInp.value = ''; showButton(); }
+    });
+
+    addRow.append(addBtn, addEditor);
     body.appendChild(addRow);
   };
 
