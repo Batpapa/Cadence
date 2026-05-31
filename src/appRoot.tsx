@@ -103,7 +103,6 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
                 <span class="text-xs font-mono font-bold text-accent">{initialsOf(u.name)}</span>
               </div>
               <span class="text-sm font-medium text-primary truncate flex-1">{u.name}</span>
-              {u.ownerGoogleId && <span class="text-xs text-dim shrink-0">●</span>}
             </button>
             <button
               disabled={!!loading}

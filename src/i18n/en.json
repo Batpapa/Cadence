@@ -279,6 +279,9 @@
   "settings.sync.conflict.message": "Drive contains data from another device. Your local data and the Drive data cannot be merged automatically — you must choose one.",
   "settings.sync.conflict.keepLocal": "Keep local",
   "settings.sync.conflict.useDrive": "Use Drive",
+  "settings.sync.wrongAccount.title": "Wrong Google account",
+  "settings.sync.wrongAccount.message": "This account ({new}) is different from the one previously associated with this user ({existing}). Connecting would link your data to a different account.",
+  "settings.sync.wrongAccount.switchAnyway": "Connect anyway",
 
   "settings.about": "About",
   "settings.aboutLine1": "Cadence — open-source spaced repetition app",

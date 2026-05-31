@@ -74,7 +74,6 @@ export interface User {
   // Identity
   id: string;
   name: string;
-  ownerGoogleId?: string;
   language: 'en' | 'fr';
 
   // Study settings
