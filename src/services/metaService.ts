@@ -47,9 +47,3 @@ export function upsertWorkspace(desc: WorkspaceDescriptor): void {
   write(meta);
 }
 
-export function removeWorkspace(id: string): void {
-  const meta = readRaw();
-  meta.workspaces = meta.workspaces.filter(w => w.id !== id);
-  if (meta.lastWorkspaceId === id) meta.lastWorkspaceId = meta.workspaces[0]?.id;
-  write(meta);
-}
