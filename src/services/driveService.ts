@@ -10,7 +10,12 @@ const LS_CONNECTED  = 'cadence_drive_connected';
 const LS_LOCAL_TS   = 'cadence_local_modified';
 const LS_HINT       = 'cadence_drive_hint';
 const LS_DEVICE_ID  = 'cadence_device_id';
+const LS_GOOGLE_ID  = 'cadence_drive_google_id';
 const SS_TOKEN      = 'cadence_access_token';
+
+export function getConnectedGoogleId(): string | null {
+  return localStorage.getItem(LS_GOOGLE_ID);
+}
 
 export type ConnectResult =
   | { action: 'none' }
@@ -139,11 +144,13 @@ export async function connectDrive(): Promise<ConnectResult> {
   setStatus('connecting');
   try {
     const token = await requestToken('consent');
-    void fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then(r => r.json()).then((d: Gis) => {
-      if (d.email) localStorage.setItem(LS_HINT, d.email as string);
-    }).catch(() => {});
+    try {
+      const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(r => r.json()) as Gis;
+      if (userInfo.email) localStorage.setItem(LS_HINT,      userInfo.email as string);
+      if (userInfo.sub)   localStorage.setItem(LS_GOOGLE_ID, userInfo.sub   as string);
+    } catch { /* non-fatal */ }
     fileId = await findOrCreateFile();
     localStorage.setItem(LS_FILE_ID, fileId);
     localStorage.setItem(LS_CONNECTED, '1');
@@ -199,6 +206,7 @@ export function disconnectDrive(): void {
   localStorage.removeItem(LS_FILE_ID);
   localStorage.removeItem(LS_CONNECTED);
   localStorage.removeItem(LS_HINT);
+  localStorage.removeItem(LS_GOOGLE_ID);
   setStatus('disconnected');
 }
 
@@ -240,6 +248,14 @@ export function syncToCloud(state: AppState): void {
   // against Drive even on devices that have never uploaded.
   localStorage.setItem(LS_LOCAL_TS, String(Date.now()));
   if (!isDriveConnected()) return;
+
+  // Safety guard: never sync if workspace owner doesn't match connected account.
+  const connectedId = getConnectedGoogleId();
+  const ownerGoogleId = state.users[state.currentUserId]?.ownerGoogleId;
+  if (ownerGoogleId && connectedId && ownerGoogleId !== connectedId) {
+    console.warn('[Drive] Workspace/account mismatch — sync blocked');
+    return;
+  }
   pendingState = state;
   setStatus('pending');
   if (syncTimer) clearTimeout(syncTimer);
