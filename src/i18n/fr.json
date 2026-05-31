@@ -47,6 +47,8 @@
   "sidebar.new": "Nouveau…",
   "sidebar.newFolder": "+ Dossier",
   "sidebar.newDeck": "+ Paquet",
+  "sidebar.profileLabel": "Profil",
+  "sidebar.manageProfiles": "Gérer les profils",
 
   "modal.newFolder.title": "Nouveau dossier",
   "modal.newFolder.label": "Nom",
@@ -285,6 +287,7 @@
   "settings.profiles.clickToRename": "Cliquer pour renommer",
   "settings.profiles.delete.title": "Supprimer le profil",
   "settings.profiles.delete.message": "Supprimer le profil « {name} » ? Tout l'historique d'étude de ce profil sera perdu.",
+  "settings.profiles.modalTitle": "Profils",
 
   "theSession.tabTune": "Morceau",
   "theSession.tabMember": "Membre",
