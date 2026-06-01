@@ -12,6 +12,7 @@ import { migrateState, migrateLegacyToUser, applyExternalData } from './services
 import { applyZoom } from './services/zoomService';
 import { applyTheme } from './services/themeService';
 import { mountApp, mountUserSelector } from './appRoot';
+import { showHelpModal } from './components/help';
 import { getContext } from './store';
 import type { User } from './types';
 
@@ -31,6 +32,7 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   setLanguage(user.language);
   appState.value = user;
   finishBoot(root);
+  setTimeout(() => showHelpModal(getContext()), 0);
 }
 
 async function showUserSelector(root: HTMLElement): Promise<void> {
