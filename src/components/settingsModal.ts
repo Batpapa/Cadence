@@ -412,17 +412,21 @@ export function showSettingsModal(ctx: AppContext): void {
       themeControl.className = 'flex items-center gap-1';
       const darkBtn  = document.createElement('button');
       const lightBtn = document.createElement('button');
+      const greenBtn = document.createElement('button');
       const updateThemeBtns = () => {
-        const isDark = getTheme() === 'dark';
-        darkBtn.className  = `text-xs px-2 py-0.5 rounded transition-colors ${isDark  ? 'bg-accent text-white' : 'btn-ghost'}`;
-        lightBtn.className = `text-xs px-2 py-0.5 rounded transition-colors ${!isDark ? 'bg-accent text-white' : 'btn-ghost'}`;
+        const cur = getTheme();
+        darkBtn.className  = `text-xs px-2 py-0.5 rounded transition-colors ${cur === 'dark'  ? 'bg-accent text-white' : 'btn-ghost'}`;
+        lightBtn.className = `text-xs px-2 py-0.5 rounded transition-colors ${cur === 'light' ? 'bg-accent text-white' : 'btn-ghost'}`;
+        greenBtn.className = `text-xs px-2 py-0.5 rounded transition-colors ${cur === 'green' ? 'bg-accent text-white' : 'btn-ghost'}`;
       };
       darkBtn.textContent  = t('settings.theme.dark');
       lightBtn.textContent = t('settings.theme.light');
+      greenBtn.textContent = t('settings.theme.green');
       darkBtn.onclick  = () => { setTheme('dark');  updateThemeBtns(); };
       lightBtn.onclick = () => { setTheme('light'); updateThemeBtns(); };
+      greenBtn.onclick = () => { setTheme('green'); updateThemeBtns(); };
       updateThemeBtns();
-      themeControl.append(darkBtn, lightBtn);
+      themeControl.append(darkBtn, lightBtn, greenBtn);
       content.appendChild(mkRow(t('settings.theme'), null, themeControl));
       const sepTheme = document.createElement('hr'); sepTheme.className = 'border-border'; content.appendChild(sepTheme);
 
