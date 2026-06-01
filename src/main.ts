@@ -1,6 +1,6 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
-import { initDb, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser } from './db';
+import { initDb, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
 import { emptyState } from './utils';
 import { appState, goBack, goForward } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
@@ -27,6 +27,7 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   initDriveForUser(user.id);
   await saveUser(user);
   setLastUserId(user.id);
+  touchUserOrder(user.id);
   setLanguage(user.language);
   appState.value = user;
   finishBoot(root);
@@ -38,7 +39,7 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
   mountUserSelector(root, users,
     (id)   => openUser(id, root),
     (name) => createAndOpenUser(name, root),
-    async (id) => { clearDriveStateForUser(id); await deleteUser(id); await showUserSelector(root); },
+    async (id) => { clearDriveStateForUser(id); removeUserFromOrder(id); await deleteUser(id); await showUserSelector(root); },
   );
 }
 
@@ -53,6 +54,7 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
   setLanguage(saved.language);
   await saveUser(saved);
   setLastUserId(id);
+  touchUserOrder(id);
   appState.value = saved;
   finishBoot(root);
 }

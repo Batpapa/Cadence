@@ -6,7 +6,8 @@ const DB_VERSION = 3;
 const USER_STORE   = 'user';
 const LEGACY_STORE = 'state';
 const LEGACY_KEY   = 'cadence-state';
-const LS_LAST_USER = 'cadence_last_user_id';
+const LS_LAST_USER  = 'cadence_last_user_id';
+const LS_USER_ORDER = 'cadence_user_order';
 
 let _db: IDBPDatabase;
 
@@ -66,8 +67,33 @@ export function clearLastUserId(): void {
   localStorage.removeItem(LS_LAST_USER);
 }
 
+function readUserOrder(): string[] {
+  try { return JSON.parse(localStorage.getItem(LS_USER_ORDER) ?? '[]') as string[]; } catch { return []; }
+}
+
+/** Move userId to front of the usage-order list. */
+export function touchUserOrder(id: string): void {
+  const order = readUserOrder().filter(x => x !== id);
+  order.unshift(id);
+  localStorage.setItem(LS_USER_ORDER, JSON.stringify(order));
+}
+
+/** Remove userId from the usage-order list (on delete). */
+export function removeUserFromOrder(id: string): void {
+  const order = readUserOrder().filter(x => x !== id);
+  localStorage.setItem(LS_USER_ORDER, JSON.stringify(order));
+}
+
 export async function loadAllUsers(): Promise<User[]> {
   const ids = await getAllUserIds();
-  const users = await Promise.all(ids.map(id => loadUser(id)));
-  return users.filter((u): u is User => u !== undefined);
+  const users = (await Promise.all(ids.map(id => loadUser(id)))).filter((u): u is User => u !== undefined);
+  const order = readUserOrder();
+  return users.sort((a, b) => {
+    const ai = order.indexOf(a.id);
+    const bi = order.indexOf(b.id);
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
 }
