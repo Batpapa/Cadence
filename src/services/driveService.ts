@@ -26,6 +26,15 @@ export function clearDriveOwner(): void {
   localStorage.removeItem(lsOwner());
 }
 
+export function clearDriveStateForUser(userId: string): void {
+  const prefix = (key: string) => `cadence_drive_${key}_${userId}`;
+  localStorage.removeItem(prefix('file_id'));
+  localStorage.removeItem(prefix('connected'));
+  localStorage.removeItem(`cadence_local_modified_${userId}`);
+  localStorage.removeItem(prefix('hint'));
+  localStorage.removeItem(prefix('owner'));
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Gis = any;
 

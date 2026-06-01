@@ -7,7 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, loadFromCloud, getLocalTimestamp, initDriveVisibilitySync, initDriveForUser } from './services/driveService';
+import { initDriveClient, isDriveConnected, loadFromCloud, getLocalTimestamp, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser } from './services/driveService';
 import { migrateState, migrateLegacyToUser, applyExternalData } from './services/migration';
 import { applyZoom } from './services/zoomService';
 import { applyTheme } from './services/themeService';
@@ -24,6 +24,7 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   user.name = name;
   ensureCurrentUser(user);
   ensureCurrentProfile(user);
+  initDriveForUser(user.id);
   await saveUser(user);
   setLastUserId(user.id);
   setLanguage(user.language);
@@ -37,7 +38,7 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
   mountUserSelector(root, users,
     (id)   => openUser(id, root),
     (name) => createAndOpenUser(name, root),
-    async (id) => { await deleteUser(id); await showUserSelector(root); },
+    async (id) => { clearDriveStateForUser(id); await deleteUser(id); await showUserSelector(root); },
   );
 }
 
