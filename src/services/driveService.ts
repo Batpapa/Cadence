@@ -290,7 +290,7 @@ export async function loadFromCloud(): Promise<(AppState & { _lastModified?: num
   try {
     const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
     if (!resp.ok) return null;
-    return resp.json() as Promise<AppState & { _lastModified?: number; _deviceId?: string }>;
+    return await resp.json() as AppState & { _lastModified?: number; _deviceId?: string };
   } catch {
     return null;
   }
