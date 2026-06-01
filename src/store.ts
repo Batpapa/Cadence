@@ -47,6 +47,14 @@ export async function mutate(fn: (user: AppState) => void): Promise<void> {
   syncToCloud(next);
 }
 
+/** Apply data received from Drive without triggering a sync-back. */
+export async function applyFromDrive(fn: (user: AppState) => void): Promise<void> {
+  const next = structuredClone(appState.value);
+  fn(next);
+  appState.value = next;
+  await saveUser(next);
+}
+
 export async function save(fn: (user: AppState) => void): Promise<void> {
   fn(appState.value);
   await saveUser(appState.value);

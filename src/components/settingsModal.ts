@@ -10,7 +10,7 @@ import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
-import { getContext, mutate } from '../store';
+import { getContext, applyFromDrive } from '../store';
 import { clearLastUserId } from '../db';
 
 export function showProfileModal(ctx: AppContext): void {
@@ -306,7 +306,7 @@ export function showSettingsModal(ctx: AppContext): void {
         const driveControl2 = document.createElement('div'); driveControl2.className = 'flex items-center gap-2';
         driveControl2.append(driveStatusEl2, driveBtn2);
         const applyDriveState2 = async (raw: unknown) => {
-          await mutate(s => { Object.assign(s, applyExternalData(raw as Record<string, unknown>, s.id)); });
+          await applyFromDrive(s => { Object.assign(s, applyExternalData(raw as Record<string, unknown>, s.id)); });
         };
         const handleConnect2 = async () => {
           try {
