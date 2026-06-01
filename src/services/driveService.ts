@@ -11,8 +11,9 @@ export type ConnectResult =
 
 const FILE_NAME    = 'cadence-data.json';
 const SCOPE        = 'https://www.googleapis.com/auth/drive.file';
-const LS_DEVICE_ID = 'cadence_device_id';
-const SS_TOKEN     = 'cadence_access_token';
+const LS_DEVICE_ID  = 'cadence_device_id';
+const SS_TOKEN      = 'cadence_access_token';
+const SS_EXPIRES_AT = 'cadence_token_expires_at';
 
 // Per-user localStorage keys — set via initDriveForUser()
 let _userId = '';
@@ -41,6 +42,7 @@ type Gis = any;
 let tokenClient: Gis = null;
 let driveReady: Promise<void> | null = null;
 let accessToken: string | null = sessionStorage.getItem(SS_TOKEN);
+let tokenExpiresAt = parseInt(sessionStorage.getItem(SS_EXPIRES_AT) ?? '0');
 let fileId: string | null = null;
 let status: DriveStatus = 'disconnected';
 const listeners: Array<(s: DriveStatus) => void> = [];
@@ -110,7 +112,9 @@ function requestToken(prompt = ''): Promise<string> {
       cleanup();
       if (resp.error) { reject(new Error(resp.error_description ?? resp.error)); return; }
       accessToken = resp.access_token as string;
+      tokenExpiresAt = Date.now() + ((resp.expires_in as number ?? 3600) * 1000) - 60_000;
       sessionStorage.setItem(SS_TOKEN, accessToken);
+      sessionStorage.setItem(SS_EXPIRES_AT, String(tokenExpiresAt));
       resolve(accessToken);
     };
     tokenClient.error_callback = (err: Gis) => {
@@ -123,7 +127,9 @@ function requestToken(prompt = ''): Promise<string> {
 }
 
 async function getToken(): Promise<string> {
-  if (accessToken) return accessToken;
+  if (accessToken && Date.now() < tokenExpiresAt) return accessToken;
+  accessToken = null;
+  sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
   await initDriveClient();
   return requestToken('');
 }
@@ -134,7 +140,7 @@ async function driveRequest(url: string, options: RequestInit = {}): Promise<Res
     headers: { ...(options.headers as Record<string, string> ?? {}), Authorization: `Bearer ${tok}` },
   });
   const resp = await doFetch(await getToken());
-  if (resp.status === 401) { accessToken = null; sessionStorage.removeItem(SS_TOKEN); return doFetch(await requestToken('')); }
+  if (resp.status === 401) { accessToken = null; sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0; return doFetch(await requestToken('')); }
   return resp;
 }
 
@@ -172,7 +178,7 @@ export async function connectDrive(): Promise<ConnectResult> {
     const existingOwner = localStorage.getItem(lsOwner());
     if (existingOwner && googleId && existingOwner !== googleId) {
       accessToken = null;
-      sessionStorage.removeItem(SS_TOKEN);
+      sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
       setStatus('disconnected');
       return { action: 'wrong_account', existingEmail: localStorage.getItem(lsHint()) ?? '', newEmail: email };
     }
@@ -227,7 +233,7 @@ export function disconnectDrive(): void {
   if (accessToken) {
     (window as Gis).google?.accounts?.oauth2?.revoke(accessToken, () => {});
     accessToken = null;
-    sessionStorage.removeItem(SS_TOKEN);
+    sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
   }
   fileId = null;
   localStorage.removeItem(lsFileId());
