@@ -249,6 +249,7 @@
   "settings.theme": "Theme",
   "settings.theme.dark": "Dark",
   "settings.theme.light": "Light",
+  "settings.theme.green": "Green",
   "settings.language": "Language",
   "settings.username": "Username",
   "settings.logout": "Log out",
