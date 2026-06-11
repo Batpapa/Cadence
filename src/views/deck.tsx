@@ -14,6 +14,19 @@ function SvgIcon({ icon }: { icon: SVGSVGElement }) {
   return <span ref={ref} />;
 }
 
+function DeckMetric({ label, value, colorClass = 'text-primary' }: {
+  label: string;
+  value: string;
+  colorClass?: string;
+}) {
+  return (
+    <div class="flex items-baseline gap-2">
+      <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{label}</span>
+      <span class={`text-sm font-mono font-semibold ${colorClass}`}>{value}</span>
+    </div>
+  );
+}
+
 function formatDays(d: number): string {
   if (d >= 365) return t('common.durationYears',    { n: (d / 365).toFixed(1) });
   if (d >= 30)  return t('common.durationMonths',   { n: Math.round(d / 30) });
@@ -24,11 +37,6 @@ function formatDays(d: number): string {
 function showStrategyModal(deckId: string): void {
   const body = document.createElement('div');
   body.className = 'space-y-2';
-  const desc = document.createElement('p');
-  desc.className = 'text-sm text-muted mb-4';
-  desc.textContent = t('deck.strategy.desc');
-  body.appendChild(desc);
-
   const strategies: Array<{ id: StudyStrategy; labelKey: string; subKey: string }> = [
     { id: 'random',     labelKey: 'deck.strategy.random',     subKey: 'deck.strategy.random.sub' },
     { id: 'optimal',    labelKey: 'deck.strategy.optimal',    subKey: 'deck.strategy.optimal.sub' },
@@ -55,7 +63,7 @@ function showStrategyModal(deckId: string): void {
     };
     body.appendChild(btn);
   }
-  showModal(t('deck.strategy.title'), body, [{ label: t('common.cancel'), onClick: closeModal }]);
+  showModal(t('deck.strategy.title'), body, []);
 }
 
 
@@ -182,6 +190,14 @@ export function DeckView({ deckId }: { deckId: string }) {
           </div>
           <div class="flex gap-2 shrink-0">
             <button
+              class={noCards || allMastered
+                ? 'btn px-3 bg-elevated text-dim cursor-default text-sm font-medium'
+                : 'btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium'}
+              onClick={(!noCards && !allMastered) ? () => showStrategyModal(deckId) : undefined}
+            >
+              {t('deck.study')}
+            </button>
+            <button
               class="btn-danger px-2"
               title={t('deck.deleteTitle')}
               onClick={() => confirmModal(
@@ -204,43 +220,29 @@ export function DeckView({ deckId }: { deckId: string }) {
           </div>
         </div>
 
-        {/* Metrics */}
-        <div class="grid grid-cols-4 gap-3">
-          <div class="card-block space-y-1">
-            <div class="section-title">{t('deck.section.availability')}</div>
-            <div class={`text-lg font-mono font-semibold ${avail >= 0.75 ? 'text-success' : avail >= 0.4 ? 'text-warn' : avail > 0 ? 'text-danger' : 'text-primary'}`}>
-              {pct(avail)}
-            </div>
-          </div>
-          <div class="card-block space-y-1">
-            <div class="section-title">{t('deck.section.stability')}</div>
-            <div class="text-lg font-mono font-semibold text-primary">
-              {stabWindow > 0 ? formatDays(stabWindow) : '—'}
-            </div>
-          </div>
-          <div class="card-block space-y-1">
-            <div class="section-title">{t('deck.section.ease')}</div>
-            <div class={`text-lg font-mono font-semibold ${ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : ease > 0 ? 'text-danger' : 'text-primary'}`}>
-              {ease > 0 ? pct(ease) : '—'}
-            </div>
-          </div>
-          <div class="card-block space-y-1">
-            <div class="section-title">{t('deck.section.mastery')}</div>
-            <div class={`text-lg font-mono font-semibold ${allMastered ? 'text-success' : 'text-primary'}`}>
-              {noCards ? '—' : `${deck.entries.length - candidates}/${deck.entries.length}`}
-            </div>
-          </div>
+        {/* Metrics — single evenly-spaced inline row */}
+        <div class="flex items-center justify-evenly border-y border-border py-3">
+          <DeckMetric
+            label={t('deck.section.availability')}
+            value={pct(avail)}
+            colorClass={avail >= 0.75 ? 'text-success' : avail >= 0.4 ? 'text-warn' : avail > 0 ? 'text-danger' : 'text-primary'}
+          />
+          <DeckMetric
+            label={t('deck.section.stability')}
+            value={stabWindow > 0 ? formatDays(stabWindow) : '—'}
+          />
+          <DeckMetric
+            label={t('deck.section.ease')}
+            value={ease > 0 ? pct(ease) : '—'}
+            colorClass={ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : ease > 0 ? 'text-danger' : 'text-primary'}
+          />
+          <DeckMetric
+            label={t('deck.section.mastery')}
+            value={noCards ? '—' : `${deck.entries.length - candidates}/${deck.entries.length}`}
+            colorClass={allMastered ? 'text-success' : 'text-primary'}
+          />
         </div>
 
-        {/* Study button */}
-        <button
-          class={(noCards || allMastered)
-            ? 'btn w-full py-3 text-base font-semibold bg-elevated text-dim cursor-default'
-            : 'btn-primary w-full py-3 text-base font-semibold'}
-          onClick={(!noCards && !allMastered) ? () => showStrategyModal(deckId) : undefined}
-        >
-          {noCards ? t('deck.noCards') : allMastered ? t('deck.allAvailable') : t('deck.study')}
-        </button>
       </div>
 
       {/* ── Cards header + quick-link ── */}

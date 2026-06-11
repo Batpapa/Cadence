@@ -25,6 +25,19 @@ function SvgIcon({ icon }: { icon: SVGSVGElement }) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function CardMetric({ label, value, colorClass = 'text-primary' }: {
+  label: string;
+  value: string;
+  colorClass?: string;
+}) {
+  return (
+    <div class="flex items-baseline gap-2">
+      <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{label}</span>
+      <span class={`text-sm font-mono font-semibold ${colorClass}`}>{value}</span>
+    </div>
+  );
+}
+
 function formatDays(d: number): string {
   if (d >= 365) return t('common.durationYears',  { n: (d / 365).toFixed(1) });
   if (d >= 30)  return t('common.durationMonths', { n: Math.round(d / 30) });
@@ -251,49 +264,49 @@ export function CardView({ cardId }: { cardId: string }) {
       </div>
 
       {/* ── Stats ── */}
-      <div class="grid grid-cols-4 gap-3">
-        <div class="card-block space-y-1">
-          <div class="section-title">{t('card.section.availability')}</div>
-          <div class={`text-lg font-mono font-semibold ${rColor}`}>{k > 0 ? pct(k) : '—'}</div>
-        </div>
-        <div class="card-block space-y-1">
-          <div class="section-title">{t('card.section.stability')}</div>
-          <div class="text-lg font-mono font-semibold text-primary">{stabWindow !== undefined ? formatDays(stabWindow) : '—'}</div>
-        </div>
-        <div class="card-block space-y-1">
-          <div class="section-title">{t('card.section.ease')}</div>
-          <div class={`text-lg font-mono font-semibold ${easeColor}`}>{ease !== undefined ? pct(ease) : '—'}</div>
-        </div>
-        <div class="card-block space-y-1">
-          <div class="section-title">{t('card.section.importance')}</div>
-          <div class="h-7 flex items-center">
-            {isEditingImportance ? (
-              <input
-                ref={importanceRef}
-                type="number" min="0.1" step="0.1"
-                value={importanceDraft}
-                class="text-lg font-mono font-semibold bg-transparent border-b border-accent outline-none text-primary w-20 p-0 leading-none"
-                onInput={(e) => setImportanceDraft((e.target as HTMLInputElement).value)}
-                onBlur={() => {
-                  const val = parseFloat(importanceDraft);
-                  if (!isNaN(val) && val > 0) mutate(s => { s.cards[cardId]!.importance = val; });
-                  setIsEditingImportance(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter')  (e.target as HTMLInputElement).blur();
-                  if (e.key === 'Escape') setIsEditingImportance(false);
-                }}
-              />
-            ) : (
-              <span
-                class="text-lg font-mono font-semibold text-primary cursor-text hover:text-accent transition-colors"
-                onClick={() => { setImportanceDraft(String(card.importance)); setIsEditingImportance(true); }}
-                title={t('card.importance.label')}
-              >
-                ×{card.importance}
-              </span>
-            )}
-          </div>
+      <div class="flex items-center justify-evenly border-y border-border py-3">
+        <CardMetric
+          label={t('card.section.availability')}
+          value={k > 0 ? pct(k) : '—'}
+          colorClass={rColor}
+        />
+        <CardMetric
+          label={t('card.section.stability')}
+          value={stabWindow !== undefined ? formatDays(stabWindow) : '—'}
+        />
+        <CardMetric
+          label={t('card.section.ease')}
+          value={ease !== undefined ? pct(ease) : '—'}
+          colorClass={easeColor}
+        />
+        <div class="flex items-baseline gap-2">
+          <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('card.section.importance')}</span>
+          {isEditingImportance ? (
+            <input
+              ref={importanceRef}
+              type="number" min="0.1" step="0.1"
+              value={importanceDraft}
+              class="text-sm font-mono font-semibold bg-transparent border-b border-accent outline-none text-primary w-16 p-0 leading-none"
+              onInput={(e) => setImportanceDraft((e.target as HTMLInputElement).value)}
+              onBlur={() => {
+                const val = parseFloat(importanceDraft);
+                if (!isNaN(val) && val > 0) mutate(s => { s.cards[cardId]!.importance = val; });
+                setIsEditingImportance(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter')  (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') setIsEditingImportance(false);
+              }}
+            />
+          ) : (
+            <span
+              class="text-sm font-mono font-semibold text-primary cursor-text hover:text-accent transition-colors"
+              onClick={() => { setImportanceDraft(String(card.importance)); setIsEditingImportance(true); }}
+              title={t('card.importance.label')}
+            >
+              ×{card.importance}
+            </span>
+          )}
         </div>
       </div>
 

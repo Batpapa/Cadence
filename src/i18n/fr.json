@@ -126,7 +126,6 @@
   "deck.delete.message": "Supprimer « {name} » ? Les cartes ne seront pas supprimées.",
 
   "deck.strategy.title": "Stratégie d'étude",
-  "deck.strategy.desc": "Choisissez comment la prochaine carte est sélectionnée pendant la session.",
   "deck.strategy.random": "Aléatoire",
   "deck.strategy.random.sub": "Tirage uniforme — toutes les cartes sont équiprobables",
   "deck.strategy.optimal": "Optimal",

@@ -126,7 +126,6 @@
   "deck.delete.message": "Delete \"{name}\"? Cards will not be deleted.",
 
   "deck.strategy.title": "Study strategy",
-  "deck.strategy.desc": "Choose how the next card is picked during the session.",
   "deck.strategy.random": "Random",
   "deck.strategy.random.sub": "Uniform draw — all cards equally likely",
   "deck.strategy.optimal": "Optimal",
