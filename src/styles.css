@@ -211,7 +211,7 @@
   60%       { transform: rotate(90deg); }
 }
 @media (max-width: 768px) and (orientation: portrait) {
-  #rotate-overlay { display: flex; }
+  #rotate-overlay { display: flex !important; }
 }
 
 /* Drag & drop indicators */
