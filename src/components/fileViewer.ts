@@ -96,9 +96,10 @@ export function showPreviewModal(entry: FileEntry): void {
   header.append(titleEl, closeBtn);
 
   const body = document.createElement('div');
-  body.className = 'flex-1 overflow-auto p-4 flex items-center justify-center';
+  body.className = 'flex-1 min-h-0 overflow-auto p-4 flex items-center justify-center';
 
   const m = entry.mimeType;
+  const mediaMaxH = `${parseInt(modalMaxH(0.9)) - 80}px`;
 
   if (m.startsWith('audio/')) {
     body.classList.replace('items-center', 'items-start');
@@ -108,19 +109,37 @@ export function showPreviewModal(entry: FileEntry): void {
     });
 
   } else if (m.startsWith('video/')) {
-    const video = document.createElement('video'); video.controls = true; video.className = 'max-w-full max-h-full rounded';
+    const video = document.createElement('video'); video.controls = true; video.className = 'max-w-full rounded';
+    video.style.maxHeight = mediaMaxH;
     video.src = entryToObjectUrl(entry);
     body.appendChild(video);
 
   } else if (m.startsWith('image/')) {
     const img = document.createElement('img'); img.src = entryToObjectUrl(entry); img.alt = entry.name;
-    img.className = 'max-w-full max-h-full object-contain rounded';
+    img.className = 'max-w-full object-contain rounded';
+    img.style.maxHeight = mediaMaxH;
+    img.style.cursor = 'zoom-in';
+
+    img.addEventListener('click', () => {
+      const lightbox = document.createElement('div');
+      lightbox.style.cssText = 'position:fixed;inset:0;z-index:100;background:black;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+      const big = document.createElement('img');
+      big.src = img.src; big.alt = img.alt;
+      big.style.cssText = `max-width:${modalMaxW(1.0)};max-height:${modalMaxH(1.0)};object-fit:contain;`;
+      lightbox.appendChild(big);
+      const closeLightbox = () => { lightbox.remove(); document.removeEventListener('keydown', onLightboxKey); };
+      const onLightboxKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); closeLightbox(); } };
+      document.addEventListener('keydown', onLightboxKey, true);
+      lightbox.addEventListener('click', closeLightbox);
+      document.body.appendChild(lightbox);
+    });
+
     body.appendChild(img);
 
   } else if (m === 'application/pdf') {
     const embed = document.createElement('embed'); embed.src = entryToObjectUrl(entry);
     embed.type = 'application/pdf'; embed.className = 'w-full rounded';
-    embed.style.height = '75vh';
+    embed.style.height = mediaMaxH;
     body.appendChild(embed);
 
   } else if (isAbc(entry)) {

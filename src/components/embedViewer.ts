@@ -38,7 +38,9 @@ export function showEmbedModal(entry: EmbedEntry): void {
   if (entry.embedUrl) {
     const iframe = document.createElement('iframe');
     iframe.src = entry.embedUrl;
-    iframe.style.cssText = `width:100%;height:${dims.height};border:none;`;
+    const availH = parseInt(modalMaxH(0.9));
+    const iframeH = Math.min(parseInt(dims.height), availH - 80);
+    iframe.style.cssText = `width:100%;height:${iframeH}px;border:none;`;
     iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
     body.appendChild(iframe);
   } else {
