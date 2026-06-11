@@ -197,10 +197,10 @@ export function LibraryView() {
     .sort((a, b) => (user.decks[a.id]?.name ?? '').localeCompare(user.decks[b.id]?.name ?? ''));
 
   return (
-    <div class="flex flex-col h-full view-enter">
+    <div class="overflow-y-auto h-full view-enter">
 
       {/* ── Header ── */}
-      <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <div class="flex items-center justify-between px-6 pt-6 pb-4">
         <div>
           <h1 class="text-xl font-semibold text-primary">{t('library.title')}</h1>
           <p class="text-xs text-muted mt-0.5">
@@ -213,7 +213,7 @@ export function LibraryView() {
       </div>
 
       {/* ── Search + filters ── */}
-      <div class="px-6 pb-2 shrink-0 space-y-1">
+      <div class="px-6 pb-2 space-y-1">
         <input
           ref={searchRef}
           type="text"
@@ -247,7 +247,7 @@ export function LibraryView() {
       </div>
 
       {/* ── Selection toolbar ── */}
-      <div class="flex items-center justify-between px-6 h-9 shrink-0">
+      <div class="flex items-center justify-between px-6 h-9">
         <label class="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -323,7 +323,7 @@ export function LibraryView() {
       </div>
 
       {/* ── Card list ── */}
-      <div class="flex-1 overflow-y-auto px-6 pb-6">
+      <div class="px-6 pb-6">
         {filtered.length === 0 ? (
           <p class="text-sm text-dim italic">
             {(q || activeTags.size > 0 || activeDecks.size > 0) ? t('library.noMatch') : t('library.empty')}
