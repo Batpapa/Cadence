@@ -50,7 +50,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
   bodyWrap.appendChild(body);
 
   const footer = document.createElement('div');
-  footer.className = 'flex items-center gap-2 px-5 py-4 border-t border-border shrink-0';
+  footer.className = 'flex items-center justify-end gap-2 px-5 py-4 border-t border-border shrink-0';
 
   for (const action of actions) {
     const btn = document.createElement('button');
