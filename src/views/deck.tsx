@@ -145,10 +145,10 @@ export function DeckView({ deckId }: { deckId: string }) {
   };
 
   return (
-    <div class="flex flex-col h-full view-enter">
+    <div class="overflow-y-auto h-full view-enter">
 
       {/* ── Top section ── */}
-      <div class="shrink-0 px-6 pt-6 pb-4 space-y-6">
+      <div class="px-6 pt-6 pb-4 space-y-6">
 
         {/* Header */}
         <div class="flex items-start justify-between gap-4">
@@ -244,7 +244,7 @@ export function DeckView({ deckId }: { deckId: string }) {
       </div>
 
       {/* ── Cards header + quick-link ── */}
-      <div class="shrink-0 flex items-center justify-between px-6 pb-2">
+      <div class="flex items-center justify-between px-6 pb-2">
         <span class="section-title">{t('deck.section.cards', { count: deck.entries.length })}</span>
 
         <div class="relative w-44">
@@ -280,7 +280,7 @@ export function DeckView({ deckId }: { deckId: string }) {
       </div>
 
       {/* ── Cards list ── */}
-      <div class="flex-1 overflow-y-auto px-6 pb-6">
+      <div class="px-6 pb-6">
         <div class="space-y-3">
           {deck.entries.length === 0 ? (
             <p class="text-sm text-dim italic">{t('deck.empty')}</p>
