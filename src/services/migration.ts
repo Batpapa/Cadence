@@ -1,7 +1,8 @@
 import type { AppState, User } from '../types';
+import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 // Each entry migrates from version N to N+1.
 // Use `Record<string, unknown>` to handle partially-typed legacy shapes.
@@ -74,6 +75,13 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
         if (TUNE_TYPES.has(tag)) return tag;
         return capitalise(tag);
       });
+    }
+  },
+  // V4 → V5: assign a stable guid to every card (used for cross-device references).
+  (s) => {
+    const cards = s['cards'] as Record<string, Record<string, unknown>>;
+    for (const card of Object.values(cards ?? {})) {
+      if (!card['guid']) card['guid'] = generateId();
     }
   },
 ];

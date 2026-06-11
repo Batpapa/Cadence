@@ -201,6 +201,7 @@ export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boole
     : settings.map(s => ({ type: 'file' as const, ...settingToAbcFile(s, tune) })) as Attachment[];
   return {
     id: generateId(),
+    guid: generateId(),
     name: tune.name,
     importance: tune.tunebooks > 0 ? tune.tunebooks : 1,
     tags,

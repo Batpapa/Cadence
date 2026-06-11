@@ -490,8 +490,9 @@ export function showNewCardModal(ctx: AppContext): void {
       const name = inp.value.trim();
       if (!name) { inp.focus(); return; }
       await mutate(s => {
-        const id = generateId();
-        s.cards[id] = { id, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
+        const id   = generateId();
+        const guid = generateId();
+        s.cards[id] = { id, guid, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
         for (const deckId of selectedDeckIds) {
           const deck = s.decks[deckId];
           if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
