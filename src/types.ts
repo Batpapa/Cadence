@@ -19,6 +19,7 @@ export type Attachment =
 
 export interface Card {
   id: string;
+  guid: string;
   name: string;
   importance: number; // default: 1
   tags: string[];

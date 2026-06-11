@@ -1,5 +1,5 @@
 import type { AppState, Card } from '../types';
-import { toDateStr } from '../utils';
+import { toDateStr, generateId } from '../utils';
 import { SCHEMA_VERSION } from './migration';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -46,6 +46,12 @@ function migrateRawCards(cards: unknown[], from: number): void {
         delete content['files'];
         delete content['embeds'];
       }
+    }
+  }
+  if (from < 5) {
+    for (const raw of cards) {
+      const card = raw as Record<string, unknown>;
+      if (!card['guid']) card['guid'] = generateId();
     }
   }
 }
