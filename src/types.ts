@@ -13,9 +13,18 @@ export interface EmbedEntry {
   embedUrl?: string; // resolved iframe src, stored to avoid re-fetching
 }
 
+export interface CardReferenceAttachment {
+  type: 'card';
+  id: string;          // local UUID — fast path
+  guid: string;        // stable guid — cross-device
+  externalId?: string; // TheSession etc. — portable
+  title: string;       // snapshot of card name, fallback if unresolved
+}
+
 export type Attachment =
   | ({ type: 'file' } & FileEntry)
-  | ({ type: 'embed' } & EmbedEntry);
+  | ({ type: 'embed' } & EmbedEntry)
+  | CardReferenceAttachment;
 
 export interface Card {
   id: string;

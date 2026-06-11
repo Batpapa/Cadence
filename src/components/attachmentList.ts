@@ -1,8 +1,10 @@
-import type { Attachment, FileEntry, EmbedEntry } from '../types';
-import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, trashIcon } from '../utils';
+import type { Attachment, FileEntry, EmbedEntry, CardReferenceAttachment } from '../types';
+import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, trashIcon, sortByRelevance } from '../utils';
 import { showPreviewModal } from './fileViewer';
 import { showEmbedModal } from './embedViewer';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
+import { resolveCardRef } from '../services/cardRefService';
+import { appState, navigate } from '../store';
 import { showModal, closeModal } from './modal';
 import { t } from '../services/i18nService';
 
@@ -107,6 +109,85 @@ function renderEmbedRow(entry: EmbedEntry, onRemove: () => void, editable: boole
   return row;
 }
 
+function renderCardRefRow(entry: CardReferenceAttachment, onRemove: () => void, editable: boolean): HTMLElement {
+  const resolved = resolveCardRef(entry, appState.value.cards);
+
+  const row = document.createElement('div');
+  row.className = 'flex items-center gap-2 px-3 py-1.5 rounded border border-border group';
+
+  const icon = document.createElement('span');
+  icon.className = 'text-[11px] text-dim shrink-0 w-4 text-center font-mono';
+  icon.textContent = '↗';
+
+  const label = document.createElement('span');
+  label.className = 'text-xs font-mono truncate flex-1';
+
+  if (resolved) {
+    label.className += ' text-muted hover:text-primary cursor-pointer transition-colors';
+    label.textContent = resolved.name;
+    label.title = t('fileViewer.cardRef.open');
+    label.onclick = () => navigate({ view: 'card', cardId: resolved.id });
+  } else {
+    label.className += ' text-dim';
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = entry.title;
+    const badge = document.createElement('span');
+    badge.className = 'ml-1 text-danger text-[10px]';
+    badge.textContent = t('fileViewer.cardRef.unresolved');
+    label.append(titleSpan, badge);
+  }
+
+  row.append(icon, label);
+
+  if (editable) {
+    const rm = document.createElement('button');
+    rm.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
+    rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
+    rm.appendChild(trashIcon(11));
+    row.appendChild(rm);
+  }
+
+  return row;
+}
+
+function showCardRefPicker(onAdd: (a: Attachment) => void): void {
+  const body = document.createElement('div');
+  body.className = 'space-y-2';
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = t('fileViewer.cardRef.search');
+  inp.className = 'input text-sm';
+
+  const listEl = document.createElement('div');
+  listEl.className = 'max-h-60 overflow-y-auto space-y-0.5';
+
+  const renderList = (query: string) => {
+    listEl.innerHTML = '';
+    const cards = Object.values(appState.value.cards);
+    const sorted = query.trim()
+      ? sortByRelevance(cards, query.trim())
+      : [...cards].sort((a, b) => a.name.localeCompare(b.name));
+    for (const card of sorted.slice(0, 50)) {
+      const item = document.createElement('button');
+      item.className = 'w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent/10 transition-colors cursor-pointer';
+      item.textContent = card.name;
+      item.onclick = () => {
+        onAdd({ type: 'card', id: card.id, guid: card.guid, externalId: card.externalId, title: card.name });
+        closeModal();
+      };
+      listEl.appendChild(item);
+    }
+  };
+
+  renderList('');
+  inp.addEventListener('input', () => renderList(inp.value));
+  body.append(inp, listEl);
+
+  showModal(t('fileViewer.cardRef.title'), body, []);
+  focusIfDesktop(inp);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function renderAttachmentList(options: {
@@ -180,7 +261,11 @@ export function renderAttachmentList(options: {
       focusIfDesktop(inp);
     };
 
-    btnRow.append(fileBtn, linkBtn);
+    const cardBtn = document.createElement('button');
+    cardBtn.className = 'btn-ghost text-xs'; cardBtn.textContent = t('fileViewer.addCard');
+    cardBtn.onclick = () => showCardRefPicker(onAdd);
+
+    btnRow.append(fileBtn, linkBtn, cardBtn);
     header.appendChild(btnRow);
   }
 
@@ -202,7 +287,9 @@ export function renderAttachmentList(options: {
   attachments.forEach((att, i) => {
     const rowEl = att.type === 'file'
       ? renderFileRow(att, () => onRemove(i), editable)
-      : renderEmbedRow(att, () => onRemove(i), editable);
+      : att.type === 'card'
+        ? renderCardRefRow(att, () => onRemove(i), editable)
+        : renderEmbedRow(att, () => onRemove(i), editable);
 
     if (editable) {
       rowEl.draggable = true;
