@@ -23,6 +23,7 @@ if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
 export async function createAndOpenUser(name: string, root: HTMLElement): Promise<void> {
   const user = emptyState();
   user.name = name;
+  user.language = detectLanguage();
   ensureCurrentUser(user);
   ensureCurrentProfile(user);
   initDriveForUser(user.id);
@@ -37,6 +38,8 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
 
 async function showUserSelector(root: HTMLElement): Promise<void> {
   setLanguage(detectLanguage());
+  applyTheme();
+  applyZoom();
   const users = await loadAllUsers();
   mountUserSelector(root, users,
     (id)   => openUser(id, root),
