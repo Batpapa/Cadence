@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
-import { appState, navigate, mutate, getContext } from '../store';
+import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, trashIcon, focusIfDesktop, sortByRelevance } from '../utils';
 import { exportCards } from '../services/importExport';
 import { confirmModal, showModal, closeModal } from '../components/modal';
@@ -7,9 +7,11 @@ import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import type { Card } from '../types';
+import type { Card, FilterState } from '../types';
 
 const NO_DECK = '__no_deck__';
+
+type FilterMap = Map<string, FilterState>;
 
 // Bridge: mounts a vanilla SVGSVGElement inside Preact's tree.
 function SvgIcon({ icon }: { icon: SVGSVGElement }) {
@@ -20,18 +22,16 @@ function SvgIcon({ icon }: { icon: SVGSVGElement }) {
 
 // ── Collapsible filter section ────────────────────────────────────────────────
 
-type FilterState = 'include' | 'exclude';
-
 function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, available, onToggle }: {
   labelKey: string;
   items: string[];
-  activeMap: Map<string, FilterState>;
+  activeMap: FilterMap;
   labelOf: (id: string) => string;
   titleOf: (id: string) => string;
   available: Set<string>;
   onToggle: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => activeMap.size > 0);
   return (
     <div>
       <button
@@ -106,11 +106,16 @@ export function LibraryView() {
   const user     = appState.value;
   const allCards = Object.values(user.cards) as Card[];
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTags,  setActiveTags]  = useState<Map<string, FilterState>>(new Map());
-  const [activeDecks, setActiveDecks] = useState<Map<string, FilterState>>(new Map());
+  const savedRoute = routeSignal.value.view === 'library' ? routeSignal.value : null;
+  const [searchQuery, setSearchQuery] = useState(savedRoute?.search ?? '');
+  const [activeTags,  setActiveTags]  = useState<FilterMap>(() => new Map(savedRoute?.tags ?? []));
+  const [activeDecks, setActiveDecks] = useState<FilterMap>(() => new Map(savedRoute?.decks ?? []));
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks] });
+  }, [searchQuery, activeTags, activeDecks]);
 
   useEffect(() => { if (searchRef.current) focusIfDesktop(searchRef.current); }, []);
 
@@ -150,7 +155,7 @@ export function LibraryView() {
   if (filtered.some(c => decksContainingCard(c.id, user).length === 0)) availDecks.add(NO_DECK);
 
   // ── Toggle handlers ───────────────────────────────────────────────────────────
-  const cycle = (prev: Map<string, FilterState>, key: string): Map<string, FilterState> => {
+  const cycle = (prev: FilterMap, key: string): FilterMap => {
     const n = new Map(prev);
     const s = n.get(key);
     if (s === undefined)  n.set(key, 'include');

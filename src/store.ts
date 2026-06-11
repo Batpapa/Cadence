@@ -21,6 +21,10 @@ export function navigate(route: Route): void {
   canGoForward.value = false;
 }
 
+export function replaceRoute(route: Route): void {
+  routeSignal.value = route;
+}
+
 export function goBack(): void {
   const prev = _history.pop();
   if (!prev) return;
