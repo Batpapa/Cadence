@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, save } from '../store';
-import { pct, trashIcon, unlinkIcon, focusIfDesktop } from '../utils';
+import { pct, trashIcon, focusIfDesktop } from '../utils';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
@@ -103,32 +103,37 @@ function openSessionModal(
   focusIfDesktop(inp);
 }
 
-function showAddToDeckModal(cardId: string) {
-  const user = appState.value;
-  const available = Object.values(user.decks)
-    .filter(d => !d.entries.some(e => e.cardId === cardId))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  if (available.length === 0) {
+function showManageDecksModal(cardId: string) {
+  const user     = appState.value;
+  const allDecks = Object.values(user.decks).sort((a, b) => a.name.localeCompare(b.name));
+  if (allDecks.length === 0) {
     const p = document.createElement('p'); p.className = 'text-sm text-muted'; p.textContent = t('card.allDecks');
-    showModal(t('card.addToDeck.title'), p, [{ label: t('common.close'), onClick: closeModal }]);
+    showModal(t('card.manageDecks.title'), p, [{ label: t('common.close'), onClick: closeModal }]);
     return;
   }
-  const chosen = new Set<string>();
+  const checks = new Map<string, HTMLInputElement>();
   const body = document.createElement('div'); body.className = 'space-y-1 max-h-64 overflow-y-auto';
-  for (const deck of available) {
+  for (const deck of allDecks) {
+    const isLinked = deck.entries.some(e => e.cardId === cardId);
     const row  = document.createElement('label'); row.className = 'flex items-center gap-3 px-2 py-2 rounded cursor-pointer hover:bg-elevated transition-colors';
-    const chk  = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'card-checkbox';
-    chk.onchange = () => { if (chk.checked) chosen.add(deck.id); else chosen.delete(deck.id); };
+    const chk  = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'card-checkbox'; chk.checked = isLinked;
     const name = document.createElement('span'); name.className = 'text-sm text-primary'; name.textContent = deck.name;
+    checks.set(deck.id, chk);
     row.append(chk, name);
     body.appendChild(row);
   }
-  showModal(t('card.addToDeck.title'), body, [
+  showModal(t('card.manageDecks.title'), body, [
     { label: t('common.cancel'), onClick: closeModal },
-    { label: t('common.add'), primary: true, onClick: () => {
-      if (chosen.size === 0) return;
+    { label: t('common.save'), primary: true, onClick: () => {
       closeModal();
-      mutate(s => { for (const dId of chosen) { const d = s.decks[dId]; if (d) d.entries.push({ cardId }); } });
+      mutate(s => {
+        for (const [deckId, chk] of checks) {
+          const deck = s.decks[deckId]; if (!deck) continue;
+          const linked = deck.entries.some(e => e.cardId === cardId);
+          if (chk.checked && !linked)  deck.entries.push({ cardId });
+          if (!chk.checked && linked)  deck.entries = deck.entries.filter(e => e.cardId !== cardId);
+        }
+      });
     }},
   ]);
 }
@@ -215,27 +220,20 @@ export function CardView({ cardId }: { cardId: string }) {
             {deckIds.map(dId => {
               const deck = user.decks[dId]; if (!deck) return null;
               return (
-                <span key={dId} class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent group transition-colors hover:bg-accent/20">
-                  <span class="cursor-pointer" title={deckPath(dId, user)} onClick={() => navigate({ view: 'deck', deckId: dId })}>
-                    {deck.name}
-                  </span>
-                  <button
-                    class="hidden group-hover:inline-flex items-center cursor-pointer hover:text-danger leading-none"
-                    title={t('card.removeFromDeck')}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      mutate(s => { const d = s.decks[dId]; if (d) d.entries = d.entries.filter(e => e.cardId !== cardId); });
-                    }}
-                  >
-                    <SvgIcon icon={unlinkIcon(10)} />
-                  </button>
+                <span
+                  key={dId}
+                  class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+                  title={deckPath(dId, user)}
+                  onClick={() => navigate({ view: 'deck', deckId: dId })}
+                >
+                  {deck.name}
                 </span>
               );
             })}
             <span
               class="inline-flex items-center gap-1 text-xs text-dim hover:text-primary transition-colors cursor-pointer"
-              title={t('card.addToDeck')}
-              onClick={() => showAddToDeckModal(cardId)}
+              title={t('card.manageDecks')}
+              onClick={() => showManageDecksModal(cardId)}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             </span>
