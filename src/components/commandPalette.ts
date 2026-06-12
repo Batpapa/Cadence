@@ -1,6 +1,6 @@
 import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
-import { focusIfDesktop } from '../utils';
+import { focusIfDesktop, scoreMatch } from '../utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -13,15 +13,6 @@ type PaletteItem = {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
-function score(name: string, q: string): number {
-  const n = name.toLowerCase();
-  if (n === q)               return 0;
-  if (n.startsWith(q + ' ')) return 1;
-  if (n.startsWith(q))       return 2;
-  if (n.includes(q))         return 3;
-  return 4;
-}
-
 function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   const q = query.toLowerCase().trim();
   if (!q) return [];
@@ -29,8 +20,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   const items: PaletteItem[] = [];
 
   for (const card of Object.values(ctx.user.cards)) {
-    const s = score(card.name, q);
-    if (s < 4) items.push({
+    if (scoreMatch(card.name, q) < 4) items.push({
       label: card.name,
       sublabel: card.tags?.join(', ') || undefined,
       kind: 'card',
@@ -39,8 +29,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   }
 
   for (const deck of Object.values(ctx.user.decks)) {
-    const s = score(deck.name, q);
-    if (s < 4) items.push({
+    if (scoreMatch(deck.name, q) < 4) items.push({
       label: deck.name,
       sublabel: t(deck.entries.length !== 1 ? 'commandPalette.deckCountPlural' : 'commandPalette.deckCount', { count: deck.entries.length }),
       kind: 'deck',
@@ -49,19 +38,16 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   }
 
   for (const folder of Object.values(ctx.user.folders)) {
-    const s = score(folder.name, q);
-    if (s < 4) items.push({
+    if (scoreMatch(folder.name, q) < 4) items.push({
       label: folder.name,
       kind: 'folder',
       onSelect: (c) => c.navigate({ view: 'folder', folderId: folder.id }),
     });
   }
 
-  items.sort((a, b) => {
-    const sa = score(a.label, q);
-    const sb = score(b.label, q);
-    return sa - sb || a.label.localeCompare(b.label);
-  });
+  items.sort((a, b) =>
+    scoreMatch(a.label, q) - scoreMatch(b.label, q) || a.label.localeCompare(b.label)
+  );
 
   return items;
 }
