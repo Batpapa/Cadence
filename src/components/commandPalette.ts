@@ -15,10 +15,11 @@ type PaletteItem = {
 
 function score(name: string, q: string): number {
   const n = name.toLowerCase();
-  if (n === q)           return 3;
-  if (n.startsWith(q))   return 2;
-  if (n.includes(q))     return 1;
-  return 0;
+  if (n === q)               return 0;
+  if (n.startsWith(q + ' ')) return 1;
+  if (n.startsWith(q))       return 2;
+  if (n.includes(q))         return 3;
+  return 4;
 }
 
 function buildItems(ctx: AppContext, query: string): PaletteItem[] {
@@ -28,11 +29,8 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   const items: PaletteItem[] = [];
 
   for (const card of Object.values(ctx.user.cards)) {
-    const s = Math.max(
-      score(card.name, q),
-      ...(card.tags ?? []).map(tg => score(tg, q) * 0.5),
-    );
-    if (s > 0) items.push({
+    const s = score(card.name, q);
+    if (s < 4) items.push({
       label: card.name,
       sublabel: card.tags?.join(', ') || undefined,
       kind: 'card',
@@ -42,7 +40,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
 
   for (const deck of Object.values(ctx.user.decks)) {
     const s = score(deck.name, q);
-    if (s > 0) items.push({
+    if (s < 4) items.push({
       label: deck.name,
       sublabel: t(deck.entries.length !== 1 ? 'commandPalette.deckCountPlural' : 'commandPalette.deckCount', { count: deck.entries.length }),
       kind: 'deck',
@@ -52,7 +50,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
 
   for (const folder of Object.values(ctx.user.folders)) {
     const s = score(folder.name, q);
-    if (s > 0) items.push({
+    if (s < 4) items.push({
       label: folder.name,
       kind: 'folder',
       onSelect: (c) => c.navigate({ view: 'folder', folderId: folder.id }),
@@ -60,12 +58,12 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   }
 
   items.sort((a, b) => {
-    const sa = Math.max(score(a.label, q), 0);
-    const sb = Math.max(score(b.label, q), 0);
-    return sb - sa || a.label.localeCompare(b.label);
+    const sa = score(a.label, q);
+    const sb = score(b.label, q);
+    return sa - sb || a.label.localeCompare(b.label);
   });
 
-  return items.slice(0, 10);
+  return items;
 }
 
 // ── Kind badge ────────────────────────────────────────────────────────────────

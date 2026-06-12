@@ -164,11 +164,13 @@ function showCardRefPicker(onAdd: (a: Attachment) => void): void {
 
   const renderList = (query: string) => {
     listEl.innerHTML = '';
+    const q = query.trim().toLowerCase();
     const cards = Object.values(appState.value.cards);
-    const sorted = query.trim()
-      ? sortByRelevance(cards, query.trim())
-      : [...cards].sort((a, b) => a.name.localeCompare(b.name));
-    for (const card of sorted.slice(0, 50)) {
+    const filtered = q ? cards.filter(c => c.name.toLowerCase().includes(q)) : cards;
+    const sorted = q
+      ? sortByRelevance(filtered, q)
+      : [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    for (const card of sorted) {
       const item = document.createElement('button');
       item.className = 'w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent/10 transition-colors cursor-pointer';
       item.textContent = card.name;
