@@ -88,17 +88,19 @@ export function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-export function sortByRelevance<T extends { name: string }>(items: T[], query: string): T[] {
+export function scoreMatch(name: string, query: string): number {
+  const n = name.toLowerCase();
   const q = query.toLowerCase().trim();
-  const score = (name: string): number => {
-    const n = name.toLowerCase();
-    if (n === q) return 0;
-    if (n.startsWith(q + ' ')) return 1;
-    if (n.startsWith(q)) return 2;
-    return 3;
-  };
+  if (n === q)               return 0;
+  if (n.startsWith(q + ' ')) return 1;
+  if (n.startsWith(q))       return 2;
+  if (n.includes(q))         return 3;
+  return 4;
+}
+
+export function sortByRelevance<T extends { name: string }>(items: T[], query: string): T[] {
   return [...items].sort((a, b) => {
-    const sd = score(a.name) - score(b.name);
+    const sd = scoreMatch(a.name, query) - scoreMatch(b.name, query);
     return sd !== 0 ? sd : a.name.localeCompare(b.name);
   });
 }
