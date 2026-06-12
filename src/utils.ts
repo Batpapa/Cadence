@@ -99,7 +99,7 @@ export function sortByRelevance<T extends { name: string }>(items: T[], query: s
   };
   return [...items].sort((a, b) => {
     const sd = score(a.name) - score(b.name);
-    return sd !== 0 ? sd : a.name.length - b.name.length || a.name.localeCompare(b.name);
+    return sd !== 0 ? sd : a.name.localeCompare(b.name);
   });
 }
 
