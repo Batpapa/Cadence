@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
-import { generateId, DAY_NAMES_KEYS, timeAgo, pct } from '../utils';
+import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon } from '../components/icons';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder, deckPath } from '../services/deckService';
-import { replayFSRS, fsrsRetrievability, retentionWindowDays } from '../services/knowledgeService';
+import { replayFSRS, fsrsRetrievability, retentionWindowDays, deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork } from '../types';
 
@@ -311,7 +311,7 @@ function CardMapSection({ user }: { user: AppState }) {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 function Dashboard({ user }: { user: AppState }) {
-  const [actPeriod, setActPeriod] = useState<ActivityPeriod>('7d');
+  const [actPeriod, setActPeriod] = useState<ActivityPeriod>('1y');
 
   const allCards       = Object.values(user.cards);
   const totalSessions  = Object.values(user.cardWorks).reduce((s, w) => s + w.history.length, 0);
@@ -384,11 +384,93 @@ function deleteFolderRecursive(s: AppState, folderId: string): void {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function FolderView({ folderId }: { folderId: string | null }) {
-  const user   = appState.value;
-  const folder = folderId ? user.folders[folderId] : null;
+  const user      = appState.value;
+  const folder    = folderId ? user.folders[folderId] : null;
+  const profileId = user.currentProfileId;
+  const w         = user.weightByImportance ?? true;
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName,      setEditName]      = useState('');
+
+  // ── Folder drag state ───────────────────────────────────────────────────────
+  const draggedFolderId  = useRef<string | null>(null);
+  const [activeDragFolder,  setActiveDragFolder]  = useState<string | null>(null);
+  const [dropFolderTarget,  setDropFolderTarget]  = useState<{ id: string; zone: 'before' | 'after' } | null>(null);
+
+  const onFolderDragStart = (id: string, e: DragEvent) => {
+    draggedFolderId.current = id;
+    e.dataTransfer?.setData('text/plain', id);
+    setTimeout(() => setActiveDragFolder(id), 0);
+  };
+  const onFolderDragEnd = () => { draggedFolderId.current = null; setActiveDragFolder(null); setDropFolderTarget(null); };
+  const onFolderDragOver = (id: string, e: DragEvent) => {
+    if (!draggedFolderId.current || draggedFolderId.current === id) return;
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const zone: 'before' | 'after' = (e.clientY - rect.top) / rect.height < 0.5 ? 'before' : 'after';
+    if (dropFolderTarget?.id !== id || dropFolderTarget?.zone !== zone) setDropFolderTarget({ id, zone });
+  };
+  const onFolderDragLeave = (e: DragEvent) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropFolderTarget(null);
+  };
+  const onFolderDrop = (toId: string, e: DragEvent) => {
+    const fromId = draggedFolderId.current;
+    if (!fromId || fromId === toId) return;
+    e.preventDefault();
+    const rect   = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const before = (e.clientY - rect.top) / rect.height < 0.5;
+    setDropFolderTarget(null);
+    draggedFolderId.current = null;
+    mutate(s => {
+      const ids = folderId ? s.folders[folderId]!.folderIds : s.rootFolderIds;
+      const from = ids.indexOf(fromId);
+      if (from === -1) return;
+      ids.splice(from, 1);
+      const to = ids.indexOf(toId);
+      if (to === -1) { ids.push(fromId); return; }
+      ids.splice(before ? to : to + 1, 0, fromId);
+    });
+  };
+
+  // ── Deck drag state ─────────────────────────────────────────────────────────
+  const draggedDeckId = useRef<string | null>(null);
+  const [activeDragDeck, setActiveDragDeck] = useState<string | null>(null);
+  const [dropDeckTarget, setDropDeckTarget] = useState<{ id: string; zone: 'before' | 'after' } | null>(null);
+
+  const onDeckDragStart = (id: string, e: DragEvent) => {
+    draggedDeckId.current = id;
+    e.dataTransfer?.setData('text/plain', id);
+    setTimeout(() => setActiveDragDeck(id), 0);
+  };
+  const onDeckDragEnd = () => { draggedDeckId.current = null; setActiveDragDeck(null); setDropDeckTarget(null); };
+  const onDeckDragOver = (id: string, e: DragEvent) => {
+    if (!draggedDeckId.current || draggedDeckId.current === id) return;
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const zone: 'before' | 'after' = (e.clientY - rect.top) / rect.height < 0.5 ? 'before' : 'after';
+    if (dropDeckTarget?.id !== id || dropDeckTarget?.zone !== zone) setDropDeckTarget({ id, zone });
+  };
+  const onDeckDragLeave = (e: DragEvent) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropDeckTarget(null);
+  };
+  const onDeckDrop = (toId: string, e: DragEvent) => {
+    const fromId = draggedDeckId.current;
+    if (!fromId || fromId === toId) return;
+    e.preventDefault();
+    const rect   = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const before = (e.clientY - rect.top) / rect.height < 0.5;
+    setDropDeckTarget(null);
+    draggedDeckId.current = null;
+    mutate(s => {
+      const ids = folderId ? s.folders[folderId]!.deckIds : s.rootDeckIds;
+      const from = ids.indexOf(fromId);
+      if (from === -1) return;
+      ids.splice(from, 1);
+      const to = ids.indexOf(toId);
+      if (to === -1) { ids.push(fromId); return; }
+      ids.splice(before ? to : to + 1, 0, fromId);
+    });
+  };
 
   const folderIds = folder ? folder.folderIds : user.rootFolderIds;
   const deckIds   = folder ? folder.deckIds   : user.rootDeckIds;
@@ -473,14 +555,34 @@ export function FolderView({ folderId }: { folderId: string | null }) {
         {folderIds.length === 0 ? (
           <p class="text-xs text-dim italic">{t('folder.empty.folders')}</p>
         ) : (
-          <div class="grid grid-cols-3 gap-2">
+          <div class="space-y-1">
             {folderIds.map(subId => {
               const sub = user.folders[subId]; if (!sub) return null;
+              const isDrop = dropFolderTarget?.id === subId;
               return (
-                <div key={subId} class="card-block cursor-pointer hover:border-accent/40 transition-colors" onClick={() => navigate({ view: 'folder', folderId: subId })}>
-                  <div class="mb-1 text-muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-                  <div class="text-sm font-medium text-primary truncate">{sub.name}</div>
-                  <div class="text-xs text-muted mt-0.5">{t('folder.meta', { folders: sub.folderIds.length, decks: sub.deckIds.length })}</div>
+                <div
+                  key={subId}
+                  draggable
+                  ref={(el) => { if (el) addTouchDragSupport(el as HTMLElement); }}
+                  class={[
+                    'flex items-center gap-3 px-3 py-2 rounded hover:bg-elevated transition-colors group cursor-pointer',
+                    activeDragFolder === subId ? 'opacity-40' : '',
+                    isDrop && dropFolderTarget?.zone === 'before' ? 'drop-before' : '',
+                    isDrop && dropFolderTarget?.zone === 'after'  ? 'drop-after'  : '',
+                  ].join(' ')}
+                  onDragStart={(e) => onFolderDragStart(subId, e as unknown as DragEvent)}
+                  onDragEnd={() => onFolderDragEnd()}
+                  onDragOver={(e) => onFolderDragOver(subId, e as unknown as DragEvent)}
+                  onDragLeave={(e) => onFolderDragLeave(e as unknown as DragEvent)}
+                  onDrop={(e) => onFolderDrop(subId, e as unknown as DragEvent)}
+                  onClick={() => navigate({ view: 'folder', folderId: subId })}
+                >
+                  <span class="text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
+                  <span class="text-muted shrink-0 flex items-center">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  </span>
+                  <span class="text-sm text-primary flex-1 truncate">{sub.name}</span>
+                  <span class="text-xs text-dim shrink-0">{t('folder.meta', { folders: sub.folderIds.length, decks: sub.deckIds.length })}</span>
                 </div>
               );
             })}
@@ -499,14 +601,49 @@ export function FolderView({ folderId }: { folderId: string | null }) {
         {deckIds.length === 0 ? (
           <p class="text-xs text-dim italic">{t('folder.empty.decks')}</p>
         ) : (
-          <div class="grid grid-cols-3 gap-2">
+          <div class="space-y-1">
             {deckIds.map(deckId => {
               const deck = user.decks[deckId]; if (!deck) return null;
+              const avail   = deckAvailability(user, profileId, deck, user.cards, user.cardWorks, w);
+              const ease    = deckEase(profileId, deck, user.cards, user.cardWorks, w);
+              const lastTs  = deck.entries.reduce<number | undefined>((max, e) => {
+                const ts = user.cardWorks[`${profileId}:${e.cardId}`]?.history.at(-1)?.ts;
+                return ts !== undefined && (max === undefined || ts > max) ? ts : max;
+              }, undefined);
+              const isDrop = dropDeckTarget?.id === deckId;
               return (
-                <div key={deckId} class="card-block cursor-pointer hover:border-accent/40 transition-colors" onClick={() => navigate({ view: 'deck', deckId })}>
-                  <div class="mb-1 text-muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
-                  <div class="text-sm font-medium text-primary truncate">{deck.name}</div>
-                  <div class="text-xs text-muted mt-0.5">{t('folder.deckMeta', { count: deck.entries.length })}</div>
+                <div
+                  key={deckId}
+                  draggable
+                  ref={(el) => { if (el) addTouchDragSupport(el as HTMLElement); }}
+                  class={[
+                    'flex items-center gap-3 px-3 py-2 rounded hover:bg-elevated transition-colors group cursor-pointer',
+                    activeDragDeck === deckId ? 'opacity-40' : '',
+                    isDrop && dropDeckTarget?.zone === 'before' ? 'drop-before' : '',
+                    isDrop && dropDeckTarget?.zone === 'after'  ? 'drop-after'  : '',
+                  ].join(' ')}
+                  onDragStart={(e) => onDeckDragStart(deckId, e as unknown as DragEvent)}
+                  onDragEnd={() => onDeckDragEnd()}
+                  onDragOver={(e) => onDeckDragOver(deckId, e as unknown as DragEvent)}
+                  onDragLeave={(e) => onDeckDragLeave(e as unknown as DragEvent)}
+                  onDrop={(e) => onDeckDrop(deckId, e as unknown as DragEvent)}
+                  onClick={() => navigate({ view: 'deck', deckId })}
+                >
+                  <span class="text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
+
+                  <span class="flex gap-0.5 items-center shrink-0">
+                    <span class={`w-2 h-2 rounded-full ${availabilityColor(avail)}`} title={t('card.dot.recall', { pct: pct(avail) })} />
+                    <span
+                      class={`w-2 h-2 rounded-full ${ease <= 0 ? 'bg-border' : ease >= 0.6 ? 'bg-success' : ease >= 0.35 ? 'bg-warn' : 'bg-danger'}`}
+                      title={ease > 0 ? t('card.dot.ease', { pct: pct(ease) }) : t('card.neverReviewed')}
+                    />
+                  </span>
+
+                  <span class="text-sm text-primary flex-1 truncate">{deck.name}</span>
+                  <span class="text-xs font-mono text-dim shrink-0">
+                    {lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}
+                  </span>
+                  <span class="text-xs text-dim shrink-0">{t('folder.deckMeta', { count: deck.entries.length })}</span>
                 </div>
               );
             })}
