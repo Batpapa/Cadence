@@ -20,6 +20,8 @@ if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
 }
 
+screen.orientation?.unlock?.();
+
 export async function createAndOpenUser(name: string, root: HTMLElement): Promise<void> {
   const user = emptyState();
   user.name = name;
