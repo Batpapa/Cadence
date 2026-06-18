@@ -69,30 +69,41 @@ function AppRoot() {
     sidebarRef.current!.replaceChildren(renderSidebar(ctx));
   });
 
-  const onResizeStart = (e: MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
+  const startResize = (startX: number) => {
     const startW = wrapperRef.current!.offsetWidth;
     wrapperRef.current!.style.transition = 'none';
-    const onMove = (ev: MouseEvent) => {
-      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + ev.clientX - startX));
+
+    const onMove = (x: number) => {
+      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + x - startX));
       wrapperRef.current!.style.width = w + 'px';
     };
-    const onUp = () => {
+    const onEnd = () => {
       const w = wrapperRef.current!.offsetWidth;
       wrapperRef.current!.style.removeProperty('transition');
       setSidebarWidth(w);
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onEnd);
       document.body.style.removeProperty('cursor');
       document.body.style.removeProperty('user-select');
     };
+
+    const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX);
+    const onMouseUp   = onEnd;
+    const onTouchMove = (ev: TouchEvent) => { ev.preventDefault(); onMove(ev.touches[0]!.clientX); };
+
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
   };
+
+  const onResizeStart  = (e: MouseEvent) => { e.preventDefault(); startResize(e.clientX); };
+  const onResizeTouch  = (e: TouchEvent) => { e.preventDefault(); startResize(e.touches[0]!.clientX); };
 
   return (
     <div class="flex flex-col flex-1 overflow-hidden">
@@ -107,8 +118,9 @@ function AppRoot() {
         </div>
         {!sidebarCollapsed && (
           <div
-            class="shrink-0 w-1 cursor-col-resize hover:bg-accent/40 transition-colors"
+            class="shrink-0 w-4 cursor-col-resize hover:bg-accent/40 transition-colors touch-none"
             onMouseDown={onResizeStart}
+            onTouchStart={onResizeTouch}
           />
         )}
         <main class="flex-1 overflow-hidden bg-bg">
