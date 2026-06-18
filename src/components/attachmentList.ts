@@ -1,5 +1,6 @@
 import type { Attachment, FileEntry, EmbedEntry, CardReferenceAttachment } from '../types';
-import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, trashIcon, sortByRelevance } from '../utils';
+import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance } from '../utils';
+import { iconElement, TrashIcon } from './icons';
 import { showPreviewModal } from './fileViewer';
 import { showEmbedModal } from './embedViewer';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
@@ -60,7 +61,7 @@ function renderFileRow(entry: FileEntry, onRemove: () => void, editable: boolean
     const rm = document.createElement('button');
     rm.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
     rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
-    rm.appendChild(trashIcon(11));
+    rm.appendChild(iconElement(TrashIcon, 11));
     wrap.appendChild(rm);
   }
 
@@ -102,7 +103,7 @@ function renderEmbedRow(entry: EmbedEntry, onRemove: () => void, editable: boole
     const rm = document.createElement('button');
     rm.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
     rm.title = t('embed.remove'); rm.onclick = onRemove;
-    rm.appendChild(trashIcon(11));
+    rm.appendChild(iconElement(TrashIcon, 11));
     row.appendChild(rm);
   }
 
@@ -143,7 +144,7 @@ function renderCardRefRow(entry: CardReferenceAttachment, onRemove: () => void, 
     const rm = document.createElement('button');
     rm.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
     rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
-    rm.appendChild(trashIcon(11));
+    rm.appendChild(iconElement(TrashIcon, 11));
     row.appendChild(rm);
   }
 

@@ -1,17 +1,12 @@
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
-import { generateId, helpIcon, addTouchDragSupport, availabilityColor, pct } from '../utils';
+import { generateId, addTouchDragSupport, availabilityColor, pct } from '../utils';
 import { promptModal } from './modal';
 import { findParentFolder } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
-import { showCommandPalette } from './commandPalette';
-import { showHelpModal } from './help';
 import { t } from '../services/i18nService';
-import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus } from '../services/driveService';
-import { showSettingsModal, showProfileModal } from './settingsModal';
 
 const expanded = new Set<string>();
 let lastAutoExpandedRoute: string | null = null;
-let driveStatusUnsub: (() => void) | null = null;
 
 // ── Drag & Drop state ─────────────────────────────────────────────────────────
 
@@ -179,8 +174,7 @@ function expandAncestors(id: string, type: 'deck' | 'folder', user: AppState): v
   }
 }
 
-function isActive(route: Route, type: 'folder' | 'deck' | 'library', id: string | null = null): boolean {
-  if (type === 'library') return route.view === 'library';
+function isActive(route: Route, type: 'folder' | 'deck', id: string | null = null): boolean {
   if (type === 'folder') return route.view === 'folder' && route.folderId === id;
   return (route.view === 'deck' || route.view === 'study') && 'deckId' in route && route.deckId === id;
 }
@@ -302,227 +296,8 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const aside = document.createElement('aside');
   aside.className = 'flex flex-col h-full bg-surface border-r border-border w-full';
 
-  const top = document.createElement('div');
-  top.className = 'px-4 py-3 border-b border-border shrink-0 flex items-center justify-between';
-  const logo = document.createElement('span');
-  logo.className = 'font-mono text-xs font-semibold tracking-[0.25em] text-muted uppercase select-none';
-  logo.textContent = t('sidebar.logo');
-
-  const settingsBtn = document.createElement('button');
-  settingsBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
-  settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
-  settingsBtn.title = t('sidebar.settings');
-  settingsBtn.onclick = () => showSettingsModal(ctx);
-
-  const searchBtn = document.createElement('button');
-  searchBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
-  searchBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
-  searchBtn.title = t('sidebar.search');
-  searchBtn.onclick = () => showCommandPalette(() => ctx);
-
-  const mkNavBtn = (arrow: string, title: string, enabled: boolean, onClick: () => void) => {
-    const btn = document.createElement('button');
-    btn.className = `inline-flex items-center text-xs transition-colors cursor-pointer shrink-0 ${enabled ? 'text-dim hover:text-primary' : 'text-border cursor-default'}`;
-    btn.textContent = arrow; btn.title = title;
-    if (enabled) btn.onclick = onClick;
-    return btn;
-  };
-
-  const backBtn = mkNavBtn('←', t('sidebar.back'),    ctx.canGoBack,    () => ctx.back());
-  const fwdBtn  = mkNavBtn('→', t('sidebar.forward'), ctx.canGoForward, () => ctx.forward());
-
-  const helpBtn = document.createElement('button');
-  helpBtn.className = 'inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
-  helpBtn.title = t('sidebar.help');
-  helpBtn.appendChild(helpIcon());
-  helpBtn.onclick = () => showHelpModal(ctx);
-
-  const iconGroup = document.createElement('div');
-  iconGroup.className = 'flex items-center gap-2';
-
-  if (isDriveFeatureEnabled()) {
-    const syncBtn = document.createElement('button');
-    const cloudUpSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`;
-    syncBtn.innerHTML = cloudUpSvg;
-
-    const applyStatus = (s: DriveStatus) => {
-      if (s === 'disconnected' || s === 'connecting') {
-        syncBtn.style.display = 'none';
-        syncBtn.onclick = null;
-        return;
-      }
-      syncBtn.style.display = '';
-      switch (s) {
-        case 'pending':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-yellow-400';
-          syncBtn.title = t('sidebar.sync.pending');
-          syncBtn.onclick = () => { void manualSync(); };
-          break;
-        case 'syncing':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-default shrink-0 text-accent animate-pulse';
-          syncBtn.title = t('sidebar.sync.syncing');
-          syncBtn.onclick = null;
-          break;
-        case 'connected':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-default shrink-0 text-green-500';
-          syncBtn.title = t('sidebar.sync.connected');
-          syncBtn.onclick = null;
-          break;
-        case 'error':
-          syncBtn.className = 'inline-flex items-center transition-colors cursor-pointer shrink-0 text-danger';
-          syncBtn.title = t('sidebar.sync.error');
-          syncBtn.onclick = () => { void manualSync(); };
-          break;
-      }
-    };
-
-    if (driveStatusUnsub) { driveStatusUnsub(); driveStatusUnsub = null; }
-    applyStatus(getDriveStatus());
-    driveStatusUnsub = onStatusChange(applyStatus);
-    iconGroup.appendChild(syncBtn);
-  }
-
-  iconGroup.append(backBtn, fwdBtn, searchBtn, helpBtn, settingsBtn);
-
-  top.append(logo, iconGroup);
-
-  // ── Profile switcher ──────────────────────────────────────────────────────────
-  const currentProfile = user.profiles[user.currentProfileId];
-
-  const profileWrap = document.createElement('div');
-  profileWrap.className = 'relative border-b border-border shrink-0';
-
-  const initialsOf = (name: string) =>
-    name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
-
-  const profileBtn = document.createElement('button');
-  profileBtn.className = 'w-full flex items-center gap-2.5 px-3 py-2 hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent';
-
-  const avatar = document.createElement('div');
-  avatar.className = 'w-6 h-6 rounded-md flex items-center justify-center shrink-0';
-  avatar.style.background = 'rgb(var(--color-accent-ch) / 0.18)';
-  const avatarText = document.createElement('span');
-  avatarText.className = 'text-[10px] font-mono font-bold text-accent';
-  avatarText.textContent = initialsOf(currentProfile?.name ?? '—');
-  avatar.appendChild(avatarText);
-
-  const profileText = document.createElement('div');
-  profileText.className = 'flex-1 text-left overflow-hidden';
-  const profileKicker = document.createElement('div');
-  profileKicker.className = 'text-[9px] text-dim uppercase tracking-wider';
-  profileKicker.textContent = t('sidebar.profileLabel');
-  const profileName = document.createElement('div');
-  profileName.className = 'text-xs text-primary font-medium truncate';
-  profileName.textContent = currentProfile?.name ?? '—';
-  profileText.append(profileKicker, profileName);
-
-  const profileChevron = document.createElement('span');
-  profileChevron.className = 'shrink-0 flex items-center text-dim';
-  profileChevron.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-
-  profileBtn.append(avatar, profileText, profileChevron);
-
-  const dropdown = document.createElement('div');
-  dropdown.className = 'absolute top-full left-2 right-2 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 hidden';
-
-  let dropOpen = false;
-  const closeDropdown = () => {
-    dropOpen = false;
-    dropdown.classList.add('hidden');
-    document.removeEventListener('mousedown', onOutside);
-  };
-  const onOutside = (e: MouseEvent) => {
-    if (!profileWrap.contains(e.target as Node)) closeDropdown();
-  };
-
-  const renderDropdown = () => {
-    dropdown.innerHTML = '';
-    for (const pid of user.profileIds ?? []) {
-      const profile = user.profiles[pid]; if (!profile) continue;
-      const isActive = pid === user.currentProfileId;
-
-      const item = document.createElement('button');
-      item.className = `w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${
-        isActive ? 'text-accent' : 'text-muted hover:bg-surface'
-      }`;
-
-      const itemAvatar = document.createElement('div');
-      itemAvatar.className = 'w-5 h-5 rounded flex items-center justify-center shrink-0';
-      itemAvatar.style.background = isActive ? 'rgb(var(--color-accent-ch) / 0.2)' : 'var(--color-border)';
-      const itemAvatarText = document.createElement('span');
-      itemAvatarText.className = `text-[8px] font-mono font-bold ${isActive ? 'text-accent' : 'text-dim'}`;
-      itemAvatarText.textContent = initialsOf(profile.name);
-      itemAvatar.appendChild(itemAvatarText);
-
-      const itemName = document.createElement('span');
-      itemName.className = 'flex-1 truncate';
-      itemName.textContent = profile.name;
-
-      item.append(itemAvatar, itemName);
-
-      if (isActive) {
-        const check = document.createElement('span');
-        check.className = 'shrink-0 flex items-center text-accent';
-        check.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-        item.appendChild(check);
-      }
-
-      item.onclick = () => {
-        closeDropdown();
-        if (pid !== user.currentProfileId) ctx.mutate(s => { s.currentProfileId = pid; });
-      };
-      dropdown.appendChild(item);
-    }
-
-    const divider = document.createElement('div');
-    divider.className = 'h-px bg-border my-1';
-    dropdown.appendChild(divider);
-
-    const manageBtn = document.createElement('button');
-    manageBtn.className = 'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-dim hover:text-primary hover:bg-surface cursor-pointer border-none bg-transparent text-left transition-colors';
-    const manageIcon = document.createElement('span');
-    manageIcon.className = 'w-5 flex justify-center shrink-0';
-    manageIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
-    const manageLabel = document.createElement('span');
-    manageLabel.textContent = t('sidebar.manageProfiles');
-    manageBtn.append(manageIcon, manageLabel);
-    manageBtn.onclick = () => { closeDropdown(); showProfileModal(ctx); };
-    dropdown.appendChild(manageBtn);
-  };
-
-  profileBtn.onclick = () => {
-    if (dropOpen) { closeDropdown(); return; }
-    dropOpen = true;
-    renderDropdown();
-    dropdown.classList.remove('hidden');
-    setTimeout(() => document.addEventListener('mousedown', onOutside), 0);
-  };
-
-  profileWrap.append(profileBtn, dropdown);
-
-  const nav = document.createElement('div');
-  nav.className = 'px-2 mt-2 mb-2 space-y-0.5 shrink-0';
-
-  const mkRow = (iconSvg: string, label: string, active: boolean, onClick: () => void) => {
-    const row = document.createElement('div');
-    row.className = `flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer text-sm transition-colors ${active ? 'bg-accent/10 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
-    const iconEl = document.createElement('span');
-    iconEl.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'}`;
-    iconEl.innerHTML = iconSvg;
-    const labelEl = document.createElement('span'); labelEl.textContent = label;
-    row.append(iconEl, labelEl);
-    row.onclick = onClick;
-    return row;
-  };
-
-  const svgHome = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`;
-  const svgLib  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`;
-
-  nav.appendChild(mkRow(svgHome, t('sidebar.home'),     isActive(ctx.route, 'folder', null), () => ctx.navigate({ view: 'folder', folderId: null })));
-  nav.appendChild(mkRow(svgLib,  t('sidebar.library'),  isActive(ctx.route, 'library'),      () => ctx.navigate({ view: 'library' })));
-
   const tree = document.createElement('div');
-  tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5 border-t border-border';
+  tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5';
   for (const folderId of user.rootFolderIds) { const folder = user.folders[folderId]; if (folder) tree.appendChild(renderFolderItem(ctx, folder, 0)); }
   for (const deckId of user.rootDeckIds) { const deck = user.decks[deckId]; if (deck) tree.appendChild(renderDeckItem(ctx, deck, 0)); }
 
@@ -560,6 +335,6 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   newBtns.appendChild(mkBottomIconBtn(svgDeck, t('sidebar.newDeck'), () => showCreateDeckModal(ctx, null)));
 
   bottom.append(newLabel, newBtns);
-  aside.append(top, profileWrap, nav, tree, bottom);
+  aside.append(tree, bottom);
   return aside;
 }

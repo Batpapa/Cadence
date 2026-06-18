@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
-import { pct, trashIcon, focusIfDesktop } from '../utils';
-import { TrashIcon } from '../components/icons';
+import { pct, focusIfDesktop } from '../utils';
+import { TrashIcon, iconElement } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
@@ -88,7 +88,7 @@ function openSessionModal(
 ) {
   const { body, inp, getRating } = mkSessionForm(defaultTs, defaultRating);
   showModal(onDelete ? t('card.logSession.editTitle') : t('card.logSession.title'), body, [
-    ...(onDelete ? [{ label: '', icon: trashIcon(), danger: true, align: 'start' as const, onClick: () => { closeModal(); onDelete(); } }] : []),
+    ...(onDelete ? [{ label: '', icon: iconElement(TrashIcon), danger: true, align: 'start' as const, onClick: () => { closeModal(); onDelete(); } }] : []),
     { label: t('common.cancel'), onClick: closeModal },
     { label: t('common.save'), primary: true, onClick: () => {
       const ts = inp.value ? new Date(inp.value).getTime() : defaultTs;

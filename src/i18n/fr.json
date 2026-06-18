@@ -39,7 +39,7 @@
 
   "sidebar.logo": "Cadence",
   "sidebar.home": "Accueil",
-  "sidebar.library": "Cartes",
+  "sidebar.library": "Bibliothèque de cartes",
   "sidebar.settings": "Paramètres",
   "sidebar.search": "Rechercher [Ctrl+K]",
   "sidebar.back": "Retour [Alt+←]",
@@ -56,6 +56,8 @@
   "sidebar.newDeck": "+ Paquet",
   "sidebar.profileLabel": "Profil",
   "sidebar.manageProfiles": "Gérer les profils",
+  "sidebar.collapse": "Réduire la barre latérale",
+  "sidebar.expand": "Afficher la barre latérale",
 
   "modal.newFolder.title": "Nouveau dossier",
   "modal.newFolder.label": "Nom",

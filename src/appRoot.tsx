@@ -3,6 +3,7 @@ import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, routeSignal, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
 import { renderSidebar } from './components/sidebar';
+import { AppHeader } from './components/header';
 import { confirmModal } from './components/modal';
 import { t } from './services/i18nService';
 import type { User } from './types';
@@ -12,10 +13,11 @@ import { CardView } from './views/card';
 import { LibraryView } from './views/library';
 import { StudyView } from './views/study';
 
-const SIDEBAR_WIDTH_KEY = 'cadence_sidebar_width';
-const SIDEBAR_DEFAULT   = 224;
-const SIDEBAR_MIN       = 120;
-const SIDEBAR_MAX       = 400;
+const SIDEBAR_WIDTH_KEY     = 'cadence_sidebar_width';
+const SIDEBAR_COLLAPSED_KEY = 'cadence_sidebar_collapsed';
+const SIDEBAR_DEFAULT       = 224;
+const SIDEBAR_MIN           = 120;
+const SIDEBAR_MAX           = 400;
 
 // Routes to the appropriate Preact component.
 // key= on stateful views forces a remount when the ID changes (resets local state).
@@ -36,6 +38,17 @@ function AppRoot() {
     const n = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '', 10);
     return isNaN(n) ? SIDEBAR_DEFAULT : Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, n));
   });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  );
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(c => {
+      const next = !c;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      return next;
+    });
+  };
 
   // Explicitly read every signal so Preact subscribes AppRoot to re-render on each change.
   const ctx: AppContext = {
@@ -57,12 +70,14 @@ function AppRoot() {
     e.preventDefault();
     const startX = e.clientX;
     const startW = wrapperRef.current!.offsetWidth;
+    wrapperRef.current!.style.transition = 'none';
     const onMove = (ev: MouseEvent) => {
       const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + ev.clientX - startX));
       wrapperRef.current!.style.width = w + 'px';
     };
     const onUp = () => {
       const w = wrapperRef.current!.offsetWidth;
+      wrapperRef.current!.style.removeProperty('transition');
       setSidebarWidth(w);
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
       document.removeEventListener('mousemove', onMove);
@@ -77,17 +92,26 @@ function AppRoot() {
   };
 
   return (
-    <div class="flex flex-1 overflow-hidden">
-      <div ref={wrapperRef} style={{ width: sidebarWidth + 'px' }} class="shrink-0 overflow-hidden">
-        <div ref={sidebarRef} class="h-full" />
+    <div class="flex flex-col flex-1 overflow-hidden">
+      <AppHeader ctx={ctx} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} />
+      <div class="flex flex-1 overflow-hidden min-h-0">
+        <div
+          ref={wrapperRef}
+          style={{ width: sidebarCollapsed ? '0px' : sidebarWidth + 'px' }}
+          class="shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
+        >
+          <div ref={sidebarRef} class="h-full" />
+        </div>
+        {!sidebarCollapsed && (
+          <div
+            class="shrink-0 w-1 cursor-col-resize hover:bg-accent/40 transition-colors"
+            onMouseDown={onResizeStart}
+          />
+        )}
+        <main class="flex-1 overflow-hidden bg-bg">
+          <ContentSwitch />
+        </main>
       </div>
-      <div
-        class="shrink-0 w-1 cursor-col-resize hover:bg-accent/40 transition-colors"
-        onMouseDown={onResizeStart}
-      />
-      <main class="flex-1 overflow-hidden bg-bg">
-        <ContentSwitch />
-      </main>
     </div>
   );
 }

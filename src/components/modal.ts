@@ -6,7 +6,7 @@ export interface ModalAction {
   label: string;
   primary?: boolean;
   danger?: boolean;
-  icon?: SVGSVGElement;
+  icon?: Element;
   align?: 'start';
   onClick: () => void | Promise<void>;
 }
