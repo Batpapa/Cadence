@@ -9,62 +9,78 @@ export type ConnectResult =
   | { action: 'conflict';      state: AppState }
   | { action: 'wrong_account'; existingEmail: string; newEmail: string };
 
-const FILE_NAME    = 'cadence-data.json';
-const SCOPE        = 'https://www.googleapis.com/auth/drive.file';
+const FILE_NAME     = 'cadence-data.json';
+const SCOPE         = 'https://www.googleapis.com/auth/drive.file';
 const LS_DEVICE_ID  = 'cadence_device_id';
 const SS_TOKEN      = 'cadence_access_token';
 const SS_EXPIRES_AT = 'cadence_token_expires_at';
 
-// Per-user localStorage keys — set via initDriveForUser()
-let _userId = '';
-const lsFileId    = () => `cadence_drive_file_id_${_userId}`;
-const lsConnected = () => `cadence_drive_connected_${_userId}`;
-const lsLocalTs   = () => `cadence_local_modified_${_userId}`;
-const lsHint      = () => `cadence_drive_hint_${_userId}`;
-const lsOwner     = () => `cadence_drive_owner_${_userId}`;
+// ── Per-user state ────────────────────────────────────────────────────────────
+
+interface DriveUserState {
+  userId:         string;
+  fileId:         string | null;
+  status:         DriveStatus;
+  syncTimer:      ReturnType<typeof setTimeout> | null;
+  retryTimer:     ReturnType<typeof setTimeout> | null;
+  pendingState:   AppState | null;
+  flushInProgress: boolean;
+}
+
+let _state: DriveUserState = {
+  userId: '', fileId: null, status: 'disconnected',
+  syncTimer: null, retryTimer: null, pendingState: null, flushInProgress: false,
+};
+
+// Key helpers — accept an explicit userId for cross-user operations (e.g. clear on delete).
+const lsFileId    = (uid = _state.userId) => `cadence_drive_file_id_${uid}`;
+const lsConnected = (uid = _state.userId) => `cadence_drive_connected_${uid}`;
+const lsLocalTs   = (uid = _state.userId) => `cadence_local_modified_${uid}`;
+const lsHint      = (uid = _state.userId) => `cadence_drive_hint_${uid}`;
+const lsOwner     = (uid = _state.userId) => `cadence_drive_owner_${uid}`;
+
+// ── Session-level state (shared across users in the same tab) ─────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Gis = any;
+
+let tokenClient:    Gis    = null;
+let driveReady:     Promise<void> | null = null;
+let accessToken:    string | null = sessionStorage.getItem(SS_TOKEN);
+let tokenExpiresAt: number = parseInt(sessionStorage.getItem(SS_EXPIRES_AT) ?? '0');
+
+const listeners: Array<(s: DriveStatus) => void> = [];
+
+function setStatus(s: DriveStatus): void {
+  _state.status = s;
+  for (const cb of listeners) cb(s);
+}
+
+/** Call once per user open, before finishBoot. Reinitialises per-user Drive state. */
+export function initDriveForUser(userId: string): void {
+  if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  }
+  if (_state.retryTimer) { clearTimeout(_state.retryTimer); }
+  _state = {
+    userId,
+    fileId:          localStorage.getItem(lsFileId(userId)),
+    status:          localStorage.getItem(lsConnected(userId)) === '1' ? 'connected' : 'disconnected',
+    syncTimer:       null,
+    retryTimer:      null,
+    pendingState:    null,
+    flushInProgress: false,
+  };
+}
 
 export function clearDriveOwner(): void {
   localStorage.removeItem(lsOwner());
 }
 
 export function clearDriveStateForUser(userId: string): void {
-  const prefix = (key: string) => `cadence_drive_${key}_${userId}`;
-  localStorage.removeItem(prefix('file_id'));
-  localStorage.removeItem(prefix('connected'));
-  localStorage.removeItem(`cadence_local_modified_${userId}`);
-  localStorage.removeItem(prefix('hint'));
-  localStorage.removeItem(prefix('owner'));
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Gis = any;
-
-let tokenClient: Gis = null;
-let driveReady: Promise<void> | null = null;
-let accessToken: string | null = sessionStorage.getItem(SS_TOKEN);
-let tokenExpiresAt = parseInt(sessionStorage.getItem(SS_EXPIRES_AT) ?? '0');
-let fileId: string | null = null;
-let status: DriveStatus = 'disconnected';
-const listeners: Array<(s: DriveStatus) => void> = [];
-let syncTimer: ReturnType<typeof setTimeout> | null = null;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingState: AppState | null = null;
-let flushInProgress = false;
-
-function setStatus(s: DriveStatus): void {
-  status = s;
-  for (const cb of listeners) cb(s);
-}
-
-/** Call once per user open, before finishBoot. Loads per-user Drive state. */
-export function initDriveForUser(userId: string): void {
-  _userId = userId;
-  fileId  = localStorage.getItem(lsFileId());
-  status  = localStorage.getItem(lsConnected()) === '1' ? 'connected' : 'disconnected';
-  if (syncTimer)  { clearTimeout(syncTimer);  syncTimer  = null; }
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  pendingState    = null;
-  flushInProgress = false;
+  localStorage.removeItem(lsFileId(userId));
+  localStorage.removeItem(lsConnected(userId));
+  localStorage.removeItem(lsLocalTs(userId));
+  localStorage.removeItem(lsHint(userId));
+  localStorage.removeItem(lsOwner(userId));
 }
 
 export function getDeviceId(): string {
@@ -75,7 +91,7 @@ export function getDeviceId(): string {
 
 export function isDriveFeatureEnabled(): boolean { return Boolean(GOOGLE_CLIENT_ID); }
 export function isDriveConnected(): boolean      { return !!localStorage.getItem(lsFileId()); }
-export function getDriveStatus(): DriveStatus    { return status; }
+export function getDriveStatus(): DriveStatus    { return _state.status; }
 export function getLocalTimestamp(): number      { return parseInt(localStorage.getItem(lsLocalTs()) ?? '0'); }
 
 export function onStatusChange(cb: (s: DriveStatus) => void): () => void {
@@ -111,7 +127,7 @@ function requestToken(prompt = ''): Promise<string> {
     tokenClient.callback = (resp: Gis) => {
       cleanup();
       if (resp.error) { reject(new Error(resp.error_description ?? resp.error)); return; }
-      accessToken = resp.access_token as string;
+      accessToken    = resp.access_token as string;
       tokenExpiresAt = Date.now() + ((resp.expires_in as number ?? 3600) * 1000) - 60_000;
       sessionStorage.setItem(SS_TOKEN, accessToken);
       sessionStorage.setItem(SS_EXPIRES_AT, String(tokenExpiresAt));
@@ -140,7 +156,11 @@ async function driveRequest(url: string, options: RequestInit = {}): Promise<Res
     headers: { ...(options.headers as Record<string, string> ?? {}), Authorization: `Bearer ${tok}` },
   });
   const resp = await doFetch(await getToken());
-  if (resp.status === 401) { accessToken = null; sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0; return doFetch(await requestToken('')); }
+  if (resp.status === 401) {
+    accessToken = null;
+    sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
+    return doFetch(await requestToken(''));
+  }
   return resp;
 }
 
@@ -186,8 +206,8 @@ export async function connectDrive(): Promise<ConnectResult> {
     if (email)    localStorage.setItem(lsHint(), email);
     if (googleId) localStorage.setItem(lsOwner(), googleId);
 
-    fileId = await findOrCreateFile();
-    localStorage.setItem(lsFileId(), fileId);
+    _state.fileId = await findOrCreateFile();
+    localStorage.setItem(lsFileId(), _state.fileId);
     localStorage.setItem(lsConnected(), '1');
 
     const driveData = await loadFromCloud();
@@ -227,15 +247,15 @@ export async function connectDrive(): Promise<ConnectResult> {
 }
 
 export function disconnectDrive(): void {
-  if (syncTimer)  { clearTimeout(syncTimer);  syncTimer  = null; }
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  pendingState = null;
+  if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  _state.syncTimer  = null; }
+  if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
+  _state.pendingState = null;
   if (accessToken) {
     (window as Gis).google?.accounts?.oauth2?.revoke(accessToken, () => {});
     accessToken = null;
     sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
   }
-  fileId = null;
+  _state.fileId = null;
   localStorage.removeItem(lsFileId());
   localStorage.removeItem(lsConnected());
   localStorage.removeItem(lsHint());
@@ -243,11 +263,11 @@ export function disconnectDrive(): void {
 }
 
 async function flushSync(): Promise<void> {
-  if (!fileId || !pendingState || flushInProgress) return;
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  flushInProgress = true;
-  const state = pendingState;
-  pendingState = null;
+  if (!_state.fileId || !_state.pendingState || _state.flushInProgress) return;
+  if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
+  _state.flushInProgress = true;
+  const state = _state.pendingState;
+  _state.pendingState = null;
   setStatus('syncing');
   try {
     const ts = Date.now();
@@ -262,48 +282,48 @@ async function flushSync(): Promise<void> {
     form.append('metadata', meta);
     form.append('file', blob);
     await driveRequest(
-      `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
+      `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=multipart`,
       { method: 'PATCH', body: form }
     );
     localStorage.setItem(lsLocalTs(), String(ts));
-    setStatus(pendingState ? 'pending' : 'connected');
+    setStatus(_state.pendingState ? 'pending' : 'connected');
   } catch {
-    pendingState = pendingState ?? state;
+    _state.pendingState = _state.pendingState ?? state;
     setStatus('error');
-    retryTimer = setTimeout(() => { retryTimer = null; void flushSync(); }, 30_000);
+    _state.retryTimer = setTimeout(() => { _state.retryTimer = null; void flushSync(); }, 30_000);
   } finally {
-    flushInProgress = false;
+    _state.flushInProgress = false;
   }
 }
 
 export function syncToCloud(state: AppState): void {
   localStorage.setItem(lsLocalTs(), String(Date.now()));
   if (!isDriveConnected()) return;
-  pendingState = state;
+  _state.pendingState = state;
   setStatus('pending');
-  if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => { syncTimer = null; void flushSync(); }, 30_000);
+  if (_state.syncTimer) clearTimeout(_state.syncTimer);
+  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(); }, 30_000);
 }
 
 export async function manualSync(): Promise<void> {
-  if (syncTimer)  { clearTimeout(syncTimer);  syncTimer  = null; }
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  _state.syncTimer  = null; }
+  if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
   await flushSync();
 }
 
 export function initDriveVisibilitySync(): void {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && pendingState) {
-      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+    if (document.visibilityState === 'hidden' && _state.pendingState) {
+      if (_state.syncTimer) { clearTimeout(_state.syncTimer); _state.syncTimer = null; }
       void flushSync();
     }
   });
 }
 
 export async function loadFromCloud(): Promise<(AppState & { _lastModified?: number; _deviceId?: string }) | null> {
-  if (!fileId) return null;
+  if (!_state.fileId) return null;
   try {
-    const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+    const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${_state.fileId}?alt=media`);
     if (!resp.ok) return null;
     return await resp.json() as AppState & { _lastModified?: number; _deviceId?: string };
   } catch {

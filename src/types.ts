@@ -132,5 +132,4 @@ export interface AppContext {
   canGoBack: boolean;
   canGoForward: boolean;
   mutate: (fn: (user: AppState) => void) => Promise<void>;
-  save: (fn: (user: AppState) => void) => Promise<void>;
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
-import { generateId, trashIcon, DAY_NAMES_KEYS, timeAgo, pct } from '../utils';
+import { generateId, DAY_NAMES_KEYS, timeAgo, pct } from '../utils';
+import { TrashIcon } from '../components/icons';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder, deckPath } from '../services/deckService';
@@ -8,13 +9,6 @@ import { replayFSRS, fsrsRetrievability, retentionWindowDays } from '../services
 import { t } from '../services/i18nService';
 import type { AppState, CardWork } from '../types';
 
-// ── Local bridge ──────────────────────────────────────────────────────────────
-
-function SvgIcon({ icon }: { icon: SVGSVGElement }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => { ref.current!.replaceChildren(icon); });
-  return <span ref={ref} />;
-}
 
 // ── Pure helpers (unchanged from vanilla) ─────────────────────────────────────
 
@@ -451,7 +445,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               },
             )}
           >
-            <SvgIcon icon={trashIcon()} />
+            <TrashIcon />
           </button>
         )}
       </div>

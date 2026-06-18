@@ -1,6 +1,7 @@
 import { render } from 'preact';
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
-import { getContext, routeSignal } from './store';
+import { appState, routeSignal, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
+import type { AppContext } from './types';
 import { renderSidebar } from './components/sidebar';
 import { confirmModal } from './components/modal';
 import { t } from './services/i18nService';
@@ -25,7 +26,17 @@ function ContentSwitch() {
 
 function AppRoot() {
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const ctx = getContext();
+  // Explicitly read every signal so Preact subscribes AppRoot to re-render on each change.
+  const ctx: AppContext = {
+    user:         appState.value,
+    route:        routeSignal.value,
+    navigate,
+    back:         goBack,
+    forward:      goForward,
+    canGoBack:    canGoBack.value,
+    canGoForward: canGoForward.value,
+    mutate,
+  };
 
   useLayoutEffect(() => {
     sidebarRef.current!.replaceChildren(renderSidebar(ctx));
