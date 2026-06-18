@@ -4,7 +4,7 @@ import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDr
 import { TrashIcon } from '../components/icons';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
-import { findParentFolder, deckPath } from '../services/deckService';
+import { findParentFolder, decksContainingCard } from '../services/deckService';
 import { replayFSRS, fsrsRetrievability, retentionWindowDays, deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork } from '../types';
@@ -161,21 +161,9 @@ function buildSvg(
 
 // ── Card map component ────────────────────────────────────────────────────────
 
-const CHIP_ACTIVE = 'text-xs px-2 py-0.5 rounded-full border bg-accent text-white border-accent cursor-pointer transition-colors';
-const CHIP_IDLE   = 'text-xs px-2 py-0.5 rounded-full border border-border text-muted hover:border-accent hover:text-accent cursor-pointer transition-colors';
-const NO_DECK     = '__no_deck__';
-
 function CardMapSection({ user }: { user: AppState }) {
 
   // Compute all reviewable points
-  const cardToDecks = new Map<string, string[]>();
-  for (const deck of Object.values(user.decks))
-    for (const entry of deck.entries) {
-      const arr = cardToDecks.get(entry.cardId) ?? [];
-      arr.push(deck.id);
-      cardToDecks.set(entry.cardId, arr);
-    }
-
   const allPoints: Point[] = [];
   for (const card of Object.values(user.cards)) {
     const work = user.cardWorks[`${user.currentProfileId}:${card.id}`];
@@ -186,21 +174,13 @@ function CardMapSection({ user }: { user: AppState }) {
     const elapsed   = (Date.now() - fsrs.lastTs) / 86400000;
     const k         = fsrsRetrievability(elapsed, fsrs.stability);
     const retWindow = retentionWindowDays(fsrs.stability, user.availabilityThreshold);
-    allPoints.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.importance, deckIds: cardToDecks.get(card.id) ?? [] });
+    const deckIds   = decksContainingCard(card.id, user);
+    allPoints.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.importance, deckIds });
   }
 
-  const deckList   = Object.values(user.decks).filter(d => allPoints.some(p => p.deckIds.includes(d.id))).sort((a, b) => a.name.localeCompare(b.name));
-  const hasOrphans = allPoints.some(p => p.deckIds.length === 0);
-
-  const [selectedDecks, setSelectedDecks] = useState<Set<string>>(
-    new Set([...deckList.map(d => d.id), ...(hasOrphans ? [NO_DECK] : [])])
-  );
-
-  const svgRef      = useRef<HTMLDivElement>(null);
-  const tooltipRef  = useRef<HTMLDivElement>(null);
-  const selectedRef = useRef(selectedDecks);
-  const lastWRef    = useRef(0);
-  selectedRef.current = selectedDecks;
+  const svgRef     = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const lastWRef   = useRef(0);
 
   // Tooltip helpers (vanilla — ref-controlled to avoid fighting Preact)
   const rColor = (k: number) => k >= 0.75 ? 'var(--color-success)' : k >= 0.4 ? 'var(--color-warn)' : 'var(--color-danger)';
@@ -233,17 +213,7 @@ function CardMapSection({ user }: { user: AppState }) {
     const container = svgRef.current;
     if (w <= 0 || !container) return;
     hideTooltip();
-
-    const sel  = selectedRef.current;
-    const seen = new Set<string>();
-    const visible: Point[] = [];
-    for (const pt of allPoints) {
-      if (seen.has(pt.id)) continue;
-      const show = pt.deckIds.length === 0 ? sel.has(NO_DECK) : pt.deckIds.some(d => sel.has(d));
-      if (show) { seen.add(pt.id); visible.push(pt); }
-    }
-
-    const newSvg = buildSvg(w, visible, showTooltip, hideTooltip);
+    const newSvg = buildSvg(w, allPoints, showTooltip, hideTooltip);
     const old = container.querySelector('svg');
     if (old) old.replaceWith(newSvg); else container.insertBefore(newSvg, tooltipRef.current);
   };
@@ -263,47 +233,15 @@ function CardMapSection({ user }: { user: AppState }) {
     return () => obs.disconnect();
   }, []);
 
-  // Rebuild when selectedDecks changes (or state changes, since this runs on every render)
   useLayoutEffect(() => { rebuildRef.current(); });
 
   if (allPoints.length === 0) {
     return <p class="text-xs text-dim italic text-center py-4">{t('card.neverReviewed')}</p>;
   }
 
-  const toggleDeck = (id: string) => {
-    setSelectedDecks(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  };
-
   return (
-    <div class="space-y-2">
-      {/* Filter chips */}
-      <div class="flex flex-wrap gap-1 items-center">
-        <div class="flex gap-1 items-center border-r border-border pr-2 mr-0.5 shrink-0">
-          <button class="text-[9px] text-dim hover:text-muted cursor-pointer transition-colors"
-            onClick={() => setSelectedDecks(new Set([...deckList.map(d => d.id), ...(hasOrphans ? [NO_DECK] : [])]))}>
-            {t('dashboard.filterAll')}
-          </button>
-          <button class="text-[9px] text-dim hover:text-muted cursor-pointer transition-colors"
-            onClick={() => setSelectedDecks(new Set())}>
-            {t('dashboard.filterNone')}
-          </button>
-        </div>
-        {hasOrphans && (
-          <button class={selectedDecks.has(NO_DECK) ? CHIP_ACTIVE : CHIP_IDLE} onClick={() => toggleDeck(NO_DECK)}>
-            {t('library.filterNoDecks')}
-          </button>
-        )}
-        {deckList.map(deck => (
-          <button key={deck.id} class={selectedDecks.has(deck.id) ? CHIP_ACTIVE : CHIP_IDLE} title={deckPath(deck.id, user)} onClick={() => toggleDeck(deck.id)}>
-            {deck.name}
-          </button>
-        ))}
-      </div>
-
-      {/* SVG container — tooltip is ref-managed (not Preact-controlled) */}
-      <div ref={svgRef} style="position:relative">
-        <div ref={tooltipRef} style="position:absolute;display:none;pointer-events:none;z-index:20;width:176px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;padding:10px 12px;box-shadow:0 4px 24px rgba(0,0,0,0.6);font-family:'IBM Plex Sans',system-ui,sans-serif;" />
-      </div>
+    <div ref={svgRef} style="position:relative">
+      <div ref={tooltipRef} style="position:absolute;display:none;pointer-events:none;z-index:20;width:176px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;padding:10px 12px;box-shadow:0 4px 24px rgba(0,0,0,0.6);font-family:'IBM Plex Sans',system-ui,sans-serif;" />
     </div>
   );
 }
