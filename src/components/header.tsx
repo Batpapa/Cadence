@@ -16,28 +16,13 @@ import {
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
 
-function NavPill({ label, active, onClick, iconOnly, children }: {
-  label: string; active: boolean; onClick: () => void; iconOnly?: boolean; children: ComponentChildren;
+function HeaderBtn({ title, active, onClick, children }: {
+  title: string; onClick: () => void; active?: boolean; children: ComponentChildren;
 }) {
   return (
     <button
-      class={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer border-none bg-transparent shrink-0
-        ${active ? 'bg-accent/10 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`}
-      onClick={onClick}
-      title={label}
-    >
-      {children}
-      {!iconOnly && <span>{label}</span>}
-    </button>
-  );
-}
-
-function IconBtn({ title, onClick, children }: {
-  title: string; onClick: () => void; children: ComponentChildren;
-}) {
-  return (
-    <button
-      class="inline-flex items-center text-dim hover:text-primary transition-colors cursor-pointer shrink-0"
+      class={`flex items-center px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0
+        ${active ? 'bg-accent/10 text-accent' : 'text-dim hover:text-primary hover:bg-elevated'}`}
       title={title}
       onClick={onClick}
     >
@@ -64,11 +49,11 @@ function SyncBtn({ status }: { status: DriveStatus }) {
   const clickable = status === 'pending' || status === 'error';
   return (
     <button
-      class={`inline-flex items-center transition-colors shrink-0 ${cls}`}
+      class={`flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${cls}`}
       title={t(SYNC_TITLE[status] as Parameters<typeof t>[0])}
       onClick={clickable ? () => void manualSync() : undefined}
     >
-      <CloudUpIcon size={13} />
+      <CloudUpIcon size={14} />
     </button>
   );
 }
@@ -103,36 +88,37 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
   const libActive  = route.view === 'library';
 
   return (
-    <header class="relative flex items-center gap-1.5 px-3 h-10 border-b border-border bg-surface shrink-0">
-      <div class="flex items-center gap-0.5">
-        <button
-          class={`flex items-center px-2.5 py-1 rounded-md transition-colors cursor-pointer shrink-0 ${sidebarCollapsed ? 'text-muted hover:text-primary hover:bg-elevated' : 'text-dim hover:text-primary hover:bg-elevated'}`}
-          title={sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')}
-          onClick={onToggleSidebar}
-        >
+    <header class="relative flex items-center px-2 h-10 border-b border-border bg-surface shrink-0">
+
+      {/* Left group */}
+      <div class="flex items-center gap-1">
+        <HeaderBtn title={sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')} onClick={onToggleSidebar}>
           <PanelLeftIcon size={14} />
-        </button>
-        <NavPill label={t('sidebar.home')} active={homeActive} iconOnly onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
-          <HomeIcon size={13} />
-        </NavPill>
-        <NavPill label={t('sidebar.library')} active={libActive} iconOnly onClick={() => ctx.navigate({ view: 'library' })}>
-          <LibraryIcon size={13} />
-        </NavPill>
+        </HeaderBtn>
+        <HeaderBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
+          <HomeIcon size={14} />
+        </HeaderBtn>
+        <HeaderBtn title={t('sidebar.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
+          <LibraryIcon size={14} />
+        </HeaderBtn>
       </div>
 
+      {/* Center: ← logo profil → */}
       <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none">
         <button
-          class={`pointer-events-auto text-xs px-1 transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
+          class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
           title={t('sidebar.back')}
           disabled={!canGoBack}
           onClick={() => ctx.back()}
         >←</button>
+
         <span class="text-accent flex items-center select-none">
           <CadenceLogo size={22} />
         </span>
+
         <div ref={profileRef} class="relative pointer-events-auto">
           <button
-            class="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
+            class="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
             onClick={() => setProfileOpen(o => !o)}
           >
             <div
@@ -184,8 +170,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
             </div>
           )}
         </div>
+
         <button
-          class={`pointer-events-auto text-xs px-1 transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
+          class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
           title={t('sidebar.forward')}
           disabled={!canGoForward}
           onClick={() => ctx.forward()}
@@ -194,19 +181,21 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
 
       <div class="flex-1" />
 
-      {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
-        <SyncBtn status={driveStatus} />
-      )}
-
-      <IconBtn title={t('sidebar.search')} onClick={() => showCommandPalette(() => ctx)}>
-        <SearchIcon size={14} />
-      </IconBtn>
-      <IconBtn title={t('sidebar.help')} onClick={() => showHelpModal(ctx)}>
-        <HelpIcon size={14} />
-      </IconBtn>
-      <IconBtn title={t('sidebar.settings')} onClick={() => showSettingsModal(ctx)}>
-        <SettingsIcon size={14} />
-      </IconBtn>
+      {/* Right group */}
+      <div class="flex items-center gap-1">
+        {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
+          <SyncBtn status={driveStatus} />
+        )}
+        <HeaderBtn title={t('sidebar.search')} onClick={() => showCommandPalette(() => ctx)}>
+          <SearchIcon size={14} />
+        </HeaderBtn>
+        <HeaderBtn title={t('sidebar.help')} onClick={() => showHelpModal(ctx)}>
+          <HelpIcon size={14} />
+        </HeaderBtn>
+        <HeaderBtn title={t('sidebar.settings')} onClick={() => showSettingsModal(ctx)}>
+          <SettingsIcon size={14} />
+        </HeaderBtn>
+      </div>
 
     </header>
   );
