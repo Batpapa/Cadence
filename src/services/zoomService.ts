@@ -6,7 +6,7 @@ export const ZOOM_LEVELS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175,
 export function getZoom(): number {
   const stored = localStorage.getItem(LS_ZOOM);
   if (stored !== null) return parseInt(stored, 10);
-  return isMobileDevice() ? 80 : 100;
+  return isMobileDevice() ? 80 : 125;
 }
 
 export function setZoom(pct: number): void {
