@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useState, useRef, useLayoutEffect } from 'preact/hooks';
+import { useState, useRef, useLayoutEffect, useEffect } from 'preact/hooks';
 import { appState, routeSignal, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
@@ -44,6 +44,21 @@ function AppRoot() {
     if (stored !== null) return stored === 'true';
     return isMobileDevice();
   });
+  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const handler = (e: MediaQueryListEvent) => {
+      const el = wrapperRef.current;
+      if (el) el.style.transition = 'none';
+      setIsNarrow(e.matches);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (el) el.style.removeProperty('transition');
+      }));
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const toggleSidebar = () => {
     setSidebarCollapsed(c => {
@@ -108,17 +123,23 @@ function AppRoot() {
   return (
     <div class="flex flex-col flex-1 overflow-hidden">
       <AppHeader ctx={ctx} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} />
-      <div class="flex flex-1 overflow-hidden min-h-0">
+      <div class="relative flex flex-1 overflow-hidden min-h-0">
+        {isNarrow && !sidebarCollapsed && (
+          <div class="absolute inset-0 z-20 bg-black/40" onClick={toggleSidebar} />
+        )}
         <div
           ref={wrapperRef}
-          style={{ width: sidebarCollapsed ? '0px' : sidebarWidth + 'px' }}
-          class="shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
+          style={{ width: (isNarrow || !sidebarCollapsed) ? sidebarWidth + 'px' : '0px' }}
+          class={isNarrow
+            ? `absolute top-0 bottom-0 left-0 z-30 overflow-hidden transition-transform duration-200 ease-in-out ${sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'}`
+            : `shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out`}
         >
           <div ref={sidebarRef} class="h-full" />
         </div>
         {!sidebarCollapsed && (
           <div
-            class="shrink-0 w-4 cursor-col-resize hover:bg-accent/40 transition-colors touch-none"
+            class={`cursor-col-resize hover:bg-accent/40 transition-colors touch-none ${isNarrow ? 'absolute top-0 bottom-0 w-4 z-30' : 'shrink-0 w-4'}`}
+            style={isNarrow ? { left: sidebarWidth + 'px' } : undefined}
             onMouseDown={onResizeStart}
             onTouchStart={onResizeTouch}
           />
