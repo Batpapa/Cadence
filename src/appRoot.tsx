@@ -33,8 +33,9 @@ function ContentSwitch() {
 }
 
 function AppRoot() {
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const wrapperRef  = useRef<HTMLDivElement>(null);
+  const sidebarRef    = useRef<HTMLDivElement>(null);
+  const wrapperRef    = useRef<HTMLDivElement>(null);
+  const resizeLineRef = useRef<HTMLDivElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const n = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '', 10);
     return isNaN(n) ? SIDEBAR_DEFAULT : Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, n));
@@ -87,6 +88,7 @@ function AppRoot() {
   const startResize = (startX: number) => {
     const startW = wrapperRef.current!.offsetWidth;
     wrapperRef.current!.style.transition = 'none';
+    if (resizeLineRef.current) resizeLineRef.current.style.background = 'rgb(var(--color-accent-ch)/0.4)';
 
     const onMove = (x: number) => {
       const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + x - startX));
@@ -95,6 +97,7 @@ function AppRoot() {
     const onEnd = () => {
       const w = wrapperRef.current!.offsetWidth;
       wrapperRef.current!.style.removeProperty('transition');
+      if (resizeLineRef.current) resizeLineRef.current.style.removeProperty('background');
       setSidebarWidth(w);
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
       document.removeEventListener('mousemove', onMouseMove);
@@ -138,12 +141,12 @@ function AppRoot() {
         </div>
         {!sidebarCollapsed && (
           <div
-            class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-4 z-30' : 'shrink-0 w-4'}`}
+            class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-2 z-30' : 'shrink-0 w-2'}`}
             style={isNarrow ? { left: sidebarWidth + 'px' } : undefined}
             onMouseDown={onResizeStart}
             onTouchStart={onResizeTouch}
           >
-            <div class="w-px h-full bg-transparent group-hover:bg-accent/40 transition-colors" />
+            <div ref={resizeLineRef} class="w-px h-full bg-transparent group-hover:bg-accent/40 transition-colors" />
           </div>
         )}
         <main class="flex-1 overflow-hidden bg-bg">
