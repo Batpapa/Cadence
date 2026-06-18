@@ -10,7 +10,7 @@ import {
 } from '../services/driveService';
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon,
-  CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon,
+  CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
 } from './icons';
 
 const initialsOf = (name: string) =>
@@ -120,28 +120,29 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
         </NavPill>
       </div>
 
-      <span class="absolute left-1/2 -translate-x-1/2 font-mono text-xs font-semibold tracking-[0.25em] text-muted uppercase select-none pointer-events-none">
-        {t('sidebar.logo')}
-      </span>
+      <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+        <button
+          class={`pointer-events-auto text-xs px-1 transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
+          title={t('sidebar.back')}
+          disabled={!canGoBack}
+          onClick={() => ctx.back()}
+        >←</button>
+        <span class="text-accent flex items-center select-none">
+          <CadenceLogo size={22} />
+        </span>
+        <button
+          class={`pointer-events-auto text-xs px-1 transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
+          title={t('sidebar.forward')}
+          disabled={!canGoForward}
+          onClick={() => ctx.forward()}
+        >→</button>
+      </div>
 
       <div class="flex-1" />
 
       {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
         <SyncBtn status={driveStatus} />
       )}
-
-      <button
-        class={`text-xs px-0.5 transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
-        title={t('sidebar.back')}
-        disabled={!canGoBack}
-        onClick={() => ctx.back()}
-      >←</button>
-      <button
-        class={`text-xs px-0.5 transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
-        title={t('sidebar.forward')}
-        disabled={!canGoForward}
-        onClick={() => ctx.forward()}
-      >→</button>
 
       <IconBtn title={t('sidebar.search')} onClick={() => showCommandPalette(() => ctx)}>
         <SearchIcon size={14} />
