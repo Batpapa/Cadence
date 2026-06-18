@@ -6,6 +6,10 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+export function isMobileDevice(): boolean {
+  return window.innerWidth < 768 && navigator.maxTouchPoints > 0;
+}
+
 /** Focus an input only on desktop (mouse+hover device). Prevents keyboard popup on mobile. */
 export function focusIfDesktop(el: HTMLElement): void {
   if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
