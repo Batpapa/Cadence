@@ -59,12 +59,6 @@ export async function applyFromDrive(fn: (user: AppState) => void): Promise<void
   await saveUser(next);
 }
 
-export async function save(fn: (user: AppState) => void): Promise<void> {
-  fn(appState.value);
-  await saveUser(appState.value);
-  syncToCloud(appState.value);
-}
-
 export function getContext(): AppContext {
   return {
     user:         appState.value,
@@ -75,6 +69,5 @@ export function getContext(): AppContext {
     canGoBack:    canGoBack.value,
     canGoForward: canGoForward.value,
     mutate,
-    save,
   };
 }

@@ -1,18 +1,13 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
-import { pct, timeAgo, availabilityColor, trashIcon, unlinkIcon, addTouchDragSupport } from '../utils';
+import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
+import { TrashIcon, UnlinkIcon } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { findParentFolder, pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { DeckEntry, StudyStrategy } from '../types';
 
-// Bridge: renders a vanilla SVGSVGElement inside Preact's tree.
-function SvgIcon({ icon }: { icon: SVGSVGElement }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => { ref.current!.replaceChildren(icon); });
-  return <span ref={ref} />;
-}
 
 function DeckMetric({ label, value, colorClass = 'text-primary' }: {
   label: string;
@@ -215,7 +210,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                 }
               )}
             >
-              <SvgIcon icon={trashIcon()} />
+              <TrashIcon />
             </button>
           </div>
         </div>
@@ -382,7 +377,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                         title={t('deck.removeFromDeck')}
                         onClick={() => mutate(s => { s.decks[deckId]!.entries = s.decks[deckId]!.entries.filter(e => e.cardId !== card.id); })}
                       >
-                        <SvgIcon icon={unlinkIcon()} />
+                        <UnlinkIcon />
                       </button>
                     </div>
                   </div>

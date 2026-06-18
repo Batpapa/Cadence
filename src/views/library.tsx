@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
-import { pct, availabilityColor, trashIcon, focusIfDesktop, sortByRelevance } from '../utils';
+import { pct, availabilityColor, focusIfDesktop, sortByRelevance } from '../utils';
+import { TrashIcon } from '../components/icons';
 import { exportCards } from '../services/importExport';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
@@ -13,12 +14,6 @@ const NO_DECK = '__no_deck__';
 
 type FilterMap = Map<string, FilterState>;
 
-// Bridge: mounts a vanilla SVGSVGElement inside Preact's tree.
-function SvgIcon({ icon }: { icon: SVGSVGElement }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => { ref.current!.replaceChildren(icon); });
-  return <span ref={ref} />;
-}
 
 // ── Collapsible filter section ────────────────────────────────────────────────
 
@@ -321,7 +316,7 @@ export function LibraryView() {
                 },
               )}
             >
-              <SvgIcon icon={trashIcon(12)} />
+              <TrashIcon size={12} />
             </button>
           </>}
         </div>

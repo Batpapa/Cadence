@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
-import { appState, navigate, mutate, save } from '../store';
+import { appState, navigate, mutate } from '../store';
 import { pct, trashIcon, focusIfDesktop } from '../utils';
+import { TrashIcon } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
@@ -17,11 +18,6 @@ function VanillaEl({ el }: { el: HTMLElement }) {
   return <div ref={ref} />;
 }
 
-function SvgIcon({ icon }: { icon: SVGSVGElement }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => { ref.current!.replaceChildren(icon); });
-  return <span ref={ref} />;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -257,7 +253,7 @@ export function CardView({ cardId }: { cardId: string }) {
             },
           )}
         >
-          <SvgIcon icon={trashIcon()} />
+          <TrashIcon />
         </button>
       </div>
 
@@ -374,7 +370,7 @@ export function CardView({ cardId }: { cardId: string }) {
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.notes')}</span>
           <button class="btn-ghost text-xs" onClick={() => {
-            if (isEditingNotes) save(s => { s.cards[cardId]!.content.notes = notesDraft; });
+            if (isEditingNotes) void mutate(s => { s.cards[cardId]!.content.notes = notesDraft; });
             setIsEditingNotes(v => !v);
           }}>
             {isEditingNotes ? t('card.preview') : t('card.edit')}
@@ -390,7 +386,7 @@ export function CardView({ cardId }: { cardId: string }) {
             onBlur={(e) => {
               const val = (e.target as HTMLTextAreaElement).value;
               setNotesDraft(val);
-              save(s => { s.cards[cardId]!.content.notes = val; });
+              void mutate(s => { s.cards[cardId]!.content.notes = val; });
             }}
           />
         ) : (
