@@ -11,6 +11,7 @@ import {
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
+  ArrowLeftIcon, ArrowRightIcon,
 } from './icons';
 
 const initialsOf = (name: string) =>
@@ -110,7 +111,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
           title={t('sidebar.back')}
           disabled={!canGoBack}
           onClick={() => ctx.back()}
-        >←</button>
+        ><ArrowLeftIcon size={14} /></button>
 
         <span class="text-accent flex items-center select-none">
           <CadenceLogo size={22} />
@@ -176,7 +177,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
           title={t('sidebar.forward')}
           disabled={!canGoForward}
           onClick={() => ctx.forward()}
-        >→</button>
+        ><ArrowRightIcon size={14} /></button>
       </div>
 
       <div class="flex-1" />
