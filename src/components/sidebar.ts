@@ -300,7 +300,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   }
 
   const aside = document.createElement('aside');
-  aside.className = 'flex flex-col h-full bg-surface border-r border-border w-56 shrink-0';
+  aside.className = 'flex flex-col h-full bg-surface border-r border-border w-full';
 
   const top = document.createElement('div');
   top.className = 'px-4 py-3 border-b border-border shrink-0 flex items-center justify-between';

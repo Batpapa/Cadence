@@ -12,6 +12,11 @@ import { CardView } from './views/card';
 import { LibraryView } from './views/library';
 import { StudyView } from './views/study';
 
+const SIDEBAR_WIDTH_KEY = 'cadence_sidebar_width';
+const SIDEBAR_DEFAULT   = 224;
+const SIDEBAR_MIN       = 120;
+const SIDEBAR_MAX       = 400;
+
 // Routes to the appropriate Preact component.
 // key= on stateful views forces a remount when the ID changes (resets local state).
 function ContentSwitch() {
@@ -26,6 +31,12 @@ function ContentSwitch() {
 
 function AppRoot() {
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const wrapperRef  = useRef<HTMLDivElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const n = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '', 10);
+    return isNaN(n) ? SIDEBAR_DEFAULT : Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, n));
+  });
+
   // Explicitly read every signal so Preact subscribes AppRoot to re-render on each change.
   const ctx: AppContext = {
     user:         appState.value,
@@ -42,9 +53,38 @@ function AppRoot() {
     sidebarRef.current!.replaceChildren(renderSidebar(ctx));
   });
 
+  const onResizeStart = (e: MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = wrapperRef.current!.offsetWidth;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + ev.clientX - startX));
+      wrapperRef.current!.style.width = w + 'px';
+    };
+    const onUp = () => {
+      const w = wrapperRef.current!.offsetWidth;
+      setSidebarWidth(w);
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.removeProperty('cursor');
+      document.body.style.removeProperty('user-select');
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
   return (
     <div class="flex flex-1 overflow-hidden">
-      <div ref={sidebarRef} class="shrink-0 flex overflow-hidden" />
+      <div ref={wrapperRef} style={{ width: sidebarWidth + 'px' }} class="shrink-0 overflow-hidden">
+        <div ref={sidebarRef} class="h-full" />
+      </div>
+      <div
+        class="shrink-0 w-1 cursor-col-resize hover:bg-accent/40 transition-colors"
+        onMouseDown={onResizeStart}
+      />
       <main class="flex-1 overflow-hidden bg-bg">
         <ContentSwitch />
       </main>
