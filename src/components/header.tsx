@@ -120,7 +120,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
         </NavPill>
       </div>
 
-      <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+      <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none">
         <button
           class={`pointer-events-auto text-xs px-1 transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
           title={t('sidebar.back')}
@@ -130,6 +130,60 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
         <span class="text-accent flex items-center select-none">
           <CadenceLogo size={22} />
         </span>
+        <div ref={profileRef} class="relative pointer-events-auto">
+          <button
+            class="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
+            onClick={() => setProfileOpen(o => !o)}
+          >
+            <div
+              class="w-5 h-5 rounded flex items-center justify-center shrink-0"
+              style="background:rgb(var(--color-accent-ch)/0.18)"
+            >
+              <span class="text-[9px] font-mono font-bold text-accent">{initialsOf(currentProfile?.name ?? '—')}</span>
+            </div>
+            <span class="text-xs text-primary font-medium max-w-[100px] truncate">{currentProfile?.name ?? '—'}</span>
+            <span class="text-dim flex items-center"><ChevronDownIcon size={10} /></span>
+          </button>
+
+          {profileOpen && (
+            <div class="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[160px]">
+              {(user.profileIds ?? []).map(pid => {
+                const profile = user.profiles[pid];
+                if (!profile) return null;
+                const active = pid === user.currentProfileId;
+                return (
+                  <button
+                    key={pid}
+                    class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
+                    onClick={() => {
+                      setProfileOpen(false);
+                      if (pid !== user.currentProfileId) void ctx.mutate(s => { s.currentProfileId = pid; });
+                    }}
+                  >
+                    <div
+                      class="w-4 h-4 rounded flex items-center justify-center shrink-0"
+                      style={active ? 'background:rgb(var(--color-accent-ch)/0.2)' : 'background:var(--color-border)'}
+                    >
+                      <span class={`text-[8px] font-mono font-bold ${active ? 'text-accent' : 'text-dim'}`}>
+                        {initialsOf(profile.name)}
+                      </span>
+                    </div>
+                    <span class="flex-1 truncate">{profile.name}</span>
+                    {active && <span class="text-accent flex items-center"><CheckIcon size={11} /></span>}
+                  </button>
+                );
+              })}
+              <div class="h-px bg-border my-1" />
+              <button
+                class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-dim hover:text-primary hover:bg-surface cursor-pointer border-none bg-transparent text-left transition-colors"
+                onClick={() => { setProfileOpen(false); showProfileModal(ctx); }}
+              >
+                <span class="flex items-center"><SettingsIcon size={12} /></span>
+                {t('sidebar.manageProfiles')}
+              </button>
+            </div>
+          )}
+        </div>
         <button
           class={`pointer-events-auto text-xs px-1 transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary cursor-pointer' : 'text-border cursor-default'}`}
           title={t('sidebar.forward')}
@@ -154,61 +208,6 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
         <SettingsIcon size={14} />
       </IconBtn>
 
-      {/* Profile selector */}
-      <div ref={profileRef} class="relative ml-0.5">
-        <button
-          class="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
-          onClick={() => setProfileOpen(o => !o)}
-        >
-          <div
-            class="w-5 h-5 rounded flex items-center justify-center shrink-0"
-            style="background:rgb(var(--color-accent-ch)/0.18)"
-          >
-            <span class="text-[9px] font-mono font-bold text-accent">{initialsOf(currentProfile?.name ?? '—')}</span>
-          </div>
-          <span class="text-xs text-primary font-medium max-w-[100px] truncate">{currentProfile?.name ?? '—'}</span>
-          <span class="text-dim flex items-center"><ChevronDownIcon size={10} /></span>
-        </button>
-
-        {profileOpen && (
-          <div class="absolute top-full right-0 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[160px]">
-            {(user.profileIds ?? []).map(pid => {
-              const profile = user.profiles[pid];
-              if (!profile) return null;
-              const active = pid === user.currentProfileId;
-              return (
-                <button
-                  key={pid}
-                  class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
-                  onClick={() => {
-                    setProfileOpen(false);
-                    if (pid !== user.currentProfileId) void ctx.mutate(s => { s.currentProfileId = pid; });
-                  }}
-                >
-                  <div
-                    class="w-4 h-4 rounded flex items-center justify-center shrink-0"
-                    style={active ? 'background:rgb(var(--color-accent-ch)/0.2)' : 'background:var(--color-border)'}
-                  >
-                    <span class={`text-[8px] font-mono font-bold ${active ? 'text-accent' : 'text-dim'}`}>
-                      {initialsOf(profile.name)}
-                    </span>
-                  </div>
-                  <span class="flex-1 truncate">{profile.name}</span>
-                  {active && <span class="text-accent flex items-center"><CheckIcon size={11} /></span>}
-                </button>
-              );
-            })}
-            <div class="h-px bg-border my-1" />
-            <button
-              class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-dim hover:text-primary hover:bg-surface cursor-pointer border-none bg-transparent text-left transition-colors"
-              onClick={() => { setProfileOpen(false); showProfileModal(ctx); }}
-            >
-              <span class="flex items-center"><SettingsIcon size={12} /></span>
-              {t('sidebar.manageProfiles')}
-            </button>
-          </div>
-        )}
-      </div>
     </header>
   );
 }
