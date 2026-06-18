@@ -1,5 +1,6 @@
 import type { AppContext } from '../types';
-import { generateId, emptyState, trashIcon } from '../utils';
+import { generateId, emptyState } from '../utils';
+import { iconElement, TrashIcon } from './icons';
 import { confirmModal, closeModal, showModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
 import { getTheme, setTheme } from '../services/themeService';
@@ -56,7 +57,7 @@ export function showProfileModal(ctx: AppContext): void {
       row.append(avatar, nameEl);
       if (canDelete) {
         const delBtn = document.createElement('button'); delBtn.className = 'btn-danger px-2 shrink-0'; delBtn.title = t('settings.profiles.delete.title');
-        delBtn.appendChild(trashIcon(12));
+        delBtn.appendChild(iconElement(TrashIcon, 12));
         delBtn.onclick = () => confirmModal(t('settings.profiles.delete.title'), t('settings.profiles.delete.message', { name: profile.name }), t('common.delete'), () => {
           ctx.mutate(s => {
             s.profileIds = (s.profileIds ?? []).filter(id => id !== pid);
