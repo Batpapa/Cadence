@@ -1,4 +1,4 @@
-const CACHE = 'cadence-v1';
+const CACHE = 'cadence-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -19,8 +19,8 @@ self.addEventListener('fetch', e => {
   // Never intercept cross-origin requests (API calls to TheSession, YouTube oEmbed, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // Always fetch HTML fresh so updates are picked up immediately
-  if (url.pathname.endsWith('/') || url.pathname.endsWith('.html')) {
+  // Always fetch HTML and manifest fresh so updates are picked up immediately
+  if (url.pathname.endsWith('/') || url.pathname.endsWith('.html') || url.pathname.endsWith('manifest.json')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }
