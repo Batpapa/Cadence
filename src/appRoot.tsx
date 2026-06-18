@@ -138,11 +138,13 @@ function AppRoot() {
         </div>
         {!sidebarCollapsed && (
           <div
-            class={`cursor-col-resize hover:bg-accent/40 transition-colors touch-none ${isNarrow ? 'absolute top-0 bottom-0 w-4 z-30' : 'shrink-0 w-4'}`}
+            class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-4 z-30' : 'shrink-0 w-4'}`}
             style={isNarrow ? { left: sidebarWidth + 'px' } : undefined}
             onMouseDown={onResizeStart}
             onTouchStart={onResizeTouch}
-          />
+          >
+            <div class="w-px h-full bg-transparent group-hover:bg-accent/40 transition-colors" />
+          </div>
         )}
         <main class="flex-1 overflow-hidden bg-bg">
           <ContentSwitch />
