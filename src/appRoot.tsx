@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, routeSignal, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
+import { isMobileDevice } from './utils';
 import { renderSidebar } from './components/sidebar';
 import { AppHeader } from './components/header';
 import { confirmModal } from './components/modal';
@@ -38,9 +39,11 @@ function AppRoot() {
     const n = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '', 10);
     return isNaN(n) ? SIDEBAR_DEFAULT : Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, n));
   });
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
-    localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
-  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    if (stored !== null) return stored === 'true';
+    return isMobileDevice();
+  });
 
   const toggleSidebar = () => {
     setSidebarCollapsed(c => {
