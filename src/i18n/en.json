@@ -60,8 +60,7 @@
   "sidebar.expand": "Expand sidebar",
 
   "modal.newFolder.title": "New Folder",
-  "modal.newFolder.label": "Name",
-  "modal.newSubfolder.title": "New Subfolder",
+  "modal.newFolder.label": "Folder name",
   "modal.newDeck.title": "New Deck",
   "modal.newDeck.label": "Deck name",
 
