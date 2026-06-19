@@ -59,10 +59,11 @@ function SyncBtn({ status }: { status: DriveStatus }) {
   );
 }
 
-export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
+export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPhone }: {
   ctx: AppContext;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
+  isPortraitPhone: boolean;
 }) {
   const { route, user, canGoBack, canGoForward } = ctx;
   const currentProfile = user.profiles[user.currentProfileId];
@@ -96,22 +97,28 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
         <HeaderBtn title={sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')} onClick={onToggleSidebar}>
           <PanelLeftIcon size={14} />
         </HeaderBtn>
-        <HeaderBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
-          <HomeIcon size={14} />
-        </HeaderBtn>
-        <HeaderBtn title={t('sidebar.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
-          <LibraryIcon size={14} />
-        </HeaderBtn>
+        {!isPortraitPhone && (
+          <>
+            <HeaderBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
+              <HomeIcon size={14} />
+            </HeaderBtn>
+            <HeaderBtn title={t('sidebar.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
+              <LibraryIcon size={14} />
+            </HeaderBtn>
+          </>
+        )}
       </div>
 
       {/* Center: ← logo profil → */}
       <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none">
-        <button
-          class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
-          title={t('sidebar.back')}
-          disabled={!canGoBack}
-          onClick={() => ctx.back()}
-        ><ArrowLeftIcon size={14} /></button>
+        {!isPortraitPhone && (
+          <button
+            class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
+            title={t('sidebar.back')}
+            disabled={!canGoBack}
+            onClick={() => ctx.back()}
+          ><ArrowLeftIcon size={14} /></button>
+        )}
 
         <span class="text-accent flex items-center select-none">
           <CadenceLogo size={22} />
@@ -172,12 +179,14 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
           )}
         </div>
 
-        <button
-          class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
-          title={t('sidebar.forward')}
-          disabled={!canGoForward}
-          onClick={() => ctx.forward()}
-        ><ArrowRightIcon size={14} /></button>
+        {!isPortraitPhone && (
+          <button
+            class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
+            title={t('sidebar.forward')}
+            disabled={!canGoForward}
+            onClick={() => ctx.forward()}
+          ><ArrowRightIcon size={14} /></button>
+        )}
       </div>
 
       <div class="flex-1" />
@@ -199,5 +208,46 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar }: {
       </div>
 
     </header>
+  );
+}
+
+// ── Bottom nav (portrait phone) ─────────────────────────────────────────────────
+
+function BottomNavBtn({ title, active, disabled, onClick, children }: {
+  title: string; active?: boolean; disabled?: boolean; onClick: () => void; children: ComponentChildren;
+}) {
+  return (
+    <button
+      class={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors
+        ${active ? 'text-accent' : disabled ? 'text-border' : 'text-dim active:text-accent'}`}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+      <span class="text-[10px] leading-none">{title}</span>
+    </button>
+  );
+}
+
+export function BottomNav({ ctx }: { ctx: AppContext }) {
+  const { route, canGoBack, canGoForward } = ctx;
+  const homeActive = route.view === 'folder' && route.folderId === null;
+  const libActive  = route.view === 'library';
+
+  return (
+    <nav class="flex items-stretch border-t border-border bg-surface shrink-0 h-14" style="padding-bottom: env(safe-area-inset-bottom)">
+      <BottomNavBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
+        <HomeIcon size={20} />
+      </BottomNavBtn>
+      <BottomNavBtn title={t('sidebar.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
+        <LibraryIcon size={20} />
+      </BottomNavBtn>
+      <BottomNavBtn title={t('sidebar.back')} disabled={!canGoBack} onClick={() => ctx.back()}>
+        <ArrowLeftIcon size={20} />
+      </BottomNavBtn>
+      <BottomNavBtn title={t('sidebar.forward')} disabled={!canGoForward} onClick={() => ctx.forward()}>
+        <ArrowRightIcon size={20} />
+      </BottomNavBtn>
+    </nav>
   );
 }
