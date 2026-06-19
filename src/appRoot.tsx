@@ -4,7 +4,7 @@ import { appState, routeSignal, canGoBack, canGoForward, navigate, goBack, goFor
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
 import { renderSidebar } from './components/sidebar';
-import { AppHeader } from './components/header';
+import { AppHeader, BottomNav } from './components/header';
 import { confirmModal } from './components/modal';
 import { t } from './services/i18nService';
 import type { User } from './types';
@@ -57,6 +57,16 @@ function AppRoot() {
         if (el) el.style.removeProperty('transition');
       }));
     };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  const PORTRAIT_PHONE_QUERY = '(max-width: 767px) and (orientation: portrait) and (pointer: coarse)';
+  const [isPortraitPhone, setIsPortraitPhone] = useState(() => window.matchMedia(PORTRAIT_PHONE_QUERY).matches);
+
+  useEffect(() => {
+    const mq = window.matchMedia(PORTRAIT_PHONE_QUERY);
+    const handler = (e: MediaQueryListEvent) => setIsPortraitPhone(e.matches);
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
@@ -125,7 +135,7 @@ function AppRoot() {
 
   return (
     <div class="flex flex-col flex-1 overflow-hidden">
-      <AppHeader ctx={ctx} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} />
+      <AppHeader ctx={ctx} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} isPortraitPhone={isPortraitPhone} />
       <div class="relative flex flex-1 overflow-hidden min-h-0">
         {isNarrow && !sidebarCollapsed && (
           <div class="absolute inset-0 z-20 bg-black/40" onClick={toggleSidebar} />
@@ -153,6 +163,7 @@ function AppRoot() {
           <ContentSwitch />
         </main>
       </div>
+      {isPortraitPhone && <BottomNav ctx={ctx} />}
     </div>
   );
 }
