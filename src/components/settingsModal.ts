@@ -459,6 +459,10 @@ export function showSettingsModal(ctx: AppContext): void {
       aboutBlock.append(mkAboutLine('settings.aboutLine1'), mkAboutLine('settings.aboutLine2'), mkAboutLine('settings.aboutLine3', 'https://github.com/Batpapa/Cadence'));
       content.appendChild(aboutBlock);
 
+      const legalBlock = document.createElement('div'); legalBlock.className = 'flex gap-3 mt-1';
+      legalBlock.append(mkAboutLine('settings.privacyPolicy', './privacy.html'), mkAboutLine('settings.termsOfService', './terms.html'));
+      content.appendChild(legalBlock);
+
       if (!isStandalone()) {
         const div = document.createElement('hr'); div.className = 'border-border'; content.appendChild(div);
         if (isIOS()) {

@@ -272,6 +272,11 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
             + {t('userSelector.new')}
           </button>
         )}
+
+        <div class="flex justify-center gap-3 pt-3">
+          <a href="./privacy.html" rel="noopener" class="text-[10px] text-dim hover:text-muted transition-colors">{t('settings.privacyPolicy')}</a>
+          <a href="./terms.html" rel="noopener" class="text-[10px] text-dim hover:text-muted transition-colors">{t('settings.termsOfService')}</a>
+        </div>
       </div>
     </div>
   );
