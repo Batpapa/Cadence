@@ -5,7 +5,8 @@ import { findParentFolder } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 
-const expanded = new Set<string>();
+// Folders are expanded by default; this set tracks the ones manually collapsed.
+const collapsed = new Set<string>();
 let lastAutoExpandedRoute: string | null = null;
 
 // ── Drag & Drop state ─────────────────────────────────────────────────────────
@@ -169,9 +170,23 @@ function addDragHandlers(
 function expandAncestors(id: string, type: 'deck' | 'folder', user: AppState): void {
   let current: string | null = findParentFolder(id, type, user);
   while (current) {
-    expanded.add(current);
+    collapsed.delete(current);
     current = findParentFolder(current, 'folder', user);
   }
+}
+
+function collectAllFolderIds(user: AppState): string[] {
+  const ids: string[] = [];
+  const visit = (folderIds: string[]) => {
+    for (const id of folderIds) {
+      const f = user.folders[id];
+      if (!f) continue;
+      ids.push(id);
+      visit(f.folderIds);
+    }
+  };
+  visit(user.rootFolderIds);
+  return ids;
 }
 
 function isActive(route: Route, type: 'folder' | 'deck', id: string | null = null): boolean {
@@ -221,30 +236,26 @@ function renderDeckItem(ctx: AppContext, deck: Deck, depth: number): HTMLElement
 
 function renderFolderItem(ctx: AppContext, folder: Folder, depth: number): HTMLElement {
   const active = isActive(ctx.route, 'folder', folder.id);
-  const isOpen = expanded.has(folder.id);
+  const isOpen = !collapsed.has(folder.id);
   const wrap = document.createElement('div');
   const row = document.createElement('div');
   row.style.paddingLeft = `${depth * 12 + 8}px`;
   row.className = `flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer transition-colors text-sm
     ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`;
 
-  const isEmpty = folder.folderIds.length === 0 && folder.deckIds.length === 0;
-
   const svgFolderClosed = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
   const svgFolderOpen  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`;
 
   const folderIcon = document.createElement('span');
-  folderIcon.className = `shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim'} ${!isEmpty ? 'cursor-pointer' : ''}`;
+  folderIcon.className = `shrink-0 flex items-center cursor-pointer ${active ? 'text-accent' : 'text-dim'}`;
   folderIcon.innerHTML = isOpen ? svgFolderOpen : svgFolderClosed;
 
-  if (!isEmpty) {
-    folderIcon.onclick = (e) => {
-      e.stopPropagation();
-      if (expanded.has(folder.id)) expanded.delete(folder.id); else expanded.add(folder.id);
-      const sidebar = wrap.closest('aside');
-      if (sidebar) sidebar.replaceWith(renderSidebar(ctx));
-    };
-  }
+  folderIcon.onclick = (e) => {
+    e.stopPropagation();
+    if (collapsed.has(folder.id)) collapsed.delete(folder.id); else collapsed.add(folder.id);
+    const sidebar = wrap.closest('aside');
+    if (sidebar) sidebar.replaceWith(renderSidebar(ctx));
+  };
 
   const name = document.createElement('span'); name.className = 'truncate flex-1 font-medium'; name.textContent = folder.name;
 
@@ -288,13 +299,38 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
       expandAncestors(route.deckId, 'deck', user);
     }
     if (route.view === 'folder' && route.folderId) {
-      expanded.add(route.folderId);
+      collapsed.delete(route.folderId);
       expandAncestors(route.folderId, 'folder', user);
     }
   }
 
   const aside = document.createElement('aside');
   aside.className = 'flex flex-col h-full bg-surface border-r border-border w-full';
+
+  const mkIconBtn = (svgString: string, title: string, onClick: () => void) => {
+    const btn = document.createElement('button');
+    btn.className = 'w-6 h-6 flex items-center justify-center rounded text-dim hover:text-primary hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent';
+    btn.title = title;
+    btn.innerHTML = svgString;
+    btn.onclick = onClick;
+    return btn;
+  };
+
+  const svgExpandAll   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>`;
+  const svgCollapseAll = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>`;
+
+  const top = document.createElement('div');
+  top.className = 'shrink-0 px-2 py-1 flex items-center justify-end gap-0.5 border-b border-border';
+  top.append(
+    mkIconBtn(svgExpandAll, t('sidebar.expandAll'), () => {
+      collapsed.clear();
+      aside.replaceWith(renderSidebar(ctx));
+    }),
+    mkIconBtn(svgCollapseAll, t('sidebar.collapseAll'), () => {
+      for (const id of collectAllFolderIds(user)) collapsed.add(id);
+      aside.replaceWith(renderSidebar(ctx));
+    }),
+  );
 
   const tree = document.createElement('div');
   tree.className = 'flex-1 overflow-y-auto py-1 px-2 space-y-0.5';
@@ -311,19 +347,10 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const newBtns = document.createElement('div');
   newBtns.className = 'flex items-center gap-1';
 
-  const mkBottomIconBtn = (svgString: string, title: string, onClick: () => void) => {
-    const btn = document.createElement('button');
-    btn.className = 'w-6 h-6 flex items-center justify-center rounded text-dim hover:text-primary hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent';
-    btn.title = title;
-    btn.innerHTML = svgString;
-    btn.onclick = onClick;
-    return btn;
-  };
-
   const svgFolder = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
   const svgDeck   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
 
-  newBtns.appendChild(mkBottomIconBtn(svgFolder, t('sidebar.newFolder'), () =>
+  newBtns.appendChild(mkIconBtn(svgFolder, t('sidebar.newFolder'), () =>
     promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
       ctx.mutate(s => {
         const id = generateId();
@@ -332,9 +359,9 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
       });
     })
   ));
-  newBtns.appendChild(mkBottomIconBtn(svgDeck, t('sidebar.newDeck'), () => showCreateDeckModal(ctx, null)));
+  newBtns.appendChild(mkIconBtn(svgDeck, t('sidebar.newDeck'), () => showCreateDeckModal(ctx, null)));
 
   bottom.append(newLabel, newBtns);
-  aside.append(tree, bottom);
+  aside.append(top, tree, bottom);
   return aside;
 }

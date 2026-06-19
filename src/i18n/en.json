@@ -51,6 +51,8 @@
   "sidebar.sync.syncing": "Syncing…",
   "sidebar.sync.connected": "Synced with Google Drive",
   "sidebar.sync.error": "Sync error — click to retry",
+  "sidebar.expandAll": "Expand all",
+  "sidebar.collapseAll": "Collapse all",
   "sidebar.new": "New…",
   "sidebar.newFolder": "+ Folder",
   "sidebar.newDeck": "+ Deck",
