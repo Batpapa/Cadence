@@ -2,7 +2,7 @@ import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
 import { emptyState } from './utils';
-import { appState, goBack, goForward } from './store';
+import { appState, routeSignal, goBack, goForward, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
@@ -34,6 +34,7 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   touchUserOrder(user.id);
   setLanguage(user.language);
   appState.value = user;
+  initRoutePersistence(user.id);
   finishBoot(root);
   setTimeout(() => showHelpModal(getContext()), 0);
 }
@@ -63,6 +64,9 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
   setLastUserId(id);
   touchUserOrder(id);
   appState.value = saved;
+  const savedRoute = loadSavedRoute(saved);
+  if (savedRoute) routeSignal.value = savedRoute;
+  initRoutePersistence(saved.id);
   finishBoot(root);
 }
 
@@ -83,6 +87,7 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
       setLastUserId(user.id);
       setLanguage(user.language);
       appState.value = user;
+      initRoutePersistence(user.id);
       finishBoot(root);
       return;
     }

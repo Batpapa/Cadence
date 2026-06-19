@@ -1,4 +1,4 @@
-import { signal } from '@preact/signals';
+import { signal, effect } from '@preact/signals';
 import type { AppState, AppContext, Route } from './types';
 import { emptyState } from './utils';
 import { saveUser } from './db';
@@ -8,6 +8,37 @@ export const appState    = signal<AppState>(emptyState());
 export const routeSignal = signal<Route>({ view: 'folder', folderId: null });
 export const canGoBack   = signal(false);
 export const canGoForward = signal(false);
+
+const ROUTE_STORAGE_KEY = 'cadence_last_route';
+
+function isValidRoute(route: Route, user: AppState): boolean {
+  switch (route.view) {
+    case 'folder':  return route.folderId === null || !!user.folders[route.folderId];
+    case 'deck':    return !!user.decks[route.deckId];
+    case 'card':    return !!user.cards[route.cardId];
+    case 'study':   return !!user.decks[route.deckId];
+    case 'library': return true;
+  }
+}
+
+/** Reads the last route saved for this user, validated against their current data. */
+export function loadSavedRoute(user: AppState): Route | null {
+  try {
+    const raw = localStorage.getItem(`${ROUTE_STORAGE_KEY}:${user.id}`);
+    if (!raw) return null;
+    const route = JSON.parse(raw) as Route;
+    return isValidRoute(route, user) ? route : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists every future route change for this user. Call once per session, after restoring the saved route. */
+export function initRoutePersistence(userId: string): void {
+  effect(() => {
+    localStorage.setItem(`${ROUTE_STORAGE_KEY}:${userId}`, JSON.stringify(routeSignal.value));
+  });
+}
 
 const _history: Route[] = [];
 const _future:  Route[] = [];
