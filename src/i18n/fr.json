@@ -60,8 +60,7 @@
   "sidebar.expand": "Afficher la barre latérale",
 
   "modal.newFolder.title": "Nouveau dossier",
-  "modal.newFolder.label": "Nom",
-  "modal.newSubfolder.title": "Nouveau sous-dossier",
+  "modal.newFolder.label": "Nom du dossier",
   "modal.newDeck.title": "Nouveau paquet",
   "modal.newDeck.label": "Nom du paquet",
 
