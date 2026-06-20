@@ -130,7 +130,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         )}
       </div>
 
-      {/* Center: ← logo profil → */}
+      {/* Center: ← profil → */}
       <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none">
         {!isPortraitPhone && (
           <button
@@ -140,10 +140,6 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             onClick={() => ctx.back()}
           ><ArrowLeftIcon size={14} /></button>
         )}
-
-        <span class="text-accent flex items-center select-none">
-          <CadenceLogo size={22} />
-        </span>
 
         <div ref={profileRef} class="relative pointer-events-auto">
           <button
@@ -231,6 +227,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         <HeaderBtn title={t('sidebar.settings')} onClick={() => showSettingsModal(ctx)}>
           <SettingsIcon size={14} />
         </HeaderBtn>
+        <span class="text-accent flex items-center select-none ml-1">
+          <CadenceLogo size={22} />
+        </span>
       </div>
 
     </header>
