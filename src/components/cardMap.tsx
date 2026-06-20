@@ -163,10 +163,6 @@ export function CardMap({ user, cards }: { user: AppState; cards: Card[] }) {
 
   useLayoutEffect(() => { rebuildRef.current(); });
 
-  if (allPoints.length === 0) {
-    return <p class="text-xs text-dim italic text-center py-4">{t('card.neverReviewed')}</p>;
-  }
-
   return (
     <div ref={svgRef} style="position:relative">
       <div ref={tooltipRef} style="position:absolute;display:none;pointer-events:none;z-index:20;width:176px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;padding:10px 12px;box-shadow:0 4px 24px rgba(0,0,0,0.6);font-family:'IBM Plex Sans',system-ui,sans-serif;" />
