@@ -8,10 +8,11 @@ import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import type { Card } from '../types';
+import type { Card, LibrarySort } from '../types';
 import { FilterSection, cycleFilter, type FilterMap } from '../components/filterSection';
 
 const NO_DECK = '__no_deck__';
+const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance'];
 
 // ── Deck picker modal (vanilla) ───────────────────────────────────────────────
 
@@ -54,12 +55,14 @@ export function LibraryView() {
   const [searchQuery, setSearchQuery] = useState(savedRoute?.search ?? '');
   const [activeTags,  setActiveTags]  = useState<FilterMap>(() => new Map(savedRoute?.tags ?? []));
   const [activeDecks, setActiveDecks] = useState<FilterMap>(() => new Map(savedRoute?.decks ?? []));
+  const [sortMode,    setSortMode]    = useState<LibrarySort>(savedRoute?.sort ?? 'alpha');
+  const [sortAsc,     setSortAsc]     = useState(savedRoute?.sortAsc ?? false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks] });
-  }, [searchQuery, activeTags, activeDecks]);
+    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], sort: sortMode, sortAsc });
+  }, [searchQuery, activeTags, activeDecks, sortMode, sortAsc]);
 
   useEffect(() => { if (searchRef.current) focusIfDesktop(searchRef.current); }, []);
 
@@ -89,9 +92,21 @@ export function LibraryView() {
     });
     return matchText && matchTags && matchDecks;
   });
-  const filtered = q
-    ? sortByRelevance(filteredUnsorted, searchQuery)
-    : filteredUnsorted.sort((a, b) => a.name.localeCompare(b.name));
+  let filtered: Card[];
+  if (sortMode === 'lastAdded') {
+    // user.cards preserves insertion order (oldest → newest); filter() keeps relative order, so reverse for newest-first.
+    filtered = [...filteredUnsorted].reverse();
+  } else if (sortMode === 'lastReviewed') {
+    const lastTs = (c: Card) => user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history.at(-1)?.ts ?? -1;
+    filtered = [...filteredUnsorted].sort((a, b) => lastTs(b) - lastTs(a));
+  } else if (sortMode === 'importance') {
+    filtered = [...filteredUnsorted].sort((a, b) => b.importance - a.importance);
+  } else {
+    filtered = q
+      ? sortByRelevance(filteredUnsorted, searchQuery)
+      : [...filteredUnsorted].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  if (sortAsc) filtered = filtered.slice().reverse();
 
   // ── Available chips (derived from filtered) ───────────────────────────────────
   const availTags  = new Set(filtered.flatMap(c => c.tags ?? []));
@@ -155,14 +170,36 @@ export function LibraryView() {
 
       {/* ── Search + filters ── */}
       <div class="px-6 pb-2 space-y-1">
-        <input
-          ref={searchRef}
-          type="text"
-          placeholder={t('library.search')}
-          class="input"
-          value={searchQuery}
-          onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
-        />
+        <div class="flex gap-2">
+          <input
+            ref={searchRef}
+            type="text"
+            placeholder={t('library.search')}
+            class="input flex-1"
+            value={searchQuery}
+            onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
+          />
+          <select
+            class="input w-auto shrink-0 cursor-pointer focus:outline-none focus:border-border"
+            value={sortMode}
+            onChange={(e) => setSortMode((e.target as HTMLSelectElement).value as LibrarySort)}
+          >
+            {SORT_MODES.map(m => (
+              <option key={m} value={m}>{t(`library.sort.${m}`)}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            class="input w-auto shrink-0 px-2 flex items-center justify-center cursor-pointer text-dim hover:text-primary transition-colors focus:outline-none focus:border-border"
+            title={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
+            onClick={() => setSortAsc(a => !a)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${sortAsc ? 'rotate-180' : ''}`}>
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <polyline points="19 12 12 19 5 12"/>
+            </svg>
+          </button>
+        </div>
         {deckItems.length > 0 && (
           <FilterSection
             labelKey="library.filterDecks"
