@@ -123,6 +123,44 @@ export function CadenceLogo({ size = 22 }: { size?: number }) {
   );
 }
 
+export function SortAlphaIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} stroke="none" fill="currentColor">
+      <text x="12" y="17" font-size="16" font-weight="700" text-anchor="middle" font-family="IBM Plex Mono, monospace">AZ</text>
+    </svg>
+  );
+}
+
+export function ClockIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <polyline points="12 7 12 12 16 14"/>
+    </svg>
+  );
+}
+
+export function CalendarPlusIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="17" rx="2"/>
+      <line x1="3" y1="9" x2="21" y2="9"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="12" y1="13" x2="12" y2="18"/>
+      <line x1="9.5" y1="15.5" x2="14.5" y2="15.5"/>
+    </svg>
+  );
+}
+
+export function StarIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2.5 15.1 8.6 22 9.6 17 14.4 18.2 21.2 12 17.9 5.8 21.2 7 14.4 2 9.6 8.9 8.6 12 2.5"/>
+    </svg>
+  );
+}
+
 export function ArrowLeftIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

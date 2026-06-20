@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
+import { ChevronDownIcon } from './icons';
 
 export type FilterMap = Map<string, FilterState>;
 
@@ -29,7 +30,9 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
         class="flex items-center gap-1.5 text-xs text-dim hover:text-primary transition-colors py-0.5"
         onClick={() => setOpen(o => !o)}
       >
-        <span class="text-[10px]">{open ? '▾' : '▶'}</span>
+        <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
+          <ChevronDownIcon size={10} />
+        </span>
         <span>{t(labelKey)}</span>
       </button>
       {open && (
