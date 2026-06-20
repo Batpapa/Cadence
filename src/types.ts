@@ -116,9 +116,11 @@ export type StudyStrategy = 'random' | 'optimal' | 'stochastic';
 
 export type FilterState = 'include' | 'exclude';
 
+export type LibrarySort = 'alpha' | 'lastReviewed' | 'lastAdded' | 'importance';
+
 export type Route =
   | { view: 'folder'; folderId: string | null }
-  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][] }
+  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean }
   | { view: 'deck'; deckId: string }
   | { view: 'card'; cardId: string }
   | { view: 'study'; deckId: string; strategy: StudyStrategy; currentCardId?: string | null };
