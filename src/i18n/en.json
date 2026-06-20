@@ -69,6 +69,7 @@
   "folder.title.home": "Home",
   "folder.section.folders": "Folders",
   "folder.section.decks": "Decks",
+  "folder.section.favorites": "Favorites",
   "folder.newFolder": "+ Folder",
   "folder.newDeck": "+ Deck",
   "folder.deleteFolder": "Delete folder",
@@ -146,6 +147,8 @@
   "deck.dot.recall": "Recall: {pct}",
   "deck.dot.ease": "Ease: {pct}",
   "deck.neverReviewed": "Never reviewed",
+  "deck.favorite": "Add to favorites",
+  "deck.unfavorite": "Remove from favorites",
 
   "card.notFound": "Card not found.",
   "card.section.availability": "Recall",

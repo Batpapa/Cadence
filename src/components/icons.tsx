@@ -153,9 +153,9 @@ export function CalendarPlusIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-export function StarIcon({ size = 14 }: { size?: number }) {
+export function StarIcon({ size = 14, filled = false }: { size?: number; filled?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <polygon points="12 2.5 15.1 8.6 22 9.6 17 14.4 18.2 21.2 12 17.9 5.8 21.2 7 14.4 2 9.6 8.9 8.6 12 2.5"/>
     </svg>
   );

@@ -48,6 +48,7 @@ export interface Deck {
   id: string;
   name: string;
   entries: DeckEntry[];
+  favorite?: boolean;
 }
 
 // ── Personal data ────────────────────────────────────────────────────────────

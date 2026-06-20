@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon, UnlinkIcon } from '../components/icons';
+import { TrashIcon, UnlinkIcon, StarIcon } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { findParentFolder, pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
@@ -155,7 +155,15 @@ export function DeckView({ deckId }: { deckId: string }) {
 
         {/* Header */}
         <div class="flex items-start justify-between gap-4">
-          <div class="flex-1 min-w-0">
+          <div class="flex-1 min-w-0 flex items-center gap-2">
+            <button
+              class={`shrink-0 flex items-center transition-colors cursor-pointer ${deck.favorite ? 'text-yellow-400' : 'text-dim hover:text-yellow-400'}`}
+              title={deck.favorite ? t('deck.unfavorite') : t('deck.favorite')}
+              onClick={() => mutate(s => { const d = s.decks[deckId]; if (d) d.favorite = !d.favorite; })}
+            >
+              <StarIcon size={20} filled={!!deck.favorite} />
+            </button>
+            <div class="flex-1 min-w-0">
             {isEditingName ? (
               <input
                 type="text"
@@ -182,6 +190,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                 {deck.name}
               </h1>
             )}
+            </div>
           </div>
           <div class="flex gap-2 shrink-0">
             <button
