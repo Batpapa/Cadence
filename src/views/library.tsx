@@ -1,7 +1,8 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
+import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
-import { TrashIcon } from '../components/icons';
+import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon } from '../components/icons';
 import { exportCards } from '../services/importExport';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
@@ -13,6 +14,12 @@ import { FilterSection, cycleFilter, type FilterMap } from '../components/filter
 
 const NO_DECK = '__no_deck__';
 const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance'];
+const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
+  alpha: SortAlphaIcon,
+  lastReviewed: ClockIcon,
+  lastAdded: CalendarPlusIcon,
+  importance: StarIcon,
+};
 
 // ── Deck picker modal (vanilla) ───────────────────────────────────────────────
 
@@ -57,8 +64,19 @@ export function LibraryView() {
   const [activeDecks, setActiveDecks] = useState<FilterMap>(() => new Map(savedRoute?.decks ?? []));
   const [sortMode,    setSortMode]    = useState<LibrarySort>(savedRoute?.sort ?? 'alpha');
   const [sortAsc,     setSortAsc]     = useState(savedRoute?.sortAsc ?? false);
+  const [sortOpen,    setSortOpen]    = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
+  const sortRef   = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!sortOpen) return;
+    const onOutside = (e: MouseEvent) => {
+      if (!sortRef.current?.contains(e.target as Node)) setSortOpen(false);
+    };
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [sortOpen]);
 
   useEffect(() => {
     replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], sort: sortMode, sortAsc });
@@ -170,36 +188,14 @@ export function LibraryView() {
 
       {/* ── Search + filters ── */}
       <div class="px-6 pb-2 space-y-1">
-        <div class="flex gap-2">
-          <input
-            ref={searchRef}
-            type="text"
-            placeholder={t('library.search')}
-            class="input flex-1"
-            value={searchQuery}
-            onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
-          />
-          <select
-            class="input w-auto shrink-0 cursor-pointer focus:outline-none focus:border-border"
-            value={sortMode}
-            onChange={(e) => setSortMode((e.target as HTMLSelectElement).value as LibrarySort)}
-          >
-            {SORT_MODES.map(m => (
-              <option key={m} value={m}>{t(`library.sort.${m}`)}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            class="input w-auto shrink-0 px-2 flex items-center justify-center cursor-pointer text-dim hover:text-primary transition-colors focus:outline-none focus:border-border"
-            title={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
-            onClick={() => setSortAsc(a => !a)}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${sortAsc ? 'rotate-180' : ''}`}>
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <polyline points="19 12 12 19 5 12"/>
-            </svg>
-          </button>
-        </div>
+        <input
+          ref={searchRef}
+          type="text"
+          placeholder={t('library.search')}
+          class="input"
+          value={searchQuery}
+          onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
+        />
         {deckItems.length > 0 && (
           <FilterSection
             labelKey="library.filterDecks"
@@ -244,7 +240,48 @@ export function LibraryView() {
           </span>
         </label>
         <div class="flex gap-1 items-center">
+          <div ref={sortRef} class="relative">
+            <button
+              type="button"
+              class="btn-ghost text-xs inline-flex items-center justify-center"
+              title={t(`library.sort.${sortMode}`)}
+              onClick={() => setSortOpen(o => !o)}
+            >
+              {(() => { const Icon = SORT_ICON[sortMode]; return <Icon size={13} />; })()}
+            </button>
+            {sortOpen && (
+              <div class="absolute top-full right-0 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[170px]">
+                {SORT_MODES.map(m => {
+                  const Icon   = SORT_ICON[m];
+                  const active = m === sortMode;
+                  return (
+                    <button
+                      key={m}
+                      class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
+                      onClick={() => { setSortMode(m); setSortOpen(false); }}
+                    >
+                      <span class="shrink-0 flex items-center"><Icon size={12} /></span>
+                      <span class="flex-1">{t(`library.sort.${m}`)}</span>
+                      {active && <span class="text-accent flex items-center"><CheckIcon size={11} /></span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            class="btn-ghost text-xs inline-flex items-center justify-center"
+            title={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
+            onClick={() => setSortAsc(a => !a)}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${sortAsc ? 'rotate-180' : ''}`}>
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <polyline points="19 12 12 19 5 12"/>
+            </svg>
+          </button>
           {hasSelection && <>
+            <div class="w-px h-4 bg-border mx-1" />
             <button class="btn-ghost text-xs inline-flex items-center justify-center" title={t('library.exportSelected')} onClick={() => exportCards(allCards.filter(c => selected.has(c.id)))}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
