@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import type { ComponentChildren } from 'preact';
 import type { AppContext } from '../types';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
 import { t } from '../services/i18nService';
+import { getZoom } from '../services/zoomService';
 import {
   isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus,
 } from '../services/driveService';
@@ -69,7 +71,24 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
   const currentProfile = user.profiles[user.currentProfileId];
 
   const [profileOpen, setProfileOpen] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const profileRef    = useRef<HTMLDivElement>(null);
+  const profileBtnRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef   = useRef<HTMLDivElement>(null);
+
+  const toggleProfileOpen = () => {
+    if (!profileOpen) {
+      const rect = profileBtnRef.current?.getBoundingClientRect();
+      if (rect) {
+        // `document.documentElement` has a CSS `zoom` applied (zoomService); the portaled
+        // dropdown stays a descendant of it, so its fixed top/left get re-scaled by that
+        // zoom on render. Pre-divide by the factor to compensate.
+        const factor = getZoom() / 100;
+        setDropdownPos({ top: (rect.bottom + 4) / factor, left: (rect.left + rect.width / 2) / factor });
+      }
+    }
+    setProfileOpen(o => !o);
+  };
 
   const [driveStatus, setDriveStatus] = useState<DriveStatus>(getDriveStatus);
   useEffect(() => {
@@ -80,7 +99,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
   useEffect(() => {
     if (!profileOpen) return;
     const onOutside = (e: MouseEvent) => {
-      if (!profileRef.current?.contains(e.target as Node)) setProfileOpen(false);
+      if (profileRef.current?.contains(e.target as Node)) return;
+      if (dropdownRef.current?.contains(e.target as Node)) return;
+      setProfileOpen(false);
     };
     document.addEventListener('mousedown', onOutside);
     return () => document.removeEventListener('mousedown', onOutside);
@@ -126,8 +147,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
         <div ref={profileRef} class="relative pointer-events-auto">
           <button
+            ref={profileBtnRef}
             class="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
-            onClick={() => setProfileOpen(o => !o)}
+            onClick={toggleProfileOpen}
           >
             <div
               class="w-5 h-5 rounded flex items-center justify-center shrink-0"
@@ -139,8 +161,12 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             <span class="text-dim flex items-center"><ChevronDownIcon size={10} /></span>
           </button>
 
-          {profileOpen && (
-            <div class="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[160px]">
+          {profileOpen && dropdownPos && createPortal((
+            <div
+              ref={dropdownRef}
+              class="fixed -translate-x-1/2 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[160px]"
+              style={{ top: `${dropdownPos.top}px`, left: `${dropdownPos.left}px` }}
+            >
               {(user.profileIds ?? []).map(pid => {
                 const profile = user.profiles[pid];
                 if (!profile) return null;
@@ -176,7 +202,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
                 {t('sidebar.manageProfiles')}
               </button>
             </div>
-          )}
+          ), document.body)}
         </div>
 
         {!isPortraitPhone && (
