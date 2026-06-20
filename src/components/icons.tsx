@@ -161,6 +161,19 @@ export function StarIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+export function ScatterPlotIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 3v18h18"/>
+      <circle cx="9" cy="8" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="13" cy="13" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="7.5" cy="15" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="17" cy="16" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="18" cy="7" r="1.4" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
 export function ArrowLeftIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
