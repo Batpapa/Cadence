@@ -69,6 +69,7 @@
   "folder.title.home": "Accueil",
   "folder.section.folders": "Dossiers",
   "folder.section.decks": "Paquets",
+  "folder.section.favorites": "Favoris",
   "folder.newFolder": "+ Dossier",
   "folder.newDeck": "+ Paquet",
   "folder.deleteFolder": "Supprimer le dossier",
@@ -146,6 +147,8 @@
   "deck.dot.recall": "Rappel : {pct}",
   "deck.dot.ease": "Aisance : {pct}",
   "deck.neverReviewed": "Jamais révisé",
+  "deck.favorite": "Ajouter aux favoris",
+  "deck.unfavorite": "Retirer des favoris",
 
   "card.notFound": "Carte introuvable.",
   "card.section.availability": "Rappel",

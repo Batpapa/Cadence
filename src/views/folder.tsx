@@ -1,7 +1,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon } from '../components/icons';
+import { TrashIcon, StarIcon } from '../components/icons';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { findParentFolder } from '../services/deckService';
@@ -298,6 +298,29 @@ export function FolderView({ folderId }: { folderId: string | null }) {
 
       {/* ── Dashboard (root only) ── */}
       {!folderId && <Dashboard user={user} />}
+
+      {/* ── Favorites (root only) ── */}
+      {!folderId && (() => {
+        const favoriteDecks = Object.values(user.decks).filter(d => d.favorite).sort((a, b) => a.name.localeCompare(b.name));
+        if (favoriteDecks.length === 0) return null;
+        return (
+          <div class="space-y-2">
+            <span class="section-title">{t('folder.section.favorites')}</span>
+            <div class="flex flex-wrap gap-2">
+              {favoriteDecks.map(deck => (
+                <button
+                  key={deck.id}
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-elevated hover:border-accent/50 transition-colors cursor-pointer text-sm text-primary"
+                  onClick={() => navigate({ view: 'deck', deckId: deck.id })}
+                >
+                  <span class="text-yellow-400 flex items-center"><StarIcon size={12} filled /></span>
+                  {deck.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Sub-folders ── */}
       <div class="space-y-2">
