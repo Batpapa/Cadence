@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
-import { pct, availabilityColor, focusIfDesktop, sortByRelevance } from '../utils';
+import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
 import { TrashIcon } from '../components/icons';
 import { exportCards } from '../services/importExport';
 import { confirmModal, showModal, closeModal } from '../components/modal';
@@ -308,7 +308,9 @@ export function LibraryView() {
           </p>
         ) : (
           <div class="space-y-1">
-            {filtered.map(card => {
+            {(() => {
+              const impColWidth = Math.max(...filtered.map(c => String(`×${c.importance}`).length));
+              return filtered.map(card => {
               const work     = user.cardWorks[`${user.currentProfileId}:${card.id}`];
               const k        = cardAvailability(user, work);
               const fsrs     = work ? replayFSRS(work.history) : undefined;
@@ -347,14 +349,14 @@ export function LibraryView() {
                   </span>
 
                   <div class="flex items-center gap-3 shrink-0">
-                    {(card.tags ?? []).length > 0 && (
-                      <div class="flex gap-1">
-                        {(card.tags ?? []).slice(0, 3).map(tg => (
-                          <span key={tg} class="text-xs px-1.5 py-0.5 rounded bg-border text-dim">{tg}</span>
-                        ))}
-                      </div>
-                    )}
-                    <span class="text-xs font-mono text-dim" title={t('library.baseImportance')}>
+                    <span class="text-xs font-mono text-dim shrink-0">
+                      {work?.history.at(-1)?.ts ? timeAgo(work.history.at(-1)!.ts) : t('card.neverReviewed')}
+                    </span>
+                    <span
+                      style={{ width: `${impColWidth}ch` }}
+                      class="text-xs font-mono text-dim shrink-0 text-right"
+                      title={t('library.baseImportance')}
+                    >
                       ×{card.importance}
                     </span>
                     <div class="hidden group-hover:flex gap-1">
@@ -378,7 +380,8 @@ export function LibraryView() {
                   </div>
                 </div>
               );
-            })}
+              });
+            })()}
           </div>
         )}
       </div>
