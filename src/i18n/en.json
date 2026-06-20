@@ -189,7 +189,7 @@
   "rating.good": "○ Good",
   "rating.easy": "✓ Easy",
 
-  "library.title": "Card library",
+  "library.title": "Library",
   "library.cardCount": "{count} card",
   "library.cardCountPlural": "{count} cards",
   "library.newCard": "+ New card",

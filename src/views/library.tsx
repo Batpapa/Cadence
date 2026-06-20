@@ -2,7 +2,8 @@
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
-import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon } from '../components/icons';
+import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon } from '../components/icons';
+import { CardMap } from '../components/cardMap';
 import { exportCards } from '../services/importExport';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
@@ -65,6 +66,7 @@ export function LibraryView() {
   const [sortMode,    setSortMode]    = useState<LibrarySort>(savedRoute?.sort ?? 'alpha');
   const [sortAsc,     setSortAsc]     = useState(savedRoute?.sortAsc ?? false);
   const [sortOpen,    setSortOpen]    = useState(false);
+  const [mapOpen,     setMapOpen]     = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   const sortRef   = useRef<HTMLDivElement>(null);
@@ -181,10 +183,29 @@ export function LibraryView() {
             {t(allCards.length !== 1 ? 'library.cardCountPlural' : 'library.cardCount', { count: allCards.length })}
           </p>
         </div>
-        <button class="btn-primary" onClick={() => showNewCardModal(getContext())}>
-          {t('library.newCard')}
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class={`w-8 h-8 shrink-0 flex items-center justify-center rounded-md border transition-colors cursor-pointer ${
+              mapOpen ? 'bg-accent text-white border-accent' : 'border-border text-muted hover:border-accent hover:text-accent'
+            }`}
+            title={t('dashboard.cardMap')}
+            onClick={() => setMapOpen(o => !o)}
+          >
+            <ScatterPlotIcon size={16} />
+          </button>
+          <button class="btn-primary" onClick={() => showNewCardModal(getContext())}>
+            {t('library.newCard')}
+          </button>
+        </div>
       </div>
+
+      {/* ── Card map ── */}
+      {mapOpen && (
+        <div class="px-6 pb-4">
+          <CardMap user={user} cards={hasSelection ? allCards.filter(c => selected.has(c.id)) : filtered} />
+        </div>
+      )}
 
       {/* ── Search + filters ── */}
       <div class="px-6 pb-2 space-y-1">
@@ -196,6 +217,7 @@ export function LibraryView() {
           value={searchQuery}
           onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
         />
+
         {deckItems.length > 0 && (
           <FilterSection
             labelKey="library.filterDecks"

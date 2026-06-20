@@ -189,7 +189,7 @@
   "rating.good": "○ Bien",
   "rating.easy": "✓ Facile",
 
-  "library.title": "Bibliothèque de cartes",
+  "library.title": "Bibliothèque",
   "library.cardCount": "{count} carte",
   "library.cardCountPlural": "{count} cartes",
   "library.newCard": "+ Nouvelle carte",
