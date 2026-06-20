@@ -374,7 +374,6 @@ export function LibraryView() {
               const k        = cardAvailability(user, work);
               const fsrs     = work ? replayFSRS(work.history) : undefined;
               const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
-              const deckIds  = decksContainingCard(card.id, user);
               const isSel    = selected.has(card.id);
 
               return (
@@ -418,24 +417,6 @@ export function LibraryView() {
                     >
                       ×{card.importance}
                     </span>
-                    <div class="hidden group-hover:flex gap-1">
-                      {deckIds.slice(0, 2).map(dId => {
-                        const deck = user.decks[dId]; if (!deck) return null;
-                        return (
-                          <span
-                            key={dId}
-                            class="text-xs px-1.5 py-0.5 rounded bg-accent/10 text-accent cursor-pointer hover:bg-accent/20 transition-colors"
-                            title={deckPath(dId, user)}
-                            onClick={(e) => { e.stopPropagation(); navigate({ view: 'deck', deckId: dId }); }}
-                          >
-                            {deck.name}
-                          </span>
-                        );
-                      })}
-                      {deckIds.length > 2 && (
-                        <span class="text-xs text-dim">+{deckIds.length - 2}</span>
-                      )}
-                    </div>
                   </div>
                 </div>
               );
