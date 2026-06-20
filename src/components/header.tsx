@@ -218,13 +218,13 @@ function BottomNavBtn({ title, active, disabled, onClick, children }: {
 }) {
   return (
     <button
-      class={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors
+      class={`flex-1 flex items-center justify-center transition-colors
         ${active ? 'text-accent' : disabled ? 'text-border' : 'text-dim active:text-accent'}`}
+      title={title}
       disabled={disabled}
       onClick={onClick}
     >
       {children}
-      <span class="text-[10px] leading-none">{title}</span>
     </button>
   );
 }
