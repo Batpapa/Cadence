@@ -9,6 +9,7 @@ import {
 } from '../services/theSessionService';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
+import { buildIrishTuneInfoBody } from './irishTuneInfoImport';
 
 // ── Tab helpers ───────────────────────────────────────────────────────────────
 
@@ -334,7 +335,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
 // ── New Card modal (hierarchical flow) ───────────────────────────────────────
 
 export function showNewCardModal(ctx: AppContext): void {
-  type Step = 'root' | 'create' | 'import' | 'thesession' | 'json';
+  type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json';
   let currentStep: Step = 'root';
 
   const overlay = document.createElement('div');
@@ -379,11 +380,12 @@ export function showNewCardModal(ctx: AppContext): void {
   overlay.appendChild(dialog);
 
   const TITLES: Record<Step, string> = {
-    root:       t('newCard.title'),
-    create:     t('newCard.tabCreate'),
-    import:     t('newCard.tabImport'),
-    thesession: t('newCard.tabTheSession'),
-    json:       t('newCard.tabImportJson'),
+    root:         t('newCard.title'),
+    create:       t('newCard.tabCreate'),
+    import:       t('newCard.tabImport'),
+    thesession:   t('newCard.tabTheSession'),
+    irishtuneinfo: t('newCard.tabIrishTuneInfo'),
+    json:         t('newCard.tabImportJson'),
   };
 
   let deckSelectorOpen = false;
@@ -436,16 +438,14 @@ export function showNewCardModal(ctx: AppContext): void {
     const btn = document.createElement('button');
     btn.className = 'flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer';
     btn.style.cssText = 'transition: border-color 0.15s, background 0.15s;';
+    btn.title = desc;
     const iconWrap = document.createElement('span');
     iconWrap.style.color = accentColor;
     iconWrap.className = 'shrink-0 flex items-center';
     iconWrap.innerHTML = icon;
-    const textWrap = document.createElement('div'); textWrap.className = 'flex-1';
-    const labelEl = document.createElement('div'); labelEl.className = 'text-sm font-medium text-primary'; labelEl.textContent = label;
-    const descEl  = document.createElement('div'); descEl.className = 'text-xs text-dim mt-0.5'; descEl.textContent = desc;
-    textWrap.append(labelEl, descEl);
+    const labelEl = document.createElement('div'); labelEl.className = 'flex-1 text-sm font-medium text-primary'; labelEl.textContent = label;
     const arrow = document.createElement('span'); arrow.className = 'text-dim text-base leading-none shrink-0'; arrow.textContent = '›';
-    btn.append(iconWrap, textWrap, arrow);
+    btn.append(iconWrap, labelEl, arrow);
     btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
     btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
     btn.onclick = onClick;
@@ -459,7 +459,7 @@ export function showNewCardModal(ctx: AppContext): void {
       backBtn.classList.add('hidden');
       backBtn.onclick = null;
     } else {
-      const backParent: Step = (step === 'thesession' || step === 'json') ? 'import' : 'root';
+      const backParent: Step = (step === 'thesession' || step === 'irishtuneinfo' || step === 'json') ? 'import' : 'root';
       backBtn.classList.remove('hidden');
       backBtn.onclick = () => navigate(backParent);
     }
@@ -468,11 +468,12 @@ export function showNewCardModal(ctx: AppContext): void {
 
   const renderBody = () => {
     body.innerHTML = '';
-    if (currentStep === 'root')            renderRoot();
-    else if (currentStep === 'create')     renderCreate();
-    else if (currentStep === 'import')     renderImport();
-    else if (currentStep === 'thesession') renderTheSession();
-    else if (currentStep === 'json')       renderJson();
+    if (currentStep === 'root')               renderRoot();
+    else if (currentStep === 'create')        renderCreate();
+    else if (currentStep === 'import')        renderImport();
+    else if (currentStep === 'thesession')    renderTheSession();
+    else if (currentStep === 'irishtuneinfo') renderIrishTuneInfo();
+    else if (currentStep === 'json')          renderJson();
   };
 
   const renderRoot = () => {
@@ -508,14 +509,21 @@ export function showNewCardModal(ctx: AppContext): void {
 
   const renderImport = () => {
     const iconTs   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+    const iconIti  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
     const iconJson = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-    body.appendChild(mkChoiceCard(iconTs,   t('newCard.tabTheSession'), t('newCard.theSessionDesc'), 'var(--color-success)', () => navigate('thesession')));
-    body.appendChild(mkChoiceCard(iconJson, t('newCard.tabImportJson'), t('newCard.importJsonDesc'), 'var(--color-warn)', () => navigate('json')));
+    body.appendChild(mkChoiceCard(iconTs,   t('newCard.tabTheSession'),     t('newCard.theSessionDesc'),     'var(--color-success)', () => navigate('thesession')));
+    body.appendChild(mkChoiceCard(iconIti,  t('newCard.tabIrishTuneInfo'),  t('newCard.irishTuneInfoDesc'),  'var(--color-accent)',  () => navigate('irishtuneinfo')));
+    body.appendChild(mkChoiceCard(iconJson, t('newCard.tabImportJson'),     t('newCard.importJsonDesc'),     'var(--color-warn)',    () => navigate('json')));
   };
 
   const renderTheSession = () => {
     const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
     body.append(buildTheSessionBody(ctx, status, () => selectedDeckIds), status);
+  };
+
+  const renderIrishTuneInfo = () => {
+    const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
+    body.append(buildIrishTuneInfoBody(ctx, status, () => selectedDeckIds), status);
   };
 
   const renderJson = () => {
