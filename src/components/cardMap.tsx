@@ -103,7 +103,7 @@ export function CardMap({ user, cards }: { user: AppState; cards: Card[] }) {
     const k         = fsrsRetrievability(elapsed, fsrs.stability);
     const retWindow = retentionWindowDays(fsrs.stability, user.availabilityThreshold);
     const deckIds   = decksContainingCard(card.id, user);
-    allPoints.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.importance, deckIds });
+    allPoints.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.defaultImportance, deckIds });
   }
 
   const svgRef     = useRef<HTMLDivElement>(null);

@@ -1,4 +1,4 @@
-import type { User, Card, DeckEntry, Deck, CardWork, SessionRating, SessionEntry } from '../types';
+import type { User, Card, DeckEntry, Deck, CardWork, SessionRating, SessionEntry, AppState } from '../types';
 
 // ── FSRS v4.5 ────────────────────────────────────────────────────────────────
 // Reference: https://github.com/open-spaced-repetition/fsrs4anki
@@ -104,7 +104,44 @@ export function applyFSRS(
 // ── Card & deck knowledge ─────────────────────────────────────────────────────
 
 export function effectiveImportance(card: Card, entry: DeckEntry): number {
-  return entry.importanceOverride ?? card.importance;
+  return entry.importance ?? card.defaultImportance;
+}
+
+/**
+ * Builds a filtered + re-weighted entry list for the given context.
+ * - contextDeckId = null/undefined → Défaut: all entries kept, importance = card.defaultImportance
+ * - contextDeckId = deckId: only entries whose card is in that deck (and importance > 0);
+ *   importance = contextDeck.entry.importance ?? card.defaultImportance
+ */
+export function buildContextualEntries(
+  deck: Deck,
+  contextDeckId: string | null | undefined,
+  user: AppState,
+): DeckEntry[] {
+  if (!contextDeckId) {
+    return deck.entries.map(e => {
+      const card = user.cards[e.cardId];
+      return { cardId: e.cardId, importance: card?.defaultImportance ?? 1 };
+    });
+  }
+  const contextDeck = user.decks[contextDeckId];
+  if (!contextDeck) {
+    return deck.entries.map(e => {
+      const card = user.cards[e.cardId];
+      return { cardId: e.cardId, importance: card?.defaultImportance ?? 1 };
+    });
+  }
+  const contextMap = new Map(contextDeck.entries.map(e => [e.cardId, e]));
+  const result: DeckEntry[] = [];
+  for (const e of deck.entries) {
+    const ctxEntry = contextMap.get(e.cardId);
+    if (!ctxEntry) continue; // not in context deck → excluded
+    const card = user.cards[e.cardId];
+    const imp = ctxEntry.importance ?? card?.defaultImportance ?? 1;
+    if (imp <= 0) continue; // importance 0 → excluded
+    result.push({ cardId: e.cardId, importance: imp });
+  }
+  return result;
 }
 
 /** Replay the full review history to compute current FSRS state on-the-fly. */

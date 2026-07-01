@@ -16,7 +16,7 @@ function isValidRoute(route: Route, user: AppState): boolean {
     case 'folder':  return route.folderId === null || !!user.folders[route.folderId];
     case 'deck':    return !!user.decks[route.deckId];
     case 'card':    return !!user.cards[route.cardId];
-    case 'study':   return !!user.decks[route.deckId];
+    case 'study':   return route.deckId ? !!user.decks[route.deckId] : (route.cardIds?.length ?? 0) > 0;
     case 'library': return true;
   }
 }

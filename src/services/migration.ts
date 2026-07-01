@@ -2,7 +2,7 @@ import type { AppState, User } from '../types';
 import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 // Each entry migrates from version N to N+1.
 // Use `Record<string, unknown>` to handle partially-typed legacy shapes.
@@ -82,6 +82,27 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) {
       if (!card['guid']) card['guid'] = generateId();
+    }
+  },
+  // V5 → V6: rename card.importance → card.defaultImportance, entry.importanceOverride → entry.importance.
+  (s) => {
+    const cards = s['cards'] as Record<string, Record<string, unknown>>;
+    for (const card of Object.values(cards ?? {})) {
+      if ('importance' in card && !('defaultImportance' in card)) {
+        card['defaultImportance'] = card['importance'];
+        delete card['importance'];
+      }
+    }
+    const decks = s['decks'] as Record<string, Record<string, unknown>>;
+    for (const deck of Object.values(decks ?? {})) {
+      const entries = deck['entries'] as Array<Record<string, unknown>>;
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        if ('importanceOverride' in entry) {
+          entry['importance'] = entry['importanceOverride'];
+          delete entry['importanceOverride'];
+        }
+      }
     }
   },
 ];

@@ -2,11 +2,11 @@ import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon, UnlinkIcon, StarIcon } from '../components/icons';
-import { confirmModal, showModal, closeModal } from '../components/modal';
-import { findParentFolder, pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
+import { confirmModal } from '../components/modal';
+import { findParentFolder } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import type { DeckEntry, StudyStrategy } from '../types';
+import { showStudyModal } from '../components/studyModal';
 
 
 function DeckMetric({ label, value, colorClass = 'text-primary' }: {
@@ -29,37 +29,6 @@ function formatDays(d: number): string {
   return t('common.durationLessThanDay');
 }
 
-function showStrategyModal(deckId: string): void {
-  const body = document.createElement('div');
-  body.className = 'space-y-2';
-  const strategies: Array<{ id: StudyStrategy; labelKey: string; subKey: string }> = [
-    { id: 'random',     labelKey: 'deck.strategy.random',     subKey: 'deck.strategy.random.sub' },
-    { id: 'optimal',    labelKey: 'deck.strategy.optimal',    subKey: 'deck.strategy.optimal.sub' },
-    { id: 'stochastic', labelKey: 'deck.strategy.stochastic', subKey: 'deck.strategy.stochastic.sub' },
-  ];
-
-  for (const s of strategies) {
-    const btn = document.createElement('button');
-    btn.className = 'w-full text-left card-block hover:border-accent/60 transition-colors cursor-pointer';
-    btn.innerHTML = `<div class="text-sm font-medium text-primary">${t(s.labelKey)}</div><div class="text-xs text-muted mt-0.5">${t(s.subKey)}</div>`;
-    btn.onclick = () => {
-      closeModal();
-      const user = appState.value;
-      const deck = user.decks[deckId]!;
-      const pid  = user.currentProfileId;
-      const w    = user.weightByImportance ?? true;
-      const pickers: Record<StudyStrategy, () => DeckEntry | null> = {
-        random:     () => pickRandom(user, pid, deck, user.cardWorks),
-        optimal:    () => pickOptimal(user, pid, deck, user.cards, user.cardWorks, w),
-        stochastic: () => pickStochastic(user, pid, deck, user.cards, user.cardWorks, w),
-      };
-      const entry = pickers[s.id]();
-      navigate({ view: 'study', deckId, strategy: s.id, currentCardId: entry?.cardId ?? null });
-    };
-    body.appendChild(btn);
-  }
-  showModal(t('deck.strategy.title'), body, []);
-}
 
 
 export function DeckView({ deckId }: { deckId: string }) {
@@ -75,14 +44,14 @@ export function DeckView({ deckId }: { deckId: string }) {
   // Quick-link dropdown
   const [linkQuery, setLinkQuery] = useState('');
 
-  // Inline importance override editing
+  // Inline deck importance editing
   const [editingImportanceId, setEditingImportanceId] = useState<string | null>(null);
-  const [importanceOverrideDraft, setImportanceOverrideDraft] = useState('');
-  const importanceOverrideRef = useRef<HTMLInputElement>(null);
+  const [importanceDraft, setImportanceDraft] = useState('');
+  const importanceInputRef = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => {
-    if (editingImportanceId && importanceOverrideRef.current) {
-      importanceOverrideRef.current.focus();
-      importanceOverrideRef.current.select();
+    if (editingImportanceId && importanceInputRef.current) {
+      importanceInputRef.current.focus();
+      importanceInputRef.current.select();
     }
   }, [editingImportanceId]);
 
@@ -197,7 +166,7 @@ export function DeckView({ deckId }: { deckId: string }) {
               class={noCards || allMastered
                 ? 'btn px-3 bg-elevated text-dim cursor-default text-sm font-medium'
                 : 'btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium'}
-              onClick={(!noCards && !allMastered) ? () => showStrategyModal(deckId) : undefined}
+              onClick={(!noCards && !allMastered) ? () => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId }) : undefined}
             >
               {t('deck.study')}
             </button>
@@ -337,30 +306,30 @@ export function DeckView({ deckId }: { deckId: string }) {
 
                     <span
                       class="text-sm text-primary flex-1 truncate cursor-pointer hover:text-accent"
-                      onClick={() => navigate({ view: 'card', cardId: card.id })}
+                      onClick={() => navigate({ view: 'card', cardId: card.id, contextDeckId: deckId })}
                     >
                       {card.name}
                     </span>
 
-                    <span class="text-xs font-mono text-dim shrink-0">
+                    <span class="hidden sm:block text-xs font-mono text-dim shrink-0">
                       {lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}
                     </span>
 
                     {editingImportanceId === entry.cardId ? (
                       <input
-                        ref={importanceOverrideRef}
-                        type="number" min="0.1" step="0.1"
-                        value={importanceOverrideDraft}
+                        ref={importanceInputRef}
+                        type="number" min="0" step="0.1"
+                        value={importanceDraft}
                         style={{ width: `${impColWidth}ch` }}
                         class="text-xs font-mono text-right p-0 bg-transparent border-b border-accent outline-none text-primary shrink-0 leading-none"
-                        onInput={(e) => setImportanceOverrideDraft((e.target as HTMLInputElement).value)}
+                        onInput={(e) => setImportanceDraft((e.target as HTMLInputElement).value)}
                         onBlur={() => {
-                          const val = parseFloat(importanceOverrideDraft);
+                          const val = parseFloat(importanceDraft);
                           mutate(s => {
                             const e = s.decks[deckId]!.entries.find(e => e.cardId === entry.cardId);
                             if (!e) return;
-                            if (isNaN(val) || importanceOverrideDraft.trim() === '') delete e.importanceOverride;
-                            else e.importanceOverride = val;
+                            if (isNaN(val) || importanceDraft.trim() === '') delete e.importance;
+                            else e.importance = val;
                           });
                           setEditingImportanceId(null);
                         }}
@@ -372,9 +341,9 @@ export function DeckView({ deckId }: { deckId: string }) {
                     ) : (
                       <span
                         style={{ width: `${impColWidth}ch` }}
-                        class={`text-xs font-mono shrink-0 text-right cursor-pointer hover:text-accent transition-colors ${entry.importanceOverride !== undefined ? 'text-accent' : 'text-dim'}`}
-                        title={entry.importanceOverride !== undefined ? t('deck.importanceTitleOverride') : t('deck.importanceTitleDefault')}
-                        onClick={() => { setImportanceOverrideDraft(entry.importanceOverride !== undefined ? String(entry.importanceOverride) : ''); setEditingImportanceId(entry.cardId); }}
+                        class={`text-xs font-mono shrink-0 text-right cursor-pointer hover:text-accent transition-colors ${entry.importance !== undefined ? 'text-accent' : 'text-dim'}`}
+                        title={entry.importance !== undefined ? t('deck.importanceTitleDeck') : t('deck.importanceTitleDefault')}
+                        onClick={() => { setImportanceDraft(entry.importance !== undefined ? String(entry.importance) : ''); setEditingImportanceId(entry.cardId); }}
                       >
                         ×{imp}
                       </span>

@@ -7,6 +7,7 @@ import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
 import { confirmModal, showModal, closeModal } from '../components/modal';
+import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
@@ -185,8 +186,8 @@ export function LibraryView() {
   const [sortMode,    setSortMode]    = useState<LibrarySort>(savedRoute?.sort ?? 'alpha');
   const [sortAsc,     setSortAsc]     = useState(savedRoute?.sortAsc ?? false);
   const [sortOpen,    setSortOpen]    = useState(false);
-  const [tagFilterOr, setTagFilterOr] = useState(false);
-  const [deckFilterOr, setDeckFilterOr] = useState(false);
+  const [tagFilterOr, setTagFilterOr] = useState(savedRoute?.tagOr ?? false);
+  const [deckFilterOr, setDeckFilterOr] = useState(savedRoute?.deckOr ?? false);
   const [mapOpen,     setMapOpen]     = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -202,8 +203,8 @@ export function LibraryView() {
   }, [sortOpen]);
 
   useEffect(() => {
-    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], sort: sortMode, sortAsc });
-  }, [searchQuery, activeTags, activeDecks, sortMode, sortAsc]);
+    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr });
+  }, [searchQuery, activeTags, activeDecks, sortMode, sortAsc, tagFilterOr, deckFilterOr]);
 
   useEffect(() => { if (searchRef.current) focusIfDesktop(searchRef.current); }, []);
 
@@ -251,7 +252,7 @@ export function LibraryView() {
     const lastTs = (c: Card) => user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history.at(-1)?.ts ?? -1;
     filtered = [...filteredUnsorted].sort((a, b) => lastTs(b) - lastTs(a));
   } else if (sortMode === 'importance') {
-    filtered = [...filteredUnsorted].sort((a, b) => b.importance - a.importance);
+    filtered = [...filteredUnsorted].sort((a, b) => b.defaultImportance - a.defaultImportance);
   } else {
     filtered = q
       ? sortByRelevance(filteredUnsorted, searchQuery)
@@ -272,6 +273,8 @@ export function LibraryView() {
   const selectedArr   = [...selected];
   const hasSelection  = selected.size > 0;
   const masterRef     = useRef<HTMLInputElement>(null);
+  const lastClickRef  = useRef<{ cardId: string; wasSelected: boolean } | null>(null);
+  const shiftActiveRef = useRef(false);
   useLayoutEffect(() => {
     if (masterRef.current) masterRef.current.indeterminate = selected.size > 0 && selected.size < filtered.length;
   });
@@ -472,6 +475,16 @@ export function LibraryView() {
               </button>
             )}
             <button
+              class="btn bg-success/80 hover:bg-success text-white text-xs flex items-center"
+              title={t('library.study')}
+              onClick={() => {
+                const pool = [...selected].map(id => ({ cardId: id }));
+                showStudyModal({ entries: pool, title: t('library.title'), defaultContext: null });
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>
+            </button>
+            <button
               class="btn-danger text-xs flex items-center gap-1.5"
               title={t('library.deleteSelected')}
               onClick={() => confirmModal(
@@ -490,7 +503,7 @@ export function LibraryView() {
                 },
               )}
             >
-              <TrashIcon size={12} />
+              <TrashIcon size={13} />
             </button>
           </>}
         </div>
@@ -505,7 +518,7 @@ export function LibraryView() {
         ) : (
           <div class="space-y-1">
             {(() => {
-              const impColWidth = Math.max(...filtered.map(c => String(`×${c.importance}`).length));
+              const impColWidth = Math.max(...filtered.map(c => String(`×${c.defaultImportance}`).length));
               return filtered.map(card => {
               const work     = user.cardWorks[`${user.currentProfileId}:${card.id}`];
               const k        = cardAvailability(user, work);
@@ -523,11 +536,33 @@ export function LibraryView() {
                     type="checkbox"
                     checked={isSel}
                     class={`card-checkbox shrink-0 transition-opacity ${isSel ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'}`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      shiftActiveRef.current = e.shiftKey;
+                    }}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
+                      const checked = (e.target as HTMLInputElement).checked;
                       const next = new Set(selected);
-                      (e.target as HTMLInputElement).checked ? next.add(card.id) : next.delete(card.id);
+                      if (shiftActiveRef.current && lastClickRef.current) {
+                        shiftActiveRef.current = false;
+                        const { cardId: lastId, wasSelected } = lastClickRef.current;
+                        const lastIdx = filtered.findIndex(c => c.id === lastId);
+                        const currIdx = filtered.findIndex(c => c.id === card.id);
+                        if (lastIdx !== -1 && currIdx !== -1) {
+                          const from = Math.min(lastIdx, currIdx);
+                          const to   = Math.max(lastIdx, currIdx);
+                          for (let i = from; i <= to; i++) {
+                            wasSelected ? next.add(filtered[i]!.id) : next.delete(filtered[i]!.id);
+                          }
+                          setSelected(next);
+                          return;
+                        }
+                      }
+                      shiftActiveRef.current = false;
+                      checked ? next.add(card.id) : next.delete(card.id);
                       setSelected(next);
+                      lastClickRef.current = { cardId: card.id, wasSelected: checked };
                     }}
                   />
 
@@ -544,7 +579,7 @@ export function LibraryView() {
                   </span>
 
                   <div class="flex items-center gap-3 shrink-0">
-                    <span class="text-xs font-mono text-dim shrink-0">
+                    <span class="hidden sm:block text-xs font-mono text-dim shrink-0">
                       {work?.history.at(-1)?.ts ? timeAgo(work.history.at(-1)!.ts) : t('card.neverReviewed')}
                     </span>
                     <span
@@ -552,7 +587,7 @@ export function LibraryView() {
                       class="text-xs font-mono text-dim shrink-0 text-right"
                       title={t('library.baseImportance')}
                     >
-                      ×{card.importance}
+                      ×{card.defaultImportance}
                     </span>
                   </div>
                 </div>

@@ -203,7 +203,7 @@ export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boole
     id: generateId(),
     guid: generateId(),
     name: tune.name,
-    importance: tune.tunebooks > 0 ? tune.tunebooks : 1,
+    defaultImportance: tune.tunebooks > 0 ? tune.tunebooks : 1,
     tags,
     externalId: `thesession:${tune.id}`,
     content: {

@@ -185,7 +185,7 @@ export function tuneToCard(tune: TuneDetail, audioFile?: FileEntry | null): Card
     id: generateId(),
     guid: generateId(),
     name: tune.name,
-    importance: 1,
+    defaultImportance: 1,
     tags,
     externalId: `irishtuneinfo:${tune.id}`,
     content: {
