@@ -21,10 +21,14 @@ export function exportBackup(user: AppState): void {
   download(JSON.stringify(data, null, 2), `cadence-backup-${toDateStr(new Date())}.cdb`);
 }
 
+/** Serializes cards to CDC JSON string without downloading. */
+export function cardPackageText(cards: Card[]): string {
+  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards }, null, 2);
+}
+
 /** Card-only export — no history, no decks, no personal data. */
 export function exportCards(cards: Card[]): void {
-  const pkg = { schemaVersion: SCHEMA_VERSION, cards };
-  download(JSON.stringify(pkg, null, 2), `cadence-cards-${toDateStr(new Date())}.cdc`);
+  download(cardPackageText(cards), `cadence-cards-${toDateStr(new Date())}.cdc`);
 }
 
 function isCardPackage(data: unknown): data is { schemaVersion?: number; cards: unknown[] } {

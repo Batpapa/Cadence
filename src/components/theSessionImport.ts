@@ -1,6 +1,7 @@
 import type { AppContext } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
 import { parseCardPackage } from '../services/importExport';
+import { downloadShare } from '../services/shareService';
 import { mutate } from '../store';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers,
@@ -347,7 +348,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
 // ── New Card modal (hierarchical flow) ───────────────────────────────────────
 
 export function showNewCardModal(ctx: AppContext): void {
-  type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json';
+  type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json' | 'share';
   let currentStep: Step = 'root';
 
   const overlay = document.createElement('div');
@@ -398,6 +399,7 @@ export function showNewCardModal(ctx: AppContext): void {
     thesession:   t('newCard.tabTheSession'),
     irishtuneinfo: t('newCard.tabIrishTuneInfo'),
     json:         t('newCard.tabImportJson'),
+    share:        t('newCard.tabImportJson'),
   };
 
   let deckSelectorOpen = false;
@@ -471,7 +473,7 @@ export function showNewCardModal(ctx: AppContext): void {
       backBtn.classList.add('hidden');
       backBtn.onclick = null;
     } else {
-      const backParent: Step = (step === 'thesession' || step === 'irishtuneinfo' || step === 'json') ? 'import' : 'root';
+      const backParent: Step = (step === 'thesession' || step === 'irishtuneinfo' || step === 'json' || step === 'share') ? 'import' : 'root';
       backBtn.classList.remove('hidden');
       backBtn.onclick = () => navigate(backParent);
     }
@@ -486,6 +488,7 @@ export function showNewCardModal(ctx: AppContext): void {
     else if (currentStep === 'thesession')    renderTheSession();
     else if (currentStep === 'irishtuneinfo') renderIrishTuneInfo();
     else if (currentStep === 'json')          renderJson();
+    else if (currentStep === 'share')         renderShare();
   };
 
   const renderRoot = () => {
@@ -532,12 +535,14 @@ export function showNewCardModal(ctx: AppContext): void {
   };
 
   const renderImport = () => {
-    const iconTs   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
-    const iconIti  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
-    const iconJson = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-    body.appendChild(mkChoiceCard(iconTs,   t('newCard.tabTheSession'),     t('newCard.theSessionDesc'),     'var(--color-success)', () => navigate('thesession')));
-    body.appendChild(mkChoiceCard(iconIti,  t('newCard.tabIrishTuneInfo'),  t('newCard.irishTuneInfoDesc'),  'var(--color-accent)',  () => navigate('irishtuneinfo')));
-    body.appendChild(mkChoiceCard(iconJson, t('newCard.tabImportJson'),     t('newCard.importJsonDesc'),     'var(--color-warn)',    () => navigate('json')));
+    const iconTs    = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+    const iconIti   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+    const iconJson  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+    const iconShare = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+    body.appendChild(mkChoiceCard(iconTs,    t('newCard.tabTheSession'),    t('newCard.theSessionDesc'),    'var(--color-success)', () => navigate('thesession')));
+    body.appendChild(mkChoiceCard(iconIti,   t('newCard.tabIrishTuneInfo'), t('newCard.irishTuneInfoDesc'), 'var(--color-accent)',  () => navigate('irishtuneinfo')));
+    body.appendChild(mkChoiceCard(iconJson,  t('newCard.tabImportJson'),    t('newCard.importJsonDesc'),    'var(--color-warn)',    () => navigate('json')));
+    body.appendChild(mkChoiceCard(iconShare, t('newCard.share.label'),      t('newCard.share.desc'),        'var(--color-accent)',  () => navigate('share')));
   };
 
   const renderTheSession = () => {
@@ -584,6 +589,53 @@ export function showNewCardModal(ctx: AppContext): void {
       fileInp.click();
     };
     body.append(pickBtn, status);
+  };
+
+  const renderShare = () => {
+    const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
+    const { wrap: inputWrap, inp } = mkInputRow(t('newCard.share.placeholder'));
+    inp.maxLength = 6;
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn-primary text-xs shrink-0'; importBtn.textContent = t('newCard.import.pick'); importBtn.disabled = true;
+
+    const row = document.createElement('div'); row.className = 'flex gap-2';
+    row.append(inputWrap, importBtn);
+
+    inp.addEventListener('input', () => {
+      importBtn.disabled = inp.value.trim().length !== 6;
+    });
+
+    const doImport = async () => {
+      const key = inp.value.trim();
+      if (key.length !== 6) return;
+      importBtn.disabled = true; status.textContent = t('newCard.import.importing');
+      try {
+        const text = await downloadShare(key);
+        const file = new File([text], `share-${key}.cdc`, { type: 'application/octet-stream' });
+        const cards = await parseCardPackage(file);
+        let imported = 0;
+        await mutate(s => {
+          for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; imported++; } }
+          for (const deckId of selectedDeckIds) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            for (const card of cards) {
+              if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+            }
+          }
+        });
+        const skipped = cards.length - imported;
+        let summary = t('theSession.status.batchDone', { count: imported });
+        if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';
+        status.textContent = summary;
+      } catch (e) {
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      } finally { importBtn.disabled = false; }
+    };
+
+    importBtn.onclick = () => { void doImport(); };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') void doImport(); });
+    body.append(row, status);
+    focusIfDesktop(inp);
   };
 
   document.body.appendChild(overlay);
