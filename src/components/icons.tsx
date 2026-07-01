@@ -174,6 +174,28 @@ export function ScatterPlotIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+// Two overlapping circles — intersection filled solid (AND)
+export function VennAndIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 20 14" width={size} height={size} fill="none">
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="13" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M10 2.4 A5.5 5.5 0 0 1 10 11.6 A5.5 5.5 0 0 1 10 2.4Z" style="fill:currentColor;fill-opacity:0.5"/>
+    </svg>
+  );
+}
+
+// Two overlapping circles — union filled as single path (OR)
+export function VennOrIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 20 14" width={size} height={size} fill="none">
+      <path d="M10 2.4 A5.5 5.5 0 1 0 10 11.6 A5.5 5.5 0 1 0 10 2.4Z" style="fill:currentColor;fill-opacity:0.5"/>
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="13" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
+    </svg>
+  );
+}
+
 export function ArrowLeftIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -103,6 +103,8 @@ export function LibraryView() {
   const [sortMode,    setSortMode]    = useState<LibrarySort>(savedRoute?.sort ?? 'alpha');
   const [sortAsc,     setSortAsc]     = useState(savedRoute?.sortAsc ?? false);
   const [sortOpen,    setSortOpen]    = useState(false);
+  const [tagFilterOr, setTagFilterOr] = useState(false);
+  const [deckFilterOr, setDeckFilterOr] = useState(false);
   const [mapOpen,     setMapOpen]     = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -138,15 +140,25 @@ export function LibraryView() {
   const q = searchQuery.toLowerCase();
   const filteredUnsorted = allCards.filter(c => {
     const tags       = c.tags ?? [];
-    const matchText  = !q || c.name.toLowerCase().includes(q);
-    const matchTags  = activeTags.size  === 0 || [...activeTags].every(([tag, fs]) =>
-      fs === 'include' ? tags.includes(tag) : !tags.includes(tag)
+    const matchText = !q || c.name.toLowerCase().includes(q);
+    const cardDecks = decksContainingCard(c.id, user);
+
+    const tagEntries  = [...activeTags];
+    const inclTags    = tagEntries.filter(([, fs]) => fs === 'include').map(([t]) => t);
+    const exclTags    = tagEntries.filter(([, fs]) => fs === 'exclude').map(([t]) => t);
+    const matchTags   = activeTags.size === 0 || (
+      (inclTags.length === 0 || (tagFilterOr ? inclTags.some(t => tags.includes(t)) : inclTags.every(t => tags.includes(t)))) &&
+      exclTags.every(t => !tags.includes(t))
     );
-    const cardDecks  = decksContainingCard(c.id, user);
-    const matchDecks = activeDecks.size === 0 || [...activeDecks].every(([id, fs]) => {
-      const has = id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id);
-      return fs === 'include' ? has : !has;
-    });
+
+    const deckEntries = [...activeDecks];
+    const inclDecks   = deckEntries.filter(([, fs]) => fs === 'include').map(([id]) => id);
+    const exclDecks   = deckEntries.filter(([, fs]) => fs === 'exclude').map(([id]) => id);
+    const hasDeck     = (id: string) => id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id);
+    const matchDecks  = activeDecks.size === 0 || (
+      (inclDecks.length === 0 || (deckFilterOr ? inclDecks.some(hasDeck) : inclDecks.every(hasDeck))) &&
+      exclDecks.every(id => !hasDeck(id))
+    );
     return matchText && matchTags && matchDecks;
   });
   let filtered: Card[];
@@ -265,6 +277,8 @@ export function LibraryView() {
             available={availDecks}
             onToggle={toggleDeck}
             highlight={q}
+            orMode={deckFilterOr}
+            onToggleOr={() => setDeckFilterOr(o => !o)}
           />
         )}
         {allTags.length > 0 && (
@@ -277,6 +291,8 @@ export function LibraryView() {
             available={availTags}
             onToggle={toggleTag}
             highlight={q}
+            orMode={tagFilterOr}
+            onToggleOr={() => setTagFilterOr(o => !o)}
           />
         )}
       </div>
