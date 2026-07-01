@@ -220,6 +220,7 @@
   "library.exportSelected": "Exporter la sélection",
   "library.export.cdc": "Cartes Cadence",
   "library.export.cdcDesc": "Paquet de cartes réimportable",
+  "library.export.file": "Fichier",
   "library.export.csvDesc": "Format tableur, lecture seule",
   "library.share.label": "Partager",
   "library.share.desc": "Génère une clé de 6 caractères, valable 10 minutes",
@@ -397,6 +398,7 @@
   "newCard.share.label": "Clé de partage",
   "newCard.share.desc": "Importer depuis une clé de partage à 6 caractères",
   "newCard.share.placeholder": "Saisir la clé (ex : ABC123)",
+  "newCard.share.importBtn": "Importer",
   "newCard.selectDecks": "Ajouter aux paquets",
   "newCard.noDecks": "Aucun paquet",
 

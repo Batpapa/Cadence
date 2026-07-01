@@ -19,12 +19,45 @@ import { FilterSection, cycleFilter, type FilterMap } from '../components/filter
 function showExportModal(cards: Card[], user: AppState): void {
   const iconCdc   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
   const iconCsv   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>`;
+  const iconFile  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
   const iconShare = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
 
-  const body = document.createElement('div');
-  body.className = 'space-y-2';
+  // ── Build modal manually for navigation support ───────────────────────────
+  const overlay = document.createElement('div');
+  overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm';
 
-  const mkChoice = (icon: string, label: string, desc: string, accentColor: string, onClick: () => void, closeAfter = true) => {
+  const dialog = document.createElement('div');
+  dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col';
+  dialog.style.cssText = `max-width:min(28rem, 90vw); max-height:85vh;`;
+
+  const header = document.createElement('div');
+  header.className = 'flex items-center justify-between px-5 py-4 border-b border-border shrink-0';
+  const headerLeft = document.createElement('div');
+  headerLeft.className = 'flex items-center gap-2 min-w-0';
+  const backBtn = document.createElement('button');
+  backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0 hidden';
+  backBtn.textContent = '←';
+  const titleEl = document.createElement('h2');
+  titleEl.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
+  headerLeft.append(backBtn, titleEl);
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0';
+  closeBtn.textContent = '✕';
+  header.append(headerLeft, closeBtn);
+
+  const body = document.createElement('div');
+  body.className = 'px-5 py-4 space-y-2 overflow-y-auto flex-1';
+
+  dialog.append(header, body);
+  overlay.appendChild(dialog);
+
+  const close = () => overlay.remove();
+  closeBtn.onclick = close;
+  let mouseDownOnOverlay = false;
+  overlay.addEventListener('mousedown', e => { mouseDownOnOverlay = e.target === overlay; });
+  overlay.addEventListener('click', e => { if (e.target === overlay && mouseDownOnOverlay) close(); });
+
+  const mkChoice = (icon: string, label: string, desc: string, accentColor: string, onClick: () => void) => {
     const btn = document.createElement('button');
     btn.className = 'flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer';
     btn.style.cssText = 'transition: border-color 0.15s, background 0.15s;';
@@ -42,25 +75,40 @@ function showExportModal(cards: Card[], user: AppState): void {
     btn.append(iconWrap, labelEl, arrow);
     btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
     btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
-    btn.onclick = () => { if (closeAfter) closeModal(); onClick(); };
+    btn.onclick = onClick;
     return btn;
   };
 
-  const showShareResult = async () => {
+  const renderRoot = () => {
+    titleEl.textContent = t('library.exportSelected');
+    backBtn.classList.add('hidden');
+    body.innerHTML = '';
+    body.appendChild(mkChoice(iconCdc, t('library.export.cdc'), t('library.export.cdcDesc'), 'var(--color-warn)', renderCdc));
+    body.appendChild(mkChoice(iconCsv, 'CSV', t('library.export.csvDesc'), 'var(--color-success)', () => { close(); exportCardsCSV(cards, user); }));
+  };
+
+  const renderCdc = () => {
+    titleEl.textContent = t('library.export.cdc');
+    backBtn.classList.remove('hidden');
+    backBtn.onclick = renderRoot;
+    body.innerHTML = '';
+    body.appendChild(mkChoice(iconFile,  t('library.export.file'),  t('library.export.cdcDesc'),  'var(--color-warn)',   () => { close(); exportCards(cards); }));
+    body.appendChild(mkChoice(iconShare, t('library.share.label'),  t('library.share.desc'),       'var(--color-accent)', () => { void renderShareResult(); }));
+  };
+
+  const renderShareResult = async () => {
+    backBtn.classList.add('hidden');
     body.innerHTML = '';
     const status = document.createElement('p');
     status.className = 'text-xs text-muted text-center py-2';
     status.textContent = t('library.share.uploading');
     body.appendChild(status);
     try {
-      const text = cardPackageText(cards);
-      const { key, secondsRemaining } = await uploadShare(text);
+      const { key, secondsRemaining } = await uploadShare(cardPackageText(cards));
       body.innerHTML = '';
-
       const keyEl = document.createElement('div');
       keyEl.className = 'text-center font-mono text-3xl font-bold tracking-[0.3em] text-primary py-2';
       keyEl.textContent = key;
-
       const copyBtn = document.createElement('button');
       copyBtn.className = 'btn-primary w-full text-sm';
       copyBtn.textContent = t('library.share.copy');
@@ -69,22 +117,19 @@ function showExportModal(cards: Card[], user: AppState): void {
         copyBtn.textContent = t('library.share.copied');
         setTimeout(() => { copyBtn.textContent = t('library.share.copy'); }, 2000);
       };
-
       const validity = document.createElement('p');
       validity.className = 'text-xs text-muted text-center';
       validity.textContent = t('library.share.validity', { minutes: Math.floor(secondsRemaining / 60) });
-
       body.append(keyEl, copyBtn, validity);
     } catch (e) {
       status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      backBtn.classList.remove('hidden');
+      backBtn.onclick = renderCdc;
     }
   };
 
-  body.appendChild(mkChoice(iconCdc,   t('library.export.cdc'),       t('library.export.cdcDesc'),   'var(--color-warn)',    () => exportCards(cards)));
-  body.appendChild(mkChoice(iconCsv,   'CSV',                          t('library.export.csvDesc'),   'var(--color-success)', () => exportCardsCSV(cards, user)));
-  body.appendChild(mkChoice(iconShare, t('library.share.label'),       t('library.share.desc'),       'var(--color-accent)',  () => { void showShareResult(); }, false));
-
-  showModal(t('library.exportSelected'), body, []);
+  document.body.appendChild(overlay);
+  renderRoot();
 }
 
 const NO_DECK = '__no_deck__';
