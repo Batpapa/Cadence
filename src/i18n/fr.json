@@ -200,6 +200,8 @@
   "library.deselectAll": "Tout désélectionner",
   "library.deleteSelected": "Supprimer la sélection",
   "library.filterTags": "Tags",
+  "library.filter.and": "ET — la carte doit correspondre à tous les sélectionnés",
+  "library.filter.or": "OU — la carte doit correspondre à au moins un",
   "library.sort.alpha": "Alphabétique",
   "library.sort.lastReviewed": "Dernière révision",
   "library.sort.lastAdded": "Récemment ajoutées",

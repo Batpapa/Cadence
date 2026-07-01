@@ -200,6 +200,8 @@
   "library.deselectAll": "Deselect all",
   "library.deleteSelected": "Delete selected",
   "library.filterTags": "Tags",
+  "library.filter.and": "AND — card must match all selected",
+  "library.filter.or": "OR — card must match at least one",
   "library.sort.alpha": "Alphabetical",
   "library.sort.lastReviewed": "Last reviewed",
   "library.sort.lastAdded": "Last added",
