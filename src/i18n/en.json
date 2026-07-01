@@ -216,6 +216,9 @@
   "library.empty": "No cards yet.",
   "library.baseImportance": "Base importance",
   "library.exportSelected": "Export selection",
+  "library.export.cdc": "Cadence Cards",
+  "library.export.cdcDesc": "Reimportable card package",
+  "library.export.csvDesc": "Spreadsheet format, read-only",
   "library.addToDecks": "Add to deck",
   "library.addToDecks.title": "Add to decks",
   "library.addToDecks.confirm": "Add",
@@ -382,7 +385,7 @@
   "newCard.importDesc": "From TheSession, irishtune.info, or a .cdc file",
   "newCard.theSessionDesc": "Search and import folk & traditional tunes",
   "newCard.tabImportJson": "Cadence Cards",
-  "newCard.importJsonDesc": "Restore cards from a previous .cdc export",
+  "newCard.importJsonDesc": "Import cards from a .cdc file",
   "newCard.selectDecks": "Add to decks",
   "newCard.noDecks": "No decks yet",
 

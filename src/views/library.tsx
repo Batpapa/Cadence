@@ -4,14 +4,51 @@ import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } fro
 import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon } from '../components/icons';
 import { CardMap } from '../components/cardMap';
-import { exportCards } from '../services/importExport';
+import { exportCards, exportCardsCSV } from '../services/importExport';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import type { Card, LibrarySort } from '../types';
+import type { AppState, Card, LibrarySort } from '../types';
 import { FilterSection, cycleFilter, type FilterMap } from '../components/filterSection';
+
+// ── Export modal ──────────────────────────────────────────────────────────────
+
+function showExportModal(cards: Card[], user: AppState): void {
+  const iconCdc = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+  const iconCsv = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>`;
+
+  const body = document.createElement('div');
+  body.className = 'space-y-2';
+
+  const mkChoice = (icon: string, label: string, desc: string, accentColor: string, onClick: () => void) => {
+    const btn = document.createElement('button');
+    btn.className = 'flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer';
+    btn.style.cssText = 'transition: border-color 0.15s, background 0.15s;';
+    btn.title = desc;
+    const iconWrap = document.createElement('span');
+    iconWrap.style.color = accentColor;
+    iconWrap.className = 'shrink-0 flex items-center';
+    iconWrap.innerHTML = icon;
+    const labelEl = document.createElement('span');
+    labelEl.className = 'flex-1 text-sm font-medium text-primary';
+    labelEl.textContent = label;
+    const arrow = document.createElement('span');
+    arrow.className = 'text-dim text-base leading-none shrink-0';
+    arrow.textContent = '›';
+    btn.append(iconWrap, labelEl, arrow);
+    btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
+    btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
+    btn.onclick = () => { onClick(); closeModal(); };
+    return btn;
+  };
+
+  body.appendChild(mkChoice(iconCdc, t('library.export.cdc'), t('library.export.cdcDesc'), 'var(--color-warn)', () => exportCards(cards)));
+  body.appendChild(mkChoice(iconCsv, 'CSV', t('library.export.csvDesc'), 'var(--color-success)', () => exportCardsCSV(cards, user)));
+
+  showModal(t('library.exportSelected'), body, []);
+}
 
 const NO_DECK = '__no_deck__';
 const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance'];
@@ -306,7 +343,7 @@ export function LibraryView() {
           </button>
           {hasSelection && <>
             <div class="w-px h-4 bg-border mx-1" />
-            <button class="btn-ghost text-xs inline-flex items-center justify-center" title={t('library.exportSelected')} onClick={() => exportCards(allCards.filter(c => selected.has(c.id)))}>
+            <button class="btn-ghost text-xs inline-flex items-center justify-center" title={t('library.exportSelected')} onClick={() => showExportModal(allCards.filter(c => selected.has(c.id)), user)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
             {addEligible.length > 0 && (

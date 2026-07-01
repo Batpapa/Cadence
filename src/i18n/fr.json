@@ -216,6 +216,9 @@
   "library.empty": "Aucune carte pour l'instant.",
   "library.baseImportance": "Importance de base",
   "library.exportSelected": "Exporter la sélection",
+  "library.export.cdc": "Cartes Cadence",
+  "library.export.cdcDesc": "Paquet de cartes réimportable",
+  "library.export.csvDesc": "Format tableur, lecture seule",
   "library.addToDecks": "Ajouter au paquet",
   "library.addToDecks.title": "Ajouter aux paquets",
   "library.addToDecks.confirm": "Ajouter",
@@ -382,7 +385,7 @@
   "newCard.importDesc": "Depuis TheSession, irishtune.info ou un fichier .cdc",
   "newCard.theSessionDesc": "Rechercher et importer des airs folk et traditionnels",
   "newCard.tabImportJson": "Cartes Cadence",
-  "newCard.importJsonDesc": "Restaurer des cartes depuis un export .cdc précédent",
+  "newCard.importJsonDesc": "Importer des cartes depuis un fichier .cdc",
   "newCard.selectDecks": "Ajouter aux paquets",
   "newCard.noDecks": "Aucun paquet",
 
