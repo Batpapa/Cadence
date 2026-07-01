@@ -18,13 +18,13 @@ function isValidBackup(data: unknown): data is Record<string, unknown> {
 /** Full backup — all user data except id (id is device-local). */
 export function exportBackup(user: AppState): void {
   const { id: _id, ...data } = user;
-  download(JSON.stringify(data, null, 2), `cadence-backup-${toDateStr(new Date())}.json`);
+  download(JSON.stringify(data, null, 2), `cadence-backup-${toDateStr(new Date())}.cdb`);
 }
 
 /** Card-only export — no history, no decks, no personal data. */
 export function exportCards(cards: Card[]): void {
   const pkg = { schemaVersion: SCHEMA_VERSION, cards };
-  download(JSON.stringify(pkg, null, 2), `cadence-cards-${toDateStr(new Date())}.json`);
+  download(JSON.stringify(pkg, null, 2), `cadence-cards-${toDateStr(new Date())}.cdc`);
 }
 
 function isCardPackage(data: unknown): data is { schemaVersion?: number; cards: unknown[] } {
@@ -57,9 +57,10 @@ function migrateRawCards(cards: unknown[], from: number): void {
 }
 
 export async function parseCardPackage(file: File): Promise<Card[]> {
+  if (!file.name.endsWith('.cdc')) throw new Error('Expected a .cdc file');
   const text = await file.text();
   let data: unknown;
-  try { data = JSON.parse(text); } catch { throw new Error('Invalid JSON file'); }
+  try { data = JSON.parse(text); } catch { throw new Error('Invalid file'); }
   if (!isCardPackage(data)) throw new Error('File is not a valid card package');
   const from = typeof data.schemaVersion === 'number' ? data.schemaVersion : 0;
   migrateRawCards(data.cards, from);
@@ -67,9 +68,10 @@ export async function parseCardPackage(file: File): Promise<Card[]> {
 }
 
 export async function parseImport(file: File): Promise<Record<string, unknown>> {
+  if (!file.name.endsWith('.cdb')) throw new Error('Expected a .cdb file');
   const text = await file.text();
   let data: unknown;
-  try { data = JSON.parse(text); } catch { throw new Error('Invalid JSON file'); }
+  try { data = JSON.parse(text); } catch { throw new Error('Invalid file'); }
   if (!isValidBackup(data)) throw new Error('File is not a valid Cadence backup');
   return data;
 }

@@ -358,7 +358,7 @@ export function showSettingsModal(ctx: AppContext): void {
       const exportBtn2 = document.createElement('button'); exportBtn2.className = 'btn-ghost text-xs inline-flex items-center justify-center gap-1.5'; exportBtn2.innerHTML = `${exportSvg2}${t('settings.export')}`;
       exportBtn2.onclick = () => exportBackup(getContext().user);
       const importLabel2 = document.createElement('label'); importLabel2.className = 'btn-ghost text-xs cursor-pointer inline-flex items-center justify-center gap-1.5'; importLabel2.innerHTML = `${importSvg2}${t('settings.import')}`;
-      const importInput2 = document.createElement('input'); importInput2.type = 'file'; importInput2.accept = 'application/json'; importInput2.className = 'hidden';
+      const importInput2 = document.createElement('input'); importInput2.type = 'file'; importInput2.accept = '.cdb'; importInput2.className = 'hidden';
       importInput2.onchange = async () => {
         const file = importInput2.files?.[0]; if (!file) return;
         try {
