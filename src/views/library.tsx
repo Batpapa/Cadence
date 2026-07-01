@@ -227,6 +227,7 @@ export function LibraryView() {
             titleOf={id => id === NO_DECK ? '' : deckPath(id, user)}
             available={availDecks}
             onToggle={toggleDeck}
+            highlight={q}
           />
         )}
         {allTags.length > 0 && (
@@ -238,6 +239,7 @@ export function LibraryView() {
             titleOf={tag => tag}
             available={availTags}
             onToggle={toggleTag}
+            highlight={q}
           />
         )}
       </div>

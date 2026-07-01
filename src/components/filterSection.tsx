@@ -14,7 +14,7 @@ export function cycleFilter(prev: FilterMap, key: string): FilterMap {
   return n;
 }
 
-export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, available, onToggle }: {
+export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, available, onToggle, highlight }: {
   labelKey: string;
   items: string[];
   activeMap: FilterMap;
@@ -22,6 +22,7 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
   titleOf: (id: string) => string;
   available: Set<string>;
   onToggle: (id: string) => void;
+  highlight?: string;
 }) {
   const [open, setOpen] = useState(() => activeMap.size > 0);
   return (
@@ -38,8 +39,11 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
       {open && (
         <div class="flex flex-wrap gap-1.5 pt-1">
           {items.map(id => {
-            const state   = activeMap.get(id);
-            const isAvail = state !== undefined || available.has(id);
+            const state        = activeMap.get(id);
+            const isAvail      = state !== undefined || available.has(id);
+            const label        = labelOf(id);
+            const isHighlighted = !!highlight && state === undefined &&
+              label.toLowerCase().includes(highlight.toLowerCase());
             return (
               <button
                 key={id}
@@ -47,13 +51,14 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
                 class={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                   state === 'include' ? 'bg-accent text-white border-accent cursor-pointer' :
                   state === 'exclude' ? 'bg-danger/10 text-danger border-danger/50 line-through cursor-pointer' :
+                  isHighlighted       ? `bg-warn/10 text-warn border-warn/40 ${isAvail ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}` :
                   isAvail             ? 'border-border text-muted hover:border-accent hover:text-accent cursor-pointer' :
                                         'border-border text-muted opacity-30 cursor-not-allowed'
                 }`}
                 title={titleOf(id)}
                 onClick={() => onToggle(id)}
               >
-                {labelOf(id)}
+                {label}
               </button>
             );
           })}
