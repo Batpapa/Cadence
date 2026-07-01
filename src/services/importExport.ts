@@ -58,6 +58,15 @@ function migrateRawCards(cards: unknown[], from: number): void {
       if (!card['guid']) card['guid'] = generateId();
     }
   }
+  if (from < 6) {
+    for (const raw of cards) {
+      const card = raw as Record<string, unknown>;
+      if ('importance' in card && !('defaultImportance' in card)) {
+        card['defaultImportance'] = card['importance'];
+        delete card['importance'];
+      }
+    }
+  }
 }
 
 export async function parseCardPackage(file: File): Promise<Card[]> {
@@ -95,7 +104,7 @@ export function exportCardsCSV(cards: Card[], user: AppState): void {
     const deckNames = cardDecks.map(d => d.name);
     const deckImportances = cardDecks.map(d => {
       const entry = d.entries.find(e => e.cardId === card.id);
-      return entry?.importanceOverride !== undefined ? String(entry.importanceOverride) : '';
+      return entry?.importance !== undefined ? String(entry.importance) : '';
     });
     const embeds = (card.content.attachments ?? [])
       .filter((a): a is { type: 'embed' } & EmbedEntry => a.type === 'embed')

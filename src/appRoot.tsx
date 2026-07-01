@@ -24,10 +24,10 @@ const SIDEBAR_MAX           = 400;
 // key= on stateful views forces a remount when the ID changes (resets local state).
 function ContentSwitch() {
   const route = routeSignal.value;
-  if (route.view === 'study')   return <StudyView deckId={route.deckId} strategy={route.strategy} currentCardId={route.currentCardId} />;
+  if (route.view === 'study')   return <StudyView deckId={route.deckId} cardIds={route.cardIds} studyTitle={route.studyTitle} strategy={route.strategy} currentCardId={route.currentCardId} contextDeckId={route.contextDeckId} />;
   if (route.view === 'deck')    return <DeckView   key={route.deckId}   deckId={route.deckId} />;
   if (route.view === 'library') return <LibraryView />;
-  if (route.view === 'card')    return <CardView   key={route.cardId}   cardId={route.cardId} />;
+  if (route.view === 'card')    return <CardView   key={route.cardId}   cardId={route.cardId} contextDeckId={route.contextDeckId} />;
   if (route.view === 'folder')  return <FolderView key={route.folderId ?? 'root'} folderId={route.folderId} />;
   const _: never = route; return _;
 }

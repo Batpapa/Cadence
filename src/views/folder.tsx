@@ -4,10 +4,11 @@ import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDr
 import { TrashIcon, StarIcon } from '../components/icons';
 import { promptModal, confirmModal } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
+import { showStudyModal } from '../components/studyModal';
 import { findParentFolder } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import type { AppState, CardWork } from '../types';
+import type { AppState, CardWork, DeckEntry } from '../types';
 
 
 // ── Pure helpers (unchanged from vanilla) ─────────────────────────────────────
@@ -134,6 +135,27 @@ function Dashboard({ user }: { user: AppState }) {
   );
 }
 
+// ── Study pool helper ─────────────────────────────────────────────────────────
+
+function collectFolderEntries(user: AppState, folderId: string | null): DeckEntry[] {
+  const folder    = folderId ? user.folders[folderId] : null;
+  const deckIds   = folder ? folder.deckIds   : user.rootDeckIds;
+  const folderIds = folder ? folder.folderIds : user.rootFolderIds;
+  const seen = new Set<string>();
+  const result: DeckEntry[] = [];
+  for (const dId of deckIds) {
+    for (const e of user.decks[dId]?.entries ?? []) {
+      if (!seen.has(e.cardId)) { seen.add(e.cardId); result.push({ cardId: e.cardId }); }
+    }
+  }
+  for (const fId of folderIds) {
+    for (const e of collectFolderEntries(user, fId)) {
+      if (!seen.has(e.cardId)) { seen.add(e.cardId); result.push(e); }
+    }
+  }
+  return result;
+}
+
 // ── Folder delete helper ──────────────────────────────────────────────────────
 
 function deleteFolderRecursive(s: AppState, folderId: string): void {
@@ -236,8 +258,12 @@ export function FolderView({ folderId }: { folderId: string | null }) {
     });
   };
 
-  const folderIds = folder ? folder.folderIds : user.rootFolderIds;
-  const deckIds   = folder ? folder.deckIds   : user.rootDeckIds;
+  const folderIds      = folder ? folder.folderIds : user.rootFolderIds;
+  const deckIds        = folder ? folder.deckIds   : user.rootDeckIds;
+  const folderEntries  = folderId === null
+    ? Object.keys(user.cards).map(id => ({ cardId: id }))
+    : collectFolderEntries(user, folderId);
+  const folderTitle    = folder ? folder.name : t('folder.title.home');
 
   return (
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
@@ -276,24 +302,34 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             <h1 class="text-xl font-semibold text-primary">{t('folder.title.home')}</h1>
           )}
         </div>
-        {folder && (
-          <button
-            class="btn-danger px-2"
-            title={t('folder.deleteFolder')}
-            onClick={() => confirmModal(
-              t('folder.delete.title'),
-              t('folder.delete.message', { name: folder.name }),
-              t('common.delete'),
-              () => {
-                const parent = findParentFolder(folderId!, 'folder', user);
-                void mutate(u => { deleteFolderRecursive(u, folderId!); });
-                navigate({ view: 'folder', folderId: parent });
-              },
-            )}
-          >
-            <TrashIcon />
-          </button>
-        )}
+        <div class="flex gap-2 shrink-0">
+          {folderEntries.length > 0 && (
+            <button
+              class="btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium"
+              onClick={() => showStudyModal({ entries: folderEntries, title: folderTitle, defaultContext: null })}
+            >
+              {folderId ? t('folder.study') : t('folder.studyAll')}
+            </button>
+          )}
+          {folder && (
+            <button
+              class="btn-danger px-2"
+              title={t('folder.deleteFolder')}
+              onClick={() => confirmModal(
+                t('folder.delete.title'),
+                t('folder.delete.message', { name: folder.name }),
+                t('common.delete'),
+                () => {
+                  const parent = findParentFolder(folderId!, 'folder', user);
+                  void mutate(u => { deleteFolderRecursive(u, folderId!); });
+                  navigate({ view: 'folder', folderId: parent });
+                },
+              )}
+            >
+              <TrashIcon />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Dashboard (root only) ── */}

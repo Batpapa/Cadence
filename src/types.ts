@@ -30,7 +30,7 @@ export interface Card {
   id: string;
   guid: string;
   name: string;
-  importance: number; // default: 1
+  defaultImportance: number; // default: 1
   tags: string[];
   externalId?: string; // e.g. "thesession:1197"
   content: {
@@ -41,7 +41,7 @@ export interface Card {
 
 export interface DeckEntry {
   cardId: string;
-  importanceOverride?: number;
+  importance?: number; // deck-specific importance; falls back to card.defaultImportance when absent
 }
 
 export interface Deck {
@@ -121,10 +121,10 @@ export type LibrarySort = 'alpha' | 'lastReviewed' | 'lastAdded' | 'importance';
 
 export type Route =
   | { view: 'folder'; folderId: string | null }
-  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean }
+  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean }
   | { view: 'deck'; deckId: string }
-  | { view: 'card'; cardId: string }
-  | { view: 'study'; deckId: string; strategy: StudyStrategy; currentCardId?: string | null };
+  | { view: 'card'; cardId: string; contextDeckId?: string }
+  | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null };
 
 export interface AppContext {
   user: AppState;

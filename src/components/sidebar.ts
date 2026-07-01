@@ -295,7 +295,7 @@ export function renderSidebar(ctx: AppContext): HTMLElement {
   const routeKey = JSON.stringify(route);
   if (routeKey !== lastAutoExpandedRoute) {
     lastAutoExpandedRoute = routeKey;
-    if ((route.view === 'deck' || route.view === 'study') && 'deckId' in route) {
+    if ((route.view === 'deck' || route.view === 'study') && route.deckId) {
       expandAncestors(route.deckId, 'deck', user);
     }
     if (route.view === 'folder' && route.folderId) {

@@ -136,7 +136,7 @@ function showManageDecksModal(cardId: string) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function CardView({ cardId }: { cardId: string }) {
+export function CardView({ cardId, contextDeckId }: { cardId: string; contextDeckId?: string }) {
   const user  = appState.value;
   const card  = user.cards[cardId];
   const work  = user.cardWorks[`${user.currentProfileId}:${cardId}`];
@@ -149,6 +149,7 @@ export function CardView({ cardId }: { cardId: string }) {
   const [newTag,         setNewTag]         = useState('');
   const [isEditingImportance, setIsEditingImportance] = useState(false);
   const [importanceDraft,     setImportanceDraft]     = useState('');
+  const [importanceCtx,       setImportanceCtx]       = useState(contextDeckId ?? ''); // '' = Défaut
   const importanceRef = useRef<HTMLInputElement>(null);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesDraft,     setNotesDraft]     = useState(card?.content.notes ?? '');
@@ -273,18 +274,46 @@ export function CardView({ cardId }: { cardId: string }) {
           value={ease !== undefined ? pct(ease) : '—'}
           colorClass={easeColor}
         />
-        <div class="flex items-baseline gap-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('card.section.importance')}</span>
+        <div class="flex items-baseline gap-1.5">
+          <span class="text-[10px] font-medium uppercase tracking-wider text-dim shrink-0">{t('card.section.importance')}</span>
+          {deckIds.length > 0 && (
+            <select
+              value={importanceCtx}
+              class="text-[10px] bg-surface border border-border/50 rounded px-1 py-0 text-dim outline-none cursor-pointer hover:border-accent/50 max-w-[7rem] truncate"
+              onChange={(e) => setImportanceCtx((e.target as HTMLSelectElement).value)}
+            >
+              <option value="">{t('card.context.default')}</option>
+              {deckIds.map(dId => (
+                <option key={dId} value={dId}>{user.decks[dId]?.name ?? dId}</option>
+              ))}
+            </select>
+          )}
           {isEditingImportance ? (
             <input
               ref={importanceRef}
-              type="number" min="0.1" step="0.1"
+              type="number" min={importanceCtx === '' ? '0.1' : '0'} step="0.1"
               value={importanceDraft}
               class="text-sm font-mono font-semibold bg-transparent border-b border-accent outline-none text-primary w-16 p-0 leading-none"
               onInput={(e) => setImportanceDraft((e.target as HTMLInputElement).value)}
               onBlur={() => {
-                const val = parseFloat(importanceDraft);
-                if (!isNaN(val) && val > 0) mutate(s => { s.cards[cardId]!.importance = val; });
+                const raw = importanceDraft.trim();
+                if (importanceCtx === '') {
+                  const val = parseFloat(raw);
+                  if (!isNaN(val) && val > 0) mutate(s => { s.cards[cardId]!.defaultImportance = val; });
+                } else {
+                  mutate(s => {
+                    const deck = s.decks[importanceCtx];
+                    if (!deck) return;
+                    const entry = deck.entries.find(e => e.cardId === cardId);
+                    if (!entry) return;
+                    if (raw === '') {
+                      delete entry.importance;
+                    } else {
+                      const val = parseFloat(raw);
+                      if (!isNaN(val) && val >= 0) entry.importance = val;
+                    }
+                  });
+                }
                 setIsEditingImportance(false);
               }}
               onKeyDown={(e) => {
@@ -294,11 +323,28 @@ export function CardView({ cardId }: { cardId: string }) {
             />
           ) : (
             <span
-              class="text-sm font-mono font-semibold text-primary cursor-text hover:text-accent transition-colors"
-              onClick={() => { setImportanceDraft(String(card.importance)); setIsEditingImportance(true); }}
-              title={t('card.importance.label')}
+              class={`text-sm font-mono font-semibold cursor-text hover:text-accent transition-colors ${
+                importanceCtx !== '' &&
+                user.decks[importanceCtx]?.entries.find(e => e.cardId === cardId)?.importance === undefined
+                  ? 'text-dim' : 'text-primary'
+              }`}
+              onClick={() => {
+                const ctxEntry = importanceCtx !== ''
+                  ? user.decks[importanceCtx]?.entries.find(e => e.cardId === cardId)
+                  : undefined;
+                setImportanceDraft(
+                  importanceCtx === ''
+                    ? String(card.defaultImportance)
+                    : ctxEntry?.importance !== undefined ? String(ctxEntry.importance) : '',
+                );
+                setIsEditingImportance(true);
+              }}
+              title={importanceCtx === '' ? t('card.importance.label') : t('card.importance.labelDeck')}
             >
-              ×{card.importance}
+              ×{importanceCtx === ''
+                ? card.defaultImportance
+                : (user.decks[importanceCtx]?.entries.find(e => e.cardId === cardId)?.importance
+                    ?? card.defaultImportance)}
             </span>
           )}
         </div>
