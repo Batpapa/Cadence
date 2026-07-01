@@ -43,9 +43,21 @@ const searchingMsg = () => isServerWarm() ? t('irishTuneInfo.status.searching') 
 
 // ── Body builder ──────────────────────────────────────────────────────────────
 
-export function buildIrishTuneInfoBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>): HTMLElement {
+export function buildIrishTuneInfoBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>, onNavigateToCard?: () => void): HTMLElement {
   let activeTab: 'tune' | 'playlist' = 'tune';
   let includeAudio = false;
+
+  const setImportedStatus = (cardId: string, cardName: string) => {
+    const marker = '\x00';
+    const [pre, suf] = t('irishTuneInfo.status.imported', { name: marker }).split(marker);
+    status.textContent = '';
+    status.append(pre);
+    const link = document.createElement('span');
+    link.textContent = cardName;
+    link.className = 'text-accent cursor-pointer hover:underline';
+    link.onclick = () => { ctx.navigate({ view: 'card', cardId }); onNavigateToCard?.(); };
+    status.append(link, suf);
+  };
 
   const wrap = document.createElement('div');
   wrap.className = 'space-y-3';
@@ -91,7 +103,7 @@ export function buildIrishTuneInfoBody(ctx: AppContext, status: HTMLElement, get
             if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
           }
         });
-        status.textContent = t('irishTuneInfo.status.imported', { name: card.name });
+        setImportedStatus(card.id, card.name);
         onSuccess();
       }
     } catch (e) {

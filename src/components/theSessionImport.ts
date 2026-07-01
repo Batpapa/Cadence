@@ -44,9 +44,21 @@ function mkInputRow(placeholder: string): { wrap: HTMLDivElement; inp: HTMLInput
 
 // ── TheSession body builder ───────────────────────────────────────────────────
 
-export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>): HTMLElement {
+export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>, onNavigateToCard?: () => void): HTMLElement {
   let activeTab: 'tune' | 'member' = 'tune';
   let mergeSettings = true;
+
+  const setImportedStatus = (cardId: string, cardName: string) => {
+    const marker = '\x00';
+    const [pre, suf] = t('theSession.status.imported', { name: marker }).split(marker);
+    status.textContent = '';
+    status.append(pre);
+    const link = document.createElement('span');
+    link.textContent = cardName;
+    link.className = 'text-accent cursor-pointer hover:underline';
+    link.onclick = () => { ctx.navigate({ view: 'card', cardId }); onNavigateToCard?.(); };
+    status.append(link, suf);
+  };
 
   const wrap = document.createElement('div');
   wrap.className = 'space-y-3';
@@ -91,7 +103,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
             if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
           }
         });
-        status.textContent = t('theSession.status.imported', { name: card.name });
+        setImportedStatus(card.id, card.name);
         onSuccess();
       }
     } catch (e) {
@@ -487,23 +499,35 @@ export function showNewCardModal(ctx: AppContext): void {
     const lbl = document.createElement('label'); lbl.className = 'label'; lbl.textContent = t('newCard.nameLabel');
     const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'input'; inp.placeholder = t('newCard.namePlaceholder');
     const createBtn = document.createElement('button'); createBtn.className = 'btn-primary w-full mt-1'; createBtn.textContent = t('newCard.createBtn');
+    const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
     const doCreate = async () => {
       const name = inp.value.trim();
       if (!name) { inp.focus(); return; }
+      createBtn.disabled = true;
+      let createdId = '';
       await mutate(s => {
         const id   = generateId();
         const guid = generateId();
+        createdId = id;
         s.cards[id] = { id, guid, name, importance: 1, tags: [], content: { notes: '', attachments: [] } };
         for (const deckId of selectedDeckIds) {
           const deck = s.decks[deckId];
           if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
         }
       });
-      close();
+      const marker = '\x00';
+      const [pre, suf] = t('newCard.create.done', { name: marker }).split(marker);
+      status.textContent = '';
+      status.append(pre);
+      const link = document.createElement('span');
+      link.textContent = name;
+      link.className = 'text-accent cursor-pointer hover:underline';
+      link.onclick = () => { ctx.navigate({ view: 'card', cardId: createdId }); close(); };
+      status.append(link, suf);
     };
     createBtn.onclick = () => { void doCreate(); };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') void doCreate(); });
-    body.append(lbl, inp, createBtn);
+    body.append(lbl, inp, createBtn, status);
     inp.focus();
   };
 
@@ -518,12 +542,12 @@ export function showNewCardModal(ctx: AppContext): void {
 
   const renderTheSession = () => {
     const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
-    body.append(buildTheSessionBody(ctx, status, () => selectedDeckIds), status);
+    body.append(buildTheSessionBody(ctx, status, () => selectedDeckIds, close), status);
   };
 
   const renderIrishTuneInfo = () => {
     const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
-    body.append(buildIrishTuneInfoBody(ctx, status, () => selectedDeckIds), status);
+    body.append(buildIrishTuneInfoBody(ctx, status, () => selectedDeckIds, close), status);
   };
 
   const renderJson = () => {
@@ -531,7 +555,7 @@ export function showNewCardModal(ctx: AppContext): void {
     const pickBtn = document.createElement('button');
     pickBtn.className = 'btn-primary w-full text-sm'; pickBtn.textContent = t('newCard.import.pick');
     pickBtn.onclick = () => {
-      const fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.json,application/json';
+      const fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.cdc';
       fileInp.onchange = async () => {
         const file = fileInp.files?.[0]; if (!file) return;
         pickBtn.disabled = true; status.textContent = t('newCard.import.importing');
