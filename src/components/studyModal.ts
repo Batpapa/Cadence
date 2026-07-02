@@ -1,4 +1,4 @@
-import { appState, navigate } from '../store';
+import { appState, navigate, mutate } from '../store';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -109,6 +109,36 @@ export function showStudyModal(opts: StudyModalOpts): void {
   ctxBlock.append(ctxRow, ctxWarn);
   body.appendChild(ctxBlock);
 
+  // ── Weight by importance toggle ────────────────────────────────────────────
+  let useWeight = user.weightByImportance ?? true;
+
+  const weightRow = document.createElement('div');
+  weightRow.className = 'flex items-center justify-between gap-3';
+
+  const weightLabel = document.createElement('span');
+  weightLabel.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
+  weightLabel.textContent = t('settings.weightByImportance');
+
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.setAttribute('role', 'switch');
+
+  const renderPill = () => {
+    pill.setAttribute('aria-checked', String(useWeight));
+    pill.className = `relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useWeight ? 'bg-accent' : 'bg-border'}`;
+    pill.innerHTML = `<span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${useWeight ? 'translate-x-4' : 'translate-x-0'}"></span>`;
+  };
+  renderPill();
+
+  pill.onclick = () => {
+    useWeight = !useWeight;
+    void mutate(s => { s.weightByImportance = useWeight; });
+    renderPill();
+  };
+
+  weightRow.append(weightLabel, pill);
+  body.appendChild(weightRow);
+
   // ── Divider ────────────────────────────────────────────────────────────────
   const divider = document.createElement('div');
   divider.className = 'border-t border-border';
@@ -153,7 +183,7 @@ export function showStudyModal(opts: StudyModalOpts): void {
       close();
       const u = appState.value;
       const pid = u.currentProfileId;
-      const w   = u.weightByImportance ?? true;
+      const w   = useWeight;
 
       // Pool: live deck when deckId provided; frozen snapshot otherwise
       const pool: Deck = deckId
