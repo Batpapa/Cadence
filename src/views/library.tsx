@@ -516,7 +516,7 @@ export function LibraryView() {
             {(q || activeTags.size > 0 || activeDecks.size > 0) ? t('library.noMatch') : t('library.empty')}
           </p>
         ) : (
-          <div class="space-y-1">
+          <div class="lib-list space-y-1">
             {(() => {
               const impColWidth = Math.max(...filtered.map(c => String(`×${c.defaultImportance}`).length));
               return filtered.map(card => {
@@ -602,7 +602,7 @@ export function LibraryView() {
                   </span>
 
                   <div class="flex items-center gap-3 shrink-0">
-                    <span class="hidden sm:block text-xs font-mono text-dim shrink-0">
+                    <span class="lib-date text-xs font-mono text-dim shrink-0">
                       {work?.history.at(-1)?.ts ? timeAgo(work.history.at(-1)!.ts) : t('card.neverReviewed')}
                     </span>
                     <span

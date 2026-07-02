@@ -172,6 +172,11 @@
 .abcjs-inline-audio .abcjs-midi-tempo { color: #000; }
 
 
+/* Library list — show date column when container is wide enough */
+.lib-list { container-type: inline-size; }
+.lib-date { display: none; }
+@container (min-width: 450px) { .lib-date { display: block; } }
+
 /* Stats grid — container-query responsive (4 → 2 → 1 columns) */
 .stats-container {
   container-type: inline-size;

@@ -262,7 +262,7 @@ export function DeckView({ deckId }: { deckId: string }) {
           {deck.entries.length === 0 ? (
             <p class="text-sm text-dim italic">{t('deck.empty')}</p>
           ) : (
-            <div class="space-y-1">
+            <div class="lib-list space-y-1">
               {(() => {
                 const impColWidth = Math.max(...deck.entries.map(e => {
                   const c = user.cards[e.cardId]; if (!c) return 2;
@@ -313,7 +313,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                       {card.name}
                     </span>
 
-                    <span class="hidden sm:block text-xs font-mono text-dim shrink-0">
+                    <span class="lib-date text-xs font-mono text-dim shrink-0">
                       {lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}
                     </span>
 
