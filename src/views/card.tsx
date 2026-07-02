@@ -8,6 +8,7 @@ import { renderAttachmentList } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
+import { CustomSelect } from '../components/customSelect';
 import type { SessionRating } from '../types';
 
 // ── Local bridges ─────────────────────────────────────────────────────────────
@@ -277,16 +278,15 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         <div class="flex items-baseline gap-1.5">
           <span class="text-[10px] font-medium uppercase tracking-wider text-dim shrink-0">{t('card.section.importance')}</span>
           {deckIds.length > 0 && (
-            <select
+            <CustomSelect
               value={importanceCtx}
-              class="text-[10px] bg-surface border border-border/50 rounded px-1 py-0 text-dim outline-none cursor-pointer hover:border-accent/50 max-w-[7rem] truncate"
-              onChange={(e) => setImportanceCtx((e.target as HTMLSelectElement).value)}
-            >
-              <option value="">{t('card.context.default')}</option>
-              {deckIds.map(dId => (
-                <option key={dId} value={dId}>{user.decks[dId]?.name ?? dId}</option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: t('card.context.default') },
+                ...deckIds.map(dId => ({ value: dId, label: user.decks[dId]?.name ?? dId })),
+              ]}
+              onChange={setImportanceCtx}
+              triggerClass="text-[10px] bg-surface border border-border/50 rounded px-1.5 py-0.5 text-dim cursor-pointer hover:border-accent/50 max-w-[7rem] flex items-center gap-1"
+            />
           )}
           {isEditingImportance ? (
             <input

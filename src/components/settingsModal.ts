@@ -12,6 +12,7 @@ import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwa
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, type DriveStatus } from '../services/driveService';
 import type { Lang } from '../services/i18nService';
 import { getContext, applyFromDrive } from '../store';
+import { mkCustomSelect } from './customSelectVanilla';
 import { clearLastUserId } from '../db';
 
 export function showProfileModal(ctx: AppContext): void {
@@ -431,19 +432,18 @@ export function showSettingsModal(ctx: AppContext): void {
       content.appendChild(mkRow(t('settings.theme'), null, themeControl));
       const sepTheme = document.createElement('hr'); sepTheme.className = 'border-border'; content.appendChild(sepTheme);
 
-      const langSel = document.createElement('select'); langSel.className = 'input text-sm w-32';
-      [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }].forEach(({ value, label }) => {
-        const opt = document.createElement('option'); opt.value = value; opt.textContent = label;
-        if (freshUser.language === value) opt.selected = true;
-        langSel.appendChild(opt);
-      });
-      langSel.addEventListener('change', () => {
-        const newLang = langSel.value as Lang;
-        setLanguage(newLang);
-        void ctx.mutate(s => updateUser(s, { language: newLang }));
-        closeSettings();
-        showSettingsModal(getContext());
-      });
+      const { el: langSel } = mkCustomSelect(
+        [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }],
+        freshUser.language ?? 'en',
+        (newLang) => {
+          setLanguage(newLang as Lang);
+          void ctx.mutate(s => updateUser(s, { language: newLang as Lang }));
+          closeSettings();
+          showSettingsModal(getContext());
+        },
+        'flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent w-32',
+      );
+      langSel.style.flex = '0 0 auto';
       content.appendChild(mkRow(t('settings.language'), null, langSel));
       const sepLang = document.createElement('hr'); sepLang.className = 'border-border'; content.appendChild(sepLang);
 

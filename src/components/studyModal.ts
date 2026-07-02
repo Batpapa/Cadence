@@ -1,4 +1,5 @@
 import { appState, navigate, mutate } from '../store';
+import { mkCustomSelect } from './customSelectVanilla';
 import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
 import { buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -68,22 +69,10 @@ export function showStudyModal(opts: StudyModalOpts): void {
   ctxLabel.className = 'text-xs font-semibold text-muted uppercase tracking-widest shrink-0';
   ctxLabel.textContent = t('deck.context.title');
 
-  const ctxSelect = document.createElement('select') as HTMLSelectElement;
-  ctxSelect.className = 'flex-1 text-sm bg-surface border border-border rounded px-2 py-1.5 text-primary outline-none cursor-pointer focus:border-accent';
-
-  const defOpt = document.createElement('option');
-  defOpt.value = '';
-  defOpt.textContent = t('deck.context.default');
-  ctxSelect.appendChild(defOpt);
-
-  for (const d of contextDecks) {
-    const opt = document.createElement('option');
-    opt.value = d.id;
-    opt.textContent = d.name;
-    ctxSelect.appendChild(opt);
-  }
-
-  ctxSelect.value = defaultContext ?? '';
+  const ctxSelectOpts = [
+    { value: '', label: t('deck.context.default') },
+    ...contextDecks.map(d => ({ value: d.id, label: d.name })),
+  ];
 
   const ctxWarn = document.createElement('p');
   ctxWarn.className = 'text-xs text-warn mt-1';
@@ -98,13 +87,15 @@ export function showStudyModal(opts: StudyModalOpts): void {
     ctxWarn.textContent = excluded > 0 ? t('study.excludedByContext', { n: excluded }) : '';
   };
 
-  ctxSelect.onchange = () => {
-    selectedContext = ctxSelect.value || null;
-    updateCtxWarn();
-  };
+  const { el: ctxSelectEl } = mkCustomSelect(
+    ctxSelectOpts,
+    defaultContext ?? '',
+    (v) => { selectedContext = v || null; updateCtxWarn(); },
+    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
+  );
   updateCtxWarn();
 
-  ctxRow.append(ctxLabel, ctxSelect);
+  ctxRow.append(ctxLabel, ctxSelectEl);
   const ctxBlock = document.createElement('div');
   ctxBlock.append(ctxRow, ctxWarn);
   body.appendChild(ctxBlock);
