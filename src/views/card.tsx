@@ -259,7 +259,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       </div>
 
       {/* ── Stats ── */}
-      <div class="flex items-center justify-evenly border-y border-border py-3">
+      <div class="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 border-y border-border py-3 px-4 gap-x-4 gap-y-3 justify-items-center">
         <CardMetric
           label={t('card.section.availability')}
           value={k > 0 ? pct(k) : '—'}
