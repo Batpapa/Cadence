@@ -530,7 +530,30 @@ export function LibraryView() {
                 <div
                   key={card.id}
                   class={`flex items-center gap-3 px-3 py-2.5 rounded transition-colors group cursor-pointer ${isSel ? 'bg-elevated' : 'hover:bg-elevated'}`}
-                  onClick={() => { if (selected.size === 0) navigate({ view: 'card', cardId: card.id }); }}
+                  onMouseDown={(e) => { if (selected.size > 0 && e.shiftKey) e.preventDefault(); }}
+                  onClick={(e) => {
+                    if (selected.size === 0) { navigate({ view: 'card', cardId: card.id }); return; }
+                    if (e.shiftKey && lastClickRef.current) {
+                      const { cardId: lastId, wasSelected } = lastClickRef.current;
+                      const lastIdx = filtered.findIndex(c => c.id === lastId);
+                      const currIdx = filtered.findIndex(c => c.id === card.id);
+                      if (lastIdx !== -1 && currIdx !== -1) {
+                        const from = Math.min(lastIdx, currIdx);
+                        const to   = Math.max(lastIdx, currIdx);
+                        const next = new Set(selected);
+                        for (let i = from; i <= to; i++) {
+                          wasSelected ? next.add(filtered[i]!.id) : next.delete(filtered[i]!.id);
+                        }
+                        setSelected(next);
+                        return;
+                      }
+                    }
+                    const nowSelected = !selected.has(card.id);
+                    const next = new Set(selected);
+                    nowSelected ? next.add(card.id) : next.delete(card.id);
+                    setSelected(next);
+                    lastClickRef.current = { cardId: card.id, wasSelected: nowSelected };
+                  }}
                 >
                   <input
                     type="checkbox"
