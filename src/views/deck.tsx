@@ -194,7 +194,8 @@ export function DeckView({ deckId }: { deckId: string }) {
         </div>
 
         {/* Metrics — single evenly-spaced inline row */}
-        <div class="grid grid-cols-1 min-[420px]:grid-cols-2 min-[650px]:grid-cols-4 border-y border-border py-3 px-4 gap-x-4 gap-y-3 justify-items-center">
+        <div class="stats-container border-y border-border">
+        <div class="stats-grid py-3 px-4 gap-x-4 gap-y-3 justify-items-center">
           <DeckMetric
             label={t('deck.section.availability')}
             value={pct(avail)}
@@ -214,6 +215,7 @@ export function DeckView({ deckId }: { deckId: string }) {
             value={noCards ? '—' : `${deck.entries.length - candidates}/${deck.entries.length}`}
             colorClass={allMastered ? 'text-success' : 'text-primary'}
           />
+        </div>
         </div>
 
       </div>

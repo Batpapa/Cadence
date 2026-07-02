@@ -172,6 +172,21 @@
 .abcjs-inline-audio .abcjs-midi-tempo { color: #000; }
 
 
+/* Stats grid — container-query responsive (4 → 2 → 1 columns) */
+.stats-container {
+  container-type: inline-size;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+@container (min-width: 280px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@container (min-width: 520px) {
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
 /* Drag & drop indicators */
 .drop-before { box-shadow: inset 0 2px 0 0 var(--color-accent); }
 .drop-after  { box-shadow: inset 0 -2px 0 0 var(--color-accent); }
