@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
+import type { ComponentChild } from 'preact';
 
-export function CustomSelect({ value, options, onChange, triggerClass }: {
+export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger }: {
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (v: string) => void;
-  triggerClass: string;
+  triggerClass?: string;
+  renderTrigger?: (label: string, open: boolean, toggle: () => void) => ComponentChild;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const toggle = () => setOpen(o => !o);
 
   useEffect(() => {
     if (!open) return;
@@ -22,16 +25,14 @@ export function CustomSelect({ value, options, onChange, triggerClass }: {
 
   return (
     <div class="relative" ref={ref}>
-      <button
-        type="button"
-        class={triggerClass}
-        onClick={() => setOpen(o => !o)}
-      >
-        <span class="truncate flex-1 text-left">{label}</span>
-        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
-      </button>
+      {renderTrigger ? renderTrigger(label, open, toggle) : (
+        <button type="button" class={triggerClass} onClick={toggle}>
+          <span class="truncate flex-1 text-left">{label}</span>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      )}
       {open && (
         <div class="absolute left-0 top-full z-40 mt-1 bg-elevated border border-border rounded-lg shadow-xl py-1 min-w-full max-h-52 overflow-y-auto">
           {options.map(opt => (

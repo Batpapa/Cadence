@@ -277,8 +277,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           colorClass={easeColor}
         />
         <div class="flex items-baseline gap-1.5">
-          <span class="text-[10px] font-medium uppercase tracking-wider text-dim shrink-0">{t('card.section.importance')}</span>
-          {deckIds.length > 0 && (
+          {deckIds.length > 0 ? (
             <CustomSelect
               value={importanceCtx}
               options={[
@@ -286,8 +285,20 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 ...deckIds.map(dId => ({ value: dId, label: user.decks[dId]?.name ?? dId })),
               ]}
               onChange={setImportanceCtx}
-              triggerClass="text-[10px] bg-surface border border-border/50 rounded px-1.5 py-0.5 text-dim cursor-pointer hover:border-accent/50 max-w-[7rem] flex items-center gap-1"
+              renderTrigger={(label, open, toggle) => (
+                <button
+                  type="button"
+                  class="text-[10px] font-medium uppercase tracking-wider text-dim cursor-pointer hover:text-muted transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
+                  onClick={toggle}
+                >
+                  {t('card.section.importance')}&nbsp;({label}
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${open ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
+                  )
+                </button>
+              )}
             />
+          ) : (
+            <span class="text-[10px] font-medium uppercase tracking-wider text-dim shrink-0">{t('card.section.importance')}</span>
           )}
           {isEditingImportance ? (
             <input
