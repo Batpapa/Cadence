@@ -100,8 +100,9 @@ export function CardMap({ user, cards }: { user: AppState; cards: Card[] }) {
     if (!fsrs) continue;
     const ease      = (10 - fsrs.difficulty) / 9;
     const elapsed   = (Date.now() - fsrs.lastTs) / 86400000;
-    const k         = fsrsRetrievability(elapsed, fsrs.stability);
-    const retWindow = retentionWindowDays(fsrs.stability, user.availabilityThreshold);
+    const lambda    = user.forgettingRate ?? 1;
+    const k         = fsrsRetrievability(elapsed, fsrs.stability, lambda);
+    const retWindow = retentionWindowDays(fsrs.stability, user.availabilityThreshold, lambda);
     const deckIds   = decksContainingCard(card.id, user);
     allPoints.push({ id: card.id, name: card.name, s: retWindow, ease, k, imp: card.defaultImportance, deckIds });
   }
