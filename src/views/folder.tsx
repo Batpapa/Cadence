@@ -50,31 +50,79 @@ type ActivityPeriod = '7d' | '30d' | '1y';
 
 // ── Activity bars (JSX) ───────────────────────────────────────────────────────
 
+function barDateRange(period: ActivityPeriod, i: number, total: number): { start: Date; end: Date } {
+  const now = new Date();
+  if (period === '1y') {
+    const weeksAgo = total - 1 - i;
+    const end = new Date(now); end.setDate(end.getDate() - weeksAgo * 7);
+    const start = new Date(end); start.setDate(start.getDate() - 6);
+    return { start, end };
+  }
+  const daysAgo = total - 1 - i;
+  const day = new Date(now); day.setDate(day.getDate() - daysAgo);
+  return { start: day, end: day };
+}
+
 function ActivityBars({ works, period }: { works: Record<string, CardWork>; period: ActivityPeriod }) {
-  const data = period === '1y' ? sessionsLastNWeeks(works, 52) : sessionsLastNDays(works, period === '30d' ? 30 : 7);
-  const max  = Math.max(...data, 1);
-  const minH = period === '1y' ? 2 : 4;
+  const [range, setRange] = useState<{ anchor: number; end: number } | null>(null);
+  const data  = period === '1y' ? sessionsLastNWeeks(works, 52) : sessionsLastNDays(works, period === '30d' ? 30 : 7);
+  const max   = Math.max(...data, 1);
+  const minH  = period === '1y' ? 2 : 4;
+  const total = data.length;
+
+  const fmtDate = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+  const lo = range ? Math.min(range.anchor, range.end) : -1;
+  const hi = range ? Math.max(range.anchor, range.end) : -1;
+
+  const handleClick = (i: number, shift: boolean) => {
+    if (shift && range !== null) {
+      setRange({ anchor: range.anchor, end: i });
+    } else if (range !== null && range.anchor === range.end && range.anchor === i) {
+      setRange(null);
+    } else {
+      setRange({ anchor: i, end: i });
+    }
+  };
+
+  const infoLine = (() => {
+    if (range === null) return null;
+    const count = data.slice(lo, hi + 1).reduce((a, b) => a + b, 0);
+    const { start } = barDateRange(period, lo, total);
+    const { end }   = barDateRange(period, hi, total);
+    const isSingleDay = period !== '1y' && lo === hi;
+    const dateStr = isSingleDay ? fmtDate(start) : `${fmtDate(start)} – ${fmtDate(end)}`;
+    const sessStr = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
+    return `${dateStr} · ${sessStr}`;
+  })();
 
   return (
-    <div class="flex gap-0.5 items-end">
-      {data.map((count, i) => {
-        const h     = Math.max(minH, Math.round((count / max) * 40));
-        const title = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
-        if (period === '7d') {
-          const d = new Date(); d.setDate(d.getDate() - (6 - i));
+    <div class="space-y-2">
+      <div class="flex gap-0.5 items-end">
+        {data.map((count, i) => {
+          const h          = Math.max(minH, Math.round((count / max) * 40));
+          const isSelected = range !== null && i >= lo && i <= hi;
+          const barColor   = isSelected ? 'bg-success' : count === 0 ? 'bg-border' : 'bg-accent';
+          const title      = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
+          if (period === '7d') {
+            const d = new Date(); d.setDate(d.getDate() - (6 - i));
+            return (
+              <div key={i} class="flex flex-col items-center gap-1 flex-1 cursor-pointer" onClick={e => handleClick(i, e.shiftKey)}>
+                <div class={`rounded-sm w-full transition-colors ${barColor}`} style={{ height: `${h}px` }} title={title} />
+                <div class="text-[9px] text-dim">{t(DAY_NAMES_KEYS[d.getDay()]!)}</div>
+              </div>
+            );
+          }
           return (
-            <div key={i} class="flex flex-col items-center gap-1 flex-1">
-              <div class={`rounded-sm w-full ${count === 0 ? 'bg-border' : 'bg-accent'}`} style={{ height: `${h}px` }} title={title} />
-              <div class="text-[9px] text-dim">{t(DAY_NAMES_KEYS[d.getDay()]!)}</div>
+            <div key={i} class="flex flex-col items-center gap-1 flex-1 cursor-pointer" onClick={e => handleClick(i, e.shiftKey)}>
+              <div class={`rounded-sm w-full transition-colors ${barColor}`} style={{ height: `${h}px` }} title={title} />
             </div>
           );
-        }
-        return (
-          <div key={i} class="flex flex-col items-center gap-1 flex-1">
-            <div class={`rounded-sm w-full ${count === 0 ? 'bg-border' : 'bg-accent'}`} style={{ height: `${h}px` }} title={title} />
-          </div>
-        );
-      })}
+        })}
+      </div>
+      {infoLine !== null && (
+        <div class="text-xs text-success text-center">{infoLine}</div>
+      )}
     </div>
   );
 }
@@ -129,7 +177,7 @@ function Dashboard({ user }: { user: AppState }) {
             ))}
           </div>
         </div>
-        <ActivityBars works={user.cardWorks} period={actPeriod} />
+        <ActivityBars key={actPeriod} works={user.cardWorks} period={actPeriod} />
       </div>
     </div>
   );
