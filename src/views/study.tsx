@@ -1,5 +1,5 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
-import { appState, navigate, mutate, replaceRoute, goBack } from '../store';
+import { appState, navigate, mutate, goBack } from '../store';
 import { pickRandom, pickOptimal, pickStochastic, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -75,9 +75,10 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
   const mastered = ctxTotal - candidateCount;
   const canSkip  = candidateCount > 1;
 
-  // Base route shape for replaceRoute — carries full context
+  // Base route shape — carries full context for each navigate() call
   const routeBase = { view: 'study' as const, deckId, cardIds, studyTitle, strategy, contextDeckId };
 
+  // navigate (push) so each card gets its own history entry — back goes to previous card, not to pre-study.
   const goNext = () => {
     const u    = appState.value;
     const d    = buildDeck(u, deckId, cardIds, studyTitle);
@@ -85,7 +86,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     const ctxLen = buildContextualEntries(d, contextDeckId, u).length;
     let   next   = pickNextCard(u, d, strategy, contextDeckId);
     if (next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
-    replaceRoute({ ...routeBase, currentCardId: next?.cardId ?? null });
+    navigate({ ...routeBase, currentCardId: next?.cardId ?? null });
   };
 
   const skipCard = () => {
@@ -95,7 +96,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     const ctxLen = buildContextualEntries(d, contextDeckId, u).length;
     let   next   = pickNextCard(u, d, strategy, contextDeckId);
     if (next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
-    replaceRoute({ ...routeBase, currentCardId: next?.cardId ?? null });
+    navigate({ ...routeBase, currentCardId: next?.cardId ?? null });
   };
 
   const logRating = (rating: SessionRating) => {
