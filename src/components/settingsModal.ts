@@ -403,8 +403,9 @@ export function showSettingsModal(ctx: AppContext): void {
         zoomDec.disabled = !canZoomOut();
         zoomInc.disabled = !canZoomIn();
       };
-      zoomDec.onclick = () => { zoomOut(); updateZoomUI(); };
-      zoomInc.onclick = () => { zoomIn(); updateZoomUI(); };
+      const updateDialogSize = () => { dialog.style.maxWidth = modalMaxW(0.9); dialog.style.maxHeight = modalMaxH(0.9); };
+      zoomDec.onclick = () => { zoomOut(); updateZoomUI(); updateDialogSize(); };
+      zoomInc.onclick = () => { zoomIn(); updateZoomUI(); updateDialogSize(); };
       updateZoomUI();
       zoomControl.append(zoomDec, zoomVal, zoomInc);
       content.appendChild(mkRow(t('settings.zoom'), null, zoomControl));
