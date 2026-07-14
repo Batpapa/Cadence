@@ -14,7 +14,6 @@ import type { Lang } from '../services/i18nService';
 import { getContext, applyFromDrive } from '../store';
 import { mkCustomSelect } from './customSelectVanilla';
 import { clearLastUserId } from '../db';
-import { optimizeForgettingRate, FORGETTING_RATE_MIN_DATA } from '../services/knowledgeService';
 
 export function showProfileModal(ctx: AppContext): void {
   const body = document.createElement('div');
@@ -300,12 +299,6 @@ export function showSettingsModal(ctx: AppContext): void {
       lambdaSlider.value = String(currentLambda);
       lambdaSlider.className = 'flex-1 accent-accent cursor-pointer';
 
-      const dataPointCount = Object.values(freshUser.cardWorks)
-        .reduce((sum, w) => sum + Math.max(0, w.history.length - 1), 0);
-      const hasEnoughData = dataPointCount >= FORGETTING_RATE_MIN_DATA;
-
-      const lambdaStatus = document.createElement('div');
-      lambdaStatus.className = 'text-xs text-dim mt-1';
 
       const setLambda = (v: number, save = true) => {
         const rounded = Math.round(v * 100) / 100;
@@ -320,37 +313,13 @@ export function showSettingsModal(ctx: AppContext): void {
       resetBtn.className = 'btn-ghost p-0.5 text-dim hover:text-primary shrink-0';
       resetBtn.title = t('settings.forgettingRate.reset');
       resetBtn.appendChild(iconElement(ResetIcon, 13));
-      resetBtn.onclick = () => { setLambda(1); lambdaStatus.textContent = ''; lambdaStatus.className = 'text-xs text-dim mt-1'; };
-
-      const optimizeBtn = document.createElement('button');
-      optimizeBtn.className = 'btn text-xs mt-1 bg-elevated border border-border text-muted hover:border-muted hover:text-primary transition-colors';
-      optimizeBtn.textContent = t('settings.forgettingRate.optimizeShort');
-      optimizeBtn.disabled = !hasEnoughData;
-      optimizeBtn.title = hasEnoughData ? '' : t('settings.forgettingRate.tooFew', { min: FORGETTING_RATE_MIN_DATA });
-      optimizeBtn.onclick = () => {
-        optimizeBtn.textContent = t('settings.forgettingRate.optimizing');
-        optimizeBtn.disabled = true;
-        setTimeout(() => {
-          const result = optimizeForgettingRate(getContext().user.cardWorks);
-          optimizeBtn.disabled = !hasEnoughData;
-          optimizeBtn.textContent = t('settings.forgettingRate.optimizeShort');
-          setLambda(result.lambda);
-          lambdaStatus.textContent = t('settings.forgettingRate.dataPoints', { n: result.dataPoints });
-          lambdaStatus.className = 'text-xs text-success mt-1';
-        }, 50);
-      };
+      resetBtn.onclick = () => { setLambda(1); };
 
       const lambdaSliderWrap = document.createElement('div');
-      lambdaSliderWrap.className = 'flex flex-col gap-0';
-
-      const lambdaSliderRow = document.createElement('div');
-      lambdaSliderRow.className = 'flex items-center gap-2 w-52';
-      lambdaSliderRow.append(lambdaVal, lambdaSlider, resetBtn);
-
-      lambdaSliderWrap.append(lambdaSliderRow, optimizeBtn);
+      lambdaSliderWrap.className = 'flex items-center gap-2 w-52';
+      lambdaSliderWrap.append(lambdaVal, lambdaSlider, resetBtn);
 
       content.appendChild(mkRow(t('settings.forgettingRate'), t('settings.forgettingRateHint'), lambdaSliderWrap));
-      content.appendChild(lambdaStatus);
       const sepStudy3 = document.createElement('hr'); sepStudy3.className = 'border-border'; content.appendChild(sepStudy3);
 
     // ── User ──
