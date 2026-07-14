@@ -59,14 +59,19 @@ function stabilityAfterForgetting(D: number, S: number, R: number): number {
     Math.exp(W[14]! * (1 - R));
 }
 
-/** Retrievability R ∈ (0, 1]: probability of recall after elapsedDays given stability S. */
-export function fsrsRetrievability(elapsedDays: number, stability: number): number {
-  return Math.pow(1 + FACTOR * elapsedDays / stability, DECAY);
+/**
+ * Retrievability R ∈ (0, 1]: probability of recall after elapsedDays given stability S.
+ * forgettingRate > 1 means the user forgets faster (equivalent to S_eff = S / forgettingRate).
+ * Pass forgettingRate = 1 (default) for raw FSRS — used inside applyFSRS so state updates
+ * are not biased by the user coefficient.
+ */
+export function fsrsRetrievability(elapsedDays: number, stability: number, forgettingRate = 1): number {
+  return Math.pow(1 + FACTOR * elapsedDays / (stability / forgettingRate), DECAY);
 }
 
-/** Days from a fresh review (R=1) until R drops to availabilityThreshold. */
-export function retentionWindowDays(stability: number, availabilityThreshold: number): number {
-  return stability * (Math.pow(availabilityThreshold, 1 / DECAY) - 1) / FACTOR;
+/** Days from a fresh review (R=1) until R drops to availabilityThreshold, accounting for forgettingRate. */
+export function retentionWindowDays(stability: number, availabilityThreshold: number, forgettingRate = 1): number {
+  return (stability / forgettingRate) * (Math.pow(availabilityThreshold, 1 / DECAY) - 1) / FACTOR;
 }
 
 /** Apply a FSRS rating, returning updated stability (days) and difficulty (1–10). */
@@ -160,13 +165,13 @@ export function replayFSRS(history: SessionEntry[]): { stability: number; diffic
   return { stability: stability!, difficulty: difficulty!, lastTs: lastTs! };
 }
 
-/** Retrievability of a card right now (0 = never reviewed, → 1 = just reviewed). */
-export function cardAvailability(_user: User, cardWork: CardWork | undefined): number {
+/** Retrievability of a card right now, scaled by user.forgettingRate. */
+export function cardAvailability(user: User, cardWork: CardWork | undefined): number {
   if (!cardWork || cardWork.history.length === 0) return 0;
   const fsrs = replayFSRS(cardWork.history);
   if (!fsrs) return 0;
   const elapsedDays = (Date.now() - fsrs.lastTs) / 86400000;
-  return fsrsRetrievability(elapsedDays, fsrs.stability);
+  return fsrsRetrievability(elapsedDays, fsrs.stability, user.forgettingRate ?? 1);
 }
 
 /** True when the card's current retrievability meets the user's availability threshold. */
@@ -266,6 +271,63 @@ export function totalDeckImportance(
     if (!card) return sum;
     return sum + (weighted ? effectiveImportance(card, e) : 1);
   }, 0);
+}
+
+// ── forgettingRate optimizer ──────────────────────────────────────────────────
+
+export const FORGETTING_RATE_MIN_DATA = 30;
+
+/**
+ * Estimates the optimal forgettingRate λ from review history via 1-D grid search
+ * minimizing log-loss + L2 regularization on ln(λ) (pulls toward 1 when data is sparse).
+ *
+ * Only uses reviews after the first (we need a prior FSRS state to compute R).
+ * 'again' → recalled=false, 'hard'/'good'/'easy' → recalled=true.
+ */
+export function optimizeForgettingRate(
+  cardWorks: Record<string, CardWork>,
+  alpha = 0.5,
+): { lambda: number; dataPoints: number } {
+  type Event = { elapsedDays: number; stability: number; recalled: boolean };
+  const events: Event[] = [];
+
+  for (const work of Object.values(cardWorks)) {
+    const sorted = [...work.history].sort((a, b) => a.ts - b.ts);
+    let stability: number | undefined;
+    let difficulty: number | undefined;
+    let lastTs: number | undefined;
+
+    for (const entry of sorted) {
+      if (stability !== undefined && lastTs !== undefined) {
+        const elapsedDays = Math.max(0, (entry.ts - lastTs) / 86400000);
+        events.push({ elapsedDays, stability, recalled: entry.rating !== 'again' });
+      }
+      const result = applyFSRS(stability, difficulty, lastTs, entry.rating, entry.ts);
+      stability  = result.stability;
+      difficulty = result.difficulty;
+      lastTs     = entry.ts;
+    }
+  }
+
+  if (events.length < FORGETTING_RATE_MIN_DATA) return { lambda: 1, dataPoints: events.length };
+
+  const STEPS = 80;
+  let bestLambda = 1;
+  let bestLoss   = Infinity;
+
+  for (let k = 0; k <= STEPS; k++) {
+    const lambda = Math.exp(-1.5 + k * 3 / STEPS); // range ≈ [0.22, 4.48]
+    let loss = alpha * Math.pow(Math.log(lambda), 2); // L2 regularization
+
+    for (const { elapsedDays, stability, recalled } of events) {
+      const R = Math.max(1e-7, Math.min(1 - 1e-7, fsrsRetrievability(elapsedDays, stability, lambda)));
+      loss += recalled ? -Math.log(R) : -Math.log(1 - R);
+    }
+
+    if (loss < bestLoss) { bestLoss = loss; bestLambda = lambda; }
+  }
+
+  return { lambda: Math.round(bestLambda * 100) / 100, dataPoints: events.length };
 }
 
 

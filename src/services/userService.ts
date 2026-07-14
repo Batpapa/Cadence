@@ -16,6 +16,7 @@ export function ensureCurrentUser(user: User): void {
   if (!user.language) user.language = detectLanguage();
   if (user.availabilityThreshold === undefined) user.availabilityThreshold = 0.9;
   if (user.weightByImportance    === undefined) user.weightByImportance    = true;
+  if (user.forgettingRate        === undefined) user.forgettingRate        = 1;
   if (!user.profileIds)   user.profileIds   = [];
   if (!user.profiles)     user.profiles     = {};
   if (!user.cards)        user.cards        = {};

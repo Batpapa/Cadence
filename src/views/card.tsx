@@ -172,7 +172,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   // ── Derived values ────────────────────────────────────────────────────────────
   const k          = cardAvailability(user, work);
   const fsrsState  = work ? replayFSRS(work.history) : undefined;
-  const stabWindow = fsrsState?.stability !== undefined ? retentionWindowDays(fsrsState.stability, user.availabilityThreshold) : undefined;
+  const stabWindow = fsrsState?.stability !== undefined ? retentionWindowDays(fsrsState.stability, user.availabilityThreshold, user.forgettingRate ?? 1) : undefined;
   const ease       = fsrsState?.difficulty !== undefined ? (10 - fsrsState.difficulty) / 9 : undefined;
   const deckIds    = decksContainingCard(cardId, user);
   const sorted     = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];

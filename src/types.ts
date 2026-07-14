@@ -90,6 +90,7 @@ export interface User {
   // Study settings
   availabilityThreshold: number;
   weightByImportance: boolean;
+  forgettingRate: number; // λ: scales S → S/λ for scheduling; 1 = FSRS default, >1 = faster forgetting
 
   // Profiles
   profileIds: string[];

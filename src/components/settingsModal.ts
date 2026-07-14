@@ -1,6 +1,6 @@
 import type { AppContext } from '../types';
 import { generateId, emptyState } from '../utils';
-import { iconElement, TrashIcon } from './icons';
+import { iconElement, TrashIcon, ResetIcon } from './icons';
 import { confirmModal, closeModal, showModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
 import { getTheme, setTheme } from '../services/themeService';
@@ -14,6 +14,7 @@ import type { Lang } from '../services/i18nService';
 import { getContext, applyFromDrive } from '../store';
 import { mkCustomSelect } from './customSelectVanilla';
 import { clearLastUserId } from '../db';
+import { optimizeForgettingRate, FORGETTING_RATE_MIN_DATA } from '../services/knowledgeService';
 
 export function showProfileModal(ctx: AppContext): void {
   const body = document.createElement('div');
@@ -285,6 +286,72 @@ export function showSettingsModal(ctx: AppContext): void {
         mkToggle(freshUser.weightByImportance ?? true, v => saveField({ weightByImportance: v })),
       ));
       const sepStudy2 = document.createElement('hr'); sepStudy2.className = 'border-border'; content.appendChild(sepStudy2);
+
+      // ── Forgetting rate ──
+      const currentLambda = freshUser.forgettingRate ?? 1;
+
+      // Value display + slider
+      const lambdaVal = document.createElement('span');
+      lambdaVal.className = 'text-sm font-mono w-10 text-right tabular-nums shrink-0';
+      lambdaVal.textContent = `×${currentLambda.toFixed(2)}`;
+
+      const lambdaSlider = document.createElement('input');
+      lambdaSlider.type = 'range'; lambdaSlider.min = '0.3'; lambdaSlider.max = '3'; lambdaSlider.step = '0.05';
+      lambdaSlider.value = String(currentLambda);
+      lambdaSlider.className = 'flex-1 accent-accent cursor-pointer';
+
+      const dataPointCount = Object.values(freshUser.cardWorks)
+        .reduce((sum, w) => sum + Math.max(0, w.history.length - 1), 0);
+      const hasEnoughData = dataPointCount >= FORGETTING_RATE_MIN_DATA;
+
+      const lambdaStatus = document.createElement('div');
+      lambdaStatus.className = 'text-xs text-dim mt-1';
+
+      const setLambda = (v: number, save = true) => {
+        const rounded = Math.round(v * 100) / 100;
+        lambdaVal.textContent = `×${rounded.toFixed(2)}`;
+        lambdaSlider.value = String(rounded);
+        if (save) void ctx.mutate(s => { s.forgettingRate = rounded; });
+      };
+
+      lambdaSlider.addEventListener('input', () => setLambda(parseFloat(lambdaSlider.value)));
+
+      const resetBtn = document.createElement('button');
+      resetBtn.className = 'btn-ghost p-0.5 text-dim hover:text-primary shrink-0';
+      resetBtn.title = t('settings.forgettingRate.reset');
+      resetBtn.appendChild(iconElement(ResetIcon, 13));
+      resetBtn.onclick = () => { setLambda(1); lambdaStatus.textContent = ''; lambdaStatus.className = 'text-xs text-dim mt-1'; };
+
+      const optimizeBtn = document.createElement('button');
+      optimizeBtn.className = 'btn text-xs mt-1 bg-elevated border border-border text-muted hover:border-muted hover:text-primary transition-colors';
+      optimizeBtn.textContent = t('settings.forgettingRate.optimizeShort');
+      optimizeBtn.disabled = !hasEnoughData;
+      optimizeBtn.title = hasEnoughData ? '' : t('settings.forgettingRate.tooFew', { min: FORGETTING_RATE_MIN_DATA });
+      optimizeBtn.onclick = () => {
+        optimizeBtn.textContent = t('settings.forgettingRate.optimizing');
+        optimizeBtn.disabled = true;
+        setTimeout(() => {
+          const result = optimizeForgettingRate(getContext().user.cardWorks);
+          optimizeBtn.disabled = !hasEnoughData;
+          optimizeBtn.textContent = t('settings.forgettingRate.optimizeShort');
+          setLambda(result.lambda);
+          lambdaStatus.textContent = t('settings.forgettingRate.dataPoints', { n: result.dataPoints });
+          lambdaStatus.className = 'text-xs text-success mt-1';
+        }, 50);
+      };
+
+      const lambdaSliderWrap = document.createElement('div');
+      lambdaSliderWrap.className = 'flex flex-col gap-0';
+
+      const lambdaSliderRow = document.createElement('div');
+      lambdaSliderRow.className = 'flex items-center gap-2 w-52';
+      lambdaSliderRow.append(lambdaVal, lambdaSlider, resetBtn);
+
+      lambdaSliderWrap.append(lambdaSliderRow, optimizeBtn);
+
+      content.appendChild(mkRow(t('settings.forgettingRate'), t('settings.forgettingRateHint'), lambdaSliderWrap));
+      content.appendChild(lambdaStatus);
+      const sepStudy3 = document.createElement('hr'); sepStudy3.className = 'border-border'; content.appendChild(sepStudy3);
 
     // ── User ──
     } else if (activeSection === 'user') {

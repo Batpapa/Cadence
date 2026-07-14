@@ -86,6 +86,7 @@ export function emptyState(): AppState {
     language: 'en',
     availabilityThreshold: 0.9,
     weightByImportance: true,
+    forgettingRate: 1,
     profileIds: [],
     currentProfileId: '',
     profiles: {},

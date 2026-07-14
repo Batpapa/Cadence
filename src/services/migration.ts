@@ -164,6 +164,7 @@ export function migrateLegacyToUser(raw: Record<string, unknown>): User {
     language:             (oldUser['language'] as User['language']) ?? 'en',
     availabilityThreshold:(oldUser['availabilityThreshold'] as number) ?? 0.9,
     weightByImportance:   (oldUser['weightByImportance'] as boolean) ?? true,
+    forgettingRate:       (oldUser['forgettingRate'] as number) ?? 1,
     profileIds:           (oldUser['profileIds'] as string[]) ?? [],
     currentProfileId:     raw['currentProfileId'] as string ?? '',
     profiles:             (raw['profiles'] as User['profiles']) ?? {},

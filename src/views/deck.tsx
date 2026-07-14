@@ -66,7 +66,7 @@ export function DeckView({ deckId }: { deckId: string }) {
   const avail       = deckAvailability(user, profileId, deck, user.cards, user.cardWorks, w);
   const stab        = deckStability(profileId, deck, user.cards, user.cardWorks, w);
   const ease        = deckEase(profileId, deck, user.cards, user.cardWorks, w);
-  const stabWindow  = stab > 0 ? retentionWindowDays(stab, user.availabilityThreshold) : 0;
+  const stabWindow  = stab > 0 ? retentionWindowDays(stab, user.availabilityThreshold, user.forgettingRate ?? 1) : 0;
   const candidates  = deck.entries.filter(e => !isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])).length;
   const noCards     = deck.entries.length === 0;
   const allMastered = !noCards && candidates === 0;
