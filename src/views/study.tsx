@@ -1,6 +1,6 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, replaceRoute, goBack } from '../store';
-import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
+import { pickRandom, pickOptimal, pickStochastic, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
@@ -181,9 +181,31 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
       <div class="flex-1 overflow-y-auto p-6">
         <div class="space-y-6">
 
-          <div class="flex items-center justify-between">
-            <h2 class="text-2xl font-semibold text-primary">{card.name}</h2>
-            <button class="btn-ghost text-xs" onClick={() => navigate({ view: 'card', cardId: card.id, contextDeckId: contextDeckId ?? undefined })}>{t('study.viewCard')}</button>
+          <div>
+            <div class="flex items-center justify-between">
+              <h2 class="text-2xl font-semibold text-primary">{card.name}</h2>
+              <button class="btn-ghost text-xs" onClick={() => navigate({ view: 'card', cardId: card.id, contextDeckId: contextDeckId ?? undefined })}>{t('study.viewCard')}</button>
+            </div>
+            {(() => {
+              const cardDeckIds = decksContainingCard(card.id, user);
+              if (cardDeckIds.length === 0) return null;
+              return (
+                <div class="flex flex-wrap gap-1.5 mt-1.5">
+                  {cardDeckIds.map(dId => {
+                    const deck = user.decks[dId]; if (!deck) return null;
+                    return (
+                      <span
+                        key={dId}
+                        class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+                        onClick={() => navigate({ view: 'deck', deckId: dId })}
+                      >
+                        {deck.name}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           <div class="space-y-2">
@@ -199,6 +221,19 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               {t('study.skip')}
             </button>
           </div>
+
+          {card.tags.length > 0 && (
+            <div class="space-y-2">
+              <span class="section-title">{t('card.section.tags')}</span>
+              <div class="flex flex-wrap items-center gap-1.5">
+                {card.tags.map(tag => (
+                  <span key={tag} class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-elevated border border-border text-muted">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {card.content.notes.trim() && (
             <div class="space-y-2">
