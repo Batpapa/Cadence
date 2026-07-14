@@ -438,8 +438,8 @@ export function showSettingsModal(ctx: AppContext): void {
         (newLang) => {
           setLanguage(newLang as Lang);
           void ctx.mutate(s => updateUser(s, { language: newLang as Lang }));
-          closeSettings();
-          showSettingsModal(getContext());
+          renderNav();
+          renderContent();
         },
         'flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent w-32',
       );
