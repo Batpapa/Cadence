@@ -108,3 +108,31 @@ async function refreshIfStale(): Promise<void> {
     // Offline or transient failure — cached copy stays in use.
   }
 }
+
+// ── Setting ABC lookup (main thread) ──────────────────────────────────────────
+// The cached index holds the ABC of every FolkFriend setting. Loaded lazily on
+// first request (a few seconds for ~55k settings), then kept as a compact map —
+// the full index object is released for GC.
+
+export interface SettingAbcMeta {
+  abc: string;
+  meter: string;
+  mode: string;  // e.g. "Dmajor", "Edorian"
+  dance: string; // reel, jig, …
+}
+
+let abcMetaPromise: Promise<Map<string, SettingAbcMeta> | null> | null = null;
+
+export function getSettingAbcMeta(settingId: string): Promise<SettingAbcMeta | null> {
+  abcMetaPromise ??= (async () => {
+    const cached = await kvGet<TuneIndexData>(KV_INDEX);
+    if (!cached) return null;
+    const map = new Map<string, SettingAbcMeta>();
+    for (const id in cached.indexData.settings) {
+      const s = cached.indexData.settings[id]!;
+      map.set(id, { abc: cached.abcStrings[id] ?? '', meter: s.meter, mode: s.mode, dance: s.dance });
+    }
+    return map;
+  })();
+  return abcMetaPromise.then(map => map?.get(settingId) ?? null);
+}
