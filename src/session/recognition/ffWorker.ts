@@ -125,7 +125,6 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   const contour = f.transcribe_pcm_buffer();
   // "No notes detected" comes back as a JSON error string, not an exception.
   if (contour.startsWith('{')) {
-    console.log(`[ff-window] ${tStart.toFixed(0)}–${tEnd.toFixed(0)}s: no notes detected`);
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
 
@@ -140,26 +139,17 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   // junk. When the window would fall below SCORE_FLOOR anyway, retry with the
   // contour lifted one octave and keep whichever the index scores higher —
   // the decision stays with FolkFriend's own score, never a register guess.
-  let octaveLifted = false;
   if ((candidates[0]?.score ?? 0) < AGG_CONFIG.SCORE_FLOOR) {
     const lifted = shiftContour(contour, 12);
     const liftedCandidates = lifted.length > 0 ? queryContour(f, lifted) : [];
     if ((liftedCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
       candidates = liftedCandidates;
       matchedContour = lifted;
-      octaveLifted = true;
     }
   }
 
   let abc: string | null = null;
   try { abc = f.contour_to_abc(matchedContour); } catch { /* cosmetic only */ }
-
-  // TEMP diagnostic (solo-query dropout investigation) — remove when done.
-  const top3 = candidates.slice(0, 3).map(c => `${c.displayName} ${c.score.toFixed(2)}`).join(' | ');
-  console.log(
-    `[ff-window] ${tStart.toFixed(0)}–${tEnd.toFixed(0)}s${octaveLifted ? ' (octave +12)' : ''}` +
-    ` top: ${top3 || '(none)'}\n  contour: ${matchedContour}\n  abc: ${abc ?? '(n/a)'}`
-  );
 
   return {
     result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates },
