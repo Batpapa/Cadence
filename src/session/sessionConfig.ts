@@ -10,14 +10,18 @@ export const INDEX_MAX_AGE_DAYS = 28;
 
 /** Recognition analysis: hop and window, in seconds. */
 export const ANALYSIS_HOP_S = 5;
+/** No analysis before this much signal — too-short first windows match junk. */
+export const MIN_ANALYSIS_S = 10;
 /** Import-mode hop — same default as live, tunable separately to speed up imports later. */
 export const HOP_S_IMPORT = 5;
 export const ANALYSIS_WINDOW_S = 15;
 
 /** Sample rate for imported-file analysis (FolkFriend accepts 3952–66974 Hz).
- *  22050 halves memory vs 48 kHz on long files; live mode keeps the real
- *  AudioContext rate. Validate once via the calibration dump if scores drop. */
-export const ANALYSIS_SAMPLE_RATE = 22050;
+ *  A/B tested 2026-07 on a real pub recording: 22050 (which would halve memory
+ *  on long files) degrades transcription badly — about a third of the set
+ *  drops below SCORE_FLOOR and whole tunes vanish. Keep 48000; the RAM cost
+ *  (~700 MB/h decoded) is what IMPORT_WARN_MINUTES guards against. */
+export const ANALYSIS_SAMPLE_RATE = 48000;
 
 /** Warn before decoding files longer than this (duration × rate × 4 bytes in RAM). */
 export const IMPORT_WARN_MINUTES = 90;

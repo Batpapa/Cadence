@@ -1,9 +1,8 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { RecognitionAggregator, type AnnotationEvent } from './aggregator';
-import { AGG_CONFIG } from './aggregatorConfig';
 import type { WindowResult, WindowCandidate } from '../model';
-import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW } from '../sessionConfig';
+import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, MIN_ANALYSIS_S } from '../sessionConfig';
 
 // ── FolkFriend recognition worker ─────────────────────────────────────────────
 // Owns the WASM instance, the tune index, the PCM ring buffer and the
@@ -118,8 +117,9 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
 
+  // No score filtering here: the aggregator applies SCORE_FLOOR itself, and
+  // the calibration dump needs the sub-floor scores to be tunable at all.
   const candidates: WindowCandidate[] = raw
-    .filter(r => r.score >= AGG_CONFIG.SCORE_FLOOR)
     .slice(0, 5)
     .map(r => ({
       tuneId: r.setting.tune_id,
@@ -143,6 +143,9 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
 // the same code path serves live capture and faster-than-real-time file import.
 function maybeAnalyzeLive(): void {
   if (!ff) return;
+  // A first window shorter than MIN_ANALYSIS_S produces junk matches
+  // (observed: 5 s of signal → confident wrong candidate).
+  if (totalSamples < MIN_ANALYSIS_S * sampleRate) return;
   const hopSamples = hopS * sampleRate;
   if (totalSamples - lastAnalysisAt < hopSamples) return;
   lastAnalysisAt = totalSamples;
