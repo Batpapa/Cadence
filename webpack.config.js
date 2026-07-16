@@ -10,7 +10,8 @@ const CopyPlugin = require('copy-webpack-plugin');
 class TsPrunePlugin {
   apply(compiler) {
     compiler.hooks.afterEmit.tapAsync('TsPrunePlugin', (compilation, callback) => {
-      execFile(process.execPath, [require.resolve('ts-prune/lib/index.js')], { cwd: __dirname }, (_err, stdout) => {
+      // vendor/ is generated code (wasm-bindgen output) — not ours to prune.
+      execFile(process.execPath, [require.resolve('ts-prune/lib/index.js'), '--ignore', 'vendor'], { cwd: __dirname }, (_err, stdout) => {
         const lines = stdout.trim().split('\n').filter(l => l && !l.includes('(used in module)'));
         for (const line of lines) {
           compilation.errors.push(new compilation.compiler.webpack.WebpackError(`[ts-prune] ${line.replace(/\\/g, '/')}`));

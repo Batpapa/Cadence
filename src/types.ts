@@ -21,10 +21,22 @@ export interface CardReferenceAttachment {
   title: string;       // snapshot of card name, fallback if unresolved
 }
 
+/** Lazy reference to a slice of a recorded session (audio lives in the device-local
+ *  session DB — on another device the clip shows as unavailable). */
+export interface SessionClipAttachment {
+  type: 'sessionClip';
+  id: string;
+  sessionId: string;
+  start: number; // seconds
+  end: number;   // seconds
+  title: string;
+}
+
 export type Attachment =
   | ({ type: 'file' } & FileEntry)
   | ({ type: 'embed' } & EmbedEntry)
-  | CardReferenceAttachment;
+  | CardReferenceAttachment
+  | SessionClipAttachment;
 
 export interface Card {
   id: string;
@@ -118,7 +130,7 @@ export type StudyStrategy = 'random' | 'optimal' | 'stochastic';
 
 export type FilterState = 'include' | 'exclude';
 
-export type LibrarySort = 'alpha' | 'lastReviewed' | 'lastAdded' | 'importance';
+export type LibrarySort = 'alpha' | 'lastReviewed' | 'lastAdded' | 'importance' | 'recall' | 'difficulty';
 
 export type Route =
   | { view: 'folder'; folderId: string | null }

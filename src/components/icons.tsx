@@ -161,6 +161,26 @@ export function StarIcon({ size = 14, filled = false }: { size?: number; filled?
   );
 }
 
+export function GaugeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 14a8 8 0 1 1 16 0"/>
+      <line x1="12" y1="14" x2="16" y2="8"/>
+      <path d="M4 18h16"/>
+    </svg>
+  );
+}
+
+export function FlameIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2c1 4-4 6-4 10a4 4 0 0 0 8 .5C16 9 13 7 12 2z"/>
+      <path d="M12 22a6 6 0 0 0 6-6c0-1.5-.5-3-1.5-4"/>
+      <path d="M12 22a6 6 0 0 1-6-6c0-1.5.5-3 1.5-4"/>
+    </svg>
+  );
+}
+
 export function ScatterPlotIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -217,6 +237,54 @@ export function ResetIcon({ size = 13 }: { size?: number }) {
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
       <path d="M3 3v5h5"/>
+    </svg>
+  );
+}
+
+export function WaveformIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <line x1="3"  y1="10" x2="3"  y2="14"/>
+      <line x1="6"  y1="7"  x2="6"  y2="17"/>
+      <line x1="9"  y1="4"  x2="9"  y2="20"/>
+      <line x1="12" y1="2"  x2="12" y2="22"/>
+      <line x1="15" y1="5"  x2="15" y2="19"/>
+      <line x1="18" y1="8"  x2="18" y2="16"/>
+      <line x1="21" y1="10" x2="21" y2="14"/>
+    </svg>
+  );
+}
+
+export function FileAudioIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <path d="M9 16v-3l3 1v3"/>
+      <circle cx="8" cy="17" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="11" cy="18" r="1.2" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
+export function ModulesIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.2"/>
+      <rect x="14" y="3" width="7" height="7" rx="1.2"/>
+      <rect x="3" y="14" width="7" height="7" rx="1.2"/>
+      <rect x="14" y="14" width="7" height="7" rx="1.2"/>
+    </svg>
+  );
+}
+
+export function MicIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="2" width="6" height="11" rx="3"/>
+      <path d="M19 10a7 7 0 0 1-14 0"/>
+      <line x1="12" y1="19" x2="12" y2="22"/>
+      <line x1="8" y1="22" x2="16" y2="22"/>
     </svg>
   );
 }

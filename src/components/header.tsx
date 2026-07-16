@@ -5,13 +5,14 @@ import type { AppContext } from '../types';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
+import { showModulesModal } from './modulesModal';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
 import {
   isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus,
 } from '../services/driveService';
 import {
-  HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon,
+  HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon, ModulesIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
   ArrowLeftIcon, ArrowRightIcon,
 } from './icons';
@@ -218,6 +219,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
           <SyncBtn status={driveStatus} />
         )}
+        <HeaderBtn title={t('sidebar.modules')} onClick={() => showModulesModal(ctx)}>
+          <ModulesIcon size={14} />
+        </HeaderBtn>
         <HeaderBtn title={t('sidebar.search')} onClick={() => showCommandPalette(() => ctx)}>
           <SearchIcon size={14} />
         </HeaderBtn>

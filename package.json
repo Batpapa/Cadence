@@ -5,6 +5,7 @@
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack serve --mode development",
+    "test": "vitest run",
     "deploy": "git add . && (git diff --cached --quiet && echo 'Nothing to commit.' || git commit -m \"${npm_config_msg:-deploy}\") && git push"
   },
   "devDependencies": {
@@ -20,14 +21,17 @@
     "ts-loader": "^9.5.0",
     "ts-prune": "^0.10.3",
     "typescript": "^5.4.0",
+    "vitest": "^4.1.10",
     "webpack": "^5.91.0",
     "webpack-cli": "^5.1.0",
     "webpack-dev-server": "^5.0.0"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@preact/signals": "^2.9.0",
     "@soundtouchjs/audio-worklet": "^1.0.10",
     "abcjs": "^6.6.2",
+    "fix-webm-duration": "^1.0.6",
     "idb": "^8.0.3",
     "marked": "^18.0.0",
     "preact": "^10.29.1"

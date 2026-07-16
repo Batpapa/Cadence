@@ -1,4 +1,5 @@
-import type { Attachment, FileEntry, EmbedEntry, CardReferenceAttachment } from '../types';
+import type { Attachment, FileEntry, EmbedEntry, CardReferenceAttachment, SessionClipAttachment } from '../types';
+import { showClipModal } from '../session/ui/clipPlayer';
 import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance } from '../utils';
 import { iconElement, TrashIcon } from './icons';
 import { showPreviewModal } from './fileViewer';
@@ -137,6 +138,33 @@ function renderCardRefRow(entry: CardReferenceAttachment, onRemove: () => void, 
     badge.textContent = t('fileViewer.cardRef.unresolved');
     label.append(titleSpan, badge);
   }
+
+  row.append(icon, label);
+
+  if (editable) {
+    const rm = document.createElement('button');
+    rm.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
+    rm.title = t('fileViewer.remove'); rm.onclick = onRemove;
+    rm.appendChild(iconElement(TrashIcon, 11));
+    row.appendChild(rm);
+  }
+
+  return row;
+}
+
+function renderSessionClipRow(entry: SessionClipAttachment, onRemove: () => void, editable: boolean): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'flex items-center gap-2 px-3 py-1.5 rounded border border-border group';
+
+  const icon = document.createElement('span');
+  icon.className = 'text-[11px] text-dim shrink-0 w-4 text-center font-mono';
+  icon.textContent = '◉';
+
+  const label = document.createElement('span');
+  label.className = 'text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors';
+  label.textContent = entry.title;
+  label.title = t('sessions.clip.play');
+  label.onclick = () => { void showClipModal(entry); };
 
   row.append(icon, label);
 
@@ -292,7 +320,9 @@ export function renderAttachmentList(options: {
       ? renderFileRow(att, () => onRemove(i), editable)
       : att.type === 'card'
         ? renderCardRefRow(att, () => onRemove(i), editable)
-        : renderEmbedRow(att, () => onRemove(i), editable);
+        : att.type === 'sessionClip'
+          ? renderSessionClipRow(att, () => onRemove(i), editable)
+          : renderEmbedRow(att, () => onRemove(i), editable);
 
     if (editable) {
       rowEl.draggable = true;
