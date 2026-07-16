@@ -10,7 +10,35 @@ export type AnnotationEvent =
   | { type: 'update'; annotation: SessionAnnotation }
   | { type: 'close'; annotation: SessionAnnotation };
 
-interface Evidence { t: number; score: number; margin: number }
+interface Evidence { t: number; tEnd: number; score: number; margin: number }
+
+/** Span of an analysis window that did NOT go to the elected tune (empty or rival). */
+interface Span { t0: number; t1: number }
+
+/** Overlap vote for the end bound of a closing annotation. Every analysis
+ *  window covering an instant is one voter; returns the latest instant where
+ *  windows won by the elected tune are not outnumbered — with a 5 s hop each
+ *  instant is covered by ~3 windows, so one junk window at the tail cannot
+ *  truncate the annotation on its own. Never returns less than `floor` (the
+ *  legacy bound: start of the closing empty/rival run), so sparse pub
+ *  recognition keeps its calibrated behaviour. */
+function voteEnd(wins: Evidence[], nonWins: Span[], floor: number, cap?: number): number {
+  const bounds = new Set<number>();
+  for (const w of wins) { bounds.add(w.t); bounds.add(w.tEnd); }
+  for (const s of nonWins) { bounds.add(s.t0); bounds.add(s.t1); }
+  const sorted = [...bounds].sort((a, b) => a - b);
+
+  let best = floor;
+  for (let i = sorted.length - 2; i >= 0; i--) {
+    const mid = (sorted[i]! + sorted[i + 1]!) / 2;
+    const won = wins.filter(e => e.t <= mid && mid < e.tEnd).length;
+    if (won === 0) continue;
+    const lost = nonWins.filter(s => s.t0 <= mid && mid < s.t1).length;
+    if (won >= lost) { best = sorted[i + 1]!; break; }
+  }
+  const capped = cap === undefined ? best : Math.min(best, cap);
+  return Math.max(floor, capped);
+}
 
 /** Per-tune stats accumulated over the lifetime of an annotation, for alternates. */
 interface AltStats { settingId: string; displayName: string; sum: number; count: number }
@@ -31,11 +59,13 @@ interface ConfirmedState {
   start: number;
   evidence: Evidence[];        // windows won by the elected tune
   windowsCovered: number;      // non-empty windows since open
+  nonWins: Span[];             // empty/rival windows since open — end-vote input
   altStats: Map<string, AltStats>;
   emptyStreak: number;
   /** First moment after the last elected win (start of empties/rival evidence):
-   *  the annotation's end bound whenever it closes, keeping end timestamps
-   *  precise even with large close-hysteresis values. */
+   *  the floor of the end vote whenever the annotation closes. The vote may
+   *  extend past it while overlapping wins hold parity, never regress below —
+   *  keeps end timestamps sane even with large close-hysteresis values. */
   endCandidate: number | null;
   rival: { tune: WindowCandidate; streak: number; firstSeen: number; evidence: Evidence[] } | null;
 }
@@ -61,7 +91,8 @@ export class RecognitionAggregator {
   /** Close any open annotation at end of session. Unconfirmed candidates are dropped. */
   finalize(tEnd: number): AnnotationEvent[] {
     if (this.state.kind !== 'confirmed') { this.state = { kind: 'idle' }; return []; }
-    const annotation = this.buildAnnotation(this.state, this.state.endCandidate ?? tEnd);
+    const s = this.state;
+    const annotation = this.buildAnnotation(s, voteEnd(s.evidence, s.nonWins, s.endCandidate ?? tEnd, tEnd));
     this.state = { kind: 'idle' };
     return [{ type: 'close', annotation }];
   }
@@ -80,9 +111,10 @@ export class RecognitionAggregator {
 
     // confirmed
     s.endCandidate ??= win.tWindowStart;
+    s.nonWins.push({ t0: win.tWindowStart, t1: win.tWindowEnd });
     s.emptyStreak++;
     if (s.emptyStreak >= this.cfg.K_EMPTY_CLOSE) {
-      const annotation = this.buildAnnotation(s, s.endCandidate);
+      const annotation = this.buildAnnotation(s, voteEnd(s.evidence, s.nonWins, s.endCandidate));
       this.state = { kind: 'idle' };
       return [{ type: 'close', annotation }];
     }
@@ -100,7 +132,7 @@ export class RecognitionAggregator {
         hits: 1,
         firstSeen: win.tWindowStart,
         emptyStreak: 0,
-        evidence: [{ t: win.tWindowStart, score: top.score, margin }],
+        evidence: [{ t: win.tWindowStart, tEnd: win.tWindowEnd, score: top.score, margin }],
       };
       return [];
     }
@@ -109,7 +141,7 @@ export class RecognitionAggregator {
       s.emptyStreak = 0;
       if (top.tuneId === s.tune.tuneId) {
         s.hits++;
-        s.evidence.push({ t: win.tWindowStart, score: top.score, margin });
+        s.evidence.push({ t: win.tWindowStart, tEnd: win.tWindowEnd, score: top.score, margin });
         if (top.score > s.tune.score) s.tune = top;
         if (s.hits >= this.cfg.K_CONFIRM) {
           const confirmed: ConfirmedState = {
@@ -119,6 +151,7 @@ export class RecognitionAggregator {
             start: s.firstSeen,
             evidence: s.evidence,
             windowsCovered: s.hits,
+            nonWins: [],
             altStats: new Map(),
             emptyStreak: 0,
             endCandidate: null,
@@ -137,7 +170,7 @@ export class RecognitionAggregator {
         hits: 1,
         firstSeen: win.tWindowStart,
         emptyStreak: 0,
-        evidence: [{ t: win.tWindowStart, score: top.score, margin }],
+        evidence: [{ t: win.tWindowStart, tEnd: win.tWindowEnd, score: top.score, margin }],
       };
       return [];
     }
@@ -155,7 +188,7 @@ export class RecognitionAggregator {
       ? elected : top;
 
     if (effectiveWinner.tuneId === s.tune.tuneId) {
-      s.evidence.push({ t: win.tWindowStart, score: effectiveWinner.score, margin });
+      s.evidence.push({ t: win.tWindowStart, tEnd: win.tWindowEnd, score: effectiveWinner.score, margin });
       if (effectiveWinner.score > s.tune.score) s.tune = effectiveWinner;
       s.rival = null;
       s.endCandidate = null; // the elected tune is still playing
@@ -164,23 +197,24 @@ export class RecognitionAggregator {
 
     // A rival won this window
     s.endCandidate ??= win.tWindowStart;
+    s.nonWins.push({ t0: win.tWindowStart, t1: win.tWindowEnd });
     if (s.rival && s.rival.tune.tuneId === effectiveWinner.tuneId) {
       s.rival.streak++;
-      s.rival.evidence.push({ t: win.tWindowStart, score: effectiveWinner.score, margin });
+      s.rival.evidence.push({ t: win.tWindowStart, tEnd: win.tWindowEnd, score: effectiveWinner.score, margin });
       if (effectiveWinner.score > s.rival.tune.score) s.rival.tune = effectiveWinner;
     } else {
       s.rival = {
         tune: effectiveWinner,
         streak: 1,
         firstSeen: win.tWindowStart,
-        evidence: [{ t: win.tWindowStart, score: effectiveWinner.score, margin }],
+        evidence: [{ t: win.tWindowStart, tEnd: win.tWindowEnd, score: effectiveWinner.score, margin }],
       };
     }
 
     if (s.rival.streak >= this.cfg.K_SWITCH) {
       // Set segmentation: close the current tune (at the start of the lull
       // that preceded the rival, when there was one), open the rival confirmed.
-      const closed = this.buildAnnotation(s, s.endCandidate ?? s.rival.firstSeen);
+      const closed = this.buildAnnotation(s, voteEnd(s.evidence, s.nonWins, s.endCandidate ?? s.rival.firstSeen, s.rival.firstSeen));
       const next: ConfirmedState = {
         kind: 'confirmed',
         tune: s.rival.tune,
@@ -188,6 +222,7 @@ export class RecognitionAggregator {
         start: s.rival.firstSeen,
         evidence: s.rival.evidence,
         windowsCovered: s.rival.evidence.length,
+        nonWins: [],
         altStats: new Map(),
         emptyStreak: 0,
         endCandidate: null,

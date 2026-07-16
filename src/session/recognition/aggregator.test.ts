@@ -119,12 +119,14 @@ describe('set segmentation (switch)', () => {
 });
 
 describe('empty-close hysteresis', () => {
-  it('closes after K_EMPTY_CLOSE empty windows, end = first empty window', () => {
+  it('closes after K_EMPTY_CLOSE empty windows, end voted past the empty start', () => {
     const agg = mkAgg();
     const events = feed(agg, [strongA, strongA, emptyWin, emptyWin, emptyWin, emptyWin]);
     const close = events.filter(e => e.type === 'close');
     expect(close).toHaveLength(1);
-    expect(close[0]!.annotation.end).toBe(2 * HOP); // start of the empty streak
+    // Wins [0,15]+[5,20] outvote the empty [10,25] up to t=15; beyond that the
+    // empties take the majority. (Legacy bound was 10, the empty-streak start.)
+    expect(close[0]!.annotation.end).toBe(3 * HOP);
   });
 
   it('a win resets the empty streak', () => {
@@ -216,16 +218,53 @@ describe('precise end bounds (endCandidate)', () => {
     const events = feed(agg, [strongA, strongA, emptyWin, emptyWin, emptyWin, strongB, strongB]);
     const close = events.filter(e => e.type === 'close');
     expect(close).toHaveLength(1);
-    expect(close[0]!.annotation.end).toBe(2 * HOP);  // first empty window, not B's first win
+    expect(close[0]!.annotation.end).toBe(3 * HOP);  // voted end, still well before B's first win
     const opens = events.filter(e => e.type === 'open');
     expect(opens[1]!.annotation.start).toBe(5 * HOP); // B still starts at its first win
   });
 
-  it('finalize after trailing empties closes at the start of the trail', () => {
+  it('finalize after trailing empties closes near the start of the trail', () => {
     const agg = mkAgg({ K_EMPTY_CLOSE: 10 });
     feed(agg, [strongA, strongA, emptyWin, emptyWin, emptyWin]);
     const events = agg.finalize(300);
-    expect(events[0]!.annotation.end).toBe(2 * HOP); // not 300
+    expect(events[0]!.annotation.end).toBe(3 * HOP); // voted end — not 300
+  });
+});
+
+
+describe('end vote (overlap majority)', () => {
+  it('one junk tail window cannot truncate the annotation (banjo solo clip)', () => {
+    // Real case: Cliffs of Moher played 0–35 s, last window [20,35] scored
+    // below floor. Windows [10,25]+[15,30] outvote it up to t=30.
+    const agg = mkAgg();
+    feed(agg, [strongA, strongA, strongA, strongA, emptyWin]);
+    const events = agg.finalize(35);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.annotation.end).toBe(30);
+  });
+
+  it('never regresses below the legacy bound on sparse recognition', () => {
+    // Pub-style: two early wins, then a long empty run before the close.
+    const agg = mkAgg({ K_EMPTY_CLOSE: 4 });
+    const events = feed(agg, [strongA, strongA, emptyWin, emptyWin, emptyWin, emptyWin]);
+    const close = events.filter(e => e.type === 'close');
+    expect(close[0]!.annotation.end).toBeGreaterThanOrEqual(2 * HOP);
+    expect(close[0]!.annotation.end).toBeLessThanOrEqual(4 * HOP); // bounded by win coverage
+  });
+
+  it('a switch close never overlaps the successor annotation', () => {
+    const agg = mkAgg();
+    const events = feed(agg, [strongA, strongA, strongA, strongB, strongB]);
+    const close = events.filter(e => e.type === 'close');
+    const opens = events.filter(e => e.type === 'open');
+    expect(close[0]!.annotation.end).toBeLessThanOrEqual(opens[1]!.annotation.start);
+  });
+
+  it('tune winning until the very end finalizes at t final', () => {
+    const agg = mkAgg();
+    feed(agg, [strongA, strongA, strongA]);
+    const events = agg.finalize(25);
+    expect(events[0]!.annotation.end).toBe(25);
   });
 });
 
