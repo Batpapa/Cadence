@@ -160,6 +160,16 @@
 .markdown pre code { @apply bg-transparent p-0 text-primary/90 text-xs rounded-none; }
 .markdown blockquote { @apply border-l-2 border-accent/40 pl-3 text-muted italic mb-3; }
 .markdown strong { @apply font-semibold text-primary; }
+
+/* ── ||Spoiler|| — click-to-reveal hidden text (notes & markdown files) ── */
+.spoiler { @apply bg-elevated border border-border rounded px-1.5 cursor-pointer; }
+.spoiler:not(.spoiler-revealed) { @apply select-none; }
+.spoiler:not(.spoiler-revealed),
+.spoiler:not(.spoiler-revealed) * { color: transparent !important; text-shadow: none !important; }
+.spoiler:not(.spoiler-revealed) img { visibility: hidden; }
+.spoiler:not(.spoiler-revealed):hover,
+.spoiler:not(.spoiler-revealed):focus-visible { @apply border-accent/50; outline: none; }
+.spoiler.spoiler-revealed { @apply bg-accent/10 border-accent/30; }
 .markdown em { @apply italic; }
 .markdown hr { @apply border-border my-4; }
 .markdown table { @apply w-full text-sm mb-3 border-collapse; }

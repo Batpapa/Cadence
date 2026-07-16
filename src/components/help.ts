@@ -45,6 +45,7 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
         title: t('help.context.card'),
         sections: [
           { style: 'definition', heading: t('help.card.edit.heading'),  items: [t('help.card.edit.1'), t('help.card.edit.2'), t('help.card.edit.3'), t('help.card.edit.4')] },
+          { style: 'logic', heading: t('help.card.notes.heading'), items: [t('help.card.notes.1'), t('help.card.notes.2'), t('help.card.notes.3')] },
           { style: 'metrics', heading: t('help.card.fsrs.heading'),  items: [t('help.card.fsrs.1'), t('help.card.fsrs.2'), t('help.card.fsrs.3')] },
         ],
       };
@@ -55,7 +56,7 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
         sections: [
           { style: 'definition', heading: t('help.study.rating.heading'),   items: [t('help.study.rating.1'), t('help.study.rating.2'), t('help.study.rating.3'), t('help.study.rating.4')] },
           { style: 'logic',      heading: t('help.study.shortcuts.heading'), items: [t('help.study.shortcuts.1'), t('help.study.shortcuts.2'), t('help.study.shortcuts.3'), t('help.study.shortcuts.4')] },
-          { style: 'metrics',    heading: t('help.study.fsrs.heading'),      items: [t('help.study.fsrs.1'), t('help.study.fsrs.2'), t('help.study.fsrs.3')] },
+          { style: 'metrics',    heading: t('help.study.fsrs.heading'),      items: [t('help.study.fsrs.1'), t('help.study.fsrs.2'), t('help.study.fsrs.3'), t('help.study.fsrs.4')] },
         ],
       };
   }

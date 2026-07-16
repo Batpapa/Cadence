@@ -552,6 +552,10 @@
   "help.card.fsrs.1": "Rappel : la probabilité de se souvenir de cette carte en ce moment. Décroît avec le temps, remonte après chaque révision.",
   "help.card.fsrs.2": "Ancrage : la durée de vie du souvenir. Augmente à chaque rappel réussi — surtout avec les notes « Facile ».",
   "help.card.fsrs.3": "Aisance : la facilité naturelle de rappel. Construite à partir de l'historique de difficulté — s'améliore à mesure que la carte devient familière.",
+  "help.card.notes.heading": "Notes et texte caché",
+  "help.card.notes.1": "Les notes acceptent le Markdown : **gras**, *italique*, listes, liens, tableaux, code…",
+  "help.card.notes.2": "Entourez un texte de doubles barres verticales pour le cacher : ||comme ceci||. Il s'affiche comme une pilule opaque — cliquez pour révéler, re-cliquez pour masquer.",
+  "help.card.notes.3": "Idéal pour les cartes question/réponse : mettez la réponse en spoiler, elle reste cachée pendant l'étude (et dans l'aperçu des notes) jusqu'au clic.",
   "help.card.abc.heading": "Fichiers ABC",
   "help.card.abc.1": "Cliquez sur une pièce jointe .abc pour ouvrir le visualiseur avec les contrôles de lecture.",
   "help.card.abc.2": "Si le fichier contient plusieurs versions, utilisez ← → dans la barre du lecteur pour naviguer entre elles.",
@@ -573,6 +577,7 @@
   "help.study.fsrs.1": "Pas besoin de tout réviser — Cadence ne vous montrera que les cartes qui en ont besoin. Faites confiance au planificateur.",
   "help.study.fsrs.2": "La régularité compte plus que la durée des sessions. Quelques cartes chaque jour valent mieux qu'un gros paquet une fois par semaine.",
   "help.study.fsrs.3": "Les cartes au-dessus de votre seuil de rappel sont automatiquement ignorées — elles n'ont pas encore besoin d'être révisées.",
+  "help.study.fsrs.4": "Le texte caché (||…||) dans les notes apparaît comme une pilule opaque — cliquez dessus pour révéler la réponse.",
 
   "sidebar.modules": "Modules",
 

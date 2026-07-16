@@ -1,5 +1,6 @@
 import type { FileEntry } from '../types';
 import { entryToObjectUrl } from '../utils';
+import { getMarked } from './markdown';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
 
@@ -243,7 +244,7 @@ export function showPreviewModal(entry: FileEntry): void {
     if (isMarkdown(entry)) {
       const rendered = document.createElement('div');
       rendered.className = 'markdown text-sm leading-relaxed w-full';
-      import('marked').then(({ marked }) => {
+      getMarked().then(marked => {
         rendered.innerHTML = marked.parse(text) as string;
         rendered.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
       }).catch(() => { rendered.textContent = text; });
@@ -274,7 +275,7 @@ export function renderNotes(notes: string): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'markdown text-sm leading-relaxed';
   if (!notes.trim()) { wrap.innerHTML = `<p class="text-dim italic">${t('fileViewer.noNotes')}</p>`; return wrap; }
-  import('marked').then(({ marked }) => {
+  getMarked().then(marked => {
     wrap.innerHTML = marked.parse(notes) as string;
     wrap.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
   }).catch(() => { wrap.textContent = notes; });
