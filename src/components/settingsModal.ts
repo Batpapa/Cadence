@@ -10,8 +10,9 @@ import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, type DriveStatus } from '../services/driveService';
+import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
-import { getContext, applyFromDrive } from '../store';
+import { getContext } from '../store';
 import { mkCustomSelect } from './customSelectVanilla';
 import { clearLastUserId } from '../db';
 
@@ -343,19 +344,12 @@ export function showSettingsModal(ctx: AppContext): void {
         const driveBtn2 = document.createElement('button'); driveBtn2.className = 'btn-ghost text-xs shrink-0';
         const driveControl2 = document.createElement('div'); driveControl2.className = 'flex items-center gap-2';
         driveControl2.append(driveStatusEl2, driveBtn2);
-        const applyDriveState2 = async (raw: unknown) => {
-          await applyFromDrive(s => { Object.assign(s, applyExternalData(raw as Record<string, unknown>, s.id)); });
-        };
         const handleConnect2 = async () => {
           try {
             const result = await connectDrive();
-            if (result.action === 'apply') { await applyDriveState2(result.state); }
+            if (result.action === 'apply') { await applyDriveState(result.state, result.driveTs); }
             else if (result.action === 'conflict') {
-              const body2 = document.createElement('p'); body2.className = 'text-sm text-muted leading-relaxed'; body2.textContent = t('settings.sync.conflict.message');
-              showModal(t('settings.sync.conflict.title'), body2, [
-                { label: t('settings.sync.conflict.keepLocal'), onClick: closeModal },
-                { label: t('settings.sync.conflict.useDrive'), onClick: async () => { closeModal(); await applyDriveState2(result.state); } },
-              ], false);
+              showDriveConflictModal(result.state, result.driveTs);
             } else if (result.action === 'none') {
               syncToCloud(getContext().user);
               void manualSync();
