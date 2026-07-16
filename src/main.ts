@@ -7,8 +7,9 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, loadFromCloud, getLocalTimestamp, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser } from './services/driveService';
-import { migrateState, migrateLegacyToUser, applyExternalData } from './services/migration';
+import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser } from './services/driveService';
+import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
+import { migrateState, migrateLegacyToUser } from './services/migration';
 import { applyZoom } from './services/zoomService';
 import { applyTheme } from './services/themeService';
 import { mountApp, mountUserSelector } from './appRoot';
@@ -122,14 +123,15 @@ function finishBoot(root: HTMLElement): void {
   void initDriveClient().then(async () => {
     if (!isDriveConnected()) return;
     try {
-      const driveData = await loadFromCloud();
-      if (driveData && (driveData._lastModified ?? 0) > getLocalTimestamp()) {
-        const { _lastModified: _, _deviceId: __, ...raw } = driveData;
-        const updated = applyExternalData(raw as Record<string, unknown>, appState.value.id);
-        appState.value = updated;
-        await saveUser(updated);
+      // Same three-way reconciliation as the manual connect flow: fast-forwards
+      // apply silently, real divergences raise the explicit conflict modal.
+      const result = reconcileDriveData(await loadFromCloud());
+      if (result.action === 'apply') {
+        await applyDriveState(result.state, result.driveTs);
+      } else if (result.action === 'conflict') {
+        showDriveConflictModal(result.state, result.driveTs);
       }
-    } catch { /* silently fall back to local data */ }
+    } catch { /* offline or transient failure — keep local data */ }
   });
 
   mountApp(root);

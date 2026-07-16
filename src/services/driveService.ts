@@ -3,10 +3,13 @@ import { GOOGLE_CLIENT_ID } from '../config';
 
 export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' | 'connected' | 'error';
 
-export type ConnectResult =
+export type ReconcileResult =
   | { action: 'none' }
-  | { action: 'apply';         state: AppState }
-  | { action: 'conflict';      state: AppState }
+  | { action: 'apply';    state: AppState; driveTs: number }  // fast-forward from Drive
+  | { action: 'conflict'; state: AppState; driveTs: number }; // both sides moved — ask the user
+
+export type ConnectResult =
+  | ReconcileResult
   | { action: 'wrong_account'; existingEmail: string; newEmail: string };
 
 const FILE_NAME     = 'cadence-data.json';
@@ -36,6 +39,7 @@ let _state: DriveUserState = {
 const lsFileId    = (uid = _state.userId) => `cadence_drive_file_id_${uid}`;
 const lsConnected = (uid = _state.userId) => `cadence_drive_connected_${uid}`;
 const lsLocalTs   = (uid = _state.userId) => `cadence_local_modified_${uid}`;
+const lsSyncedTs  = (uid = _state.userId) => `cadence_drive_synced_ts_${uid}`;
 const lsHint      = (uid = _state.userId) => `cadence_drive_hint_${uid}`;
 const lsOwner     = (uid = _state.userId) => `cadence_drive_owner_${uid}`;
 
@@ -79,6 +83,7 @@ export function clearDriveStateForUser(userId: string): void {
   localStorage.removeItem(lsFileId(userId));
   localStorage.removeItem(lsConnected(userId));
   localStorage.removeItem(lsLocalTs(userId));
+  localStorage.removeItem(lsSyncedTs(userId));
   localStorage.removeItem(lsHint(userId));
   localStorage.removeItem(lsOwner(userId));
 }
@@ -93,6 +98,58 @@ export function isDriveFeatureEnabled(): boolean { return Boolean(GOOGLE_CLIENT_
 export function isDriveConnected(): boolean      { return !!localStorage.getItem(lsFileId()); }
 export function getDriveStatus(): DriveStatus    { return _state.status; }
 export function getLocalTimestamp(): number      { return parseInt(localStorage.getItem(lsLocalTs()) ?? '0'); }
+
+/** Sync base: `_lastModified` of the Drive content at the last moment local == Drive. */
+function getSyncedTimestamp(): number {
+  return parseInt(localStorage.getItem(lsSyncedTs()) ?? '0');
+}
+
+/** Record that local and Drive are identical at this content timestamp. */
+export function markSynced(driveTs: number): void {
+  localStorage.setItem(lsSyncedTs(), String(driveTs));
+  localStorage.setItem(lsLocalTs(), String(driveTs));
+}
+
+/**
+ * Three-way reconciliation between local state and the Drive copy, using the
+ * last-synced timestamp as merge base:
+ *  - Drive unchanged since base → keep local ('none'; a later flush uploads it)
+ *  - Drive moved, local didn't  → safe fast-forward ('apply')
+ *  - both moved                 → real divergence ('conflict', user decides)
+ * Falls back to the device-id heuristic when no base was recorded yet
+ * (pre-existing installs, fresh connects).
+ */
+export function reconcileDriveData(
+  driveData: (AppState & { _lastModified?: number; _deviceId?: string }) | null,
+): ReconcileResult {
+  if (!driveData) return { action: 'none' };
+
+  const driveTs     = driveData._lastModified ?? 0;
+  const driveDevice = driveData._deviceId;
+  const { _lastModified: _a, _deviceId: _b, ...clean } = driveData;
+  const state      = clean as AppState;
+  const localTs    = getLocalTimestamp();
+  const syncedTs   = getSyncedTimestamp();
+  const sameDevice = driveDevice === getDeviceId();
+
+  if (syncedTs > 0) {
+    const driveMoved = driveTs > syncedTs;
+    const localMoved = localTs > syncedTs;
+    if (!driveMoved) return { action: 'none' };
+    if (!localMoved) return { action: 'apply', state, driveTs };
+    // Same device writing on both sides means another tab of this browser —
+    // the newer content wins, there is no cross-device divergence to arbitrate.
+    if (sameDevice) return driveTs > localTs ? { action: 'apply', state, driveTs } : { action: 'none' };
+    return { action: 'conflict', state, driveTs };
+  }
+
+  // No merge base yet: legacy heuristic (deviceId + timestamps).
+  if (sameDevice) {
+    return driveTs > localTs ? { action: 'apply', state, driveTs } : { action: 'none' };
+  }
+  if (localTs === 0) return { action: 'apply', state, driveTs };
+  return { action: 'conflict', state, driveTs };
+}
 
 export function onStatusChange(cb: (s: DriveStatus) => void): () => void {
   listeners.push(cb);
@@ -212,32 +269,7 @@ export async function connectDrive(): Promise<ConnectResult> {
 
     const driveData = await loadFromCloud();
     setStatus('connected');
-
-    if (!driveData) return { action: 'none' };
-
-    const driveTs     = driveData._lastModified ?? 0;
-    const driveDevice = driveData._deviceId;
-    const localTs     = getLocalTimestamp();
-    const myDevice    = getDeviceId();
-    const { _lastModified: _a, _deviceId: _b, ...clean } = driveData;
-    const cleanState  = clean as AppState;
-    const sameDevice  = driveDevice === myDevice;
-    const localHasData = localTs > 0;
-
-    if (sameDevice) {
-      if (driveTs > localTs) {
-        localStorage.setItem(lsLocalTs(), String(driveTs));
-        return { action: 'apply', state: cleanState };
-      }
-      return { action: 'none' };
-    }
-
-    if (!localHasData) {
-      localStorage.setItem(lsLocalTs(), String(driveTs));
-      return { action: 'apply', state: cleanState };
-    }
-
-    return { action: 'conflict', state: cleanState };
+    return reconcileDriveData(driveData);
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -259,6 +291,7 @@ export function disconnectDrive(): void {
   localStorage.removeItem(lsFileId());
   localStorage.removeItem(lsConnected());
   localStorage.removeItem(lsHint());
+  localStorage.removeItem(lsSyncedTs()); // merge base is meaningless once detached
   setStatus('disconnected');
 }
 
@@ -285,7 +318,8 @@ async function flushSync(): Promise<void> {
       `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=multipart`,
       { method: 'PATCH', body: form }
     );
-    localStorage.setItem(lsLocalTs(), String(ts));
+    // Successful upload: local and Drive are identical again — new merge base.
+    markSynced(ts);
     setStatus(_state.pendingState ? 'pending' : 'connected');
   } catch {
     _state.pendingState = _state.pendingState ?? state;
