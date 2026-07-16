@@ -496,6 +496,20 @@ export function showSettingsModal(ctx: AppContext): void {
       aboutBlock.append(mkAboutLine('settings.aboutLine1'), mkAboutLine('settings.aboutLine2'), mkAboutLine('settings.aboutLine3', 'https://github.com/Batpapa/Cadence'));
       content.appendChild(aboutBlock);
 
+      // FolkFriend attribution (GPLv3) — required by the vendored recognition engine.
+      const sepFf = document.createElement('hr'); sepFf.className = 'border-border'; content.appendChild(sepFf);
+      const ffBlock = document.createElement('div'); ffBlock.className = 'space-y-1.5';
+      const ffLine = document.createElement('p'); ffLine.className = 'text-xs text-muted';
+      ffLine.textContent = t('settings.aboutFolkFriend');
+      const ffLink = document.createElement('p'); ffLink.className = 'text-xs text-muted';
+      const ffA = document.createElement('a');
+      ffA.href = 'https://github.com/TomWyllie/folkfriend'; ffA.target = '_blank'; ffA.rel = 'noopener';
+      ffA.className = 'text-accent hover:underline';
+      ffA.textContent = 'github.com/TomWyllie/folkfriend (GPLv3)';
+      ffLink.appendChild(ffA);
+      ffBlock.append(ffLine, ffLink);
+      content.appendChild(ffBlock);
+
       if (!isStandalone()) {
         const div = document.createElement('hr'); div.className = 'border-border'; content.appendChild(div);
         if (isIOS()) {

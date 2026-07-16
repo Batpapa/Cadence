@@ -2,7 +2,7 @@
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
-import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon } from '../components/icons';
+import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
@@ -134,12 +134,14 @@ function showExportModal(cards: Card[], user: AppState): void {
 }
 
 const NO_DECK = '__no_deck__';
-const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance'];
+const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance', 'recall', 'difficulty'];
 const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
   alpha: SortAlphaIcon,
   lastReviewed: ClockIcon,
   lastAdded: CalendarPlusIcon,
   importance: StarIcon,
+  recall: GaugeIcon,
+  difficulty: FlameIcon,
 };
 
 // ── Deck picker modal (vanilla) ───────────────────────────────────────────────
@@ -245,14 +247,32 @@ export function LibraryView() {
     return matchText && matchTags && matchDecks;
   });
   let filtered: Card[];
+  // Ties resolve alphabetically. The tie-break lives inside the comparator, so
+  // the global sortAsc reverse below flips it together with the primary key.
+  const byName = (a: Card, b: Card) => a.name.localeCompare(b.name);
+  const numCmp = (x: number, y: number) => x === y ? 0 : x - y; // −∞ vs −∞ would give NaN
   if (sortMode === 'lastAdded') {
     // user.cards preserves insertion order (oldest → newest); filter() keeps relative order, so reverse for newest-first.
     filtered = [...filteredUnsorted].reverse();
   } else if (sortMode === 'lastReviewed') {
     const lastTs = (c: Card) => user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history.at(-1)?.ts ?? -1;
-    filtered = [...filteredUnsorted].sort((a, b) => lastTs(b) - lastTs(a));
+    filtered = [...filteredUnsorted].sort((a, b) => numCmp(lastTs(b), lastTs(a)) || byName(a, b));
   } else if (sortMode === 'importance') {
-    filtered = [...filteredUnsorted].sort((a, b) => b.defaultImportance - a.defaultImportance);
+    filtered = [...filteredUnsorted].sort((a, b) => numCmp(b.defaultImportance, a.defaultImportance) || byName(a, b));
+  } else if (sortMode === 'recall') {
+    // Weakest first: never-reviewed cards count as recall 0 and lead the list.
+    // Precomputed: cardAvailability replays the whole FSRS history per card.
+    const kOf = new Map(filteredUnsorted.map(c =>
+      [c.id, cardAvailability(user, user.cardWorks[`${user.currentProfileId}:${c.id}`])]));
+    filtered = [...filteredUnsorted].sort((a, b) => numCmp(kOf.get(a.id)!, kOf.get(b.id)!) || byName(a, b));
+  } else if (sortMode === 'difficulty') {
+    // FSRS difficulty D (1–10) ascending; never-reviewed = −∞, so they lead.
+    const dOf = new Map(filteredUnsorted.map(c => {
+      const work = user.cardWorks[`${user.currentProfileId}:${c.id}`];
+      const fsrs = work ? replayFSRS(work.history) : undefined;
+      return [c.id, fsrs?.difficulty ?? Number.NEGATIVE_INFINITY];
+    }));
+    filtered = [...filteredUnsorted].sort((a, b) => numCmp(dOf.get(a.id)!, dOf.get(b.id)!) || byName(a, b));
   } else {
     filtered = q
       ? sortByRelevance(filteredUnsorted, searchQuery)
