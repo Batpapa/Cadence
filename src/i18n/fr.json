@@ -607,6 +607,8 @@
   "sessions.keepPartial.keep": "Garder",
   "sessions.dumpWindows": "Exporter le dump d'analyse (JSON)",
   "sessions.playSlice": "Écouter ce passage",
+  "sessions.listenAbc": "Partition / écouter",
+  "sessions.abcUnavailable": "ABC indisponible",
   "sessions.empty": "Aucune session enregistrée",
   "sessions.defaultName": "Session du {date}",
   "sessions.titlePlaceholder": "Nom de la session",

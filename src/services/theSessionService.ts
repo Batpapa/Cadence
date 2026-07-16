@@ -120,7 +120,8 @@ export async function fetchMemberTunes(
 
 // ── ABC generation ────────────────────────────────────────────────────────────
 
-function theSessionKeyToAbc(key: string): string {
+/** "Dmajor" → "D", "Edorian" → "Edor", "Aminor" → "Am" — TheSession/FolkFriend mode names to ABC keys. */
+export function theSessionKeyToAbc(key: string): string {
   const modes: Record<string, string> = {
     major: '', minor: 'm', dorian: 'dor', mixolydian: 'mix',
     lydian: 'lyd', phrygian: 'phr', locrian: 'loc',

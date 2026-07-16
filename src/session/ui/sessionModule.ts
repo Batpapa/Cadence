@@ -8,6 +8,7 @@ import { LiveSession } from '../liveSession';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile } from '../audio/sources';
 import { extractClipMp3 } from '../audio/clipExtract';
+import { makeAbcNoteButton } from './abcPreview';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
 import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta } from '../db';
 import { getContext } from '../../store';
@@ -153,13 +154,16 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
   if (opts.onPlay) {
     const playing = opts.playingId === ann.id;
     const playBtn = document.createElement('button');
-    playBtn.className = `w-6 h-6 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors text-[10px] ${
+    playBtn.className = `w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors text-[10px] ${
       playing ? 'bg-accent text-white' : 'bg-accent/10 text-accent hover:bg-accent/20'}`;
     playBtn.textContent = playing ? '⏸' : '▶';
     playBtn.title = t('sessions.playSlice');
     playBtn.onclick = (e) => { e.stopPropagation(); opts.onPlay!(ann); };
     row1.appendChild(playBtn);
   }
+
+  // Sheet + synth preview of the matched setting (inert when no ABC exists).
+  row1.appendChild(makeAbcNoteButton(ann.settingId, ann.displayName));
 
   const nameEl = document.createElement('span');
   nameEl.className = 'text-sm font-semibold text-primary capitalize truncate flex-1';
@@ -217,21 +221,36 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
 
   el.append(row1, row2, row3);
 
-  // Alternates: tap the card body to expand, each is relabelable.
+  // Alternates: tap the card body to expand; each candidate can be explored
+  // (sheet + synth, TheSession page) before being elected.
   if (ann.alternates.length > 0 && opts.onRelabel) {
     const altWrap = document.createElement('div');
-    altWrap.className = 'space-y-1 hidden';
+    altWrap.className = 'space-y-0.5 hidden pt-1 border-t border-border/50';
     for (const alt of ann.alternates) {
-      const altRow = document.createElement('button');
-      altRow.className = 'w-full text-left text-[11px] text-dim hover:text-primary cursor-pointer flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-elevated transition-colors';
+      const altRow = document.createElement('div');
+      altRow.className = 'flex items-center gap-2 px-2 py-1 rounded hover:bg-elevated transition-colors text-[11px]';
+
       const altName = document.createElement('span');
-      altName.className = 'truncate capitalize';
+      altName.className = 'truncate capitalize text-muted flex-1';
       altName.textContent = `${alt.displayName} (${Math.round(alt.meanScore * 100)}%)`;
-      const altAction = document.createElement('span');
-      altAction.className = 'text-accent shrink-0';
-      altAction.textContent = t('sessions.relabel');
-      altRow.append(altName, altAction);
-      altRow.onclick = (e) => { e.stopPropagation(); opts.onRelabel!(ann, alt); };
+
+      const altAbc = makeAbcNoteButton(alt.settingId, alt.displayName, 11);
+
+      const altTs = document.createElement('a');
+      altTs.className = 'text-dim hover:text-primary shrink-0';
+      altTs.href = `https://thesession.org/tunes/${alt.tuneId}`;
+      altTs.target = '_blank';
+      altTs.rel = 'noopener';
+      altTs.textContent = '↗';
+      altTs.title = t('sessions.viewOnTheSession');
+      altTs.onclick = (e) => e.stopPropagation();
+
+      const altPick = document.createElement('button');
+      altPick.className = 'text-accent hover:underline cursor-pointer shrink-0';
+      altPick.textContent = t('sessions.relabel');
+      altPick.onclick = (e) => { e.stopPropagation(); opts.onRelabel!(ann, alt); };
+
+      altRow.append(altName, altAbc, altTs, altPick);
       altWrap.appendChild(altRow);
     }
     el.appendChild(altWrap);

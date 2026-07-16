@@ -607,6 +607,8 @@
   "sessions.keepPartial.keep": "Keep",
   "sessions.dumpWindows": "Export analysis dump (JSON)",
   "sessions.playSlice": "Play this passage",
+  "sessions.listenAbc": "Sheet / listen",
+  "sessions.abcUnavailable": "ABC unavailable",
   "sessions.empty": "No recorded sessions yet",
   "sessions.defaultName": "Session of {date}",
   "sessions.titlePlaceholder": "Session name",
