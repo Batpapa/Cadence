@@ -33,7 +33,10 @@ interface ConfirmedState {
   windowsCovered: number;      // non-empty windows since open
   altStats: Map<string, AltStats>;
   emptyStreak: number;
-  emptyStreakStart: number;    // tWindowStart of the first empty window in the streak
+  /** First moment after the last elected win (start of empties/rival evidence):
+   *  the annotation's end bound whenever it closes, keeping end timestamps
+   *  precise even with large close-hysteresis values. */
+  endCandidate: number | null;
   rival: { tune: WindowCandidate; streak: number; firstSeen: number; evidence: Evidence[] } | null;
 }
 
@@ -58,7 +61,7 @@ export class RecognitionAggregator {
   /** Close any open annotation at end of session. Unconfirmed candidates are dropped. */
   finalize(tEnd: number): AnnotationEvent[] {
     if (this.state.kind !== 'confirmed') { this.state = { kind: 'idle' }; return []; }
-    const annotation = this.buildAnnotation(this.state, tEnd);
+    const annotation = this.buildAnnotation(this.state, this.state.endCandidate ?? tEnd);
     this.state = { kind: 'idle' };
     return [{ type: 'close', annotation }];
   }
@@ -76,10 +79,10 @@ export class RecognitionAggregator {
     }
 
     // confirmed
-    if (s.emptyStreak === 0) s.emptyStreakStart = win.tWindowStart;
+    s.endCandidate ??= win.tWindowStart;
     s.emptyStreak++;
     if (s.emptyStreak >= this.cfg.K_EMPTY_CLOSE) {
-      const annotation = this.buildAnnotation(s, s.emptyStreakStart);
+      const annotation = this.buildAnnotation(s, s.endCandidate);
       this.state = { kind: 'idle' };
       return [{ type: 'close', annotation }];
     }
@@ -118,7 +121,7 @@ export class RecognitionAggregator {
             windowsCovered: s.hits,
             altStats: new Map(),
             emptyStreak: 0,
-            emptyStreakStart: 0,
+            endCandidate: null,
             rival: null,
           };
           this.accumulateAlternates(confirmed, win.candidates);
@@ -155,10 +158,12 @@ export class RecognitionAggregator {
       s.evidence.push({ t: win.tWindowStart, score: effectiveWinner.score, margin });
       if (effectiveWinner.score > s.tune.score) s.tune = effectiveWinner;
       s.rival = null;
+      s.endCandidate = null; // the elected tune is still playing
       return [{ type: 'update', annotation: this.buildAnnotation(s, null) }];
     }
 
     // A rival won this window
+    s.endCandidate ??= win.tWindowStart;
     if (s.rival && s.rival.tune.tuneId === effectiveWinner.tuneId) {
       s.rival.streak++;
       s.rival.evidence.push({ t: win.tWindowStart, score: effectiveWinner.score, margin });
@@ -173,8 +178,9 @@ export class RecognitionAggregator {
     }
 
     if (s.rival.streak >= this.cfg.K_SWITCH) {
-      // Set segmentation: close the current tune, open the rival as confirmed.
-      const closed = this.buildAnnotation(s, s.rival.firstSeen);
+      // Set segmentation: close the current tune (at the start of the lull
+      // that preceded the rival, when there was one), open the rival confirmed.
+      const closed = this.buildAnnotation(s, s.endCandidate ?? s.rival.firstSeen);
       const next: ConfirmedState = {
         kind: 'confirmed',
         tune: s.rival.tune,
@@ -184,7 +190,7 @@ export class RecognitionAggregator {
         windowsCovered: s.rival.evidence.length,
         altStats: new Map(),
         emptyStreak: 0,
-        emptyStreakStart: 0,
+        endCandidate: null,
         rival: null,
       };
       this.accumulateAlternates(next, win.candidates);
