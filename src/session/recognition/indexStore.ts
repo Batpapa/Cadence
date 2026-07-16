@@ -122,6 +122,7 @@ export interface SettingAbcMeta {
 }
 
 let abcMetaPromise: Promise<Map<string, SettingAbcMeta> | null> | null = null;
+let abcMetaMap: Map<string, SettingAbcMeta> | null = null;
 
 export function getSettingAbcMeta(settingId: string): Promise<SettingAbcMeta | null> {
   abcMetaPromise ??= (async () => {
@@ -132,7 +133,15 @@ export function getSettingAbcMeta(settingId: string): Promise<SettingAbcMeta | n
       const s = cached.indexData.settings[id]!;
       map.set(id, { abc: cached.abcStrings[id] ?? '', meter: s.meter, mode: s.mode, dance: s.dance });
     }
+    abcMetaMap = map;
     return map;
   })();
   return abcMetaPromise.then(map => map?.get(settingId) ?? null);
+}
+
+/** Synchronous lookup once the map is loaded — undefined while still loading.
+ *  Lets UI that re-renders often draw the final state immediately (no flash). */
+export function getSettingAbcMetaSync(settingId: string): SettingAbcMeta | null | undefined {
+  if (!abcMetaMap) return undefined;
+  return abcMetaMap.get(settingId) ?? null;
 }

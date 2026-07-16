@@ -1,4 +1,4 @@
-import { getSettingAbcMeta } from '../recognition/indexStore';
+import { getSettingAbcMeta, getSettingAbcMetaSync, type SettingAbcMeta } from '../recognition/indexStore';
 import { theSessionKeyToAbc } from '../../services/theSessionService';
 import { showPreviewModal } from '../../components/fileViewer';
 import { iconElement, MusicNoteIcon } from '../../components/icons';
@@ -40,23 +40,34 @@ export function makeAbcNoteButton(settingId: string, displayName: string, size =
   // Same geometry as the slice play button: w-6 h-6 circle, icon flex-centered.
   const base = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
   const btn = document.createElement('button');
-  btn.className = `${base} bg-elevated text-border cursor-default`;
   btn.title = t('sessions.listenAbc');
-  btn.disabled = true;
   const icon = iconElement(MusicNoteIcon, size);
   // The glyph's visual mass sits right of its geometric centre — nudge left.
   (icon as HTMLElement).style.transform = 'translateX(-1px)';
   btn.appendChild(icon);
 
-  void getSettingAbcMeta(settingId).then(meta => {
+  const applyState = (meta: SettingAbcMeta | null) => {
     if (!meta?.abc) {
+      btn.disabled = true;
+      btn.className = `${base} bg-elevated text-border cursor-default`;
       btn.title = t('sessions.abcUnavailable');
       return;
     }
     btn.disabled = false;
     btn.className = `${base} bg-accent/10 text-accent hover:bg-accent/20 cursor-pointer`;
     btn.onclick = (e) => { e.stopPropagation(); showAbcPreview(displayName, meta); };
-  });
+  };
+
+  // Feeds re-render on every recognition event: draw the final state
+  // synchronously once the map is loaded, so the button never flashes.
+  const sync = getSettingAbcMetaSync(settingId);
+  if (sync !== undefined) {
+    applyState(sync);
+  } else {
+    btn.disabled = true;
+    btn.className = `${base} bg-elevated text-border cursor-default`;
+    void getSettingAbcMeta(settingId).then(applyState);
+  }
 
   return btn;
 }
