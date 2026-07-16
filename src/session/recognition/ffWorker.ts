@@ -1,6 +1,8 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { RecognitionAggregator, type AnnotationEvent } from './aggregator';
+import { AGG_CONFIG } from './aggregatorConfig';
+import { shiftContour } from './contourShift';
 import type { WindowResult, WindowCandidate } from '../model';
 import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, MIN_ANALYSIS_S } from '../sessionConfig';
 
@@ -92,6 +94,20 @@ function tailOfRing(n: number): Float32Array {
   return out;
 }
 
+/** Query the tune index with a contour; empty list when the query errors out. */
+function queryContour(f: FolkFriendWASM, contour: string): WindowCandidate[] {
+  const raw = JSON.parse(f.run_transcription_query(contour)) as RawQueryRecord[] | { error: string };
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 5).map(r => ({
+    tuneId: r.setting.tune_id,
+    settingId: r.setting_id,
+    displayName: r.display_name,
+    dance: r.setting.dance,
+    meter: r.setting.meter,
+    score: r.score,
+  }));
+}
+
 /** Feed a PCM signal into FolkFriend and return the analysis of it. */
 function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { result: WindowResult; abc: string | null } {
   const f = ff!;
@@ -109,29 +125,41 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   const contour = f.transcribe_pcm_buffer();
   // "No notes detected" comes back as a JSON error string, not an exception.
   if (contour.startsWith('{')) {
-    return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
-  }
-
-  const raw = JSON.parse(f.run_transcription_query(contour)) as RawQueryRecord[] | { error: string };
-  if (!Array.isArray(raw)) {
+    console.log(`[ff-window] ${tStart.toFixed(0)}–${tEnd.toFixed(0)}s: no notes detected`);
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
 
   // No score filtering here: the aggregator applies SCORE_FLOOR itself, and
   // the calibration dump needs the sub-floor scores to be tunable at all.
-  const candidates: WindowCandidate[] = raw
-    .slice(0, 5)
-    .map(r => ({
-      tuneId: r.setting.tune_id,
-      settingId: r.setting_id,
-      displayName: r.display_name,
-      dance: r.setting.dance,
-      meter: r.setting.meter,
-      score: r.score,
-    }));
+  let candidates = queryContour(f, contour);
+  let matchedContour = contour;
+
+  // Octave fallback: the index query has no transposition invariance and the
+  // index contours sit at fiddle register, so low instruments (Irish tenor
+  // banjo, an octave below the fiddle) transcribe an octave down and score
+  // junk. When the window would fall below SCORE_FLOOR anyway, retry with the
+  // contour lifted one octave and keep whichever the index scores higher —
+  // the decision stays with FolkFriend's own score, never a register guess.
+  let octaveLifted = false;
+  if ((candidates[0]?.score ?? 0) < AGG_CONFIG.SCORE_FLOOR) {
+    const lifted = shiftContour(contour, 12);
+    const liftedCandidates = lifted.length > 0 ? queryContour(f, lifted) : [];
+    if ((liftedCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
+      candidates = liftedCandidates;
+      matchedContour = lifted;
+      octaveLifted = true;
+    }
+  }
 
   let abc: string | null = null;
-  try { abc = f.contour_to_abc(contour); } catch { /* cosmetic only */ }
+  try { abc = f.contour_to_abc(matchedContour); } catch { /* cosmetic only */ }
+
+  // TEMP diagnostic (solo-query dropout investigation) — remove when done.
+  const top3 = candidates.slice(0, 3).map(c => `${c.displayName} ${c.score.toFixed(2)}`).join(' | ');
+  console.log(
+    `[ff-window] ${tStart.toFixed(0)}–${tEnd.toFixed(0)}s${octaveLifted ? ' (octave +12)' : ''}` +
+    ` top: ${top3 || '(none)'}\n  contour: ${matchedContour}\n  abc: ${abc ?? '(n/a)'}`
+  );
 
   return {
     result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates },

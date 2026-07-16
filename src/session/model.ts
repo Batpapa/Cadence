@@ -5,6 +5,7 @@ export type ConfidenceBucket = 'high' | 'medium' | 'low';
 
 export interface AnnotationEvidence {
   t: number;      // window start, seconds since session start
+  tEnd?: number;  // window end — absent on annotations persisted before the end-vote (2026-07)
   score: number;  // top-1 Needleman-Wunsch score [0,1]
   margin: number; // top-1 − top-2 score
 }
