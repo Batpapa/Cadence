@@ -194,6 +194,8 @@
   "card.logSession.qualityLabel": "Quality",
   "card.logSession.chip": "+ Log session",
 
+  "sessions.review.log": "Log review:",
+  "sessions.review.remove": "remove review",
   "rating.again": "✗ Again",
   "rating.hard": "△ Hard",
   "rating.good": "○ Good",

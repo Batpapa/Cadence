@@ -194,6 +194,8 @@
   "card.logSession.qualityLabel": "Qualité",
   "card.logSession.chip": "+ Enregistrer",
 
+  "sessions.review.log": "Noter la révision :",
+  "sessions.review.remove": "supprimer la révision",
   "rating.again": "✗ À revoir",
   "rating.hard": "△ Difficile",
   "rating.good": "○ Bien",
