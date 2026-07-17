@@ -100,35 +100,41 @@ export function showStudyModal(opts: StudyModalOpts): void {
   ctxBlock.append(ctxRow, ctxWarn);
   body.appendChild(ctxBlock);
 
-  // ── Weight by importance toggle ────────────────────────────────────────────
-  let useWeight = user.weightByImportance ?? true;
-
-  const weightRow = document.createElement('div');
-  weightRow.className = 'flex items-center justify-between gap-3';
-
-  const weightLabel = document.createElement('span');
-  weightLabel.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
-  weightLabel.textContent = t('settings.weightByImportance');
-
-  const pill = document.createElement('button');
-  pill.type = 'button';
-  pill.setAttribute('role', 'switch');
-
-  const renderPill = () => {
-    pill.setAttribute('aria-checked', String(useWeight));
-    pill.className = `relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useWeight ? 'bg-accent' : 'bg-border'}`;
-    pill.innerHTML = `<span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${useWeight ? 'translate-x-4' : 'translate-x-0'}"></span>`;
-  };
-  renderPill();
-
-  pill.onclick = () => {
-    useWeight = !useWeight;
-    void mutate(s => { s.weightByImportance = useWeight; });
+  // ── Toggles (persisted user settings, editable per study launch) ───────────
+  const mkSwitch = (labelText: string, initial: boolean, onChange: (v: boolean) => void): HTMLElement => {
+    let on = initial;
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between gap-3';
+    const label = document.createElement('span');
+    label.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
+    label.textContent = labelText;
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.setAttribute('role', 'switch');
+    const renderPill = () => {
+      pill.setAttribute('aria-checked', String(on));
+      pill.className = `relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${on ? 'bg-accent' : 'bg-border'}`;
+      pill.innerHTML = `<span class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0'}"></span>`;
+    };
     renderPill();
+    pill.onclick = () => { on = !on; onChange(on); renderPill(); };
+    row.append(label, pill);
+    return row;
   };
 
-  weightRow.append(weightLabel, pill);
-  body.appendChild(weightRow);
+  let useWeight = user.weightByImportance ?? true;
+  body.appendChild(mkSwitch(t('settings.weightByImportance'), useWeight, v => {
+    useWeight = v;
+    void mutate(s => { s.weightByImportance = v; });
+  }));
+
+  // Off = study as if the mastery threshold were 100%: mastered cards are
+  // proposed again. Study flow only — deck metrics keep the real threshold.
+  let exclMastered = user.excludeMastered ?? true;
+  body.appendChild(mkSwitch(t('study.excludeMastered'), exclMastered, v => {
+    exclMastered = v;
+    void mutate(s => { s.excludeMastered = v; });
+  }));
 
   // ── Divider ────────────────────────────────────────────────────────────────
   const divider = document.createElement('div');
@@ -184,10 +190,11 @@ export function showStudyModal(opts: StudyModalOpts): void {
       const ctxEntries = buildContextualEntries(pool, selectedContext, u);
       const ctxPool: Deck = { ...pool, entries: ctxEntries };
 
+      const excl = exclMastered;
       const pickers: Record<StudyStrategy, () => DeckEntry | null> = {
-        random:     () => pickRandom(u, pid, ctxPool, u.cardWorks),
-        optimal:    () => pickOptimal(u, pid, ctxPool, u.cards, u.cardWorks, w),
-        stochastic: () => pickStochastic(u, pid, ctxPool, u.cards, u.cardWorks, w),
+        random:     () => pickRandom(u, pid, ctxPool, u.cardWorks, excl),
+        optimal:    () => pickOptimal(u, pid, ctxPool, u.cards, u.cardWorks, w, excl),
+        stochastic: () => pickStochastic(u, pid, ctxPool, u.cards, u.cardWorks, w, excl),
       };
       const firstCard = pickers[s.id]();
 

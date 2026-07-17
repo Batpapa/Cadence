@@ -31,12 +31,13 @@ function pickNextCard(
   contextDeckId: string | null | undefined,
 ): DeckEntry | null {
   const profileId = user.currentProfileId;
-  const w = user.weightByImportance ?? true;
+  const w    = user.weightByImportance ?? true;
+  const excl = user.excludeMastered ?? true;
   const ctxEntries = buildContextualEntries(deck, contextDeckId, user);
   const ctxDeck: Deck = { ...deck, entries: ctxEntries };
-  if (strategy === 'random')     return pickRandom(user, profileId, ctxDeck, user.cardWorks);
-  if (strategy === 'optimal')    return pickOptimal(user, profileId, ctxDeck, user.cards, user.cardWorks, w);
-  if (strategy === 'stochastic') return pickStochastic(user, profileId, ctxDeck, user.cards, user.cardWorks, w);
+  if (strategy === 'random')     return pickRandom(user, profileId, ctxDeck, user.cardWorks, excl);
+  if (strategy === 'optimal')    return pickOptimal(user, profileId, ctxDeck, user.cards, user.cardWorks, w, excl);
+  if (strategy === 'stochastic') return pickStochastic(user, profileId, ctxDeck, user.cards, user.cardWorks, w, excl);
   return null;
 }
 
@@ -69,10 +70,11 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
   const total          = deck?.entries.length ?? 0;
   const ctxTotal       = ctxEntries.length;
   const excludedByCtx  = total - ctxTotal;
-  const candidateCount = ctxEntries.filter(e =>
-    !isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])
+  // `mastered` stays the real count (informational); eligibility follows the toggle.
+  const mastered = ctxEntries.filter(e =>
+    isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])
   ).length;
-  const mastered = ctxTotal - candidateCount;
+  const candidateCount = (user.excludeMastered ?? true) ? ctxTotal - mastered : ctxTotal;
   const canSkip  = candidateCount > 1;
 
   // Base route shape — carries full context for each navigate() call

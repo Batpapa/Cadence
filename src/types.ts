@@ -102,6 +102,10 @@ export interface User {
   // Study settings
   availabilityThreshold: number;
   weightByImportance: boolean;
+  /** Exclude mastered cards from study picks (default true). Off = study as if
+   *  the mastery threshold were 100% — study flow only, deck metrics keep the
+   *  real threshold. */
+  excludeMastered?: boolean;
   forgettingRate: number; // λ: scales S → S/λ for scheduling; 1 = FSRS default, >1 = faster forgetting
 
   // Profiles

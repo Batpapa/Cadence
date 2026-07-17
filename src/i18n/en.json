@@ -283,6 +283,7 @@
   "settings.availabilityThreshold": "Recall threshold (%)",
   "settings.availabilityThresholdHint": "Cards above this recall score are skipped during study sessions.",
   "settings.weightByImportance": "Weight by importance",
+  "study.excludeMastered": "Exclude mastered",
   "settings.weightByImportanceHint": "When enabled, a card contributes to deck knowledge proportionally to its importance rather than equally.",
   "settings.forgettingRate": "Forgetting speed",
   "settings.forgettingRateHint": "Scales how quickly cards are forgotten. Above 1 = faster forgetting → more frequent reviews. Default: 1.",
@@ -578,7 +579,7 @@
   "help.study.fsrs.heading": "Tips",
   "help.study.fsrs.1": "You don't need to review everything — Cadence will only show cards that need it. Trust the scheduler.",
   "help.study.fsrs.2": "Consistency matters more than session length. A few cards every day beats a large batch once a week.",
-  "help.study.fsrs.3": "Cards above your recall threshold are skipped automatically — they don't need reviewing yet.",
+  "help.study.fsrs.3": "Cards above your recall threshold are skipped automatically — they don't need reviewing yet. Disable \"Exclude mastered\" in the study options to review everything anyway.",
   "help.study.fsrs.4": "Hidden text (||…||) in the notes appears as an opaque pill — click it to reveal the answer.",
 
   "sidebar.modules": "Modules",
