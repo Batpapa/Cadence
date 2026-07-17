@@ -5,41 +5,46 @@ import {
 
 // ── Picking strategies ────────────────────────────────────────────────────────
 
-/** Cards not yet mastered by the user — the only ones eligible for study. */
+/** Cards eligible for study: the not-yet-mastered ones, or every card when
+ *  `excludeMastered` is off (study as if the mastery threshold were 100%). */
 function candidateEntries(
   user: User,
   profileId: string,
   deck: Deck,
-  cardWorks: Record<string, CardWork>
+  cardWorks: Record<string, CardWork>,
+  excludeMastered: boolean
 ): DeckEntry[] {
+  if (!excludeMastered) return [...deck.entries];
   return deck.entries.filter(entry => {
     const work = cardWorks[`${profileId}:${entry.cardId}`];
     return !isAvailable(user, work);
   });
 }
 
-/** Uniform random pick, excluding mastered cards. */
+/** Uniform random pick among eligible cards. */
 export function pickRandom(
   user: User,
   profileId: string,
   deck: Deck,
-  cardWorks: Record<string, CardWork>
+  cardWorks: Record<string, CardWork>,
+  excludeMastered = true
 ): DeckEntry | null {
-  const candidates = candidateEntries(user, profileId, deck, cardWorks);
+  const candidates = candidateEntries(user, profileId, deck, cardWorks, excludeMastered);
   if (candidates.length === 0) return null;
   return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
 }
 
-/** Deterministic: entry with highest marginal gain, excluding mastered cards. */
+/** Deterministic: eligible entry with highest marginal gain. */
 export function pickOptimal(
   user: User,
   profileId: string,
   deck: Deck,
   cards: Record<string, Card>,
   cardWorks: Record<string, CardWork>,
-  weighted = true
+  weighted = true,
+  excludeMastered = true
 ): DeckEntry | null {
-  const candidates = candidateEntries(user, profileId, deck, cardWorks);
+  const candidates = candidateEntries(user, profileId, deck, cardWorks, excludeMastered);
   if (candidates.length === 0) return null;
   const total = totalDeckImportance(deck, cards, weighted);
   let best: DeckEntry | null = null;
@@ -54,16 +59,17 @@ export function pickOptimal(
   return best ?? candidates[0] ?? null;
 }
 
-/** Weighted random by marginal gain, excluding mastered cards. */
+/** Weighted random by marginal gain among eligible cards. */
 export function pickStochastic(
   user: User,
   profileId: string,
   deck: Deck,
   cards: Record<string, Card>,
   cardWorks: Record<string, CardWork>,
-  weighted = true
+  weighted = true,
+  excludeMastered = true
 ): DeckEntry | null {
-  const candidates = candidateEntries(user, profileId, deck, cardWorks);
+  const candidates = candidateEntries(user, profileId, deck, cardWorks, excludeMastered);
   if (candidates.length === 0) return null;
   const total = totalDeckImportance(deck, cards, weighted);
   const gains = candidates.map(e => {

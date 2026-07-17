@@ -162,11 +162,13 @@ export function DeckView({ deckId }: { deckId: string }) {
             </div>
           </div>
           <div class="flex gap-2 shrink-0">
+            {/* Stays clickable when all cards are mastered: the study modal
+                hosts the "exclude mastered" toggle that unlocks that case. */}
             <button
-              class={noCards || allMastered
+              class={noCards
                 ? 'btn px-3 bg-elevated text-dim cursor-default text-sm font-medium'
                 : 'btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium'}
-              onClick={(!noCards && !allMastered) ? () => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId }) : undefined}
+              onClick={!noCards ? () => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId }) : undefined}
             >
               {t('deck.study')}
             </button>

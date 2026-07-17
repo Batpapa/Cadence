@@ -283,6 +283,7 @@
   "settings.availabilityThreshold": "Seuil de rappel (%)",
   "settings.availabilityThresholdHint": "Les cartes au-dessus de ce seuil de rappel sont ignorées pendant les sessions d'étude.",
   "settings.weightByImportance": "Pondérer par importance",
+  "study.excludeMastered": "Exclure les maîtrisées",
   "settings.weightByImportanceHint": "Lorsque cette option est activée, une carte contribue à la connaissance du paquet proportionnellement à son importance plutôt qu'à parts égales.",
   "settings.forgettingRate": "Vitesse d'oubli",
   "settings.forgettingRateHint": "Coefficient d'oubli. > 1 = oubli plus rapide → révisions plus fréquentes. Défaut : 1.",
@@ -578,7 +579,7 @@
   "help.study.fsrs.heading": "Conseils",
   "help.study.fsrs.1": "Pas besoin de tout réviser — Cadence ne vous montrera que les cartes qui en ont besoin. Faites confiance au planificateur.",
   "help.study.fsrs.2": "La régularité compte plus que la durée des sessions. Quelques cartes chaque jour valent mieux qu'un gros paquet une fois par semaine.",
-  "help.study.fsrs.3": "Les cartes au-dessus de votre seuil de rappel sont automatiquement ignorées — elles n'ont pas encore besoin d'être révisées.",
+  "help.study.fsrs.3": "Les cartes au-dessus de votre seuil de rappel sont automatiquement ignorées — elles n'ont pas encore besoin d'être révisées. Désactivez « Exclure les maîtrisées » dans les options d'étude pour tout réviser malgré tout.",
   "help.study.fsrs.4": "Le texte caché (||…||) dans les notes apparaît comme une pilule opaque — cliquez dessus pour révéler la réponse.",
 
   "sidebar.modules": "Modules",
