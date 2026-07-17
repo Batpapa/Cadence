@@ -2,6 +2,7 @@ import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { fileToEntry } from '../../utils';
 import { iconElement, ArrowLeftIcon, TrashIcon, MicIcon, FileAudioIcon } from '../../components/icons';
+import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { confirmModal, showModal, closeModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import { LiveSession } from '../liveSession';
@@ -114,6 +115,7 @@ const BUCKET_BADGE: Record<SessionAnnotation['bucket'], string> = {
   low: 'bg-elevated text-dim border border-border',
 };
 
+
 const BUCKET_SEGMENT: Record<SessionAnnotation['bucket'], string> = {
   high: 'rgb(34 197 94 / 0.75)',
   medium: 'rgb(245 158 11 / 0.75)',
@@ -154,9 +156,9 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
   if (opts.onPlay) {
     const playing = opts.playingId === ann.id;
     const playBtn = document.createElement('button');
-    playBtn.className = `w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors text-[10px] ${
+    playBtn.className = `w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
       playing ? 'bg-accent text-white' : 'bg-accent/10 text-accent hover:bg-accent/20'}`;
-    playBtn.textContent = playing ? '⏸' : '▶';
+    playBtn.innerHTML = playing ? pauseIcon(10) : playIcon(10);
     playBtn.title = t('sessions.playSlice');
     playBtn.onclick = (e) => { e.stopPropagation(); opts.onPlay!(ann); };
     row1.appendChild(playBtn);
