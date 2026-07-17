@@ -169,10 +169,14 @@ export class ImportSession {
 
   private async save(): Promise<RecordedSession> {
     this.setPhase('saving');
+    // lastModified is when the file was finalized, i.e. the END of the
+    // recording — subtract the duration so session.date is its t=0, aligning
+    // review timestamps (summary screen) with the live-session convention.
+    const endMs = this.file.lastModified || Date.now();
     const session: RecordedSession = {
       id: this.sessionId,
       name: this.file.name.replace(/\.[^.]+$/, ''),
-      date: new Date(this.file.lastModified || Date.now()).toISOString(),
+      date: new Date(endMs - this.source!.duration * 1000).toISOString(),
       duration: this.source!.duration,
       mimeType: this.file.type || 'application/octet-stream',
       source: 'import',
