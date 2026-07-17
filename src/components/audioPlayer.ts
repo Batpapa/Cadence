@@ -1,6 +1,7 @@
 import { SoundTouch, SimpleFilter, WebAudioBufferSource, getWebAudioNode } from '@soundtouchjs/core';
 import type { FileEntry } from '../types';
 import { t } from '../services/i18nService';
+import { playIcon, pauseIcon, stopIcon, repeatIcon } from './playbackIcons';
 
 // ── Global audio context (one at a time) ────────────────────────────────────
 
@@ -125,10 +126,10 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   const transport = document.createElement('div');
   transport.style.cssText = 'display:none;align-items:center;gap:6px;flex-wrap:wrap';
 
-  const mkBtn = (text: string, title: string): HTMLButtonElement => {
+  const mkBtn = (html: string, title: string): HTMLButtonElement => {
     const b = document.createElement('button');
-    b.textContent = text; b.title = title;
-    b.style.cssText = 'padding:3px 8px;font-size:13px;background:transparent;border:1px solid var(--color-border);border-radius:4px;color:var(--color-muted);cursor:pointer;font-family:"IBM Plex Mono",monospace;line-height:1.4';
+    b.innerHTML = html; b.title = title;
+    b.style.cssText = 'padding:5px 8px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--color-border);border-radius:4px;color:var(--color-muted);cursor:pointer;line-height:1';
     b.onmouseenter = () => { b.style.borderColor = 'var(--color-accent)'; b.style.color = 'var(--color-primary)'; };
     b.onmouseleave = () => { if (b.dataset['active'] !== '1') { b.style.borderColor = 'var(--color-border)'; b.style.color = 'var(--color-muted)'; } };
     return b;
@@ -142,9 +143,9 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
     return b;
   };
 
-  const playBtn     = mkBtn('▶',  t('audioPlayer.play'));
-  const stopBtn     = mkBtn('■',  t('audioPlayer.stop'));
-  const repeatBtn   = mkBtn('↻',  t('audioPlayer.repeat'));
+  const playBtn     = mkBtn(playIcon(),   t('audioPlayer.play'));
+  const stopBtn     = mkBtn(stopIcon(),   t('audioPlayer.stop'));
+  const repeatBtn   = mkBtn(repeatIcon(), t('audioPlayer.repeat'));
   const setStartBtn = mkSmall('[←', t('audioPlayer.setStart.title'));
   const setEndBtn   = mkSmall('→]', t('audioPlayer.setEnd.title'));
   const resetBtn    = mkSmall(t('audioPlayer.reset'), t('audioPlayer.reset.title'));
@@ -268,7 +269,7 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
     timeCurrent.textContent = fmtTime(pos);
     timeRegion.textContent  = `${fmtTime(regionStart)} → ${fmtTime(regionEnd)}`;
     timeDur.textContent     = fmtTime(duration);
-    playBtn.textContent     = playing ? '⏸' : '▶';
+    playBtn.innerHTML       = playing ? pauseIcon() : playIcon();
   };
 
   // ── SoundTouch pipeline ──
