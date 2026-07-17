@@ -1,4 +1,4 @@
-import type { AppContext } from '../../types';
+import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { fileToEntry } from '../../utils';
 import { iconElement, ArrowLeftIcon, TrashIcon, MicIcon, FileAudioIcon } from '../../components/icons';
@@ -131,6 +131,81 @@ interface AnnotationCardOptions {
   onPlay?: (ann: SessionAnnotation) => void;
   playingId?: string | null;
   extraControls?: (el: HTMLElement) => void; // summary-only controls appended to the card
+  /** Unix ms of the session's t=0. When set, closed annotations of known cards
+   *  get the "log this as a review" control (summary screen only). */
+  sessionStartMs?: number;
+}
+
+// ── Review logging from a recognised tune ─────────────────────────────────────
+// "I played it at this session" = one review entry at the annotation's end
+// time, in the same history the card view and FSRS read. The exact timestamp
+// doubles as the marker that this annotation was already logged: when an entry
+// exists at that instant the four rating buttons are replaced by a single
+// remove control.
+
+const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: string; cls: string; labelKey: string }> = [
+  { rating: 'again', glyph: '✗', cls: 'text-danger',  labelKey: 'rating.again' },
+  { rating: 'hard',  glyph: '△', cls: 'text-warn',    labelKey: 'rating.hard' },
+  { rating: 'good',  glyph: '○', cls: 'text-accent',  labelKey: 'rating.good' },
+  { rating: 'easy',  glyph: '✓', cls: 'text-success', labelKey: 'rating.easy' },
+];
+
+function reviewLogControl(cardId: string, ts: number, ctx: AppContext): HTMLElement {
+  const wrap = document.createElement('span');
+  wrap.className = 'inline-flex items-center gap-1.5';
+
+  const render = () => {
+    wrap.innerHTML = '';
+    const user = getContext().user;
+    const existing = user.cardWorks[`${user.currentProfileId}:${cardId}`]?.history.find(e => e.ts === ts);
+
+    if (existing) {
+      const glyph = RATING_GLYPHS.find(r => r.rating === existing.rating);
+      const del = document.createElement('button');
+      del.className = 'text-xs text-muted cursor-pointer inline-flex items-center gap-1 hover:text-danger';
+      del.title = new Date(ts).toLocaleString();
+      const mark = document.createElement('span');
+      mark.className = glyph?.cls ?? '';
+      mark.textContent = glyph?.glyph ?? '';
+      const lbl = document.createElement('span');
+      lbl.className = 'hover:underline';
+      lbl.textContent = t('sessions.review.remove');
+      del.append(mark, lbl);
+      del.onclick = () => {
+        void ctx.mutate(s => {
+          const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
+          const i = h?.findIndex(e => e.ts === ts) ?? -1;
+          if (h && i !== -1) h.splice(i, 1);
+        }).then(render);
+      };
+      wrap.appendChild(del);
+      return;
+    }
+
+    const label = document.createElement('span');
+    label.className = 'text-xs text-dim';
+    label.textContent = t('sessions.review.log');
+    wrap.appendChild(label);
+
+    for (const { rating, glyph, cls, labelKey } of RATING_GLYPHS) {
+      const btn = document.createElement('button');
+      btn.className = `text-xs cursor-pointer transition-transform hover:scale-125 ${cls}`;
+      btn.textContent = glyph;
+      btn.title = t(labelKey);
+      btn.onclick = () => {
+        void ctx.mutate(s => {
+          const key = `${s.currentProfileId}:${cardId}`;
+          if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
+          s.cardWorks[key]!.history.push({ ts, rating });
+          s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
+        }).then(render);
+      };
+      wrap.appendChild(btn);
+    }
+  };
+
+  render();
+  return wrap;
 }
 
 function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HTMLElement {
@@ -193,6 +268,9 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
     openBtn.textContent = t('sessions.openCard');
     openBtn.onclick = () => opts.onOpenCard?.(known.id);
     row3.appendChild(openBtn);
+    if (opts.sessionStartMs !== undefined && ann.end !== null) {
+      row3.appendChild(reviewLogControl(known.id, opts.sessionStartMs + ann.end * 1000, opts.ctx));
+    }
   } else {
     const addBtn = document.createElement('button');
     addBtn.className = 'text-xs text-accent hover:underline cursor-pointer';
@@ -865,6 +943,7 @@ function renderSummary(host: SessionModuleHost, session: RecordedSession): void 
         ctx: host.ctx,
         onPlay: playSlice,
         playingId,
+        sessionStartMs: Date.parse(session.date),
         onRelabel: (a, alt) => {
           a.tuneId = alt.tuneId;
           a.settingId = alt.settingId;
