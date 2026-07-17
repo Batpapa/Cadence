@@ -137,7 +137,8 @@ interface AnnotationCardOptions {
   playingId?: string | null;
   extraControls?: (el: HTMLElement) => void; // summary-only controls appended to the card
   /** Unix ms of the session's t=0. When set, closed annotations of known cards
-   *  get the "log this as a review" control (summary screen only). */
+   *  get the "log this as a review" control (summary + live feed; the import
+   *  feed has no date until the user sets one in the summary). */
   sessionStartMs?: number;
 }
 
@@ -778,6 +779,7 @@ function renderLive(host: SessionModuleHost): void {
         onRelabel: (a, alt) => { live.relabel(a.id, alt); },
         onOpenCard: (cardId) => { host.closeModal(); host.ctx.navigate({ view: 'card', cardId }); },
         onCardAdded: () => renderFeed(live.getAnnotations()),
+        sessionStartMs: live.startedAt || undefined,
       }));
     }
     if (nearBottom) body.scrollTop = body.scrollHeight;
