@@ -291,13 +291,16 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
     row3.appendChild(addBtn);
   }
 
-  const tsLink = document.createElement('a');
-  tsLink.className = 'text-xs text-dim hover:text-primary hover:underline';
-  tsLink.href = `https://thesession.org/tunes/${ann.tuneId}`;
-  tsLink.target = '_blank';
-  tsLink.rel = 'noopener';
-  tsLink.textContent = t('sessions.viewOnTheSession');
-  row3.appendChild(tsLink);
+  // Redundant once the card exists — its page already links to the source.
+  if (!known) {
+    const tsLink = document.createElement('a');
+    tsLink.className = 'text-xs text-dim hover:text-primary hover:underline';
+    tsLink.href = `https://thesession.org/tunes/${ann.tuneId}`;
+    tsLink.target = '_blank';
+    tsLink.rel = 'noopener';
+    tsLink.textContent = t('sessions.viewOnTheSession');
+    row3.appendChild(tsLink);
+  }
 
   el.append(row1, row2, row3);
 
