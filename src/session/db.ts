@@ -72,7 +72,8 @@ export async function listSessions(): Promise<RecordedSession[]> {
   const keys = (await d.getAllKeys(SESSIONS_STORE)) as string[];
   const metaKeys = keys.filter(k => !k.endsWith(':audio'));
   const sessions = await Promise.all(metaKeys.map(k => d.get(SESSIONS_STORE, k) as Promise<RecordedSession>));
-  return sessions.map(s => migrateSession(s)!).sort((a, b) => b.date.localeCompare(a.date));
+  // Undated sessions (fresh imports) sort first — they're the current work.
+  return sessions.map(s => migrateSession(s)!).sort((a, b) => (b.date ?? '￿').localeCompare(a.date ?? '￿'));
 }
 
 // ── Recording chunks (crash recovery) ─────────────────────────────────────────

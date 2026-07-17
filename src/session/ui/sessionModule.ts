@@ -1,7 +1,7 @@
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { fileToEntry } from '../../utils';
-import { iconElement, ArrowLeftIcon, TrashIcon, MicIcon, FileAudioIcon } from '../../components/icons';
+import { iconElement, TrashIcon, MicIcon, FileAudioIcon } from '../../components/icons';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { confirmModal, showModal, closeModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
@@ -58,8 +58,10 @@ function fmtLongTime(s: number): string {
   return fmtTime(s);
 }
 
-function defaultSessionName(dateIso: string): string {
-  return t('sessions.defaultName', { date: new Date(dateIso).toLocaleDateString() });
+function defaultSessionName(dateIso: string | null): string {
+  return dateIso
+    ? t('sessions.defaultName', { date: new Date(dateIso).toLocaleDateString() })
+    : t('sessions.defaultNameNoDate');
 }
 
 function indexProgressText(p: IndexProgress): string {
@@ -90,15 +92,17 @@ function fmtEta(etaS: number): string {
 
 // ── Shared bits ───────────────────────────────────────────────────────────────
 
-function moduleHeader(host: SessionModuleHost, title: string, onBack: () => void): void {
+/** Builds the module header; returns the title element so screens with an
+ *  editable name (summary) can keep it in sync. */
+function moduleHeader(host: SessionModuleHost, title: string, onBack: () => void): HTMLElement {
   host.header.innerHTML = '';
   const leftGroup = document.createElement('div');
   leftGroup.className = 'flex items-center gap-2';
 
+  // Same back button as the library / TheSession-import headers.
   const backBtn = document.createElement('button');
-  backBtn.className = 'p-1 rounded text-dim hover:text-primary hover:bg-surface transition-colors cursor-pointer';
-  backBtn.title = t('sidebar.back');
-  backBtn.appendChild(iconElement(ArrowLeftIcon, 14));
+  backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
+  backBtn.textContent = '←';
   backBtn.onclick = onBack;
 
   const titleEl = document.createElement('h2');
@@ -107,6 +111,7 @@ function moduleHeader(host: SessionModuleHost, title: string, onBack: () => void
 
   leftGroup.append(backBtn, titleEl);
   host.header.append(leftGroup, host.makeCloseBtn());
+  return titleEl;
 }
 
 const BUCKET_BADGE: Record<SessionAnnotation['bucket'], string> = {
@@ -436,7 +441,8 @@ function renderLibrary(host: SessionModuleHost): void {
 
       const metaEl = document.createElement('div');
       metaEl.className = 'text-xs text-dim';
-      metaEl.textContent = `${new Date(session.date).toLocaleDateString()} · ${fmtLongTime(session.duration)} · ${t('sessions.tunesCount', { n: session.annotations.length })}`;
+      const datePart = session.date ? `${new Date(session.date).toLocaleDateString()} · ` : '';
+      metaEl.textContent = `${datePart}${fmtLongTime(session.duration)} · ${t('sessions.tunesCount', { n: session.annotations.length })}`;
 
       textWrap.append(nameEl, metaEl);
       row.appendChild(textWrap);
@@ -828,7 +834,8 @@ function renderLive(host: SessionModuleHost): void {
 // ── Screen: summary ───────────────────────────────────────────────────────────
 
 function renderSummary(host: SessionModuleHost, session: RecordedSession): void {
-  moduleHeader(host, session.name || defaultSessionName(session.date), () => renderLibrary(host));
+  const headerTitle = moduleHeader(host, session.name || defaultSessionName(session.date), () => renderLibrary(host));
+  const syncHeader = () => { headerTitle.textContent = session.name || defaultSessionName(session.date); };
   const body = host.body;
   body.innerHTML = '';
 
@@ -842,9 +849,55 @@ function renderSummary(host: SessionModuleHost, session: RecordedSession): void 
   titleInp.value = session.name || defaultSessionName(session.date);
   titleInp.addEventListener('blur', () => {
     const val = titleInp.value.trim();
-    if (val) { session.name = val; persist(); }
+    if (val) { session.name = val; persist(); syncHeader(); }
   });
   body.appendChild(titleInp);
+
+  // ── Session start date (t=0 of every review logged from this session).
+  // Optional: live sessions arrive with one, imports without. Erasable — the
+  // review-log controls only exist while a date is set.
+  const toLocalInput = (iso: string): string => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const dateRow = document.createElement('div');
+  dateRow.className = 'flex items-center gap-2 mt-2';
+  const dateInp = document.createElement('input');
+  dateInp.type = 'datetime-local';
+  dateInp.className = 'input text-sm';
+  dateInp.value = session.date ? toLocalInput(session.date) : '';
+  dateInp.max = toLocalInput(new Date().toISOString());
+  const dateClear = document.createElement('button');
+  dateClear.className = 'text-xs text-dim hover:text-danger cursor-pointer shrink-0';
+  dateClear.textContent = t('sessions.dateClear');
+  const dateNow = document.createElement('button');
+  dateNow.className = 'text-xs text-dim hover:text-accent cursor-pointer shrink-0';
+  dateNow.textContent = t('sessions.dateNow');
+  const syncBtns = () => {
+    dateClear.style.display = session.date ? '' : 'none';
+    dateNow.style.display   = session.date ? 'none' : '';
+  };
+  const applyDate = (date: string | null) => {
+    session.date = date;
+    dateInp.value = date ? toLocalInput(date) : '';
+    syncBtns();
+    syncHeader(); // an unnamed session's default name embeds the date
+    persist();
+    renderList(); // review-log controls (dis)appear / re-anchor on the new t=0
+  };
+  dateInp.addEventListener('change', () => {
+    if (!dateInp.value) { applyDate(null); return; }
+    // 'YYYY-MM-DDTHH:mm' without offset parses as local time — what the picker shows.
+    const ms = Date.parse(dateInp.value);
+    if (Number.isNaN(ms) || ms > Date.now()) { dateInp.value = session.date ? toLocalInput(session.date) : ''; return; }
+    applyDate(new Date(ms).toISOString());
+  });
+  dateClear.onclick = () => applyDate(null);
+  dateNow.onclick = () => applyDate(new Date().toISOString());
+  syncBtns();
+  dateRow.append(dateInp, dateNow, dateClear);
+  body.appendChild(dateRow);
 
   // ── Audio player
   const audio = document.createElement('audio');
@@ -946,7 +999,7 @@ function renderSummary(host: SessionModuleHost, session: RecordedSession): void 
         ctx: host.ctx,
         onPlay: playSlice,
         playingId,
-        sessionStartMs: Date.parse(session.date),
+        sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
         onRelabel: (a, alt) => {
           a.tuneId = alt.tuneId;
           a.settingId = alt.settingId;

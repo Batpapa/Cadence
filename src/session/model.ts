@@ -36,7 +36,10 @@ export interface SessionAnnotation {
 export interface RecordedSession {
   id: string;
   name: string;
-  date: string;        // ISO
+  /** ISO timestamp of the session's t=0. Live recordings set it to the
+   *  recording start; file imports start with null (file mtime is unreliable).
+   *  Editable and erasable in the summary screen — review logging requires it. */
+  date: string | null;
   duration: number;    // seconds
   mimeType: string;
   /** 'live' = mic recording; 'import' = user-provided audio file (stored as-is). */

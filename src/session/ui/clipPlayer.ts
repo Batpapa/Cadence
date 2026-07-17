@@ -32,7 +32,10 @@ export async function showClipModal(clip: SessionClipAttachment): Promise<void> 
 
   const info = document.createElement('p');
   info.className = 'text-xs text-dim';
-  info.textContent = `${meta?.name || t('sessions.defaultName', { date: new Date(meta?.date ?? 0).toLocaleDateString() })} · ${fmtTime(clip.start)} – ${fmtTime(clip.end)}`;
+  const fallbackName = meta?.date
+    ? t('sessions.defaultName', { date: new Date(meta.date).toLocaleDateString() })
+    : t('sessions.defaultNameNoDate');
+  info.textContent = `${meta?.name || fallbackName} · ${fmtTime(clip.start)} – ${fmtTime(clip.end)}`;
 
   const audio = document.createElement('audio');
   audio.controls = true;
