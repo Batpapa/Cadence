@@ -370,7 +370,9 @@ function renderLibrary(host: SessionModuleHost): void {
 
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = 'audio/*';
+  // No `accept` filter: on iOS Safari it's known to hide some m4a containers
+  // depending on provenance (iCloud/Messages/third-party apps) — the card
+  // attachment picker (attachmentList.ts) has never had this filter either.
   fileInput.style.display = 'none';
   fileInput.addEventListener('change', () => {
     const file = fileInput.files?.[0];
