@@ -100,6 +100,16 @@ export class MicSource implements PcmSource {
     await attachPcmWorklet(this.audioContext, this._stream, channel.port2);
   }
 
+  /** Suspends the whole graph: worklet (recognition feed) and recording tap
+   *  both stop producing audio in the same tick — no per-consumer wiring needed. */
+  async suspend(): Promise<void> {
+    await this.audioContext?.suspend();
+  }
+
+  async resume(): Promise<void> {
+    await this.audioContext?.resume();
+  }
+
   stop(): void {
     this._stream?.getTracks().forEach(trk => trk.stop());
     this._stream = null;

@@ -12,6 +12,7 @@ import { extractClipMp3 } from '../audio/clipExtract';
 import { makeAbcNoteButton } from './abcPreview';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
 import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta } from '../db';
+import { recoverOrphanedSessions } from '../recovery';
 import { getContext } from '../../store';
 import type { RecordedSession, SessionAnnotation, WindowResult } from '../model';
 import type { IndexProgress } from '../recognition/indexStore';
@@ -410,7 +411,7 @@ function renderLibrary(host: SessionModuleHost): void {
   listWrap.className = 'mt-4 space-y-2';
   body.appendChild(listWrap);
 
-  void listSessions().then(sessions => {
+  void recoverOrphanedSessions(activeLive?.sessionId).then(() => listSessions()).then(sessions => {
     if (sessions.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'text-xs text-dim text-center py-4';
@@ -714,11 +715,16 @@ function renderLive(host: SessionModuleHost): void {
   vuFill.style.width = '0%';
   vu.appendChild(vuFill);
 
+  const pauseBtn = document.createElement('button');
+  pauseBtn.className = 'btn-ghost border border-border w-8 h-8 p-0 rounded-full flex items-center justify-center shrink-0';
+  pauseBtn.innerHTML = pauseIcon(12);
+  pauseBtn.title = t('sessions.pause');
+
   const stopBtn = document.createElement('button');
   stopBtn.className = 'btn-danger px-3 shrink-0';
   stopBtn.textContent = t('sessions.stop');
 
-  statusBar.append(recDot, recLbl, chrono, vu, stopBtn);
+  statusBar.append(recDot, recLbl, chrono, vu, pauseBtn, stopBtn);
 
   const initStatus = document.createElement('p');
   initStatus.className = 'text-xs text-dim mt-2 text-center';
@@ -763,11 +769,30 @@ function renderLive(host: SessionModuleHost): void {
     rafId = requestAnimationFrame(vuLoop);
   };
 
+  // Idempotent: safe to call again on resume without leaking a second interval/rAF loop.
   const startTimers = () => {
+    clearInterval(chronoId);
+    cancelAnimationFrame(rafId);
+    chrono.textContent = fmtLongTime(live.getElapsedMs() / 1000);
     chronoId = window.setInterval(() => {
-      chrono.textContent = fmtLongTime((Date.now() - live.startedAt) / 1000);
+      chrono.textContent = fmtLongTime(live.getElapsedMs() / 1000);
     }, 1000);
     rafId = requestAnimationFrame(vuLoop);
+  };
+
+  const stopTimers = () => {
+    clearInterval(chronoId);
+    cancelAnimationFrame(rafId);
+    vuFill.style.width = '0%';
+  };
+
+  const setPausedUi = (paused: boolean) => {
+    recDot.classList.toggle('bg-danger', !paused);
+    recDot.classList.toggle('animate-pulse', !paused);
+    recDot.classList.toggle('bg-dim', paused);
+    recLbl.textContent = paused ? t('sessions.paused') : 'REC';
+    pauseBtn.innerHTML = paused ? playIcon(12) : pauseIcon(12);
+    pauseBtn.title = paused ? t('sessions.resume') : t('sessions.pause');
   };
 
   const renderFeed = (annotations: SessionAnnotation[]) => {
@@ -789,7 +814,11 @@ function renderLive(host: SessionModuleHost): void {
     onPhase: (phase) => {
       if (phase === 'recording') {
         initStatus.textContent = '';
+        setPausedUi(false);
         startTimers();
+      } else if (phase === 'paused') {
+        setPausedUi(true);
+        stopTimers();
       } else if (phase === 'error') {
         cleanup();
       }
@@ -812,15 +841,27 @@ function renderLive(host: SessionModuleHost): void {
 
   // If we re-entered a session already running (modal was closed and reopened):
   if (live.getPhase() === 'recording') {
+    setPausedUi(false);
     startTimers();
+    renderFeed(live.getAnnotations());
+  } else if (live.getPhase() === 'paused') {
+    setPausedUi(true);
+    chrono.textContent = fmtLongTime(live.getElapsedMs() / 1000);
     renderFeed(live.getAnnotations());
   } else if (live.getPhase() === 'initializing') {
     initStatus.textContent = t('sessions.initializing');
   }
 
+  pauseBtn.onclick = () => {
+    if (live.getPhase() === 'recording') void live.pause();
+    else if (live.getPhase() === 'paused') void live.resume();
+  };
+
   stopBtn.onclick = async () => {
     stopBtn.disabled = true;
     stopBtn.classList.add('opacity-50');
+    pauseBtn.disabled = true;
+    pauseBtn.classList.add('opacity-50');
     cleanup();
     try {
       const session = await live.stop();

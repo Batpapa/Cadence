@@ -44,6 +44,9 @@ export interface RecordedSession {
   mimeType: string;
   /** 'live' = mic recording; 'import' = user-provided audio file (stored as-is). */
   source: 'live' | 'import';
+  /** 'recording' = draft written while a live recording is still in progress
+   *  (crash/refresh recovery); absent once the session is finalized. */
+  status?: 'recording' | 'done';
   annotations: SessionAnnotation[];
   // The audio Blob lives in IndexedDB under the session id (see session db).
 }
