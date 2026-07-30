@@ -1,4 +1,4 @@
-import type { AppContext } from '../types';
+import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
 import { parseCardPackage } from '../services/importExport';
 import { downloadShare } from '../services/shareService';
@@ -11,6 +11,30 @@ import {
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { buildIrishTuneInfoBody } from './irishTuneInfoImport';
+
+// ── Shared: import a batch of cards from a .cdc package (file or share key) ────
+// Dedupes on externalId when present (two independent shares of the same
+// TheSession tune land on two different card ids) so the same tune isn't
+// re-created — the already-owned card is linked into the target deck instead.
+
+async function importCardPackage(cards: Card[], deckIds: Iterable<string>): Promise<string> {
+  let imported = 0;
+  await mutate(s => {
+    for (const card of cards) {
+      const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : s.cards[card.id];
+      if (!existing) { s.cards[card.id] = card; imported++; }
+      const targetId = existing?.id ?? card.id;
+      for (const deckId of deckIds) {
+        const deck = s.decks[deckId]; if (!deck) continue;
+        if (!deck.entries.some(e => e.cardId === targetId)) deck.entries.push({ cardId: targetId });
+      }
+    }
+  });
+  const skipped = cards.length - imported;
+  let summary = t('theSession.status.batchDone', { count: imported });
+  if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';
+  return summary;
+}
 
 // ── Tab helpers ───────────────────────────────────────────────────────────────
 
@@ -575,20 +599,7 @@ export function showNewCardModal(ctx: AppContext): void {
         pickBtn.disabled = true; status.textContent = t('newCard.import.importing');
         try {
           const cards = await parseCardPackage(file);
-          let imported = 0;
-          await mutate(s => {
-            for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; imported++; } }
-            for (const deckId of selectedDeckIds) {
-              const deck = s.decks[deckId]; if (!deck) continue;
-              for (const card of cards) {
-                if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
-              }
-            }
-          });
-          const skipped = cards.length - imported;
-          let summary = t('theSession.status.batchDone', { count: imported });
-          if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';
-          status.textContent = summary;
+          status.textContent = await importCardPackage(cards, selectedDeckIds);
         } catch (e) {
           status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
         } finally { pickBtn.disabled = false; }
@@ -620,20 +631,7 @@ export function showNewCardModal(ctx: AppContext): void {
         const text = await downloadShare(key);
         const file = new File([text], `share-${key}.cdc`, { type: 'application/octet-stream' });
         const cards = await parseCardPackage(file);
-        let imported = 0;
-        await mutate(s => {
-          for (const card of cards) { if (!s.cards[card.id]) { s.cards[card.id] = card; imported++; } }
-          for (const deckId of selectedDeckIds) {
-            const deck = s.decks[deckId]; if (!deck) continue;
-            for (const card of cards) {
-              if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
-            }
-          }
-        });
-        const skipped = cards.length - imported;
-        let summary = t('theSession.status.batchDone', { count: imported });
-        if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';
-        status.textContent = summary;
+        status.textContent = await importCardPackage(cards, selectedDeckIds);
       } catch (e) {
         status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
       } finally { importBtn.disabled = false; }
