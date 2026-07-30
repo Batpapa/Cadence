@@ -14,7 +14,7 @@ import type { IndexProgress } from './recognition/indexStore';
 // Time source of truth is the worker's sample counter; recorder and worklet
 // start in the same frame (residual offset < 300 ms, accepted).
 
-export type LiveSessionPhase = 'idle' | 'initializing' | 'recording' | 'stopping' | 'done' | 'error';
+export type LiveSessionPhase = 'idle' | 'initializing' | 'recording' | 'paused' | 'stopping' | 'done' | 'error';
 
 export interface LiveSessionCallbacks {
   onPhase?: (phase: LiveSessionPhase) => void;
@@ -33,6 +33,8 @@ export class LiveSession {
   private recorder: SessionFileRecorder | null = null;
   private wakeLock = new WakeLockManager();
   private annotations = new Map<string, SessionAnnotation>();
+  private pauseStartedAt = 0;
+  private pausedAccumMs = 0;
 
   readonly sessionId = crypto.randomUUID();
   startedAt = 0;
@@ -62,6 +64,30 @@ export class LiveSession {
     return this.mic.getLevel();
   }
 
+  /** Elapsed recording time, excluding time spent paused. */
+  getElapsedMs(): number {
+    if (!this.startedAt) return 0;
+    const pausedSoFar = this.phase === 'paused'
+      ? this.pausedAccumMs + (Date.now() - this.pauseStartedAt)
+      : this.pausedAccumMs;
+    return Date.now() - this.startedAt - pausedSoFar;
+  }
+
+  /** Writes the in-progress session so a crash/refresh can be recovered later. */
+  private persistDraft(): void {
+    const session: RecordedSession = {
+      id: this.sessionId,
+      name: '',
+      date: new Date(this.startedAt).toISOString(),
+      duration: this.getElapsedMs() / 1000,
+      mimeType: this.recorder?.mimeType ?? '',
+      source: 'live',
+      status: 'recording',
+      annotations: this.getAnnotations(),
+    };
+    void saveSessionMeta(session).catch(() => { /* best-effort — stop() still writes the final copy */ });
+  }
+
   async start(): Promise<void> {
     try {
       this.setPhase('initializing');
@@ -85,6 +111,7 @@ export class LiveSession {
       this.recorder = new SessionFileRecorder(this.mic.recordingStream, this.sessionId);
       this.recorder.start();
       this.startedAt = Date.now();
+      this.persistDraft();
 
       await this.wakeLock.start();
       this.setPhase('recording');
@@ -115,6 +142,7 @@ export class LiveSession {
         this.annotations.set(ev.annotation.id, ev.annotation);
       }
     }
+    this.persistDraft();
     this.cb.onAnnotations?.(events, this.getAnnotations());
   }
 
@@ -130,7 +158,26 @@ export class LiveSession {
       displayName: alt.displayName,
       userConfirmed: true,
     });
+    this.persistDraft();
     this.cb.onAnnotations?.([], this.getAnnotations());
+  }
+
+  /** Pauses the whole capture graph (recognition feed + recorder) in one shot —
+   *  the worker's sample clock simply stops advancing, no offset bookkeeping needed. */
+  async pause(): Promise<void> {
+    if (this.phase !== 'recording') return;
+    this.recorder?.pause();
+    await this.mic.suspend();
+    this.pauseStartedAt = Date.now();
+    this.setPhase('paused');
+  }
+
+  async resume(): Promise<void> {
+    if (this.phase !== 'paused') return;
+    await this.mic.resume();
+    this.recorder?.resume();
+    this.pausedAccumMs += Date.now() - this.pauseStartedAt;
+    this.setPhase('recording');
   }
 
   /** Stops everything and persists the session (audio + annotations). */

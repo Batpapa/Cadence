@@ -26,6 +26,8 @@ export class SessionFileRecorder {
   private recordingId: string;
   private seq = 0;
   private startedAt = 0;
+  private pausedMs = 0;
+  private pausedAt = 0;
   private pendingWrites: Promise<void>[] = [];
   readonly mimeType: string;
 
@@ -47,8 +49,24 @@ export class SessionFileRecorder {
     this.recorder.start(RECORDER_TIMESLICE_MS);
   }
 
+  pause(): void {
+    if (this.recorder.state !== 'recording') return;
+    this.recorder.pause();
+    this.pausedAt = Date.now();
+  }
+
+  resume(): void {
+    if (this.recorder.state !== 'paused') return;
+    this.pausedMs += Date.now() - this.pausedAt;
+    this.recorder.resume();
+  }
+
   /** Stops and returns the final session file (duration-fixed for webm). */
   async stop(): Promise<{ blob: Blob; mimeType: string; durationMs: number }> {
+    // Stopping directly from a paused state (no resume() in between) still
+    // needs the trailing pause gap folded in.
+    if (this.recorder.state === 'paused') this.pausedMs += Date.now() - this.pausedAt;
+
     const stopped = new Promise<void>(resolve => {
       this.recorder.onstop = () => resolve();
     });
@@ -56,7 +74,7 @@ export class SessionFileRecorder {
     await stopped;
     await Promise.all(this.pendingWrites);
 
-    const durationMs = Date.now() - this.startedAt;
+    const durationMs = Date.now() - this.startedAt - this.pausedMs;
     const chunks = await collectChunks(this.recordingId);
     const mimeType = this.recorder.mimeType || this.mimeType || 'audio/webm';
     let blob = new Blob(chunks, { type: mimeType });
