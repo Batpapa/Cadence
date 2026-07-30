@@ -86,7 +86,7 @@ export async function fetchMemberTunes(
   memberId: number,
   onProgress: (loaded: number, total: number, phase: 'pages' | 'tunes') => void,
   skipId?: (id: number) => boolean
-): Promise<{ tunes: TuneResult[]; skippedCount: number }> {
+): Promise<{ tunes: TuneResult[]; skippedIds: number[] }> {
   // Phase 1 — collect unique tune IDs by paginating tunebook
   const first = await fetch(`${BASE}/members/${memberId}/tunebook?format=json`);
   if (!first.ok) throw new Error(`TheSession member fetch failed: ${first.status}`);
@@ -109,13 +109,13 @@ export async function fetchMemberTunes(
 
   // Phase 2 — fetch only tunes not already in the library
   const ids = skipId ? [...seen].filter(id => !skipId(id)) : [...seen];
-  const skippedCount = seen.size - ids.length;
+  const skippedIds = skipId ? [...seen].filter(id => skipId(id)) : [];
   const tunes: TuneResult[] = [];
   for (let i = 0; i < ids.length; i++) {
     tunes.push(await fetchTuneById(ids[i]!));
     onProgress(i + 1, ids.length, 'tunes');
   }
-  return { tunes, skippedCount };
+  return { tunes, skippedIds };
 }
 
 // ── ABC generation ────────────────────────────────────────────────────────────

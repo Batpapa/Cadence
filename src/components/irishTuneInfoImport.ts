@@ -259,30 +259,33 @@ export function buildIrishTuneInfoBody(ctx: AppContext, status: HTMLElement, get
       progressWrap.classList.remove('hidden'); progressFill.style.width = '0%';
       status.textContent = fetchingMsg();
       try {
-        const existingTuneIds = new Set<number>();
+        const existingCardIdByTuneId = new Map<number, string>();
         for (const card of Object.values(ctx.user.cards)) {
           if (card.externalId?.startsWith('irishtuneinfo:')) {
             const id = parseInt(card.externalId.slice('irishtuneinfo:'.length));
-            if (!isNaN(id)) existingTuneIds.add(id);
+            if (!isNaN(id)) existingCardIdByTuneId.set(id, card.id);
           }
         }
-        const { tunes, skippedCount } = await fetchPlaylistTunes(username, (loaded, total) => {
+        const { tunes, skippedIds } = await fetchPlaylistTunes(username, (loaded, total) => {
           progressFill.style.width = `${Math.round((loaded / total) * 100)}%`;
           status.textContent = t('irishTuneInfo.status.fetchingTunes', { loaded, total });
-        }, id => existingTuneIds.has(id), includeAudio);
+        }, id => existingCardIdByTuneId.has(id), includeAudio);
         const newCards = tunes.map(({ tune, audioFile }) => tuneToCard(tune, audioFile));
         await mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; }
+          // Already-owned tunes were skipped above (no re-fetch), but they
+          // still belong in the target deck if they were missing there.
+          const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
             const deck = s.decks[deckId]; if (!deck) continue;
-            for (const card of newCards) {
-              if (!deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+            for (const cardId of linkIds) {
+              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
             }
           }
         });
         progressFill.style.width = '100%';
         let summary = t('irishTuneInfo.status.batchDone', { count: newCards.length });
-        if (skippedCount > 0) summary = summary.replace('.', '') + t('irishTuneInfo.status.batchSkipped', { count: skippedCount }) + '.';
+        if (skippedIds.length > 0) summary = summary.replace('.', '') + t('irishTuneInfo.status.batchSkipped', { count: skippedIds.length }) + '.';
         status.textContent = summary;
       } catch (e) {
         status.textContent = t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) });
