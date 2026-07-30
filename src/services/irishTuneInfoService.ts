@@ -109,10 +109,10 @@ export async function fetchPlaylistTunes(
   onProgress: (loaded: number, total: number) => void,
   skipId?: (id: number) => boolean,
   includeAudio = false,
-): Promise<{ tunes: PlaylistTuneResult[]; skippedCount: number }> {
+): Promise<{ tunes: PlaylistTuneResult[]; skippedIds: number[] }> {
   const playlist = await fetchPlaylist(username);
   const ids = skipId ? playlist.tunes.map(t => t.id).filter(id => !skipId(id)) : playlist.tunes.map(t => t.id);
-  const skippedCount = playlist.tunes.length - ids.length;
+  const skippedIds = skipId ? playlist.tunes.map(t => t.id).filter(id => skipId(id)) : [];
   const tunes: PlaylistTuneResult[] = [];
   for (let i = 0; i < ids.length; i++) {
     const tune = await fetchTuneById(ids[i]!);
@@ -120,7 +120,7 @@ export async function fetchPlaylistTunes(
     tunes.push({ tune, audioFile });
     onProgress(i + 1, ids.length);
   }
-  return { tunes, skippedCount };
+  return { tunes, skippedIds };
 }
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
