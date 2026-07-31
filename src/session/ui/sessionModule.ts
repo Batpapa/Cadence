@@ -11,7 +11,7 @@ import { probeAudioDuration, canPlayFile } from '../audio/sources';
 import { extractClipMp3 } from '../audio/clipExtract';
 import { makeAbcNoteButton } from './abcPreview';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
-import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta } from '../db';
+import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
 import { getContext } from '../../store';
 import type { RecordedSession, SessionAnnotation, WindowResult } from '../model';
@@ -947,15 +947,38 @@ function renderSummary(host: SessionModuleHost, session: RecordedSession): void 
   // ── Audio player
   const audio = document.createElement('audio');
   audio.controls = true;
-  audio.className = 'w-full mt-3';
+  audio.className = 'flex-1 min-w-0';
   let audioUrl: string | null = null;
+
+  const forgetBtn = document.createElement('button');
+  forgetBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0';
+  forgetBtn.title = t('sessions.forgetAudio.hint');
+  forgetBtn.appendChild(iconElement(TrashIcon, 14));
+  forgetBtn.onclick = () => confirmModal(
+    t('sessions.forgetAudio.title'),
+    t('sessions.forgetAudio.message'),
+    t('sessions.forgetAudio'),
+    () => {
+      void forgetSessionAudio(session.id).then(() => {
+        if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
+        audioRow.style.display = 'none';
+      });
+    },
+  );
+
+  const audioRow = document.createElement('div');
+  audioRow.className = 'flex items-center gap-2 mt-3';
+  audioRow.style.display = 'none';
+  audioRow.append(audio, forgetBtn);
+  body.appendChild(audioRow);
+
   void loadSessionAudio(session.id).then(blob => {
     if (!blob) return;
     audioUrl = URL.createObjectURL(blob);
     audio.src = audioUrl;
+    audioRow.style.display = '';
   });
   host.registerCleanup(() => { if (audioUrl) URL.revokeObjectURL(audioUrl); });
-  body.appendChild(audio);
 
   // ── Timeline segment bar
   const bar = document.createElement('div');
