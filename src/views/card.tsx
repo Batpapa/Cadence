@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
-import { pct, focusIfDesktop } from '../utils';
-import { TrashIcon, iconElement } from '../components/icons';
+import { pct, focusIfDesktop, externalSourceLink } from '../utils';
+import { TrashIcon, ExternalLinkIcon, iconElement } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
@@ -51,6 +51,12 @@ const RATING_DEFS: Array<{ rating: SessionRating; key: string; activeClass: stri
   { rating: 'easy',  key: 'rating.easy',  activeClass: 'bg-success/20 text-success border-success/40' },
 ];
 const IDLE_BTN = 'btn border border-border text-muted hover:text-primary hover:bg-elevated text-xs py-1.5';
+// Fixed per-source brand colors — intentionally not theme-driven (the app's
+// dark/green/light themes swap via [data-theme], not Tailwind's `dark:` variant).
+const SOURCE_PIN_COLORS: Record<string, string> = {
+  thesession: 'text-green-500 border-green-500/30 hover:border-green-500/60',
+  irishtuneinfo: 'text-blue-500 border-blue-500/30 hover:border-blue-500/60',
+};
 const pad = (n: number) => String(n).padStart(2, '0');
 const toInputVal = (ts: number) => {
   const d = new Date(ts);
@@ -175,6 +181,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const stabWindow = fsrsState?.stability !== undefined ? retentionWindowDays(fsrsState.stability, user.availabilityThreshold, user.forgettingRate ?? 1) : undefined;
   const ease       = fsrsState?.difficulty !== undefined ? (10 - fsrsState.difficulty) / 9 : undefined;
   const deckIds    = decksContainingCard(cardId, user);
+  const source     = externalSourceLink(card.externalId);
   const sorted     = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
 
   const rColor    = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
@@ -238,25 +245,39 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           </div>
         </div>
 
-        <button
-          class="btn-danger px-2 shrink-0"
-          title={t('card.deleteTitle')}
-          onClick={() => confirmModal(
-            t('card.delete.title'),
-            t('card.delete.message', { name: card.name }),
-            t('common.delete'),
-            () => {
-              void mutate(s => {
-                delete s.cards[cardId];
-                for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
-                delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
-              });
-              navigate({ view: 'folder', folderId: null });
-            },
+        <div class="flex items-center gap-2 shrink-0">
+          {source && (
+            <a
+              href={source.url}
+              target="_blank"
+              rel="noopener"
+              class={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-elevated border transition-colors shrink-0 ${SOURCE_PIN_COLORS[source.source] ?? 'text-dim border-border'}`}
+              title={source.url}
+            >
+              {source.label}
+              <ExternalLinkIcon size={9} />
+            </a>
           )}
-        >
-          <TrashIcon />
-        </button>
+          <button
+            class="btn-danger px-2 shrink-0"
+            title={t('card.deleteTitle')}
+            onClick={() => confirmModal(
+              t('card.delete.title'),
+              t('card.delete.message', { name: card.name }),
+              t('common.delete'),
+              () => {
+                void mutate(s => {
+                  delete s.cards[cardId];
+                  for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
+                  delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
+                });
+                navigate({ view: 'folder', folderId: null });
+              },
+            )}
+          >
+            <TrashIcon />
+          </button>
+        </div>
       </div>
 
       {/* ── Stats ── */}

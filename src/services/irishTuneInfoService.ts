@@ -189,7 +189,8 @@ export function tuneToCard(tune: TuneDetail, audioFile?: FileEntry | null): Card
     tags,
     externalId: `irishtuneinfo:${tune.id}`,
     content: {
-      notes: `[↗ IrishTune.info](${tune.sourceUrl})`,
+      // No source link here: the card page shows a clickable pin from `externalId` (see utils.ts externalSourceLink).
+      notes: '',
       attachments,
     },
   };

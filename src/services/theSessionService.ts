@@ -208,7 +208,8 @@ export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boole
     tags,
     externalId: `thesession:${tune.id}`,
     content: {
-      notes: `[↗ TheSession](${tune.url || `https://thesession.org/tunes/${tune.id}`})`,
+      // No source link here: the card page shows a clickable pin from `externalId` (see utils.ts externalSourceLink).
+      notes: '',
       attachments,
     },
   };

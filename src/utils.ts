@@ -6,6 +6,24 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+const EXTERNAL_SOURCES: Record<string, { label: string; url: (id: string) => string }> = {
+  thesession: { label: 'TheSession', url: id => `https://thesession.org/tunes/${id}` },
+  irishtuneinfo: { label: 'IrishTuneInfo', url: id => `https://www.irishtune.info/tune/${id}/` },
+};
+
+/** "thesession:52302" → { source: "thesession", label: "TheSession:52302", url: "https://thesession.org/tunes/52302" }.
+ *  Reconstructed from the id alone (no slug needed by either source) — independent of
+ *  `content.notes`, which the user can freely edit away. */
+export function externalSourceLink(externalId: string | undefined): { source: string; label: string; url: string } | null {
+  if (!externalId) return null;
+  const sep = externalId.indexOf(':');
+  if (sep === -1) return null;
+  const source = externalId.slice(0, sep);
+  const id = externalId.slice(sep + 1);
+  const def = EXTERNAL_SOURCES[source];
+  return def ? { source, label: `${def.label}:${id}`, url: def.url(id) } : null;
+}
+
 export function isMobileDevice(): boolean {
   return window.innerWidth < 768 && navigator.maxTouchPoints > 0;
 }
