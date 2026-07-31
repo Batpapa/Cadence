@@ -67,6 +67,12 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await d.delete(SESSIONS_STORE, `${sessionId}:audio`);
 }
 
+/** Storage-saving: drops the (large) audio blob, keeps metadata + annotations.
+ *  Irreversible — clip attachments can no longer be extracted from this session afterward. */
+export async function forgetSessionAudio(sessionId: string): Promise<void> {
+  await (await db()).delete(SESSIONS_STORE, `${sessionId}:audio`);
+}
+
 export async function listSessions(): Promise<RecordedSession[]> {
   const d = await db();
   const keys = (await d.getAllKeys(SESSIONS_STORE)) as string[];
