@@ -1,6 +1,6 @@
 import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
-import { parseCardPackage } from '../services/importExport';
+import { parseCardPackage, parseCardPackageFromText } from '../services/importExport';
 import { downloadShare } from '../services/shareService';
 import { mutate, appState } from '../store';
 import {
@@ -12,6 +12,34 @@ import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { buildIrishTuneInfoBody } from './irishTuneInfoImport';
 import { showDeckPickerPopover, deckLinkIcon } from './deckSelector';
+import { AI_IMPORT_PROMPT } from './aiImportPrompt';
+import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '../services/irishTuneInfoService';
+
+/** Replaces an AI-crafted "externalId"-only card with the real tune fetched
+ *  from that source — the AI can't reliably know real names/tags for a given
+ *  id (only the id itself, if the user gave it), so this never merges: either
+ *  the full real card wins, or the fetch failed and the card is dropped (null). */
+async function hydrateExternalCard(card: Card): Promise<Card | null> {
+  const ext = card.externalId;
+  if (!ext) return card;
+  const sep = ext.indexOf(':');
+  const source = ext.slice(0, sep);
+  const id = parseInt(ext.slice(sep + 1), 10);
+  if (isNaN(id)) return card;
+  try {
+    if (source === 'thesession') {
+      const fetched = tuneResultToCard(await fetchTuneById(id));
+      return { ...fetched, id: card.id, guid: card.guid };
+    }
+    if (source === 'irishtuneinfo') {
+      const fetched = iriTuneToCard(await fetchIriTuneById(id));
+      return { ...fetched, id: card.id, guid: card.guid };
+    }
+  } catch {
+    return null;
+  }
+  return card;
+}
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
 // Dedupes on externalId when present (two independent shares of the same
@@ -470,7 +498,7 @@ export function buildTheSessionBody(
 // ── New Card modal (hierarchical flow) ───────────────────────────────────────
 
 export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): void {
-  type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json' | 'json-file' | 'share';
+  type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json' | 'json-file' | 'share' | 'ai';
   let currentStep: Step = 'root';
 
   const overlay = document.createElement('div');
@@ -533,6 +561,7 @@ export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): vo
     json:         t('newCard.tabImportJson'),
     'json-file':  t('newCard.tabImportJson'),
     share:        t('newCard.tabImportJson'),
+    ai:           t('newCard.tabAi'),
   };
 
   // Coordinates with the outer modal's Escape handler below, so Escape closes
@@ -592,7 +621,7 @@ export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): vo
       backBtn.classList.add('hidden');
       backBtn.onclick = null;
     } else {
-      const backParent: Step = (step === 'share' || step === 'json-file') ? 'json' : (step === 'thesession' || step === 'irishtuneinfo' || step === 'json') ? 'import' : 'root';
+      const backParent: Step = (step === 'share' || step === 'json-file' || step === 'ai') ? 'json' : (step === 'thesession' || step === 'irishtuneinfo' || step === 'json') ? 'import' : 'root';
       backBtn.classList.remove('hidden');
       backBtn.onclick = () => navigate(backParent);
     }
@@ -609,6 +638,7 @@ export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): vo
     else if (currentStep === 'json')          renderJson();
     else if (currentStep === 'json-file')     renderJsonFile();
     else if (currentStep === 'share')         renderShare();
+    else if (currentStep === 'ai')            renderAi();
   };
 
   const renderRoot = () => {
@@ -676,9 +706,11 @@ export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): vo
   const renderJson = () => {
     const iconFile  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
     const iconShare = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+    const iconAi    = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>`;
     body.append(
       mkChoiceCard(iconFile,  t('library.export.file'),  t('newCard.importJsonDesc'), 'var(--color-warn)',   () => navigate('json-file')),
       mkChoiceCard(iconShare, t('newCard.share.label'),  t('newCard.share.desc'),     'var(--color-accent)', () => navigate('share')),
+      mkChoiceCard(iconAi,    t('newCard.tabAi'),        t('newCard.aiDesc'),         'var(--color-success)', () => navigate('ai')),
     );
   };
 
@@ -738,6 +770,65 @@ export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): vo
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') withDeckChoice(() => { void doImport(); }); });
     body.append(row, status);
     focusIfDesktop(inp);
+  };
+
+  const renderAi = () => {
+    const intro = document.createElement('p');
+    intro.className = 'text-xs text-muted leading-relaxed';
+    intro.textContent = t('newCard.ai.intro');
+
+    const promptBox = document.createElement('pre');
+    promptBox.className = 'text-[11px] font-mono text-primary/80 bg-bg border border-border rounded-lg p-3 max-h-48 overflow-y-auto whitespace-pre-wrap';
+    promptBox.textContent = AI_IMPORT_PROMPT;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn-primary w-full text-sm';
+    copyBtn.textContent = t('newCard.ai.copy');
+    copyBtn.onclick = () => {
+      void navigator.clipboard.writeText(AI_IMPORT_PROMPT);
+      copyBtn.textContent = t('newCard.ai.copied');
+      setTimeout(() => { copyBtn.textContent = t('newCard.ai.copy'); }, 2000);
+    };
+
+    const pasteLabel = document.createElement('label');
+    pasteLabel.className = 'label';
+    pasteLabel.textContent = t('newCard.ai.pasteLabel');
+
+    const pasteArea = document.createElement('textarea');
+    pasteArea.className = 'input text-xs font-mono min-h-[6rem] resize-y';
+    pasteArea.placeholder = t('newCard.ai.pastePlaceholder');
+
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn-primary w-full text-sm';
+    importBtn.textContent = t('newCard.ai.pasteBtn');
+    importBtn.disabled = true;
+    pasteArea.addEventListener('input', () => { importBtn.disabled = !pasteArea.value.trim(); });
+
+    const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
+
+    const doImportPasted = async () => {
+      importBtn.disabled = true;
+      status.textContent = t('newCard.import.importing');
+      try {
+        const cards = parseCardPackageFromText(pasteArea.value);
+        const toHydrate = cards.filter(c => c.externalId);
+        const hydrated: Card[] = cards.filter(c => !c.externalId);
+        let failed = 0;
+        for (let i = 0; i < toHydrate.length; i++) {
+          if (toHydrate.length > 1) status.textContent = t('theSession.status.fetchingTunes', { loaded: i, total: toHydrate.length });
+          const h = await hydrateExternalCard(toHydrate[i]!);
+          if (h) hydrated.push(h); else failed++;
+        }
+        let summary = await importCardPackage(hydrated, selectedDeckIds!);
+        if (failed > 0) summary += ' ' + t('newCard.ai.fetchFailed', { count: failed });
+        status.textContent = summary;
+      } catch (e) {
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      } finally { importBtn.disabled = !pasteArea.value.trim(); }
+    };
+    importBtn.onclick = () => withDeckChoice(() => { void doImportPasted(); });
+
+    body.append(intro, promptBox, copyBtn, pasteLabel, pasteArea, importBtn, status);
   };
 
   document.body.appendChild(overlay);
