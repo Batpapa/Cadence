@@ -12,13 +12,15 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
       return route.folderId ? {
         title: t('help.context.folder'),
         sections: [
-          { style: 'definition', heading: t('help.folder.what.heading'), items: [t('help.folder.what.1'), t('help.folder.what.2'), t('help.folder.what.3')] },
+          { style: 'definition', heading: t('help.folder.what.heading'),    items: [t('help.folder.what.1'), t('help.folder.what.2'), t('help.folder.what.3')] },
+          { style: 'logic',      heading: t('help.folder.actions.heading'), items: [t('help.folder.actions.1'), t('help.folder.actions.2'), t('help.folder.actions.3')] },
         ],
       } : {
         title: t('help.context.home'),
         sections: [
-          { style: 'definition', heading: t('help.home.welcome.heading'), items: [t('help.home.welcome.1'), t('help.home.welcome.2'), t('help.home.welcome.3')] },
-          { style: 'logic',      heading: t('help.home.nav.heading'),     items: [t('help.home.nav.1'), t('help.home.nav.2'), t('help.home.nav.3')] },
+          { style: 'definition', heading: t('help.home.welcome.heading'),  items: [t('help.home.welcome.1'), t('help.home.welcome.2'), t('help.home.welcome.3')] },
+          { style: 'logic',      heading: t('help.home.nav.heading'),      items: [t('help.home.nav.1'), t('help.home.nav.2'), t('help.home.nav.3')] },
+          { style: 'metrics',    heading: t('help.home.organize.heading'), items: [t('help.home.organize.1'), t('help.home.organize.2'), t('help.home.organize.3'), t('help.home.organize.4')] },
         ],
       };
 
@@ -27,6 +29,7 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
         title: t('help.context.library'),
         sections: [
           { style: 'definition', heading: t('help.library.browse.heading'), items: [t('help.library.browse.1'), t('help.library.browse.2'), t('help.library.browse.3'), t('help.library.browse.4')] },
+          { style: 'logic',      heading: t('help.library.tools.heading'),  items: [t('help.library.tools.1'), t('help.library.tools.2'), t('help.library.tools.3'), t('help.library.tools.4')] },
         ],
       };
 
@@ -34,9 +37,10 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
       return {
         title: t('help.context.deck'),
         sections: [
-          { style: 'definition', heading: t('help.deck.study.heading'),  items: [t('help.deck.study.1'), t('help.deck.study.2'), t('help.deck.study.3')] },
-          { style: 'logic',      heading: t('help.deck.manage.heading'), items: [t('help.deck.manage.1'), t('help.deck.manage.2'), t('help.deck.manage.3'), t('help.deck.manage.4')] },
-          { style: 'metrics',    heading: t('help.deck.bar.heading'),    items: [t('help.deck.bar.1'), t('help.deck.bar.2'), t('help.deck.bar.3'), t('help.deck.bar.4')] },
+          { style: 'definition', heading: t('help.deck.study.heading'),    items: [t('help.deck.study.1'), t('help.deck.study.2'), t('help.deck.study.3')] },
+          { style: 'logic',      heading: t('help.deck.manage.heading'),   items: [t('help.deck.manage.1'), t('help.deck.manage.2'), t('help.deck.manage.3'), t('help.deck.manage.4')] },
+          { style: 'metrics',    heading: t('help.deck.bar.heading'),      items: [t('help.deck.bar.1'), t('help.deck.bar.2'), t('help.deck.bar.3'), t('help.deck.bar.4')] },
+          { style: 'logic',      heading: t('help.deck.location.heading'), items: [t('help.deck.location.1'), t('help.deck.location.2'), t('help.deck.location.3'), t('help.deck.location.4')] },
         ],
       };
 
@@ -44,9 +48,12 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
       return {
         title: t('help.context.card'),
         sections: [
-          { style: 'definition', heading: t('help.card.edit.heading'),  items: [t('help.card.edit.1'), t('help.card.edit.2'), t('help.card.edit.3'), t('help.card.edit.4')] },
-          { style: 'logic', heading: t('help.card.notes.heading'), items: [t('help.card.notes.1'), t('help.card.notes.2'), t('help.card.notes.3')] },
-          { style: 'metrics', heading: t('help.card.fsrs.heading'),  items: [t('help.card.fsrs.1'), t('help.card.fsrs.2'), t('help.card.fsrs.3')] },
+          { style: 'definition', heading: t('help.card.edit.heading'),    items: [t('help.card.edit.1'), t('help.card.edit.2'), t('help.card.edit.3'), t('help.card.edit.4')] },
+          { style: 'logic',      heading: t('help.card.manage.heading'),  items: [t('help.card.manage.1'), t('help.card.manage.2'), t('help.card.manage.3'), t('help.card.manage.4'), t('help.card.manage.5')] },
+          { style: 'logic',      heading: t('help.card.abc.heading'),     items: [t('help.card.abc.1'), t('help.card.abc.2'), t('help.card.abc.3')] },
+          { style: 'logic',      heading: t('help.card.notes.heading'),   items: [t('help.card.notes.1'), t('help.card.notes.2'), t('help.card.notes.3')] },
+          { style: 'metrics',    heading: t('help.card.history.heading'), items: [t('help.card.history.1'), t('help.card.history.2')] },
+          { style: 'metrics',    heading: t('help.card.fsrs.heading'),    items: [t('help.card.fsrs.1'), t('help.card.fsrs.2'), t('help.card.fsrs.3')] },
         ],
       };
 
@@ -54,9 +61,11 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
       return {
         title: t('help.context.study'),
         sections: [
-          { style: 'definition', heading: t('help.study.rating.heading'),   items: [t('help.study.rating.1'), t('help.study.rating.2'), t('help.study.rating.3'), t('help.study.rating.4')] },
+          { style: 'definition', heading: t('help.study.launch.heading'),    items: [t('help.study.launch.1'), t('help.study.launch.2'), t('help.study.launch.3')] },
+          { style: 'definition', heading: t('help.study.rating.heading'),    items: [t('help.study.rating.1'), t('help.study.rating.2'), t('help.study.rating.3'), t('help.study.rating.4')] },
           { style: 'logic',      heading: t('help.study.shortcuts.heading'), items: [t('help.study.shortcuts.1'), t('help.study.shortcuts.2'), t('help.study.shortcuts.3'), t('help.study.shortcuts.4')] },
           { style: 'metrics',    heading: t('help.study.fsrs.heading'),      items: [t('help.study.fsrs.1'), t('help.study.fsrs.2'), t('help.study.fsrs.3'), t('help.study.fsrs.4')] },
+          { style: 'metrics',    heading: t('help.study.end.heading'),       items: [t('help.study.end.1'), t('help.study.end.2'), t('help.study.end.3')] },
         ],
       };
 
@@ -64,16 +73,19 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
       return {
         title: t('help.context.modules'),
         sections: [
-          { style: 'definition', heading: t('help.modules.what.heading'),     items: [t('help.modules.what.1'), t('help.modules.what.2')] },
+          { style: 'definition', heading: t('help.modules.what.heading'),     items: [t('help.modules.what.1'), t('help.modules.what.2'), t('help.modules.what.3')] },
           { style: 'logic',      heading: t('help.modules.sessions.heading'), items: [t('help.modules.sessions.1'), t('help.modules.sessions.2'), t('help.modules.sessions.3'), t('help.modules.sessions.4')] },
         ],
       };
 
     case 'sessions':
       return {
-        title: t('help.context.modules'),
+        title: t('help.context.sessions'),
         sections: [
-          { style: 'logic', heading: t('help.modules.sessions.heading'), items: [t('help.modules.sessions.1'), t('help.modules.sessions.2'), t('help.modules.sessions.3'), t('help.modules.sessions.4')] },
+          { style: 'definition', heading: t('help.sessions.recording.heading'), items: [t('help.sessions.recording.1'), t('help.sessions.recording.2'), t('help.sessions.recording.3'), t('help.sessions.recording.4'), t('help.sessions.recording.5')] },
+          { style: 'logic',      heading: t('help.sessions.import.heading'),    items: [t('help.sessions.import.1'), t('help.sessions.import.2')] },
+          { style: 'logic',      heading: t('help.sessions.results.heading'),   items: [t('help.sessions.results.1'), t('help.sessions.results.2'), t('help.sessions.results.3'), t('help.sessions.results.4')] },
+          { style: 'metrics',    heading: t('help.sessions.summary.heading'),   items: [t('help.sessions.summary.1'), t('help.sessions.summary.2'), t('help.sessions.summary.3'), t('help.sessions.summary.4'), t('help.sessions.summary.5')] },
         ],
       };
   }
