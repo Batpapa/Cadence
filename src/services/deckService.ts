@@ -122,3 +122,15 @@ export function decksContainingCard(cardId: string, user: AppState): string[] {
     .filter(d => d.entries.some(e => e.cardId === cardId))
     .map(d => d.id);
 }
+
+/** Cards that would end up in no deck at all if the given decks were removed. */
+export function orphanedCardsAfterDeckRemoval(deckIds: string[], user: AppState): string[] {
+  const removing = new Set(deckIds);
+  const candidateIds = new Set<string>();
+  for (const deckId of deckIds) {
+    for (const e of user.decks[deckId]?.entries ?? []) candidateIds.add(e.cardId);
+  }
+  return [...candidateIds].filter(cardId =>
+    decksContainingCard(cardId, user).every(dId => removing.has(dId))
+  );
+}

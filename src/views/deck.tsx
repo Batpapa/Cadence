@@ -2,8 +2,8 @@ import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon, UnlinkIcon, StarIcon } from '../components/icons';
-import { confirmModal } from '../components/modal';
-import { findParentFolder } from '../services/deckService';
+import { confirmModal, confirmModalWithOption } from '../components/modal';
+import { findParentFolder, orphanedCardsAfterDeckRemoval } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { showStudyModal } from '../components/studyModal';
@@ -175,20 +175,40 @@ export function DeckView({ deckId }: { deckId: string }) {
             <button
               class="btn-danger px-2"
               title={t('deck.deleteTitle')}
-              onClick={() => confirmModal(
-                t('deck.delete.title'),
-                t('deck.delete.message', { name: deck.name }),
-                t('common.delete'),
-                () => {
+              onClick={() => {
+                const doDelete = (deleteOrphans: boolean) => {
                   const parent = findParentFolder(deckId, 'deck', user);
                   mutate(s => {
+                    if (deleteOrphans) {
+                      for (const cardId of orphanedCardsAfterDeckRemoval([deckId], s)) {
+                        delete s.cards[cardId];
+                        delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
+                      }
+                    }
                     delete s.decks[deckId];
                     if (parent) s.folders[parent]!.deckIds = s.folders[parent]!.deckIds.filter(id => id !== deckId);
                     else s.rootDeckIds = s.rootDeckIds.filter(id => id !== deckId);
                   });
                   navigate({ view: 'folder', folderId: findParentFolder(deckId, 'deck', user) });
+                };
+                const orphans = orphanedCardsAfterDeckRemoval([deckId], user);
+                if (orphans.length > 0) {
+                  confirmModalWithOption(
+                    t('deck.delete.title'),
+                    t('deck.delete.message', { name: deck.name }),
+                    t('common.delete'),
+                    t(orphans.length !== 1 ? 'common.deleteOrphanCardsPlural' : 'common.deleteOrphanCards', { count: orphans.length }),
+                    doDelete,
+                  );
+                } else {
+                  confirmModal(
+                    t('deck.delete.title'),
+                    t('deck.delete.message', { name: deck.name }),
+                    t('common.delete'),
+                    () => doDelete(false),
+                  );
                 }
-              )}
+              }}
             >
               <TrashIcon />
             </button>

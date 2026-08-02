@@ -23,6 +23,8 @@
   "common.link": "Link",
   "common.replace": "Replace",
   "common.reset": "Reset",
+  "common.deleteOrphanCards": "Also delete the orphaned card (which would no longer be in any deck)",
+  "common.deleteOrphanCardsPlural": "Also delete the {count} orphaned cards (which would no longer be in any deck)",
 
   "time.ago.months": "{n}mo ago",
   "time.ago.days": "{n}d ago",
