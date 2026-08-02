@@ -104,3 +104,34 @@ export function confirmModal(title: string, message: string, confirmLabel: strin
   ]);
 }
 
+export function confirmModalWithOption(
+  title: string,
+  message: string,
+  confirmLabel: string,
+  optionLabel: string,
+  onConfirm: (optionChecked: boolean) => void
+): void {
+  const body = document.createElement('div');
+  body.className = 'space-y-3';
+
+  const msg = document.createElement('p');
+  msg.className = 'text-sm text-muted leading-relaxed';
+  msg.textContent = message;
+
+  const label = document.createElement('label');
+  label.className = 'flex items-center gap-2 cursor-pointer select-none text-sm text-primary';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'card-checkbox';
+  const optionText = document.createElement('span');
+  optionText.textContent = optionLabel;
+  label.append(checkbox, optionText);
+
+  body.append(msg, label);
+
+  showModal(title, body, [
+    { label: t('common.cancel'), onClick: closeModal },
+    { label: confirmLabel, danger: true, onClick: () => { const checked = checkbox.checked; closeModal(); onConfirm(checked); } },
+  ]);
+}
+

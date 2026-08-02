@@ -23,6 +23,8 @@
   "common.link": "Lier",
   "common.replace": "Remplacer",
   "common.reset": "Réinitialiser",
+  "common.deleteOrphanCards": "Aussi supprimer la carte orpheline (qui ne serait plus dans aucun paquet)",
+  "common.deleteOrphanCardsPlural": "Aussi supprimer les {count} cartes orphelines (qui ne seraient plus dans aucun paquet)",
 
   "time.ago.months": "il y a {n} mois",
   "time.ago.days": "il y a {n}j",

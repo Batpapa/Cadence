@@ -2,10 +2,10 @@ import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon, StarIcon } from '../components/icons';
-import { promptModal, confirmModal } from '../components/modal';
+import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
-import { findParentFolder } from '../services/deckService';
+import { findParentFolder, orphanedCardsAfterDeckRemoval } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork, DeckEntry } from '../types';
@@ -206,6 +206,13 @@ function collectFolderEntries(user: AppState, folderId: string | null): DeckEntr
 
 // ── Folder delete helper ──────────────────────────────────────────────────────
 
+function collectFolderDeckIds(user: AppState, folderId: string): string[] {
+  const folder = user.folders[folderId]; if (!folder) return [];
+  const result = [...folder.deckIds];
+  for (const subId of folder.folderIds) result.push(...collectFolderDeckIds(user, subId));
+  return result;
+}
+
 function deleteFolderRecursive(s: AppState, folderId: string): void {
   const folder = s.folders[folderId]; if (!folder) return;
   for (const subId of folder.folderIds) deleteFolderRecursive(s, subId);
@@ -363,16 +370,38 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             <button
               class="btn-danger px-2"
               title={t('folder.deleteFolder')}
-              onClick={() => confirmModal(
-                t('folder.delete.title'),
-                t('folder.delete.message', { name: folder.name }),
-                t('common.delete'),
-                () => {
+              onClick={() => {
+                const doDelete = (deleteOrphans: boolean) => {
                   const parent = findParentFolder(folderId!, 'folder', user);
-                  void mutate(u => { deleteFolderRecursive(u, folderId!); });
+                  void mutate(u => {
+                    if (deleteOrphans) {
+                      for (const cardId of orphanedCardsAfterDeckRemoval(collectFolderDeckIds(u, folderId!), u)) {
+                        delete u.cards[cardId];
+                        delete u.cardWorks[`${u.currentProfileId}:${cardId}`];
+                      }
+                    }
+                    deleteFolderRecursive(u, folderId!);
+                  });
                   navigate({ view: 'folder', folderId: parent });
-                },
-              )}
+                };
+                const orphans = orphanedCardsAfterDeckRemoval(collectFolderDeckIds(user, folderId!), user);
+                if (orphans.length > 0) {
+                  confirmModalWithOption(
+                    t('folder.delete.title'),
+                    t('folder.delete.message', { name: folder.name }),
+                    t('common.delete'),
+                    t(orphans.length !== 1 ? 'common.deleteOrphanCardsPlural' : 'common.deleteOrphanCards', { count: orphans.length }),
+                    doDelete,
+                  );
+                } else {
+                  confirmModal(
+                    t('folder.delete.title'),
+                    t('folder.delete.message', { name: folder.name }),
+                    t('common.delete'),
+                    () => doDelete(false),
+                  );
+                }
+              }}
             >
               <TrashIcon />
             </button>
