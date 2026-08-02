@@ -1,12 +1,13 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
-import { appState, navigate, mutate } from '../store';
+import { appState, navigate, mutate, getContext } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon, UnlinkIcon, StarIcon } from '../components/icons';
+import { TrashIcon, StarIcon, PlusIcon, LibraryIcon } from '../components/icons';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { findParentFolder, orphanedCardsAfterDeckRemoval } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { showStudyModal } from '../components/studyModal';
+import { showNewCardModal } from '../components/theSessionImport';
 
 
 function DeckMetric({ label, value, colorClass = 'text-primary' }: {
@@ -244,19 +245,30 @@ export function DeckView({ deckId }: { deckId: string }) {
 
       {/* ── Cards header + quick-link ── */}
       <div class="flex items-center justify-between px-6 pb-2">
-        <span class="section-title">{t('deck.section.cards', { count: deck.entries.length })}</span>
+        <div class="flex items-center gap-2">
+          <span class="section-title">{t('deck.section.cards', { count: deck.entries.length })}</span>
+          <button
+            type="button"
+            class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+            title={t('deck.viewInLibrary')}
+            onClick={() => navigate({ view: 'library', decks: [[deckId, 'include']] })}
+          >
+            <LibraryIcon size={12} />
+          </button>
+        </div>
 
-        <div class="relative w-44">
-          <input
-            type="text"
-            value={linkQuery}
-            placeholder={t('deck.quickLink.placeholder')}
-            class="w-full text-xs bg-transparent text-dim placeholder:text-dim/50 outline-none py-0.5 px-2 border border-dashed border-border rounded hover:border-accent/50 focus:border-accent transition-colors"
-            onInput={(e) => setLinkQuery((e.target as HTMLInputElement).value)}
-            onKeyDown={(e) => { if (e.key === 'Escape') setLinkQuery(''); }}
-            onBlur={() => setTimeout(() => setLinkQuery(''), 100)}
-          />
-          {linkQuery && (
+        <div class="flex items-center gap-2">
+          <div class="relative w-44">
+            <input
+              type="text"
+              value={linkQuery}
+              placeholder={t('deck.quickLink.placeholder')}
+              class="w-full h-6 text-xs bg-transparent text-dim placeholder:text-dim/50 outline-none px-2 border border-dashed border-border rounded hover:border-accent/50 focus:border-accent transition-colors"
+              onInput={(e) => setLinkQuery((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setLinkQuery(''); }}
+              onBlur={() => setTimeout(() => setLinkQuery(''), 100)}
+            />
+            {linkQuery && (
             <div class="absolute z-10 left-0 right-0 top-full mt-1 bg-surface border border-border rounded shadow-lg max-h-52 overflow-y-auto">
               {linkMatches.length === 0 ? (
                 <p class="text-sm text-dim italic px-3 py-2">{t('deck.quickLink.noMatch')}</p>
@@ -274,7 +286,16 @@ export function DeckView({ deckId }: { deckId: string }) {
                 </div>
               ))}
             </div>
-          )}
+            )}
+          </div>
+          <button
+            type="button"
+            class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+            title={t('deck.addCards')}
+            onClick={() => showNewCardModal(getContext(), [deckId])}
+          >
+            <PlusIcon size={12} />
+          </button>
         </div>
       </div>
 
@@ -373,15 +394,6 @@ export function DeckView({ deckId }: { deckId: string }) {
                       </span>
                     )}
 
-                    <div class="hidden group-hover:flex gap-2">
-                      <button
-                        class="text-dim hover:text-danger transition-colors cursor-pointer"
-                        title={t('deck.removeFromDeck')}
-                        onClick={() => mutate(s => { s.decks[deckId]!.entries = s.decks[deckId]!.entries.filter(e => e.cardId !== card.id); })}
-                      >
-                        <UnlinkIcon />
-                      </button>
-                    </div>
                   </div>
                 );
               });
