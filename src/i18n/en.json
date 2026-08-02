@@ -69,6 +69,7 @@
   "modal.newDeck.label": "Deck name",
 
   "folder.title.home": "Home",
+  "folder.parent.label": "Location:",
   "folder.section.folders": "Folders",
   "folder.section.decks": "Decks",
   "folder.section.favorites": "Favorites",

@@ -69,6 +69,7 @@
   "modal.newDeck.label": "Nom du paquet",
 
   "folder.title.home": "Accueil",
+  "folder.parent.label": "Emplacement :",
   "folder.section.folders": "Dossiers",
   "folder.section.decks": "Paquets",
   "folder.section.favorites": "Favoris",
