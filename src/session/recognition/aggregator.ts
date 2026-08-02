@@ -267,6 +267,12 @@ export class RecognitionAggregator {
       .sort((a, b) => b.meanScore - a.meanScore)
       .slice(0, this.cfg.MAX_ALTERNATES);
 
+    // Same metric as alternates' meanScore, just for the elected tune itself —
+    // altStats accumulates every window's candidates, winner included, so this
+    // is already there, just never read out before.
+    const selfStats = s.altStats.get(s.tune.tuneId);
+    const meanScore = selfStats ? selfStats.sum / selfStats.count : 0;
+
     return {
       id: s.annotationId,
       tuneId: s.tune.tuneId,
@@ -278,9 +284,13 @@ export class RecognitionAggregator {
       end,
       confidence,
       bucket: this.bucketOf(confidence),
+      meanScore,
       evidence: [...s.evidence],
       alternates,
       userConfirmed: false,
+      // Not aggregator state — always false here; the session layer (live/import
+      // applyEvents) preserves the user's actual choice across updates.
+      liked: false,
     };
   }
 

@@ -50,6 +50,15 @@ export function ExternalLinkIcon({ size = 10 }: { size?: number }) {
   );
 }
 
+export function PlusIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"/>
+      <line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  );
+}
+
 export function HomeIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -171,6 +180,22 @@ export function StarIcon({ size = 14, filled = false }: { size?: number; filled?
   );
 }
 
+export function HeartIcon({ size = 14, filled = false }: { size?: number; filled?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 21s-7.5-4.6-10.2-9.1C.2 8.9 1.5 5 5.2 4.2c2.1-.5 4.1.5 5.3 2.3l1.5 2.1 1.5-2.1c1.2-1.8 3.2-2.8 5.3-2.3 3.7.8 5 4.7 3.4 7.7C19.5 16.4 12 21 12 21z"/>
+    </svg>
+  );
+}
+
+/** Like iconElement, but for HeartIcon's extra `filled` prop — a vanilla-TS
+ *  caller can't pass it through iconElement's size-only signature. */
+export function heartIconElement(filled: boolean, size = 13): Element {
+  const wrap = document.createElement('span');
+  render(<HeartIcon size={size} filled={filled} />, wrap);
+  return wrap.firstElementChild ?? wrap;
+}
+
 export function MusicNoteIcon({ size = 12 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -283,6 +308,16 @@ export function FileAudioIcon({ size = 12 }: { size?: number }) {
       <path d="M9 16v-3l3 1v3"/>
       <circle cx="8" cy="17" r="1.2" fill="currentColor" stroke="none"/>
       <circle cx="11" cy="18" r="1.2" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
+export function ImportTrayIcon({ size = 13 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
     </svg>
   );
 }

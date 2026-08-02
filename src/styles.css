@@ -181,6 +181,11 @@
 /* ABC notation audio controls */
 .abcjs-inline-audio .abcjs-midi-tempo { color: #000; }
 
+/* Playback cursor + note highlight — notation is always rendered on a white
+   background regardless of app theme, so plain hex colors (not theme vars). */
+.abcjs-cursor { stroke: #e11d48; stroke-width: 2px; }
+.abcjs-highlight { fill: #e11d48 !important; }
+
 
 /* Library list — show date column when container is wide enough */
 .lib-list { container-type: inline-size; }

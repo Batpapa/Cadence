@@ -17,7 +17,11 @@ function isValidRoute(route: Route, user: AppState): boolean {
     case 'deck':    return !!user.decks[route.deckId];
     case 'card':    return !!user.cards[route.cardId];
     case 'study':   return route.deckId ? !!user.decks[route.deckId] : (route.cardIds?.length ?? 0) > 0;
-    case 'library': return true;
+    case 'library':  return true;
+    case 'modules':  return true;
+    // Sessions live in a separate IndexedDB, not `user` — can't validate synchronously
+    // here; SessionsView redirects to the library itself if the id doesn't resolve.
+    case 'sessions': return true;
   }
 }
 

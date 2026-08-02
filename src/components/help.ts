@@ -59,6 +59,23 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
           { style: 'metrics',    heading: t('help.study.fsrs.heading'),      items: [t('help.study.fsrs.1'), t('help.study.fsrs.2'), t('help.study.fsrs.3'), t('help.study.fsrs.4')] },
         ],
       };
+
+    case 'modules':
+      return {
+        title: t('help.context.modules'),
+        sections: [
+          { style: 'definition', heading: t('help.modules.what.heading'),     items: [t('help.modules.what.1'), t('help.modules.what.2')] },
+          { style: 'logic',      heading: t('help.modules.sessions.heading'), items: [t('help.modules.sessions.1'), t('help.modules.sessions.2'), t('help.modules.sessions.3'), t('help.modules.sessions.4')] },
+        ],
+      };
+
+    case 'sessions':
+      return {
+        title: t('help.context.modules'),
+        sections: [
+          { style: 'logic', heading: t('help.modules.sessions.heading'), items: [t('help.modules.sessions.1'), t('help.modules.sessions.2'), t('help.modules.sessions.3'), t('help.modules.sessions.4')] },
+        ],
+      };
   }
 }
 

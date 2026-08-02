@@ -23,6 +23,7 @@ export type FFWorkerRequest =
   | { type: 'init'; sampleRate: number; hopS?: number }
   | { type: 'worklet-port'; port: MessagePort }
   | { type: 'pcm'; buffer: ArrayBuffer; ack?: boolean }
+  | { type: 'set-pitch-shift'; semitones: number }
   | { type: 'stop' };
 
 export type FFWorkerResponse =
@@ -44,6 +45,11 @@ let pcmPtr = 0;
 let sampleRate = 48000;
 let hopS = ANALYSIS_HOP_S;
 let aggregator = new RecognitionAggregator();
+/** User-controlled transposition applied to every transcribed contour before
+ *  querying the index (e.g. a session played in Bb) — independent of, and
+ *  composes with, the automatic banjo octave fallback below. Live-adjustable
+ *  mid-session; a fresh worker per session already resets it to 0. */
+let manualShift = 0;
 
 // Ring buffer holding the last ANALYSIS_WINDOW_S seconds (plus slack).
 let ring: Float32Array = new Float32Array(0);
@@ -122,9 +128,16 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
     f.feed_single_pcm_window(pcmPtr);
   }
 
-  const contour = f.transcribe_pcm_buffer();
+  const rawContour = f.transcribe_pcm_buffer();
   // "No notes detected" comes back as a JSON error string, not an exception.
-  if (contour.startsWith('{')) {
+  if (rawContour.startsWith('{')) {
+    return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
+  }
+
+  // Manual shift first (user-selected, e.g. -2 for a Bb session) — everything
+  // below operates on this as the new baseline.
+  const contour = manualShift !== 0 ? shiftContour(rawContour, manualShift) : rawContour;
+  if (manualShift !== 0 && contour.length === 0) {
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
 
@@ -210,6 +223,9 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
         // The ack doubles as backpressure: it is sent after any analysis this
         // chunk triggered, so a file import cannot flood the message queue.
         if (msg.ack) post({ type: 'pcm-ack' });
+        break;
+      case 'set-pitch-shift':
+        manualShift = msg.semitones;
         break;
       case 'stop':
         handleStop();

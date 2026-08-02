@@ -9,7 +9,7 @@ import { applyExternalData } from '../services/migration';
 import { exportBackup, parseImport } from '../services/importExport';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
-import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, type DriveStatus } from '../services/driveService';
+import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
 import { getContext } from '../store';
@@ -365,7 +365,18 @@ export function showSettingsModal(ctx: AppContext): void {
                 }},
               ], false);
             }
-          } catch {}
+          } catch {
+            // Known cause: the OAuth consent screen renders blank inside chat
+            // apps' in-app browsers (WhatsApp, Instagram…) — worth a specific
+            // pointer since the status indicator alone ("✕ Error") doesn't
+            // explain why. Expected cancellations (popup closed / consent
+            // denied) don't reach here as an error worth surfacing further.
+            if (isLikelyInAppBrowser()) {
+              const body4 = document.createElement('p'); body4.className = 'text-sm text-muted leading-relaxed';
+              body4.textContent = t('settings.sync.inAppBrowserError');
+              showModal(t('settings.sync.inAppBrowserTitle'), body4, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
+            }
+          }
         };
         const updateDriveUI2 = (s: DriveStatus) => {
           switch (s) {
@@ -379,6 +390,16 @@ export function showSettingsModal(ctx: AppContext): void {
         updateDriveUI2(getDriveStatus());
         driveUnsub = onStatusChange(updateDriveUI2);
         content.appendChild(mkRow('Google Drive', null, driveControl2));
+
+        // Proactive: don't wait for a connect attempt that may just hang on
+        // a blank screen inside an in-app browser (WhatsApp, Instagram…) —
+        // Cadence links commonly circulate that way.
+        if (getDriveStatus() !== 'connected' && isLikelyInAppBrowser()) {
+          const inAppWarn = document.createElement('p');
+          inAppWarn.className = 'text-xs text-warn leading-relaxed -mt-1 mb-1';
+          inAppWarn.textContent = t('settings.sync.inAppBrowserWarning');
+          content.appendChild(inAppWarn);
+        }
       }
 
       // 3. Sauvegarde — Exporter + Importer côte à côte

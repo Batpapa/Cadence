@@ -1,8 +1,22 @@
 import type { FileEntry } from '../types';
-import { entryToObjectUrl } from '../utils';
+import { entryToObjectUrl, arrayBufferToBase64, focusIfDesktop } from '../utils';
 import { getMarked } from './markdown';
+import { mkCustomSelect } from './customSelectVanilla';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
+
+// General MIDI program numbers (0-indexed) for instruments relevant to Irish
+// trad — GM happens to have dedicated Fiddle/Whistle/Banjo/Bagpipe patches.
+const ABC_INSTRUMENTS = [
+  { value: '',    labelKey: 'fileViewer.abc.instrument.default' },
+  { value: '110', labelKey: 'fileViewer.abc.instrument.fiddle' },
+  { value: '78',  labelKey: 'fileViewer.abc.instrument.whistle' },
+  { value: '73',  labelKey: 'fileViewer.abc.instrument.flute' },
+  { value: '21',  labelKey: 'fileViewer.abc.instrument.accordion' },
+  { value: '105', labelKey: 'fileViewer.abc.instrument.banjo' },
+  { value: '109', labelKey: 'fileViewer.abc.instrument.pipes' },
+  { value: '25',  labelKey: 'fileViewer.abc.instrument.guitar' },
+];
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
@@ -73,7 +87,7 @@ function modalWidth(entry: FileEntry): string {
   return '860px';
 }
 
-export function showPreviewModal(entry: FileEntry): void {
+export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => void): void {
   const overlay = document.createElement('div');
   overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm';
 
@@ -90,7 +104,8 @@ export function showPreviewModal(entry: FileEntry): void {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0 ml-4';
   let stopAudio: () => void = () => {};
-  const closeModal = () => { stopAudio(); overlay.remove(); document.removeEventListener('keydown', onKey); };
+  let closed = false;
+  const closeModal = () => { closed = true; stopAudio(); overlay.remove(); document.removeEventListener('keydown', onKey); };
   let onKey: (e: KeyboardEvent) => void;
 
   closeBtn.textContent = '✕'; closeBtn.onclick = closeModal;
@@ -105,6 +120,9 @@ export function showPreviewModal(entry: FileEntry): void {
   if (m.startsWith('audio/')) {
     body.classList.replace('items-center', 'items-start');
     import('./audioPlayer').then(({ renderAudioPlayer, stopCurrentAudio }) => {
+      // Modal may already have been dismissed while this dynamic import was
+      // in flight — don't spin up an AudioContext nobody will ever close.
+      if (closed) return;
       body.appendChild(renderAudioPlayer(entry));
       stopAudio = stopCurrentAudio;
     });
@@ -145,14 +163,68 @@ export function showPreviewModal(entry: FileEntry): void {
 
   } else if (isAbc(entry)) {
     body.classList.replace('items-center', 'items-start');
-    const abcText = decodeText(entry);
+    let abcText = decodeText(entry);
 
     const tunes = splitAbcTunes(abcText);
     const versionCount = tunes.length;
     let currentIndex = 0;
+    let currentMode: 'sheet' | 'text' = 'sheet';
+    let selectedProgram: number | undefined = undefined; // undefined = ABC's own %%MIDI program / abcjs default
 
     const container = document.createElement('div');
     container.className = 'w-full space-y-3';
+
+    // ── Top row: Sheet/ABC tabs (left) + version nav (right, multi-tune files only) ──
+    const topRow = document.createElement('div');
+    topRow.className = 'flex items-center justify-between gap-2';
+
+    const tabBar = document.createElement('div');
+    tabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg w-fit';
+    const mkAbcTab = (label: string): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.className = 'px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer';
+      return b;
+    };
+    const sheetTabBtn = mkAbcTab(t('fileViewer.abc.sheetTab'));
+    const textTabBtn  = mkAbcTab(t('fileViewer.abc.textTab'));
+    sheetTabBtn.onclick = () => setAbcMode('sheet');
+    textTabBtn.onclick  = () => setAbcMode('text');
+    tabBar.append(sheetTabBtn, textTabBtn);
+
+    const versionNav = document.createElement('div');
+    versionNav.className = `flex items-center gap-1 p-1 bg-bg rounded-lg w-fit ${versionCount <= 1 ? 'hidden' : ''}`;
+    const mkNavBtn = (glyph: string): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.textContent = glyph;
+      b.className = 'px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer text-muted hover:text-primary hover:bg-elevated disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted';
+      return b;
+    };
+    const prevBtn = mkNavBtn('←');
+    const versionLabel = document.createElement('span');
+    versionLabel.className = 'px-1 text-xs font-medium text-muted tabular-nums';
+    const nextBtn = mkNavBtn('→');
+    prevBtn.onclick = () => goToVersion(currentIndex - 1);
+    nextBtn.onclick = () => goToVersion(currentIndex + 1);
+    versionNav.append(prevBtn, versionLabel, nextBtn);
+
+    topRow.append(tabBar, versionNav);
+    container.appendChild(topRow);
+
+    // ── Instrument picker — sheet mode only, affects the next setTune() call.
+    const instrumentRow = document.createElement('div');
+    instrumentRow.className = 'flex items-center gap-2';
+    const instrumentLabel = document.createElement('span');
+    instrumentLabel.className = 'text-xs text-dim shrink-0';
+    instrumentLabel.textContent = t('fileViewer.abc.instrument');
+    const { el: instrumentSelectEl } = mkCustomSelect(
+      ABC_INSTRUMENTS.map(i => ({ value: i.value, label: t(i.labelKey) })),
+      '',
+      (v) => { selectedProgram = v ? parseInt(v) : undefined; doRenderTune?.(currentIndex); },
+      'flex items-center gap-2 text-xs bg-bg border border-border rounded px-2 py-1 text-muted cursor-pointer hover:border-accent',
+    );
+    instrumentRow.append(instrumentLabel, instrumentSelectEl);
+    container.appendChild(instrumentRow);
 
     const uid = Date.now();
     const controls = document.createElement('div');
@@ -166,23 +238,144 @@ export function showPreviewModal(entry: FileEntry): void {
     notation.id = `abc-notation-${uid}`;
     container.appendChild(notation);
 
+    // ── Raw ABC text of the SELECTED tune only — editable and saved back to
+    // the attachment when the caller passed a save callback (card view);
+    // read-only otherwise (study).
+    const textarea = document.createElement('textarea');
+    textarea.className = 'hidden w-full h-72 font-mono text-xs p-3 border border-border rounded-lg bg-bg text-primary resize-y outline-none focus:border-accent';
+    textarea.spellcheck = false;
+    textarea.readOnly = !onSave;
+    textarea.value = tunes[0] ?? '';
+    container.appendChild(textarea);
+
+    const saveRow = document.createElement('div');
+    saveRow.className = 'hidden flex items-center justify-end gap-2';
+    const saveStatus = document.createElement('span');
+    saveStatus.className = 'text-xs text-dim';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn-primary text-xs';
+    saveBtn.textContent = t('fileViewer.abc.save');
+    saveBtn.disabled = true;
+    saveRow.append(saveStatus, saveBtn);
+    container.appendChild(saveRow);
+
     body.appendChild(container);
+
+    let doRenderTune: ((index: number) => void) | null = null;
+
+    // The "X:n" header line is the tune's identity within the file (what
+    // splitAbcTunes keys the version split on) — never shown/editable, so the
+    // user can't desync it from its position and corrupt the file structure.
+    function splitXLine(tune: string): { xLine: string; body: string } {
+      const nl = tune.indexOf('\n');
+      const firstLine = nl === -1 ? tune : tune.slice(0, nl);
+      if (/^X:\s*\d+/.test(firstLine)) return { xLine: firstLine, body: nl === -1 ? '' : tune.slice(nl + 1) };
+      return { xLine: '', body: tune };
+    }
+    const currentBody = (): string => splitXLine(tunes[currentIndex] ?? '').body;
+
+    function goToVersion(index: number): void {
+      currentIndex = Math.max(0, Math.min(versionCount - 1, index));
+      prevBtn.disabled = currentIndex === 0;
+      nextBtn.disabled = currentIndex === versionCount - 1;
+      versionLabel.textContent = `${currentIndex + 1}/${versionCount}`;
+      if (currentMode === 'sheet') {
+        doRenderTune?.(currentIndex);
+      } else {
+        textarea.value = currentBody();
+        saveBtn.disabled = true;
+        saveStatus.textContent = '';
+      }
+    }
+
+    function setAbcMode(mode: 'sheet' | 'text'): void {
+      currentMode = mode;
+      const active = 'bg-accent text-white';
+      const inactive = 'text-muted hover:text-primary hover:bg-elevated';
+      sheetTabBtn.className = `px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${mode === 'sheet' ? active : inactive}`;
+      textTabBtn.className  = `px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${mode === 'text'  ? active : inactive}`;
+      // Sheet + synth toolbar fully hidden in text mode, not just visually behind
+      // it — inline style.display, not just the 'hidden' class: abcjs's own
+      // resize handling can otherwise leave the notation SVG visibly reflowing.
+      controls.style.display = mode === 'sheet' ? '' : 'none';
+      notation.style.display = mode === 'sheet' ? '' : 'none';
+      instrumentRow.style.display = mode === 'sheet' ? 'flex' : 'none';
+      textarea.style.display = mode === 'text' ? 'block' : 'none';
+      if (onSave) saveRow.style.display = mode === 'text' ? 'flex' : 'none';
+      if (mode === 'text') {
+        textarea.value = currentBody();
+        saveBtn.disabled = true;
+        saveStatus.textContent = '';
+        focusIfDesktop(textarea);
+      }
+    }
+
+    if (onSave) {
+      textarea.addEventListener('input', () => {
+        saveBtn.disabled = textarea.value === currentBody();
+        saveStatus.textContent = '';
+      });
+      saveBtn.onclick = () => {
+        const { xLine } = splitXLine(tunes[currentIndex] ?? '');
+        tunes[currentIndex] = xLine ? `${xLine}\n${textarea.value}` : textarea.value;
+        // Tunes already carry their trailing separator from splitAbcTunes —
+        // plain '\n' join reconstructs the file without doubling blank lines.
+        abcText = tunes.join('\n');
+        onSave(arrayBufferToBase64(new TextEncoder().encode(abcText).buffer));
+        saveBtn.disabled = true;
+        saveStatus.textContent = t('fileViewer.abc.saved');
+        doRenderTune?.(currentIndex); // keep the sheet in sync for when the user switches tabs
+      };
+    }
+
+    goToVersion(0); // initializes prev/next disabled state + label
+    setAbcMode('sheet');
 
     import('abcjs').then((abcjs) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let synthControl: any = null;
-      let prevBtn: HTMLButtonElement | null = null;
-      let nextBtn: HTMLButtonElement | null = null;
-      let versionLabel: HTMLSpanElement | null = null;
+
+      // Cursor + note highlighting during playback — abcjs drives this via
+      // TimingCallbacks internally once a cursorControl is passed to
+      // SynthController.load(). Re-queries the SVG/cursor by ID each call
+      // rather than caching elements, since renderAbc replaces the SVG
+      // wholesale on every version switch.
+      const cursorControl = {
+        beatSubdivisions: 2,
+        onStart: () => {
+          const svg = notation.querySelector('svg');
+          if (!svg || svg.querySelector('.abcjs-cursor')) return;
+          const cursor = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          cursor.setAttribute('class', 'abcjs-cursor');
+          cursor.setAttribute('x1', '0'); cursor.setAttribute('y1', '0');
+          cursor.setAttribute('x2', '0'); cursor.setAttribute('y2', '0');
+          svg.appendChild(cursor);
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onEvent: (ev: any) => {
+          if (ev.measureStart && ev.left === null) return; // 2nd half of a tie across a measure line
+          notation.querySelectorAll('.abcjs-highlight').forEach(el => el.classList.remove('abcjs-highlight'));
+          for (const note of ev.elements ?? []) {
+            for (const el of note) el.classList.add('abcjs-highlight');
+          }
+          const cursor = notation.querySelector('.abcjs-cursor');
+          if (cursor && ev.left != null) {
+            cursor.setAttribute('x1', String(ev.left - 2));
+            cursor.setAttribute('x2', String(ev.left - 2));
+            cursor.setAttribute('y1', String(ev.top));
+            cursor.setAttribute('y2', String(ev.top + ev.height));
+          }
+        },
+        onFinished: () => {
+          notation.querySelectorAll('.abcjs-highlight').forEach(el => el.classList.remove('abcjs-highlight'));
+          const cursor = notation.querySelector('.abcjs-cursor');
+          cursor?.setAttribute('x1', '0'); cursor?.setAttribute('x2', '0');
+          cursor?.setAttribute('y1', '0'); cursor?.setAttribute('y2', '0');
+        },
+      };
 
       const renderTune = (index: number) => {
-        currentIndex = index;
-
-        if (prevBtn) { prevBtn.disabled = index === 0; prevBtn.style.opacity = index === 0 ? '0.3' : '0.8'; }
-        if (nextBtn) { nextBtn.disabled = index === versionCount - 1; nextBtn.style.opacity = index === versionCount - 1 ? '0.3' : '0.8'; }
-        if (versionLabel) versionLabel.textContent = `${index + 1}/${versionCount}`;
-
-        const visualObj = abcjs.renderAbc(notation.id, injectDefaultTempo(tunes[index]!), {
+        const visualObj = abcjs.renderAbc(notation.id, injectDefaultTempo(tunes[index] ?? ''), {
           responsive: 'resize',
           add_classes: true,
           paddingright: 0,
@@ -194,43 +387,30 @@ export function showPreviewModal(entry: FileEntry): void {
           if (!synthControl) {
             synthControl = new abcjs.synth.SynthController();
             stopAudio = () => { try { synthControl.pause(); } catch { /* ignore */ } };
-            synthControl.load(`#${controls.id}`, null, {
+            synthControl.load(`#${controls.id}`, cursorControl, {
               displayLoop: true,
               displayRestart: true,
               displayPlay: true,
               displayProgress: true,
               displayWarp: true,
             });
-
-            const toolbar = controls.querySelector('.abcjs-inline-audio');
-            if (toolbar) {
-                const btnStyle = 'cursor:pointer; background:transparent; border:none; color:inherit; padding:0 6px; font-size:14px; opacity:0.8;';
-
-                prevBtn = document.createElement('button');
-                prevBtn.style.cssText = `${btnStyle} margin-left:auto;`;
-                prevBtn.textContent = '←';
-                prevBtn.onclick = () => renderTune(currentIndex - 1);
-
-                versionLabel = document.createElement('span');
-                versionLabel.style.cssText = 'font-size:11px; font-family:monospace; color:inherit; padding:0 2px;';
-
-                nextBtn = document.createElement('button');
-                nextBtn.style.cssText = btnStyle;
-                nextBtn.textContent = '→';
-                nextBtn.onclick = () => renderTune(currentIndex + 1);
-
-                toolbar.append(prevBtn, versionLabel, nextBtn);
-
-                prevBtn.disabled = index === 0; prevBtn.style.opacity = index === 0 ? '0.3' : '0.8';
-                nextBtn.disabled = index === versionCount - 1; nextBtn.style.opacity = index === versionCount - 1 ? '0.3' : '0.8';
-                versionLabel.textContent = `${index + 1}/${versionCount}`;
-              }
+          } else {
+            // Switching tunes on an already-used controller: if playback ever
+            // started, abcjs can keep the previous tune's primed audio bound
+            // and silently ignore setTune() — stop it first so the rebind
+            // below actually takes.
+            try { synthControl.pause(); } catch { /* ignore */ }
           }
-          synthControl.setTune(visualObj[0]!, false, {}).catch(() => {});
+          // userAction: true on every call (not just the first) — abcjs needs
+          // this to actually re-prime the AudioContext-backed buffer for the
+          // new tune instead of silently keeping the old one queued.
+          const audioParams = selectedProgram !== undefined ? { program: selectedProgram } : {};
+          synthControl.setTune(visualObj[0]!, true, audioParams).catch(() => {});
         }
       };
 
-      renderTune(0);
+      doRenderTune = renderTune;
+      renderTune(currentIndex);
     }).catch(() => {
       const err = document.createElement('p');
       err.className = 'text-sm text-dim italic';

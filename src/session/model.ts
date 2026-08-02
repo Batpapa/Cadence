@@ -26,11 +26,18 @@ export interface SessionAnnotation {
   meter: string;
   start: number;       // seconds since session start
   end: number | null;  // null = still open (live)
-  confidence: number;  // [0,1]
+  confidence: number;  // [0,1] — consistency-weighted (win rate over the annotation's span), NOT comparable to alternates' meanScore below
   bucket: ConfidenceBucket;
+  /** Mean raw match score whenever this tune appeared as a window candidate —
+   *  same metric as `alternates[].meanScore`, so the two are directly comparable
+   *  in the detection-options panel (unlike `confidence`, which only this tune has). */
+  meanScore: number;
   evidence: AnnotationEvidence[];
   alternates: AnnotationAlternate[];
   userConfirmed: boolean;
+  /** User marker: "I liked this tune when I heard it" — has no bearing on
+   *  recognition or on any card, purely a personal reminder. */
+  liked: boolean;
 }
 
 export interface RecordedSession {

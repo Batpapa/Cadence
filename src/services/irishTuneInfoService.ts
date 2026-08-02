@@ -123,6 +123,27 @@ export async function fetchPlaylistTunes(
   return { tunes, skippedIds };
 }
 
+/** Fetches a user-supplied list of tune IDs (e.g. pasted "1;5;97"), skipping
+ *  IDs already in the library — same shape as fetchPlaylistTunes. */
+export async function fetchTunesByIds(
+  ids: number[],
+  onProgress: (loaded: number, total: number) => void,
+  skipId?: (id: number) => boolean,
+  includeAudio = false,
+): Promise<{ tunes: PlaylistTuneResult[]; skippedIds: number[] }> {
+  const unique = [...new Set(ids)];
+  const toFetch = skipId ? unique.filter(id => !skipId(id)) : unique;
+  const skippedIds = skipId ? unique.filter(id => skipId(id)) : [];
+  const tunes: PlaylistTuneResult[] = [];
+  for (let i = 0; i < toFetch.length; i++) {
+    const tune = await fetchTuneById(toFetch[i]!);
+    const audioFile = includeAudio && tune.featuredAudioUrl ? await fetchAudioFile(tune.featuredAudioUrl, `${tune.name}.mp3`) : null;
+    tunes.push({ tune, audioFile });
+    onProgress(i + 1, toFetch.length);
+  }
+  return { tunes, skippedIds };
+}
+
 // ── Audio ─────────────────────────────────────────────────────────────────────
 
 const ALBUM_PREFIX = 'https://www.irishtune.info/album/';

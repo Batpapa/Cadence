@@ -40,3 +40,7 @@ export const WORKLET_CHUNK_SAMPLES = 16384;
 
 /** MediaRecorder timeslice (ms) — one chunk every 5 s appended to IndexedDB. */
 export const RECORDER_TIMESLICE_MS = 5000;
+
+/** Session sharing: base64 inflates the audio blob ~33%, and the JSON envelope
+ *  adds a little more on top — stay safely under the backend's 100 MB share cap. */
+export const SHARE_MAX_AUDIO_BYTES = 70 * 1024 * 1024;

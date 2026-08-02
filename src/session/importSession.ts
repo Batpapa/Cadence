@@ -46,6 +46,24 @@ export class ImportSession {
   private analysisStartedAt = 0;
 
   readonly sessionId = crypto.randomUUID();
+  /** Editable during analysis (renderImportAnalysis title input) — same field save() persists under. */
+  name = '';
+  /** Editable during analysis — no trustworthy t=0 for a file, so this starts
+   *  null unless the user sets it (same as a finished import's date in the summary). */
+  dateOverride: string | null = null;
+  /** Target deck(s) for cards created from this import's recognised tunes —
+   *  in-memory only, not persisted with the session (resets next time).
+   *  `undefined` = never touched the picker yet (forces it open on first "Add card"). */
+  targetDeckIds: Set<string> | undefined = undefined;
+  /** Manual transposition (semitones, -12..12) applied to the ongoing
+   *  analysis — e.g. a file recorded in Bb. In-memory only. */
+  pitchShift = 0;
+
+  /** Live-adjustable: affects analysis windows from now on, not past ones. */
+  setPitchShift(semitones: number): void {
+    this.pitchShift = semitones;
+    this.recognition?.setPitchShift(semitones);
+  }
 
   constructor(file: File, callbacks: ImportSessionCallbacks = {}) {
     this.file = file;
@@ -87,6 +105,7 @@ export class ImportSession {
         onAnnotations: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
       }, { hopS: HOP_S_IMPORT });
+      if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       const version = await this.recognition.ready;
       console.debug(`[import] engine ready (FolkFriend ${version})`);
 
@@ -159,22 +178,37 @@ export class ImportSession {
           dance: existing.dance,
           meter: existing.meter,
           userConfirmed: true,
+          liked: existing.liked,
         });
       } else {
-        this.annotations.set(ev.annotation.id, ev.annotation);
+        // The aggregator never knows about the like marker — carry it forward
+        // across updates the same as any other user choice.
+        this.annotations.set(ev.annotation.id, { ...ev.annotation, liked: existing?.liked ?? false });
       }
     }
     this.cb.onAnnotations?.(events, this.getAnnotations());
+  }
+
+  /** Toggle the "I liked this tune" marker — no bearing on recognition. */
+  toggleLike(annotationId: string): void {
+    const ann = this.annotations.get(annotationId);
+    if (!ann) return;
+    this.annotations.set(annotationId, { ...ann, liked: !ann.liked });
+  }
+
+  /** Filename without extension — the default name shown/persisted until renamed. */
+  defaultName(): string {
+    return this.file.name.replace(/\.[^.]+$/, '');
   }
 
   private async save(): Promise<RecordedSession> {
     this.setPhase('saving');
     const session: RecordedSession = {
       id: this.sessionId,
-      name: this.file.name.replace(/\.[^.]+$/, ''),
+      name: this.name || this.defaultName(),
       // No trustworthy t=0 for a file (mtime survives transfers erratically):
-      // start dateless, the user sets it in the summary if they want reviews.
-      date: null,
+      // dateless unless the user set one during analysis or in the summary.
+      date: this.dateOverride,
       duration: this.source!.duration,
       mimeType: this.file.type || 'application/octet-stream',
       source: 'import',

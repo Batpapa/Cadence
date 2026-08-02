@@ -6,10 +6,18 @@ import { playIcon, pauseIcon, stopIcon, repeatIcon } from './playbackIcons';
 // ── Global audio context (one at a time) ────────────────────────────────────
 
 let currentAudioCtx: AudioContext | null = null;
+let currentDispose: (() => void) | null = null;
 
 export function stopCurrentAudio(): void {
+  // Disconnect the node explicitly instead of relying on AudioContext.close()
+  // alone — on some Android/Chrome builds close() doesn't silence an
+  // in-flight ScriptProcessorNode immediately, letting a new instance's
+  // audio overlap the old one for a moment (reported as "duplicated
+  // playback with a slight offset").
+  currentDispose?.();
   currentAudioCtx?.close();
   currentAudioCtx = null;
+  currentDispose = null;
 }
 
 // ── Slider CSS (injected once) ───────────────────────────────────────────────
@@ -337,6 +345,7 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
     if (!audioCtx) {
       audioCtx = new AudioContext();
       currentAudioCtx = audioCtx;
+      currentDispose = teardown;
       buildPipeline();
     }
     if (!scriptNode) buildPipeline();
@@ -418,6 +427,7 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
       stopCurrentAudio();
       audioCtx = new AudioContext();
       currentAudioCtx = audioCtx;
+      currentDispose = teardown;
       await audioCtx.suspend(); // stay silent until user hits play
 
       buffer   = await decodeAudio(entry, audioCtx);

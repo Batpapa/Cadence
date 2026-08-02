@@ -36,9 +36,11 @@ export const AGG_CONFIG: AggConfig = {
    *  Calibrated 2026-07: 2 killed real tunes recognised sporadically
    *  (The Flogging: 3 correct hits 25 s apart, never 2 consecutive). */
   K_EMPTY_CANDIDATE_RESET: 8,
-  /** Confidence bucket thresholds. */
-  BUCKET_HIGH: 0.7,
-  BUCKET_MEDIUM: 0.5,
-  /** Number of alternate candidates kept on an annotation. */
-  MAX_ALTERNATES: 3,
+  /** Confidence bucket thresholds. Calibrated 2026-08 empirically. */
+  BUCKET_HIGH: 0.5,
+  BUCKET_MEDIUM: 0.3,
+  /** Number of alternate candidates kept on an annotation, besides the current
+   *  pick — the detection-options panel always shows the current pick too, so
+   *  this is "total shown minus one" (4 here → 5 total, as requested). */
+  MAX_ALTERNATES: 4,
 };
