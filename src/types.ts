@@ -143,7 +143,8 @@ export type Route =
   | { view: 'card'; cardId: string; contextDeckId?: string }
   | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null }
   | { view: 'modules' }
-  | { view: 'sessions'; sessionId?: string };
+  | { view: 'sessions'; sessionId?: string }
+  | { view: 'trending' };
 
 export interface AppContext {
   user: AppState;

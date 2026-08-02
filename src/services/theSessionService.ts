@@ -189,7 +189,7 @@ function settingToAbcFile(setting: TuneSetting, tune: TuneResult): FileEntry {
   };
 }
 
-function settingsToMergedAbcFile(settings: TuneSetting[], tune: TuneResult): FileEntry {
+export function settingsToMergedAbcFile(settings: TuneSetting[], tune: TuneResult): FileEntry {
   const abc = settings.map((s, i) => settingToAbcBlock(s, tune, i + 1)).join('\n\n');
   return {
     name: `${tune.name}.abc`,

@@ -22,6 +22,7 @@ function isValidRoute(route: Route, user: AppState): boolean {
     // Sessions live in a separate IndexedDB, not `user` — can't validate synchronously
     // here; SessionsView redirects to the library itself if the id doesn't resolve.
     case 'sessions': return true;
+    case 'trending': return true;
   }
 }
 

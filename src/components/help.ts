@@ -88,6 +88,15 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
           { style: 'metrics',    heading: t('help.sessions.summary.heading'),   items: [t('help.sessions.summary.1'), t('help.sessions.summary.2'), t('help.sessions.summary.3'), t('help.sessions.summary.4'), t('help.sessions.summary.5')] },
         ],
       };
+
+    case 'trending':
+      return {
+        title: t('help.context.trending'),
+        sections: [
+          { style: 'definition', heading: t('help.trending.what.heading'),    items: [t('help.trending.what.1'), t('help.trending.what.2'), t('help.trending.what.3')] },
+          { style: 'logic',      heading: t('help.trending.actions.heading'), items: [t('help.trending.actions.1'), t('help.trending.actions.2'), t('help.trending.actions.3')] },
+        ],
+      };
   }
 }
 
