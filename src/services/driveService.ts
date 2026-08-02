@@ -99,6 +99,18 @@ export function isDriveConnected(): boolean      { return !!localStorage.getItem
 export function getDriveStatus(): DriveStatus    { return _state.status; }
 export function getLocalTimestamp(): number      { return parseInt(localStorage.getItem(lsLocalTs()) ?? '0'); }
 
+/** Chat apps' built-in browsers (WhatsApp, Instagram, Messenger, Line…) are
+ *  known to block Google's OAuth consent screen — it shows as a blank/white
+ *  screen with no error surfaced back to us. Since Cadence links circulate
+ *  via WhatsApp, this is worth flagging proactively rather than waiting for
+ *  a token request that may never resolve or reject. */
+export function isLikelyInAppBrowser(): boolean {
+  const ua = navigator.userAgent || '';
+  if (/FBAN|FBAV|Instagram|Line\/|WhatsApp|Messenger/i.test(ua)) return true;
+  // Generic Android WebView marker — catches other chat/social apps' in-app browsers.
+  return /Android/.test(ua) && /; wv\)/.test(ua);
+}
+
 /** Sync base: `_lastModified` of the Drive content at the last moment local == Drive. */
 function getSyncedTimestamp(): number {
   return parseInt(localStorage.getItem(lsSyncedTs()) ?? '0');

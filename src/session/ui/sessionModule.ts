@@ -1,8 +1,8 @@
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { fileToEntry } from '../../utils';
-import { iconElement, TrashIcon, MicIcon, FileAudioIcon } from '../../components/icons';
-import { playIcon, pauseIcon } from '../../components/playbackIcons';
+import { fileToEntry, focusIfDesktop } from '../../utils';
+import { iconElement, TrashIcon, MicIcon, FileAudioIcon, PlusIcon, heartIconElement, ImportTrayIcon } from '../../components/icons';
+import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, showModal, closeModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import { LiveSession } from '../liveSession';
@@ -10,9 +10,11 @@ import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile } from '../audio/sources';
 import { extractClipMp3 } from '../audio/clipExtract';
 import { makeAbcNoteButton } from './abcPreview';
-import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
+import { IMPORT_WARN_MINUTES, IMPORT_MIN_S, SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
+import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
+import { shareSession, importSharedSession, exportSessionFile, importSessionFile } from '../../services/sessionShareService';
 import { getContext } from '../../store';
 import type { RecordedSession, SessionAnnotation, WindowResult } from '../model';
 import type { IndexProgress } from '../recognition/indexStore';
@@ -42,9 +44,7 @@ export interface SessionModuleHost {
   header: HTMLElement;
   body: HTMLElement;
   ctx: AppContext;
-  onBack: () => void;         // back to the modules list
   closeModal: () => void;
-  makeCloseBtn: () => HTMLElement;
   registerCleanup: (fn: () => void) => void;
 }
 
@@ -63,6 +63,13 @@ function defaultSessionName(dateIso: string | null): string {
   return dateIso
     ? t('sessions.defaultName', { date: new Date(dateIso).toLocaleDateString() })
     : t('sessions.defaultNameNoDate');
+}
+
+/** ISO timestamp → 'YYYY-MM-DDTHH:mm' local time, what a datetime-local input shows/expects. */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function indexProgressText(p: IndexProgress): string {
@@ -93,26 +100,235 @@ function fmtEta(etaS: number): string {
 
 // ── Shared bits ───────────────────────────────────────────────────────────────
 
+// Same icon glyphs as the card import/export flow (theSessionImport.ts's
+// mkChoiceCard SVGs / library.tsx's export trigger) — kept as a local copy
+// rather than shared, matching how those two already don't share code with
+// each other either. Two "file" variants: arrow OUT of a tray for export
+// (library.tsx's actual export-button icon), arrow INTO a tray for import
+// (theSessionImport.ts's .cdc-file icon) — same tray, opposite arrow.
+const SHARE_ICON_FILE_UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+// Same glyph, small size — exact match of library.tsx's icon-only export trigger.
+const SHARE_ICON_TRIGGER = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+const SHARE_ICON_FILE_DOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+const SHARE_ICON_SHARE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
+
 /** Builds the module header; returns the title element so screens with an
- *  editable name (summary) can keep it in sync. */
-function moduleHeader(host: SessionModuleHost, title: string, onBack: () => void): HTMLElement {
+ *  editable name (summary) can keep it in sync.
+ *  `onBack` is null for screens now reachable via real routes (their back
+ *  navigation is the app's own history) — still used by the live/import
+ *  screens, which stay local state and have no route of their own. */
+function moduleHeader(host: SessionModuleHost, title: string, onBack: (() => void) | null): HTMLElement {
   host.header.innerHTML = '';
   const leftGroup = document.createElement('div');
-  leftGroup.className = 'flex items-center gap-2';
+  leftGroup.className = 'flex items-center gap-3 mb-4';
 
   // Same back button as the library / TheSession-import headers.
-  const backBtn = document.createElement('button');
-  backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0';
-  backBtn.textContent = '←';
-  backBtn.onclick = onBack;
+  if (onBack) {
+    const backBtn = document.createElement('button');
+    backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0 text-lg leading-none';
+    backBtn.textContent = '←';
+    backBtn.onclick = onBack;
+    leftGroup.appendChild(backBtn);
+  }
 
-  const titleEl = document.createElement('h2');
-  titleEl.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
+  const titleEl = document.createElement('h1');
+  titleEl.className = 'text-xl font-semibold text-primary';
   titleEl.textContent = title;
 
-  leftGroup.append(backBtn, titleEl);
-  host.header.append(leftGroup, host.makeCloseBtn());
+  leftGroup.appendChild(titleEl);
+  host.header.append(leftGroup);
   return titleEl;
+}
+
+/** Card.tsx-style header shared by the three "one particular session/recording"
+ *  screens (a finished session, a live recording, an import in progress): plain
+ *  heading that turns into an input on click, plus a delete button — no back
+ *  arrow. `getName`/`getDefaultName` abstract over RecordedSession/LiveSession/
+ *  ImportSession, which don't share a base type. Returns a `refreshTitle()` to
+ *  call when something else (e.g. the date) changes what the default name shows. */
+function titleAndDeleteRow(body: HTMLElement, opts: {
+  getName: () => string;
+  getDefaultName: () => string;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+  /** Only the finished-session summary offers sharing — shows a button left
+   *  of delete when set. */
+  onShare?: () => void;
+  /** Target deck(s) new cards from this session's recognised tunes get linked
+   *  to. `undefined` = never touched — the icon shows a "(?)" warning until
+   *  the picker's been opened at least once (even choosing zero decks counts). */
+  getTargetDeckIds: () => Set<string> | undefined;
+  ensureTargetDeckIds: () => Set<string>;
+}): { refreshTitle: () => void; refreshDeckBtn: () => void } {
+  const titleH1 = document.createElement('h1');
+  titleH1.className = 'text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors flex-1 min-w-0 truncate';
+  titleH1.title = 'Click to rename';
+  titleH1.textContent = opts.getName() || opts.getDefaultName();
+
+  const titleInp = document.createElement('input');
+  titleInp.type = 'text';
+  titleInp.className = 'text-xl font-semibold bg-transparent border-b border-accent outline-none text-primary flex-1 min-w-0 hidden';
+
+  const refreshTitle = () => { titleH1.textContent = opts.getName() || opts.getDefaultName(); };
+
+  const stopEditing = () => {
+    titleInp.classList.add('hidden');
+    titleH1.classList.remove('hidden');
+  };
+  titleInp.addEventListener('blur', () => {
+    const val = titleInp.value.trim();
+    if (val) opts.onRename(val);
+    refreshTitle();
+    stopEditing();
+  });
+  titleInp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') titleInp.blur();
+    if (e.key === 'Escape') stopEditing();
+  });
+  titleH1.addEventListener('click', () => {
+    titleInp.value = opts.getName() || opts.getDefaultName();
+    titleH1.classList.add('hidden');
+    titleInp.classList.remove('hidden');
+    titleInp.focus();
+  });
+
+  const deckBtn = document.createElement('button');
+  const updateDeckBtn = () => {
+    const ids = opts.getTargetDeckIds();
+    const suffix = ids === undefined ? ' (?)' : ids.size > 0 ? ` (${ids.size})` : '';
+    deckBtn.innerHTML = `${deckLinkIcon}${suffix}`;
+    deckBtn.className = `inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${
+      ids === undefined ? 'text-warn hover:text-primary' : ids.size > 0 ? 'text-accent' : 'text-dim hover:text-primary'
+    }`;
+    deckBtn.title = t('newCard.selectDecks');
+  };
+  updateDeckBtn();
+  deckBtn.onclick = () => {
+    const ids = opts.ensureTargetDeckIds();
+    updateDeckBtn(); // reflect the undefined→Set transition even before any checkbox is touched
+    showDeckPickerPopover(ids, updateDeckBtn);
+  };
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn-danger px-2 shrink-0';
+  deleteBtn.title = t('sessions.deleteTitle');
+  deleteBtn.appendChild(iconElement(TrashIcon, 14));
+  deleteBtn.onclick = () => confirmModal(
+    t('sessions.delete.title'),
+    t('sessions.delete.message', { name: opts.getName() || opts.getDefaultName() }),
+    t('common.delete'),
+    opts.onDelete,
+  );
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'flex items-center gap-2';
+  titleRow.append(titleH1, titleInp, deckBtn);
+  if (opts.onShare) {
+    const shareBtn = document.createElement('button');
+    shareBtn.className = 'btn-ghost px-2 shrink-0 inline-flex items-center justify-center';
+    shareBtn.title = t('sessions.share.button');
+    shareBtn.innerHTML = SHARE_ICON_TRIGGER;
+    shareBtn.onclick = opts.onShare;
+    titleRow.appendChild(shareBtn);
+  }
+  titleRow.appendChild(deleteBtn);
+  body.appendChild(titleRow);
+
+  return { refreshTitle, refreshDeckBtn: updateDeckBtn };
+}
+
+/** Editable + erasable session-start date row — shared by a finished session
+ *  and an import in progress (both can be genuinely dateless: no trustworthy
+ *  t=0 for a file). A live recording always has one and shows it read-only
+ *  instead (see renderLive) — editing it mid-recording isn't offered here. */
+function editableDateRow(body: HTMLElement, opts: {
+  getDate: () => string | null;
+  setDate: (date: string | null) => void;
+  onChange?: () => void;
+}): void {
+  const dateRow = document.createElement('div');
+  dateRow.className = 'flex items-center gap-2 mt-2';
+  const dateInp = document.createElement('input');
+  dateInp.type = 'datetime-local';
+  dateInp.className = 'input text-sm';
+  dateInp.value = opts.getDate() ? toLocalInput(opts.getDate()!) : '';
+  dateInp.max = toLocalInput(new Date().toISOString());
+  const dateClear = document.createElement('button');
+  dateClear.className = 'text-xs text-dim hover:text-danger cursor-pointer shrink-0';
+  dateClear.textContent = t('sessions.dateClear');
+  const dateNow = document.createElement('button');
+  dateNow.className = 'text-xs text-dim hover:text-accent cursor-pointer shrink-0';
+  dateNow.textContent = t('sessions.dateNow');
+  const syncBtns = () => {
+    const has = !!opts.getDate();
+    dateClear.style.display = has ? '' : 'none';
+    dateNow.style.display   = has ? 'none' : '';
+  };
+  const applyDate = (date: string | null) => {
+    opts.setDate(date);
+    dateInp.value = date ? toLocalInput(date) : '';
+    syncBtns();
+    opts.onChange?.();
+  };
+  dateInp.addEventListener('change', () => {
+    if (!dateInp.value) { applyDate(null); return; }
+    // 'YYYY-MM-DDTHH:mm' without offset parses as local time — what the picker shows.
+    const ms = Date.parse(dateInp.value);
+    if (Number.isNaN(ms) || ms > Date.now()) { dateInp.value = opts.getDate() ? toLocalInput(opts.getDate()!) : ''; return; }
+    applyDate(new Date(ms).toISOString());
+  });
+  dateClear.onclick = () => applyDate(null);
+  dateNow.onclick = () => applyDate(new Date().toISOString());
+  syncBtns();
+  dateRow.append(dateInp, dateNow, dateClear);
+  body.appendChild(dateRow);
+}
+
+/** Compact "− N +" stepper for the manual pitch shift applied to an ongoing
+ *  live/import analysis (e.g. a session played in Bb). Plain +/- taps rather
+ *  than a slider — with only 25 discrete steps, big touch targets beat
+ *  dragging a thin range input on a phone. Live-adjustable: takes effect on
+ *  the next analysis window. Sits inline in the status bar, next to the
+ *  stop/cancel button — no label, just the tooltip. */
+function pitchShiftControl(opts: {
+  get: () => number;
+  set: (semitones: number) => void;
+}): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'flex items-center gap-1 text-xs shrink-0';
+  row.title = t('sessions.pitchShift.hint');
+
+  const stepBtn = (glyph: string): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.className = 'btn-ghost border border-border w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 leading-none';
+    b.textContent = glyph;
+    return b;
+  };
+  const minusBtn = stepBtn('−');
+  const plusBtn = stepBtn('+');
+
+  const valueEl = document.createElement('span');
+  valueEl.className = 'font-mono tabular-nums text-center shrink-0';
+  valueEl.style.width = '2em';
+
+  const refresh = () => {
+    const v = opts.get();
+    valueEl.textContent = v === 0 ? '0' : `${v > 0 ? '+' : ''}${v}`;
+    valueEl.classList.toggle('text-dim', v === 0);
+    valueEl.classList.toggle('text-accent', v !== 0);
+    valueEl.classList.toggle('font-semibold', v !== 0);
+    minusBtn.disabled = v <= -12;
+    plusBtn.disabled = v >= 12;
+    minusBtn.classList.toggle('opacity-40', minusBtn.disabled);
+    plusBtn.classList.toggle('opacity-40', plusBtn.disabled);
+  };
+
+  minusBtn.onclick = () => { opts.set(Math.max(-12, opts.get() - 1)); refresh(); };
+  plusBtn.onclick  = () => { opts.set(Math.min(12, opts.get() + 1)); refresh(); };
+
+  refresh();
+  row.append(minusBtn, valueEl, plusBtn);
+  return row;
 }
 
 const BUCKET_BADGE: Record<SessionAnnotation['bucket'], string> = {
@@ -130,7 +346,6 @@ const BUCKET_SEGMENT: Record<SessionAnnotation['bucket'], string> = {
 
 interface AnnotationCardOptions {
   ctx: AppContext;
-  onRelabel?: (ann: SessionAnnotation, alt: SessionAnnotation['alternates'][number]) => void;
   onOpenCard?: (cardId: string) => void;
   onCardAdded?: () => void;
   /** Play/stop this annotation's audio slice; shows a ▶ button when provided. */
@@ -141,6 +356,15 @@ interface AnnotationCardOptions {
    *  get the "log this as a review" control (summary + live feed; the import
    *  feed has no date until the user sets one in the summary). */
   sessionStartMs?: number;
+  /** Deck(s) a card created from this annotation via "Add card" should link into.
+   *  `undefined` = never touched — "Add card" forces the picker open first (auto-
+   *  creating once it closes) instead of creating immediately, same rule as the
+   *  title row's deck icon these three share the underlying Set with. */
+  getTargetDeckIds?: () => Set<string> | undefined;
+  ensureTargetDeckIds?: () => Set<string>;
+  onTargetDeckIdsChanged?: () => void;
+  /** "I liked this tune" marker — purely personal, unrelated to any card. */
+  onToggleLike?: (annotationId: string) => void;
 }
 
 // ── Review logging from a recognised tune ─────────────────────────────────────
@@ -249,15 +473,89 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
   // Sheet + synth preview of the matched setting (inert when no ABC exists).
   row1.appendChild(makeAbcNoteButton(ann.settingId, ann.displayName));
 
-  const nameEl = document.createElement('span');
-  nameEl.className = 'text-sm font-semibold text-primary capitalize truncate flex-1';
-  nameEl.textContent = ann.displayName;
+  if (!known) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20';
+    addBtn.title = t('sessions.addCard');
+    addBtn.appendChild(iconElement(PlusIcon, 12));
+    const doAdd = async () => {
+      addBtn.disabled = true;
+      addBtn.classList.add('opacity-50');
+      try {
+        const tune = await fetchTuneById(Number(ann.tuneId));
+        const card = tuneResultToCard(tune);
+        await opts.ctx.mutate(s => {
+          s.cards[card.id] = card;
+          for (const deckId of opts.getTargetDeckIds?.() ?? []) {
+            const deck = s.decks[deckId];
+            if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+          }
+        });
+        opts.onCardAdded?.();
+      } catch {
+        addBtn.disabled = false;
+        addBtn.classList.remove('opacity-50');
+      }
+    };
+    addBtn.onclick = (e) => {
+      e.stopPropagation();
+      // First "Add card" ever for this session: force a deliberate deck choice
+      // (or explicit "none") before creating anything — same rule as the title
+      // row's deck icon, sharing its underlying Set. Creates automatically once
+      // the forced picker closes, no second click needed.
+      if (opts.getTargetDeckIds?.() === undefined && opts.ensureTargetDeckIds) {
+        const ids = opts.ensureTargetDeckIds();
+        opts.onTargetDeckIdsChanged?.();
+        showDeckPickerPopover(ids, () => opts.onTargetDeckIdsChanged?.(), () => { void doAdd(); });
+      } else {
+        void doAdd();
+      }
+    };
+    row1.appendChild(addBtn);
+  }
 
+  // A name that "navigates to" the card page if it exists, else TheSession —
+  // shared by the main title and the current pick's row in the alternates
+  // panel below (both refer to the same tune while nothing's been relabelled).
+  const makeNavigableName = (label: string, tuneId: string, knownCardId: string | undefined): HTMLElement => {
+    if (knownCardId) {
+      const span = document.createElement('span');
+      span.className = 'cursor-pointer hover:text-accent transition-colors';
+      span.title = t('sessions.openCard');
+      span.textContent = label;
+      span.onclick = () => opts.onOpenCard?.(knownCardId);
+      return span;
+    }
+    const a = document.createElement('a');
+    a.className = 'cursor-pointer hover:text-accent transition-colors';
+    a.title = t('sessions.viewOnTheSession');
+    a.textContent = label;
+    a.href = `https://thesession.org/tunes/${tuneId}`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    return a;
+  };
+
+  const nameEl = makeNavigableName(ann.displayName, ann.tuneId, known?.id);
+  nameEl.classList.add('text-sm', 'font-semibold', 'text-primary', 'capitalize', 'truncate', 'flex-1');
+
+  // Confidence pin — percentage appended (dropped the expandable "detection
+  // options" panel entirely: confidence and the alternates' meanScore are
+  // different metrics, comparing them side by side was misleading).
   const badge = document.createElement('span');
   badge.className = `text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${BUCKET_BADGE[ann.bucket]}`;
-  badge.textContent = ann.userConfirmed ? '✓' : t(`sessions.confidence.${ann.bucket}`);
+  badge.textContent = ann.userConfirmed ? '✓' : `${t(`sessions.confidence.${ann.bucket}`)} ${Math.round(ann.confidence * 100)}%`;
 
   row1.append(nameEl, badge);
+
+  if (opts.onToggleLike) {
+    const likeBtn = document.createElement('button');
+    likeBtn.className = `shrink-0 cursor-pointer transition-colors ${ann.liked ? 'text-danger' : 'text-dim hover:text-danger'}`;
+    likeBtn.title = t(ann.liked ? 'sessions.unlike' : 'sessions.like');
+    likeBtn.appendChild(heartIconElement(ann.liked));
+    likeBtn.onclick = (e) => { e.stopPropagation(); opts.onToggleLike!(ann.id); };
+    row1.appendChild(likeBtn);
+  }
 
   const row2 = document.createElement('div');
   row2.className = 'text-xs text-muted';
@@ -268,85 +566,12 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
 
   const row3 = document.createElement('div');
   row3.className = 'flex items-center gap-3 flex-wrap';
-
-  if (known) {
-    const openBtn = document.createElement('button');
-    openBtn.className = 'text-xs text-accent hover:underline cursor-pointer';
-    openBtn.textContent = t('sessions.openCard');
-    openBtn.onclick = () => opts.onOpenCard?.(known.id);
-    row3.appendChild(openBtn);
-    if (opts.sessionStartMs !== undefined && ann.end !== null) {
-      row3.appendChild(reviewLogControl(known.id, opts.sessionStartMs + ann.end * 1000, opts.ctx));
-    }
-  } else {
-    const addBtn = document.createElement('button');
-    addBtn.className = 'text-xs text-accent hover:underline cursor-pointer';
-    addBtn.textContent = t('sessions.addCard');
-    addBtn.onclick = async () => {
-      addBtn.disabled = true;
-      addBtn.textContent = '…';
-      try {
-        const tune = await fetchTuneById(Number(ann.tuneId));
-        const card = tuneResultToCard(tune);
-        await opts.ctx.mutate(s => { s.cards[card.id] = card; });
-        opts.onCardAdded?.();
-      } catch {
-        addBtn.disabled = false;
-        addBtn.textContent = t('sessions.addCard');
-      }
-    };
-    row3.appendChild(addBtn);
+  if (known && opts.sessionStartMs !== undefined && ann.end !== null) {
+    row3.appendChild(reviewLogControl(known.id, opts.sessionStartMs + ann.end * 1000, opts.ctx));
   }
 
-  // Redundant once the card exists — its page already links to the source.
-  if (!known) {
-    const tsLink = document.createElement('a');
-    tsLink.className = 'text-xs text-dim hover:text-primary hover:underline';
-    tsLink.href = `https://thesession.org/tunes/${ann.tuneId}`;
-    tsLink.target = '_blank';
-    tsLink.rel = 'noopener';
-    tsLink.textContent = t('sessions.viewOnTheSession');
-    row3.appendChild(tsLink);
-  }
-
-  el.append(row1, row2, row3);
-
-  // Alternates: tap the card body to expand; each candidate can be explored
-  // (sheet + synth, TheSession page) before being elected.
-  if (ann.alternates.length > 0 && opts.onRelabel) {
-    const altWrap = document.createElement('div');
-    altWrap.className = 'space-y-0.5 hidden pt-1 border-t border-border/50';
-    for (const alt of ann.alternates) {
-      const altRow = document.createElement('div');
-      altRow.className = 'flex items-center gap-2 px-2 py-1 rounded hover:bg-elevated transition-colors text-[11px]';
-
-      const altName = document.createElement('span');
-      altName.className = 'truncate capitalize text-muted flex-1';
-      altName.textContent = `${alt.displayName} (${Math.round(alt.meanScore * 100)}%)`;
-
-      const altAbc = makeAbcNoteButton(alt.settingId, alt.displayName, 11);
-
-      const altTs = document.createElement('a');
-      altTs.className = 'text-dim hover:text-primary shrink-0';
-      altTs.href = `https://thesession.org/tunes/${alt.tuneId}`;
-      altTs.target = '_blank';
-      altTs.rel = 'noopener';
-      altTs.textContent = '↗';
-      altTs.title = t('sessions.viewOnTheSession');
-      altTs.onclick = (e) => e.stopPropagation();
-
-      const altPick = document.createElement('button');
-      altPick.className = 'text-accent hover:underline cursor-pointer shrink-0';
-      altPick.textContent = t('sessions.relabel');
-      altPick.onclick = (e) => { e.stopPropagation(); opts.onRelabel!(ann, alt); };
-
-      altRow.append(altName, altAbc, altTs, altPick);
-      altWrap.appendChild(altRow);
-    }
-    el.appendChild(altWrap);
-    row1.classList.add('cursor-pointer');
-    row1.onclick = () => altWrap.classList.toggle('hidden');
-  }
+  el.append(row1, row2);
+  if (row3.children.length > 0) el.appendChild(row3);
 
   opts.extraControls?.(el);
   return el;
@@ -355,7 +580,7 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
 // ── Screen: library ───────────────────────────────────────────────────────────
 
 function renderLibrary(host: SessionModuleHost): void {
-  moduleHeader(host, t('sessions.moduleTitle'), host.onBack);
+  moduleHeader(host, t('sessions.moduleTitle'), null);
   const body = host.body;
   body.innerHTML = '';
 
@@ -389,6 +614,15 @@ function renderLibrary(host: SessionModuleHost): void {
   importBtn.onclick = () => fileInput.click();
   body.append(fileInput, importBtn);
 
+  const importSessionBtn = document.createElement('button');
+  importSessionBtn.className = 'btn-ghost w-full justify-center flex items-center gap-2 mt-2 border border-border';
+  importSessionBtn.appendChild(iconElement(ImportTrayIcon, 13));
+  const importSessionLbl = document.createElement('span');
+  importSessionLbl.textContent = t('sessions.share.importSession');
+  importSessionBtn.appendChild(importSessionLbl);
+  importSessionBtn.onclick = () => showImportSessionModal(host);
+  body.appendChild(importSessionBtn);
+
   // Drag & drop an audio file anywhere on the library screen. renderLibrary
   // runs many times on the same body element (back from summary, deletions…):
   // wire the listeners only once per modal instance.
@@ -409,22 +643,36 @@ function renderLibrary(host: SessionModuleHost): void {
     });
   }
 
+  const searchInp = document.createElement('input');
+  searchInp.type = 'text';
+  searchInp.className = 'input text-sm mt-3';
+  searchInp.placeholder = t('sessions.search');
+  body.appendChild(searchInp);
+
   const listWrap = document.createElement('div');
   listWrap.className = 'mt-4 space-y-2';
   body.appendChild(listWrap);
 
-  void recoverOrphanedSessions(activeLive?.sessionId).then(() => listSessions()).then(sessions => {
+  let allSessions: RecordedSession[] = [];
+
+  const renderRows = (query: string) => {
+    listWrap.innerHTML = '';
+    const q = query.trim().toLowerCase();
+    const sessions = q
+      ? allSessions.filter(s => (s.name || defaultSessionName(s.date)).toLowerCase().includes(q))
+      : allSessions;
+
     if (sessions.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'text-xs text-dim text-center py-4';
-      empty.textContent = t('sessions.empty');
+      empty.textContent = q ? t('sessions.noSearchResults') : t('sessions.empty');
       listWrap.appendChild(empty);
       return;
     }
     for (const session of sessions) {
       const row = document.createElement('div');
-      row.className = 'flex items-center gap-3 p-3 rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors cursor-pointer group';
-      row.onclick = () => renderSummary(host, session);
+      row.className = 'flex items-center gap-3 p-3 rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors cursor-pointer';
+      row.onclick = () => host.ctx.navigate({ view: 'sessions', sessionId: session.id });
 
       const textWrap = document.createElement('div');
       textWrap.className = 'flex-1 min-w-0';
@@ -451,20 +699,15 @@ function renderLibrary(host: SessionModuleHost): void {
       textWrap.append(nameEl, metaEl);
       row.appendChild(textWrap);
 
-      const delBtn = document.createElement('button');
-      delBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100';
-      delBtn.title = t('common.delete');
-      delBtn.appendChild(iconElement(TrashIcon, 12));
-      delBtn.onclick = (e) => {
-        e.stopPropagation();
-        confirmModal(t('sessions.delete.title'), t('sessions.delete.message', { name: session.name || defaultSessionName(session.date) }), t('common.delete'), () => {
-          void deleteSession(session.id).then(() => renderLibrary(host));
-        });
-      };
-      row.appendChild(delBtn);
-
       listWrap.appendChild(row);
     }
+  };
+
+  searchInp.addEventListener('input', () => renderRows(searchInp.value));
+
+  void recoverOrphanedSessions(activeLive?.sessionId).then(() => listSessions()).then(sessions => {
+    allSessions = sessions;
+    renderRows(searchInp.value);
   });
 }
 
@@ -478,6 +721,184 @@ function alertModal(title: string, message: string): void {
   p.className = 'text-sm text-muted leading-relaxed';
   p.textContent = message;
   showModal(title, p, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
+}
+
+// ── Share a session (annotations + optionally the audio) via a short key —
+// same mechanism as card sharing (shareService.ts). ─────────────────────────
+
+function mkShareChoiceCard(icon: string, label: string, desc: string, accentColor: string, onClick: () => void): HTMLElement {
+  const btn = document.createElement('button');
+  btn.className = 'flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer';
+  btn.style.cssText = 'transition: border-color 0.15s, background 0.15s;';
+  btn.title = desc;
+  const iconWrap = document.createElement('span');
+  iconWrap.style.color = accentColor;
+  iconWrap.className = 'shrink-0 flex items-center';
+  iconWrap.innerHTML = icon;
+  const labelEl = document.createElement('div');
+  labelEl.className = 'flex-1 text-sm font-medium text-primary';
+  labelEl.textContent = label;
+  const arrow = document.createElement('span');
+  arrow.className = 'text-dim text-base leading-none shrink-0';
+  arrow.textContent = '›';
+  btn.append(iconWrap, labelEl, arrow);
+  btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
+  btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
+  btn.onclick = onClick;
+  return btn;
+}
+
+/** Same look as theSessionImport.ts's mkInputRow, without the unused info span. */
+function mkShareInputRow(placeholder: string): { wrap: HTMLDivElement; inp: HTMLInputElement } {
+  const wrap = document.createElement('div');
+  wrap.className = 'flex-1 flex items-center bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent';
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'flex-1 min-w-0 bg-transparent outline-none text-sm text-primary placeholder:text-dim';
+  inp.placeholder = placeholder;
+  wrap.appendChild(inp);
+  return { wrap, inp };
+}
+
+function showShareSessionModal(session: RecordedSession): void {
+  const body = document.createElement('div');
+  body.className = 'space-y-3';
+  const status = document.createElement('p');
+  status.className = 'text-xs text-muted text-center py-2';
+  status.textContent = t('sessions.share.checking');
+  body.appendChild(status);
+
+  showModal(t('sessions.share.title'), body, []);
+
+  void loadSessionAudio(session.id).then(loaded => {
+    body.innerHTML = '';
+    const audioBlob = loaded ?? null;
+
+    let includeAudio = false;
+    if (audioBlob) {
+      const tooBig = audioBlob.size > SHARE_MAX_AUDIO_BYTES;
+      includeAudio = !tooBig;
+
+      const row = document.createElement('label');
+      row.className = 'flex items-center gap-2 cursor-pointer select-none';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'card-checkbox';
+      chk.checked = includeAudio;
+      const lbl = document.createElement('span');
+      lbl.className = 'text-xs text-muted';
+      lbl.textContent = t('sessions.share.includeAudio', { mb: (audioBlob.size / 1048576).toFixed(0) });
+      chk.onchange = () => { includeAudio = chk.checked; };
+      row.append(chk, lbl);
+      body.appendChild(row);
+
+      if (tooBig) {
+        const warn = document.createElement('p');
+        warn.className = 'text-xs text-warn';
+        warn.textContent = t('sessions.share.tooBig');
+        body.appendChild(warn);
+      }
+    } else {
+      const lbl = document.createElement('p');
+      lbl.className = 'text-xs text-dim';
+      lbl.textContent = t('sessions.share.noAudio');
+      body.appendChild(lbl);
+    }
+
+    const choices = document.createElement('div');
+    choices.className = 'space-y-2 mt-1';
+    choices.appendChild(mkShareChoiceCard(SHARE_ICON_FILE_UP, t('library.export.file'), t('sessions.share.fileDesc'), 'var(--color-warn)', () => {
+      void exportSessionFile(session, includeAudio ? audioBlob : null);
+      closeModal();
+    }));
+    choices.appendChild(mkShareChoiceCard(SHARE_ICON_SHARE, t('library.share.label'), t('library.share.desc'), 'var(--color-accent)', () => {
+      void doUpload(includeAudio ? audioBlob : null);
+    }));
+    body.appendChild(choices);
+
+    const doUpload = async (withAudio: Blob | null) => {
+      body.innerHTML = '';
+      status.textContent = t('sessions.share.uploading');
+      body.appendChild(status);
+      try {
+        const { key, secondsRemaining } = await shareSession(session, withAudio);
+        body.innerHTML = '';
+        const keyEl = document.createElement('div');
+        keyEl.className = 'text-center font-mono text-3xl font-bold tracking-[0.3em] text-primary py-2';
+        keyEl.textContent = key;
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-primary w-full text-sm';
+        copyBtn.textContent = t('library.share.copy');
+        copyBtn.onclick = () => {
+          void navigator.clipboard.writeText(key);
+          copyBtn.textContent = t('library.share.copied');
+          setTimeout(() => { copyBtn.textContent = t('library.share.copy'); }, 2000);
+        };
+        const validity = document.createElement('p');
+        validity.className = 'text-xs text-muted text-center';
+        validity.textContent = t('library.share.validity', { minutes: Math.floor(secondsRemaining / 60) });
+        body.append(keyEl, copyBtn, validity);
+      } catch (e) {
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      }
+    };
+  });
+}
+
+function showImportSessionModal(host: SessionModuleHost): void {
+  const body = document.createElement('div');
+  body.className = 'space-y-2';
+
+  body.appendChild(mkShareChoiceCard(SHARE_ICON_FILE_DOWN, t('library.export.file'), t('sessions.share.fileImportDesc'), 'var(--color-warn)', () => {
+    closeModal();
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.cds';
+    inp.onchange = () => {
+      const file = inp.files?.[0];
+      if (!file) return;
+      void importSessionFile(file).then(session => {
+        host.ctx.navigate({ view: 'sessions', sessionId: session.id });
+      }).catch(e => alertModal(t('sessions.share.importTitle'), e instanceof Error ? e.message : String(e)));
+    };
+    inp.click();
+  }));
+
+  body.appendChild(mkShareChoiceCard(SHARE_ICON_SHARE, t('newCard.share.label'), t('newCard.share.desc'), 'var(--color-accent)', () => {
+    renderKeyEntry();
+  }));
+
+  showModal(t('sessions.share.importTitle'), body, []);
+
+  const renderKeyEntry = () => {
+    body.innerHTML = '';
+    const status = document.createElement('p');
+    status.className = 'text-xs text-muted min-h-[1.25rem]';
+    const { wrap: inputWrap, inp } = mkShareInputRow(t('newCard.share.placeholder'));
+    inp.maxLength = 6;
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn-primary text-xs shrink-0';
+    importBtn.textContent = t('newCard.share.importBtn');
+    importBtn.disabled = true;
+    const row = document.createElement('div');
+    row.className = 'flex gap-2';
+    row.append(inputWrap, importBtn);
+    inp.addEventListener('input', () => { importBtn.disabled = inp.value.trim().length !== 6; });
+    const doImport = () => {
+      importBtn.disabled = true;
+      status.textContent = t('newCard.import.importing');
+      void importSharedSession(inp.value.trim()).then(session => {
+        host.ctx.navigate({ view: 'sessions', sessionId: session.id });
+      }).catch(e => {
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+        importBtn.disabled = false;
+      });
+    };
+    importBtn.onclick = doImport;
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim().length === 6) doImport(); });
+    body.append(row, status);
+    focusIfDesktop(inp);
+  };
 }
 
 async function startImport(host: SessionModuleHost, file: File): Promise<void> {
@@ -523,7 +944,7 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
     if (session) {
       lastImportDump = { sessionId: session.id, windows: [...imp.windows] };
       activeImport = null;
-      renderSummary(host, session);
+      host.ctx.navigate({ view: 'sessions', sessionId: session.id });
       return;
     }
     // Cancelled: offer to keep the partial result when enough was recognised.
@@ -536,7 +957,7 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
           void imp.keepPartial().then(session2 => {
             lastImportDump = { sessionId: session2.id, windows: [...imp.windows] };
             activeImport = null;
-            renderSummary(host, session2);
+            host.ctx.navigate({ view: 'sessions', sessionId: session2.id });
           });
         },
       );
@@ -562,9 +983,29 @@ function renderImportAnalysis(host: SessionModuleHost): void {
   const imp = activeImport;
   if (!imp) { renderLibrary(host); return; }
 
-  moduleHeader(host, t('sessions.import'), () => renderLibrary(host));
+  // Card.tsx-style header, same as a finished session / a live recording —
+  // no back arrow. "Delete" reuses imp.cancel(): the existing cancellation
+  // flow already offers to keep whatever was recognised so far (see below).
+  host.header.innerHTML = '';
   const body = host.body;
   body.innerHTML = '';
+
+  const ensureImpTargetDeckIds = () => { if (!imp.targetDeckIds) imp.targetDeckIds = new Set(); return imp.targetDeckIds; };
+  const { refreshDeckBtn: refreshImpDeckBtn } = titleAndDeleteRow(body, {
+    getName: () => imp.name,
+    getDefaultName: () => imp.defaultName(),
+    onRename: (val) => { imp.name = val; },
+    onDelete: () => imp.cancel(),
+    getTargetDeckIds: () => imp.targetDeckIds,
+    ensureTargetDeckIds: ensureImpTargetDeckIds,
+  });
+
+  // No trustworthy t=0 for a file — dateless by default, editable here
+  // already (not just afterward in the summary) since there's no reason to wait.
+  editableDateRow(body, {
+    getDate: () => imp.dateOverride,
+    setDate: (date) => { imp.dateOverride = date; },
+  });
 
   // ── Progress bar + status
   const statusBar = document.createElement('div');
@@ -590,7 +1031,12 @@ function renderImportAnalysis(host: SessionModuleHost): void {
     imp.cancel();
   };
 
-  topRow.append(label, pctEl, cancelBtn);
+  const pitchCtrl = pitchShiftControl({
+    get: () => imp.pitchShift,
+    set: (semitones) => imp.setPitchShift(semitones),
+  });
+
+  topRow.append(label, pctEl, pitchCtrl, cancelBtn);
 
   const barOuter = document.createElement('div');
   barOuter.className = 'h-1.5 rounded-full bg-elevated overflow-hidden';
@@ -650,6 +1096,10 @@ function renderImportAnalysis(host: SessionModuleHost): void {
         playingId,
         onOpenCard: (cardId) => { host.closeModal(); host.ctx.navigate({ view: 'card', cardId }); },
         onCardAdded: () => renderFeed(imp.getAnnotations()),
+        getTargetDeckIds: () => imp.targetDeckIds,
+        ensureTargetDeckIds: ensureImpTargetDeckIds,
+        onTargetDeckIdsChanged: refreshImpDeckBtn,
+        onToggleLike: (id) => { imp.toggleLike(id); renderFeed(imp.getAnnotations()); },
       }));
     }
     if (nearBottom) body.scrollTop = body.scrollHeight;
@@ -691,9 +1141,36 @@ function renderLive(host: SessionModuleHost): void {
   const live = activeLive;
   if (!live) { renderLibrary(host); return; }
 
-  moduleHeader(host, t('sessions.moduleTitle'), () => renderLibrary(host));
+  host.header.innerHTML = '';
   const body = host.body;
   body.innerHTML = '';
+
+  // A live recording always has a start date, from the real startedAt (0 for
+  // the first instant, before start() resolves — "now" is a fine approximation
+  // until then). Shown read-only: no reason to let the user desync it from
+  // the actual recording while it's still running.
+  const effectiveDate = () => new Date(live.startedAt || Date.now()).toISOString();
+
+  // ── Title + delete (same card.tsx-style pattern as a finished session:
+  // no back arrow, plain heading, click to turn into an input)
+  const ensureLiveTargetDeckIds = () => { if (!live.targetDeckIds) live.targetDeckIds = new Set(); return live.targetDeckIds; };
+  const { refreshDeckBtn: refreshLiveDeckBtn } = titleAndDeleteRow(body, {
+    getName: () => live.name,
+    getDefaultName: () => defaultSessionName(effectiveDate()),
+    onRename: (val) => { live.name = val; },
+    // Same route as this live screen (`{ view: 'sessions' }`, no sessionId) —
+    // navigate() would be a no-op here since the route object doesn't change
+    // in a way Preact/the SessionsView effect would notice. Re-render locally.
+    onDelete: () => { void live.cancel().then(() => { activeLive = null; renderLibrary(host); }); },
+    getTargetDeckIds: () => live.targetDeckIds,
+    ensureTargetDeckIds: ensureLiveTargetDeckIds,
+  });
+
+  // ── Session date — always set for a live recording, read-only.
+  const dateDisplay = document.createElement('p');
+  dateDisplay.className = 'text-sm text-primary mt-2 mb-3';
+  dateDisplay.textContent = new Date(effectiveDate()).toLocaleString();
+  body.appendChild(dateDisplay);
 
   // ── Status bar
   const statusBar = document.createElement('div');
@@ -726,7 +1203,12 @@ function renderLive(host: SessionModuleHost): void {
   stopBtn.className = 'btn-danger px-3 shrink-0';
   stopBtn.textContent = t('sessions.stop');
 
-  statusBar.append(recDot, recLbl, chrono, vu, pauseBtn, stopBtn);
+  const pitchCtrl = pitchShiftControl({
+    get: () => live.pitchShift,
+    set: (semitones) => live.setPitchShift(semitones),
+  });
+
+  statusBar.append(recDot, recLbl, chrono, vu, pauseBtn, pitchCtrl, stopBtn);
 
   const initStatus = document.createElement('p');
   initStatus.className = 'text-xs text-dim mt-2 text-center';
@@ -803,10 +1285,13 @@ function renderLive(host: SessionModuleHost): void {
     for (const ann of annotations) {
       feed.appendChild(annotationCard(ann, {
         ctx: host.ctx,
-        onRelabel: (a, alt) => { live.relabel(a.id, alt); },
         onOpenCard: (cardId) => { host.closeModal(); host.ctx.navigate({ view: 'card', cardId }); },
         onCardAdded: () => renderFeed(live.getAnnotations()),
         sessionStartMs: live.startedAt || undefined,
+        getTargetDeckIds: () => live.targetDeckIds,
+        ensureTargetDeckIds: ensureLiveTargetDeckIds,
+        onTargetDeckIdsChanged: refreshLiveDeckBtn,
+        onToggleLike: (id) => { live.toggleLike(id); renderFeed(live.getAnnotations()); },
       }));
     }
     if (nearBottom) body.scrollTop = body.scrollHeight;
@@ -818,6 +1303,7 @@ function renderLive(host: SessionModuleHost): void {
         initStatus.textContent = '';
         setPausedUi(false);
         startTimers();
+        dateDisplay.textContent = new Date(effectiveDate()).toLocaleString(); // startedAt is now the real value
       } else if (phase === 'paused') {
         setPausedUi(true);
         stopTimers();
@@ -868,7 +1354,7 @@ function renderLive(host: SessionModuleHost): void {
     try {
       const session = await live.stop();
       activeLive = null;
-      renderSummary(host, session);
+      host.ctx.navigate({ view: 'sessions', sessionId: session.id });
     } catch (err) {
       activeLive = null;
       initStatus.textContent = `⚠ ${String(err)}`;
@@ -878,77 +1364,80 @@ function renderLive(host: SessionModuleHost): void {
 
 // ── Screen: summary ───────────────────────────────────────────────────────────
 
-function renderSummary(host: SessionModuleHost, session: RecordedSession): void {
-  const headerTitle = moduleHeader(host, session.name || defaultSessionName(session.date), () => renderLibrary(host));
-  const syncHeader = () => { headerTitle.textContent = session.name || defaultSessionName(session.date); };
+export function renderSummary(host: SessionModuleHost, session: RecordedSession): void {
+  // Card.tsx-style header: title+delete row is the whole header — no back
+  // arrow, no close cross. Reachable only via a routed sessionId now, so the
+  // app's own back/forward already covers navigating away.
+  host.header.innerHTML = '';
   const body = host.body;
   body.innerHTML = '';
 
   const persist = () => { void saveSessionMeta(session); };
+  // Not persisted — resets each time the summary is opened, on purpose.
+  let targetDeckIds: Set<string> | undefined = undefined;
+  const ensureSummaryTargetDeckIds = () => { if (!targetDeckIds) targetDeckIds = new Set(); return targetDeckIds; };
 
-  // ── Title
-  const titleInp = document.createElement('input');
-  titleInp.type = 'text';
-  titleInp.className = 'input text-sm w-full';
-  titleInp.placeholder = t('sessions.titlePlaceholder');
-  titleInp.value = session.name || defaultSessionName(session.date);
-  titleInp.addEventListener('blur', () => {
-    const val = titleInp.value.trim();
-    if (val) { session.name = val; persist(); syncHeader(); }
+  const { refreshTitle, refreshDeckBtn } = titleAndDeleteRow(body, {
+    getName: () => session.name,
+    getDefaultName: () => defaultSessionName(session.date),
+    onRename: (val) => { session.name = val; persist(); },
+    onDelete: () => { void deleteSession(session.id).then(() => host.ctx.navigate({ view: 'sessions' })); },
+    onShare: () => showShareSessionModal(session),
+    getTargetDeckIds: () => targetDeckIds,
+    ensureTargetDeckIds: ensureSummaryTargetDeckIds,
   });
-  body.appendChild(titleInp);
 
   // ── Session start date (t=0 of every review logged from this session).
   // Optional: live sessions arrive with one, imports without. Erasable — the
   // review-log controls only exist while a date is set.
-  const toLocalInput = (iso: string): string => {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-  const dateRow = document.createElement('div');
-  dateRow.className = 'flex items-center gap-2 mt-2';
-  const dateInp = document.createElement('input');
-  dateInp.type = 'datetime-local';
-  dateInp.className = 'input text-sm';
-  dateInp.value = session.date ? toLocalInput(session.date) : '';
-  dateInp.max = toLocalInput(new Date().toISOString());
-  const dateClear = document.createElement('button');
-  dateClear.className = 'text-xs text-dim hover:text-danger cursor-pointer shrink-0';
-  dateClear.textContent = t('sessions.dateClear');
-  const dateNow = document.createElement('button');
-  dateNow.className = 'text-xs text-dim hover:text-accent cursor-pointer shrink-0';
-  dateNow.textContent = t('sessions.dateNow');
-  const syncBtns = () => {
-    dateClear.style.display = session.date ? '' : 'none';
-    dateNow.style.display   = session.date ? 'none' : '';
-  };
-  const applyDate = (date: string | null) => {
-    session.date = date;
-    dateInp.value = date ? toLocalInput(date) : '';
-    syncBtns();
-    syncHeader(); // an unnamed session's default name embeds the date
-    persist();
-    renderList(); // review-log controls (dis)appear / re-anchor on the new t=0
-  };
-  dateInp.addEventListener('change', () => {
-    if (!dateInp.value) { applyDate(null); return; }
-    // 'YYYY-MM-DDTHH:mm' without offset parses as local time — what the picker shows.
-    const ms = Date.parse(dateInp.value);
-    if (Number.isNaN(ms) || ms > Date.now()) { dateInp.value = session.date ? toLocalInput(session.date) : ''; return; }
-    applyDate(new Date(ms).toISOString());
+  editableDateRow(body, {
+    getDate: () => session.date,
+    setDate: (date) => { session.date = date; persist(); },
+    onChange: () => {
+      refreshTitle(); // unnamed session's default name embeds the date
+      renderList(); // review-log controls (dis)appear / re-anchor on the new t=0
+    },
   });
-  dateClear.onclick = () => applyDate(null);
-  dateNow.onclick = () => applyDate(new Date().toISOString());
-  syncBtns();
-  dateRow.append(dateInp, dateNow, dateClear);
-  body.appendChild(dateRow);
 
-  // ── Audio player
+  // ── Audio player — custom transport over a native <audio> element (no
+  // decodeAudioData/waveform: sessions can run for hours, and the native
+  // element streams/seeks without materializing the whole thing in RAM).
+  // `audio` is also the element the timeline bar and per-annotation slice
+  // playback below seek/play on directly.
   const audio = document.createElement('audio');
-  audio.controls = true;
-  audio.className = 'flex-1 min-w-0';
+  audio.className = 'hidden';
   let audioUrl: string | null = null;
+
+  const playerPlayBtn = document.createElement('button');
+  playerPlayBtn.className = 'w-7 h-7 p-0 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent hover:bg-accent/20 transition-colors';
+  playerPlayBtn.innerHTML = playIcon(12);
+  playerPlayBtn.onclick = () => { if (audio.paused) void audio.play(); else audio.pause(); };
+
+  const playerStopBtn = document.createElement('button');
+  playerStopBtn.className = 'w-7 h-7 p-0 rounded-full flex items-center justify-center shrink-0 text-dim hover:text-primary transition-colors';
+  playerStopBtn.innerHTML = stopIcon(12);
+  playerStopBtn.onclick = () => { audio.pause(); audio.currentTime = 0; };
+
+  const seekInp = document.createElement('input');
+  seekInp.type = 'range';
+  seekInp.min = '0';
+  seekInp.max = '0';
+  seekInp.step = '0.1';
+  seekInp.value = '0';
+  seekInp.className = 'flex-1 min-w-[80px] accent-accent cursor-pointer';
+  let seeking = false;
+  seekInp.addEventListener('input', () => { seeking = true; audio.currentTime = parseFloat(seekInp.value); updateTime(); });
+  seekInp.addEventListener('change', () => { seeking = false; });
+
+  const timeLbl = document.createElement('span');
+  timeLbl.className = 'text-[11px] font-mono text-dim shrink-0 tabular-nums';
+  timeLbl.textContent = '0:00 / 0:00';
+  const updateTime = () => { timeLbl.textContent = `${fmtLongTime(audio.currentTime)} / ${fmtLongTime(audio.duration || 0)}`; };
+
+  const downloadBtn = document.createElement('a');
+  downloadBtn.className = 'text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center';
+  downloadBtn.title = t('sessions.downloadAudio');
+  downloadBtn.innerHTML = downloadIcon(14);
 
   const forgetBtn = document.createElement('button');
   forgetBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer shrink-0';
@@ -961,22 +1450,30 @@ function renderSummary(host: SessionModuleHost, session: RecordedSession): void 
     () => {
       void forgetSessionAudio(session.id).then(() => {
         if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
-        audioRow.style.display = 'none';
+        playerRow.style.display = 'none';
       });
     },
   );
 
-  const audioRow = document.createElement('div');
-  audioRow.className = 'flex items-center gap-2 mt-3';
-  audioRow.style.display = 'none';
-  audioRow.append(audio, forgetBtn);
-  body.appendChild(audioRow);
+  const playerRow = document.createElement('div');
+  playerRow.className = 'flex items-center gap-2 mt-3 flex-wrap';
+  playerRow.style.display = 'none';
+  playerRow.append(playerPlayBtn, playerStopBtn, seekInp, timeLbl, downloadBtn, forgetBtn);
+  body.append(playerRow, audio);
+
+  audio.addEventListener('loadedmetadata', () => { seekInp.max = String(audio.duration || 0); updateTime(); });
+  audio.addEventListener('timeupdate', () => { if (!seeking) seekInp.value = String(audio.currentTime); updateTime(); });
+  audio.addEventListener('play',  () => { playerPlayBtn.innerHTML = pauseIcon(12); });
+  audio.addEventListener('pause', () => { playerPlayBtn.innerHTML = playIcon(12); });
 
   void loadSessionAudio(session.id).then(blob => {
     if (!blob) return;
     audioUrl = URL.createObjectURL(blob);
     audio.src = audioUrl;
-    audioRow.style.display = '';
+    downloadBtn.href = audioUrl;
+    downloadBtn.download = `${(session.name || defaultSessionName(session.date)).replace(/[^\w-]+/g, '_')}.${(session.mimeType.split('/')[1] || 'webm').split(';')[0]}`;
+    playerRow.style.display = '';
+    renderList(); // audio just became known-available — "add clip to card" can now show
   });
   host.registerCleanup(() => { if (audioUrl) URL.revokeObjectURL(audioUrl); });
 
@@ -1068,17 +1565,18 @@ function renderSummary(host: SessionModuleHost, session: RecordedSession): void 
         onPlay: playSlice,
         playingId,
         sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
-        onRelabel: (a, alt) => {
-          a.tuneId = alt.tuneId;
-          a.settingId = alt.settingId;
-          a.displayName = alt.displayName;
-          a.userConfirmed = true;
-          persist();
-          renderList();
-          renderBar();
-        },
         onOpenCard: (cardId) => { host.closeModal(); host.ctx.navigate({ view: 'card', cardId }); },
         onCardAdded: () => renderList(),
+        getTargetDeckIds: () => targetDeckIds,
+        ensureTargetDeckIds: ensureSummaryTargetDeckIds,
+        onTargetDeckIdsChanged: refreshDeckBtn,
+        onToggleLike: (id) => {
+          const target = session.annotations.find(a => a.id === id);
+          if (!target) return;
+          target.liked = !target.liked;
+          persist();
+          renderList();
+        },
         extraControls: (el) => {
           const controls = document.createElement('div');
           controls.className = 'flex items-center gap-2 flex-wrap pt-1 border-t border-border/50';
@@ -1113,10 +1611,12 @@ function renderSummary(host: SessionModuleHost, session: RecordedSession): void 
           controls.appendChild(boundCtl('◂', () => ann.end ?? session.duration, v => { ann.end = v; }));
 
           // Add clip as a standalone MP3 attachment (known card only) —
-          // fresh state, the card may be brand new
+          // fresh state, the card may be brand new. Hidden once the session's
+          // audio has been forgotten, unless a clip was already extracted
+          // before that (nothing left to extract, but still worth showing as done).
           const known = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
-          if (known) {
-            const already = isClipAttached(session, ann);
+          const already = known ? isClipAttached(session, ann) : false;
+          if (known && (already || audioUrl)) {
             const attachBtn = document.createElement('button');
             attachBtn.className = already
               ? 'text-[11px] text-green-500 cursor-default'

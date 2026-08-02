@@ -2,7 +2,7 @@ import { WakeLockManager } from './audio/capture';
 import { MicSource } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
-import { saveSessionMeta, saveSessionAudio } from './db';
+import { saveSessionMeta, saveSessionAudio, deleteSession } from './db';
 import type { RecordedSession, SessionAnnotation, WindowResult } from './model';
 import type { AnnotationEvent } from './recognition/aggregator';
 import type { IndexProgress } from './recognition/indexStore';
@@ -38,6 +38,22 @@ export class LiveSession {
 
   readonly sessionId = crypto.randomUUID();
   startedAt = 0;
+  /** Editable during recording (renderLive title input) — same field `stop()` persists under. */
+  name = '';
+  /** Target deck(s) for cards created from this session's recognised tunes —
+   *  in-memory only, not persisted with the session (resets next time).
+   *  `undefined` = never touched the picker yet (forces it open on first "Add card"). */
+  targetDeckIds: Set<string> | undefined = undefined;
+  /** Manual transposition (semitones, -12..12) applied to the ongoing
+   *  analysis — e.g. a session played in Bb. In-memory only, resets to 0
+   *  next recording. */
+  pitchShift = 0;
+
+  /** Live-adjustable: affects analysis windows from now on, not past ones. */
+  setPitchShift(semitones: number): void {
+    this.pitchShift = semitones;
+    this.recognition?.setPitchShift(semitones);
+  }
 
   constructor(callbacks: LiveSessionCallbacks = {}) {
     this.cb = callbacks;
@@ -77,7 +93,7 @@ export class LiveSession {
   private persistDraft(): void {
     const session: RecordedSession = {
       id: this.sessionId,
-      name: '',
+      name: this.name,
       date: new Date(this.startedAt).toISOString(),
       duration: this.getElapsedMs() / 1000,
       mimeType: this.recorder?.mimeType ?? '',
@@ -101,6 +117,7 @@ export class LiveSession {
         onAnnotations: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
       });
+      if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       await this.recognition.ready;
 
       // Hot path: worklet → worker via dedicated MessageChannel.
@@ -137,29 +154,24 @@ export class LiveSession {
           dance: existing.dance,
           meter: existing.meter,
           userConfirmed: true,
+          liked: existing.liked,
         });
       } else {
-        this.annotations.set(ev.annotation.id, ev.annotation);
+        // The aggregator never knows about the like marker — carry it forward
+        // across updates the same as any other user choice.
+        this.annotations.set(ev.annotation.id, { ...ev.annotation, liked: existing?.liked ?? false });
       }
     }
     this.persistDraft();
     this.cb.onAnnotations?.(events, this.getAnnotations());
   }
 
-  /** User picked an alternate ("it's rather this one"): swap tune identity,
-   *  keep the interval — it comes from temporal segmentation, not identification. */
-  relabel(annotationId: string, alt: { tuneId: string; settingId: string; displayName: string }): void {
+  /** Toggle the "I liked this tune" marker — no bearing on recognition. */
+  toggleLike(annotationId: string): void {
     const ann = this.annotations.get(annotationId);
     if (!ann) return;
-    this.annotations.set(annotationId, {
-      ...ann,
-      tuneId: alt.tuneId,
-      settingId: alt.settingId,
-      displayName: alt.displayName,
-      userConfirmed: true,
-    });
+    this.annotations.set(annotationId, { ...ann, liked: !ann.liked });
     this.persistDraft();
-    this.cb.onAnnotations?.([], this.getAnnotations());
   }
 
   /** Pauses the whole capture graph (recognition feed + recorder) in one shot —
@@ -190,7 +202,7 @@ export class LiveSession {
 
       const session: RecordedSession = {
         id: this.sessionId,
-        name: '',
+        name: this.name,
         date: new Date(this.startedAt).toISOString(),
         duration: Math.max(tFinal, fileResult.durationMs / 1000),
         mimeType: fileResult.mimeType,
@@ -205,6 +217,20 @@ export class LiveSession {
     } finally {
       this.cleanup();
     }
+  }
+
+  /** Discards an in-progress recording entirely: stops all resources and
+   *  deletes whatever draft/chunks were already persisted. Unlike stop(),
+   *  nothing is saved. */
+  async cancel(): Promise<void> {
+    this.setPhase('stopping');
+    try {
+      await this.recorder?.stop(); // flushes pending writes and clears chunks
+    } finally {
+      this.cleanup();
+    }
+    await deleteSession(this.sessionId); // remove the progressively-persisted draft
+    this.setPhase('idle');
   }
 
   private cleanup(): void {

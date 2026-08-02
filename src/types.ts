@@ -141,7 +141,9 @@ export type Route =
   | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean }
   | { view: 'deck'; deckId: string }
   | { view: 'card'; cardId: string; contextDeckId?: string }
-  | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null };
+  | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null }
+  | { view: 'modules' }
+  | { view: 'sessions'; sessionId?: string };
 
 export interface AppContext {
   user: AppState;

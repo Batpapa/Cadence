@@ -74,6 +74,12 @@ export class RecognitionClient implements RecognitionSink {
     this.send({ type: 'worklet-port', port }, [port]);
   }
 
+  /** Update the manual transposition applied to every contour from now on —
+   *  takes effect on the next analysis window, doesn't touch past ones. */
+  setPitchShift(semitones: number): void {
+    this.send({ type: 'set-pitch-shift', semitones });
+  }
+
   /** Feed a PCM chunk; resolves once the worker has absorbed it (backpressure). */
   feedPcmWithAck(chunk: Float32Array): Promise<void> {
     return new Promise(resolve => {

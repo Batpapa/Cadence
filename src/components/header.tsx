@@ -5,7 +5,6 @@ import type { AppContext } from '../types';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
-import { showModulesModal } from './modulesModal';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
 import {
@@ -108,8 +107,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
     return () => document.removeEventListener('mousedown', onOutside);
   }, [profileOpen]);
 
-  const homeActive = route.view === 'folder' && route.folderId === null;
-  const libActive  = route.view === 'library';
+  const homeActive    = route.view === 'folder' && route.folderId === null;
+  const libActive     = route.view === 'library';
+  const modulesActive = route.view === 'modules' || route.view === 'sessions';
 
   return (
     <header class="relative flex items-center px-2 h-10 border-b border-border bg-surface shrink-0">
@@ -129,7 +129,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             </HeaderBtn>
           </>
         )}
-        <HeaderBtn title={t('sidebar.modules')} onClick={() => showModulesModal(ctx)}>
+        <HeaderBtn title={t('sidebar.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
           <ModulesIcon size={14} />
         </HeaderBtn>
       </div>
@@ -260,8 +260,9 @@ function BottomNavBtn({ title, active, disabled, onClick, children }: {
 
 export function BottomNav({ ctx }: { ctx: AppContext }) {
   const { route, canGoBack, canGoForward } = ctx;
-  const homeActive = route.view === 'folder' && route.folderId === null;
-  const libActive  = route.view === 'library';
+  const homeActive    = route.view === 'folder' && route.folderId === null;
+  const libActive     = route.view === 'library';
+  const modulesActive = route.view === 'modules' || route.view === 'sessions';
 
   return (
     <nav class="flex items-stretch border-t border-border bg-surface shrink-0 h-14" style="padding-bottom: env(safe-area-inset-bottom)">
@@ -270,6 +271,9 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
       </BottomNavBtn>
       <BottomNavBtn title={t('sidebar.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
         <LibraryIcon size={20} />
+      </BottomNavBtn>
+      <BottomNavBtn title={t('sidebar.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
+        <ModulesIcon size={20} />
       </BottomNavBtn>
       <BottomNavBtn title={t('sidebar.back')} disabled={!canGoBack} onClick={() => ctx.back()}>
         <ArrowLeftIcon size={20} />

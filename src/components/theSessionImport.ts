@@ -2,15 +2,16 @@ import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
 import { parseCardPackage } from '../services/importExport';
 import { downloadShare } from '../services/shareService';
-import { mutate } from '../store';
+import { mutate, appState } from '../store';
 import {
-  searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers,
+  searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers, fetchTunesByIds,
   tuneResultToCard, findByExternalId,
   type TuneSearchResult, type MemberSearchResult,
 } from '../services/theSessionService';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { buildIrishTuneInfoBody } from './irishTuneInfoImport';
+import { showDeckPickerPopover, deckLinkIcon } from './deckSelector';
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
 // Dedupes on externalId when present (two independent shares of the same
@@ -67,9 +68,23 @@ function mkInputRow(placeholder: string): { wrap: HTMLDivElement; inp: HTMLInput
   return { wrap, inp, info };
 }
 
+/** Parses a pasted delimited ID list ("1;5;97", "1, 5, 97", "1 5 97") — returns
+ *  [] unless there are at least two distinct positive integers, so a lone ID
+ *  still falls through to the regular single-tune lookup. */
+function parseIdList(text: string): number[] {
+  if (!/^\d+(?:[;,\s]+\d+)+[;,\s]*$/.test(text)) return [];
+  return [...new Set(text.split(/[;,\s]+/).filter(Boolean).map(Number).filter(n => Number.isFinite(n) && n > 0))];
+}
+
 // ── TheSession body builder ───────────────────────────────────────────────────
 
-export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTargetDeckIds?: () => Set<string>, onNavigateToCard?: () => void): HTMLElement {
+export function buildTheSessionBody(
+  ctx: AppContext,
+  status: HTMLElement,
+  getTargetDeckIds?: () => Set<string> | undefined,
+  onNavigateToCard?: () => void,
+  withDeckChoice: (onReady: () => void) => void = onReady => onReady(),
+): HTMLElement {
   let activeTab: 'tune' | 'member' = 'tune';
   let mergeSettings = true;
 
@@ -109,7 +124,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
     status.textContent = t('theSession.status.fetching');
     try {
       const tune = await fetchTuneById(tuneId);
-      const existing = findByExternalId(`thesession:${tune.id}`, ctx.user.cards);
+      const existing = findByExternalId(`thesession:${tune.id}`, appState.value.cards);
       if (existing) {
         await mutate(s => {
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
@@ -137,6 +152,52 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
     }
   };
 
+  /** Cards already owned, by TheSession tune ID — shared by every batch path
+   *  (member tunebook, pasted ID list) to skip re-fetching and still link the
+   *  existing card into the target deck. */
+  const buildExistingByTuneId = (): Map<number, string> => {
+    const map = new Map<number, string>();
+    for (const card of Object.values(appState.value.cards)) {
+      if (card.externalId?.startsWith('thesession:')) {
+        const id = parseInt(card.externalId.slice('thesession:'.length));
+        if (!isNaN(id)) map.set(id, card.id);
+      }
+    }
+    return map;
+  };
+
+  /** Shared: import a list of tune IDs (e.g. pasted "1;5;97"), same shape as
+   *  the member tunebook batch import below. */
+  const importIds = async (
+    ids: number[],
+    onProgress: (loaded: number, total: number) => void,
+    onDone: () => void,
+  ): Promise<void> => {
+    status.textContent = t('theSession.status.fetching');
+    try {
+      const existingCardIdByTuneId = buildExistingByTuneId();
+      const { tunes, skippedIds } = await fetchTunesByIds(ids, onProgress, id => existingCardIdByTuneId.has(id));
+      const newCards = tunes.map(tune => tuneResultToCard(tune, { mergeSettings }));
+      await mutate(s => {
+        for (const card of newCards) { s.cards[card.id] = card; }
+        const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
+        for (const deckId of (getTargetDeckIds?.() ?? [])) {
+          const deck = s.decks[deckId]; if (!deck) continue;
+          for (const cardId of linkIds) {
+            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+          }
+        }
+      });
+      let summary = t('theSession.status.batchDone', { count: newCards.length });
+      if (skippedIds.length > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skippedIds.length }) + '.';
+      status.textContent = summary;
+    } catch (e) {
+      status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      onDone();
+    }
+  };
+
   const renderTabs = () => {
     tabBar.innerHTML = '';
     const tabs: Array<{ id: typeof activeTab; labelKey: string }> = [
@@ -157,9 +218,10 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
     if (activeTab === 'member') renderMemberTab();
   };
 
-  // ── Tab: Tune (ID or name search) ─────────────────────────────────────────
+  // ── Tab: Tune (ID, name search, or a pasted "1;5;97" ID list) ─────────────
   const renderTuneTab = () => {
     const { wrap: inputWrap, inp, info: infoSpan } = mkInputRow(t('theSession.tune.placeholder'));
+    inputWrap.title = t('theSession.ids.hint');
 
     const importBtn = document.createElement('button');
     importBtn.className = 'btn-primary text-xs shrink-0';
@@ -170,17 +232,40 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
     row.className = 'flex gap-2';
     row.append(inputWrap, importBtn);
 
+    // Progress bar — hidden except during a pasted-ID-list batch import.
+    const progressWrap = document.createElement('div'); progressWrap.className = 'hidden space-y-1';
+    const progressTrack = document.createElement('div'); progressTrack.className = 'knowledge-bar';
+    const progressFill = document.createElement('div'); progressFill.className = 'knowledge-fill bg-accent'; progressFill.style.width = '0%';
+    progressTrack.appendChild(progressFill); progressWrap.appendChild(progressTrack);
+
     let pendingId: number | null = null;
+    let pendingIds: number[] | null = null;
     const showResult = (name: string, type: string, id: number) => {
-      pendingId = id;
+      pendingId = id; pendingIds = null;
       infoSpan.textContent = /^\d+$/.test(inp.value.trim()) ? `${name} · ${type}` : type;
       importBtn.disabled = false;
     };
-    const clearResult = () => { pendingId = null; infoSpan.textContent = ''; importBtn.disabled = true; };
+    const showIdList = (ids: number[]) => {
+      pendingIds = ids; pendingId = null;
+      infoSpan.textContent = ids.length === 1 ? t('theSession.ids.preview', { count: ids.length }) : t('theSession.ids.previewPlural', { count: ids.length });
+      importBtn.disabled = false;
+    };
+    const clearResult = () => { pendingId = null; pendingIds = null; infoSpan.textContent = ''; importBtn.disabled = true; };
 
     importBtn.onclick = () => {
+      if (pendingIds) {
+        const ids = pendingIds;
+        withDeckChoice(() => {
+          importBtn.disabled = true; inp.disabled = true;
+          progressWrap.classList.remove('hidden'); progressFill.style.width = '0%';
+          void importIds(ids, (loaded, total) => { progressFill.style.width = `${Math.round((loaded / total) * 100)}%`; status.textContent = t('theSession.status.fetchingTunes', { loaded, total }); }, () => {
+            importBtn.disabled = false; inp.disabled = false; inp.value = ''; clearResult();
+          });
+        });
+        return;
+      }
       if (pendingId === null) return;
-      void importTune(pendingId, () => { inp.value = ''; clearResult(); }, importBtn);
+      withDeckChoice(() => { void importTune(pendingId!, () => { inp.value = ''; clearResult(); }, importBtn); });
     };
 
     // Floating dropdown — aligned to input wrapper width
@@ -214,11 +299,26 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
       showDropdown();
     };
 
+    // Pasting a newline-separated list into a single-line input drops the
+    // newlines on some browsers — normalize to ';' before it hits 'input'.
+    inp.addEventListener('paste', (e) => {
+      const text = e.clipboardData?.getData('text');
+      if (!text || !/[\r\n]/.test(text)) return;
+      e.preventDefault();
+      const cleaned = text.replace(/[\r\n]+/g, ';');
+      const start = inp.selectionStart ?? inp.value.length;
+      const end = inp.selectionEnd ?? inp.value.length;
+      inp.value = inp.value.slice(0, start) + cleaned + inp.value.slice(end);
+      inp.dispatchEvent(new Event('input'));
+    });
+
     let inputTimer: ReturnType<typeof setTimeout> | null = null;
     inp.addEventListener('input', () => {
       if (inputTimer) { clearTimeout(inputTimer); inputTimer = null; }
       clearResult(); status.textContent = ''; dropdown.innerHTML = ''; hideDropdown();
       const val = inp.value.trim(); if (!val) return;
+      const ids = parseIdList(val);
+      if (ids.length > 0) { showIdList(ids); return; }
       if (/^\d+$/.test(val)) {
         inputTimer = setTimeout(async () => {
           inputTimer = null; status.textContent = t('theSession.status.fetching');
@@ -235,9 +335,9 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
     });
     inp.addEventListener('blur',  () => { setTimeout(hideDropdown, 150); });
     inp.addEventListener('focus', () => { if (dropdown.children.length) showDropdown(); });
-    inp.addEventListener('keydown', e => { if (e.key === 'Escape') hideDropdown(); if (e.key === 'Enter' && pendingId !== null) importBtn.click(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Escape') hideDropdown(); if (e.key === 'Enter' && (pendingId !== null || pendingIds !== null)) importBtn.click(); });
 
-    content.append(row);
+    content.append(row, progressWrap);
     focusIfDesktop(inp);
   };
 
@@ -302,20 +402,14 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
       showDropdown();
     };
 
-    importAllBtn.onclick = async () => {
+    const doImportAll = async () => {
       if (selectedMemberId === null) return;
       const memberId = selectedMemberId;
       importAllBtn.disabled = true; inp.disabled = true;
       progressWrap.classList.remove('hidden'); progressFill.style.width = '0%';
       status.textContent = t('theSession.status.fetchingPage');
       try {
-        const existingCardIdByTuneId = new Map<number, string>();
-        for (const card of Object.values(ctx.user.cards)) {
-          if (card.externalId?.startsWith('thesession:')) {
-            const id = parseInt(card.externalId.slice('thesession:'.length));
-            if (!isNaN(id)) existingCardIdByTuneId.set(id, card.id);
-          }
-        }
+        const existingCardIdByTuneId = buildExistingByTuneId();
         const { tunes, skippedIds } = await fetchMemberTunes(memberId, (loaded, total, phase) => {
           progressFill.style.width = `${Math.round((loaded / total) * 100)}%`;
           status.textContent = phase === 'pages' ? t('theSession.status.collectingIds', { loaded, total }) : t('theSession.status.fetchingTunes', { loaded, total });
@@ -341,6 +435,7 @@ export function buildTheSessionBody(ctx: AppContext, status: HTMLElement, getTar
         status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
       } finally { importAllBtn.disabled = false; inp.disabled = false; }
     };
+    importAllBtn.onclick = () => withDeckChoice(() => { void doImportAll(); });
 
     let inputTimer: ReturnType<typeof setTimeout> | null = null;
     inp.addEventListener('input', () => {
@@ -398,13 +493,21 @@ export function showNewCardModal(ctx: AppContext): void {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0';
   closeBtn.textContent = '✕';
-  const selectedDeckIds = new Set<string>();
-  const linkIconSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+  // undefined = never touched the deck picker yet — creation triggers below
+  // force it open first (see withDeckChoice) instead of creating right away.
+  let selectedDeckIds: Set<string> | undefined = undefined;
+  const ensureSelectedDeckIds = (): Set<string> => {
+    if (!selectedDeckIds) selectedDeckIds = new Set();
+    return selectedDeckIds;
+  };
   const deckBtn = document.createElement('button');
   const updateDeckBtn = () => {
-    const n = selectedDeckIds.size;
-    deckBtn.innerHTML = `${linkIconSvg}${n > 0 ? ` (${n})` : ''}`;
-    deckBtn.className = `inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${n > 0 ? 'text-accent' : 'text-dim hover:text-primary'}`;
+    const ids = selectedDeckIds;
+    const suffix = ids === undefined ? ' (?)' : ids.size > 0 ? ` (${ids.size})` : '';
+    deckBtn.innerHTML = `${deckLinkIcon}${suffix}`;
+    deckBtn.className = `inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${
+      ids === undefined ? 'text-warn hover:text-primary' : ids.size > 0 ? 'text-accent' : 'text-dim hover:text-primary'
+    }`;
     deckBtn.title = t('newCard.selectDecks');
   };
   updateDeckBtn();
@@ -430,42 +533,28 @@ export function showNewCardModal(ctx: AppContext): void {
     share:        t('newCard.tabImportJson'),
   };
 
+  // Coordinates with the outer modal's Escape handler below, so Escape closes
+  // the deck popover first instead of the whole "new card" modal.
   let deckSelectorOpen = false;
   const showDeckSelector = () => {
     deckSelectorOpen = true;
-    const selOverlay = document.createElement('div');
-    selOverlay.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/60';
-    const selDialog = document.createElement('div');
-    selDialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 flex flex-col overflow-hidden';
-    selDialog.style.cssText = `max-width:min(360px, ${modalMaxW(0.9)}); max-height:${modalMaxH(0.65)};`;
-    const selHeader = document.createElement('div');
-    selHeader.className = 'flex items-center justify-between px-4 py-3 border-b border-border shrink-0';
-    const selTitle = document.createElement('span'); selTitle.className = 'text-sm font-semibold text-primary'; selTitle.textContent = t('newCard.selectDecks');
-    const selClose = document.createElement('button'); selClose.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer'; selClose.textContent = '✕';
-    selHeader.append(selTitle, selClose);
-    const selBody = document.createElement('div'); selBody.className = 'overflow-y-auto flex-1 py-2';
-    const decks = Object.values(ctx.user.decks).sort((a, b) => a.name.localeCompare(b.name));
-    if (decks.length === 0) {
-      const empty = document.createElement('p'); empty.className = 'text-xs text-muted px-4 py-3'; empty.textContent = t('newCard.noDecks'); selBody.appendChild(empty);
-    } else {
-      for (const deck of decks) {
-        const row = document.createElement('label'); row.className = 'flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-bg transition-colors';
-        const chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = selectedDeckIds.has(deck.id); chk.className = 'card-checkbox shrink-0';
-        chk.onchange = () => { if (chk.checked) selectedDeckIds.add(deck.id); else selectedDeckIds.delete(deck.id); updateDeckBtn(); };
-        const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary truncate'; nameEl.textContent = deck.name;
-        row.append(chk, nameEl); selBody.appendChild(row);
-      }
-    }
-    const closeSelector = () => { deckSelectorOpen = false; document.removeEventListener('keydown', selOnKey); selOverlay.remove(); };
-    const selOnKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeSelector(); };
-    document.addEventListener('keydown', selOnKey);
-    selClose.onclick = closeSelector;
-    selOverlay.addEventListener('mousedown', e => { if (e.target === selOverlay) closeSelector(); });
-    selDialog.append(selHeader, selBody);
-    selOverlay.appendChild(selDialog);
-    document.body.appendChild(selOverlay);
+    const ids = ensureSelectedDeckIds();
+    updateDeckBtn();
+    showDeckPickerPopover(ids, updateDeckBtn, () => { deckSelectorOpen = false; });
   };
   deckBtn.onclick = showDeckSelector;
+
+  /** Gate for every creation/import trigger below: the first one ever clicked
+   *  forces a deliberate deck choice (or explicit "none") before anything is
+   *  created — `onReady` runs immediately if already chosen, else once the
+   *  forced picker closes (no second click needed). */
+  const withDeckChoice = (onReady: () => void): void => {
+    if (selectedDeckIds !== undefined) { onReady(); return; }
+    deckSelectorOpen = true;
+    const ids = ensureSelectedDeckIds();
+    updateDeckBtn();
+    showDeckPickerPopover(ids, updateDeckBtn, () => { deckSelectorOpen = false; onReady(); });
+  };
 
   const close = () => {
     overlay.remove();
@@ -542,7 +631,7 @@ export function showNewCardModal(ctx: AppContext): void {
         const guid = generateId();
         createdId = id;
         s.cards[id] = { id, guid, name, defaultImportance: 1, tags: [], content: { notes: '', attachments: [] } };
-        for (const deckId of selectedDeckIds) {
+        for (const deckId of selectedDeckIds!) { // doCreate only ever runs via withDeckChoice, which guarantees this
           const deck = s.decks[deckId];
           if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
         }
@@ -557,8 +646,8 @@ export function showNewCardModal(ctx: AppContext): void {
       link.onclick = () => { ctx.navigate({ view: 'card', cardId: createdId }); close(); };
       status.append(link, suf);
     };
-    createBtn.onclick = () => { void doCreate(); };
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') void doCreate(); });
+    createBtn.onclick = () => withDeckChoice(() => { void doCreate(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') withDeckChoice(() => { void doCreate(); }); });
     body.append(lbl, inp, createBtn, status);
     inp.focus();
   };
@@ -574,12 +663,12 @@ export function showNewCardModal(ctx: AppContext): void {
 
   const renderTheSession = () => {
     const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
-    body.append(buildTheSessionBody(ctx, status, () => selectedDeckIds, close), status);
+    body.append(buildTheSessionBody(ctx, status, () => selectedDeckIds, close, withDeckChoice), status);
   };
 
   const renderIrishTuneInfo = () => {
     const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
-    body.append(buildIrishTuneInfoBody(ctx, status, () => selectedDeckIds, close), status);
+    body.append(buildIrishTuneInfoBody(ctx, status, () => selectedDeckIds, close, withDeckChoice), status);
   };
 
   const renderJson = () => {
@@ -595,17 +684,20 @@ export function showNewCardModal(ctx: AppContext): void {
     const status = document.createElement('p'); status.className = 'text-xs text-muted min-h-[1.25rem]';
     const pickBtn = document.createElement('button');
     pickBtn.className = 'btn-primary w-full text-sm'; pickBtn.textContent = t('newCard.import.pick');
+    const doImportFile = async (file: File) => {
+      pickBtn.disabled = true; status.textContent = t('newCard.import.importing');
+      try {
+        const cards = await parseCardPackage(file);
+        status.textContent = await importCardPackage(cards, selectedDeckIds!);
+      } catch (e) {
+        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      } finally { pickBtn.disabled = false; }
+    };
     pickBtn.onclick = () => {
       const fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.cdc';
-      fileInp.onchange = async () => {
+      fileInp.onchange = () => {
         const file = fileInp.files?.[0]; if (!file) return;
-        pickBtn.disabled = true; status.textContent = t('newCard.import.importing');
-        try {
-          const cards = await parseCardPackage(file);
-          status.textContent = await importCardPackage(cards, selectedDeckIds);
-        } catch (e) {
-          status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
-        } finally { pickBtn.disabled = false; }
+        withDeckChoice(() => { void doImportFile(file); });
       };
       fileInp.click();
     };
@@ -634,14 +726,14 @@ export function showNewCardModal(ctx: AppContext): void {
         const text = await downloadShare(key);
         const file = new File([text], `share-${key}.cdc`, { type: 'application/octet-stream' });
         const cards = await parseCardPackage(file);
-        status.textContent = await importCardPackage(cards, selectedDeckIds);
+        status.textContent = await importCardPackage(cards, selectedDeckIds!);
       } catch (e) {
         status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
       } finally { importBtn.disabled = false; }
     };
 
-    importBtn.onclick = () => { void doImport(); };
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') void doImport(); });
+    importBtn.onclick = () => withDeckChoice(() => { void doImport(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') withDeckChoice(() => { void doImport(); }); });
     body.append(row, status);
     focusIfDesktop(inp);
   };

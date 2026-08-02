@@ -33,7 +33,7 @@ function mimeIcon(entry: FileEntry): string {
 
 // ── Row renderers ─────────────────────────────────────────────────────────────
 
-function renderFileRow(entry: FileEntry, onRemove: () => void, editable: boolean): HTMLElement {
+function renderFileRow(entry: FileEntry, onRemove: () => void, editable: boolean, onSave?: (data: string) => void): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'flex items-center gap-2 px-3 py-1.5 rounded border border-border group';
 
@@ -45,7 +45,7 @@ function renderFileRow(entry: FileEntry, onRemove: () => void, editable: boolean
   name.className = 'text-xs font-mono truncate flex-1';
   if (isPreviewable(entry)) {
     name.className += ' text-muted hover:text-primary cursor-pointer transition-colors';
-    name.onclick = () => showPreviewModal(entry);
+    name.onclick = () => showPreviewModal(entry, editable ? onSave : undefined);
   } else {
     name.className += ' text-dim';
   }
@@ -227,11 +227,15 @@ export function renderAttachmentList(options: {
   onAdd?: (a: Attachment) => void;
   onRemove?: (i: number) => void;
   onReorder?: (from: number, insertBefore: number) => void;
+  /** Persists an edited file's content (currently only wired for the ABC
+   *  raw-text editor in the preview modal). */
+  onUpdateFile?: (i: number, data: string) => void;
 }): HTMLElement {
   const { attachments, editable } = options;
   const onAdd     = options.onAdd     ?? (() => {});
   const onRemove  = options.onRemove  ?? (() => {});
   const onReorder = options.onReorder ?? (() => {});
+  const onUpdateFile = options.onUpdateFile;
 
   const wrap = document.createElement('div');
   wrap.className = 'space-y-2';
@@ -317,7 +321,7 @@ export function renderAttachmentList(options: {
 
   attachments.forEach((att, i) => {
     const rowEl = att.type === 'file'
-      ? renderFileRow(att, () => onRemove(i), editable)
+      ? renderFileRow(att, () => onRemove(i), editable, onUpdateFile ? (data) => onUpdateFile(i, data) : undefined)
       : att.type === 'card'
         ? renderCardRefRow(att, () => onRemove(i), editable)
         : att.type === 'sessionClip'

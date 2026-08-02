@@ -118,6 +118,24 @@ export async function fetchMemberTunes(
   return { tunes, skippedIds };
 }
 
+/** Fetches a user-supplied list of tune IDs (e.g. pasted "1;5;97"), skipping
+ *  IDs already in the library — same shape as fetchMemberTunes' phase 2. */
+export async function fetchTunesByIds(
+  ids: number[],
+  onProgress: (loaded: number, total: number) => void,
+  skipId?: (id: number) => boolean
+): Promise<{ tunes: TuneResult[]; skippedIds: number[] }> {
+  const unique = [...new Set(ids)];
+  const toFetch = skipId ? unique.filter(id => !skipId(id)) : unique;
+  const skippedIds = skipId ? unique.filter(id => skipId(id)) : [];
+  const tunes: TuneResult[] = [];
+  for (let i = 0; i < toFetch.length; i++) {
+    tunes.push(await fetchTuneById(toFetch[i]!));
+    onProgress(i + 1, toFetch.length);
+  }
+  return { tunes, skippedIds };
+}
+
 // ── ABC generation ────────────────────────────────────────────────────────────
 
 /** "Dmajor" → "D", "Edorian" → "Edor", "Aminor" → "Am" — TheSession/FolkFriend mode names to ABC keys. */

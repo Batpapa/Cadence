@@ -9,6 +9,7 @@ import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { CustomSelect } from '../components/customSelect';
+import { showDeckPickerPopover } from '../components/deckSelector';
 import type { SessionRating } from '../types';
 
 // ── Local bridges ─────────────────────────────────────────────────────────────
@@ -107,38 +108,22 @@ function openSessionModal(
 }
 
 function showManageDecksModal(cardId: string) {
-  const user     = appState.value;
-  const allDecks = Object.values(user.decks).sort((a, b) => a.name.localeCompare(b.name));
-  if (allDecks.length === 0) {
-    const p = document.createElement('p'); p.className = 'text-sm text-muted'; p.textContent = t('card.allDecks');
-    showModal(t('card.manageDecks.title'), p, [{ label: t('common.close'), onClick: closeModal }]);
-    return;
-  }
-  const checks = new Map<string, HTMLInputElement>();
-  const body = document.createElement('div'); body.className = 'space-y-1 max-h-64 overflow-y-auto';
-  for (const deck of allDecks) {
-    const isLinked = deck.entries.some(e => e.cardId === cardId);
-    const row  = document.createElement('label'); row.className = 'flex items-center gap-3 px-2 py-2 rounded cursor-pointer hover:bg-elevated transition-colors';
-    const chk  = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'card-checkbox'; chk.checked = isLinked;
-    const name = document.createElement('span'); name.className = 'text-sm text-primary'; name.textContent = deck.name;
-    checks.set(deck.id, chk);
-    row.append(chk, name);
-    body.appendChild(row);
-  }
-  showModal(t('card.manageDecks.title'), body, [
-    { label: t('common.cancel'), onClick: closeModal },
-    { label: t('common.save'), primary: true, onClick: () => {
-      closeModal();
-      mutate(s => {
-        for (const [deckId, chk] of checks) {
-          const deck = s.decks[deckId]; if (!deck) continue;
-          const linked = deck.entries.some(e => e.cardId === cardId);
-          if (chk.checked && !linked)  deck.entries.push({ cardId });
-          if (!chk.checked && linked)  deck.entries = deck.entries.filter(e => e.cardId !== cardId);
-        }
-      });
-    }},
-  ]);
+  const user = appState.value;
+  const selected = new Set(
+    Object.values(user.decks).filter(d => d.entries.some(e => e.cardId === cardId)).map(d => d.id),
+  );
+  // Live-toggle, no separate save step (same as the session/new-card deck pickers):
+  // each checkbox click immediately syncs this card's membership for every deck.
+  showDeckPickerPopover(selected, () => {
+    void mutate(s => {
+      for (const deck of Object.values(s.decks)) {
+        const linked = deck.entries.some(e => e.cardId === cardId);
+        const shouldBeLinked = selected.has(deck.id);
+        if (shouldBeLinked && !linked) deck.entries.push({ cardId });
+        if (!shouldBeLinked && linked) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
+      }
+    });
+  });
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -480,6 +465,10 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         editable: true,
         onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); }),
         onRemove:  (i) => mutate(s => { s.cards[cardId]!.content.attachments.splice(i, 1); }),
+        onUpdateFile: (i, data) => mutate(s => {
+          const att = s.cards[cardId]!.content.attachments[i];
+          if (att && att.type === 'file') att.data = data;
+        }),
         onReorder: (from, insertBefore) => mutate(s => {
           const atts = s.cards[cardId]!.content.attachments;
           const [moved] = atts.splice(from, 1);
