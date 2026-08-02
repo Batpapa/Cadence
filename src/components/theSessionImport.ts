@@ -469,7 +469,7 @@ export function buildTheSessionBody(
 
 // ── New Card modal (hierarchical flow) ───────────────────────────────────────
 
-export function showNewCardModal(ctx: AppContext): void {
+export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): void {
   type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json' | 'json-file' | 'share';
   let currentStep: Step = 'root';
 
@@ -495,7 +495,9 @@ export function showNewCardModal(ctx: AppContext): void {
   closeBtn.textContent = '✕';
   // undefined = never touched the deck picker yet — creation triggers below
   // force it open first (see withDeckChoice) instead of creating right away.
-  let selectedDeckIds: Set<string> | undefined = undefined;
+  // A caller-provided deck (e.g. opening this from within a deck) counts as
+  // an already-made choice, so it skips that forced picker.
+  let selectedDeckIds: Set<string> | undefined = initialDeckIds ? new Set(initialDeckIds) : undefined;
   const ensureSelectedDeckIds = (): Set<string> => {
     if (!selectedDeckIds) selectedDeckIds = new Set();
     return selectedDeckIds;
