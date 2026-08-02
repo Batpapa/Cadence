@@ -65,6 +65,8 @@ module.exports = (env, argv) => {
           { from: 'src/sw.js',         to: 'sw.js' },
           { from: 'src/privacy.html',  to: 'privacy.html' },
           { from: 'src/terms.html',    to: 'terms.html' },
+          { from: 'src/robots.txt',    to: 'robots.txt' },
+          { from: 'src/sitemap.xml',   to: 'sitemap.xml' },
           { from: 'src/googleadb03431aeef178b.html', to: 'googleadb03431aeef178b.html' },
         ],
       })] : []),
