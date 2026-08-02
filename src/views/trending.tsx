@@ -20,7 +20,10 @@ function buildTrendingPage(ctx: ReturnType<typeof getContext>): HTMLElement {
     registerCleanup: () => { /* nothing to clean up: no live audio/session state here */ },
   };
 
-  renderTrendingList(host);
+  // Restore the saved filter params (period/gain mode/threshold) from the
+  // route — deliberately excludes the deck-picker target, which stays session-only.
+  const route = ctx.route;
+  renderTrendingList(host, route.view === 'trending' ? route : undefined);
 
   return root;
 }
