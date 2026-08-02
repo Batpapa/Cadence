@@ -117,6 +117,47 @@ export function deckPath(deckId: string, user: AppState): string {
   return parts.join(' / ');
 }
 
+/** Full breadcrumb path for a folder, e.g. "Folk / Reels". */
+export function folderPath(folderId: string, user: AppState): string {
+  const folder = user.folders[folderId];
+  if (!folder) return '';
+  const parts: string[] = [folder.name];
+  let parentId = findParentFolder(folderId, 'folder', user);
+  while (parentId) {
+    const parent = user.folders[parentId];
+    if (!parent) break;
+    parts.unshift(parent.name);
+    parentId = findParentFolder(parentId, 'folder', user);
+  }
+  return parts.join(' / ');
+}
+
+export function isFolderDescendant(user: AppState, ancestorId: string, targetId: string): boolean {
+  const folder = user.folders[ancestorId];
+  if (!folder) return false;
+  if (folder.folderIds.includes(targetId)) return true;
+  return folder.folderIds.some(subId => isFolderDescendant(user, subId, targetId));
+}
+
+/** Reparents a folder, appending it at the end of the new parent's children.
+ *  No-op if the move would create a cycle (moving a folder into itself or a descendant). */
+export function moveFolderToParent(s: AppState, folderId: string, newParentId: string | null): void {
+  if (newParentId === folderId) return;
+  if (newParentId && isFolderDescendant(s, folderId, newParentId)) return;
+  s.rootFolderIds = s.rootFolderIds.filter(id => id !== folderId);
+  for (const f of Object.values(s.folders)) f.folderIds = f.folderIds.filter(id => id !== folderId);
+  if (newParentId) s.folders[newParentId]!.folderIds.push(folderId);
+  else s.rootFolderIds.push(folderId);
+}
+
+/** Reparents a deck, appending it at the end of the new parent's children. */
+export function moveDeckToParent(s: AppState, deckId: string, newParentId: string | null): void {
+  s.rootDeckIds = s.rootDeckIds.filter(id => id !== deckId);
+  for (const f of Object.values(s.folders)) f.deckIds = f.deckIds.filter(id => id !== deckId);
+  if (newParentId) s.folders[newParentId]!.deckIds.push(deckId);
+  else s.rootDeckIds.push(deckId);
+}
+
 export function decksContainingCard(cardId: string, user: AppState): string[] {
   return Object.values(user.decks)
     .filter(d => d.entries.some(e => e.cardId === cardId))

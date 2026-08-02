@@ -5,7 +5,8 @@ import { TrashIcon, StarIcon } from '../components/icons';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
-import { findParentFolder, orphanedCardsAfterDeckRemoval } from '../services/deckService';
+import { CustomSelect } from '../components/customSelect';
+import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, isFolderDescendant, moveFolderToParent } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork, DeckEntry } from '../types';
@@ -320,6 +321,15 @@ export function FolderView({ folderId }: { folderId: string | null }) {
     : collectFolderEntries(user, folderId);
   const folderTitle    = folder ? folder.name : t('folder.title.home');
 
+  const parentId = folder ? findParentFolder(folderId!, 'folder', user) : null;
+  const parentOptions = folder ? [
+    { value: '', label: t('folder.title.home') },
+    ...Object.values(user.folders)
+      .filter(f => f.id !== folderId && !isFolderDescendant(user, folderId!, f.id))
+      .map(f => ({ value: f.id, label: folderPath(f.id, user) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  ] : [];
+
   return (
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
 
@@ -355,6 +365,28 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             )
           ) : (
             <h1 class="text-xl font-semibold text-primary">{t('folder.title.home')}</h1>
+          )}
+          {folder && (
+            <div class="flex items-center gap-1 mt-1">
+              <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('folder.parent.label')}</span>
+              <CustomSelect
+                value={parentId ?? ''}
+                options={parentOptions}
+                onChange={(v) => mutate(s => moveFolderToParent(s, folderId!, v || null))}
+                renderTrigger={(label, open, toggle) => (
+                  <button
+                    type="button"
+                    class="text-[10px] font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
+                    onClick={toggle}
+                  >
+                    {label}
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </button>
+                )}
+              />
+            </div>
           )}
         </div>
         <div class="flex gap-2 shrink-0">

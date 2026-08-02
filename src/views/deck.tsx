@@ -3,7 +3,8 @@ import { appState, navigate, mutate, getContext } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon, StarIcon, PlusIcon, LibraryIcon } from '../components/icons';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
-import { findParentFolder, orphanedCardsAfterDeckRemoval } from '../services/deckService';
+import { CustomSelect } from '../components/customSelect';
+import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckToParent } from '../services/deckService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { showStudyModal } from '../components/studyModal';
@@ -117,6 +118,14 @@ export function DeckView({ deckId }: { deckId: string }) {
     });
   };
 
+  const parentId = findParentFolder(deckId, 'deck', user);
+  const parentOptions = [
+    { value: '', label: t('folder.title.home') },
+    ...Object.values(user.folders)
+      .map(f => ({ value: f.id, label: folderPath(f.id, user) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  ];
+
   return (
     <div class="overflow-y-auto h-full view-enter">
 
@@ -125,15 +134,16 @@ export function DeckView({ deckId }: { deckId: string }) {
 
         {/* Header */}
         <div class="flex items-start justify-between gap-4">
-          <div class="flex-1 min-w-0 flex items-center gap-2">
-            <button
-              class={`shrink-0 flex items-center transition-colors cursor-pointer ${deck.favorite ? 'text-yellow-400' : 'text-dim hover:text-yellow-400'}`}
-              title={deck.favorite ? t('deck.unfavorite') : t('deck.favorite')}
-              onClick={() => mutate(s => { const d = s.decks[deckId]; if (d) d.favorite = !d.favorite; })}
-            >
-              <StarIcon size={20} filled={!!deck.favorite} />
-            </button>
-            <div class="flex-1 min-w-0">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <button
+                class={`shrink-0 flex items-center transition-colors cursor-pointer ${deck.favorite ? 'text-yellow-400' : 'text-dim hover:text-yellow-400'}`}
+                title={deck.favorite ? t('deck.unfavorite') : t('deck.favorite')}
+                onClick={() => mutate(s => { const d = s.decks[deckId]; if (d) d.favorite = !d.favorite; })}
+              >
+                <StarIcon size={20} filled={!!deck.favorite} />
+              </button>
+              <div class="flex-1 min-w-0">
             {isEditingName ? (
               <input
                 type="text"
@@ -160,6 +170,27 @@ export function DeckView({ deckId }: { deckId: string }) {
                 {deck.name}
               </h1>
             )}
+              </div>
+            </div>
+            <div class="flex items-center gap-1 mt-1">
+              <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('folder.parent.label')}</span>
+              <CustomSelect
+                value={parentId ?? ''}
+                options={parentOptions}
+                onChange={(v) => mutate(s => moveDeckToParent(s, deckId, v || null))}
+                renderTrigger={(label, open, toggle) => (
+                  <button
+                    type="button"
+                    class="text-[10px] font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
+                    onClick={toggle}
+                  >
+                    {label}
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </button>
+                )}
+              />
             </div>
           </div>
           <div class="flex gap-2 shrink-0">
