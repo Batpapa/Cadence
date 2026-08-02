@@ -129,9 +129,14 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             </HeaderBtn>
           </>
         )}
-        <HeaderBtn title={t('sidebar.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
-          <ModulesIcon size={14} />
-        </HeaderBtn>
+        {!isPortraitPhone && (
+          <HeaderBtn title={t('sidebar.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
+            <ModulesIcon size={14} />
+          </HeaderBtn>
+        )}
+        {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
+          <SyncBtn status={driveStatus} />
+        )}
       </div>
 
       {/* Center: ← profil → */}
@@ -219,9 +224,6 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
       {/* Right group */}
       <div class="flex items-center gap-1">
-        {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
-          <SyncBtn status={driveStatus} />
-        )}
         <HeaderBtn title={t('sidebar.search')} onClick={() => showCommandPalette(() => ctx)}>
           <SearchIcon size={14} />
         </HeaderBtn>
