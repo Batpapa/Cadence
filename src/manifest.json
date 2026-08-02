@@ -1,7 +1,7 @@
 {
   "name": "Cadence",
   "short_name": "Cadence",
-  "description": "Spaced repetition for your music repertoire",
+  "description": "Spaced repetition for anything you want to remember",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

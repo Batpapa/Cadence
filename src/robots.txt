@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://batpapa.github.io/Cadence/sitemap.xml
