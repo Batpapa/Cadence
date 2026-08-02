@@ -512,6 +512,39 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
       }
     };
     row1.appendChild(addBtn);
+  } else {
+    // Card already exists: offer a quick link into the session's target
+    // deck(s) instead — additive only, never unlinks from decks not selected.
+    const linkBtn = document.createElement('button');
+    linkBtn.className = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20';
+    linkBtn.title = t('sessions.linkToDeck');
+    linkBtn.innerHTML = deckLinkIcon;
+    const doLink = async () => {
+      linkBtn.disabled = true;
+      linkBtn.classList.add('opacity-50');
+      try {
+        await opts.ctx.mutate(s => {
+          for (const deckId of opts.getTargetDeckIds?.() ?? []) {
+            const deck = s.decks[deckId];
+            if (deck && !deck.entries.some(e => e.cardId === known.id)) deck.entries.push({ cardId: known.id });
+          }
+        });
+      } finally {
+        linkBtn.disabled = false;
+        linkBtn.classList.remove('opacity-50');
+      }
+    };
+    linkBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (opts.getTargetDeckIds?.() === undefined && opts.ensureTargetDeckIds) {
+        const ids = opts.ensureTargetDeckIds();
+        opts.onTargetDeckIdsChanged?.();
+        showDeckPickerPopover(ids, () => opts.onTargetDeckIdsChanged?.(), () => { void doLink(); });
+      } else {
+        void doLink();
+      }
+    };
+    row1.appendChild(linkBtn);
   }
 
   // A name that "navigates to" the card page if it exists, else TheSession —

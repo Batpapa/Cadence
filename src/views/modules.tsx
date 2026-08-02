@@ -1,6 +1,6 @@
 import { navigate } from '../store';
 import { t } from '../services/i18nService';
-import { WaveformIcon } from '../components/icons';
+import { WaveformIcon, FlameIcon } from '../components/icons';
 import { isSessionRecording } from '../session/ui/sessionModule';
 
 // ── Modules page ──────────────────────────────────────────────────────────────
@@ -27,6 +27,19 @@ export function ModulesView() {
             {isSessionRecording() && <span class="w-2 h-2 rounded-full bg-danger animate-pulse inline-block" />}
           </div>
           <div class="text-xs text-muted">{t('sessions.moduleDesc')}</div>
+        </div>
+      </button>
+
+      <button
+        class="w-full text-left p-4 rounded-lg border border-border bg-bg hover:border-accent/50 hover:bg-accent/5 transition-colors cursor-pointer flex items-center gap-3 mt-3"
+        onClick={() => navigate({ view: 'trending' })}
+      >
+        <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 text-accent">
+          <FlameIcon size={20} />
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-semibold text-primary mb-0.5">{t('trending.moduleTitle')}</div>
+          <div class="text-xs text-muted">{t('trending.moduleDesc')}</div>
         </div>
       </button>
     </div>

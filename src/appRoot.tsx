@@ -15,6 +15,7 @@ import { LibraryView } from './views/library';
 import { StudyView } from './views/study';
 import { ModulesView } from './views/modules';
 import { SessionsView } from './views/sessions';
+import { TrendingView } from './views/trending';
 
 const SIDEBAR_WIDTH_KEY     = 'cadence_sidebar_width';
 const SIDEBAR_COLLAPSED_KEY = 'cadence_sidebar_collapsed';
@@ -33,6 +34,7 @@ function ContentSwitch() {
   if (route.view === 'folder')  return <FolderView key={route.folderId ?? 'root'} folderId={route.folderId} />;
   if (route.view === 'modules') return <ModulesView />;
   if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? 'library'} sessionId={route.sessionId} />;
+  if (route.view === 'trending') return <TrendingView />;
   const _: never = route; return _;
 }
 
