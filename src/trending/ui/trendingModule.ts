@@ -9,9 +9,16 @@ import {
   fetchTuneById, tuneResultToCard, findByExternalId, settingsToMergedAbcFile, type TuneResult,
 } from '../../services/theSessionService';
 import type { PopularityDb } from '../db';
-import { appState, mutate, navigate } from '../../store';
+import { appState, mutate, navigate, replaceRoute } from '../../store';
 import { timeAgo, externalSourceLink } from '../../utils';
 import { buildSparkline } from './sparkline';
+
+export interface TrendingRouteParams {
+  from?: string;
+  to?: string;
+  gainMode?: GainMode;
+  minTunebooks?: number;
+}
 
 // ── Trending module UI (hosted inside the Modules page) ──────────────────────
 // Explorer over TheSession's popularity history, ported from the local
@@ -45,7 +52,7 @@ function closestSnapshotIndex(snapshots: string[], targetTime: number): number {
   return bestIdx;
 }
 
-export function renderTrendingList(host: SessionModuleHost): void {
+export function renderTrendingList(host: SessionModuleHost, initial?: TrendingRouteParams): void {
   host.header.replaceChildren();
   host.body.replaceChildren();
 
@@ -139,7 +146,7 @@ export function renderTrendingList(host: SessionModuleHost): void {
   const threshInput = document.createElement('input');
   threshInput.type = 'number';
   threshInput.min = '0';
-  threshInput.value = String(DEFAULT_MIN_TUNEBOOKS);
+  threshInput.value = String(initial?.minTunebooks ?? DEFAULT_MIN_TUNEBOOKS);
   threshInput.className = 'w-16 text-xs px-2 py-1 rounded border border-border bg-bg text-primary';
   threshWrap.append(threshLabel, threshInput);
   controls.appendChild(threshWrap);
@@ -161,7 +168,7 @@ export function renderTrendingList(host: SessionModuleHost): void {
   let dbState: PopularityDb | null = null;
   let startIdx = 0;
   let endIdx = 0;
-  let gainMode: GainMode = 'percent';
+  let gainMode: GainMode = initial?.gainMode ?? 'percent';
   let allRows: TuneRow[] = [];
   let revealed = 0;
   let loading = false;
@@ -180,25 +187,41 @@ export function renderTrendingList(host: SessionModuleHost): void {
   }
   absBtn.textContent = t('trending.gainAbsolute');
   pctBtn.textContent = t('trending.gainPercent');
-  absBtn.onclick = () => { gainMode = 'absolute'; updateGainButtons(); recompute(); };
-  pctBtn.onclick = () => { gainMode = 'percent'; updateGainButtons(); recompute(); };
+  absBtn.onclick = () => { gainMode = 'absolute'; updateGainButtons(); recompute(); updateRoute(); };
+  pctBtn.onclick = () => { gainMode = 'percent'; updateGainButtons(); recompute(); updateRoute(); };
   updateGainButtons();
   gainRow.append(absBtn, pctBtn);
 
-  threshInput.oninput = () => recompute();
+  threshInput.oninput = () => { recompute(); updateRoute(); };
 
   fromInput.onchange = () => {
     if (!dbState || !fromInput.value) return;
     startIdx = closestSnapshotIndex(dbState.snapshots, new Date(fromInput.value).getTime());
     syncDateInputs();
     recompute();
+    updateRoute();
   };
   toInput.onchange = () => {
     if (!dbState || !toInput.value) return;
     endIdx = closestSnapshotIndex(dbState.snapshots, new Date(toInput.value).getTime());
     syncDateInputs();
     recompute();
+    updateRoute();
   };
+
+  // Persists the current filter params (not the deck-picker target, which
+  // stays session-only) into the route — via replaceRoute, not navigate, so
+  // tweaking a filter doesn't spam the back-stack. Restored by views/trending.tsx.
+  function updateRoute(): void {
+    if (!dbState) return;
+    replaceRoute({
+      view: 'trending',
+      from: fromInput.value || undefined,
+      to: toInput.value || undefined,
+      gainMode,
+      minTunebooks: Number(threshInput.value) || undefined,
+    });
+  }
 
   async function getTune(id: number): Promise<TuneResult> {
     const cached = tuneCache.get(id);
@@ -411,8 +434,12 @@ export function renderTrendingList(host: SessionModuleHost): void {
 
       if (isFirstLoad) {
         const latestTime = new Date(dbState.snapshots[dbState.snapshots.length - 1]!).getTime();
-        startIdx = closestSnapshotIndex(dbState.snapshots, latestTime - DEFAULT_WINDOW_DAYS * 86400000);
-        endIdx = dbState.snapshots.length - 1;
+        startIdx = initial?.from
+          ? closestSnapshotIndex(dbState.snapshots, new Date(initial.from).getTime())
+          : closestSnapshotIndex(dbState.snapshots, latestTime - DEFAULT_WINDOW_DAYS * 86400000);
+        endIdx = initial?.to
+          ? closestSnapshotIndex(dbState.snapshots, new Date(initial.to).getTime())
+          : dbState.snapshots.length - 1;
       } else {
         if (wasLatest) endIdx = dbState.snapshots.length - 1;
         startIdx = Math.min(startIdx, dbState.snapshots.length - 1);
@@ -421,6 +448,7 @@ export function renderTrendingList(host: SessionModuleHost): void {
       controls.style.display = '';
       syncDateInputs();
       recompute();
+      updateRoute();
       status.textContent = t('trending.updated', { time: timeAgo(new Date(dbState.snapshots[dbState.snapshots.length - 1]!).getTime()) });
     } catch {
       status.textContent = t('trending.loadError');

@@ -1,4 +1,5 @@
 import type { PopularityDb } from '../trending/db';
+import type { TrendingGainMode } from '../types';
 
 // ── Trending table computation ──────────────────────────────────────────────
 // Pure local computation over a synced PopularityDb (see trendingSyncService) —
@@ -6,7 +7,9 @@ import type { PopularityDb } from '../trending/db';
 // adapted to read from Cadence's own PopularityDb shape (which already carries
 // `names`, unlike the source tool's Database).
 
-export type GainMode = 'absolute' | 'percent';
+// Alias kept so existing GainMode imports don't need to change — the type
+// itself lives in types.ts since it's also part of the trending Route shape.
+export type GainMode = TrendingGainMode;
 
 export interface TuneRow {
   id: number;

@@ -136,6 +136,8 @@ export type FilterState = 'include' | 'exclude';
 
 export type LibrarySort = 'alpha' | 'lastReviewed' | 'lastAdded' | 'importance' | 'recall' | 'difficulty';
 
+export type TrendingGainMode = 'absolute' | 'percent';
+
 export type Route =
   | { view: 'folder'; folderId: string | null }
   | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean }
@@ -144,7 +146,9 @@ export type Route =
   | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null }
   | { view: 'modules' }
   | { view: 'sessions'; sessionId?: string }
-  | { view: 'trending' };
+  // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
+  // Deliberately excludes the deck-picker target — that stays session-only, never persisted.
+  | { view: 'trending'; from?: string; to?: string; gainMode?: TrendingGainMode; minTunebooks?: number };
 
 export interface AppContext {
   user: AppState;
