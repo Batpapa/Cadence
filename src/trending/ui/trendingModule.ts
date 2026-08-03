@@ -33,7 +33,7 @@ const PAGE_SIZE = 50;
 // least 100 tunebooks (filters out obscure entries whose small counts make
 // percentage changes noisy/meaningless).
 const DEFAULT_MIN_TUNEBOOKS = 100;
-const DEFAULT_WINDOW_DAYS = 90;
+const DEFAULT_WINDOW_DAYS = 365;
 
 /** GitHub commit timestamps are ISO strings already starting with YYYY-MM-DD —
  *  exactly what <input type="date"> expects. */
