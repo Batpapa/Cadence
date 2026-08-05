@@ -13,10 +13,13 @@ function toBase64(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 }
 
-function showAbcPreview(displayName: string, meta: { abc: string; meter: string; mode: string; dance: string }): void {
+function showAbcPreview(displayName: string, settingId: string, meta: SettingAbcMeta): void {
   const abcText = [
     'X: 1',
     `T: ${displayName}`,
+    // Same URL shape as theSessionService.ts's settingToAbcBlock — verified
+    // FolkFriend's settingId/tune_id are TheSession's own ids, not remapped.
+    `S: https://thesession.org/tunes/${meta.tune_id}#setting${settingId}`,
     `R: ${meta.dance}`,
     `M: ${meta.meter}`,
     'L: 1/8',
@@ -55,7 +58,7 @@ export function makeAbcNoteButton(settingId: string, displayName: string, size =
     }
     btn.disabled = false;
     btn.className = `${base} bg-accent/10 text-accent hover:bg-accent/20 cursor-pointer`;
-    btn.onclick = (e) => { e.stopPropagation(); showAbcPreview(displayName, meta); };
+    btn.onclick = (e) => { e.stopPropagation(); showAbcPreview(displayName, settingId, meta); };
   };
 
   // Feeds re-render on every recognition event: draw the final state

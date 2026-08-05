@@ -119,6 +119,11 @@ export interface SettingAbcMeta {
   meter: string;
   mode: string;  // e.g. "Dmajor", "Edorian"
   dance: string; // reel, jig, …
+  /** TheSession tune id — same numeric id used by theSessionService.ts, not a
+   *  FolkFriend-internal renumbering (verified: index setting ids and tune_ids
+   *  match TheSession's own /tunes/{id} API 1:1). Combined with the settingId
+   *  key, builds the exact-setting URL: /tunes/{tune_id}#setting{settingId}. */
+  tune_id: string;
 }
 
 let abcMetaPromise: Promise<Map<string, SettingAbcMeta> | null> | null = null;
@@ -131,7 +136,7 @@ export function getSettingAbcMeta(settingId: string): Promise<SettingAbcMeta | n
     const map = new Map<string, SettingAbcMeta>();
     for (const id in cached.indexData.settings) {
       const s = cached.indexData.settings[id]!;
-      map.set(id, { abc: cached.abcStrings[id] ?? '', meter: s.meter, mode: s.mode, dance: s.dance });
+      map.set(id, { abc: cached.abcStrings[id] ?? '', meter: s.meter, mode: s.mode, dance: s.dance, tune_id: s.tune_id });
     }
     abcMetaMap = map;
     return map;
