@@ -951,7 +951,16 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
     alertModal(t('sessions.import'), t('sessions.tooShort', { n: IMPORT_MIN_S }));
     return;
   }
-  if (duration !== null && duration > IMPORT_WARN_MINUTES * 60) {
+
+  // Chunk-by-chunk decoding (StreamingFileSource) keeps memory bounded
+  // regardless of duration — the RAM warning below only applies to the
+  // one-shot decodeAudioData fallback, so skip it when streaming will be used.
+  const { StreamingFileSource } = await import('../audio/streamingFileSource');
+  const streamProbe = await StreamingFileSource.tryCreate(file);
+  streamProbe?.stop();
+  const canStream = streamProbe !== null;
+
+  if (!canStream && duration !== null && duration > IMPORT_WARN_MINUTES * 60) {
     // Non-dismissable two-button modal: the promise always settles, so the
     // importStarting guard can never get stuck.
     const proceed = await new Promise<boolean>(resolve => {

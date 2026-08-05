@@ -10,6 +10,7 @@
     "deploy": "git add . && (git diff --cached --quiet && echo 'Nothing to commit.' || git commit -m \"${npm_config_msg:-deploy}\") && git push"
   },
   "devDependencies": {
+    "@types/dom-webcodecs": "^0.1.18",
     "autoprefixer": "^10.4.0",
     "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^7.1.0",
@@ -35,6 +36,7 @@
     "fix-webm-duration": "^1.0.6",
     "idb": "^8.0.3",
     "marked": "^18.0.0",
-    "preact": "^10.29.1"
+    "preact": "^10.29.1",
+    "web-demuxer": "^4.0.0"
   }
 }
