@@ -497,6 +497,8 @@
   "fileViewer.abc.textTab": "ABC",
   "fileViewer.abc.save": "Enregistrer",
   "fileViewer.abc.saved": "Enregistré.",
+  "fileViewer.abc.setDefault": "Définir comme version par défaut",
+  "fileViewer.abc.isDefault": "Version par défaut",
   "fileViewer.abc.instrument": "Instrument",
   "fileViewer.abc.instrument.default": "Défaut",
   "fileViewer.abc.instrument.fiddle": "Violon",

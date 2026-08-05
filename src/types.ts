@@ -33,7 +33,12 @@ export interface SessionClipAttachment {
 }
 
 export type Attachment =
-  | ({ type: 'file' } & FileEntry)
+  | ({ type: 'file' } & FileEntry & {
+      /** Multi-tune ABC files only: which splitAbcTunes() index to open by
+       *  default — a per-attachment "favorite version", set explicitly from
+       *  the preview modal. Absent = today's default (index 0). */
+      preferredIndex?: number;
+    })
   | ({ type: 'embed' } & EmbedEntry)
   | CardReferenceAttachment
   | SessionClipAttachment;
