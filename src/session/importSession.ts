@@ -1,5 +1,6 @@
 import { WakeLockManager } from './audio/capture';
-import { FileSource } from './audio/sources';
+import { createFileSource } from './audio/sources';
+import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
@@ -37,7 +38,7 @@ export class ImportSession {
   readonly file: File;
 
   private recognition: RecognitionClient | null = null;
-  private source: FileSource | null = null;
+  private source: PcmSource | null = null;
   private wakeLock = new WakeLockManager();
   private annotations = new Map<string, SessionAnnotation>();
   /** Raw per-window results — the AGG_CONFIG calibration dump. */
@@ -110,10 +111,10 @@ export class ImportSession {
       console.debug(`[import] engine ready (FolkFriend ${version})`);
 
       this.setPhase('decoding');
-      this.source = await FileSource.fromFile(this.file);
-      console.debug(`[import] decoded: ${this.source.duration.toFixed(1)}s @ ${this.source.sampleRate}Hz`);
-      if (this.source.duration < IMPORT_MIN_S) {
-        throw new Error(`too-short:${Math.round(this.source.duration)}`);
+      this.source = await createFileSource(this.file);
+      console.debug(`[import] decoded: ${this.source.duration!.toFixed(1)}s @ ${this.source.sampleRate}Hz`);
+      if (this.source.duration! < IMPORT_MIN_S) {
+        throw new Error(`too-short:${Math.round(this.source.duration!)}`);
       }
 
       await this.wakeLock.start();
@@ -209,7 +210,7 @@ export class ImportSession {
       // No trustworthy t=0 for a file (mtime survives transfers erratically):
       // dateless unless the user set one during analysis or in the summary.
       date: this.dateOverride,
-      duration: this.source!.duration,
+      duration: this.source!.duration!,
       mimeType: this.file.type || 'application/octet-stream',
       source: 'import',
       annotations: this.getAnnotations(),
