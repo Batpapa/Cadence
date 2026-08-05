@@ -2,6 +2,7 @@ import type { FileEntry } from '../types';
 import { entryToObjectUrl, arrayBufferToBase64, focusIfDesktop } from '../utils';
 import { getMarked } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
+import { starIconElement } from './icons';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
 
@@ -87,7 +88,17 @@ function modalWidth(entry: FileEntry): string {
   return '860px';
 }
 
-export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => void): void {
+export interface PreviewModalOpts {
+  /** Multi-tune ABC files: which splitAbcTunes() index to open at — the
+   *  attachment's stored `preferredIndex`, if any. */
+  initialIndex?: number;
+  /** Called when the user stars a version as the new default. Independent of
+   *  `onSave` — available in read-only contexts (study) too, since picking a
+   *  favorite version isn't "editing" the card's content. */
+  onSetPreferredIndex?: (index: number) => void;
+}
+
+export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => void, opts?: PreviewModalOpts): void {
   const overlay = document.createElement('div');
   overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm';
 
@@ -167,7 +178,8 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
 
     const tunes = splitAbcTunes(abcText);
     const versionCount = tunes.length;
-    let currentIndex = 0;
+    let currentIndex = Math.max(0, Math.min(versionCount - 1, opts?.initialIndex ?? 0));
+    let favoriteIndex = opts?.initialIndex;
     let currentMode: 'sheet' | 'text' = 'sheet';
     let selectedProgram: number | undefined = undefined; // undefined = ABC's own %%MIDI program / abcjs default
 
@@ -207,6 +219,29 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     prevBtn.onclick = () => goToVersion(currentIndex - 1);
     nextBtn.onclick = () => goToVersion(currentIndex + 1);
     versionNav.append(prevBtn, versionLabel, nextBtn);
+
+    // ★ "set as default version" — independent of onSave, works read-only too
+    // (picking a favorite version isn't editing the card's content). Declared
+    // before goToVersion() below so it can refresh the star on every navigation.
+    let updateStarBtn: (() => void) | null = null;
+    const onSetPreferredIndex = opts?.onSetPreferredIndex;
+    if (onSetPreferredIndex) {
+      const starBtn = document.createElement('button');
+      updateStarBtn = () => {
+        const isFavorite = currentIndex === favoriteIndex;
+        starBtn.innerHTML = '';
+        starBtn.appendChild(starIconElement(isFavorite, 12));
+        starBtn.className = `px-2 py-1 rounded transition-colors cursor-pointer ${isFavorite ? 'text-warn' : 'text-muted hover:text-warn'}`;
+        starBtn.title = t(isFavorite ? 'fileViewer.abc.isDefault' : 'fileViewer.abc.setDefault');
+      };
+      starBtn.onclick = () => {
+        favoriteIndex = currentIndex;
+        onSetPreferredIndex(currentIndex);
+        updateStarBtn!();
+      };
+      updateStarBtn();
+      versionNav.insertBefore(starBtn, nextBtn);
+    }
 
     topRow.append(tabBar, versionNav);
     container.appendChild(topRow);
@@ -279,6 +314,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
       prevBtn.disabled = currentIndex === 0;
       nextBtn.disabled = currentIndex === versionCount - 1;
       versionLabel.textContent = `${currentIndex + 1}/${versionCount}`;
+      updateStarBtn?.();
       if (currentMode === 'sheet') {
         doRenderTune?.(currentIndex);
       } else {
@@ -328,7 +364,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
       };
     }
 
-    goToVersion(0); // initializes prev/next disabled state + label
+    goToVersion(currentIndex); // initializes prev/next disabled state + label (respects opts.initialIndex)
     setAbcMode('sheet');
 
     import('abcjs').then((abcjs) => {

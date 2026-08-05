@@ -497,6 +497,8 @@
   "fileViewer.abc.textTab": "ABC",
   "fileViewer.abc.save": "Save",
   "fileViewer.abc.saved": "Saved.",
+  "fileViewer.abc.setDefault": "Set as default version",
+  "fileViewer.abc.isDefault": "Default version",
   "fileViewer.abc.instrument": "Instrument",
   "fileViewer.abc.instrument.default": "Default",
   "fileViewer.abc.instrument.fiddle": "Fiddle",

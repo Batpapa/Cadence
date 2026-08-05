@@ -246,7 +246,16 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           )}
 
           {card.content.attachments.length > 0 && (
-            <VanillaEl el={renderAttachmentList({ attachments: card.content.attachments, editable: false })} />
+            <VanillaEl el={renderAttachmentList({
+              attachments: card.content.attachments,
+              editable: false,
+              // Picking a favorite ABC version is a viewing preference, not a
+              // content edit — allowed here even though the rest is read-only.
+              onSetPreferredIndex: (i, index) => mutate(s => {
+                const att = s.cards[cardId!]?.content.attachments[i];
+                if (att && att.type === 'file') att.preferredIndex = index;
+              }),
+            })} />
           )}
 
           {(() => {

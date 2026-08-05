@@ -186,6 +186,13 @@ export function heartIconElement(filled: boolean, size = 13): Element {
   return wrap.firstElementChild ?? wrap;
 }
 
+/** Same as heartIconElement, for StarIcon. */
+export function starIconElement(filled: boolean, size = 13): Element {
+  const wrap = document.createElement('span');
+  render(<StarIcon size={size} filled={filled} />, wrap);
+  return wrap.firstElementChild ?? wrap;
+}
+
 export function MusicNoteIcon({ size = 12 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -33,7 +33,13 @@ function mimeIcon(entry: FileEntry): string {
 
 // ── Row renderers ─────────────────────────────────────────────────────────────
 
-function renderFileRow(entry: FileEntry, onRemove: () => void, editable: boolean, onSave?: (data: string) => void): HTMLElement {
+function renderFileRow(
+  entry: FileEntry & { preferredIndex?: number },
+  onRemove: () => void,
+  editable: boolean,
+  onSave?: (data: string) => void,
+  onSetPreferredIndex?: (index: number) => void,
+): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'flex items-center gap-2 px-3 py-1.5 rounded border border-border group';
 
@@ -45,7 +51,11 @@ function renderFileRow(entry: FileEntry, onRemove: () => void, editable: boolean
   name.className = 'text-xs font-mono truncate flex-1';
   if (isPreviewable(entry)) {
     name.className += ' text-muted hover:text-primary cursor-pointer transition-colors';
-    name.onclick = () => showPreviewModal(entry, editable ? onSave : undefined);
+    // Favoriting a version isn't "editing" the card — available regardless of `editable`.
+    name.onclick = () => showPreviewModal(entry, editable ? onSave : undefined, {
+      initialIndex: entry.preferredIndex,
+      onSetPreferredIndex,
+    });
   } else {
     name.className += ' text-dim';
   }
@@ -230,12 +240,17 @@ export function renderAttachmentList(options: {
   /** Persists an edited file's content (currently only wired for the ABC
    *  raw-text editor in the preview modal). */
   onUpdateFile?: (i: number, data: string) => void;
+  /** Persists the "★ default version" pick for a multi-tune ABC file — wired
+   *  even where `editable` is false (study), since it's a viewing preference,
+   *  not a content edit. */
+  onSetPreferredIndex?: (i: number, index: number) => void;
 }): HTMLElement {
   const { attachments, editable } = options;
   const onAdd     = options.onAdd     ?? (() => {});
   const onRemove  = options.onRemove  ?? (() => {});
   const onReorder = options.onReorder ?? (() => {});
   const onUpdateFile = options.onUpdateFile;
+  const onSetPreferredIndex = options.onSetPreferredIndex;
 
   const wrap = document.createElement('div');
   wrap.className = 'space-y-2';
@@ -321,7 +336,11 @@ export function renderAttachmentList(options: {
 
   attachments.forEach((att, i) => {
     const rowEl = att.type === 'file'
-      ? renderFileRow(att, () => onRemove(i), editable, onUpdateFile ? (data) => onUpdateFile(i, data) : undefined)
+      ? renderFileRow(
+          att, () => onRemove(i), editable,
+          onUpdateFile ? (data) => onUpdateFile(i, data) : undefined,
+          onSetPreferredIndex ? (index) => onSetPreferredIndex(i, index) : undefined,
+        )
       : att.type === 'card'
         ? renderCardRefRow(att, () => onRemove(i), editable)
         : att.type === 'sessionClip'
