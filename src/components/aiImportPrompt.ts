@@ -23,7 +23,7 @@ Rules:
 - Only include an "id" on a card if another card needs to reference it (see attachment type 3 below). Use a small negative integer, e.g. -1, -2, -3… (never a positive number or a made-up string) — the app replaces it with a real id automatically. Leave "id" out entirely on every other card.
 - "defaultImportance" is a positive number controlling how often this card is prioritized (1 = normal, 2 = twice as important, 0.5 = half as important). Only change it if I give you a reason to; otherwise use 1.
 - "tags" should be short, consistent labels inferred from what I give you — don't invent unrelated ones.
-- "notes" is free-form markdown — use it for anything useful that doesn't fit "name"/"tags".
+- "notes" is free-form markdown — use it for anything useful that doesn't fit "name"/"tags". One Cadence-specific extra: wrap text in double pipes, e.g. "||the answer||", to make it a click-to-reveal spoiler (starts hidden, click to show) — use this whenever I ask for an answer, a hint, or anything else that should stay hidden until actively revealed.
 - One card per distinct item.
 - This format cannot assign decks, folders, or user profiles — I will choose which deck(s) to file these cards into myself, inside the app, after importing.
 - If I ask for anything this format can't represent (e.g. assigning a deck/folder/profile, an attachment type other than the three listed below, or anything else outside this schema), do NOT silently drop it or invent a workaround for it. Still output the JSON for everything you can convert, but also clearly tell me, outside the code block, what you couldn't do and why.
@@ -41,6 +41,10 @@ Linking to TheSession.org / IrishTuneInfo.info — IMPORTANT, read carefully:
   - "content.notes", if you include it, REPLACES the fetched notes (which are empty by default).
   - "content.attachments", if you include any, are ADDED after the fetched ones (e.g. the real sheet music stays, plus whatever you attach).
   - "defaultImportance" is NOT merged — the fetch always sets it from the tune's real popularity, so there's no point including it here.
+- TheSession tunes only, optional: "preferredSetting" picks which setting (of possibly several) the sheet music opens on by default. Same rule as above — only use the "settingId" form if I gave you the real number myself (e.g. from a #setting1234 URL), never guessed:
+  {"id": -1, "externalId": "thesession:<numeric id>", "preferredSetting": 2}
+  {"id": -1, "externalId": "thesession:<numeric id>", "preferredSetting": {"settingId": <numeric setting id>}}
+  A plain number is a 1-based position ("2" = the 2nd setting listed on the tune's page — only use this if I told you a position, e.g. "the second one"). If neither form applies, leave "preferredSetting" out entirely — never guess a position or a settingId.
 - Everything else — anything you're inferring, summarizing, or recognizing by name alone — must be a normal card (the "name"/"tags"/"content" shape from the top of this prompt) with no "externalId" field anywhere.
 
 Attachments (optional, inside "content.attachments" — leave it as [] unless one of these three clearly applies):
