@@ -547,10 +547,10 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
     row1.appendChild(linkBtn);
   }
 
-  // A name that "navigates to" the card page if it exists, else TheSession —
-  // shared by the main title and the current pick's row in the alternates
-  // panel below (both refer to the same tune while nothing's been relabelled).
-  const makeNavigableName = (label: string, tuneId: string, knownCardId: string | undefined): HTMLElement => {
+  // A name that "navigates to" the card page if it exists, else the exact
+  // TheSession setting that matched (not just the tune page) — same URL shape
+  // as the S: line in abcPreview.ts's showAbcPreview.
+  const makeNavigableName = (label: string, tuneId: string, settingId: string, knownCardId: string | undefined): HTMLElement => {
     if (knownCardId) {
       const span = document.createElement('span');
       span.className = 'cursor-pointer hover:text-accent transition-colors';
@@ -563,13 +563,13 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
     a.className = 'cursor-pointer hover:text-accent transition-colors';
     a.title = t('sessions.viewOnTheSession');
     a.textContent = label;
-    a.href = `https://thesession.org/tunes/${tuneId}`;
+    a.href = `https://thesession.org/tunes/${tuneId}#setting${settingId}`;
     a.target = '_blank';
     a.rel = 'noopener';
     return a;
   };
 
-  const nameEl = makeNavigableName(ann.displayName, ann.tuneId, known?.id);
+  const nameEl = makeNavigableName(ann.displayName, ann.tuneId, ann.settingId, known?.id);
   nameEl.classList.add('text-sm', 'font-semibold', 'text-primary', 'capitalize', 'truncate', 'flex-1');
 
   // Confidence pin — percentage appended (dropped the expandable "detection
