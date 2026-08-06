@@ -31,10 +31,16 @@ Rules:
 
 Linking to TheSession.org / IrishTuneInfo.info — IMPORTANT, read carefully:
 - Only do this if I explicitly gave you the exact numeric id myself (e.g. I pasted a URL or said "id 1234"). Do NOT guess or recall a numeric id from memory just because you recognize a tune's name — you are frequently wrong about exact database ids, and a wrong id silently links to a completely different tune.
-- If you do have a confirmed id, that card's entire JSON object must look EXACTLY like one of these two — "externalId" is a TOP-LEVEL field, a sibling of "id", never nested inside "content", and there must be no "name"/"tags"/"content"/"defaultImportance" at all:
+- If you do have a confirmed id, "externalId" is a TOP-LEVEL field, a sibling of "id", never nested inside "content":
   {"id": -1, "externalId": "thesession:<numeric id>"}
   {"id": -1, "externalId": "irishtuneinfo:<numeric id>"}
-  ("id" is optional here too, same negative-placeholder rule as above — only add it if another card references this one.) The app fetches the real tune from the source and fully replaces this entry with it, so anything else you added would just be discarded — don't write anything else.
+  ("id" is optional here too, same negative-placeholder rule as above — only add it if another card references this one.)
+- The app fetches the real tune from the source and merges it with whatever else you put on this card — it's not all discarded, but the fetch always wins for the tune's core identity/sheet music:
+  - "name", if you include it, REPLACES the fetched title (leave it out to just keep the real title).
+  - "tags", if you include any, are ADDED to the fetched tags (not a replacement).
+  - "content.notes", if you include it, REPLACES the fetched notes (which are empty by default).
+  - "content.attachments", if you include any, are ADDED after the fetched ones (e.g. the real sheet music stays, plus whatever you attach).
+  - "defaultImportance" is NOT merged — the fetch always sets it from the tune's real popularity, so there's no point including it here.
 - Everything else — anything you're inferring, summarizing, or recognizing by name alone — must be a normal card (the "name"/"tags"/"content" shape from the top of this prompt) with no "externalId" field anywhere.
 
 Attachments (optional, inside "content.attachments" — leave it as [] unless one of these three clearly applies):
