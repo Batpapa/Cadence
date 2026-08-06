@@ -6,7 +6,7 @@ import { mutate, appState } from '../store';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers, fetchTunesByIds,
   tuneResultToCard, findByExternalId,
-  type TuneSearchResult, type MemberSearchResult,
+  type TuneSearchResult, type MemberSearchResult, type TuneSetting,
 } from '../services/theSessionService';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
@@ -24,6 +24,26 @@ import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '
  *  when absent, so there's no way to tell "the AI wrote 1" from "the AI wrote
  *  nothing", and silently overriding a genuine 1 would be worse than not
  *  merging it at all. */
+/** AI-authored, consumed here only — never persisted as its own field, just
+ *  its effect (Attachment.preferredIndex on the merged ABC). Two forms, same
+ *  "only if explicitly given, never guessed" rule as externalId itself: a
+ *  plain number (1-based position — "the 2nd setting listed", for when the
+ *  user told the AI which one by position) or {"settingId": N} (a real
+ *  TheSession setting id, e.g. from a #settingN URL the user gave) — resolved
+ *  by searching the real fetched settings, never trusted blindly. */
+function resolvePreferredSettingIndex(pref: unknown, settings: TuneSetting[]): number | undefined {
+  if (typeof pref === 'number') {
+    const idx = Math.trunc(pref) - 1;
+    return idx >= 0 && idx < settings.length ? idx : undefined;
+  }
+  if (pref && typeof pref === 'object' && 'settingId' in pref) {
+    const settingId = Number((pref as { settingId: unknown }).settingId);
+    const idx = settings.findIndex(s => s.id === settingId);
+    return idx === -1 ? undefined : idx;
+  }
+  return undefined;
+}
+
 async function hydrateExternalCard(card: Card): Promise<Card | null> {
   const ext = card.externalId;
   if (!ext) return card;
@@ -33,8 +53,17 @@ async function hydrateExternalCard(card: Card): Promise<Card | null> {
   if (isNaN(id)) return card;
   try {
     let fetched: Card | null = null;
-    if (source === 'thesession') fetched = tuneResultToCard(await fetchTuneById(id));
-    else if (source === 'irishtuneinfo') fetched = iriTuneToCard(await fetchIriTuneById(id));
+    if (source === 'thesession') {
+      const tune = await fetchTuneById(id);
+      fetched = tuneResultToCard(tune);
+      const preferredIndex = resolvePreferredSettingIndex((card as { preferredSetting?: unknown }).preferredSetting, tune.settings);
+      if (preferredIndex !== undefined) {
+        const abcAttachment = fetched.content.attachments.find(a => a.type === 'file');
+        if (abcAttachment && abcAttachment.type === 'file') abcAttachment.preferredIndex = preferredIndex;
+      }
+    } else if (source === 'irishtuneinfo') {
+      fetched = iriTuneToCard(await fetchIriTuneById(id));
+    }
     if (!fetched) return card;
     return {
       ...fetched,
