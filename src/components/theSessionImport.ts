@@ -15,10 +15,15 @@ import { showDeckPickerPopover, deckLinkIcon } from './deckSelector';
 import { AI_IMPORT_PROMPT } from './aiImportPrompt';
 import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '../services/irishTuneInfoService';
 
-/** Replaces an AI-crafted "externalId"-only card with the real tune fetched
- *  from that source — the AI can't reliably know real names/tags for a given
- *  id (only the id itself, if the user gave it), so this never merges: either
- *  the full real card wins, or the fetch failed and the card is dropped (null). */
+/** Merges the AI-authored card onto the real fetched one: the fetch is always
+ *  authoritative for the tune's identity/ABC (never trust the AI for that —
+ *  the whole reason this hydration exists, see the id-hallucination note
+ *  below), but the AI's own touches are kept on top rather than discarded —
+ *  title override, notes override, tags/attachments appended. Deliberately
+ *  NOT merged: defaultImportance — sanitizeCard() always backfills it to 1
+ *  when absent, so there's no way to tell "the AI wrote 1" from "the AI wrote
+ *  nothing", and silently overriding a genuine 1 would be worse than not
+ *  merging it at all. */
 async function hydrateExternalCard(card: Card): Promise<Card | null> {
   const ext = card.externalId;
   if (!ext) return card;
@@ -27,18 +32,24 @@ async function hydrateExternalCard(card: Card): Promise<Card | null> {
   const id = parseInt(ext.slice(sep + 1), 10);
   if (isNaN(id)) return card;
   try {
-    if (source === 'thesession') {
-      const fetched = tuneResultToCard(await fetchTuneById(id));
-      return { ...fetched, id: card.id, guid: card.guid };
-    }
-    if (source === 'irishtuneinfo') {
-      const fetched = iriTuneToCard(await fetchIriTuneById(id));
-      return { ...fetched, id: card.id, guid: card.guid };
-    }
+    let fetched: Card | null = null;
+    if (source === 'thesession') fetched = tuneResultToCard(await fetchTuneById(id));
+    else if (source === 'irishtuneinfo') fetched = iriTuneToCard(await fetchIriTuneById(id));
+    if (!fetched) return card;
+    return {
+      ...fetched,
+      id: card.id,
+      guid: card.guid,
+      name: card.name || fetched.name,
+      tags: [...new Set([...fetched.tags, ...card.tags])],
+      content: {
+        notes: card.content.notes || fetched.content.notes,
+        attachments: [...fetched.content.attachments, ...card.content.attachments],
+      },
+    };
   } catch {
     return null;
   }
-  return card;
 }
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
