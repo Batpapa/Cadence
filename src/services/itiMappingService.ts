@@ -1,4 +1,4 @@
-import { loadItiMappingDb, saveItiMappingDb, type ItiMappingDb } from './itiMappingDb';
+import { loadItiMappingDb, saveItiMappingDb, type ItiMappingDb, type ItiMappingEntry } from './itiMappingDb';
 
 // ── IrishTuneInfo⇒TheSession mapping sync ────────────────────────────────────
 // TheSession.org maintains a "collection" (id 4, "Irishtune.info") pairing every
@@ -77,4 +77,18 @@ export async function ensureItiMapping(onProgress?: (p: MappingSyncProgress) => 
   const result: ItiMappingDb = { total: first.total, byItiId };
   await saveItiMappingDb(result);
   return result;
+}
+
+/** Single-id convenience wrapper around ensureItiMapping(), for call sites
+ *  (like card.tsx's context menu) that only need to check one card rather
+ *  than a whole batch — irishTuneInfoImport.ts keeps its own batch-oriented
+ *  mapping check. Best-effort: resolves to null on any failure (offline,
+ *  etc.) instead of throwing. */
+export async function lookupItiMapping(itiId: number): Promise<ItiMappingEntry | null> {
+  try {
+    const db = await ensureItiMapping();
+    return db.byItiId[itiId] ?? null;
+  } catch {
+    return null;
+  }
 }

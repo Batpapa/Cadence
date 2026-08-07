@@ -7,6 +7,10 @@ import { renderNotes } from '../components/fileViewer';
 import { renderAttachmentList } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
+import { fetchTuneById, tuneResultToCard, settingsToMergedAbcFile } from '../services/theSessionService';
+import { lookupItiMapping } from '../services/itiMappingService';
+import type { ItiMappingEntry } from '../services/itiMappingDb';
+import { useContextMenu, type ContextMenuItem } from '../components/contextMenu';
 import { t } from '../services/i18nService';
 import { CustomSelect } from '../components/customSelect';
 import { showDeckPickerPopover } from '../components/deckSelector';
@@ -126,6 +130,57 @@ function showManageDecksModal(cardId: string) {
   });
 }
 
+function showContextMenuError(message: string): void {
+  const p = document.createElement('p');
+  p.className = 'text-sm text-muted leading-relaxed';
+  p.textContent = message;
+  showModal(t('card.contextMenu.errorTitle'), p, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
+}
+
+/** Re-fetches the tune from TheSession and replaces only the ABC attachment(s)
+ *  this card got from a previous TheSession fetch (found via `generatedBy`) —
+ *  name/tags/notes/other attachments are untouched. If none are tagged (a card
+ *  imported before this field existed, or whose ABC was removed manually), the
+ *  fresh one is simply appended instead — never blocked on finding an original
+ *  to overwrite. */
+async function refreshAbcFromTheSession(cardId: string, sessionId: number): Promise<void> {
+  try {
+    const tune = await fetchTuneById(sessionId);
+    const fresh = settingsToMergedAbcFile(tune.settings, tune);
+    await mutate(s => {
+      const card = s.cards[cardId]; if (!card) return;
+      const old = card.content.attachments.find(a => a.type === 'file' && a.generatedBy === 'thesession');
+      const oldPreferredIndex = old?.type === 'file' ? old.preferredIndex : undefined;
+      // Only carried over if it's still a valid tune index in the freshly
+      // fetched ABC (settingsToMergedAbcFile emits one tune per setting) —
+      // a setting removed on TheSession since the last fetch shouldn't leave
+      // the card pointing at a version that no longer exists.
+      const preferredIndex = oldPreferredIndex !== undefined && oldPreferredIndex < tune.settings.length ? oldPreferredIndex : undefined;
+      const kept = card.content.attachments.filter(a => !(a.type === 'file' && a.generatedBy === 'thesession'));
+      kept.push({ type: 'file', ...fresh, generatedBy: 'thesession', ...(preferredIndex !== undefined ? { preferredIndex } : {}) });
+      card.content.attachments = kept;
+    });
+  } catch (e) {
+    showContextMenuError(t('card.contextMenu.refreshError', { message: e instanceof Error ? e.message : String(e) }));
+  }
+}
+
+/** Full replace via a fresh TheSession fetch — name, tags, notes and
+ *  attachments all come from `fetched`; only `id`/`guid` are kept so decks,
+ *  review history and cross-references stay attached to the same card. */
+async function migrateCardToTheSession(cardId: string, sessionId: number): Promise<void> {
+  try {
+    const tune = await fetchTuneById(sessionId);
+    const fetched = tuneResultToCard(tune);
+    await mutate(s => {
+      const existing = s.cards[cardId]; if (!existing) return;
+      s.cards[cardId] = { ...fetched, id: existing.id, guid: existing.guid };
+    });
+  } catch (e) {
+    showContextMenuError(t('card.contextMenu.migrateError', { message: e instanceof Error ? e.message : String(e) }));
+  }
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function CardView({ cardId, contextDeckId }: { cardId: string; contextDeckId?: string }) {
@@ -158,6 +213,46 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
     }
   }, [isEditingImportance]);
 
+  // `source` computed here (not just below, alongside the other derived
+  // values) because the context-menu hook must be called unconditionally,
+  // before the `if (!card) return` below — same "all hooks before
+  // conditional returns" rule the rest of this component already follows.
+  const source = externalSourceLink(card?.externalId);
+
+  const [itiMapping, setItiMapping] = useState<ItiMappingEntry | null | undefined>(undefined);
+  useEffect(() => {
+    setItiMapping(undefined);
+    if (source?.source !== 'irishtuneinfo' || !card?.externalId) return;
+    const itiId = parseInt(card.externalId.slice('irishtuneinfo:'.length), 10);
+    if (isNaN(itiId)) return;
+    let cancelled = false;
+    void lookupItiMapping(itiId).then(entry => { if (!cancelled) setItiMapping(entry); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card?.externalId, source?.source]);
+
+  const menuItems: ContextMenuItem[] = !source ? [] : source.source === 'thesession'
+    ? [
+        { label: t('card.contextMenu.browse'), onClick: () => window.open(source.url, '_blank', 'noopener') },
+        { label: t('card.contextMenu.refreshAbc'), onClick: () => {
+          const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
+          if (!isNaN(sessionId)) void refreshAbcFromTheSession(cardId, sessionId);
+        } },
+      ]
+    : [
+        { label: t('card.contextMenu.browse'), onClick: () => window.open(source.url, '_blank', 'noopener') },
+        ...(itiMapping ? [{
+          label: t('card.contextMenu.migrate'),
+          onClick: () => confirmModal(
+            t('card.contextMenu.migrateConfirmTitle'),
+            t('card.contextMenu.migrateConfirmMessage'),
+            t('card.contextMenu.migrate'),
+            () => { void migrateCardToTheSession(cardId, itiMapping.sessionId); },
+          ),
+        }] : []),
+      ];
+  const { menu: pinContextMenu, triggerProps: pinTriggerProps } = useContextMenu(menuItems);
+
   if (!card) return <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">{t('card.notFound')}</div>;
 
   // ── Derived values ────────────────────────────────────────────────────────────
@@ -166,7 +261,6 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const stabWindow = fsrsState?.stability !== undefined ? retentionWindowDays(fsrsState.stability, user.availabilityThreshold, user.forgettingRate ?? 1) : undefined;
   const ease       = fsrsState?.difficulty !== undefined ? (10 - fsrsState.difficulty) / 9 : undefined;
   const deckIds    = decksContainingCard(cardId, user);
-  const source     = externalSourceLink(card.externalId);
   const sorted     = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
 
   const rColor    = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
@@ -238,11 +332,13 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               rel="noopener"
               class={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-elevated border transition-colors shrink-0 ${SOURCE_PIN_COLORS[source.source] ?? 'text-dim border-border'}`}
               title={source.url}
+              {...pinTriggerProps}
             >
               {source.label}
               <ExternalLinkIcon size={9} />
             </a>
           )}
+          {pinContextMenu}
           <button
             class="btn-danger px-2 shrink-0"
             title={t('card.deleteTitle')}

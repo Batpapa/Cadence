@@ -216,8 +216,8 @@ export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boole
   const settings = tune.settings;
   const merge = (opts.mergeSettings ?? true) && settings.length > 1;
   const attachments: Attachment[] = merge
-    ? [{ type: 'file' as const, ...settingsToMergedAbcFile(settings, tune) }]
-    : settings.map(s => ({ type: 'file' as const, ...settingToAbcFile(s, tune) })) as Attachment[];
+    ? [{ type: 'file' as const, ...settingsToMergedAbcFile(settings, tune), generatedBy: 'thesession' as const }]
+    : settings.map(s => ({ type: 'file' as const, ...settingToAbcFile(s, tune), generatedBy: 'thesession' as const })) as Attachment[];
   return {
     id: generateId(),
     guid: generateId(),
