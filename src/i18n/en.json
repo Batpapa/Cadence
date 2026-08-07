@@ -409,8 +409,17 @@
   "irishTuneInfo.status.fetchingTunes": "Fetching tunes — {loaded}/{total}…",
   "irishTuneInfo.status.batchDone": "✓ {count} imported.",
   "irishTuneInfo.status.batchSkipped": ", {count} already in library skipped",
+  "irishTuneInfo.status.batchRedirected": ", {count} imported from TheSession instead",
+  "irishTuneInfo.status.checkingMapping": "Checking TheSession catalogue…",
+  "irishTuneInfo.status.checkingMappingProgress": "Checking TheSession catalogue — {done}/{total}…",
   "irishTuneInfo.error": "Error: {message}",
   "irishTuneInfo.noResults": "No results.",
+
+  "irishTuneInfo.mapping.title": "Available on TheSession",
+  "irishTuneInfo.mapping.offerSingle": "\"{name}\" is also available on TheSession: a bigger community, tunes the session analyser can recognise, and no IrishTuneInfo/TheSession duplicates in your library. We recommend importing it from there instead.",
+  "irishTuneInfo.mapping.offerPlural": "{count} of the {total} tunes you're about to import are also available on TheSession: a bigger community, tunes the session analyser can recognise, and no IrishTuneInfo/TheSession duplicates in your library. We recommend importing those from there instead.",
+  "irishTuneInfo.mapping.useTheSession": "Use TheSession (recommended)",
+  "irishTuneInfo.mapping.keepIti": "Keep IrishTuneInfo",
 
   "newCard.title": "New Card",
   "newCard.tabCreate": "Create",

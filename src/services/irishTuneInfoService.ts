@@ -103,28 +103,8 @@ export interface PlaylistTuneResult {
   audioFile: FileEntry | null;
 }
 
-/** Fetches every tune's full detail for a playlist, skipping IDs already in the library. Audio is only fetched when `includeAudio` is true. */
-export async function fetchPlaylistTunes(
-  username: string,
-  onProgress: (loaded: number, total: number) => void,
-  skipId?: (id: number) => boolean,
-  includeAudio = false,
-): Promise<{ tunes: PlaylistTuneResult[]; skippedIds: number[] }> {
-  const playlist = await fetchPlaylist(username);
-  const ids = skipId ? playlist.tunes.map(t => t.id).filter(id => !skipId(id)) : playlist.tunes.map(t => t.id);
-  const skippedIds = skipId ? playlist.tunes.map(t => t.id).filter(id => skipId(id)) : [];
-  const tunes: PlaylistTuneResult[] = [];
-  for (let i = 0; i < ids.length; i++) {
-    const tune = await fetchTuneById(ids[i]!);
-    const audioFile = includeAudio && tune.featuredAudioUrl ? await fetchAudioFile(tune.featuredAudioUrl, `${tune.name}.mp3`) : null;
-    tunes.push({ tune, audioFile });
-    onProgress(i + 1, ids.length);
-  }
-  return { tunes, skippedIds };
-}
-
-/** Fetches a user-supplied list of tune IDs (e.g. pasted "1;5;97"), skipping
- *  IDs already in the library — same shape as fetchPlaylistTunes. */
+/** Fetches a user-supplied list of tune IDs (e.g. pasted "1;5;97", or a
+ *  playlist's tune IDs already resolved by the caller via fetchPlaylist). */
 export async function fetchTunesByIds(
   ids: number[],
   onProgress: (loaded: number, total: number) => void,
