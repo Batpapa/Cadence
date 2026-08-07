@@ -734,6 +734,7 @@
 
   "sessions.moduleTitle": "Tune analyser",
   "sessions.moduleDesc": "Recognise tunes from an audio file or by recording a live session",
+  "sessions.recordingIndicator": "A session is recording or importing — tap to return to it",
   "sessions.start": "Start a live session",
   "sessions.import": "Import a recording",
   "sessions.importHint": "MP3, M4A, WAV, OGG…",

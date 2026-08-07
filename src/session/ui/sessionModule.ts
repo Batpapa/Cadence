@@ -1,3 +1,4 @@
+import { signal } from '@preact/signals';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { fileToEntry, focusIfDesktop } from '../../utils';
@@ -36,8 +37,19 @@ const dropWiredBodies = new WeakSet<HTMLElement>();
 /** Synchronous re-entrancy guard: startImport awaits before setting activeImport. */
 let importStarting = false;
 
-export function isSessionRecording(): boolean {
-  return activeLive !== null || activeImport !== null;
+/** Reactive mirror of activeLive/activeImport — plain module vars aren't observable
+ *  by Preact, so the chrome (header dot, modules page) needs a signal to update live
+ *  without the user having to reopen the Modules page. */
+export const sessionRecordingSignal = signal(false);
+
+function setActiveLive(v: LiveSession | null): void {
+  activeLive = v;
+  sessionRecordingSignal.value = activeLive !== null || activeImport !== null;
+}
+
+function setActiveImport(v: ImportSession | null): void {
+  activeImport = v;
+  sessionRecordingSignal.value = activeLive !== null || activeImport !== null;
 }
 
 export interface SessionModuleHost {
@@ -978,14 +990,14 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
   importPlaybackWarn = !canPlayFile(file);
 
   const imp = new ImportSession(file, {});
-  activeImport = imp;
+  setActiveImport(imp);
   renderImportAnalysis(host);
 
   try {
     const session = await imp.start();
     if (session) {
       lastImportDump = { sessionId: session.id, windows: [...imp.windows] };
-      activeImport = null;
+      setActiveImport(null);
       host.ctx.navigate({ view: 'sessions', sessionId: session.id });
       return;
     }
@@ -998,17 +1010,17 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
         () => {
           void imp.keepPartial().then(session2 => {
             lastImportDump = { sessionId: session2.id, windows: [...imp.windows] };
-            activeImport = null;
+            setActiveImport(null);
             host.ctx.navigate({ view: 'sessions', sessionId: session2.id });
           });
         },
       );
       // If the user dismisses the modal, the library below is already rendered.
     }
-    activeImport = null;
+    setActiveImport(null);
     renderLibrary(host);
   } catch (err) {
-    activeImport = null;
+    setActiveImport(null);
     const msg = String(err);
     if (msg.includes('too-short')) {
       alertModal(t('sessions.import'), t('sessions.tooShort', { n: IMPORT_MIN_S }));
@@ -1174,9 +1186,9 @@ function renderImportAnalysis(host: SessionModuleHost): void {
 // ── Screen: live recording ────────────────────────────────────────────────────
 
 function startLiveSession(host: SessionModuleHost): void {
-  activeLive = new LiveSession({});
+  setActiveLive(new LiveSession({}));
   renderLive(host);
-  void activeLive.start().catch(() => { /* error surfaced via onError callback */ });
+  void activeLive!.start().catch(() => { /* error surfaced via onError callback */ });
 }
 
 function renderLive(host: SessionModuleHost): void {
@@ -1203,7 +1215,7 @@ function renderLive(host: SessionModuleHost): void {
     // Same route as this live screen (`{ view: 'sessions' }`, no sessionId) —
     // navigate() would be a no-op here since the route object doesn't change
     // in a way Preact/the SessionsView effect would notice. Re-render locally.
-    onDelete: () => { void live.cancel().then(() => { activeLive = null; renderLibrary(host); }); },
+    onDelete: () => { void live.cancel().then(() => { setActiveLive(null); renderLibrary(host); }); },
     getTargetDeckIds: () => live.targetDeckIds,
     ensureTargetDeckIds: ensureLiveTargetDeckIds,
   });
@@ -1395,10 +1407,10 @@ function renderLive(host: SessionModuleHost): void {
     cleanup();
     try {
       const session = await live.stop();
-      activeLive = null;
+      setActiveLive(null);
       host.ctx.navigate({ view: 'sessions', sessionId: session.id });
     } catch (err) {
-      activeLive = null;
+      setActiveLive(null);
       initStatus.textContent = `⚠ ${String(err)}`;
     }
   };

@@ -9,6 +9,38 @@ export function iconElement(Comp: ComponentType<{ size?: number }>, size?: numbe
   return wrap.firstElementChild ?? wrap;
 }
 
+/** HAL 9000-ish "recording in progress" marker: a pulsing outer ring plus a
+ *  glowing solid core, instead of a flat dot. Shared between the header chrome
+ *  and the Modules page module-picker card so both stay visually identical. */
+export function RecordingPulseDot({ size = 12, onClick, title, class: className = '' }: {
+  size?: number; onClick?: () => void; title?: string; class?: string;
+}) {
+  const c = size / 2;
+  const coreR = size * 0.22;
+  const ringR = size * 0.36;
+  // Plain SVG, not stacked absolutely-positioned/translated <span>s: a circle's
+  // center is just its cx/cy, so animating only `r` (via SMIL, not a CSS
+  // transform) can never drift off-center. An earlier attempt centering
+  // divs via `translate(-50%,-50%)` broke because Tailwind's `animate-ping`
+  // keyframe hardcodes `transform: scale(2)`, which clobbers any translate
+  // sharing that same `transform` property mid-animation.
+  return (
+    <span
+      class={`inline-flex shrink-0 ${onClick ? 'pointer-events-auto cursor-pointer' : ''} ${className}`}
+      title={title}
+      onClick={onClick}
+    >
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ overflow: 'visible' }}>
+        <circle cx={c} cy={c} r={ringR} class="fill-none stroke-danger" stroke-width="1">
+          <animate attributeName="r" values={`${ringR};${size * 0.62}`} dur="1.4s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.8;0" dur="1.4s" repeatCount="indefinite" />
+        </circle>
+        <circle cx={c} cy={c} r={coreR} class="fill-danger" style={{ filter: 'drop-shadow(0 0 2px rgb(var(--color-danger-ch)))' }} />
+      </svg>
+    </span>
+  );
+}
+
 export function TrashIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
