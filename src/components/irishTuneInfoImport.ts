@@ -1,12 +1,14 @@
-import type { AppContext } from '../types';
+import type { AppContext, Card } from '../types';
 import { focusIfDesktop, sortByRelevance } from '../utils';
 import { mutate, appState } from '../store';
 import {
-  searchTunes, fetchTuneById, fetchPlaylist, fetchPlaylistTunes, fetchTunesByIds, fetchAudioFile,
+  searchTunes, fetchTuneById, fetchPlaylist, fetchTunesByIds, fetchAudioFile,
   tuneToCard, isServerWarm,
   type TuneSearchResult,
 } from '../services/irishTuneInfoService';
-import { findByExternalId } from '../services/theSessionService';
+import { findByExternalId, fetchTunesByIds as fetchTunesByIdsTheSession, tuneResultToCard } from '../services/theSessionService';
+import { ensureItiMapping } from '../services/itiMappingService';
+import { showModal, closeModal } from './modal';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
 
@@ -94,6 +96,32 @@ export function buildIrishTuneInfoBody(
   // ── Shared: import a single tune ──────────────────────────────────────────
   const importTune = async (tuneId: number, onSuccess: () => void, btn: HTMLButtonElement) => {
     btn.disabled = true;
+    status.textContent = t('irishTuneInfo.status.checkingMapping');
+    const { mapped } = await checkMapping([tuneId]);
+    if (mapped.length > 0) {
+      const choice = await promptUseTheSession(mapped, 1);
+      if (choice === 'cancel') {
+        status.textContent = '';
+        btn.disabled = false;
+        return;
+      }
+      if (choice === 'thesession') {
+        status.textContent = fetchingMsg();
+        try {
+          const { newCards, linkIds, displayCards } = await fetchViaTheSession([mapped[0]!.sessionId], () => {});
+          await commitCards(newCards, linkIds);
+          const card = displayCards[0]!;
+          setImportedStatus(card.id, card.name);
+          onSuccess();
+        } catch (e) {
+          status.textContent = t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) });
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+      // choice === 'iti': fall through to the regular IrishTuneInfo path below.
+    }
     status.textContent = fetchingMsg();
     try {
       const tune = await fetchTuneById(tuneId);
@@ -140,6 +168,117 @@ export function buildIrishTuneInfoBody(
     return map;
   };
 
+  // ── TheSession redirect: if a mapping exists for some of the IDs about to be
+  // imported, offer to import those specific ones from TheSession instead
+  // (recommended — richer, community-curated data). Best-effort throughout:
+  // a sync failure never blocks the underlying IrishTuneInfo import.
+
+  const checkMapping = async (
+    itiIds: number[],
+  ): Promise<{ mapped: { itiId: number; sessionId: number; name: string }[]; unmapped: number[] }> => {
+    try {
+      // Only ticks during an actual (re)sync of the full collection (the
+      // common case — mapping already up to date — resolves via a single
+      // page-1 fetch with no progress callback at all).
+      const mappingDb = await ensureItiMapping(p => {
+        status.textContent = t('irishTuneInfo.status.checkingMappingProgress', { done: p.done, total: p.total });
+      });
+      const mapped: { itiId: number; sessionId: number; name: string }[] = [];
+      const unmapped: number[] = [];
+      for (const id of itiIds) {
+        const entry = mappingDb.byItiId[id];
+        if (entry) mapped.push({ itiId: id, sessionId: entry.sessionId, name: entry.name });
+        else unmapped.push(id);
+      }
+      return { mapped, unmapped };
+    } catch (e) {
+      // Best-effort: never let a mapping-sync failure block the underlying
+      // IrishTuneInfo import. Logged (not surfaced to the user) so a silent
+      // failure is still diagnosable via devtools.
+      console.warn('[itiMapping] TheSession mapping check failed, continuing without it', e);
+      return { mapped: [], unmapped: itiIds };
+    }
+  };
+
+  /** Two-choice prompt (same shape as sessionModule.ts's "long file" warning),
+   *  but dismissable (X / click outside) — closing it that way is treated as
+   *  'cancel', not as picking "Keep IrishTuneInfo": callers must abort the
+   *  whole import in that case, exactly as if Import had never been clicked.
+   *  TheSession is the recommended choice, so its button is primary and says
+   *  so explicitly rather than presenting a neutral pick. */
+  const promptUseTheSession = (mapped: { name: string }[], totalRequested: number): Promise<'thesession' | 'iti' | 'cancel'> => {
+    return new Promise(resolve => {
+      const p = document.createElement('p');
+      p.className = 'text-sm text-muted leading-relaxed';
+      p.textContent = mapped.length === 1
+        ? t('irishTuneInfo.mapping.offerSingle', { name: mapped[0]!.name })
+        : t('irishTuneInfo.mapping.offerPlural', { count: mapped.length, total: totalRequested });
+      showModal(t('irishTuneInfo.mapping.title'), p, [
+        { label: t('irishTuneInfo.mapping.keepIti'), onClick: () => { closeModal(); resolve('iti'); } },
+        { label: t('irishTuneInfo.mapping.useTheSession'), primary: true, onClick: () => { closeModal(); resolve('thesession'); } },
+      ], true, '28rem', () => resolve('cancel'));
+    });
+  };
+
+  /** Fetches+builds cards EXCLUSIVELY via theSessionService (fetchTunesByIds +
+   *  tuneResultToCard) — never merged with any IrishTuneInfo data already
+   *  fetched for these tunes. Dedupes on `thesession:<id>`, same convention as
+   *  buildExistingByTuneId. Does NOT touch the store: callers combine this
+   *  with another fetch phase (the remaining IrishTuneInfo import, if any) and
+   *  commit everything via commitCards() only once every phase has succeeded
+   *  — a failure partway through must never leave only half the batch
+   *  imported into the library. */
+  const fetchViaTheSession = async (
+    sessionIds: number[],
+    onProgress: (loaded: number, total: number) => void,
+  ): Promise<{ newCards: Card[]; linkIds: string[]; displayCards: { id: string; name: string }[] }> => {
+    const existingCardIdBySessionId = new Map<number, string>();
+    for (const card of Object.values(appState.value.cards)) {
+      if (card.externalId?.startsWith('thesession:')) {
+        const id = parseInt(card.externalId.slice('thesession:'.length));
+        if (!isNaN(id)) existingCardIdBySessionId.set(id, card.id);
+      }
+    }
+    const { tunes, skippedIds } = await fetchTunesByIdsTheSession(sessionIds, onProgress, id => existingCardIdBySessionId.has(id));
+    const newCards = tunes.map(tune => tuneResultToCard(tune));
+    const existingIds = skippedIds.map(id => existingCardIdBySessionId.get(id)!);
+    return {
+      newCards,
+      linkIds: [...newCards.map(c => c.id), ...existingIds],
+      displayCards: [
+        ...newCards.map(c => ({ id: c.id, name: c.name })),
+        ...existingIds.map(id => ({ id, name: appState.value.cards[id]?.name ?? '' })),
+      ],
+    };
+  };
+
+  /** Writes a set of newly-built cards plus a set of already-known card ids
+   *  into the store and links all of them to the current target deck(s), in
+   *  one single mutate() call — the only place either batch path below
+   *  actually commits anything, and only once every fetch phase has already
+   *  succeeded. */
+  const commitCards = (newCards: Card[], linkIds: string[]): Promise<void> => mutate(s => {
+    for (const card of newCards) { s.cards[card.id] = card; }
+    for (const deckId of (getTargetDeckIds?.() ?? [])) {
+      const deck = s.decks[deckId]; if (!deck) continue;
+      for (const cardId of linkIds) {
+        if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+      }
+    }
+  });
+
+  /** Combines the batch-import summary segments (imported / redirected to
+   *  TheSession / already-in-library skipped) into one sentence — factored
+   *  out since both batch paths below build this. */
+  const buildBatchSummary = (newCount: number, skippedCount: number, redirectedCount: number): string => {
+    let summary = t('irishTuneInfo.status.batchDone', { count: newCount });
+    const extras: string[] = [];
+    if (redirectedCount > 0) extras.push(t('irishTuneInfo.status.batchRedirected', { count: redirectedCount }));
+    if (skippedCount > 0) extras.push(t('irishTuneInfo.status.batchSkipped', { count: skippedCount }));
+    if (extras.length > 0) summary = summary.replace('.', '') + extras.join('') + '.';
+    return summary;
+  };
+
   /** Shared: import a list of tune IDs (e.g. pasted "1;5;97"), same shape as
    *  the playlist batch import below. */
   const importIds = async (
@@ -147,24 +286,60 @@ export function buildIrishTuneInfoBody(
     onProgress: (loaded: number, total: number) => void,
     onDone: () => void,
   ): Promise<void> => {
+    status.textContent = t('irishTuneInfo.status.checkingMapping');
+    const { mapped, unmapped } = await checkMapping(ids);
+    let useRedirect = false;
+    if (mapped.length > 0) {
+      const choice = await promptUseTheSession(mapped, ids.length);
+      if (choice === 'cancel') {
+        status.textContent = '';
+        onDone();
+        return;
+      }
+      useRedirect = choice === 'thesession';
+    }
+    const remainingIds = useRedirect ? unmapped : ids;
+
+    // One continuous bar/status across both phases (TheSession redirect
+    // fetch, then the remaining IrishTuneInfo fetch) instead of two separate
+    // "X/N" progressions that each reset to 0.
+    const totalToFetch = (useRedirect ? mapped.length : 0) + remainingIds.length;
+    let doneSoFar = 0;
+    const onCombinedProgress = (loadedInPhase: number) => onProgress(doneSoFar + loadedInPhase, totalToFetch);
+
     status.textContent = fetchingMsg();
     try {
-      const existingCardIdByTuneId = buildExistingByTuneId();
-      const { tunes, skippedIds } = await fetchTunesByIds(ids, onProgress, id => existingCardIdByTuneId.has(id), includeAudio);
-      const newCards = tunes.map(({ tune, audioFile }) => tuneToCard(tune, audioFile));
-      await mutate(s => {
-        for (const card of newCards) { s.cards[card.id] = card; }
-        const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
-        for (const deckId of (getTargetDeckIds?.() ?? [])) {
-          const deck = s.decks[deckId]; if (!deck) continue;
-          for (const cardId of linkIds) {
-            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-          }
-        }
-      });
-      let summary = t('irishTuneInfo.status.batchDone', { count: newCards.length });
-      if (skippedIds.length > 0) summary = summary.replace('.', '') + t('irishTuneInfo.status.batchSkipped', { count: skippedIds.length }) + '.';
-      status.textContent = summary;
+      // Every phase is fetched FIRST — nothing is written to the library
+      // until every phase below has actually succeeded, so a failure partway
+      // through (e.g. the IrishTuneInfo fetch dies right after the TheSession
+      // one already finished) never leaves the library with only half the
+      // batch imported.
+      let sessionFetch: Awaited<ReturnType<typeof fetchViaTheSession>> | null = null;
+      if (useRedirect) {
+        sessionFetch = await fetchViaTheSession(mapped.map(m => m.sessionId), onCombinedProgress);
+        doneSoFar = mapped.length;
+      }
+
+      let itiNewCards: Card[] = [];
+      let itiSkippedIds: number[] = [];
+      let existingCardIdByTuneId: Map<number, string> | null = null;
+      if (remainingIds.length > 0) {
+        existingCardIdByTuneId = buildExistingByTuneId();
+        const { tunes, skippedIds } = await fetchTunesByIds(remainingIds, onCombinedProgress, id => existingCardIdByTuneId!.has(id), includeAudio);
+        itiNewCards = tunes.map(({ tune, audioFile }) => tuneToCard(tune, audioFile));
+        itiSkippedIds = skippedIds;
+      }
+
+      const allNewCards = [...(sessionFetch?.newCards ?? []), ...itiNewCards];
+      const linkIds = [
+        ...(sessionFetch?.linkIds ?? []),
+        ...itiNewCards.map(c => c.id),
+        ...itiSkippedIds.map(id => existingCardIdByTuneId!.get(id)!),
+      ];
+      await commitCards(allNewCards, linkIds);
+
+      const redirectedCount = sessionFetch?.displayCards.length ?? 0;
+      status.textContent = buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount);
     } catch (e) {
       status.textContent = t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -335,14 +510,26 @@ export function buildIrishTuneInfoBody(
     progressTrack.appendChild(progressFill); progressWrap.appendChild(progressTrack);
 
     let pendingUsername: string | null = null;
+    // Populated by showPreview, which already has every tune's ID for free
+    // (fetchPlaylist returns {id,name} per tune) — checked against the
+    // TheSession mapping right there so doImportAll never needs a second
+    // username→ids round trip just to know what it's about to fetch.
+    let pendingMapped: { itiId: number; sessionId: number; name: string }[] = [];
+    let pendingUnmappedIds: number[] = [];
 
     const showPreview = async (username: string) => {
-      pendingUsername = null; importAllBtn.disabled = true; infoSpan.textContent = '';
+      pendingUsername = null; pendingMapped = []; pendingUnmappedIds = [];
+      importAllBtn.disabled = true; infoSpan.textContent = '';
       status.textContent = fetchingMsg();
       try {
         const playlist = await fetchPlaylist(username);
         const n = playlist.tunes.length;
         infoSpan.textContent = n === 1 ? t('irishTuneInfo.playlist.preview', { count: n }) : t('irishTuneInfo.playlist.previewPlural', { count: n });
+        // Checked here (not just shown) so doImportAll never needs a second
+        // username→ids round trip — the TheSession-redirect prompt itself
+        // only appears once the user actually clicks Import, not here.
+        const { mapped, unmapped } = await checkMapping(playlist.tunes.map(pt => pt.id));
+        pendingMapped = mapped; pendingUnmappedIds = unmapped;
         pendingUsername = username;
         importAllBtn.disabled = n === 0;
         status.textContent = '';
@@ -353,33 +540,67 @@ export function buildIrishTuneInfoBody(
 
     const doImportAll = async () => {
       if (pendingUsername === null) return;
-      const username = pendingUsername;
       importAllBtn.disabled = true; inp.disabled = true;
       progressWrap.classList.remove('hidden'); progressFill.style.width = '0%';
+
+      let useRedirect = false;
+      if (pendingMapped.length > 0) {
+        const choice = await promptUseTheSession(pendingMapped, pendingMapped.length + pendingUnmappedIds.length);
+        if (choice === 'cancel') {
+          status.textContent = '';
+          progressWrap.classList.add('hidden');
+          importAllBtn.disabled = false; inp.disabled = false;
+          return;
+        }
+        useRedirect = choice === 'thesession';
+      }
+      const ids = useRedirect ? pendingUnmappedIds : [...pendingMapped.map(m => m.itiId), ...pendingUnmappedIds];
+
+      // One continuous bar/status across both phases (TheSession redirect
+      // fetch, then the remaining IrishTuneInfo fetch) instead of two
+      // separate "X/N" progressions that each reset to 0.
+      const totalToFetch = (useRedirect ? pendingMapped.length : 0) + ids.length;
+      let doneSoFar = 0;
+      const onCombinedProgress = (loadedInPhase: number) => {
+        const done = doneSoFar + loadedInPhase;
+        progressFill.style.width = `${Math.round((done / totalToFetch) * 100)}%`;
+        status.textContent = t('irishTuneInfo.status.fetchingTunes', { loaded: done, total: totalToFetch });
+      };
+
       status.textContent = fetchingMsg();
       try {
-        const existingCardIdByTuneId = buildExistingByTuneId();
-        const { tunes, skippedIds } = await fetchPlaylistTunes(username, (loaded, total) => {
-          progressFill.style.width = `${Math.round((loaded / total) * 100)}%`;
-          status.textContent = t('irishTuneInfo.status.fetchingTunes', { loaded, total });
-        }, id => existingCardIdByTuneId.has(id), includeAudio);
-        const newCards = tunes.map(({ tune, audioFile }) => tuneToCard(tune, audioFile));
-        await mutate(s => {
-          for (const card of newCards) { s.cards[card.id] = card; }
-          // Already-owned tunes were skipped above (no re-fetch), but they
-          // still belong in the target deck if they were missing there.
-          const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId]; if (!deck) continue;
-            for (const cardId of linkIds) {
-              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-            }
-          }
-        });
+        // Every phase is fetched FIRST — nothing is written to the library
+        // until every phase below has actually succeeded, so a failure
+        // partway through (e.g. the IrishTuneInfo fetch dies right after the
+        // TheSession one already finished) never leaves the library with
+        // only half the batch imported.
+        let sessionFetch: Awaited<ReturnType<typeof fetchViaTheSession>> | null = null;
+        if (useRedirect) {
+          sessionFetch = await fetchViaTheSession(pendingMapped.map(m => m.sessionId), onCombinedProgress);
+          doneSoFar = pendingMapped.length;
+        }
+
+        let itiNewCards: Card[] = [];
+        let itiSkippedIds: number[] = [];
+        let existingCardIdByTuneId: Map<number, string> | null = null;
+        if (ids.length > 0) {
+          existingCardIdByTuneId = buildExistingByTuneId();
+          const { tunes, skippedIds } = await fetchTunesByIds(ids, onCombinedProgress, id => existingCardIdByTuneId!.has(id), includeAudio);
+          itiNewCards = tunes.map(({ tune, audioFile }) => tuneToCard(tune, audioFile));
+          itiSkippedIds = skippedIds;
+        }
+
+        const allNewCards = [...(sessionFetch?.newCards ?? []), ...itiNewCards];
+        const linkIds = [
+          ...(sessionFetch?.linkIds ?? []),
+          ...itiNewCards.map(c => c.id),
+          ...itiSkippedIds.map(id => existingCardIdByTuneId!.get(id)!),
+        ];
+        await commitCards(allNewCards, linkIds);
+
         progressFill.style.width = '100%';
-        let summary = t('irishTuneInfo.status.batchDone', { count: newCards.length });
-        if (skippedIds.length > 0) summary = summary.replace('.', '') + t('irishTuneInfo.status.batchSkipped', { count: skippedIds.length }) + '.';
-        status.textContent = summary;
+        const redirectedCount = sessionFetch?.displayCards.length ?? 0;
+        status.textContent = buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount);
       } catch (e) {
         status.textContent = t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) });
       } finally { importAllBtn.disabled = false; inp.disabled = false; }

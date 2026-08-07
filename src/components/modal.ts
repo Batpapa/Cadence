@@ -18,7 +18,10 @@ export function closeModal(): void {
   if (top) top.remove();
 }
 
-export function showModal(title: string, body: HTMLElement, actions: ModalAction[], dismissable = true, maxWidth = '28rem'): void {
+export function showModal(
+  title: string, body: HTMLElement, actions: ModalAction[], dismissable = true, maxWidth = '28rem',
+  onDismiss?: () => void,
+): void {
 
   const overlay = document.createElement('div');
   overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm';
@@ -35,11 +38,15 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
   titleEl.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
   titleEl.textContent = title;
 
+  // Fires only for X/outside-click dismissal, never for an explicit action
+  // button (those call closeModal() themselves, deliberately without this).
+  const dismiss = () => { closeModal(); onDismiss?.(); };
+
   if (dismissable) {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer';
     closeBtn.textContent = '✕';
-    closeBtn.onclick = closeModal;
+    closeBtn.onclick = dismiss;
     header.append(titleEl, closeBtn);
   } else {
     header.appendChild(titleEl);
@@ -71,7 +78,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
   if (dismissable) {
     let mouseDownOnOverlay = false;
     overlay.addEventListener('mousedown', (e) => { mouseDownOnOverlay = e.target === overlay; });
-    overlay.onclick = (e) => { if (e.target === overlay && mouseDownOnOverlay) closeModal(); };
+    overlay.onclick = (e) => { if (e.target === overlay && mouseDownOnOverlay) dismiss(); };
   }
   modalStack.push(overlay);
   document.body.appendChild(overlay);

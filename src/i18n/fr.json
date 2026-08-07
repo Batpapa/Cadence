@@ -409,8 +409,17 @@
   "irishTuneInfo.status.fetchingTunes": "Récupération des morceaux — {loaded}/{total}…",
   "irishTuneInfo.status.batchDone": "✓ {count} importé(s).",
   "irishTuneInfo.status.batchSkipped": ", {count} déjà dans la bibliothèque, ignoré(s)",
+  "irishTuneInfo.status.batchRedirected": ", {count} importé(s) depuis TheSession à la place",
+  "irishTuneInfo.status.checkingMapping": "Vérification du catalogue TheSession…",
+  "irishTuneInfo.status.checkingMappingProgress": "Vérification du catalogue TheSession — {done}/{total}…",
   "irishTuneInfo.error": "Erreur : {message}",
   "irishTuneInfo.noResults": "Aucun résultat.",
+
+  "irishTuneInfo.mapping.title": "Disponible sur TheSession",
+  "irishTuneInfo.mapping.offerSingle": "« {name} » est aussi disponible sur TheSession : une communauté plus grande, des morceaux que l'analyseur de session sait reconnaître, et plus de doublons IrishTuneInfo/TheSession dans ta bibliothèque. On te conseille de l'importer depuis là-bas à la place.",
+  "irishTuneInfo.mapping.offerPlural": "{count} des {total} morceaux que tu es sur le point d'importer sont aussi disponibles sur TheSession : une communauté plus grande, des morceaux que l'analyseur de session sait reconnaître, et plus de doublons IrishTuneInfo/TheSession dans ta bibliothèque. On te conseille de les importer depuis là-bas à la place.",
+  "irishTuneInfo.mapping.useTheSession": "Utiliser TheSession (conseillé)",
+  "irishTuneInfo.mapping.keepIti": "Garder IrishTuneInfo",
 
   "newCard.title": "Nouvelle carte",
   "newCard.tabCreate": "Créer",
