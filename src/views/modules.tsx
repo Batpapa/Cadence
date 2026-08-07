@@ -1,7 +1,7 @@
 import { navigate } from '../store';
 import { t } from '../services/i18nService';
-import { WaveformIcon, FlameIcon } from '../components/icons';
-import { isSessionRecording } from '../session/ui/sessionModule';
+import { WaveformIcon, FlameIcon, RecordingPulseDot } from '../components/icons';
+import { sessionRecordingSignal } from '../session/ui/sessionModule';
 
 // ── Modules page ──────────────────────────────────────────────────────────────
 // Was a modal (modulesModal.ts) — moved to a routed page for back/forward
@@ -24,7 +24,7 @@ export function ModulesView() {
         <div class="flex-1 min-w-0">
           <div class="text-sm font-semibold text-primary mb-0.5 flex items-center gap-2">
             {t('sessions.moduleTitle')}
-            {isSessionRecording() && <span class="w-2 h-2 rounded-full bg-danger animate-pulse inline-block" />}
+            {sessionRecordingSignal.value && <RecordingPulseDot size={10} />}
           </div>
           <div class="text-xs text-muted">{t('sessions.moduleDesc')}</div>
         </div>

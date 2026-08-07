@@ -7,13 +7,14 @@ import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
+import { sessionRecordingSignal } from '../session/ui/sessionModule';
 import {
   isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus,
 } from '../services/driveService';
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon, ModulesIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
-  ArrowLeftIcon, ArrowRightIcon,
+  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot,
 } from './icons';
 
 const initialsOf = (name: string) =>
@@ -209,6 +210,10 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             </div>
           ), document.body)}
         </div>
+
+        {sessionRecordingSignal.value && (
+          <RecordingPulseDot title={t('sessions.recordingIndicator')} onClick={() => ctx.navigate({ view: 'sessions' })} />
+        )}
 
         {!isPortraitPhone && (
           <button
