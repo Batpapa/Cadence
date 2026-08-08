@@ -58,8 +58,6 @@ export interface RecordedSession {
   // The audio Blob lives in IndexedDB under the session id (see session db).
 }
 
-// Clip references attached to cards live in types.ts (SessionClipAttachment).
-
 // ── Recognition window results (worker → aggregator) ─────────────────────────
 
 export interface WindowCandidate {

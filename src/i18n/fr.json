@@ -819,6 +819,5 @@
   "sessions.attached": "Extrait ajouté ✓",
   "sessions.extracting": "Extraction… {pct}%",
   "sessions.merge": "Fusionner avec le précédent",
-  "sessions.clip.play": "Écouter l'extrait",
   "sessions.clip.unavailable": "Audio indisponible sur cet appareil (enregistré ailleurs)"
 }
