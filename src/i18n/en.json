@@ -819,6 +819,5 @@
   "sessions.attached": "Clip added ✓",
   "sessions.extracting": "Extracting… {pct}%",
   "sessions.merge": "Merge with previous",
-  "sessions.clip.play": "Play clip",
   "sessions.clip.unavailable": "Audio unavailable on this device (recorded elsewhere)"
 }
