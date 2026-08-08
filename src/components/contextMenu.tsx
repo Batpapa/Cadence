@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { getZoom } from '../services/zoomService';
+import { useLongPress } from './longPress';
 
 // ── Context menu (right-click / long-press) ──────────────────────────────────
 // Generic, not card-specific: anchors a small menu at the click/touch point
@@ -11,19 +12,15 @@ import { getZoom } from '../services/zoomService';
 // document.body, zoom-compensated fixed coordinates (CSS zoom on <html> means
 // getBoundingClientRect()/clientX/clientY need dividing by getZoom()/100).
 //
-// Not reused for the library's planned long-press range-select (#X) — that
-// gesture simulates a Shift+click, it doesn't open a menu, so it's a
-// different behavior wired directly where needed rather than through this hook.
+// The long-press gesture itself is shared (components/longPress.ts) with the
+// library's long-press range-select (#X) — same detection, different things
+// done with it: this hook opens a menu, the library simulates a Shift+click.
 
 export interface ContextMenuItem {
   label: string;
   onClick: () => void;
   danger?: boolean;
 }
-
-const LONG_PRESS_MS = 550;
-/** Touch movement past this many px cancels the long-press (treat as a scroll/drag). */
-const LONG_PRESS_MOVE_TOLERANCE = 10;
 
 /** Anchor point + which corner of the menu it pins, in CSS-pixel space (already
  *  zoom-divided). Pinning the corner nearest the click/touch — rather than
@@ -39,9 +36,6 @@ interface MenuAnchor {
 export function useContextMenu(items: ContextMenuItem[]) {
   const [pos, setPos] = useState<MenuAnchor | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressFired = useRef(false);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
 
   const open = (clientX: number, clientY: number) => {
     const z = getZoom() / 100;
@@ -59,10 +53,7 @@ export function useContextMenu(items: ContextMenuItem[]) {
     });
   };
   const close = () => setPos(null);
-
-  const clearLongPress = () => {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
-  };
+  const { firedRef: _longPressFired, ...longPress } = useLongPress(open);
 
   useEffect(() => {
     if (!pos) return;
@@ -86,30 +77,7 @@ export function useContextMenu(items: ContextMenuItem[]) {
       e.preventDefault();
       open(e.clientX, e.clientY);
     },
-    onTouchStart: (e: TouchEvent) => {
-      longPressFired.current = false;
-      const touch = e.touches[0];
-      if (!touch) return;
-      touchStart.current = { x: touch.clientX, y: touch.clientY };
-      const { clientX, clientY } = touch;
-      longPressTimer.current = setTimeout(() => {
-        longPressFired.current = true;
-        open(clientX, clientY);
-      }, LONG_PRESS_MS);
-    },
-    onTouchMove: (e: TouchEvent) => {
-      const touch = e.touches[0];
-      if (!touch || !touchStart.current) return;
-      const dx = touch.clientX - touchStart.current.x;
-      const dy = touch.clientY - touchStart.current.y;
-      if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_TOLERANCE) clearLongPress();
-    },
-    onTouchEnd: (e: TouchEvent) => {
-      clearLongPress();
-      // Suppress the native link navigation/callout that would otherwise
-      // follow a long-press release once our own menu already opened.
-      if (longPressFired.current) e.preventDefault();
-    },
+    ...longPress,
   };
 
   const menu = pos ? createPortal((

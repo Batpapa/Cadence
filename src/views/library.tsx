@@ -14,6 +14,7 @@ import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
 import { FilterSection, cycleFilter, type FilterMap } from '../components/filterSection';
+import { createLongPressHandlers } from '../components/longPress';
 
 // ── Export modal ──────────────────────────────────────────────────────────────
 
@@ -295,6 +296,13 @@ export function LibraryView() {
   const masterRef     = useRef<HTMLInputElement>(null);
   const lastClickRef  = useRef<{ cardId: string; wasSelected: boolean } | null>(null);
   const shiftActiveRef = useRef(false);
+  // Shared long-press state (one row touched at a time) — created once here,
+  // not per-row, since createLongPressHandlers is a plain function (not a
+  // hook) precisely so it can be called per-row inside the .map() below
+  // without breaking the Rules of Hooks.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressFiredRef = useRef(false);
   useLayoutEffect(() => {
     if (masterRef.current) masterRef.current.indeterminate = selected.size > 0 && selected.size < filtered.length;
   });
@@ -539,6 +547,31 @@ export function LibraryView() {
           <div class="lib-list space-y-1">
             {(() => {
               const impColWidth = Math.max(...filtered.map(c => String(`×${c.defaultImportance}`).length));
+              // Shared by the row's click handler (treatAsShift = e.shiftKey)
+              // and its long-press handler (treatAsShift = always true, long-press
+              // being mobile's equivalent of holding Shift while clicking).
+              const selectRange = (card: Card, treatAsShift: boolean): void => {
+                if (treatAsShift && lastClickRef.current) {
+                  const { cardId: lastId, wasSelected } = lastClickRef.current;
+                  const lastIdx = filtered.findIndex(c => c.id === lastId);
+                  const currIdx = filtered.findIndex(c => c.id === card.id);
+                  if (lastIdx !== -1 && currIdx !== -1) {
+                    const from = Math.min(lastIdx, currIdx);
+                    const to   = Math.max(lastIdx, currIdx);
+                    const next = new Set(selected);
+                    for (let i = from; i <= to; i++) {
+                      wasSelected ? next.add(filtered[i]!.id) : next.delete(filtered[i]!.id);
+                    }
+                    setSelected(next);
+                    return;
+                  }
+                }
+                const nowSelected = !selected.has(card.id);
+                const next = new Set(selected);
+                nowSelected ? next.add(card.id) : next.delete(card.id);
+                setSelected(next);
+                lastClickRef.current = { cardId: card.id, wasSelected: nowSelected };
+              };
               return filtered.map(card => {
               const work     = user.cardWorks[`${user.currentProfileId}:${card.id}`];
               const k        = cardAvailability(user, work);
@@ -553,27 +586,16 @@ export function LibraryView() {
                   onMouseDown={(e) => { if (selected.size > 0 && e.shiftKey) e.preventDefault(); }}
                   onClick={(e) => {
                     if (selected.size === 0) { navigate({ view: 'card', cardId: card.id }); return; }
-                    if (e.shiftKey && lastClickRef.current) {
-                      const { cardId: lastId, wasSelected } = lastClickRef.current;
-                      const lastIdx = filtered.findIndex(c => c.id === lastId);
-                      const currIdx = filtered.findIndex(c => c.id === card.id);
-                      if (lastIdx !== -1 && currIdx !== -1) {
-                        const from = Math.min(lastIdx, currIdx);
-                        const to   = Math.max(lastIdx, currIdx);
-                        const next = new Set(selected);
-                        for (let i = from; i <= to; i++) {
-                          wasSelected ? next.add(filtered[i]!.id) : next.delete(filtered[i]!.id);
-                        }
-                        setSelected(next);
-                        return;
-                      }
-                    }
-                    const nowSelected = !selected.has(card.id);
-                    const next = new Set(selected);
-                    nowSelected ? next.add(card.id) : next.delete(card.id);
-                    setSelected(next);
-                    lastClickRef.current = { cardId: card.id, wasSelected: nowSelected };
+                    selectRange(card, e.shiftKey);
                   }}
+                  {...createLongPressHandlers(
+                    { timer: longPressTimerRef, start: longPressStartRef, fired: longPressFiredRef },
+                    // Long-press = mobile's Shift+click: always ranges from the
+                    // last-touched card (or just selects this one if there
+                    // isn't one yet) — unlike a plain tap, never navigates,
+                    // since that's the whole point of a long-press here.
+                    () => selectRange(card, true),
+                  )}
                 >
                   <input
                     type="checkbox"
