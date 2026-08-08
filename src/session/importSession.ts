@@ -46,12 +46,17 @@ export class ImportSession {
   private cancelRequested = false;
   private analysisStartedAt = 0;
 
-  readonly sessionId = crypto.randomUUID();
+  readonly sessionId: string;
   /** Editable during analysis (renderImportAnalysis title input) — same field save() persists under. */
   name = '';
   /** Editable during analysis — no trustworthy t=0 for a file, so this starts
    *  null unless the user sets it (same as a finished import's date in the summary). */
   dateOverride: string | null = null;
+  /** Overrides the persisted session's `source` on save() — only set when
+   *  re-analyzing an existing session (sessionModule.ts's startReanalyze), so
+   *  a live recording re-processed this way still shows as "live" in the
+   *  library, not "import". null = the normal fresh-import behavior. */
+  sourceOverride: 'live' | 'import' | null = null;
   /** Target deck(s) for cards created from this import's recognised tunes —
    *  in-memory only, not persisted with the session (resets next time).
    *  `undefined` = never touched the picker yet (forces it open on first "Add card"). */
@@ -66,9 +71,10 @@ export class ImportSession {
     this.recognition?.setPitchShift(semitones);
   }
 
-  constructor(file: File, callbacks: ImportSessionCallbacks = {}) {
+  constructor(file: File, callbacks: ImportSessionCallbacks = {}, sessionId?: string) {
     this.file = file;
     this.cb = callbacks;
+    this.sessionId = sessionId ?? crypto.randomUUID();
   }
 
   /** Rebind UI callbacks (the modal can close and reopen during an import). */
@@ -212,7 +218,7 @@ export class ImportSession {
       date: this.dateOverride,
       duration: this.source!.duration!,
       mimeType: this.file.type || 'application/octet-stream',
-      source: 'import',
+      source: this.sourceOverride ?? 'import',
       annotations: this.getAnnotations(),
     };
     // Store the original file untouched: no webm duration bug, native seeking.
