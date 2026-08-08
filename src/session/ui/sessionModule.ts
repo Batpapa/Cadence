@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { fileToEntry, focusIfDesktop } from '../../utils';
-import { iconElement, TrashIcon, MicIcon, FileAudioIcon, PlusIcon, heartIconElement, ImportTrayIcon } from '../../components/icons';
+import { iconElement, TrashIcon, MicIcon, FileAudioIcon, PlusIcon, heartIconElement, ImportTrayIcon, ResetIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, showModal, closeModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
@@ -992,7 +992,22 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
   const imp = new ImportSession(file, {});
   setActiveImport(imp);
   renderImportAnalysis(host);
+  await finishImportRun(host, imp);
+}
 
+/** Runs an already-constructed ImportSession to completion and handles every
+ *  outcome (saved / cancelled-with-partial / error) — shared by a fresh file
+ *  import (preflightImport) and re-analyzing an existing session
+ *  (startReanalyze), which only differ in how `imp` gets built.
+ *  `onCancelledOrError` is where to land if nothing ends up saved — a fresh
+ *  import has nowhere to go back to but the library; re-analyzing an
+ *  existing session should fall back to that session's own (untouched)
+ *  summary instead. */
+async function finishImportRun(
+  host: SessionModuleHost,
+  imp: ImportSession,
+  onCancelledOrError: () => void = () => renderLibrary(host),
+): Promise<void> {
   try {
     const session = await imp.start();
     if (session) {
@@ -1015,10 +1030,10 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
           });
         },
       );
-      // If the user dismisses the modal, the library below is already rendered.
+      // If the user dismisses the modal, the fallback screen below is already rendered.
     }
     setActiveImport(null);
-    renderLibrary(host);
+    onCancelledOrError();
   } catch (err) {
     setActiveImport(null);
     const msg = String(err);
@@ -1029,7 +1044,32 @@ async function preflightImport(host: SessionModuleHost, file: File): Promise<voi
     } else {
       alertModal(t('sessions.import'), msg);
     }
-    renderLibrary(host);
+    onCancelledOrError();
+  }
+}
+
+/** Re-runs recognition on a finished session's own stored audio, as if it had
+ *  just been picked as a file to import — replacing its annotations with the
+ *  fresh results (name/date/source preserved, same session id so decks/likes
+ *  tied to it stay put and existing card attachments, which are independent
+ *  extracted files, are unaffected). Never available without stored audio
+ *  (caller gates the triggering button on that; this is just a safety net). */
+async function startReanalyze(host: SessionModuleHost, session: RecordedSession): Promise<void> {
+  if (activeImport || activeLive || importStarting) return; // one recognition job at a time
+  importStarting = true;
+  try {
+    const blob = await loadSessionAudio(session.id);
+    if (!blob) return;
+    const file = new File([blob], session.name || 'session', { type: blob.type || session.mimeType });
+    const imp = new ImportSession(file, {}, session.id);
+    imp.name = session.name;
+    imp.dateOverride = session.date;
+    imp.sourceOverride = session.source;
+    setActiveImport(imp);
+    host.ctx.navigate({ view: 'sessions' });
+    await finishImportRun(host, imp, () => host.ctx.navigate({ view: 'sessions', sessionId: session.id }));
+  } finally {
+    importStarting = false;
   }
 }
 
@@ -1509,10 +1549,21 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
     },
   );
 
+  const reanalyzeBtn = document.createElement('button');
+  reanalyzeBtn.className = 'text-dim hover:text-accent transition-colors cursor-pointer shrink-0';
+  reanalyzeBtn.title = t('sessions.reanalyze.hint');
+  reanalyzeBtn.appendChild(iconElement(ResetIcon, 14));
+  reanalyzeBtn.onclick = () => confirmModal(
+    t('sessions.reanalyze.title'),
+    t('sessions.reanalyze.message'),
+    t('sessions.reanalyze.confirm'),
+    () => { void startReanalyze(host, session); },
+  );
+
   const playerRow = document.createElement('div');
   playerRow.className = 'flex items-center gap-2 mt-3 flex-wrap';
   playerRow.style.display = 'none';
-  playerRow.append(playerPlayBtn, playerStopBtn, seekInp, timeLbl, downloadBtn, forgetBtn);
+  playerRow.append(playerPlayBtn, playerStopBtn, seekInp, timeLbl, downloadBtn, reanalyzeBtn, forgetBtn);
   body.append(playerRow, audio);
 
   audio.addEventListener('loadedmetadata', () => { seekInp.max = String(audio.duration || 0); updateTime(); });
