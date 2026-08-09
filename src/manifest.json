@@ -4,7 +4,7 @@
   "description": "Spaced repetition for anything you want to remember",
   "start_url": "./",
   "scope": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "background_color": "#0d0d0d",
   "theme_color": "#0d0d0d",
   "icons": [
