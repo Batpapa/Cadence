@@ -933,6 +933,7 @@ function showImportSessionModal(host: SessionModuleHost): void {
       importBtn.disabled = true;
       status.textContent = t('newCard.import.importing');
       void importSharedSession(inp.value.trim()).then(session => {
+        closeModal();
         host.ctx.navigate({ view: 'sessions', sessionId: session.id });
       }).catch(e => {
         status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
