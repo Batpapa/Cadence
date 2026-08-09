@@ -113,7 +113,10 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
   const modulesActive = route.view === 'modules' || route.view === 'sessions';
 
   return (
-    <header class="relative flex items-center px-2 h-10 border-b border-border bg-surface shrink-0">
+    <header
+      class="relative flex items-center px-2 min-h-10 border-b border-border bg-surface shrink-0"
+      style="padding-top: calc(env(safe-area-inset-top) / var(--zoom-factor, 1))"
+    >
 
       {/* Left group */}
       <div class="flex items-center gap-1">
@@ -272,7 +275,10 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
   const modulesActive = route.view === 'modules' || route.view === 'sessions';
 
   return (
-    <nav class="flex items-stretch border-t border-border bg-surface shrink-0 h-14" style="padding-bottom: env(safe-area-inset-bottom)">
+    <nav
+      class="flex items-stretch border-t border-border bg-surface shrink-0 min-h-14"
+      style="padding-bottom: calc(env(safe-area-inset-bottom) / var(--zoom-factor, 1))"
+    >
       <BottomNavBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
         <HomeIcon size={20} />
       </BottomNavBtn>
