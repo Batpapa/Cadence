@@ -93,6 +93,9 @@
 
 @layer base {
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* Tracks the live visual viewport (dvh reacts natively to mobile browser chrome
+     showing/hiding) instead of a JS snapshot of window.innerHeight — see zoomService.ts. */
+  #app { height: calc(100dvh / var(--zoom-factor, 1)); }
   /* Prevent double-tap zoom on interactive elements (major cause of keyboard flicker on Android) */
   button, input, select, textarea, a, label, [role="button"] { touch-action: manipulation; }
   input[type=number]::-webkit-inner-spin-button,
