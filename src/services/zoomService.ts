@@ -32,8 +32,12 @@ export function canZoomOut(): boolean { return getZoom() > ZOOM_LEVELS[0]!; }
 export function applyZoom(): void {
   const z = getZoom();
   document.documentElement.style.zoom = `${z}%`;
-  const app = document.getElementById('app');
-  if (app) app.style.height = `${Math.floor(window.innerHeight / (z / 100))}px`;
+  // #app's height is driven by CSS (`calc(100dvh / var(--zoom-factor))`, styles.css) rather
+  // than a JS snapshot of window.innerHeight: mobile browsers resize their own chrome (address
+  // bar, etc.) independently of any 'resize' event timing, and a stale JS-computed height left
+  // #app taller or shorter than the real viewport whenever that chrome showed/hid — pushing the
+  // header and bottom nav out of view. `dvh` tracks the live visual viewport natively.
+  document.documentElement.style.setProperty('--zoom-factor', String(z / 100));
 }
 
 export function modalMaxH(pct = 0.9): string {

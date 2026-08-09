@@ -116,7 +116,6 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
 function finishBoot(root: HTMLElement): void {
   applyTheme();
   applyZoom();
-  window.addEventListener('resize', applyZoom);
   initPWA();
   initDriveVisibilitySync();
 
