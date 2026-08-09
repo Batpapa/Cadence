@@ -1668,7 +1668,7 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
     session.annotations.forEach((ann, i) => {
       const card = annotationCard(ann, {
         ctx: host.ctx,
-        onPlay: playSlice,
+        onPlay: audioUrl ? playSlice : undefined,
         playingId,
         sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
         onOpenCard: (cardId) => { host.closeModal(); host.ctx.navigate({ view: 'card', cardId }); },
