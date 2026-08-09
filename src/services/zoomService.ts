@@ -32,11 +32,6 @@ export function canZoomOut(): boolean { return getZoom() > ZOOM_LEVELS[0]!; }
 export function applyZoom(): void {
   const z = getZoom();
   document.documentElement.style.zoom = `${z}%`;
-  // Exposed so fixed-size CSS (safe-area insets, etc.) declared inside the
-  // zoomed subtree can pre-divide by this factor to cancel the zoom's own
-  // scaling and land on the intended physical pixel size — same principle
-  // as the getZoom()-based JS compensation used for portaled fixed elements.
-  document.documentElement.style.setProperty('--zoom-factor', String(z / 100));
   const app = document.getElementById('app');
   if (app) app.style.height = `${Math.floor(window.innerHeight / (z / 100))}px`;
 }
