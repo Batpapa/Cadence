@@ -605,8 +605,8 @@ function annotationCard(ann: SessionAnnotation, opts: AnnotationCardOptions): HT
   const row2 = document.createElement('div');
   row2.className = 'text-xs text-muted';
   const range = ann.end === null
-    ? `${fmtTime(ann.start)} · ${t('sessions.inProgress')}`
-    : `${fmtTime(ann.start)} – ${fmtTime(ann.end)}`;
+    ? `${fmtLongTime(ann.start)} · ${t('sessions.inProgress')}`
+    : `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)}`;
   row2.textContent = `${ann.dance} · ${ann.meter} · ${range}`;
 
   const row3 = document.createElement('div');
