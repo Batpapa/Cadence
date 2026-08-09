@@ -45,6 +45,12 @@ export class ImportSession {
   readonly windows: WindowResult[] = [];
   private cancelRequested = false;
   private analysisStartedAt = 0;
+  /** Actual analyzed length (worker's own sample-accurate clock) — can exceed
+   *  `source.duration` when that was only a pre-decode ESTIMATE (no Cues to
+   *  compute it exactly for a Cue-less MediaRecorder webm) that undershot the
+   *  real content; used as a floor for the persisted session duration so a
+   *  long recording never gets saved shorter than what was actually analyzed. */
+  private analyzedDurationS = 0;
 
   readonly sessionId: string;
   /** Editable during analysis (renderImportAnalysis title input) — same field save() persists under. */
@@ -128,7 +134,8 @@ export class ImportSession {
       this.analysisStartedAt = Date.now();
       await this.source.start(this.recognition); // resolves when fully emitted or stopped
 
-      const { events } = await this.recognition.stop();
+      const { events, tFinal } = await this.recognition.stop();
+      this.analyzedDurationS = tFinal;
 
       if (this.cancelRequested) {
         this.applyEvents(events);
@@ -216,7 +223,11 @@ export class ImportSession {
       // No trustworthy t=0 for a file (mtime survives transfers erratically):
       // dateless unless the user set one during analysis or in the summary.
       date: this.dateOverride,
-      duration: this.source!.duration!,
+      // Prefer the worker's own sample-accurate clock over source.duration
+      // when the latter was only a pre-decode estimate that undershot it
+      // (see analyzedDurationS) — never persist a session shorter than what
+      // was actually analyzed.
+      duration: Math.max(this.source!.duration!, this.analyzedDurationS),
       mimeType: this.file.type || 'application/octet-stream',
       source: this.sourceOverride ?? 'import',
       annotations: this.getAnnotations(),

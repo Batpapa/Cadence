@@ -80,6 +80,12 @@ export class RecognitionClient implements RecognitionSink {
     this.send({ type: 'set-pitch-shift', semitones });
   }
 
+  /** Tells the worker a manual pause just ended, so its wall-clock drift
+   *  correction (#16) doesn't mistake the pause itself for lost audio. */
+  notifyLiveResume(): void {
+    this.send({ type: 'live-resume' });
+  }
+
   /** Feed a PCM chunk; resolves once the worker has absorbed it (backpressure). */
   feedPcmWithAck(chunk: Float32Array): Promise<void> {
     return new Promise(resolve => {

@@ -35,6 +35,14 @@ export class LiveSession {
   private annotations = new Map<string, SessionAnnotation>();
   private pauseStartedAt = 0;
   private pausedAccumMs = 0;
+  /** Raw per-window results with a wall-clock cross-reference — diagnostic
+   *  dump for comparing the worker's sample-counted clock (tWindowStart/End)
+   *  against real elapsed time during a LIVE recording, the way importSession
+   *  already does for file analysis (its `windows` field, no wall clock needed
+   *  there since import runs faster than real time). `wallMs` is `Date.now()`
+   *  minus `startedAt` MINUS accumulated paused time, so a pause/resume cycle
+   *  doesn't masquerade as clock drift. */
+  readonly windows: (WindowResult & { wallMs: number })[] = [];
 
   readonly sessionId = crypto.randomUUID();
   startedAt = 0;
@@ -113,7 +121,12 @@ export class LiveSession {
       // Recognition worker: WASM + index (may trigger the big first download).
       this.recognition = new RecognitionClient(this.mic.sampleRate, {
         onIndexProgress: p => this.cb.onIndexProgress?.(p),
-        onWindow: (result, abc) => this.cb.onWindow?.(result, abc),
+        onWindow: (result, abc) => {
+          // A window firing implies phase === 'recording' (analysis is fed by
+          // the worklet, which pause() suspends) — no "currently paused" branch needed.
+          this.windows.push({ ...result, wallMs: Date.now() - this.startedAt - this.pausedAccumMs });
+          this.cb.onWindow?.(result, abc);
+        },
         onAnnotations: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
       });
@@ -189,6 +202,7 @@ export class LiveSession {
     await this.mic.resume();
     this.recorder?.resume();
     this.pausedAccumMs += Date.now() - this.pauseStartedAt;
+    this.recognition?.notifyLiveResume();
     this.setPhase('recording');
   }
 

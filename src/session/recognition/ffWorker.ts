@@ -24,6 +24,7 @@ export type FFWorkerRequest =
   | { type: 'worklet-port'; port: MessagePort }
   | { type: 'pcm'; buffer: ArrayBuffer; ack?: boolean }
   | { type: 'set-pitch-shift'; semitones: number }
+  | { type: 'live-resume' }
   | { type: 'stop' };
 
 export type FFWorkerResponse =
@@ -57,6 +58,33 @@ let ringWrite = 0;        // next write position
 let totalSamples = 0;     // global sample counter since start (time source of truth)
 let lastAnalysisAt = 0;   // totalSamples value at last analysis
 
+// #16: same class of bug as the file-import decode deficit (see
+// streamingFileSource.ts) but via a different mechanism — on a long live
+// session (phone, hours, real CPU contention), the browser can skip audio
+// worklet render quanta entirely (a well-known glitch under load); those
+// samples never arrive here at all, so totalSamples silently falls behind
+// real elapsed time with nothing to signal it happened. Only ever relevant
+// to the worklet (live) path — file import feeds PCM via the `pcm` message
+// instead, with its own PTS-based catch-up upstream. `null` = not anchored
+// yet (first worklet chunk sets it) or a live-resume just reset it.
+let liveWallClockAnchorMs: number | null = null;
+const LIVE_DEFICIT_SAFETY_MARGIN_S = 1;
+
+/** Pads the ring with silence if totalSamples has fallen behind real wall-clock
+ *  time since the anchor — called once per worklet message, before the new
+ *  chunk is appended, never for file-import PCM. */
+function padToWallClock(): void {
+  if (liveWallClockAnchorMs === null) {
+    liveWallClockAnchorMs = Date.now() - (totalSamples / sampleRate) * 1000;
+    return;
+  }
+  const expectedSamples = Math.round(((Date.now() - liveWallClockAnchorMs) / 1000) * sampleRate);
+  const deficit = expectedSamples - totalSamples - Math.round(LIVE_DEFICIT_SAFETY_MARGIN_S * sampleRate);
+  if (deficit > 0) {
+    appendToRing(new Float32Array(deficit));
+  }
+}
+
 function post(msg: FFWorkerResponse): void {
   ctx.postMessage(msg);
 }
@@ -76,6 +104,7 @@ async function handleInit(sr: number, hop?: number): Promise<void> {
   ringWrite = 0;
   totalSamples = 0;
   lastAnalysisAt = 0;
+  liveWallClockAnchorMs = null;
   aggregator = new RecognitionAggregator();
 
   post({ type: 'ready', version: ff.version() });
@@ -197,6 +226,12 @@ function handlePcm(buffer: ArrayBuffer): void {
   maybeAnalyzeLive();
 }
 
+/** Worklet (live) path only — file import never calls this, see padToWallClock(). */
+function handleWorkletPcm(buffer: ArrayBuffer): void {
+  padToWallClock();
+  handlePcm(buffer);
+}
+
 function handleStop(): void {
   const tFinal = totalSamples / sampleRate;
   const events = aggregator.finalize(tFinal);
@@ -205,6 +240,7 @@ function handleStop(): void {
   ringWrite = 0;
   totalSamples = 0;
   lastAnalysisAt = 0;
+  liveWallClockAnchorMs = null;
   aggregator = new RecognitionAggregator();
 }
 
@@ -216,7 +252,7 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
         void handleInit(msg.sampleRate, msg.hopS).catch(err => post({ type: 'error', message: String(err) }));
         break;
       case 'worklet-port':
-        msg.port.onmessage = (ev: MessageEvent<ArrayBuffer>) => handlePcm(ev.data);
+        msg.port.onmessage = (ev: MessageEvent<ArrayBuffer>) => handleWorkletPcm(ev.data);
         break;
       case 'pcm':
         handlePcm(msg.buffer);
@@ -226,6 +262,12 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
         break;
       case 'set-pitch-shift':
         manualShift = msg.semitones;
+        break;
+      case 'live-resume':
+        // A deliberate pause/resume must NOT be padded as if it were lost
+        // audio — re-anchor so "expected samples" picks up exactly where
+        // totalSamples already is, with no gap to catch up on.
+        liveWallClockAnchorMs = Date.now() - (totalSamples / sampleRate) * 1000;
         break;
       case 'stop':
         handleStop();
