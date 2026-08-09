@@ -32,6 +32,12 @@ let activeImport: ImportSession | null = null;
 let importPlaybackWarn = false;
 /** Raw window dump of the last completed import — AGG_CONFIG calibration tool. */
 let lastImportDump: { sessionId: string; windows: WindowResult[] } | null = null;
+/** Same idea for the last completed LIVE session, plus a wall-clock cross
+ *  reference per window (see LiveSession.windows) — lets a #16 drift
+ *  investigation compare the worker's sample-counted clock against real
+ *  elapsed time directly, which an import dump can't do (import runs faster
+ *  than real time). */
+let lastLiveDump: { sessionId: string; windows: (WindowResult & { wallMs: number })[] } | null = null;
 /** Bodies whose drag & drop listeners are already wired (renderLibrary re-runs). */
 const dropWiredBodies = new WeakSet<HTMLElement>();
 /** Synchronous re-entrancy guard: startImport awaits before setting activeImport. */
@@ -1448,6 +1454,7 @@ function renderLive(host: SessionModuleHost): void {
     cleanup();
     try {
       const session = await live.stop();
+      lastLiveDump = { sessionId: session.id, windows: [...live.windows] };
       setActiveLive(null);
       host.ctx.navigate({ view: 'sessions', sessionId: session.id });
     } catch (err) {
@@ -1614,9 +1621,12 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
   const actions = document.createElement('div');
   actions.className = 'flex items-center gap-2 mt-3';
 
-  // Calibration tool: raw window dump (scores/margins) of the just-finished import.
-  if (lastImportDump?.sessionId === session.id) {
-    const dump = lastImportDump;
+  // Calibration tool: raw window dump (scores/margins) of the just-finished
+  // import or live recording — live windows additionally carry `wallMs`.
+  const dump = lastImportDump?.sessionId === session.id ? lastImportDump
+    : lastLiveDump?.sessionId === session.id ? lastLiveDump
+    : null;
+  if (dump) {
     const dumpBtn = document.createElement('button');
     dumpBtn.className = 'text-[11px] text-dim hover:text-primary hover:underline cursor-pointer ml-auto';
     dumpBtn.textContent = t('sessions.dumpWindows');

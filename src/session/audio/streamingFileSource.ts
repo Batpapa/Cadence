@@ -87,6 +87,15 @@ export class StreamingFileSource implements PcmSource {
     let nativeBuffer: Float32Array[] = [];
     let nativeBufferedSamples = 0;
     let nativeSampleRate = this.config.sampleRate;
+    // #16: the container's own per-packet PTS (what the file declares each
+    // encoded chunk's real-time span to be) — AudioDecoder can genuinely
+    // return fewer decoded samples than that span implies (confirmed: a
+    // growing multi-minute deficit over a long recording, e.g. DTX/comfort-
+    // noise packets during quiet stretches). packetSpanS is the reference the
+    // padding below catches up to.
+    let prevPacketTsS: number | null = null;
+    let packetSpanS = 0;
+    let decodedFrames = 0;
     // Batched by HOP_S_IMPORT, not a larger arbitrary size: ffWorker.ts's ring
     // buffer only carries ANALYSIS_WINDOW_S + hopS of slack (one hop's worth),
     // and maybeAnalyzeLive() only catches up on a single missed hop per PCM
@@ -112,15 +121,34 @@ export class StreamingFileSource implements PcmSource {
         audioData.close();
         nativeBuffer.push(mono);
         nativeBufferedSamples += frames;
+        decodedFrames += frames;
       },
       error: (e) => { decodeError = e; },
     });
     this.decoder.configure(this.config);
 
+    // #16: pads with silence up to the packet-timestamp-implied sample count
+    // whenever AudioDecoder under-produces (see packetSpanS above) — keeps
+    // the fed sample count aligned with real file time regardless of *why*
+    // the decoder fell behind. A margin (~1 s of native samples) is left
+    // unpadded each time so ordinary decode-queue lag (bounded by
+    // MAX_DECODE_QUEUE) is never mistaken for a real deficit.
+    const DEFICIT_SAFETY_MARGIN_S = 1;
+    let paddedNativeSamples = 0; // counts as "decoded" so it isn't repadded next flush
+
     // Sequential on purpose: only one flush (resample + feedPcmWithAck) is ever
     // in flight, so chunks reach the recognition worker strictly in order even
     // though decode() outputs can arrive asynchronously relative to the read loop.
     const flushIfReady = async (final = false): Promise<void> => {
+      const expectedNativeSamples = Math.round(packetSpanS * nativeSampleRate);
+      const actualNativeSamples = decodedFrames + paddedNativeSamples;
+      const deficit = expectedNativeSamples - actualNativeSamples - Math.round(DEFICIT_SAFETY_MARGIN_S * nativeSampleRate);
+      if (deficit > 0) {
+        nativeBuffer.push(new Float32Array(deficit)); // zero-filled by construction
+        nativeBufferedSamples += deficit;
+        paddedNativeSamples += deficit;
+      }
+
       if (nativeBufferedSamples === 0) return;
       if (!final && nativeBufferedSamples < targetNativeChunkSamples) return;
       const merged = new Float32Array(nativeBufferedSamples);
@@ -132,7 +160,14 @@ export class StreamingFileSource implements PcmSource {
       await sink.feedPcmWithAck(resampled);
     };
 
-    const stream = this.demuxer.read('audio', 0, this.duration);
+    // Never bound this by `this.duration` — that's web-demuxer's own duration
+    // ESTIMATE (getMediaInfo(), no Cues to compute it exactly for a Cue-less
+    // MediaRecorder webm), and it can undershoot the real content by several
+    // minutes on a long file: confirmed on a 6h07 recording where the
+    // estimate was ~11 minutes short of the container's own last Cluster
+    // timecode, silently truncating the analysis that many minutes early.
+    // Omitting `end` reads to the true end of stream instead.
+    const stream = this.demuxer.read('audio', 0);
     this.reader = stream.getReader();
 
     try {
@@ -140,6 +175,12 @@ export class StreamingFileSource implements PcmSource {
         const { done, value } = await this.reader.read();
         if (decodeError) throw decodeError;
         if (done) break;
+
+        // value.timestamp is microseconds since the start of the stream —
+        // the container's own PTS, independent of anything AudioDecoder does.
+        const packetTsS = value.timestamp / 1e6;
+        if (prevPacketTsS !== null) packetSpanS += packetTsS - prevPacketTsS;
+        prevPacketTsS = packetTsS;
 
         this.decoder.decode(value);
         if (this.decoder.decodeQueueSize > MAX_DECODE_QUEUE) {
