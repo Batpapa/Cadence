@@ -768,6 +768,7 @@
   "sessions.keepPartial.message": "{n} morceaux ont déjà été reconnus. Garder la session partielle ?",
   "sessions.keepPartial.keep": "Garder",
   "sessions.dumpWindows": "Exporter le dump d'analyse (JSON)",
+  "sessions.dumpBgLog": "Exporter le journal arrière-plan (JSON)",
   "sessions.playSlice": "Écouter ce passage",
   "sessions.listenAbc": "Partition / écouter",
   "sessions.abcUnavailable": "ABC indisponible",

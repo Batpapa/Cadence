@@ -10,6 +10,7 @@ import { LiveSession } from '../liveSession';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile } from '../audio/sources';
 import { extractClipMp3 } from '../audio/clipExtract';
+import { bgLog } from '../audio/bgDiagnostics';
 import { makeAbcNoteButton } from './abcPreview';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S, SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
@@ -1640,6 +1641,25 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     };
     actions.appendChild(dumpBtn);
+  }
+
+  // #17 diagnostics: visibilitychange/AudioContext/wake-lock/mic-track events
+  // buffered during the just-finished live session (reset at each start()) —
+  // download instead of needing a tethered devtools session on the phone.
+  if (lastLiveDump?.sessionId === session.id && bgLog.length > 0) {
+    const bgLogBtn = document.createElement('button');
+    bgLogBtn.className = 'text-[11px] text-dim hover:text-primary hover:underline cursor-pointer' + (dump ? '' : ' ml-auto');
+    bgLogBtn.textContent = t('sessions.dumpBgLog');
+    bgLogBtn.onclick = () => {
+      const blob = new Blob([JSON.stringify(bgLog, null, 1)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(session.name || 'session').replace(/[^\w-]+/g, '_')}-bglog.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    };
+    actions.appendChild(bgLogBtn);
   }
 
   body.appendChild(actions);

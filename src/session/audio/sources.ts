@@ -1,5 +1,6 @@
 import { openMicForMusic } from './capture';
 import { attachPcmWorklet } from './pcmWorklet';
+import { logBg } from './bgDiagnostics';
 import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE } from '../sessionConfig';
 
 // ── PCM source abstraction ────────────────────────────────────────────────────
@@ -45,9 +46,22 @@ export class MicSource implements PcmSource {
     this.audioContext = new AudioContext();
     // Some browsers create suspended contexts outside a user gesture chain.
     if (this.audioContext.state === 'suspended') await this.audioContext.resume();
+    // #17: does backgrounding suspend the graph outright, or just let the
+    // screen sleep while audio keeps flowing? This is the direct answer.
+    // Captured in a local, not read back via `this.audioContext` — stop()
+    // nulls that field synchronously while close() is still resolving async,
+    // so a late 'closed' statechange event would otherwise read a null field.
+    const ctx = this.audioContext;
+    ctx.addEventListener('statechange', () => logBg(`audioContext: state=${ctx.state}`));
 
     const track = this._stream.getAudioTracks()[0];
     console.debug('[mic] track:', track?.label, JSON.stringify(track?.getSettings?.() ?? {}));
+    // #17: some mobile browsers mute the mic track (rather than suspending
+    // the AudioContext) when the app backgrounds — a different code path
+    // that AudioContext.state alone wouldn't reveal.
+    track?.addEventListener('mute', () => logBg('mic track: muted'));
+    track?.addEventListener('unmute', () => logBg('mic track: unmuted'));
+    track?.addEventListener('ended', () => logBg('mic track: ended'));
 
     const src = this.audioContext.createMediaStreamSource(this._stream);
 
