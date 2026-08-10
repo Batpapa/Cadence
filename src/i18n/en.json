@@ -768,6 +768,7 @@
   "sessions.keepPartial.message": "{n} tunes were already recognised. Keep the partial session?",
   "sessions.keepPartial.keep": "Keep",
   "sessions.dumpWindows": "Export analysis dump (JSON)",
+  "sessions.dumpBgLog": "Export background log (JSON)",
   "sessions.playSlice": "Play this passage",
   "sessions.listenAbc": "Sheet / listen",
   "sessions.abcUnavailable": "ABC unavailable",
