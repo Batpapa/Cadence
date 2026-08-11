@@ -1,5 +1,3 @@
-import { logBg } from './bgDiagnostics';
-
 // ── Microphone capture + screen wake lock ─────────────────────────────────────
 
 /**
@@ -28,7 +26,6 @@ export class WakeLockManager {
   private sentinel: WakeLockSentinel | null = null;
   private active = false;
   private onVisibility = () => {
-    logBg(`visibilitychange: ${document.visibilityState}`);
     if (this.active && document.visibilityState === 'visible') void this.acquire();
   };
 
@@ -47,13 +44,10 @@ export class WakeLockManager {
 
   private async acquire(): Promise<void> {
     try {
-      if (!('wakeLock' in navigator)) { logBg('wakelock: API unavailable'); return; }
+      if (!('wakeLock' in navigator)) return;
       this.sentinel = await navigator.wakeLock.request('screen');
-      logBg('wakelock: acquired');
-      this.sentinel.addEventListener('release', () => logBg('wakelock: released'), { once: true });
-    } catch (e) {
+    } catch {
       // Denied (battery saver…) — recording continues, screen may sleep.
-      logBg(`wakelock: acquire failed — ${String(e)}`);
     }
   }
 }

@@ -1,8 +1,6 @@
 import { WakeLockManager } from './audio/capture';
 import { MicSource } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
-import { startBackgroundKeepAlive, stopBackgroundKeepAlive } from './audio/backgroundKeepAlive';
-import { resetBgLog, logBg } from './audio/bgDiagnostics';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, deleteSession } from './db';
 import type { RecordedSession, SessionAnnotation, WindowResult } from './model';
@@ -119,8 +117,6 @@ export class LiveSession {
   async start(): Promise<void> {
     try {
       this.setPhase('initializing');
-      resetBgLog();
-      logBg('session: start');
 
       await this.mic.open();
 
@@ -151,7 +147,6 @@ export class LiveSession {
       this.persistDraft();
 
       await this.wakeLock.start();
-      startBackgroundKeepAlive();
       this.setPhase('recording');
     } catch (err) {
       this.cleanup();
@@ -217,7 +212,6 @@ export class LiveSession {
   /** Stops everything and persists the session (audio + annotations). */
   async stop(): Promise<RecordedSession> {
     this.setPhase('stopping');
-    logBg('session: stop');
     try {
       const fileResult = await this.recorder!.stop();
       const { events, tFinal } = await this.recognition!.stop();
@@ -258,7 +252,6 @@ export class LiveSession {
 
   private cleanup(): void {
     this.wakeLock.stop();
-    stopBackgroundKeepAlive();
     this.recognition?.dispose();
     this.recognition = null;
     this.mic.stop();
