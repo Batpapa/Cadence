@@ -29,15 +29,17 @@ import { logBg } from './bgDiagnostics';
 // an unverified, much quieter number. Any further reduction needs its own
 // real background test before being trusted, not just a smaller constant.
 
-// 30 s, not 1 s: the waveform closes into a perfectly smooth cycle either way
-// (TONE_FREQUENCY_HZ * TONE_DURATION_S is an integer, so the phase step from
-// the last sample back to the first is identical to any other consecutive
-// pair — no discontinuity), but a 1 s loop is still short enough for the
-// repetition ITSELF to read as a once-a-second pulse. 30 s spaces that far
-// enough apart to stop being perceptible as a rhythm — a real continuous
-// oscillator would remove it entirely, but that needs an AudioContext, i.e.
-// exactly the kind of thing this whole file exists to work around.
-const TONE_DURATION_S = 30;
+// 1 s, not longer: tried 30 s first (spaces the once-per-loop pulse far
+// enough apart to stop reading as a rhythm) and it field-tested fine for the
+// throttling exemption itself, BUT it also made Android show a persistent
+// lock-screen media-player widget with a 30 s scrubber — the 1 s version
+// never triggered that. Trading the softer envelope back for staying
+// invisible; the waveform still closes into a perfectly smooth cycle either
+// way (TONE_FREQUENCY_HZ * TONE_DURATION_S is an integer, so the phase step
+// from the last sample back to the first matches every other consecutive
+// pair — no discontinuity at the seam, just the once-a-second repetition
+// itself being perceptible).
+const TONE_DURATION_S = 1;
 const TONE_SAMPLE_RATE = 8000;
 /** Low and soft, not a frequency anyone would consciously pick out. */
 const TONE_FREQUENCY_HZ = 55;
