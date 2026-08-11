@@ -16,6 +16,7 @@ import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta, forgetS
 import { recoverOrphanedSessions } from '../recovery';
 import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
 import { shareSession, importSharedSession, exportSessionFile, importSessionFile } from '../../services/sessionShareService';
+import { isScraperServerWarm } from '../../services/scraperServerStatus';
 import { getContext } from '../../store';
 import type { RecordedSession, SessionAnnotation, WindowResult } from '../model';
 import type { IndexProgress } from '../recognition/indexStore';
@@ -869,7 +870,7 @@ function showShareSessionModal(session: RecordedSession): void {
 
     const doUpload = async (withAudio: Blob | null) => {
       body.innerHTML = '';
-      status.textContent = t('sessions.share.uploading');
+      status.textContent = isScraperServerWarm() ? t('sessions.share.uploading') : t('sessions.share.wakingServer');
       body.appendChild(status);
       try {
         const { key, secondsRemaining } = await shareSession(session, withAudio);

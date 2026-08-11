@@ -1,12 +1,7 @@
 import type { Attachment, Card, FileEntry } from '../types';
 import { arrayBufferToBase64, generateId } from '../utils';
-
-const BASE = 'https://irishtuneinfo-scraper-api.onrender.com';
-
-// The Render free-tier instance sleeps after inactivity; the first request after
-// a while can take up to ~1 min to wake it up. Tracked so the UI can warn once.
-let serverWarm = false;
-export function isServerWarm(): boolean { return serverWarm; }
+import { SCRAPER_BASE as BASE, markScraperServerWarm } from './scraperServerStatus';
+export { isScraperServerWarm as isServerWarm } from './scraperServerStatus';
 
 // ── API shapes (normalized to `name`, matching theSessionService's convention) ──
 
@@ -65,7 +60,7 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
 export async function searchTunes(term: string): Promise<TuneSearchResult[]> {
   const res = await fetch(`${BASE}/search?term=${encodeURIComponent(term)}`);
   if (!res.ok) throw new Error(await errorMessage(res, 'IrishTuneInfo search failed'));
-  serverWarm = true;
+  markScraperServerWarm();
   const data = (await res.json()) as RawSearchResponse;
   return (data.results ?? []).map(r => ({ id: r.id, name: r.title, rhythm: r.rhythm, key: r.key }));
 }
@@ -73,7 +68,7 @@ export async function searchTunes(term: string): Promise<TuneSearchResult[]> {
 export async function fetchTuneById(id: number): Promise<TuneDetail> {
   const res = await fetch(`${BASE}/tune/${id}`);
   if (!res.ok) throw new Error(await errorMessage(res, 'IrishTuneInfo fetch failed'));
-  serverWarm = true;
+  markScraperServerWarm();
   const data = (await res.json()) as RawTuneResponse;
   return {
     id: data.id,
@@ -93,7 +88,7 @@ export async function fetchPlaylist(username: string): Promise<{ username: strin
   const res = await fetch(`${BASE}/playlist/${encodeURIComponent(username)}`);
   if (res.status === 404) throw new Error('PlaylistNotFound');
   if (!res.ok) throw new Error(await errorMessage(res, 'IrishTuneInfo playlist fetch failed'));
-  serverWarm = true;
+  markScraperServerWarm();
   const data = (await res.json()) as RawPlaylistResponse;
   return { username: data.username, tunes: (data.tunes ?? []).map(t => ({ id: t.id, name: t.title })) };
 }
@@ -141,7 +136,7 @@ export async function fetchAudioFile(featuredAudioUrl: string, fileName: string)
   try {
     const res = await fetch(`${BASE}/audio/${path}`);
     if (!res.ok) return null;
-    serverWarm = true;
+    markScraperServerWarm();
     const mimeType = res.headers.get('content-type') ?? 'audio/mpeg';
     const data = arrayBufferToBase64(await res.arrayBuffer());
     return { name: fileName, data, mimeType };

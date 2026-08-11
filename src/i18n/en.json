@@ -808,6 +808,7 @@
   "sessions.share.fileDesc": "Download a .cds file",
   "sessions.share.upload": "Share",
   "sessions.share.uploading": "Uploading…",
+  "sessions.share.wakingServer": "Waking up the share server, please wait (up to 1 min)…",
   "sessions.share.importSession": "Import a session",
   "sessions.share.fileImportDesc": "Pick a .cds file from your device",
   "sessions.share.importTitle": "Import shared session",
