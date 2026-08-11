@@ -13,6 +13,9 @@ export interface RecognitionCallbacks {
   onWindow?: (result: WindowResult, abc: string | null) => void;
   onAnnotations?: (events: AnnotationEvent[]) => void;
   onError?: (message: string) => void;
+  /** #17: a real live-capture gap was caught up on (worklet path only) — how
+   *  many seconds of silence got padded in to keep pace with wall-clock time. */
+  onLiveGap?: (seconds: number) => void;
 }
 
 export interface RecognitionOptions {
@@ -58,6 +61,7 @@ export class RecognitionClient implements RecognitionSink {
         case 'annotations':   this.cb.onAnnotations?.(msg.events); break;
         case 'pcm-ack':       this.ackQueue.shift()?.(); break;
         case 'stopped':       this.stopDone?.({ events: msg.events, tFinal: msg.tFinal }); this.stopDone = null; break;
+        case 'live-gap':      this.cb.onLiveGap?.(msg.seconds); break;
         case 'error':         this.cb.onError?.(msg.message); rejectReady(new Error(msg.message)); break;
       }
     };

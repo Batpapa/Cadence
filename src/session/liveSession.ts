@@ -24,6 +24,8 @@ export interface LiveSessionCallbacks {
   onWindow?: (result: WindowResult, abc: string | null) => void;
   onAnnotations?: (events: AnnotationEvent[], all: SessionAnnotation[]) => void;
   onError?: (message: string) => void;
+  /** #17: forwarded straight from RecognitionClient — see its onLiveGap doc. */
+  onLiveGap?: (seconds: number) => void;
 }
 
 export class LiveSession {
@@ -133,6 +135,7 @@ export class LiveSession {
         },
         onAnnotations: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
+        onLiveGap: seconds => this.cb.onLiveGap?.(seconds),
       });
       if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       await this.recognition.ready;

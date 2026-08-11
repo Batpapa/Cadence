@@ -1326,14 +1326,18 @@ function renderLive(host: SessionModuleHost): void {
   const abcTicker = document.createElement('p');
   abcTicker.className = 'text-[10px] font-mono text-dim/60 text-center truncate mt-1';
 
-  // Mobile browsers may suspend a backgrounded tab and interrupt the recording.
+  // #17: only surfaced when a real gap was actually measured and caught up on
+  // (see ffWorker.ts's padToWallClock) — not a blanket "may have happened"
+  // guess on every single visibility change regardless of outcome.
   const bgWarning = document.createElement('p');
   bgWarning.className = 'text-xs text-amber-500 mt-2 text-center hidden';
-  bgWarning.textContent = t('sessions.bgWarning');
+  let pendingGapS = 0;
   const onVisibility = () => {
-    if (document.visibilityState === 'visible' && live.getPhase() === 'recording') {
+    if (document.visibilityState === 'visible' && live.getPhase() === 'recording' && pendingGapS > 0) {
+      bgWarning.textContent = t('sessions.bgWarning', { duration: fmtLongTime(pendingGapS) });
       bgWarning.classList.remove('hidden');
       setTimeout(() => bgWarning.classList.add('hidden'), 8000);
+      pendingGapS = 0;
     }
   };
   document.addEventListener('visibilitychange', onVisibility);
@@ -1427,6 +1431,7 @@ function renderLive(host: SessionModuleHost): void {
     },
     onAnnotations: (_events, all) => renderFeed(all),
     onError: (message) => { initStatus.textContent = `⚠ ${message}`; },
+    onLiveGap: (seconds) => { pendingGapS += seconds; },
   });
 
   // If we re-entered a session already running (modal was closed and reopened):

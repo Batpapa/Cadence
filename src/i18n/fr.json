@@ -347,7 +347,7 @@
   "settings.aboutLine2": "Auteur : Antoine Lucat — antl@hotmail.fr",
   "settings.aboutLine3": "github.com/Batpapa/Cadence",
   "settings.aboutFolkFriend": "La reconnaissance de morceaux repose sur FolkFriend, de Tom Wyllie :",
-  "sessions.bgWarning": "L'onglet est passé en arrière-plan — l'enregistrement a pu être interrompu par le navigateur.",
+  "sessions.bgWarning": "L'enregistrement a été interrompu pendant la mise en arrière-plan — environ {duration} manquant(es).",
   "settings.import.title": "Importer une sauvegarde",
   "settings.import.message": "Cela remplacera toutes les données actuelles. Êtes-vous sûr ?",
   "settings.import.confirm": "Remplacer",
