@@ -1332,11 +1332,18 @@ function renderLive(host: SessionModuleHost): void {
   const bgWarning = document.createElement('p');
   bgWarning.className = 'text-xs text-amber-500 mt-2 text-center hidden';
   let pendingGapS = 0;
+  // Below this, it's ordinary worklet-message jitter the padding margin
+  // already smooths over (harmless, and would otherwise round to "0:00" in
+  // the UI — confusing, not reassuring) rather than a real interruption
+  // worth alerting the user about.
+  const MIN_REPORTED_GAP_S = 5;
   const onVisibility = () => {
-    if (document.visibilityState === 'visible' && live.getPhase() === 'recording' && pendingGapS > 0) {
-      bgWarning.textContent = t('sessions.bgWarning', { duration: fmtLongTime(pendingGapS) });
-      bgWarning.classList.remove('hidden');
-      setTimeout(() => bgWarning.classList.add('hidden'), 8000);
+    if (document.visibilityState === 'visible' && live.getPhase() === 'recording') {
+      if (pendingGapS > MIN_REPORTED_GAP_S) {
+        bgWarning.textContent = t('sessions.bgWarning', { duration: fmtLongTime(pendingGapS) });
+        bgWarning.classList.remove('hidden');
+        setTimeout(() => bgWarning.classList.add('hidden'), 8000);
+      }
       pendingGapS = 0;
     }
   };
