@@ -808,6 +808,7 @@
   "sessions.share.fileDesc": "Télécharger un fichier .cds",
   "sessions.share.upload": "Partager",
   "sessions.share.uploading": "Envoi en cours…",
+  "sessions.share.wakingServer": "Réveil du serveur de partage, veuillez patienter (jusqu'à 1 min)…",
   "sessions.share.importSession": "Importer une session",
   "sessions.share.fileImportDesc": "Choisir un fichier .cds sur cet appareil",
   "sessions.share.importTitle": "Importer une session partagée",

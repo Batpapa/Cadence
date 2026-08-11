@@ -1,4 +1,4 @@
-const BASE = 'https://irishtuneinfo-scraper-api.onrender.com';
+import { SCRAPER_BASE as BASE, markScraperServerWarm } from './scraperServerStatus';
 
 export interface ShareUploadResult {
   key: string;
@@ -15,6 +15,7 @@ export async function uploadShare(content: string): Promise<ShareUploadResult> {
     const json = await res.json().catch(() => ({}));
     throw new Error((json as { message?: string }).message ?? `HTTP ${res.status}`);
   }
+  markScraperServerWarm();
   return res.json() as Promise<ShareUploadResult>;
 }
 
@@ -24,5 +25,6 @@ export async function downloadShare(key: string): Promise<string> {
     if (res.status === 404) throw new Error('Clé introuvable ou expirée.');
     throw new Error(`HTTP ${res.status}`);
   }
+  markScraperServerWarm();
   return res.text();
 }
