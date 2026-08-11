@@ -83,7 +83,9 @@ export class RecognitionAggregator {
   /** Feed one analysis window; returns the annotation events it triggered. */
   step(win: WindowResult): AnnotationEvent[] {
     const top = win.candidates[0];
-    const isEmpty = win.empty || !top || top.score < this.cfg.SCORE_FLOOR;
+    // A single candidate has nothing to be tied with — never margin-rejected.
+    const margin = top && win.candidates[1] ? top.score - win.candidates[1]!.score : Infinity;
+    const isEmpty = win.empty || !top || top.score < this.cfg.SCORE_FLOOR || margin < this.cfg.MARGIN_FLOOR;
     if (isEmpty) return this.onEmpty(win);
     return this.onWin(win, top!);
   }
