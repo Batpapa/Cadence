@@ -347,7 +347,7 @@
   "settings.aboutLine2": "Author: Antoine Lucat — antl@hotmail.fr",
   "settings.aboutLine3": "github.com/Batpapa/Cadence",
   "settings.aboutFolkFriend": "Tune recognition is powered by FolkFriend, by Tom Wyllie:",
-  "sessions.bgWarning": "The tab went to the background — the recording may have been interrupted by the browser.",
+  "sessions.bgWarning": "The recording was interrupted while backgrounded — about {duration} may be missing.",
   "settings.import.title": "Import backup",
   "settings.import.message": "This will replace all current data. Are you sure?",
   "settings.import.confirm": "Replace",

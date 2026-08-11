@@ -34,6 +34,7 @@ export type FFWorkerResponse =
   | { type: 'annotations'; events: AnnotationEvent[] }
   | { type: 'pcm-ack' }
   | { type: 'stopped'; events: AnnotationEvent[]; tFinal: number }
+  | { type: 'live-gap'; seconds: number }
   | { type: 'error'; message: string };
 
 const ctx = self as unknown as {
@@ -82,6 +83,10 @@ function padToWallClock(): void {
   const deficit = expectedSamples - totalSamples - Math.round(LIVE_DEFICIT_SAFETY_MARGIN_S * sampleRate);
   if (deficit > 0) {
     appendToRing(new Float32Array(deficit));
+    // #17: tells the UI a real gap was caught up on (and how much), instead
+    // of the old unconditional "may have been interrupted" guess on every
+    // visibility change regardless of whether anything actually happened.
+    post({ type: 'live-gap', seconds: deficit / sampleRate });
   }
 }
 

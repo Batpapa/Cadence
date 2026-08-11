@@ -7,22 +7,48 @@ import { logBg } from './bgDiagnostics';
 // multi-minute gap, AudioContext.state never left "running") — but apps that
 // play real HTMLMediaElement audio with a declared MediaSession get treated
 // like a music/podcast player and are known to be spared this throttling.
-// This plays an inaudible-but-non-zero looping noise clip (pure digital
-// silence can get optimized away / not dispatched to the OS media session on
-// some browsers — Firefox notably) purely to make the tab look like it's
-// "playing media" for as long as a live session runs. Independent of the
-// AudioContext used for recognition/recording — if that one still gets
-// interrupted, this element (a different browser subsystem) is the point.
+// This plays a real (if soft) looping tone to make the tab look like it's
+// "playing media" for as long as a live session runs — pure digital silence
+// doesn't grant this. Independent of the AudioContext used for recognition/
+// recording — if that one still gets interrupted, this element (a different
+// browser subsystem) is the point.
+//
+// IMPORTANT, confirmed via Chrome's own background-tabs docs (not a guess):
+// there IS a genuine minimum-audibility threshold here, BY DESIGN, precisely
+// to defeat tricks like this one — "Chrome exempts tabs from background
+// throttling if they are playing audio above a certain volume level, to avoid
+// pages sticking silent audio elements in to circumvent these protections"
+// (Firefox: same idea, tied to its tab-audio-icon heuristic). So this cannot
+// be turned down to "inaudible even at max device volume" without risking it
+// silently stopping the whole #17 mitigation from working at all — the two
+// goals (quiet vs. actually exempted) are in tension, not just a dial to turn
+// down freely. The amplitude below targets roughly the same loudness as the
+// broadband-noise version that was FIELD-TESTED and confirmed to work
+// (10 min locked, zero gap) — a single low tone at that same level reads as
+// much softer/less harsh to a human ear than noise did, without gambling on
+// an unverified, much quieter number. Any further reduction needs its own
+// real background test before being trusted, not just a smaller constant.
 
-const NOISE_DURATION_S = 1;
-const NOISE_SAMPLE_RATE = 8000;
-/** Amplitude out of 128 (8-bit unsigned PCM, 128 = silence) — inaudible in
- *  practice but never exactly zero, so it can't be mistaken for true silence. */
-const NOISE_AMPLITUDE = 2;
+// 30 s, not 1 s: the waveform closes into a perfectly smooth cycle either way
+// (TONE_FREQUENCY_HZ * TONE_DURATION_S is an integer, so the phase step from
+// the last sample back to the first is identical to any other consecutive
+// pair — no discontinuity), but a 1 s loop is still short enough for the
+// repetition ITSELF to read as a once-a-second pulse. 30 s spaces that far
+// enough apart to stop being perceptible as a rhythm — a real continuous
+// oscillator would remove it entirely, but that needs an AudioContext, i.e.
+// exactly the kind of thing this whole file exists to work around.
+const TONE_DURATION_S = 30;
+const TONE_SAMPLE_RATE = 8000;
+/** Low and soft, not a frequency anyone would consciously pick out. */
+const TONE_FREQUENCY_HZ = 55;
+/** Amplitude out of 32767 (16-bit signed PCM) — matches the relative loudness
+ *  of the field-tested noise version's ±2/128 (8-bit), not lower. */
+const TONE_AMPLITUDE = 500;
 
-function createQuietNoiseWavUrl(): string {
-  const numSamples = NOISE_DURATION_S * NOISE_SAMPLE_RATE;
-  const dataSize = numSamples; // 8-bit mono = 1 byte/sample
+function createSoftHumWavUrl(): string {
+  const numSamples = TONE_DURATION_S * TONE_SAMPLE_RATE;
+  const bytesPerSample = 2;
+  const dataSize = numSamples * bytesPerSample;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
 
@@ -36,15 +62,19 @@ function createQuietNoiseWavUrl(): string {
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);          // PCM
   view.setUint16(22, 1, true);          // mono
-  view.setUint32(24, NOISE_SAMPLE_RATE, true);
-  view.setUint32(28, NOISE_SAMPLE_RATE, true); // byte rate (1 byte/sample)
-  view.setUint16(32, 1, true);          // block align
-  view.setUint16(34, 8, true);          // bits per sample
+  view.setUint32(24, TONE_SAMPLE_RATE, true);
+  view.setUint32(28, TONE_SAMPLE_RATE * bytesPerSample, true); // byte rate
+  view.setUint16(32, bytesPerSample, true); // block align
+  view.setUint16(34, 16, true);         // bits per sample
   writeStr(36, 'data');
   view.setUint32(40, dataSize, true);
 
+  // TONE_FREQUENCY_HZ * TONE_DURATION_S is an integer (55 cycles in 1 s), so
+  // the waveform's phase at the end exactly matches its phase at the start —
+  // loops with no click at the seam.
   for (let i = 0; i < numSamples; i++) {
-    view.setUint8(44 + i, 128 + Math.round((Math.random() - 0.5) * 2 * NOISE_AMPLITUDE));
+    const sample = Math.round(TONE_AMPLITUDE * Math.sin((2 * Math.PI * TONE_FREQUENCY_HZ * i) / TONE_SAMPLE_RATE));
+    view.setInt16(44 + i * 2, sample, true);
   }
 
   return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
@@ -52,20 +82,35 @@ function createQuietNoiseWavUrl(): string {
 
 let audioEl: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
+let onVisibility: (() => void) | null = null;
 
-/** Idempotent — safe to call even if already running. */
+/** Idempotent — safe to call even if already running. Playback starts
+ *  immediately (foreground, inside the same user-gesture chain as the
+ *  "start recording" tap) and never stops for the rest of the session —
+ *  only `volume` toggles with visibility. Starting playback FROM a hidden
+ *  tab is a much less reliable move: background tabs are exactly where
+ *  autoplay-with-sound is most aggressively blocked, i.e. the one moment a
+ *  fresh `.play()` call is least likely to be honoured. Muted-but-playing
+ *  while visible sidesteps that entirely, and foreground tabs were never
+ *  the ones getting throttled anyway — audible only needs to happen once
+ *  hidden. */
 export function startBackgroundKeepAlive(): void {
   if (audioEl) return;
-  objectUrl = createQuietNoiseWavUrl();
+  objectUrl = createSoftHumWavUrl();
   audioEl = new Audio(objectUrl);
   audioEl.loop = true;
-  // Real (if inaudible) volume, not 0 — a muted element risks being treated
-  // the same as no audio at all by the same throttling this is working around.
-  audioEl.volume = 1;
+  audioEl.volume = document.hidden ? 1 : 0;
   audioEl.play().then(
     () => logBg('keepalive: playing'),
     (e) => logBg(`keepalive: play() rejected — ${String(e)}`),
   );
+
+  onVisibility = () => {
+    if (!audioEl) return;
+    audioEl.volume = document.hidden ? 1 : 0;
+    logBg(`keepalive: volume=${audioEl.volume}`);
+  };
+  document.addEventListener('visibilitychange', onVisibility);
 
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -78,6 +123,7 @@ export function startBackgroundKeepAlive(): void {
 export function stopBackgroundKeepAlive(): void {
   audioEl?.pause();
   audioEl = null;
+  if (onVisibility) { document.removeEventListener('visibilitychange', onVisibility); onVisibility = null; }
   if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = 'none';
