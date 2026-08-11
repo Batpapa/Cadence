@@ -752,6 +752,7 @@
   "sessions.moduleTitle": "Analyseur de morceaux",
   "sessions.moduleDesc": "Reconnaître des morceaux depuis un fichier audio ou en enregistrant une session live",
   "sessions.recordingIndicator": "Une session est en cours d'enregistrement ou d'import — cliquer pour y retourner",
+  "sessions.recordingMediaTitle": "Cadence — session en cours",
   "sessions.start": "Démarrer une session live",
   "sessions.import": "Importer un enregistrement",
   "sessions.importHint": "MP3, M4A, WAV, OGG…",

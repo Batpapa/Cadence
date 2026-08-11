@@ -1,6 +1,7 @@
 import { WakeLockManager } from './audio/capture';
 import { MicSource } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
+import { startBackgroundKeepAlive, stopBackgroundKeepAlive } from './audio/backgroundKeepAlive';
 import { resetBgLog, logBg } from './audio/bgDiagnostics';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, deleteSession } from './db';
@@ -147,6 +148,7 @@ export class LiveSession {
       this.persistDraft();
 
       await this.wakeLock.start();
+      startBackgroundKeepAlive();
       this.setPhase('recording');
     } catch (err) {
       this.cleanup();
@@ -253,6 +255,7 @@ export class LiveSession {
 
   private cleanup(): void {
     this.wakeLock.stop();
+    stopBackgroundKeepAlive();
     this.recognition?.dispose();
     this.recognition = null;
     this.mic.stop();
