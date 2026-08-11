@@ -35,6 +35,16 @@ export function focusIfDesktop(el: HTMLElement): void {
   }
 }
 
+/** True on a touch-primary device (phone/tablet), false on desktop (mouse+hover) —
+ *  same signal as focusIfDesktop, inverted. Not width-based (unlike isMobileDevice):
+ *  stable across resizing/orientation, which matters for a one-time capability check
+ *  like "will backgrounding this tab cut off microphone access" rather than a layout
+ *  decision. Deliberately not OS-specific — the restriction isn't unique to one OS
+ *  and this only needs "is background capture likely to be interrupted here". */
+export function isTouchPrimaryDevice(): boolean {
+  return !window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+}
+
 export function toDateStr(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');

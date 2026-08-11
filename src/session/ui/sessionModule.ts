@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { fileToEntry, focusIfDesktop } from '../../utils';
+import { fileToEntry, focusIfDesktop, isTouchPrimaryDevice } from '../../utils';
 import { iconElement, TrashIcon, MicIcon, FileAudioIcon, PlusIcon, heartIconElement, ImportTrayIcon, ResetIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, showModal, closeModal } from '../../components/modal';
@@ -10,7 +10,6 @@ import { LiveSession } from '../liveSession';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile } from '../audio/sources';
 import { extractClipMp3 } from '../audio/clipExtract';
-import { bgLog } from '../audio/bgDiagnostics';
 import { makeAbcNoteButton } from './abcPreview';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S, SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
@@ -1326,30 +1325,46 @@ function renderLive(host: SessionModuleHost): void {
   const abcTicker = document.createElement('p');
   abcTicker.className = 'text-[10px] font-mono text-dim/60 text-center truncate mt-1';
 
-  // #17: only surfaced when a real gap was actually measured and caught up on
-  // (see ffWorker.ts's padToWallClock) — not a blanket "may have happened"
-  // guess on every single visibility change regardless of outcome.
+  // #17: on a touch-primary device (phone/tablet), the OS very likely blocks
+  // microphone access outright once the app is backgrounded — confirmed by
+  // listening back to a real recording (background noise present right
+  // before and after locking, silent for the entire locked stretch) even
+  // though the worker keeps ticking on schedule throughout (fed silence, not
+  // missing chunks — no code-side trick fixes this: tried a MediaSession/
+  // silent-audio "keep-alive" and it made no real difference, removed).
+  // Desktop doesn't have this restriction (minimizing the window is
+  // harmless, confirmed) — none of this applies there.
+  const isTouchPrimary = isTouchPrimaryDevice();
+
+  const foregroundReminder = document.createElement('p');
+  foregroundReminder.className = 'text-[11px] text-dim mt-2 text-center';
+  foregroundReminder.textContent = t('sessions.foregroundReminder');
+
+  // Measured directly off document.hidden duration, not off any recognition-
+  // side signal — the worker keeps ticking on schedule the whole time either
+  // way (just fed silence by the OS), so there's no sample-count deficit to
+  // detect for this specific cause, unlike a genuine worklet delivery gap.
   const bgWarning = document.createElement('p');
   bgWarning.className = 'text-xs text-amber-500 mt-2 text-center hidden';
-  let pendingGapS = 0;
-  // Below this, it's ordinary worklet-message jitter the padding margin
-  // already smooths over (harmless, and would otherwise round to "0:00" in
-  // the UI — confusing, not reassuring) rather than a real interruption
-  // worth alerting the user about.
-  const MIN_REPORTED_GAP_S = 5;
+  let hiddenAtMs: number | null = null;
   const onVisibility = () => {
-    if (document.visibilityState === 'visible' && live.getPhase() === 'recording') {
-      if (pendingGapS > MIN_REPORTED_GAP_S) {
-        bgWarning.textContent = t('sessions.bgWarning', { duration: fmtLongTime(pendingGapS) });
+    if (document.hidden) {
+      hiddenAtMs = Date.now();
+      return;
+    }
+    if (hiddenAtMs !== null && live.getPhase() === 'recording') {
+      const hiddenS = (Date.now() - hiddenAtMs) / 1000;
+      if (hiddenS > 2) {
+        bgWarning.textContent = t('sessions.bgWarning', { duration: fmtLongTime(hiddenS) });
         bgWarning.classList.remove('hidden');
         setTimeout(() => bgWarning.classList.add('hidden'), 8000);
       }
-      pendingGapS = 0;
     }
+    hiddenAtMs = null;
   };
-  document.addEventListener('visibilitychange', onVisibility);
+  if (isTouchPrimary) document.addEventListener('visibilitychange', onVisibility);
 
-  body.append(statusBar, initStatus, bgWarning, feed, stateZone, abcTicker);
+  body.append(statusBar, initStatus, ...(isTouchPrimary ? [foregroundReminder, bgWarning] : []), feed, stateZone, abcTicker);
 
   // ── Wiring
   let rafId = 0;
@@ -1438,7 +1453,6 @@ function renderLive(host: SessionModuleHost): void {
     },
     onAnnotations: (_events, all) => renderFeed(all),
     onError: (message) => { initStatus.textContent = `⚠ ${message}`; },
-    onLiveGap: (seconds) => { pendingGapS += seconds; },
   });
 
   // If we re-entered a session already running (modal was closed and reopened):
@@ -1653,25 +1667,6 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     };
     actions.appendChild(dumpBtn);
-  }
-
-  // #17 diagnostics: visibilitychange/AudioContext/wake-lock/mic-track events
-  // buffered during the just-finished live session (reset at each start()) —
-  // download instead of needing a tethered devtools session on the phone.
-  if (lastLiveDump?.sessionId === session.id && bgLog.length > 0) {
-    const bgLogBtn = document.createElement('button');
-    bgLogBtn.className = 'text-[11px] text-dim hover:text-primary hover:underline cursor-pointer' + (dump ? '' : ' ml-auto');
-    bgLogBtn.textContent = t('sessions.dumpBgLog');
-    bgLogBtn.onclick = () => {
-      const blob = new Blob([JSON.stringify(bgLog, null, 1)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(session.name || 'session').replace(/[^\w-]+/g, '_')}-bglog.json`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    };
-    actions.appendChild(bgLogBtn);
   }
 
   body.appendChild(actions);
