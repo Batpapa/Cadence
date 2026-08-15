@@ -24,7 +24,14 @@ export interface SessionAnnotation {
   displayName: string;
   dance: string;       // reel, jig, …
   meter: string;
-  start: number;       // seconds since session start
+  /** Seconds since session start covered by the OBSERVATION WINDOWS that led
+   *  to this detection (see DetectedTuneSegment's doc in viterbiDetector.ts)
+   *  — not necessarily the exact instant the tune actually started/stopped.
+   *  Analysis windows overlap each other by design, so this annotation's
+   *  range can and does legitimately overlap the next annotation's — that
+   *  overlap is real signal (a transition/uncertainty zone), not a bug to be
+   *  trimmed away. */
+  start: number;
   end: number | null;  // null = still open (live)
   confidence: number;  // [0,1] — consistency-weighted (win rate over the annotation's span), NOT comparable to alternates' meanScore below
   bucket: ConfidenceBucket;
@@ -38,7 +45,33 @@ export interface SessionAnnotation {
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */
   liked: boolean;
+  /** false while the Viterbi detector could still revise this annotation's
+   *  bounds or existence as more windows arrive (see viterbiSegmenter.ts) —
+   *  the UI gates destructive/committing actions (delete, merge, attach, SRS
+   *  logging) on this. Always true for file imports (all windows are known
+   *  upfront) and for annotations persisted before this field existed
+   *  (read as `ann.finalized ?? true`, no migration). */
+  finalized: boolean;
 }
+
+/** Emitted by the recognition pipeline (viterbiSegmenter.ts's
+ *  IncrementalViterbiSegmenter) as annotations are created/revised/settled —
+ *  the session orchestrators (liveSession.ts, importSession.ts) merge these
+ *  into their annotation map. */
+export type AnnotationEvent =
+  | { type: 'open'; annotation: SessionAnnotation }
+  | { type: 'update'; annotation: SessionAnnotation }
+  | { type: 'close'; annotation: SessionAnnotation }
+  /** A provisional annotation that was shown (opened) while it was still the
+   *  live tail (see minSegmentWindows in detectionTemporalConfig.ts) but
+   *  never actually reached the confirmation threshold before being
+   *  superseded — remove it from the annotation list entirely, as if it had
+   *  never appeared (2026-08-15: `close` with `finalized:false` still left a
+   *  permanent, if unconfirmed, entry sitting in the UI — the user explicitly
+   *  wants it gone, not just marked unreliable). Orchestrators should ignore
+   *  this for an id the user has already `userConfirmed` — an explicit user
+   *  choice must never be silently erased. */
+  | { type: 'retract'; id: string };
 
 export interface RecordedSession {
   id: string;
@@ -58,7 +91,7 @@ export interface RecordedSession {
   // The audio Blob lives in IndexedDB under the session id (see session db).
 }
 
-// ── Recognition window results (worker → aggregator) ─────────────────────────
+// ── Recognition window results (worker → Viterbi detector) ─────────────────────
 
 export interface WindowCandidate {
   tuneId: string;

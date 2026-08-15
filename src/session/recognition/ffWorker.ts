@@ -1,16 +1,15 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
-import { RecognitionAggregator, type AnnotationEvent } from './aggregator';
-import { AGG_CONFIG } from './aggregatorConfig';
+import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
-import type { WindowResult, WindowCandidate } from '../model';
-import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, MIN_ANALYSIS_S } from '../sessionConfig';
+import type { WindowResult, WindowCandidate, AnnotationEvent } from '../model';
+import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW } from '../sessionConfig';
 
 // ── FolkFriend recognition worker ─────────────────────────────────────────────
 // Owns the WASM instance, the tune index, the PCM ring buffer and the
-// aggregator. PCM chunks arrive (from the audio worklet's MessagePort or the
-// main thread); every ANALYSIS_HOP_S of new signal, the last ANALYSIS_WINDOW_S
-// are transcribed and queried.
+// incremental Viterbi detector (viterbiSegmenter.ts). PCM chunks arrive (from
+// the audio worklet's MessagePort or the main thread); every ANALYSIS_HOP_S of
+// new signal, the last ANALYSIS_WINDOW_S are transcribed and queried.
 
 interface RawQueryRecord {
   setting_id: string;
@@ -46,7 +45,7 @@ let ff: FolkFriendWASM | null = null;
 let pcmPtr = 0;
 let sampleRate = 48000;
 let hopS = ANALYSIS_HOP_S;
-let aggregator = new RecognitionAggregator();
+let segmenter = new IncrementalViterbiSegmenter(hopS);
 /** User-controlled transposition applied to every transcribed contour before
  *  querying the index (e.g. a session played in Bb) — independent of, and
  *  composes with, the automatic banjo octave fallback below. Live-adjustable
@@ -110,7 +109,7 @@ async function handleInit(sr: number, hop?: number): Promise<void> {
   totalSamples = 0;
   lastAnalysisAt = 0;
   liveWallClockAnchorMs = null;
-  aggregator = new RecognitionAggregator();
+  segmenter = new IncrementalViterbiSegmenter(hopS);
 
   post({ type: 'ready', version: ff.version() });
 }
@@ -135,10 +134,27 @@ function tailOfRing(n: number): Float32Array {
 }
 
 /** Query the tune index with a contour; empty list when the query errors out. */
+// The Viterbi detector builds a per-tune score timeline across the whole
+// recording, so it needs more headroom than a single online winner would.
+// Started at 20 (2026-08-11); dropped to 10 the same day once a real dump
+// showed a noisy window can put 8 different tuneIds above threshold at once —
+// more candidates just means more of them clear the floor, not more signal
+// (minCandidateProbability + the Viterbi decode itself handle whatever gets
+// through regardless, but there's no reason to feed either more noise than
+// needed).
+const TOP_N_CANDIDATES = 10;
+
+/** Engine-level "confident enough top match" gate for the octave fallback
+ *  below — independent of whichever downstream detection algorithm consumes
+ *  the candidates (was segmenterConfig.ts's ENTER_THRESHOLD, reused here
+ *  purely as a numeric floor, before segmenter.ts was replaced by the
+ *  Viterbi detector). */
+const OCTAVE_FALLBACK_THRESHOLD = 0.40;
+
 function queryContour(f: FolkFriendWASM, contour: string): WindowCandidate[] {
   const raw = JSON.parse(f.run_transcription_query(contour)) as RawQueryRecord[] | { error: string };
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 5).map(r => ({
+  return raw.slice(0, TOP_N_CANDIDATES).map(r => ({
     tuneId: r.setting.tune_id,
     settingId: r.setting_id,
     displayName: r.display_name,
@@ -175,18 +191,20 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
 
-  // No score filtering here: the aggregator applies SCORE_FLOOR itself, and
-  // the calibration dump needs the sub-floor scores to be tunable at all.
+  // No score filtering here: the Viterbi detector applies its own candidate
+  // floor (minCandidateProbability), and the calibration dump needs the
+  // sub-floor scores to be tunable at all.
   let candidates = queryContour(f, contour);
   let matchedContour = contour;
 
   // Octave fallback: the index query has no transposition invariance and the
   // index contours sit at fiddle register, so low instruments (Irish tenor
   // banjo, an octave below the fiddle) transcribe an octave down and score
-  // junk. When the window would fall below SCORE_FLOOR anyway, retry with the
-  // contour lifted one octave and keep whichever the index scores higher —
-  // the decision stays with FolkFriend's own score, never a register guess.
-  if ((candidates[0]?.score ?? 0) < AGG_CONFIG.SCORE_FLOOR) {
+  // junk. When the window would fall below OCTAVE_FALLBACK_THRESHOLD anyway,
+  // retry with the contour lifted one octave and keep whichever the index
+  // scores higher — the decision stays with FolkFriend's own score, never a
+  // register guess.
+  if ((candidates[0]?.score ?? 0) < OCTAVE_FALLBACK_THRESHOLD) {
     const lifted = shiftContour(contour, 12);
     const liftedCandidates = lifted.length > 0 ? queryContour(f, lifted) : [];
     if ((liftedCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
@@ -208,9 +226,14 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
 // the same code path serves live capture and faster-than-real-time file import.
 function maybeAnalyzeLive(): void {
   if (!ff) return;
-  // A first window shorter than MIN_ANALYSIS_S produces junk matches
-  // (observed: 5 s of signal → confident wrong candidate).
-  if (totalSamples < MIN_ANALYSIS_S * sampleRate) return;
+  // Wait for a full ANALYSIS_WINDOW_S before the very first analysis too
+  // (2026-08-15) — an earlier version fired early on a shorter first window
+  // (produced junk matches: 5s of signal -> confident wrong candidate), which
+  // ALSO made that first window narrower than every later one, breaking the
+  // "every segment's timestamps are just its windows' own real span" premise
+  // (a real detection ended up looking like a near-zero-length sliver). Worth
+  // the extra ~10s of latency before the first result.
+  if (totalSamples < ANALYSIS_WINDOW_S * sampleRate) return;
   const hopSamples = hopS * sampleRate;
   if (totalSamples - lastAnalysisAt < hopSamples) return;
   lastAnalysisAt = totalSamples;
@@ -222,7 +245,7 @@ function maybeAnalyzeLive(): void {
 
   const { result, abc } = analyzeSignal(pcm, tStart, tEnd);
   post({ type: 'window', result, abc });
-  const events = aggregator.step(result);
+  const events = segmenter.step(result);
   if (events.length > 0) post({ type: 'annotations', events });
 }
 
@@ -239,14 +262,14 @@ function handleWorkletPcm(buffer: ArrayBuffer): void {
 
 function handleStop(): void {
   const tFinal = totalSamples / sampleRate;
-  const events = aggregator.finalize(tFinal);
+  const events = segmenter.finalize();
   post({ type: 'stopped', events, tFinal });
   // Reset live state for a potential next run (index + WASM stay loaded).
   ringWrite = 0;
   totalSamples = 0;
   lastAnalysisAt = 0;
   liveWallClockAnchorMs = null;
-  aggregator = new RecognitionAggregator();
+  segmenter = new IncrementalViterbiSegmenter(hopS);
 }
 
 function onRequest(e: MessageEvent<FFWorkerRequest>): void {

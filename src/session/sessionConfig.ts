@@ -8,10 +8,11 @@ export const TUNE_INDEX_META_URL = 'https://raw.githubusercontent.com/TomWyllie/
 /** Re-download the index when the remote version is this much newer (days). */
 export const INDEX_MAX_AGE_DAYS = 28;
 
-/** Recognition analysis: hop and window, in seconds. */
+/** Recognition analysis: hop and window, in seconds. The very first analysis
+ *  also waits for a full ANALYSIS_WINDOW_S of signal (2026-08-15) — no
+ *  separate "minimum" below the window size, so every window (including the
+ *  first) has the same true span. */
 export const ANALYSIS_HOP_S = 5;
-/** No analysis before this much signal — too-short first windows match junk. */
-export const MIN_ANALYSIS_S = 10;
 /** Import-mode hop — same default as live, tunable separately to speed up imports later. */
 export const HOP_S_IMPORT = 5;
 export const ANALYSIS_WINDOW_S = 15;

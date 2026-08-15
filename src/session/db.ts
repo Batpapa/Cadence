@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { RecordedSession } from './model';
+import type { RecordedSession, WindowResult } from './model';
 
 // ── Session-feature IndexedDB ─────────────────────────────────────────────────
 // Separate database from the main Cadence user DB: holds the (large) FolkFriend
@@ -47,6 +47,29 @@ export async function saveSessionAudio(sessionId: string, audio: Blob): Promise<
   await (await db()).put(SESSIONS_STORE, audio, `${sessionId}:audio`);
 }
 
+/** Raw per-window recognition results for an in-progress LIVE recording
+ *  (2026-08-15) — recovery.ts replays these through a fresh
+ *  IncrementalViterbiSegmenter instead of trusting a persisted annotation
+ *  snapshot, so a crash mid-session can never resurrect a short-lived,
+ *  never-confirmed guess (which the live snapshot could contain at any given
+ *  instant) as a "real" finalized annotation. Overwritten wholesale on every
+ *  persistDraft() call, same as the audio blob and the metadata row —
+ *  simplest correct thing, not bounded, per the same "recompute is cheap
+ *  enough" call made throughout this feature. */
+export async function saveSessionWindows(sessionId: string, windows: WindowResult[]): Promise<void> {
+  await (await db()).put(SESSIONS_STORE, windows, `${sessionId}:windows`);
+}
+
+export async function loadSessionWindows(sessionId: string): Promise<WindowResult[] | undefined> {
+  return (await db()).get(SESSIONS_STORE, `${sessionId}:windows`);
+}
+
+/** Dead weight once a live recording is done (normally or via recovery) —
+ *  only ever needed for crash-recovery replay of a still-in-progress session. */
+export async function deleteSessionWindows(sessionId: string): Promise<void> {
+  await (await db()).delete(SESSIONS_STORE, `${sessionId}:windows`);
+}
+
 /** Sessions saved before the `source` field existed were all mic recordings. */
 function migrateSession(s: RecordedSession | undefined): RecordedSession | undefined {
   if (s && s.source === undefined) s.source = 'live';
@@ -65,6 +88,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
   const d = await db();
   await d.delete(SESSIONS_STORE, sessionId);
   await d.delete(SESSIONS_STORE, `${sessionId}:audio`);
+  await d.delete(SESSIONS_STORE, `${sessionId}:windows`);
 }
 
 /** Storage-saving: drops the (large) audio blob, keeps metadata + annotations.

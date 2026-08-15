@@ -31,7 +31,7 @@ let activeLive: LiveSession | null = null;
 let activeImport: ImportSession | null = null;
 /** Playback warning for the current import (format analysable but not playable). */
 let importPlaybackWarn = false;
-/** Raw window dump of the last completed import — AGG_CONFIG calibration tool. */
+/** Raw window dump of the last completed import — detectionTemporalConfig.ts calibration tool. */
 let lastImportDump: { sessionId: string; windows: WindowResult[] } | null = null;
 /** Same idea for the last completed LIVE session, plus a wall-clock cross
  *  reference per window (see LiveSession.windows) — lets a #16 drift

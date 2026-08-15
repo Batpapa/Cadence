@@ -4,8 +4,7 @@ import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
-import type { RecordedSession, SessionAnnotation, WindowResult } from './model';
-import type { AnnotationEvent } from './recognition/aggregator';
+import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent } from './model';
 import type { IndexProgress } from './recognition/indexStore';
 
 // ── Import session orchestrator ───────────────────────────────────────────────
@@ -41,7 +40,7 @@ export class ImportSession {
   private source: PcmSource | null = null;
   private wakeLock = new WakeLockManager();
   private annotations = new Map<string, SessionAnnotation>();
-  /** Raw per-window results — the AGG_CONFIG calibration dump. */
+  /** Raw per-window results — the detectionTemporalConfig.ts calibration dump. */
   readonly windows: WindowResult[] = [];
   private cancelRequested = false;
   private analysisStartedAt = 0;
@@ -182,6 +181,13 @@ export class ImportSession {
 
   private applyEvents(events: AnnotationEvent[]): void {
     for (const ev of events) {
+      if (ev.type === 'retract') {
+        // A guess the user hasn't touched never got confirmed — remove it
+        // entirely, as if it had never been shown. Never erase an explicit
+        // user choice, even if the algorithm itself would retract it.
+        if (!this.annotations.get(ev.id)?.userConfirmed) this.annotations.delete(ev.id);
+        continue;
+      }
       const existing = this.annotations.get(ev.annotation.id);
       if (existing?.userConfirmed) {
         this.annotations.set(ev.annotation.id, {
