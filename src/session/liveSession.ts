@@ -2,9 +2,8 @@ import { WakeLockManager } from './audio/capture';
 import { MicSource } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
-import { saveSessionMeta, saveSessionAudio, deleteSession } from './db';
-import type { RecordedSession, SessionAnnotation, WindowResult } from './model';
-import type { AnnotationEvent } from './recognition/aggregator';
+import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
+import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent } from './model';
 import type { IndexProgress } from './recognition/indexStore';
 
 // ── Live session orchestrator ─────────────────────────────────────────────────
@@ -37,12 +36,14 @@ export class LiveSession {
   private annotations = new Map<string, SessionAnnotation>();
   private pauseStartedAt = 0;
   private pausedAccumMs = 0;
-  /** Raw per-window results with a wall-clock cross-reference — diagnostic
-   *  dump for comparing the worker's sample-counted clock (tWindowStart/End)
-   *  against real elapsed time during a LIVE recording, the way importSession
-   *  already does for file analysis (its `windows` field, no wall clock needed
-   *  there since import runs faster than real time). `wallMs` is `Date.now()`
-   *  minus `startedAt` MINUS accumulated paused time, so a pause/resume cycle
+  /** Raw per-window results with a wall-clock cross-reference — doubles as
+   *  (a) a diagnostic dump for comparing the worker's sample-counted clock
+   *  (tWindowStart/End) against real elapsed time during a LIVE recording,
+   *  the way importSession already does for file analysis (its `windows`
+   *  field, no wall clock needed there since import runs faster than real
+   *  time), and (b) the crash-recovery source of truth (2026-08-15) — see
+   *  persistDraft() and recovery.ts. `wallMs` is `Date.now()` minus
+   *  `startedAt` MINUS accumulated paused time, so a pause/resume cycle
    *  doesn't masquerade as clock drift. */
   readonly windows: (WindowResult & { wallMs: number })[] = [];
 
@@ -99,7 +100,14 @@ export class LiveSession {
     return Date.now() - this.startedAt - pausedSoFar;
   }
 
-  /** Writes the in-progress session so a crash/refresh can be recovered later. */
+  /** Writes the in-progress session so a crash/refresh can be recovered
+   *  later. `annotations` here is only ever a best-effort live snapshot —
+   *  recovery.ts does NOT trust it; it replays the separately-persisted raw
+   *  `windows` (see the onWindow handler below) through a fresh detector
+   *  instead. Reason (2026-08-15): a snapshot taken at an arbitrary instant
+   *  can catch a short-lived, not-yet-confirmed guess (see
+   *  minSegmentWindows/'retract' in viterbiSegmenter.ts) that a crash would
+   *  otherwise resurrect as if it were a real, finalized detection. */
   private persistDraft(): void {
     const session: RecordedSession = {
       id: this.sessionId,
@@ -127,6 +135,10 @@ export class LiveSession {
           // A window firing implies phase === 'recording' (analysis is fed by
           // the worklet, which pause() suspends) — no "currently paused" branch needed.
           this.windows.push({ ...result, wallMs: Date.now() - this.startedAt - this.pausedAccumMs });
+          // Crash-recovery source of truth — kept in step with every window,
+          // not just annotation-changing ones, so a crash loses at most the
+          // very last window's worth of signal (~stepSeconds).
+          void saveSessionWindows(this.sessionId, this.windows).catch(() => { /* best-effort */ });
           this.cb.onWindow?.(result, abc);
         },
         onAnnotations: events => this.applyEvents(events),
@@ -158,6 +170,13 @@ export class LiveSession {
 
   private applyEvents(events: AnnotationEvent[]): void {
     for (const ev of events) {
+      if (ev.type === 'retract') {
+        // A guess the user hasn't touched never got confirmed — remove it
+        // entirely, as if it had never been shown. Never erase an explicit
+        // user choice, even if the algorithm itself would retract it.
+        if (!this.annotations.get(ev.id)?.userConfirmed) this.annotations.delete(ev.id);
+        continue;
+      }
       const existing = this.annotations.get(ev.annotation.id);
       if (existing?.userConfirmed) {
         // The user relabelled this annotation — keep their tune identity,
@@ -228,6 +247,10 @@ export class LiveSession {
       };
       await saveSessionAudio(session.id, fileResult.blob);
       await saveSessionMeta(session);
+      // A cleanly-stopped session no longer needs its crash-recovery replay
+      // source — drop it rather than keeping a growing raw-windows dump
+      // around forever for every past session.
+      await deleteSessionWindows(session.id);
 
       this.setPhase('done');
       return session;

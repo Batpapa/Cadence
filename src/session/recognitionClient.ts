@@ -1,7 +1,6 @@
 import type { FFWorkerRequest, FFWorkerResponse } from './recognition/ffWorker';
-import type { AnnotationEvent } from './recognition/aggregator';
 import type { IndexProgress } from './recognition/indexStore';
-import type { WindowResult } from './model';
+import type { WindowResult, AnnotationEvent } from './model';
 import type { RecognitionSink } from './audio/sources';
 
 // ── Main-thread wrapper around the FolkFriend recognition worker ──────────────
