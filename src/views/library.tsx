@@ -226,7 +226,12 @@ export function LibraryView() {
   const q = searchQuery.toLowerCase();
   const filteredUnsorted = allCards.filter(c => {
     const tags       = c.tags ?? [];
-    const matchText = !q || c.name.toLowerCase().includes(q);
+    // externalId match is EXACT (whole "source:id", or just the id part),
+    // not a substring — "729" must not also pull in "thesession:7290".
+    const extId      = c.externalId?.toLowerCase();
+    const extIdOnly  = extId?.slice(extId.indexOf(':') + 1);
+    const matchExternalId = q !== '' && (extId === q || extIdOnly === q);
+    const matchText = !q || c.name.toLowerCase().includes(q) || matchExternalId;
     const cardDecks = decksContainingCard(c.id, user);
 
     const tagEntries  = [...activeTags];
