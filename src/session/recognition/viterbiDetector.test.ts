@@ -317,7 +317,7 @@ describe('segment timestamps reflect raw observation-window spans (overlap is ex
       const r = runViterbiDetection(timeline, TEST_CFG);
       expectRawSpans(r.segments, windows);
     }
-  });
+  }, 30000); // 4 real fixtures' full decode ~3s combined — comfortably under this, but tight against vitest's 5s default under any system load.
 });
 
 // ── filterShortSegments (2026-08-15 post-process) ───────────────────────────

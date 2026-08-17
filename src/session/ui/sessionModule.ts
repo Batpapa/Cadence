@@ -67,6 +67,14 @@ export interface SessionModuleHost {
   registerCleanup: (fn: () => void) => void;
 }
 
+/** `host.body` (sessions.tsx) is a plain, non-scrolling content div — the
+ *  actual scrollable element is its `overflow-y-auto` ancestor (the page's
+ *  own wrapper). Auto-follow logic needs the REAL scroll position, not
+ *  `host.body`'s own (which never moves), so always go through this. */
+function scrollContainerOf(el: HTMLElement): HTMLElement {
+  return (el.closest('.overflow-y-auto') as HTMLElement | null) ?? el;
+}
+
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
@@ -1189,7 +1197,8 @@ function renderImportAnalysis(host: SessionModuleHost): void {
   };
 
   const renderFeed = (annotations: SessionAnnotation[]) => {
-    const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+    const scrollEl = scrollContainerOf(body);
+    const nearBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 80;
     feed.innerHTML = '';
     for (const ann of annotations) {
       feed.appendChild(annotationCard(ann, {
@@ -1204,7 +1213,7 @@ function renderImportAnalysis(host: SessionModuleHost): void {
         onToggleLike: (id) => { imp.toggleLike(id); renderFeed(imp.getAnnotations()); },
       }));
     }
-    if (nearBottom) body.scrollTop = body.scrollHeight;
+    if (nearBottom) scrollEl.scrollTop = scrollEl.scrollHeight;
   };
 
   imp.setCallbacks({
@@ -1409,7 +1418,8 @@ function renderLive(host: SessionModuleHost): void {
   };
 
   const renderFeed = (annotations: SessionAnnotation[]) => {
-    const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+    const scrollEl = scrollContainerOf(body);
+    const nearBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 80;
     feed.innerHTML = '';
     for (const ann of annotations) {
       feed.appendChild(annotationCard(ann, {
@@ -1423,7 +1433,7 @@ function renderLive(host: SessionModuleHost): void {
         onToggleLike: (id) => { live.toggleLike(id); renderFeed(live.getAnnotations()); },
       }));
     }
-    if (nearBottom) body.scrollTop = body.scrollHeight;
+    if (nearBottom) scrollEl.scrollTop = scrollEl.scrollHeight;
   };
 
   live.setCallbacks({
