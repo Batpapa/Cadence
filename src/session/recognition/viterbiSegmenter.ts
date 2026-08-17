@@ -1,5 +1,5 @@
 import type { WindowResult, SessionAnnotation, AnnotationAlternate, AnnotationEvidence, AnnotationEvent } from '../model';
-import { runViterbiDetection, filterShortSegments, countTop1Windows, type DetectedTuneSegment } from './viterbiDetector';
+import { runViterbiDetection, filterShortSegments, mergeNearbySameTune, countTop1Windows, type DetectedTuneSegment } from './viterbiDetector';
 import { buildTemporalTimeline, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
@@ -134,7 +134,11 @@ export class IncrementalViterbiSegmenter {
     // shown even if still short (user call: fine if it later disappears) —
     // only once finalize() confirms no more windows are coming does a short
     // last segment get filtered like any other.
-    const segments = filterShortSegments(result.segments, timeline, this.cfg.minSegmentWindows, !forceFinalizeAll);
+    const filteredSegments = filterShortSegments(result.segments, timeline, this.cfg.minSegmentWindows, !forceFinalizeAll);
+    // Bridges a brief UNKNOWN drop between two occurrences of the same tune
+    // (e.g. a couple of quiet/noisy windows mid-performance) into one
+    // continuous segment, instead of reporting two separate detections.
+    const segments = mergeNearbySameTune(filteredSegments, timeline, this.cfg.sameTuneMergeGapWindows);
     const lastSegment = segments[segments.length - 1] ?? null;
     const newSegments = segments.filter(s => s.tuneId !== UNKNOWN_STATE);
 

@@ -27,6 +27,7 @@ const TEST_CFG: DetectionTemporalConfig = {
   maxAlternates: 4,
   finalizationLagSeconds: 30,
   minSegmentWindows: 2,
+  sameTuneMergeGapWindows: 10,
 };
 
 function cand(tuneId: string, score: number): WindowCandidate {
