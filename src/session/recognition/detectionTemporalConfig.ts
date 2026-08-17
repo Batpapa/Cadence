@@ -79,20 +79,26 @@ export interface DetectionTemporalConfig {
   finalizationLagSeconds: number;
 
   /** Post-process (2026-08-15), applied AFTER the Viterbi decode, never
-   *  inside it — see `filterShortSegments` in viterbiDetector.ts. A non-UNKNOWN
-   *  segment covered by fewer than this many windows is relabeled UNKNOWN
-   *  (then merged with any now-adjacent UNKNOWN segment) — a single stray
-   *  window winning against the tuneChangePenalty is weaker evidence than a
-   *  run that persists. EXCEPTION: while detection is still in progress
-   *  (live capture OR an import/recording still streaming windows in — i.e.
-   *  viterbiSegmenter.ts's forceFinalizeAll is false), the very last segment
-   *  is shown regardless of its current windowCount — explicit user call:
-   *  showing it and then having it disappear/get superseded is fine, being
-   *  permanently invisible is not. It closes NOT finalized if it never
-   *  reached the threshold (see viterbiSegmenter.ts's vanish-cleanup), so it
-   *  can't be mistaken for a confirmed detection. Once truly finalized (no
-   *  more windows will ever arrive), that exemption no longer applies: a
-   *  genuinely short last segment is filtered like any other. */
+   *  inside it — see `filterShortSegments`/`countTop1Windows` in
+   *  viterbiDetector.ts. A segment is only trusted once at least this many
+   *  of its OWN windows had it as the #1-ranked RAW candidate (not merely
+   *  "Viterbi assigned this window to this tune" — a window can be assigned
+   *  by hysteresis/transition cost alone without ever topping that window's
+   *  own candidate list; requiring rank 1 specifically is a stricter, more
+   *  stable confirmation signal, changed from the original "windowCount"
+   *  version on explicit user request the same day). A segment that never
+   *  reaches this count is relabeled UNKNOWN (then merged with any
+   *  now-adjacent UNKNOWN segment). EXCEPTION: while detection is still in
+   *  progress (live capture OR an import/recording still streaming windows
+   *  in — i.e. viterbiSegmenter.ts's forceFinalizeAll is false), the very
+   *  last segment is shown regardless of its current rank-1 count —
+   *  explicit user call: showing it and then having it disappear/get
+   *  superseded is fine, being permanently invisible is not. It closes NOT
+   *  finalized if it never reached the threshold (see viterbiSegmenter.ts's
+   *  vanish-cleanup), so it can't be mistaken for a confirmed detection.
+   *  Once truly finalized (no more windows will ever arrive), that
+   *  exemption no longer applies: a genuinely unconfirmed last segment is
+   *  filtered like any other. */
   minSegmentWindows: number;
 }
 

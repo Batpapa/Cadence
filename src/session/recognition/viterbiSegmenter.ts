@@ -1,5 +1,5 @@
 import type { WindowResult, SessionAnnotation, AnnotationAlternate, AnnotationEvidence, AnnotationEvent } from '../model';
-import { runViterbiDetection, filterShortSegments, type DetectedTuneSegment } from './viterbiDetector';
+import { runViterbiDetection, filterShortSegments, countTop1Windows, type DetectedTuneSegment } from './viterbiDetector';
 import { buildTemporalTimeline, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
@@ -134,7 +134,7 @@ export class IncrementalViterbiSegmenter {
     // shown even if still short (user call: fine if it later disappears) —
     // only once finalize() confirms no more windows are coming does a short
     // last segment get filtered like any other.
-    const segments = filterShortSegments(result.segments, this.cfg.minSegmentWindows, !forceFinalizeAll);
+    const segments = filterShortSegments(result.segments, timeline, this.cfg.minSegmentWindows, !forceFinalizeAll);
     const lastSegment = segments[segments.length - 1] ?? null;
     const newSegments = segments.filter(s => s.tuneId !== UNKNOWN_STATE);
 
@@ -203,7 +203,12 @@ export class IncrementalViterbiSegmenter {
       if (claimed.has(i)) continue;
       const prev = this.tracked[i]!;
       if (prev.finalized) continue;
-      const wasConfirmed = prev.seg.windowCount >= this.cfg.minSegmentWindows;
+      // timeline here is this call's (current, possibly larger) timeline —
+      // safe to use for a segment captured on an earlier recompute's smaller
+      // one: TemporalTimeline.ranks for a given window index is computed
+      // purely from that window's own candidates, never affected by how many
+      // other windows are in the array.
+      const wasConfirmed = countTop1Windows(prev.seg.tuneId, prev.seg.firstWindowIndex, prev.seg.windowCount, timeline) >= this.cfg.minSegmentWindows;
       if (wasConfirmed) {
         events.push({ type: 'close', annotation: this.toAnnotation(prev.id, prev.seg, false, true) });
       } else {
