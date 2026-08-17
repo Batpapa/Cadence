@@ -1764,6 +1764,37 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
           controls.appendChild(boundCtl('▸', () => ann.start, v => { ann.start = v; }));
           controls.appendChild(boundCtl('◂', () => ann.end ?? session.duration, v => { ann.end = v; }));
 
+          // Download the clip as a standalone MP3, independent of any card —
+          // hidden once the session's audio has been forgotten (nothing left
+          // to extract from). To the left of "Add clip to card" below.
+          if (audioUrl) {
+            const downloadClipBtn = document.createElement('button');
+            downloadClipBtn.className = 'text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center';
+            downloadClipBtn.title = t('sessions.downloadClip');
+            downloadClipBtn.innerHTML = downloadIcon(13);
+            downloadClipBtn.onclick = async () => {
+              downloadClipBtn.disabled = true;
+              downloadClipBtn.classList.add('opacity-50');
+              try {
+                const audio = await loadSessionAudio(session.id);
+                if (!audio) throw new Error(t('sessions.clip.unavailable'));
+                const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? session.duration);
+                const url = URL.createObjectURL(mp3);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = clipFileName(session, ann);
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (err) {
+                downloadClipBtn.title = `⚠ ${String(err)}`;
+              } finally {
+                downloadClipBtn.disabled = false;
+                downloadClipBtn.classList.remove('opacity-50');
+              }
+            };
+            controls.appendChild(downloadClipBtn);
+          }
+
           // Add clip as a standalone MP3 attachment (known card only) —
           // fresh state, the card may be brand new. Hidden once the session's
           // audio has been forgotten, unless a clip was already extracted
