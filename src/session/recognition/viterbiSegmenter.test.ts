@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
-import { runViterbiDetection, filterShortSegments } from './viterbiDetector';
+import { runViterbiDetection, filterShortSegments, mergeNearbySameTune } from './viterbiDetector';
 import { buildTemporalTimeline, UNKNOWN_STATE } from './temporalObservationBuilder';
 import type { DetectionTemporalConfig } from './detectionTemporalConfig';
 import type { WindowResult, WindowCandidate, SessionAnnotation, AnnotationEvent } from '../model';
@@ -27,6 +27,10 @@ const TEST_CFG: DetectionTemporalConfig = {
   // 2 windows at HOP=5 — small on purpose so tests don't need long tails.
   finalizationLagSeconds: 10,
   minSegmentWindows: 2,
+  // 0 by default — disabled, so existing tests that happen to reuse a
+  // tuneId letter aren't silently affected. Overridden explicitly in the
+  // tests that exercise mergeNearbySameTune below.
+  sameTuneMergeGapWindows: 0,
 };
 
 function cand(tuneId: string, score: number): WindowCandidate {
@@ -66,7 +70,9 @@ function batchSegments(windows: WindowResult[], cfg: DetectionTemporalConfig = T
   // Finalized batch context — exemptLastSegment=false, same as
   // IncrementalViterbiSegmenter.finalize() — so this stays a fair comparison
   // for the "matches a one-shot batch call" test below.
-  return filterShortSegments(result.segments, timeline, cfg.minSegmentWindows, false).filter(s => s.tuneId !== UNKNOWN_STATE);
+  const filtered = filterShortSegments(result.segments, timeline, cfg.minSegmentWindows, false);
+  const merged = mergeNearbySameTune(filtered, timeline, cfg.sameTuneMergeGapWindows);
+  return merged.filter(s => s.tuneId !== UNKNOWN_STATE);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -252,5 +258,57 @@ describe('IncrementalViterbiSegmenter', () => {
     const bAfter = [...store.values()].find(a => a.tuneId === 'B');
     expect(bAfter).toBeDefined();
     expect(bAfter!.userConfirmed).toBe(true);
+  });
+
+  it('mergeNearbySameTune: bridges a brief UNKNOWN gap between two occurrences of the SAME tune into one continuous annotation', () => {
+    const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 10 };
+    const seg = new IncrementalViterbiSegmenter(HOP, cfg);
+    const store = new Map<string, SessionAnnotation>();
+    const windows = sequence([
+      { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 }, // A: 5 windows
+      {}, {}, {},                                                     // gap: 3 empty windows (< 10) -> UNKNOWN
+      { A: 0.92 }, { A: 0.95 }, { A: 0.94 },                          // A again: 3 windows
+    ]);
+    for (const w of windows) apply(store, seg.step(w));
+    apply(store, seg.finalize());
+
+    const anns = [...store.values()];
+    expect(anns).toHaveLength(1);
+    expect(anns[0]!.tuneId).toBe('A');
+    expect(anns[0]!.start).toBe(0);
+    expect(anns[0]!.end).toBe(windows[windows.length - 1]!.tWindowEnd);
+    expect(anns[0]!.finalized).toBe(true);
+  });
+
+  it('mergeNearbySameTune: does NOT bridge a gap of >= sameTuneMergeGapWindows — stays two separate detections', () => {
+    const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 3 };
+    const seg = new IncrementalViterbiSegmenter(HOP, cfg);
+    const store = new Map<string, SessionAnnotation>();
+    const windows = sequence([
+      { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 },
+      {}, {}, {}, {}, // gap: 4 empty windows (>= 3) -> should NOT merge
+      { A: 0.92 }, { A: 0.95 }, { A: 0.94 },
+    ]);
+    for (const w of windows) apply(store, seg.step(w));
+    apply(store, seg.finalize());
+
+    const anns = [...store.values()].sort((a, b) => a.start - b.start);
+    expect(anns.map(a => a.tuneId)).toEqual(['A', 'A']);
+  });
+
+  it('mergeNearbySameTune: never merges across a DIFFERENT confirmed tune in between (A, B, A stays three results)', () => {
+    const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 10 };
+    const seg = new IncrementalViterbiSegmenter(HOP, cfg);
+    const store = new Map<string, SessionAnnotation>();
+    const windows = sequence([
+      { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 },
+      { B: 0.92 }, { B: 0.95 }, { B: 0.94 }, { B: 0.91 }, { B: 0.93 },
+      { A: 0.92 }, { A: 0.95 }, { A: 0.94 },
+    ]);
+    for (const w of windows) apply(store, seg.step(w));
+    apply(store, seg.finalize());
+
+    const anns = [...store.values()].sort((a, b) => a.start - b.start);
+    expect(anns.map(a => a.tuneId)).toEqual(['A', 'B', 'A']);
   });
 });

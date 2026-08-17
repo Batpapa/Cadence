@@ -237,6 +237,88 @@ export function filterShortSegments(
   return merged;
 }
 
+/** Index in `segments` of the most recent NON-UNKNOWN entry, or -1. Only
+ *  ever needs to look at the last one or two entries: filterShortSegments
+ *  already guarantees no two UNKNOWN segments sit adjacent, and this
+ *  function's own merges never introduce a new UNKNOWN-UNKNOWN adjacency
+ *  either (it only ever combines two REAL segments) — so at most one
+ *  trailing UNKNOWN can separate `segments`'s last entry from the last real
+ *  one. */
+function lastRealIndex(segments: DetectedTuneSegment[]): number {
+  const last = segments.length - 1;
+  if (last < 0) return -1;
+  if (segments[last]!.tuneId !== UNKNOWN_STATE) return last;
+  if (last > 0 && segments[last - 1]!.tuneId !== UNKNOWN_STATE) return last - 1;
+  return -1;
+}
+
+function mergeTwoSameTune(a: DetectedTuneSegment, b: DetectedTuneSegment, timeline: TemporalTimeline): DetectedTuneSegment {
+  const firstWindowIndex = a.firstWindowIndex;
+  const windowCount = (b.firstWindowIndex + b.windowCount) - a.firstWindowIndex;
+  const obs = timeline.observations.get(a.tuneId);
+  const probs: number[] = [];
+  for (let i = firstWindowIndex; i < firstWindowIndex + windowCount; i++) probs.push(obs?.[i] ?? 0);
+  const avg = probs.reduce((x, y) => x + y, 0) / probs.length;
+  return {
+    ...a,
+    endTime: b.endTime,
+    firstWindowIndex,
+    windowCount,
+    confidence: avg,
+    averageProbability: avg,
+    minimumProbability: Math.min(...probs),
+    maximumProbability: Math.max(...probs),
+  };
+}
+
+/** Post-process (2026-08-15), run AFTER filterShortSegments: two "tune
+ *  results" (i.e. real, non-UNKNOWN segments — deliberately blind to
+ *  whatever UNKNOWN stretch separates them, since that's exactly the case
+ *  this exists to bridge) for the SAME tuneId, with fewer than
+ *  `maxGapWindows` windows between the first's end and the second's start,
+ *  are merged into one continuous segment — a brief drop to UNKNOWN (a
+ *  couple of quiet/noisy windows mid-tune) shouldn't split one real
+ *  performance into two separate results. Explicit user request: "si 2 tune
+ *  results consécutifs sont la même tune, que ça fusionne automatiquement
+ *  s'il y a moins de N fenêtres d'écart."
+ *
+ *  Deliberately does NOT fire across a DIFFERENT real tune in between (A,
+ *  B, A): by construction, if a different tune's segment sits between two
+ *  A's, the A's are no longer "consecutive tune results" to each other — B
+ *  is the one adjacent to each of them — so nothing here ever merges across
+ *  or silently absorbs a separately-confirmed different tune.
+ *
+ *  Probability stats (confidence/average/min/max) are recomputed over the
+ *  WHOLE bridged window range (gap windows included, using the same
+ *  zero-if-absent TemporalTimeline.observations extractSegments itself
+ *  reads) — not a weighted average of the two original segments' stats —
+ *  so a merged segment's numbers mean the same thing as any other
+ *  segment's: "the tune's own observed scores across its actual window
+ *  range," gap included. */
+export function mergeNearbySameTune(
+  segments: DetectedTuneSegment[],
+  timeline: TemporalTimeline,
+  maxGapWindows: number,
+): DetectedTuneSegment[] {
+  const result: DetectedTuneSegment[] = [];
+  for (const s of segments) {
+    if (s.tuneId !== UNKNOWN_STATE) {
+      const idx = lastRealIndex(result);
+      if (idx >= 0) {
+        const prevReal = result[idx]!;
+        const gap = s.firstWindowIndex - (prevReal.firstWindowIndex + prevReal.windowCount);
+        if (prevReal.tuneId === s.tuneId && gap < maxGapWindows) {
+          result.length = idx; // drop prevReal and any UNKNOWN entry after it — both absorbed into the merge
+          result.push(mergeTwoSameTune(prevReal, s, timeline));
+          continue;
+        }
+      }
+    }
+    result.push(s);
+  }
+  return result;
+}
+
 /** Shared by both implementations: turns a completed (score, prevState) DP
  *  table into the final ViterbiResult (backtrack + segment extraction +
  *  optional debug payload). */

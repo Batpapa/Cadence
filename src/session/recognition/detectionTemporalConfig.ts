@@ -100,6 +100,15 @@ export interface DetectionTemporalConfig {
    *  exemption no longer applies: a genuinely unconfirmed last segment is
    *  filtered like any other. */
   minSegmentWindows: number;
+
+  /** Post-process (2026-08-15), applied AFTER filterShortSegments — see
+   *  `mergeNearbySameTune` in viterbiDetector.ts. Two confirmed "tune
+   *  results" for the SAME tuneId, separated by fewer than this many
+   *  windows (of UNKNOWN, or nothing at all), are merged into one
+   *  continuous segment instead of showing as two separate detections — a
+   *  brief drop to UNKNOWN mid-tune (a couple of quiet/noisy windows)
+   *  shouldn't split one real performance in two. Explicit user request. */
+  sameTuneMergeGapWindows: number;
 }
 
 export const DETECTION_TEMPORAL_CONFIG: DetectionTemporalConfig = {
@@ -126,4 +135,5 @@ export const DETECTION_TEMPORAL_CONFIG: DetectionTemporalConfig = {
   finalizationLagSeconds: 30,
 
   minSegmentWindows: 2,
+  sameTuneMergeGapWindows: 10,
 };
