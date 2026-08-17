@@ -38,6 +38,12 @@ export interface DetectedTuneSegment {
    *  be preserved, not trimmed into a disjoint partition. */
   startTime: number;
   endTime: number;
+  /** Index into TemporalTimeline.windows of this segment's first window —
+   *  the exact, unambiguous way to map back to per-window data (e.g.
+   *  TemporalTimeline.ranks) for this segment's range, rather than
+   *  re-deriving membership from a time-range comparison against
+   *  startTime/endTime (fragile now that those can overlap — see above). */
+  firstWindowIndex: number;
   /** V1: identical to averageProbability — kept as its own field because the
    *  two are expected to diverge later (e.g. once segment length or Viterbi
    *  margin factors in), not because there's a different formula yet. Always
@@ -135,6 +141,7 @@ function extractSegments(
       meter: meta?.meter ?? '',
       startTime: start,
       endTime: end,
+      firstWindowIndex: runStart,
       confidence: avg,
       averageProbability: avg,
       minimumProbability: Math.min(...probs),
@@ -160,14 +167,33 @@ function asUnknown(s: DetectedTuneSegment): DetectedTuneSegment {
   };
 }
 
+/** How many windows in [firstIdx, firstIdx+windowCount) had `tuneId` as their
+ *  own #1-ranked raw candidate (TemporalTimeline.ranks, 1-based, set by
+ *  buildTemporalTimeline straight off each window's own sorted candidate
+ *  list — untouched by Viterbi). 2026-08-15: deliberately NOT the same thing
+ *  as `windowCount` (how many windows Viterbi's global optimization
+ *  ASSIGNED to this tuneId, which can include windows where the tune only
+ *  won by hysteresis/transition cost, never having been the top raw guess
+ *  there) — the user specifically wants confirmation tied to the engine's
+ *  own top pick, a stricter and more stable signal. */
+export function countTop1Windows(tuneId: string, firstIdx: number, windowCount: number, timeline: TemporalTimeline): number {
+  const ranks = timeline.ranks.get(tuneId);
+  if (!ranks) return 0;
+  let count = 0;
+  for (let i = firstIdx; i < firstIdx + windowCount; i++) {
+    if (ranks[i] === 1) count++;
+  }
+  return count;
+}
+
 /** Post-process, deliberately kept OUTSIDE the Viterbi decode itself (see
- *  minSegmentWindows's doc in detectionTemporalConfig.ts): a single window
- *  can still beat tuneChangePenalty and win a segment of its own, but that's
- *  weaker evidence than a run that actually persists. Any non-UNKNOWN segment
- *  covered by fewer than `minWindowCount` windows is relabeled UNKNOWN (the
- *  Viterbi path/scores/timestamps are NOT touched — only how this one
- *  segment is reported), then adjacent UNKNOWN segments are merged into one
- *  so the result never has two UNKNOWN segments sitting back to back.
+ *  minSegmentWindows's doc in detectionTemporalConfig.ts): a segment is only
+ *  as trustworthy as how many of its OWN windows had it as the #1 raw
+ *  candidate (see countTop1Windows) — fewer than `minWindowCount` such
+ *  windows and the whole segment is relabeled UNKNOWN (the Viterbi
+ *  path/scores/timestamps are NOT touched — only how this one segment is
+ *  reported), then adjacent UNKNOWN segments are merged into one so the
+ *  result never has two UNKNOWN segments sitting back to back.
  *
  *  `exemptLastSegment`: while detection is still in progress (live capture or
  *  an import/recording still streaming windows in), the very last segment IS
@@ -182,6 +208,7 @@ function asUnknown(s: DetectedTuneSegment): DetectedTuneSegment {
  *  exactly like any other. */
 export function filterShortSegments(
   segments: DetectedTuneSegment[],
+  timeline: TemporalTimeline,
   minWindowCount: number,
   exemptLastSegment: boolean,
 ): DetectedTuneSegment[] {
@@ -189,7 +216,7 @@ export function filterShortSegments(
   const relabeled = segments.map((s, i) => {
     if (s.tuneId === UNKNOWN_STATE) return s;
     if (exemptLastSegment && i === lastIdx) return s;
-    if (s.windowCount >= minWindowCount) return s;
+    if (countTop1Windows(s.tuneId, s.firstWindowIndex, s.windowCount, timeline) >= minWindowCount) return s;
     return asUnknown(s);
   });
 

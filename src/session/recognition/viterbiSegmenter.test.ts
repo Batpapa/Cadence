@@ -66,7 +66,7 @@ function batchSegments(windows: WindowResult[], cfg: DetectionTemporalConfig = T
   // Finalized batch context — exemptLastSegment=false, same as
   // IncrementalViterbiSegmenter.finalize() — so this stays a fair comparison
   // for the "matches a one-shot batch call" test below.
-  return filterShortSegments(result.segments, cfg.minSegmentWindows, false).filter(s => s.tuneId !== UNKNOWN_STATE);
+  return filterShortSegments(result.segments, timeline, cfg.minSegmentWindows, false).filter(s => s.tuneId !== UNKNOWN_STATE);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
