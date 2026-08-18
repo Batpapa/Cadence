@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { runViterbiDetection, filterShortSegments, mergeNearbySameTune } from './viterbiDetector';
-import { buildTemporalTimeline, UNKNOWN_STATE } from './temporalObservationBuilder';
+import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE } from './temporalObservationBuilder';
 import type { DetectionTemporalConfig } from './detectionTemporalConfig';
 import type { WindowResult, WindowCandidate, SessionAnnotation, AnnotationEvent } from '../model';
 
@@ -31,6 +31,15 @@ const TEST_CFG: DetectionTemporalConfig = {
   // tuneId letter aren't silently affected. Overridden explicitly in the
   // tests that exercise mergeNearbySameTune below.
   sameTuneMergeGapWindows: 0,
+  // marginThreshold=0 disables the filter (gap is never negative, so
+  // `gap >= 0` always holds) — same "off by default" reasoning as above.
+  // Overridden explicitly in the tests that exercise filterFlatWindows below.
+  flatWindowTopN: 3,
+  flatWindowMarginThreshold: 0,
+  // Same "disabled by default" reasoning — std dev is never negative, so
+  // `std >= 0` always holds. Overridden explicitly in the tempo-filter wiring
+  // test below.
+  tempoSpreadThreshold: 0,
 };
 
 function cand(tuneId: string, score: number): WindowCandidate {
@@ -44,6 +53,28 @@ function win(i: number, candidates: WindowCandidate[]): WindowResult {
 
 function sequence(rows: Record<string, number>[], startIdx = 0): WindowResult[] {
   return rows.map((row, i) => win(startIdx + i, Object.entries(row).map(([id, score]) => cand(id, score))));
+}
+
+/** Same as win(), plus debug.features.tempo_candidates built from raw combined_scores. */
+function winWithTempo(i: number, candidates: WindowCandidate[], tempoScores: number[]): WindowResult {
+  return {
+    ...win(i, candidates),
+    debug: {
+      contour: null,
+      octaveShiftApplied: 0,
+      fullCandidates: candidates,
+      features: {
+        note_count_raw: 0, note_count_filtered: 0, note_count_rejected: 0,
+        note_duration_mean: 0, note_duration_median: 0,
+        note_power_mean: 0, note_power_max: 0, note_power_median: 0,
+        best_bpm: 0, best_quant_score: 0, best_rhythm_score: 0, best_combined_score: 0,
+        contour_length: 0,
+        tempo_candidates: tempoScores.map((combined_score, bpmIdx) => ({
+          bpm: 60 + bpmIdx * 5, quant_score: 0, rhythm_score: 0, combined_score,
+        })),
+      },
+    },
+  };
 }
 
 /** Narrows out 'retract' (which carries no `.annotation`) for tests that only
@@ -65,7 +96,9 @@ function apply(store: Map<string, SessionAnnotation>, events: AnnotationEvent[])
 }
 
 function batchSegments(windows: WindowResult[], cfg: DetectionTemporalConfig = TEST_CFG) {
-  const timeline = buildTemporalTimeline(windows, cfg);
+  const marginFiltered = filterFlatWindows(windows, cfg.flatWindowTopN, cfg.flatWindowMarginThreshold);
+  const detectionWindows = filterByTempoSpread(marginFiltered, cfg.tempoSpreadThreshold);
+  const timeline = buildTemporalTimeline(detectionWindows, cfg);
   const result = runViterbiDetection(timeline, cfg);
   // Finalized batch context — exemptLastSegment=false, same as
   // IncrementalViterbiSegmenter.finalize() — so this stays a fair comparison
@@ -310,5 +343,55 @@ describe('IncrementalViterbiSegmenter', () => {
 
     const anns = [...store.values()].sort((a, b) => a.start - b.start);
     expect(anns.map(a => a.tuneId)).toEqual(['A', 'B', 'A']);
+  });
+
+  it('filterFlatWindows wiring: a real flatWindowMarginThreshold changes detection vs the disabled (0) default', () => {
+    // A always ranks 1st, but by a razor-thin margin over B every window —
+    // exactly the "flat" case flatWindowTopN/flatWindowMarginThreshold exist
+    // to strip before Viterbi ever sees it (see detectionTemporalConfig.ts).
+    const windows = sequence([
+      { A: 0.92, B: 0.90 }, { A: 0.93, B: 0.91 }, { A: 0.91, B: 0.89 },
+      { A: 0.92, B: 0.90 }, { A: 0.93, B: 0.91 },
+    ]);
+
+    const withoutFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, flatWindowMarginThreshold: 0 });
+    const storeWithout = new Map<string, SessionAnnotation>();
+    for (const w of windows) apply(storeWithout, withoutFilter.step(w));
+    apply(storeWithout, withoutFilter.finalize());
+    expect([...storeWithout.values()].map(a => a.tuneId)).toEqual(['A']);
+
+    const withFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, flatWindowTopN: 2, flatWindowMarginThreshold: 0.05 });
+    const storeWith = new Map<string, SessionAnnotation>();
+    for (const w of windows) apply(storeWith, withFilter.step(w));
+    apply(storeWith, withFilter.finalize());
+    expect([...storeWith.values()]).toHaveLength(0);
+  });
+
+  it('filterByTempoSpread wiring: a real tempoSpreadThreshold changes detection vs the disabled (0) default', () => {
+    // A wins clearly every window (margin filter has nothing to do here —
+    // TEST_CFG's flatWindowMarginThreshold stays 0/disabled), but its
+    // tempo-candidate spread is razor-thin ("tempo-agnostic") every window —
+    // exactly the case tempoSpreadThreshold exists to strip before Viterbi
+    // ever sees it (see detectionTemporalConfig.ts).
+    const flatTempo = [0.40, 0.41, 0.39, 0.40, 0.41];
+    const windows = [
+      winWithTempo(0, [cand('A', 0.92)], flatTempo),
+      winWithTempo(1, [cand('A', 0.93)], flatTempo),
+      winWithTempo(2, [cand('A', 0.91)], flatTempo),
+      winWithTempo(3, [cand('A', 0.92)], flatTempo),
+      winWithTempo(4, [cand('A', 0.93)], flatTempo),
+    ];
+
+    const withoutFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, tempoSpreadThreshold: 0 });
+    const storeWithout = new Map<string, SessionAnnotation>();
+    for (const w of windows) apply(storeWithout, withoutFilter.step(w));
+    apply(storeWithout, withoutFilter.finalize());
+    expect([...storeWithout.values()].map(a => a.tuneId)).toEqual(['A']);
+
+    const withFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, tempoSpreadThreshold: 0.10 });
+    const storeWith = new Map<string, SessionAnnotation>();
+    for (const w of windows) apply(storeWith, withFilter.step(w));
+    apply(storeWith, withFilter.finalize());
+    expect([...storeWith.values()]).toHaveLength(0);
   });
 });

@@ -28,6 +28,9 @@ const TEST_CFG: DetectionTemporalConfig = {
   finalizationLagSeconds: 30,
   minSegmentWindows: 2,
   sameTuneMergeGapWindows: 10,
+  flatWindowTopN: 3,
+  flatWindowMarginThreshold: 0, // disabled — this file never calls filterFlatWindows
+  tempoSpreadThreshold: 0, // disabled — this file never calls filterByTempoSpread
 };
 
 function cand(tuneId: string, score: number): WindowCandidate {

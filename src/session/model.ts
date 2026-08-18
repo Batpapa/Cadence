@@ -107,4 +107,52 @@ export interface WindowResult {
   tWindowEnd: number;
   empty: boolean;       // no notes detected, or nothing above SCORE_FLOOR
   candidates: WindowCandidate[]; // sorted desc by score, deduplicated by tuneId
+  /** EXPERIMENTAL (2026-08-18) — note/tempo/quantization features + full
+   *  (untruncated) candidate list, populated ONLY by the offline noise-study
+   *  harness (experiments/noise-study/), NEVER by the live production
+   *  ffWorker.ts path. Absent on every real session recorded through the app.
+   *  See experiments/noise-study/README.md. */
+  debug?: WindowDebugFeatures;
+}
+
+// Field names are snake_case verbatim from Rust's `serde_json` output
+// (decode::ContourDebugFeatures / TempoCandidateScore in folkfriend-src) —
+// deliberately NOT renamed, so this stays a direct passthrough of
+// FolkFriend's own computed values (per the noise-study spec: expose,
+// don't reimplement).
+export interface TempoCandidateScore {
+  bpm: number;
+  quant_score: number;
+  rhythm_score: number;
+  combined_score: number;
+}
+
+export interface NoteAndTempoFeatures {
+  note_count_raw: number;
+  note_count_filtered: number;
+  note_count_rejected: number;
+  note_duration_mean: number;
+  note_duration_median: number;
+  note_power_mean: number;
+  note_power_max: number;
+  note_power_median: number;
+  tempo_candidates: TempoCandidateScore[];
+  best_bpm: number;
+  best_quant_score: number;
+  best_rhythm_score: number;
+  best_combined_score: number;
+  contour_length: number;
+}
+
+export interface WindowDebugFeatures {
+  contour: string | null;
+  octaveShiftApplied: number;
+  /** null when FolkFriend found too few notes to build a contour at all
+   *  (the same case that makes `WindowResult.empty` true) — distinguished
+   *  from "not collected" so a noise-study export can tell them apart. */
+  features: NoteAndTempoFeatures | null;
+  /** Same shape as `candidates`, but untruncated (up to ~100 — whatever the
+   *  query engine's `num_output` cap computed), for stats needing more than
+   *  the top 10 (candidatesAboveX thresholds, sum-of-top-N, etc). */
+  fullCandidates: WindowCandidate[];
 }

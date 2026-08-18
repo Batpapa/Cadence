@@ -1,6 +1,6 @@
 import type { WindowResult, SessionAnnotation, AnnotationAlternate, AnnotationEvidence, AnnotationEvent } from '../model';
 import { runViterbiDetection, filterShortSegments, mergeNearbySameTune, countTop1Windows, type DetectedTuneSegment } from './viterbiDetector';
-import { buildTemporalTimeline, UNKNOWN_STATE } from './temporalObservationBuilder';
+import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
 // ── Incremental adapter over the Viterbi detector ───────────────────────────
@@ -127,7 +127,16 @@ export class IncrementalViterbiSegmenter {
     if (this.windows.length === 0) return [];
     const latestT = this.windows[this.windows.length - 1]!.tWindowEnd;
 
-    const timeline = buildTemporalTimeline(this.windows, this.cfg);
+    // filterFlatWindows/filterByTempoSpread only shape what Viterbi sees as
+    // evidence — evidence/alternates displayed to the user
+    // (toAnnotation/computeAlternates below) still read from this.windows
+    // unfiltered, since a flattened window's real raw scores are still
+    // legitimate to show, just not to detect from. Order matters: the tempo
+    // filter was A/B tested STACKED on top of the margin filter, not in
+    // isolation — always margin first, then tempo.
+    const marginFiltered = filterFlatWindows(this.windows, this.cfg.flatWindowTopN, this.cfg.flatWindowMarginThreshold);
+    const detectionWindows = filterByTempoSpread(marginFiltered, this.cfg.tempoSpreadThreshold);
+    const timeline = buildTemporalTimeline(detectionWindows, this.cfg);
     const result = runViterbiDetection(timeline, this.cfg);
     // exemptLastSegment = !forceFinalizeAll: while a session (live or
     // import) is still streaming windows in, the most recent segment is
