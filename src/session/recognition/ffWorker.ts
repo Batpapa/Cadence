@@ -169,15 +169,16 @@ function mapCandidates(raw: RawQueryRecord[]): WindowCandidate[] {
   }));
 }
 
-/** Untruncated candidate query (2026-08-18): `run_transcription_query_debug()`
- *  replaces `run_transcription_query()` — identical query, just without the
- *  top-20 truncation applied at the WASM boundary for the old UI-facing call.
- *  `candidates` (below, in analyzeSignal) still keeps only the top
- *  TOP_N_CANDIDATES for detection/display; the full list is kept in
- *  WindowResult.debug.fullCandidates for margin/tempo-spread filtering and
- *  future analysis dumps. */
-function queryContourFull(f: FolkFriendWASM, contour: string): WindowCandidate[] {
-  const raw = JSON.parse(f.run_transcription_query_debug(contour)) as RawQueryRecord[] | { error: string };
+/** Candidate query (2026-08-18): plain `run_transcription_query()` — NOT the
+ *  `_debug` variant. Same call as before this whole debug-instrumentation
+ *  change: WASM-side truncation to 20 (lib.rs), then sliced to TOP_N_CANDIDATES
+ *  below. The untruncated ~100-candidate `_debug` query was tried first and
+ *  dropped (explicit user call, "c'est un peu beaucoup") — it roughly
+ *  doubled per-window IndexedDB storage for no feature the 2026-08-17/18
+ *  noise study actually needed (every feature there — margin,
+ *  candidatesAbove20/30/40/50, sum_top5/10 — only ever looks at the top 10). */
+function queryContour(f: FolkFriendWASM, contour: string): WindowCandidate[] {
+  const raw = JSON.parse(f.run_transcription_query(contour)) as RawQueryRecord[] | { error: string };
   if (!Array.isArray(raw)) return [];
   return mapCandidates(raw);
 }
@@ -213,7 +214,7 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   // No score filtering here: the Viterbi detector applies its own candidate
   // floor (minCandidateProbability), and the calibration dump needs the
   // sub-floor scores to be tunable at all.
-  let fullCandidates = queryContourFull(f, contour);
+  let candidates = queryContour(f, contour).slice(0, TOP_N_CANDIDATES);
   let matchedContour = contour;
   let octaveShiftApplied = 0;
 
@@ -224,22 +225,24 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   // retry with the contour lifted one octave and keep whichever the index
   // scores higher — the decision stays with FolkFriend's own score, never a
   // register guess.
-  if ((fullCandidates[0]?.score ?? 0) < OCTAVE_FALLBACK_THRESHOLD) {
+  if ((candidates[0]?.score ?? 0) < OCTAVE_FALLBACK_THRESHOLD) {
     const lifted = shiftContour(contour, 12);
-    const liftedCandidates = lifted.length > 0 ? queryContourFull(f, lifted) : [];
-    if ((liftedCandidates[0]?.score ?? 0) > (fullCandidates[0]?.score ?? 0)) {
-      fullCandidates = liftedCandidates;
+    const liftedCandidates = lifted.length > 0 ? queryContour(f, lifted).slice(0, TOP_N_CANDIDATES) : [];
+    if ((liftedCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
+      candidates = liftedCandidates;
       matchedContour = lifted;
       octaveShiftApplied = 12;
     }
   }
 
-  const candidates = fullCandidates.slice(0, TOP_N_CANDIDATES);
-
   let abc: string | null = null;
   try { abc = f.contour_to_abc(matchedContour); } catch { /* cosmetic only */ }
 
-  const debug: WindowDebugFeatures = { contour: matchedContour, octaveShiftApplied, features, fullCandidates };
+  // "Enriched top-10" (2026-08-18): candidates stay capped at TOP_N_CANDIDATES
+  // as always — debug only adds note/tempo/contour telemetry, no extra
+  // candidates, keeping the per-window storage growth to just this struct
+  // (a few hundred bytes) instead of duplicating (part of) the candidate list.
+  const debug: WindowDebugFeatures = { contour: matchedContour, octaveShiftApplied, features };
 
   return {
     result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates, debug },

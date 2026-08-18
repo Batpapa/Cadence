@@ -149,10 +149,13 @@ export interface WindowDebugFeatures {
   octaveShiftApplied: number;
   /** null when FolkFriend found too few notes to build a contour at all
    *  (the same case that makes `WindowResult.empty` true) — distinguished
-   *  from "not collected" so a noise-study export can tell them apart. */
+   *  from "not collected" so a noise-study export can tell them apart.
+   *
+   *  Deliberately NO separate candidate list here (2026-08-18) — an earlier
+   *  version carried an untruncated ~100-candidate `fullCandidates` array,
+   *  which roughly doubled per-window IndexedDB storage for no feature the
+   *  noise study actually needed; every candidate-based feature used there
+   *  (margin, candidatesAboveX, sum-of-top-N) only ever looks at the top 10,
+   *  i.e. exactly `WindowResult.candidates` already. Read that instead. */
   features: NoteAndTempoFeatures | null;
-  /** Same shape as `candidates`, but untruncated (up to ~100 — whatever the
-   *  query engine's `num_output` cap computed), for stats needing more than
-   *  the top 10 (candidatesAboveX thresholds, sum-of-top-N, etc). */
-  fullCandidates: WindowCandidate[];
 }
