@@ -1,5 +1,6 @@
 import type { AppState } from '../types';
 import { GOOGLE_CLIENT_ID } from '../config';
+import { withTimeout } from '../utils';
 
 export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' | 'connected' | 'error';
 
@@ -14,6 +15,14 @@ export type ConnectResult =
 
 const FILE_NAME     = 'cadence-data.json';
 const SCOPE         = 'https://www.googleapis.com/auth/drive.file';
+/** 2026-08-18: on some mobile browsers the consent popup can open but never
+ *  actually navigate (stays on about:blank forever, no error callback ever
+ *  fires) — e.g. when the click that triggered it wasn't recognised as a
+ *  fresh user gesture. Neither GIS's callback nor error_callback ever fires
+ *  in that case, so without this the whole flow (and the calling UI) hangs
+ *  forever. Generous on purpose — a real consent flow (picking an account,
+ *  entering a password, 2FA) can legitimately take a while. */
+const OAUTH_TIMEOUT_MS = 60_000;
 const LS_DEVICE_ID  = 'cadence_device_id';
 const SS_TOKEN      = 'cadence_access_token';
 const SS_EXPIRES_AT = 'cadence_token_expires_at';
@@ -191,7 +200,7 @@ export function initDriveClient(): Promise<void> {
 }
 
 function requestToken(prompt = ''): Promise<string> {
-  return new Promise((resolve, reject) => {
+  const attempt = new Promise<string>((resolve, reject) => {
     const cleanup = () => { tokenClient.error_callback = null; };
     tokenClient.callback = (resp: Gis) => {
       cleanup();
@@ -208,6 +217,13 @@ function requestToken(prompt = ''): Promise<string> {
     };
     const hint = localStorage.getItem(lsHint()) ?? undefined;
     tokenClient.requestAccessToken({ prompt, ...(hint ? { hint } : {}) });
+  });
+  return withTimeout(attempt, OAUTH_TIMEOUT_MS, 'oauth_timeout').catch((e: Error) => {
+    // Neither callback will ever fire now — drop them so a very late,
+    // unexpected resolution from the abandoned popup can't resurface.
+    tokenClient.callback = null;
+    tokenClient.error_callback = null;
+    throw e;
   });
 }
 

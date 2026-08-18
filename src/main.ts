@@ -1,6 +1,6 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
-import { initDb, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
+import { initDb, resetDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
 import { emptyState } from './utils';
 import { appState, routeSignal, goBack, goForward, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
@@ -107,11 +107,33 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
 
   } catch (err) {
     console.error('Failed to start Cadence:', err);
-    root.innerHTML = `<div class="p-8 text-danger font-mono text-sm">
-      Failed to initialize: ${err instanceof Error ? err.message : String(err)}
-    </div>`;
+    showBootErrorScreen(root, err);
   }
 })();
+
+/** Boot failed to even reach a mounted UI (most commonly initDb() timing out
+ *  because another tab/connection deadlocked the IndexedDB upgrade lock — see
+ *  db.ts). Give the user a way out instead of a permanently frozen blank app. */
+function showBootErrorScreen(root: HTMLElement, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  root.innerHTML = `
+    <div class="p-8 max-w-md mx-auto text-center space-y-4">
+      <p class="text-danger font-mono text-sm">Failed to initialize: ${message}</p>
+      <p class="text-xs text-muted">This can happen if another tab got stuck holding your local data open, or if it became corrupted.</p>
+      <div class="flex gap-2 justify-center">
+        <button id="boot-retry" class="btn-primary text-sm">Retry</button>
+        <button id="boot-reset" class="btn-danger text-sm">Reset local data</button>
+      </div>
+    </div>`;
+  document.getElementById('boot-retry')?.addEventListener('click', () => location.reload());
+  document.getElementById('boot-reset')?.addEventListener('click', () => {
+    void (async () => {
+      if (!confirm('This erases all local data on this device that has not been synced to Drive. Continue?')) return;
+      await resetDatabase();
+      location.reload();
+    })();
+  });
+}
 
 function finishBoot(root: HTMLElement): void {
   applyTheme();

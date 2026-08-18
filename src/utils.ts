@@ -6,6 +6,19 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+/** Rejects with `message` if `promise` hasn't settled within `ms` — turns a
+ *  silent hang (blocked IndexedDB upgrade, a stuck OAuth popup) into a
+ *  surfaced, recoverable error instead of freezing the app forever. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e as Error); },
+    );
+  });
+}
+
 const EXTERNAL_SOURCES: Record<string, { label: string; url: (id: string) => string }> = {
   thesession: { label: 'TheSession', url: id => `https://thesession.org/tunes/${id}` },
   irishtuneinfo: { label: 'IrishTuneInfo', url: id => `https://www.irishtune.info/tune/${id}/` },
