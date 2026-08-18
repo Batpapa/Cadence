@@ -57,4 +57,17 @@ describe('recomputeAnnotations', () => {
   it('returns an empty list for an empty windows array (crash before the first analysis)', () => {
     expect(recomputeAnnotations([])).toEqual([]);
   });
+
+  it('stays fast for a long orphaned session (regression guard, 2026-08-18) — replaying via feedAll() must not regress to a per-window step() loop (O(T²), took minutes/hung on a real multi-hour session — see viterbiSegmenter.ts)', () => {
+    const rows: Record<string, number>[] = [];
+    for (let i = 0; i < 1000; i++) rows.push({ A: 0.9 + (i % 3) * 0.01 });
+    const windows = sequence(rows);
+
+    const start = performance.now();
+    const annotations = recomputeAnnotations(windows);
+    const elapsed = performance.now() - start;
+
+    expect(annotations.map(a => a.tuneId)).toEqual(['A']);
+    expect(elapsed).toBeLessThan(2000);
+  });
 });

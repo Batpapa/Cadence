@@ -91,6 +91,25 @@ export class IncrementalViterbiSegmenter {
     return this.recompute(true);
   }
 
+  /** Feed many windows at once, recomputing only once at the end — for a
+   *  one-shot replay (crash recovery, see recovery.ts) that only needs the
+   *  FINAL result, not a live incremental event stream. Calling step() once
+   *  per window instead would re-run the full recompute() T times (T growing
+   *  each call) purely to produce intermediate events nobody reads — each
+   *  individual call is cheap (see this class's header comment), but summed
+   *  over a multi-thousand-window session that's O(T²) done back-to-back on
+   *  the main thread, easily minutes of synchronous blocking instead of the
+   *  one recompute() this actually needs. Produces byte-identical results to
+   *  step()-ing through the same windows one at a time, since recompute() is
+   *  a pure function of `this.windows` (fully present either way by the time
+   *  finalize() is called) — `this.tracked` only affects which AnnotationEvent
+   *  TYPE gets emitted (open/update vs close/retract), never which segments
+   *  are detected. */
+  feedAll(wins: WindowResult[]): AnnotationEvent[] {
+    this.windows.push(...wins);
+    return this.recompute(false);
+  }
+
   private toAnnotation(id: string, seg: DetectedTuneSegment, openEnded: boolean, finalized: boolean): SessionAnnotation {
     const alternates = computeAlternates(this.windows, seg.tuneId, seg.startTime, seg.endTime, this.cfg);
     const evidence: AnnotationEvidence[] = [];

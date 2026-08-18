@@ -33,7 +33,7 @@ export function recomputeAnnotations(windows: WindowResult[]): SessionAnnotation
       store.set(ev.annotation.id, ev.annotation);
     }
   };
-  for (const w of windows) apply(segmenter.step(w));
+  apply(segmenter.feedAll(windows));
   apply(segmenter.finalize());
   return [...store.values()].sort((a, b) => a.start - b.start);
 }
