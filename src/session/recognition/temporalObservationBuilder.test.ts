@@ -21,7 +21,6 @@ function winWithTempo(i: number, candidates: WindowCandidate[], tempoScores: num
     debug: {
       contour: null,
       octaveShiftApplied: 0,
-      fullCandidates: candidates,
       features: {
         note_count_raw: 0, note_count_filtered: 0, note_count_rejected: 0,
         note_duration_mean: 0, note_duration_median: 0,
