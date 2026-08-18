@@ -21,13 +21,16 @@ About screen.
 Prerequisites: Rust toolchain (`rustup`, host `x86_64-pc-windows-gnu` works fine,
 no Visual Studio needed), target `wasm32-unknown-unknown`, and `wasm-pack`.
 
-```sh
-git clone https://github.com/TomWyllie/folkfriend
-cd folkfriend/rust
+**As of 2026-08-18, the source of truth is the locally-patched fork at
+`C:\Perso\IrishMusicExperiments\folkfriend-src`, NOT upstream master** — it
+carries the `_debug` export additions described above. Diff against upstream
+before assuming a fresh `git clone` is equivalent.
 
-# The committed Cargo.lock pins wasm-bindgen 0.2.81, which modern rustc refuses
-# to compile. Bump it to the oldest compatible non-yanked version:
-cargo update -p wasm-bindgen --precise 0.2.92
+```sh
+cd C:\Perso\IrishMusicExperiments\folkfriend-src\rust
+
+# The original committed Cargo.lock pinned wasm-bindgen 0.2.81, which modern
+# rustc refuses to compile — already bumped to 0.2.92 and committed in this fork.
 
 wasm-pack build --target web --release
 
@@ -35,7 +38,13 @@ cp pkg/folkfriend.js pkg/folkfriend.d.ts pkg/folkfriend_bg.wasm pkg/folkfriend_b
    <cadence>/vendor/folkfriend/
 ```
 
+(A separate `wasm-pack build --target nodejs --release --out-dir pkg-node`
+also exists, used only by the offline noise-study harness in
+`Cadence/experiments/noise-study/` — not part of the shipped app.)
+
 Built 2026-07-15 from master (folkfriend v1.3.0, rustc 1.97.0, wasm-pack 0.15.0).
+
+**Rebuilt 2026-08-18** from a locally-patched fork (`C:\Perso\IrishMusicExperiments\folkfriend-src`, not upstream master) — adds two new WASM exports, `transcribe_pcm_buffer_debug()` and `run_transcription_query_debug()`, that surface note/tempo/quantization telemetry and the untruncated candidate list (previously computed internally then discarded). Purely additive: every export that existed before (`transcribe_pcm_buffer`, `run_transcription_query`, etc.) is byte-for-byte unchanged in behavior — verified via `cargo check` + the full Cadence test suite before vendoring. See `src/session/recognition/ffWorker.ts` (now calls the `_debug` variants and populates `WindowResult.debug`) and project memory ("noise signature study", 2026-08-17/18) for why.
 
 ## Tune index
 

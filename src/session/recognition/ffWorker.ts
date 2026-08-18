@@ -2,7 +2,7 @@ import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
-import type { WindowResult, WindowCandidate, AnnotationEvent } from '../model';
+import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, AnnotationEvent } from '../model';
 import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW } from '../sessionConfig';
 
 // ── FolkFriend recognition worker ─────────────────────────────────────────────
@@ -151,10 +151,15 @@ const TOP_N_CANDIDATES = 10;
  *  Viterbi detector). */
 const OCTAVE_FALLBACK_THRESHOLD = 0.40;
 
-function queryContour(f: FolkFriendWASM, contour: string): WindowCandidate[] {
-  const raw = JSON.parse(f.run_transcription_query(contour)) as RawQueryRecord[] | { error: string };
-  if (!Array.isArray(raw)) return [];
-  return raw.slice(0, TOP_N_CANDIDATES).map(r => ({
+/** Debug transcribe response (2026-08-18): `transcribe_pcm_buffer_debug()`
+ *  replaces `transcribe_pcm_buffer()` — same underlying computation (see
+ *  folkfriend-src's contour_from_notes, which always builds this data
+ *  internally regardless of which wrapper is called), just not discarded
+ *  before crossing the WASM boundary. Zero extra engine cost. */
+type RawTranscribeDebug = { contour: string; features: NoteAndTempoFeatures } | { error: string; features: null };
+
+function mapCandidates(raw: RawQueryRecord[]): WindowCandidate[] {
+  return raw.map(r => ({
     tuneId: r.setting.tune_id,
     settingId: r.setting_id,
     displayName: r.display_name,
@@ -164,11 +169,24 @@ function queryContour(f: FolkFriendWASM, contour: string): WindowCandidate[] {
   }));
 }
 
+/** Untruncated candidate query (2026-08-18): `run_transcription_query_debug()`
+ *  replaces `run_transcription_query()` — identical query, just without the
+ *  top-20 truncation applied at the WASM boundary for the old UI-facing call.
+ *  `candidates` (below, in analyzeSignal) still keeps only the top
+ *  TOP_N_CANDIDATES for detection/display; the full list is kept in
+ *  WindowResult.debug.fullCandidates for margin/tempo-spread filtering and
+ *  future analysis dumps. */
+function queryContourFull(f: FolkFriendWASM, contour: string): WindowCandidate[] {
+  const raw = JSON.parse(f.run_transcription_query_debug(contour)) as RawQueryRecord[] | { error: string };
+  if (!Array.isArray(raw)) return [];
+  return mapCandidates(raw);
+}
+
 /** Feed a PCM signal into FolkFriend and return the analysis of it. */
 function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { result: WindowResult; abc: string | null } {
   const f = ff!;
-  // transcribe_pcm_buffer consumes the internal buffer, so every analysis
-  // re-feeds its full window; flush first for safety.
+  // transcribe_pcm_buffer_debug consumes the internal buffer, so every
+  // analysis re-feeds its full window; flush first for safety.
   f.flush_pcm_buffer();
   const frames = Math.floor(pcm.length / FF_PCM_WINDOW);
   for (let i = 0; i < frames; i++) {
@@ -178,11 +196,12 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
     f.feed_single_pcm_window(pcmPtr);
   }
 
-  const rawContour = f.transcribe_pcm_buffer();
-  // "No notes detected" comes back as a JSON error string, not an exception.
-  if (rawContour.startsWith('{')) {
+  const rawDebug = JSON.parse(f.transcribe_pcm_buffer_debug()) as RawTranscribeDebug;
+  if ('error' in rawDebug) {
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
+  const rawContour = rawDebug.contour;
+  const features = rawDebug.features;
 
   // Manual shift first (user-selected, e.g. -2 for a Bb session) — everything
   // below operates on this as the new baseline.
@@ -194,8 +213,9 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   // No score filtering here: the Viterbi detector applies its own candidate
   // floor (minCandidateProbability), and the calibration dump needs the
   // sub-floor scores to be tunable at all.
-  let candidates = queryContour(f, contour);
+  let fullCandidates = queryContourFull(f, contour);
   let matchedContour = contour;
+  let octaveShiftApplied = 0;
 
   // Octave fallback: the index query has no transposition invariance and the
   // index contours sit at fiddle register, so low instruments (Irish tenor
@@ -204,20 +224,25 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   // retry with the contour lifted one octave and keep whichever the index
   // scores higher — the decision stays with FolkFriend's own score, never a
   // register guess.
-  if ((candidates[0]?.score ?? 0) < OCTAVE_FALLBACK_THRESHOLD) {
+  if ((fullCandidates[0]?.score ?? 0) < OCTAVE_FALLBACK_THRESHOLD) {
     const lifted = shiftContour(contour, 12);
-    const liftedCandidates = lifted.length > 0 ? queryContour(f, lifted) : [];
-    if ((liftedCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
-      candidates = liftedCandidates;
+    const liftedCandidates = lifted.length > 0 ? queryContourFull(f, lifted) : [];
+    if ((liftedCandidates[0]?.score ?? 0) > (fullCandidates[0]?.score ?? 0)) {
+      fullCandidates = liftedCandidates;
       matchedContour = lifted;
+      octaveShiftApplied = 12;
     }
   }
+
+  const candidates = fullCandidates.slice(0, TOP_N_CANDIDATES);
 
   let abc: string | null = null;
   try { abc = f.contour_to_abc(matchedContour); } catch { /* cosmetic only */ }
 
+  const debug: WindowDebugFeatures = { contour: matchedContour, octaveShiftApplied, features, fullCandidates };
+
   return {
-    result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates },
+    result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates, debug },
     abc,
   };
 }

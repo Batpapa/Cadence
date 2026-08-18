@@ -2,3 +2,11 @@ node_modules/
 dist/
 *.local
 .env
+
+# Real session recordings — never publish these, personal/private audio.
+test-fixtures/audio/
+
+# Noise-study experiment: build artifacts + downloaded index cache, not source.
+experiments/noise-study/wasm-node/
+experiments/noise-study/.cache/
+experiments/noise-study/output/

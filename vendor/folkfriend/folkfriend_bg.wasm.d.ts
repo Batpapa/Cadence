@@ -13,9 +13,11 @@ export function folkfriendwasm_load_index_from_json_obj(a: number, b: number): v
 export function folkfriendwasm_new(): number;
 export function folkfriendwasm_run_name_query(a: number, b: number, c: number, d: number): void;
 export function folkfriendwasm_run_transcription_query(a: number, b: number, c: number, d: number): void;
+export function folkfriendwasm_run_transcription_query_debug(a: number, b: number, c: number, d: number): void;
 export function folkfriendwasm_set_sample_rate(a: number, b: number): number;
 export function folkfriendwasm_settings_from_tune_id(a: number, b: number, c: number, d: number): void;
 export function folkfriendwasm_transcribe_pcm_buffer(a: number, b: number): void;
+export function folkfriendwasm_transcribe_pcm_buffer_debug(a: number, b: number): void;
 export function folkfriendwasm_version(a: number, b: number): void;
 export function __wbindgen_malloc(a: number, b: number): number;
 export function __wbindgen_realloc(a: number, b: number, c: number, d: number): number;
