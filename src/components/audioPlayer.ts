@@ -106,7 +106,7 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   waveSection.style.cssText = 'display:none;flex-direction:column;gap:4px';
 
   const waveWrap = document.createElement('div');
-  waveWrap.style.cssText = 'position:relative;height:56px;cursor:pointer;user-select:none';
+  waveWrap.style.cssText = 'position:relative;height:56px;cursor:pointer;user-select:none;touch-action:none';
 
   const waveSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   waveSvg.setAttribute('height', '56');
@@ -115,10 +115,20 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   const playhead = document.createElement('div');
   playhead.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:var(--color-accent);pointer-events:none;z-index:3';
 
-  const startHandle = document.createElement('div');
-  startHandle.style.cssText = 'position:absolute;top:0;bottom:0;width:3px;background:var(--color-accent);cursor:ew-resize;z-index:4;transform:translateX(-1px)';
-  const endHandle = document.createElement('div');
-  endHandle.style.cssText = 'position:absolute;top:0;bottom:0;width:3px;background:var(--color-accent);cursor:ew-resize;z-index:4;transform:translateX(-1px)';
+  // Wider invisible hit box than the visible bar — a 3px target is unusable
+  // with a finger on mobile. The bar stays centered in the box so the
+  // visual position (driven by updateUI's .left assignment on the outer
+  // element) is unchanged.
+  const mkHandle = (): HTMLDivElement => {
+    const h = document.createElement('div');
+    h.style.cssText = 'position:absolute;top:0;bottom:0;width:20px;cursor:ew-resize;z-index:4;transform:translateX(-10px);touch-action:none;display:flex;justify-content:center';
+    const bar = document.createElement('div');
+    bar.style.cssText = 'width:3px;height:100%;background:var(--color-accent);pointer-events:none';
+    h.appendChild(bar);
+    return h;
+  };
+  const startHandle = mkHandle();
+  const endHandle = mkHandle();
 
   waveWrap.append(waveSvg, playhead, startHandle, endHandle);
 
@@ -268,6 +278,17 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
     }
   };
 
+  // Tracks what's currently rendered inside playBtn so updateUI (called on
+  // every rAF tick while playing, ~60/s) only touches its innerHTML on an
+  // actual play/pause state change. Churning it every frame regardless was
+  // destroying and recreating the SVG under the user's pointer continuously
+  // — if a click's mousedown/mouseup landed either side of one of those
+  // ~16ms swaps, the browser had no live element to dispatch "click" to, so
+  // the click was silently dropped. Pause is only clickable while playing
+  // (i.e. exactly while this churn was running), which is why it looked
+  // specifically broken.
+  let iconIsPause = false;
+
   const updateUI = () => {
     const pos = getCurrentPos();
     renderWave(pos);
@@ -277,7 +298,10 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
     timeCurrent.textContent = fmtTime(pos);
     timeRegion.textContent  = `${fmtTime(regionStart)} → ${fmtTime(regionEnd)}`;
     timeDur.textContent     = fmtTime(duration);
-    playBtn.innerHTML       = playing ? pauseIcon() : playIcon();
+    if (playing !== iconIsPause) {
+      playBtn.innerHTML = playing ? pauseIcon() : playIcon();
+      iconIsPause = playing;
+    }
   };
 
   // ── SoundTouch pipeline ──
@@ -383,39 +407,41 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   setEndBtn.onclick   = () => { regionEnd   = Math.max(getCurrentPos(), regionStart + 0.5); updateUI(); };
   resetBtn.onclick    = () => { regionStart = 0; regionEnd = duration; seek(0); updateUI(); };
 
-  // Waveform drag → seek (follows mouse while held)
-  waveWrap.addEventListener('mousedown', (e) => {
+  // Waveform drag → seek (follows pointer while held — Pointer Events cover
+  // mouse, touch and pen with one set of listeners; the mouse-only version
+  // of this never worked on mobile at all).
+  waveWrap.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    const doSeek = (ev: MouseEvent) => {
+    const doSeek = (ev: PointerEvent) => {
       const rect = waveWrap.getBoundingClientRect();
       const pos  = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * duration;
       seek(pos);
       updateUI();
     };
     doSeek(e);
-    const onMove = (ev: MouseEvent) => doSeek(ev);
+    const onMove = (ev: PointerEvent) => doSeek(ev);
     const onUp   = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup',   onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup',   onUp);
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup',   onUp);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup',   onUp);
   });
 
   // Handle drag
   const addDrag = (handle: HTMLElement, isStart: boolean) => {
     handle.addEventListener('click', e => e.stopPropagation());
-    handle.addEventListener('mousedown', (e) => {
+    handle.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
-      const onMove = (ev: MouseEvent) => {
+      const onMove = (ev: PointerEvent) => {
         const rect = waveWrap.getBoundingClientRect();
         const pos  = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * duration;
         if (isStart) regionStart = Math.min(pos, regionEnd - 0.5);
         else         regionEnd   = Math.max(pos, regionStart + 0.5);
         updateUI();
       };
-      const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-      window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+      const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+      window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
     });
   };
   addDrag(startHandle, true);
