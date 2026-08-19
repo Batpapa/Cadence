@@ -147,7 +147,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
   body.className = 'flex-1 min-h-0 overflow-auto p-4 flex items-center justify-center';
 
   const m = entry.mimeType;
-  const mediaMaxH = `${parseInt(modalMaxH(0.9)) - 80}px`;
+  const mediaMaxH = `calc(${modalMaxH(0.9)} - 80px)`;
 
   if (m.startsWith('audio/')) {
     body.classList.replace('items-center', 'items-start');

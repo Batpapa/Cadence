@@ -40,10 +40,14 @@ export function applyZoom(): void {
   document.documentElement.style.setProperty('--zoom-factor', String(z / 100));
 }
 
+// Same reasoning as #app above: expressed in `dvh`/`dvw` (not a JS snapshot of
+// window.innerWidth/innerHeight) so modal dialogs stay correctly sized across
+// orientation changes and mobile browser-chrome resizing without needing a
+// 'resize'/'orientationchange' listener to re-apply a stale px value.
 export function modalMaxH(pct = 0.9): string {
-  return `${Math.floor(window.innerHeight * pct / (getZoom() / 100))}px`;
+  return `calc(${pct * 100}dvh / var(--zoom-factor, 1))`;
 }
 
 export function modalMaxW(pct = 0.9): string {
-  return `${Math.floor(window.innerWidth * pct / (getZoom() / 100))}px`;
+  return `calc(${pct * 100}dvw / var(--zoom-factor, 1))`;
 }
