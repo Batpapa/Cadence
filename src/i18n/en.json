@@ -23,6 +23,7 @@
   "common.link": "Link",
   "common.replace": "Replace",
   "common.reset": "Reset",
+  "common.alreadyInLibrary": "Already in your library",
   "common.deleteOrphanCards": "Also delete the orphaned card (which would no longer be in any deck)",
   "common.deleteOrphanCardsPlural": "Also delete the {count} orphaned cards (which would no longer be in any deck)",
 
