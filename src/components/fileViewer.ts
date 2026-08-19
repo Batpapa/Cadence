@@ -1,10 +1,31 @@
+import LZString from 'lz-string';
 import type { FileEntry } from '../types';
 import { entryToObjectUrl, arrayBufferToBase64, focusIfDesktop } from '../utils';
 import { getMarked } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
-import { starIconElement } from './icons';
+import { starIconElement, iconElement, ExternalLinkIcon } from './icons';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
+
+// ── ABC Transcription Tools share-link integration ────────────────────────────
+// https://michaeleskin.com/abctools/userguide.html#generate_share_link — the
+// documented, sanctioned integration format: LZ-String-compress the ABC text
+// into a URL-safe string and pass it as `lzw=`. format=noten/editor=1 opens
+// the tune straight into the editor with standard notation, matching what
+// this modal already shows.
+const ABC_TOOLS_BASE_URL = 'https://michaeleskin.com/abctools/abctools.html';
+
+function abcToolsShareUrl(tuneText: string): string {
+  const titleMatch = tuneText.match(/^T:\s*(.+)/m);
+  const name = titleMatch ? titleMatch[1]!.trim() : 'Cadence_Tune';
+  const params = new URLSearchParams({
+    lzw: LZString.compressToEncodedURIComponent(tuneText),
+    format: 'noten',
+    name,
+    editor: '1',
+  });
+  return `${ABC_TOOLS_BASE_URL}?${params.toString()}`;
+}
 
 // General MIDI program numbers (0-indexed) for instruments relevant to Irish
 // trad — GM happens to have dedicated Fiddle/Whistle/Banjo/Bagpipe patches.
@@ -243,7 +264,14 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
       versionNav.insertBefore(starBtn, nextBtn);
     }
 
-    topRow.append(tabBar, versionNav);
+    const abcToolsLink = document.createElement('a');
+    abcToolsLink.target = '_blank';
+    abcToolsLink.rel = 'noopener noreferrer';
+    abcToolsLink.title = t('fileViewer.abc.openInAbcTools');
+    abcToolsLink.className = 'px-2 py-1 rounded transition-colors cursor-pointer text-muted hover:text-accent shrink-0';
+    abcToolsLink.appendChild(iconElement(ExternalLinkIcon, 13));
+
+    topRow.append(tabBar, versionNav, abcToolsLink);
     container.appendChild(topRow);
 
     // ── Instrument picker — sheet mode only, affects the next setTune() call.
@@ -315,6 +343,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
       nextBtn.disabled = currentIndex === versionCount - 1;
       versionLabel.textContent = `${currentIndex + 1}/${versionCount}`;
       updateStarBtn?.();
+      abcToolsLink.href = abcToolsShareUrl(tunes[currentIndex] ?? '');
       if (currentMode === 'sheet') {
         doRenderTune?.(currentIndex);
       } else {
@@ -361,6 +390,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
         saveBtn.disabled = true;
         saveStatus.textContent = t('fileViewer.abc.saved');
         doRenderTune?.(currentIndex); // keep the sheet in sync for when the user switches tabs
+        abcToolsLink.href = abcToolsShareUrl(tunes[currentIndex] ?? '');
       };
     }
 
