@@ -202,6 +202,12 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     let currentIndex = Math.max(0, Math.min(versionCount - 1, opts?.initialIndex ?? 0));
     let favoriteIndex = opts?.initialIndex;
     let currentMode: 'sheet' | 'text' = 'sheet';
+    // Set when a text-mode edit is saved while notation is hidden — abcjs's
+    // resize handling can make the SVG visibly reflow back in even inside a
+    // display:none container (see setAbcMode's comment below), so the
+    // re-render is deferred until the Sheet tab is actually reopened instead
+    // of running immediately into the hidden view.
+    let sheetNeedsRerender = false;
     let selectedProgram: number | undefined = undefined; // undefined = ABC's own %%MIDI program / abcjs default
 
     const container = document.createElement('div');
@@ -367,6 +373,10 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
       instrumentRow.style.display = mode === 'sheet' ? 'flex' : 'none';
       textarea.style.display = mode === 'text' ? 'block' : 'none';
       if (onSave) saveRow.style.display = mode === 'text' ? 'flex' : 'none';
+      if (mode === 'sheet' && sheetNeedsRerender) {
+        sheetNeedsRerender = false;
+        doRenderTune?.(currentIndex);
+      }
       if (mode === 'text') {
         textarea.value = currentBody();
         saveBtn.disabled = true;
@@ -389,7 +399,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
         onSave(arrayBufferToBase64(new TextEncoder().encode(abcText).buffer));
         saveBtn.disabled = true;
         saveStatus.textContent = t('fileViewer.abc.saved');
-        doRenderTune?.(currentIndex); // keep the sheet in sync for when the user switches tabs
+        sheetNeedsRerender = true; // re-render lazily once Sheet is reopened — see setAbcMode
         abcToolsLink.href = abcToolsShareUrl(tunes[currentIndex] ?? '');
       };
     }
