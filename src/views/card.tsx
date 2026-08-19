@@ -165,6 +165,22 @@ async function refreshAbcFromTheSession(cardId: string, sessionId: number): Prom
   }
 }
 
+/** Re-fetches the tune from TheSession and replaces only the card's `name` —
+ *  tags/notes/attachments untouched. The name is otherwise frozen at import
+ *  time (fetchTuneById only ever runs then), so a tune renamed upstream on
+ *  TheSession since never reaches an already-imported card without this. */
+async function refreshNameFromTheSession(cardId: string, sessionId: number): Promise<void> {
+  try {
+    const tune = await fetchTuneById(sessionId);
+    await mutate(s => {
+      const card = s.cards[cardId]; if (!card) return;
+      card.name = tune.name;
+    });
+  } catch (e) {
+    showContextMenuError(t('card.contextMenu.refreshNameError', { message: e instanceof Error ? e.message : String(e) }));
+  }
+}
+
 /** Full replace via a fresh TheSession fetch — name, tags, notes and
  *  attachments all come from `fetched`; only `id`/`guid` are kept so decks,
  *  review history and cross-references stay attached to the same card. */
@@ -237,6 +253,10 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         { label: t('card.contextMenu.refreshAbc'), onClick: () => {
           const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
           if (!isNaN(sessionId)) void refreshAbcFromTheSession(cardId, sessionId);
+        } },
+        { label: t('card.contextMenu.refreshName'), onClick: () => {
+          const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
+          if (!isNaN(sessionId)) void refreshNameFromTheSession(cardId, sessionId);
         } },
       ]
     : [
