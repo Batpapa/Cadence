@@ -22,7 +22,7 @@ import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT } from '../sessionConfig';
 // The "mini" wasm build is smaller but doesn't export every function the JS
 // wrapper calls (confirmed: "get_av_stream is not a function" at runtime) —
 // the full build is required, lazily loaded so it never touches the main bundle.
-const WASM_URL = new URL('../../../node_modules/web-demuxer/dist/wasm-files/web-demuxer.wasm', import.meta.url);
+export const WEB_DEMUXER_WASM_URL = new URL('../../../node_modules/web-demuxer/dist/wasm-files/web-demuxer.wasm', import.meta.url);
 
 /** Cap on in-flight decode() calls not yet output — bounds decoder-side memory. */
 const MAX_DECODE_QUEUE = 8;
@@ -31,7 +31,7 @@ const MAX_DECODE_QUEUE = 8;
  *  decodeAudioData uses internally, never a hand-rolled resampler (accuracy
  *  matters here: sessionConfig.ts documents 22050 vs 48000 changing FolkFriend's
  *  transcription quality, so resampling quality isn't a detail to cut corners on). */
-async function resamplePcm(pcm: Float32Array<ArrayBuffer>, fromRate: number, toRate: number): Promise<Float32Array> {
+export async function resamplePcm(pcm: Float32Array<ArrayBuffer>, fromRate: number, toRate: number): Promise<Float32Array> {
   if (fromRate === toRate) return pcm;
   const ctx = new OfflineAudioContext(1, Math.ceil(pcm.length * toRate / fromRate), toRate);
   const buffer = ctx.createBuffer(1, pcm.length, fromRate);
@@ -63,7 +63,7 @@ export class StreamingFileSource implements PcmSource {
 
     let demuxer: WebDemuxer | null = null;
     try {
-      demuxer = new WebDemuxer({ wasmFilePath: WASM_URL.href });
+      demuxer = new WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
       await demuxer.load(file);
 
       const config = await demuxer.getDecoderConfig('audio');

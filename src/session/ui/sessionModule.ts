@@ -1778,7 +1778,9 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
               try {
                 const audio = await loadSessionAudio(session.id);
                 if (!audio) throw new Error(t('sessions.clip.unavailable'));
-                const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? session.duration);
+                const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? session.duration, ratio => {
+                  downloadClipBtn.title = t('sessions.extracting', { pct: Math.round(ratio * 100) });
+                });
                 const url = URL.createObjectURL(mp3);
                 const a = document.createElement('a');
                 a.href = url;
@@ -1790,6 +1792,7 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
               } finally {
                 downloadClipBtn.disabled = false;
                 downloadClipBtn.classList.remove('opacity-50');
+                downloadClipBtn.title = t('sessions.downloadClip');
               }
             };
             controls.appendChild(downloadClipBtn);
