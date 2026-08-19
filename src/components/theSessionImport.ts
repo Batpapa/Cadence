@@ -6,14 +6,16 @@ import { mutate, appState } from '../store';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers, fetchTunesByIds,
   tuneResultToCard, findByExternalId,
-  type TuneSearchResult, type MemberSearchResult, type TuneSetting,
+  type MemberSearchResult, type TuneSetting,
 } from '../services/theSessionService';
+import { ensureTuneNameIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { buildIrishTuneInfoBody } from './irishTuneInfoImport';
 import { showDeckPickerPopover, deckLinkIcon } from './deckSelector';
 import { AI_IMPORT_PROMPT } from './aiImportPrompt';
 import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '../services/irishTuneInfoService';
+import { iconElement, CheckIcon } from './icons';
 
 /** Merges the AI-authored card onto the real fetched one: the fetch is always
  *  authoritative for the tune's identity/ABC (never trust the AI for that —
@@ -288,6 +290,13 @@ export function buildTheSessionBody(
 
   // ── Tab: Tune (ID, name search, or a pasted "1;5;97" ID list) ─────────────
   const renderTuneTab = () => {
+    // Kick off the local tune-name index sync as soon as this tab is shown
+    // (fire-and-forget) — by the time the user finishes typing, it's usually
+    // already resolved. Cheap on every call after the first (see
+    // tuneNameIndexService.ts): a single commit-SHA check unless
+    // TheSession's tunes.json dump actually changed upstream.
+    void ensureTuneNameIndex().catch(() => { /* handled per-search below */ });
+
     const { wrap: inputWrap, inp, info: infoSpan } = mkInputRow(t('theSession.tune.placeholder'));
     inputWrap.title = t('theSession.ids.hint');
 
@@ -351,9 +360,17 @@ export function buildTheSessionBody(
     const obs = new MutationObserver(() => { if (!inp.isConnected) { dropdown.remove(); obs.disconnect(); } });
     obs.observe(document.body, { childList: true, subtree: true });
 
-    const renderSuggestions = (tunes: TuneSearchResult[]) => {
+    const renderSuggestions = (tunes: Array<{ id: number; name: string; type: string }>) => {
       dropdown.innerHTML = '';
       if (!tunes.length) { hideDropdown(); return; }
+      // Built once per render pass (not per row) — same pattern as
+      // buildExistingByTuneId() below, just keyed by the raw numeric id.
+      const knownIds = new Set(
+        Object.values(appState.value.cards)
+          .map(c => c.externalId)
+          .filter((id): id is string => !!id && id.startsWith('thesession:'))
+          .map(id => parseInt(id.slice('thesession:'.length), 10))
+      );
       for (const tune of tunes) {
         const item = document.createElement('div');
         item.className = 'flex items-center gap-3 px-3 py-2 hover:bg-bg cursor-pointer';
@@ -361,6 +378,12 @@ export function buildTheSessionBody(
         const name = document.createElement('span'); name.className = 'text-sm text-primary truncate block'; name.textContent = tune.name;
         const meta = document.createElement('span'); meta.className = 'text-xs text-dim'; meta.textContent = tune.type;
         left.append(name, meta); item.appendChild(left);
+        if (knownIds.has(tune.id)) {
+          const badge = document.createElement('span');
+          badge.className = 'text-success shrink-0'; badge.title = t('common.alreadyInLibrary');
+          badge.appendChild(iconElement(CheckIcon, 12));
+          item.appendChild(badge);
+        }
         item.addEventListener('mousedown', e => { e.preventDefault(); inp.value = tune.name; dropdown.innerHTML = ''; hideDropdown(); showResult(tune.name, tune.type, tune.id); status.textContent = ''; });
         dropdown.appendChild(item);
       }
@@ -396,8 +419,22 @@ export function buildTheSessionBody(
       } else if (val.length >= 2) {
         inputTimer = setTimeout(async () => {
           inputTimer = null; status.textContent = t('theSession.status.searching');
-          try { const tunes = await searchTunes(val); renderSuggestions(sortByRelevance(tunes, val)); status.textContent = tunes.length ? '' : t('theSession.noResults'); }
-          catch (e) { status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) }); }
+          try {
+            let tunes: Array<{ id: number; name: string; type: string }>;
+            try {
+              // Local-first: TheSession's own /tunes/search has proven
+              // unreliable in practice. Falls back to it below only if the
+              // local index genuinely isn't available (offline on a device
+              // that has never synced it, or the sync itself failed).
+              const index = await ensureTuneNameIndex();
+              tunes = searchLocalTuneIndex(index, val);
+            } catch {
+              const remote = await searchTunes(val);
+              tunes = sortByRelevance(remote, val);
+            }
+            renderSuggestions(tunes);
+            status.textContent = tunes.length ? '' : t('theSession.noResults');
+          } catch (e) { status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) }); }
         }, 300);
       }
     });

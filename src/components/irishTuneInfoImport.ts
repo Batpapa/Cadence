@@ -11,6 +11,7 @@ import { ensureItiMapping } from '../services/itiMappingService';
 import { showModal, closeModal } from './modal';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
+import { iconElement, CheckIcon } from './icons';
 
 // ── Tab helpers (same look as theSessionImport's) ────────────────────────────
 
@@ -435,6 +436,13 @@ export function buildIrishTuneInfoBody(
     const renderSuggestions = (tunes: TuneSearchResult[]) => {
       dropdown.innerHTML = '';
       if (!tunes.length) { hideDropdown(); return; }
+      // Built once per render pass, not per row — same pattern as theSessionImport.ts.
+      const knownIds = new Set(
+        Object.values(appState.value.cards)
+          .map(c => c.externalId)
+          .filter((id): id is string => !!id && id.startsWith('irishtuneinfo:'))
+          .map(id => parseInt(id.slice('irishtuneinfo:'.length), 10))
+      );
       for (const tune of tunes) {
         const item = document.createElement('div');
         item.className = 'flex items-center gap-3 px-3 py-2 hover:bg-bg cursor-pointer';
@@ -442,6 +450,12 @@ export function buildIrishTuneInfoBody(
         const name = document.createElement('span'); name.className = 'text-sm text-primary truncate block'; name.textContent = tune.name;
         const meta = document.createElement('span'); meta.className = 'text-xs text-dim'; meta.textContent = tune.rhythm;
         left.append(name, meta); item.appendChild(left);
+        if (knownIds.has(tune.id)) {
+          const badge = document.createElement('span');
+          badge.className = 'text-success shrink-0'; badge.title = t('common.alreadyInLibrary');
+          badge.appendChild(iconElement(CheckIcon, 12));
+          item.appendChild(badge);
+        }
         item.addEventListener('mousedown', e => { e.preventDefault(); inp.value = tune.name; dropdown.innerHTML = ''; hideDropdown(); showResult(tune.name, tune.rhythm, tune.id); status.textContent = ''; });
         dropdown.appendChild(item);
       }

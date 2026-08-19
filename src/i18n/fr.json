@@ -23,6 +23,7 @@
   "common.link": "Lier",
   "common.replace": "Remplacer",
   "common.reset": "Réinitialiser",
+  "common.alreadyInLibrary": "Déjà dans ta bibliothèque",
   "common.deleteOrphanCards": "Aussi supprimer la carte orpheline (qui ne serait plus dans aucun paquet)",
   "common.deleteOrphanCardsPlural": "Aussi supprimer les {count} cartes orphelines (qui ne seraient plus dans aucun paquet)",
 
