@@ -23,7 +23,11 @@ const DECODE_PHASE_RATIO = 0.5;
 
 type RangeDecodeResult = { pcm: Float32Array; sampleRate: number } | null;
 
-async function decodeRangeWork(demuxer: InstanceType<typeof import('web-demuxer').WebDemuxer>, file: File, start: number, end: number): Promise<RangeDecodeResult> {
+async function decodeRangeWork(
+  demuxer: InstanceType<typeof import('web-demuxer').WebDemuxer>,
+  file: File, start: number, end: number,
+  onProgress?: (ratio: number) => void,
+): Promise<RangeDecodeResult> {
   await demuxer.load(file);
 
   const config = await demuxer.getDecoderConfig('audio');
@@ -53,6 +57,13 @@ async function decodeRangeWork(demuxer: InstanceType<typeof import('web-demuxer'
   decoder.configure(config);
 
   const readStart = Math.max(0, start - PRE_ROLL_S);
+  const totalSpanS = Math.max(end - readStart, 1e-6);
+  // Reading + decoding each packet is the slow part in practice (confirmed
+  // on mobile: real time, not instant even for the streamed path) — report
+  // progress off each packet's own container timestamp as it's read, rather
+  // than only once the whole range has been pulled in. Throttled by time,
+  // not by packet count, since packet duration/count varies a lot by codec.
+  let lastTickAt = 0;
   const stream = demuxer.read('audio', readStart, end);
   const reader = stream.getReader();
   try {
@@ -61,6 +72,14 @@ async function decodeRangeWork(demuxer: InstanceType<typeof import('web-demuxer'
       if (decodeError) throw decodeError;
       if (done) break;
       decoder.decode(value);
+      if (onProgress) {
+        const now = Date.now();
+        if (now - lastTickAt >= 100) {
+          lastTickAt = now;
+          const packetTsS = value.timestamp / 1e6;
+          onProgress(Math.max(0, Math.min(1, (packetTsS - readStart) / totalSpanS)));
+        }
+      }
     }
     await decoder.flush();
     if (decodeError) throw decodeError;
@@ -97,7 +116,9 @@ async function decodeRangeWork(demuxer: InstanceType<typeof import('web-demuxer'
  *  a clean rejection, not a hang, so plain try/catch is enough here) so the
  *  caller falls back to the old whole-file decode unconditionally — never a
  *  regression for a case that worked before. */
-async function tryDecodeRangeViaWebCodecs(file: File, start: number, end: number): Promise<RangeDecodeResult> {
+async function tryDecodeRangeViaWebCodecs(
+  file: File, start: number, end: number, onProgress?: (ratio: number) => void,
+): Promise<RangeDecodeResult> {
   if (typeof AudioDecoder === 'undefined') return null;
 
   // Lazy — web-demuxer must never sit in the main bundle for everyone who
@@ -113,7 +134,7 @@ async function tryDecodeRangeViaWebCodecs(file: File, start: number, end: number
   const demuxer = new webDemuxerMod.WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
 
   try {
-    return await decodeRangeWork(demuxer, file, start, end);
+    return await decodeRangeWork(demuxer, file, start, end, onProgress);
   } catch {
     return null;
   } finally {
@@ -174,13 +195,14 @@ export async function extractClipMp3(
   onProgress?: (ratio: number) => void,
 ): Promise<Blob> {
   const file = new File([sessionAudio], 'session-audio', { type: sessionAudio.type });
-  const streamed = await tryDecodeRangeViaWebCodecs(file, start, end);
+  const streamed = await tryDecodeRangeViaWebCodecs(
+    file, start, end,
+    onProgress && (ratio => onProgress(ratio * DECODE_PHASE_RATIO)),
+  );
 
   let mono: Float32Array;
   if (streamed) {
-    // Fast path decodes only the clip itself — no meaningfully long "decode
-    // phase" to report, so jump straight past it into the encode phase.
-    onProgress?.(DECODE_PHASE_RATIO);
+    onProgress?.(DECODE_PHASE_RATIO); // in case the loop's last throttled tick landed short of it
     if (streamed.sampleRate === CLIP_SAMPLE_RATE) {
       mono = streamed.pcm;
     } else {
