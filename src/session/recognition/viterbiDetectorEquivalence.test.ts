@@ -206,6 +206,7 @@ describe('Viterbi optimized == reference (mandatory equivalence oracle)', () => 
     '20260523_5_auberge_fleurie-windows.json',
     '20260523_2_aprem_tabac-windows.json',
     '20260523_1_matin_Anglade-windows.json',
+    '13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24-windows.json',
   ];
 
   for (const file of REAL_FIXTURES) {

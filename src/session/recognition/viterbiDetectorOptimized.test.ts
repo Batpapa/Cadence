@@ -27,7 +27,6 @@ const TEST_CFG: DetectionTemporalConfig = {
   bucketHighConfidence: 0.5,
   bucketMediumConfidence: 0.3,
   maxAlternates: 4,
-  finalizationLagSeconds: 30,
   minSegmentWindows: 2,
   sameTuneMergeGapWindows: 10,
   flatWindowTopN: 3,

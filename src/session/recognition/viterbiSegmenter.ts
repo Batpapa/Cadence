@@ -1,5 +1,5 @@
 import type { WindowResult, SessionAnnotation, AnnotationAlternate, AnnotationEvidence, AnnotationEvent } from '../model';
-import { runViterbiDetection, filterShortSegments, mergeNearbySameTune, countTop1Windows, type DetectedTuneSegment } from './viterbiDetector';
+import { runViterbiDetection, filterShortSegments, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
 import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
@@ -144,7 +144,6 @@ export class IncrementalViterbiSegmenter {
 
   private recompute(forceFinalizeAll: boolean): AnnotationEvent[] {
     if (this.windows.length === 0) return [];
-    const latestT = this.windows[this.windows.length - 1]!.tWindowEnd;
 
     // filterFlatWindows/filterByTempoSpread only shape what Viterbi sees as
     // evidence — evidence/alternates displayed to the user
@@ -188,7 +187,17 @@ export class IncrementalViterbiSegmenter {
       // is a filter() of result.segments, so surviving elements are the exact
       // same object references, not copies.
       const openEnded = seg === lastSegment;
-      const finalized = forceFinalizeAll || (latestT - seg.endTime > this.cfg.finalizationLagSeconds);
+      // Safe from ANY future revision — not just to Viterbi's own raw state
+      // path (result.convergedThroughIndex — see its doc), but also to
+      // mergeNearbySameTune still bridging a same-tune neighbour in from
+      // later: that only ever happens within sameTuneMergeGapWindows of this
+      // segment's own last window, so requiring convergence to reach that far
+      // past it rules out a same-tune merge arriving after the fact too.
+      // filterShortSegments' rank-1 confirmation only ever looks at a
+      // segment's OWN window range, already covered by convergence alone.
+      const lastWindowIndex = seg.firstWindowIndex + seg.windowCount - 1;
+      const finalized = forceFinalizeAll
+        || result.convergedThroughIndex >= lastWindowIndex + this.cfg.sameTuneMergeGapWindows;
 
       if (matchIdx < 0) {
         const annotation = this.toAnnotation(crypto.randomUUID(), seg, openEnded, finalized);
@@ -214,38 +223,34 @@ export class IncrementalViterbiSegmenter {
     }
 
     // Previously-tracked, still-provisional segments that vanished entirely
-    // this pass. A finalized entry is permanent and always reappears above;
-    // this only ever concerns the non-finalized ones. Two different reasons
-    // this can happen:
-    // (a) Viterbi's own global re-optimization absorbed a REAL (>=
-    // minSegmentWindows) segment into a neighbour — close it at its last
-    // known bounds, finalized: the evidence backing it was genuine while it
-    // stood, so it stays in the list rather than leaving a dangling open
-    // annotation.
-    // (b) it was only ever shown because it was the live tail (exempt from
-    // minSegmentWindows in filterShortSegments) and never actually reached
-    // the threshold before being superseded — RETRACT it entirely (2026-08-15,
-    // explicit user call): a `close` still left a permanent, if unconfirmed,
-    // stub sitting in the UI, which isn't good enough — a guess that never
-    // got confirmed should disappear as if it had never been shown, not
-    // linger looking like a real (if untrustworthy) result. Never retract an
-    // id the orchestrator says the user has already confirmed, though — see
-    // AnnotationEvent's doc.
+    // this pass — no longer a real segment in THIS recompute's own freshly
+    // (re-)decoded result, whether because mergeNearbySameTune folded it into
+    // a same-tune neighbour, or because Viterbi's own global re-optimization
+    // simply changed its mind about that stretch (e.g. reassigned it to
+    // UNKNOWN, or to a different tune) now that more evidence is available.
+    // ALWAYS RETRACT — never close it standalone at its last known bounds
+    // (2026-08-21, replaces the old "close it anyway if it looked confirmed
+    // while it stood" compromise from 2026-08-15): that compromise existed
+    // because finalization used to be a time-based GUESS, so "it looked
+    // confirmed" was the best available proxy for "probably real, just
+    // superseded". Now that finalization is driven by
+    // ViterbiResult.convergedThroughIndex — an exact, provable guarantee, not
+    // a guess — a segment only ever reaches this loop while genuinely
+    // unproven, so closing it as if the guess were reliable is exactly the
+    // "doublons consécutifs pas fusionnés" bug reported 2026-08-20/21 (two
+    // separate "Rolling Waves, The" results from one performance): the
+    // vanished one closed for looking confirmed at the time, while the real
+    // one converged and finalized separately later. A segment that's
+    // genuinely real will keep reappearing and eventually converge/finalize
+    // on its own merits — same "fine to disappear and come back, never fine
+    // to linger as a permanent phantom" philosophy already established for
+    // minSegmentWindows (2026-08-15). Never retract an id the orchestrator
+    // says the user has already confirmed, though — see AnnotationEvent's doc.
     for (let i = 0; i < this.tracked.length; i++) {
       if (claimed.has(i)) continue;
       const prev = this.tracked[i]!;
       if (prev.finalized) continue;
-      // timeline here is this call's (current, possibly larger) timeline —
-      // safe to use for a segment captured on an earlier recompute's smaller
-      // one: TemporalTimeline.ranks for a given window index is computed
-      // purely from that window's own candidates, never affected by how many
-      // other windows are in the array.
-      const wasConfirmed = countTop1Windows(prev.seg.tuneId, prev.seg.firstWindowIndex, prev.seg.windowCount, timeline) >= this.cfg.minSegmentWindows;
-      if (wasConfirmed) {
-        events.push({ type: 'close', annotation: this.toAnnotation(prev.id, prev.seg, false, true) });
-      } else {
-        events.push({ type: 'retract', id: prev.id });
-      }
+      events.push({ type: 'retract', id: prev.id });
     }
 
     this.tracked = nextTracked;

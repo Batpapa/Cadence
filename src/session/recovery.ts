@@ -14,18 +14,33 @@ import type { AnnotationEvent, SessionAnnotation, WindowResult } from './model';
 // it to IndexedDB before the interruption, exactly as if the user had
 // pressed stop at that point.
 
-/** Replays raw windows through a FRESH detector, exactly as a clean stop()
- *  would have — never trusts a persisted annotation snapshot (2026-08-15):
- *  a snapshot taken at an arbitrary instant can catch a short-lived,
- *  not-yet-confirmed guess (minSegmentWindows/'retract' in
- *  viterbiSegmenter.ts) that blanket-finalizing would wrongly resurrect as a
- *  real detection. Loses any userConfirmed/liked edits the user made during
- *  the live session before the crash — those only ever lived in the
- *  in-memory annotation map, never persisted independently of it. Accepted
- *  tradeoff (explicit user call): correctness of the recognition result
- *  matters more than preserving mid-session manual edits across a crash. */
-export function recomputeAnnotations(windows: WindowResult[]): SessionAnnotation[] {
-  const segmenter = new IncrementalViterbiSegmenter(ANALYSIS_HOP_S);
+/** Replays raw windows through a FRESH detector in one shot — never trusts a
+ *  persisted annotation snapshot (2026-08-15): a snapshot taken at an
+ *  arbitrary instant (here, whatever made it to IndexedDB before a crash) can
+ *  catch a short-lived, not-yet-confirmed guess (minSegmentWindows/'retract'
+ *  in viterbiSegmenter.ts) that blanket-finalizing would wrongly resurrect as
+ *  a real detection.
+ *
+ *  A clean LiveSession.stop()/ImportSession.save() does NOT need this
+ *  extra replay (2026-08-21): viterbiSegmenter.ts now only marks a segment
+ *  `finalized` once ViterbiResult.convergedThroughIndex proves no future
+ *  window could ever revise it (see its doc — this replaced an EMPIRICAL
+ *  finalizationLagSeconds time guess that turned out not to be a real
+ *  guarantee, per a 2026-08-21 bug report of two duplicate "Rolling Waves"
+ *  results from one performance), so a clean finish's live-accumulated
+ *  annotation map is already provably identical to what this function would
+ *  produce. This function stays needed only where there's no live map left
+ *  to trust at all — a crash/refresh loses it entirely, leaving just the raw
+ *  windows dump to replay.
+ *
+ *  Loses any userConfirmed/liked edits made before the crash — those only
+ *  ever lived in the in-memory annotation map, never persisted independently
+ *  of it, and userConfirmed has no UI path to ever become true anyway.
+ *  Accepted tradeoff (explicit user call): correctness of the recognition
+ *  result matters more than preserving mid-session manual edits across a
+ *  crash. */
+export function recomputeAnnotations(windows: WindowResult[], hopS: number = ANALYSIS_HOP_S): SessionAnnotation[] {
+  const segmenter = new IncrementalViterbiSegmenter(hopS);
   const store = new Map<string, SessionAnnotation>();
   const apply = (events: AnnotationEvent[]) => {
     for (const ev of events) {
