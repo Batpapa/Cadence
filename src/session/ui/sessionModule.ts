@@ -11,8 +11,9 @@ import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile } from '../audio/sources';
 import { extractClipMp3 } from '../audio/clipExtract';
 import { makeAbcNoteButton } from './abcPreview';
-import { IMPORT_WARN_MINUTES, IMPORT_MIN_S, SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
-import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
+import { IMPORT_WARN_MINUTES, IMPORT_MIN_S, SHARE_MAX_AUDIO_BYTES, RECORDER_TIMESLICE_MS } from '../sessionConfig';
+import { listSessions, deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio, collectChunks } from '../db';
+import fixWebmDuration from 'fix-webm-duration';
 import { recoverOrphanedSessions } from '../recovery';
 import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
 import { shareSession, importSharedSession, exportSessionFile, importSessionFile } from '../../services/sessionShareService';
@@ -1196,6 +1197,13 @@ function renderImportAnalysis(host: SessionModuleHost): void {
     renderFeed(imp.getAnnotations());
   };
 
+  // Latest known total duration, for the clip-filename fallback only — a
+  // finalized annotation (the only ones offered clip extraction below)
+  // always has a concrete `end`, so this is never actually load-bearing, just
+  // satisfying ClipSessionRef's shape.
+  let currentTotalS = 0;
+  const impRef = (): ClipSessionRef => ({ id: imp.sessionId, name: imp.name || imp.defaultName(), date: imp.dateOverride, duration: currentTotalS });
+
   const renderFeed = (annotations: SessionAnnotation[]) => {
     const scrollEl = scrollContainerOf(body);
     const nearBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 80;
@@ -1211,6 +1219,22 @@ function renderImportAnalysis(host: SessionModuleHost): void {
         ensureTargetDeckIds: ensureImpTargetDeckIds,
         onTargetDeckIdsChanged: refreshImpDeckBtn,
         onToggleLike: (id) => { imp.toggleLike(id); renderFeed(imp.getAnnotations()); },
+        // Clip extraction only once finalized (2026-08-21): the full file is
+        // already sitting right there in imp.file from the very first
+        // instant, unlike a live recording — no reason to make the user wait
+        // for the whole import to finish just to grab a proven-stable tune's
+        // clip. Provisional (not-yet-finalized) annotations still don't get
+        // the buttons, since their bounds/existence could still change.
+        extraControls: ann.finalized ? (el) => {
+          const controls = document.createElement('div');
+          controls.className = 'flex items-center gap-2 flex-wrap pt-1 border-t border-border/50';
+          appendBoundControls(controls, ann, () => currentTotalS, {
+            refresh: () => renderFeed(imp.getAnnotations()),
+            previewBound: (tSec) => { audio.currentTime = Math.max(0, tSec); void audio.play().catch(() => { /* not loaded yet */ }); setTimeout(() => audio.pause(), 3000); },
+          });
+          appendClipControls(controls, ann, impRef(), true, async () => imp.file, host.ctx, () => renderFeed(imp.getAnnotations()));
+          el.appendChild(controls);
+        } : undefined,
       }));
     }
     if (nearBottom) scrollEl.scrollTop = scrollEl.scrollHeight;
@@ -1224,6 +1248,7 @@ function renderImportAnalysis(host: SessionModuleHost): void {
     },
     onIndexProgress: p => { initStatus.textContent = indexProgressText(p); },
     onProgress: ({ analyzedS, totalS, etaS }) => {
+      currentTotalS = totalS;
       const pct = totalS > 0 ? Math.min(100, (analyzedS / totalS) * 100) : 0;
       pctEl.textContent = `${Math.round(pct)}%`;
       barFill.style.width = `${pct}%`;
@@ -1417,6 +1442,25 @@ function renderLive(host: SessionModuleHost): void {
     pauseBtn.title = paused ? t('sessions.resume') : t('sessions.pause');
   };
 
+  const liveRef = (): ClipSessionRef => ({ id: live.sessionId, name: live.name, date: effectiveDate(), duration: live.getElapsedMs() / 1000 });
+  // Assembles a Blob from whatever chunks the recorder has written to
+  // IndexedDB so far — the same "concatenate + best-effort duration fix"
+  // technique recovery.ts already trusts for a crashed session's chunks, just
+  // run on-demand instead of after the fact. Non-destructive (collectChunks
+  // never clears anything) and lazy: only pays this cost when the user
+  // actually clicks, not on every render of the feed.
+  const getLiveAudioBlob = async (): Promise<Blob | undefined> => {
+    const chunks = await collectChunks(live.sessionId);
+    if (chunks.length === 0) return undefined;
+    const mimeType = live.mimeType || 'audio/webm';
+    let blob = new Blob(chunks, { type: mimeType });
+    if (mimeType.includes('webm')) {
+      try { blob = await fixWebmDuration(blob, chunks.length * RECORDER_TIMESLICE_MS, { logger: false }); }
+      catch { /* seeking degraded but audio intact */ }
+    }
+    return blob;
+  };
+
   const renderFeed = (annotations: SessionAnnotation[]) => {
     const scrollEl = scrollContainerOf(body);
     const nearBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 80;
@@ -1431,6 +1475,20 @@ function renderLive(host: SessionModuleHost): void {
         ensureTargetDeckIds: ensureLiveTargetDeckIds,
         onTargetDeckIdsChanged: refreshLiveDeckBtn,
         onToggleLike: (id) => { live.toggleLike(id); renderFeed(live.getAnnotations()); },
+        // Clip extraction only once finalized (2026-08-21) — before that the
+        // tune's own bounds/existence could still be revised, so extracting
+        // now could grab the wrong range or vanish entirely.
+        extraControls: ann.finalized ? (el) => {
+          const controls = document.createElement('div');
+          controls.className = 'flex items-center gap-2 flex-wrap pt-1 border-t border-border/50';
+          // No previewBound here — a live recording has no seekable file to
+          // preview from (raw mic capture), unlike summary/import.
+          appendBoundControls(controls, ann, () => live.getElapsedMs() / 1000, {
+            refresh: () => renderFeed(live.getAnnotations()),
+          });
+          appendClipControls(controls, ann, liveRef(), true, getLiveAudioBlob, host.ctx, () => renderFeed(live.getAnnotations()));
+          el.appendChild(controls);
+        } : undefined,
       }));
     }
     if (nearBottom) scrollEl.scrollTop = scrollEl.scrollHeight;
@@ -1736,96 +1794,16 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
           controls.className = 'flex items-center gap-2 flex-wrap pt-1 border-t border-border/50';
 
           // Bound adjustment: ±5 s with a 3 s audio preview at the new bound.
-          const boundCtl = (label: string, get: () => number, set: (v: number) => void) => {
-            const wrap = document.createElement('span');
-            wrap.className = 'flex items-center gap-1 text-[11px] text-dim';
-            const minus = document.createElement('button');
-            minus.className = 'px-1 rounded hover:bg-elevated cursor-pointer';
-            minus.textContent = '−5s';
-            const val = document.createElement('span');
-            val.className = 'font-mono tabular-nums';
-            val.textContent = `${label} ${fmtTime(get())}`;
-            const plus = document.createElement('button');
-            plus.className = 'px-1 rounded hover:bg-elevated cursor-pointer';
-            plus.textContent = '+5s';
-            const apply = (delta: number) => {
-              set(Math.max(0, Math.min(session.duration, get() + delta)));
-              val.textContent = `${label} ${fmtTime(get())}`;
-              persist();
-              renderBar();
-              previewBound(get());
-            };
-            minus.onclick = () => apply(-5);
-            plus.onclick = () => apply(+5);
-            wrap.append(minus, val, plus);
-            return wrap;
-          };
+          appendBoundControls(controls, ann, () => session.duration, {
+            persist,
+            refresh: () => { renderBar(); renderList(); },
+            previewBound,
+          });
 
-          controls.appendChild(boundCtl('▸', () => ann.start, v => { ann.start = v; }));
-          controls.appendChild(boundCtl('◂', () => ann.end ?? session.duration, v => { ann.end = v; }));
-
-          // Download the clip as a standalone MP3, independent of any card —
-          // hidden once the session's audio has been forgotten (nothing left
-          // to extract from). To the left of "Add clip to card" below.
-          if (audioUrl) {
-            const downloadClipBtn = document.createElement('button');
-            downloadClipBtn.className = 'text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center';
-            downloadClipBtn.title = t('sessions.downloadClip');
-            downloadClipBtn.innerHTML = downloadIcon(13);
-            downloadClipBtn.onclick = async () => {
-              downloadClipBtn.disabled = true;
-              downloadClipBtn.classList.add('opacity-50');
-              try {
-                const audio = await loadSessionAudio(session.id);
-                if (!audio) throw new Error(t('sessions.clip.unavailable'));
-                const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? session.duration, ratio => {
-                  downloadClipBtn.title = t('sessions.extracting', { pct: Math.round(ratio * 100) });
-                });
-                const url = URL.createObjectURL(mp3);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = clipFileName(session, ann);
-                a.click();
-                URL.revokeObjectURL(url);
-              } catch (err) {
-                downloadClipBtn.title = `⚠ ${String(err)}`;
-              } finally {
-                downloadClipBtn.disabled = false;
-                downloadClipBtn.classList.remove('opacity-50');
-                downloadClipBtn.title = t('sessions.downloadClip');
-              }
-            };
-            controls.appendChild(downloadClipBtn);
-          }
-
-          // Add clip as a standalone MP3 attachment (known card only) —
-          // fresh state, the card may be brand new. Hidden once the session's
-          // audio has been forgotten, unless a clip was already extracted
-          // before that (nothing left to extract, but still worth showing as done).
-          const known = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
-          const already = known ? isClipAttached(session, ann) : false;
-          if (known && (already || audioUrl)) {
-            const attachBtn = document.createElement('button');
-            attachBtn.className = already
-              ? 'text-[11px] text-green-500 cursor-default'
-              : 'text-[11px] text-accent hover:underline cursor-pointer';
-            attachBtn.textContent = already ? t('sessions.attached') : t('sessions.attach');
-            if (!already) {
-              attachBtn.onclick = async () => {
-                attachBtn.disabled = true;
-                attachBtn.classList.remove('hover:underline', 'cursor-pointer');
-                try {
-                  await attachClip(host.ctx, session, ann, ratio => {
-                    attachBtn.textContent = t('sessions.extracting', { pct: Math.round(ratio * 100) });
-                  });
-                  renderList();
-                } catch (err) {
-                  attachBtn.textContent = `⚠ ${String(err)}`;
-                }
-              };
-            }
-            controls.appendChild(attachBtn);
-          }
+          // Download/attach clip — hidden (download) or reduced to just the
+          // "already attached" label (attach) once the session's audio has
+          // been forgotten (nothing left to extract from).
+          appendClipControls(controls, ann, session, !!audioUrl, () => loadSessionAudio(session.id), host.ctx, renderList);
 
           // Merge with previous annotation of the same tune (false set change)
           const prev = session.annotations[i - 1];
@@ -1871,20 +1849,30 @@ export function renderSummary(host: SessionModuleHost, session: RecordedSession)
   renderList();
 }
 
+/** The subset of RecordedSession the clip-extraction helpers actually need —
+ *  lets a still-in-progress LiveSession/ImportSession (no RecordedSession row
+ *  saved yet) build a lightweight literal instead. */
+interface ClipSessionRef {
+  id: string;
+  name: string;
+  date: string | null;
+  duration: number;
+}
+
 /** Stable identity of a clip, embedded in the filename: survives session
  *  renames and annotation relabels (session id fragment + start second). */
-function clipTag(session: RecordedSession, ann: SessionAnnotation): string {
+function clipTag(session: ClipSessionRef, ann: SessionAnnotation): string {
   return `[${session.id.slice(0, 8)}·${Math.round(ann.start)}]`;
 }
 
-function clipFileName(session: RecordedSession, ann: SessionAnnotation): string {
+function clipFileName(session: ClipSessionRef, ann: SessionAnnotation): string {
   const sessionName = session.name || defaultSessionName(session.date);
   const range = `${fmtTime(ann.start)}–${fmtTime(ann.end ?? session.duration)}`.replace(/:/g, 'm');
   return `${ann.displayName} — ${sessionName} (${range}) ${clipTag(session, ann)}.mp3`;
 }
 
 /** True when this exact clip is already attached, whatever it was renamed to look like. */
-function isClipAttached(session: RecordedSession, ann: SessionAnnotation): boolean {
+function isClipAttached(session: ClipSessionRef, ann: SessionAnnotation): boolean {
   const card = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
   if (!card) return false;
   const tag = clipTag(session, ann);
@@ -1892,20 +1880,21 @@ function isClipAttached(session: RecordedSession, ann: SessionAnnotation): boole
 }
 
 /** Extracts the annotation's audio slice as a standalone MP3 file and attaches
- *  it to the card — independent from the session file. */
+ *  it to the card — independent from the session file. `audio` is already
+ *  resolved by the caller (loadSessionAudio for a saved session, or a
+ *  lazily-assembled Blob for a still-in-progress live/import one — see
+ *  appendClipControls). */
 async function attachClip(
   ctx: AppContext,
-  session: RecordedSession,
+  session: ClipSessionRef,
   ann: SessionAnnotation,
+  audio: Blob,
   onProgress?: (ratio: number) => void,
 ): Promise<boolean> {
   // getContext(): ctx.user is a snapshot from modal-open time — cards added
   // since (e.g. via "Add to Cadence" on a result) would be missed.
   if (!findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards)) return false;
   if (isClipAttached(session, ann)) return true;
-
-  const audio = await loadSessionAudio(session.id);
-  if (!audio) throw new Error(t('sessions.clip.unavailable'));
 
   const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? session.duration, onProgress);
   const entry = await fileToEntry(new File([mp3], clipFileName(session, ann), { type: 'audio/mpeg' }));
@@ -1914,4 +1903,132 @@ async function attachClip(
     if (card) card.content.attachments.push({ type: 'file', ...entry });
   });
   return true;
+}
+
+/** ±5s start/end bound adjustment, shared by the summary, live, and
+ *  import-in-progress feeds (2026-08-21 — see appendClipControls's doc just
+ *  below for why a finalized annotation can now show up before a session is
+ *  fully done). Mutates `ann` in place — for a live/import session that's
+ *  enough on its own: `ann` is the SAME object getAnnotations() already
+ *  returns, so the edit is naturally included whenever that session is next
+ *  saved, no separate persist step required (`opts.persist`, when given, is
+ *  for the summary's "write it out right now" case only). `opts.previewBound`
+ *  plays a 3s preview at the new bound when given — omitted for a live
+ *  recording, which has no seekable file to preview from (raw mic capture,
+ *  not played-back audio); the value still updates, just silently. */
+function appendBoundControls(
+  controls: HTMLElement,
+  ann: SessionAnnotation,
+  getDuration: () => number,
+  opts: { persist?: () => void; refresh?: () => void; previewBound?: (t: number) => void } = {},
+): void {
+  const boundCtl = (label: string, get: () => number, set: (v: number) => void) => {
+    const wrap = document.createElement('span');
+    wrap.className = 'flex items-center gap-1 text-[11px] text-dim';
+    const minus = document.createElement('button');
+    minus.className = 'px-1 rounded hover:bg-elevated cursor-pointer';
+    minus.textContent = '−5s';
+    const val = document.createElement('span');
+    val.className = 'font-mono tabular-nums';
+    val.textContent = `${label} ${fmtTime(get())}`;
+    const plus = document.createElement('button');
+    plus.className = 'px-1 rounded hover:bg-elevated cursor-pointer';
+    plus.textContent = '+5s';
+    const apply = (delta: number) => {
+      set(Math.max(0, Math.min(getDuration(), get() + delta)));
+      val.textContent = `${label} ${fmtTime(get())}`;
+      opts.persist?.();
+      opts.refresh?.();
+      opts.previewBound?.(get());
+    };
+    minus.onclick = () => apply(-5);
+    plus.onclick = () => apply(+5);
+    wrap.append(minus, val, plus);
+    return wrap;
+  };
+
+  controls.appendChild(boundCtl('▸', () => ann.start, v => { ann.start = v; }));
+  controls.appendChild(boundCtl('◂', () => ann.end ?? getDuration(), v => { ann.end = v; }));
+}
+
+/** Download-clip + attach-to-card controls, shared by the summary, live, and
+ *  import-in-progress feeds (2026-08-21 — previously summary-only: a
+ *  finalized annotation used to only exist once a session was fully done,
+ *  but now the live/import feed can show one too — see
+ *  ViterbiResult.convergedThroughIndex). `getAudio` is a lazy Blob provider
+ *  so a live recording only pays to assemble its (still-growing) chunk dump
+ *  when the user actually clicks, not on every render. `audioAvailable`
+ *  mirrors the summary's existing "hidden once the session's audio has been
+ *  forgotten" rule — always true for live/import, where there's no such
+ *  action yet. */
+function appendClipControls(
+  controls: HTMLElement,
+  ann: SessionAnnotation,
+  ref: ClipSessionRef,
+  audioAvailable: boolean,
+  getAudio: () => Promise<Blob | undefined>,
+  ctx: AppContext,
+  onAttached?: () => void,
+): void {
+  if (audioAvailable) {
+    const downloadClipBtn = document.createElement('button');
+    downloadClipBtn.className = 'text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center';
+    downloadClipBtn.title = t('sessions.downloadClip');
+    downloadClipBtn.innerHTML = downloadIcon(13);
+    downloadClipBtn.onclick = async () => {
+      downloadClipBtn.disabled = true;
+      downloadClipBtn.classList.add('opacity-50');
+      try {
+        const audio = await getAudio();
+        if (!audio) throw new Error(t('sessions.clip.unavailable'));
+        const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? ref.duration, ratio => {
+          downloadClipBtn.title = t('sessions.extracting', { pct: Math.round(ratio * 100) });
+        });
+        const url = URL.createObjectURL(mp3);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = clipFileName(ref, ann);
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        downloadClipBtn.title = `⚠ ${String(err)}`;
+      } finally {
+        downloadClipBtn.disabled = false;
+        downloadClipBtn.classList.remove('opacity-50');
+        downloadClipBtn.title = t('sessions.downloadClip');
+      }
+    };
+    controls.appendChild(downloadClipBtn);
+  }
+
+  // Add clip as a standalone MP3 attachment (known card only) — fresh state,
+  // the card may be brand new. Hidden once the session's audio has been
+  // forgotten, unless a clip was already extracted before that (nothing left
+  // to extract, but still worth showing as done).
+  const known = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
+  const already = known ? isClipAttached(ref, ann) : false;
+  if (known && (already || audioAvailable)) {
+    const attachBtn = document.createElement('button');
+    attachBtn.className = already
+      ? 'text-[11px] text-green-500 cursor-default'
+      : 'text-[11px] text-accent hover:underline cursor-pointer';
+    attachBtn.textContent = already ? t('sessions.attached') : t('sessions.attach');
+    if (!already) {
+      attachBtn.onclick = async () => {
+        attachBtn.disabled = true;
+        attachBtn.classList.remove('hover:underline', 'cursor-pointer');
+        try {
+          const audio = await getAudio();
+          if (!audio) throw new Error(t('sessions.clip.unavailable'));
+          await attachClip(ctx, ref, ann, audio, ratio => {
+            attachBtn.textContent = t('sessions.extracting', { pct: Math.round(ratio * 100) });
+          });
+          onAttached?.();
+        } catch (err) {
+          attachBtn.textContent = `⚠ ${String(err)}`;
+        }
+      };
+    }
+    controls.appendChild(attachBtn);
+  }
 }
