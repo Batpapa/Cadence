@@ -11,18 +11,17 @@ When you sit down to practice, Cadence helps you make the most of your session b
 ## Features
 
 - **Flashcard-based study** — rate each card after review (Again / Hard / Good / Easy), FSRS tracks how well you know each item and prioritises accordingly
-- **Deck organisation** — group cards into decks, nest decks in folders
-- **Knowledge tracking** — per-card and per-deck retention scores, weighted by importance
-- **Rich cards** — attach notes, images, sheet music, audio files, or any document to a card
-- **Works offline** — everything is stored locally in your browser (IndexedDB), nothing is sent to a server
-
-## TheSession integration
-
-Cadence includes built-in support for [TheSession.org](https://thesession.org), a community library of folk and traditional music. You can search and import any tune directly by name — all available settings (keys and modes) are imported as ABC notation files, rendered as sheet music with audio playback and tempo control inside the app.
+- **Deck organisation** — group cards into decks, nest decks in folders, study a folder or the whole library at once
+- **Knowledge tracking** — per-card and per-deck retention scores, weighted by contextual importance
+- **Rich cards** — attach notes, images, sheet music (ABC notation, rendered with [abcjs](https://github.com/paulrosen/abcjs)), audio, or any document to a card
+- **Session recording & tune recognition** — record a session (or import a recording), and Cadence identifies which tunes are being played and when, entirely on-device, then lets you clip and save extracts straight onto cards
+- **Import from TheSession.org and IrishTuneInfo.com** — search and import tunes by name, with all available settings brought in as ABC
+- **Import / export** — share individual cards or full backups (`.cdc` / `.cdb`), export a deck as CSV, or hand a pack to someone else with a short one-time share key
+- **Local-first** — card data and study history live in your browser (IndexedDB); no account needed.
 
 ## Tech stack
 
-TypeScript · Webpack 5 · Tailwind CSS v3 · abcjs · IndexedDB (via idb)
+TypeScript · Preact · Webpack 5 · Tailwind CSS v3 · abcjs · IndexedDB (via idb) · WebCodecs / web-demuxer (audio) · [FolkFriend](https://github.com/TomWyllie/folkfriend) (WASM, on-device tune recognition)
 
 ## Development
 
@@ -33,3 +32,11 @@ npm run build    # production build → dist/
 npm run deploy   # build + push to GitHub Pages
 npm run deploy --msg="your message"   # with a custom commit message
 ```
+
+## Acknowledgments
+
+The session tune-recognition feature is powered by [FolkFriend](https://github.com/TomWyllie/folkfriend) by Tom Wyllie, compiled to WebAssembly and run fully on-device — no audio ever leaves the browser. FolkFriend is GPL-3.0-licensed; see [`vendor/folkfriend/README.md`](vendor/folkfriend/README.md) for the vendored build details.
+
+## License
+
+[AGPL-3.0-or-later](https://www.gnu.org/licenses/agpl-3.0.html)
