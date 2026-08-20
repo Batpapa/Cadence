@@ -10,10 +10,20 @@ import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detec
 // just "faster than real time", not a different code path). Re-runs the full
 // decode over the FULL window history on every step — same "recompute is
 // cheap enough, don't bound it" call the segmenter.ts-era IncrementalSegmenter
-// this replaces made (2026-08-11 design discussion); see the 2026-08-14/15
-// O(T×S) benchmark (T=5000, S=150 stays under 300ms per call) for why summing
-// that across every step of even a multi-hour session is nowhere near a
-// performance concern.
+// this replaces made (2026-08-11 design discussion).
+//
+// ⚠ This IS genuinely O(T²×S) summed over a whole session (T recomputes, each
+// itself O(T×S) per the 2026-08-14/15 benchmark) — confirmed directly
+// (2026-08-21): replaying a real 955-window/~80min session step-by-step, as
+// ffWorker.ts actually does, takes ~100-110s of pure compute (worker thread,
+// not the main thread — doesn't freeze the UI, but is a real, measured cost,
+// not the "nowhere near a concern" this comment used to claim). Accepted
+// as-is by design (2026-08-21 user call) rather than fixed: correctness and
+// the simplicity of "just recompute everything, no incremental DP state to
+// keep in sync" win over the cost here. Don't "fix" this without asking —
+// bounding/throttling the recompute would trade away exactly the property
+// (every step sees the true, fully-converged answer — see
+// ViterbiResult.convergedThroughIndex) this design deliberately bought.
 //
 // UNKNOWN_STATE segments never become annotations — they represent silence,
 // talk, or noise, not a tune.
