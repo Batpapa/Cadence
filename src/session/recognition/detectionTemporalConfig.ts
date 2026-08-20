@@ -63,21 +63,6 @@ export interface DetectionTemporalConfig {
    *  pick (formerly segmenterConfig.ts's MAX_ALTERNATES). */
   maxAlternates: number;
 
-  /** Used by viterbiSegmenter.ts's incremental wrapper to decide when a
-   *  segment is safe from future revision. UNLIKE segmenterConfig.ts's old
-   *  MAX_GAP_WINDOWS (a PROVEN bound, from purely local hysteresis, on how far
-   *  back a new window could touch history), this is an EMPIRICAL heuristic:
-   *  Viterbi is a global decode, so there's no formal guarantee a distant
-   *  future window can never revise an old decision. The 2026-08-15
-   *  revision-lag probe (replayed all 4 annotated real sessions as growing
-   *  prefixes, ~60 checkpoints each, comparing every prefix's decoded state
-   *  per window against the full-session final state) found the disagreement
-   *  NEVER reached more than 0 windows back from the prefix's own last
-   *  window — i.e., in every real case observed, only the most recent window
-   *  was ever still "undecided." This value is a precautionary margin on top
-   *  of that (0 measured), not a value the data required. */
-  finalizationLagSeconds: number;
-
   /** Post-process (2026-08-15), applied AFTER the Viterbi decode, never
    *  inside it — see `filterShortSegments`/`countTop1Windows` in
    *  viterbiDetector.ts. A segment is only trusted once at least this many
@@ -107,7 +92,14 @@ export interface DetectionTemporalConfig {
    *  windows (of UNKNOWN, or nothing at all), are merged into one
    *  continuous segment instead of showing as two separate detections — a
    *  brief drop to UNKNOWN mid-tune (a couple of quiet/noisy windows)
-   *  shouldn't split one real performance in two. Explicit user request. */
+   *  shouldn't split one real performance in two. Explicit user request.
+   *
+   *  Also used (2026-08-21) by viterbiSegmenter.ts to decide when a segment
+   *  is safe to finalize: Viterbi's own raw state path can be proven stable
+   *  via ViterbiResult.convergedThroughIndex, but a same-tune merge could
+   *  still reach back into a segment from a NEW segment appearing up to this
+   *  many windows later — so finality additionally requires convergence to
+   *  reach that far past the segment's own last window. */
   sameTuneMergeGapWindows: number;
 
   /** Pre-Viterbi post-process (2026-08-18), applied BEFORE `buildTemporalTimeline`
@@ -199,8 +191,6 @@ export const DETECTION_TEMPORAL_CONFIG: DetectionTemporalConfig = {
   bucketHighConfidence: 0.5,
   bucketMediumConfidence: 0.3,
   maxAlternates: 4,
-
-  finalizationLagSeconds: 30,
 
   minSegmentWindows: 2,
   sameTuneMergeGapWindows: 10,

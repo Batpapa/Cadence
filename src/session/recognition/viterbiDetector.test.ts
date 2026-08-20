@@ -25,7 +25,6 @@ const TEST_CFG: DetectionTemporalConfig = {
   bucketHighConfidence: 0.5,
   bucketMediumConfidence: 0.3,
   maxAlternates: 4,
-  finalizationLagSeconds: 30,
   minSegmentWindows: 2,
   sameTuneMergeGapWindows: 10,
   flatWindowTopN: 3,
@@ -304,13 +303,14 @@ describe('segment timestamps reflect raw observation-window spans (overlap is ex
     expect(r.segments[1]!.startTime).not.toBe(20 * HOP);
   });
 
-  it('holds on all 4 real annotated session fixtures', () => {
+  it('holds on all 5 real annotated session fixtures', () => {
     const FIXTURE_DIR = nodePath.resolve(__dirname, '../../../test-fixtures/sessions');
     const REAL_FIXTURES = [
       'One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video-windows.json',
       '20260523_5_auberge_fleurie-windows.json',
       '20260523_2_aprem_tabac-windows.json',
       '20260523_1_matin_Anglade-windows.json',
+      '13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24-windows.json',
     ];
     for (const file of REAL_FIXTURES) {
       const p = nodePath.join(FIXTURE_DIR, file);

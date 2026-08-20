@@ -74,6 +74,11 @@ export interface ViterbiDebug {
 export interface ViterbiResult {
   segments: DetectedTuneSegment[];
   stats: { numberOfTransitions: number; numberOfWindows: number };
+  /** The latest window index t such that EVERY window in [0, t] is
+   *  GUARANTEED to keep its currently-decoded state no matter what future
+   *  windows arrive — see findConvergencePoint's doc. -1 if nothing has
+   *  converged yet. */
+  convergedThroughIndex: number;
   debug?: ViterbiDebug;
 }
 
@@ -319,6 +324,44 @@ export function mergeNearbySameTune(
   return result;
 }
 
+/** The latest window index t* such that EVERY current per-state optimal
+ *  backtrack path — not just the single overall winner finalize() below
+ *  backtracks — agrees on the decoded state for every window in [0, t*].
+ *  This is an exact property of Viterbi decoding ("path convergence" /
+ *  "traceback merge point" in the streaming-decoder literature): a global
+ *  decode's optimal path for the whole recording always originates from one
+ *  of the CURRENT best-score-per-state chains, so once all of them agree on
+ *  a shared prefix, no future window — however it scores — can ever change
+ *  the decode for that prefix again. Runs one backward pass tracking each
+ *  state's own backtrack pointer simultaneously (O(T×S), same class already
+ *  benchmarked as cheap for the per-step live recompute) — the first time
+ *  all pointers coincide is the answer; they can only ever stay merged once
+ *  they meet, never diverge again, since from then on every state's pointer
+ *  is tracing the exact same underlying chain.
+ *
+ *  Replaces the old finalizationLagSeconds heuristic (2026-08-15: an
+ *  EMPIRICAL probe across 4 real sessions that never saw a revision reach
+ *  more than 0 windows back) — that heuristic turned out not to be a real
+ *  guarantee: a 2026-08-21 bug report (two separate "Rolling Waves, The"
+ *  results from one performance) traced back to exactly a revision the probe
+ *  never covered, reaching much further back than 0 windows once the whole
+ *  session's context was available. This function answers the question
+ *  exactly instead of by precedent. -1 if nothing has converged yet — a
+ *  short or genuinely ambiguous recording may legitimately have no final
+ *  answer yet; that's a correct "don't know", never a wrong "final". */
+function findConvergencePoint(T: number, states: string[], previousState: Map<string, string | null>[]): number {
+  if (T === 0) return -1;
+  if (states.length <= 1) return T - 1; // only one possible state ever — trivially converged
+  let pointer = new Map<string, string>(states.map(s => [s, s])); // each state's own backtrack pointer, currently at time T-1
+  for (let t = T - 1; t >= 1; t--) {
+    const next = new Map<string, string>();
+    for (const s of states) next.set(s, previousState[t]!.get(pointer.get(s)!)!);
+    pointer = next;
+    if (new Set(pointer.values()).size === 1) return t - 1;
+  }
+  return -1;
+}
+
 /** Shared by both implementations: turns a completed (score, prevState) DP
  *  table into the final ViterbiResult (backtrack + segment extraction +
  *  optional debug payload). */
@@ -352,6 +395,7 @@ function finalize(
       numberOfTransitions: segments.length > 0 ? segments.length - 1 : 0,
       numberOfWindows: T,
     },
+    convergedThroughIndex: findConvergencePoint(T, states, previousState),
   };
 
   if (debug) {
@@ -394,7 +438,7 @@ export function runViterbiDetectionReference(
   options: { debug?: boolean } = {},
 ): ViterbiResult {
   const T = timeline.windows.length;
-  if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 } };
+  if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
 
   const states = [...timeline.tuneIds, UNKNOWN_STATE];
 
@@ -589,7 +633,7 @@ export function runViterbiDetectionOptimized(
   options: { debug?: boolean } = {},
 ): ViterbiResult {
   const T = timeline.windows.length;
-  if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 } };
+  if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
 
   const tuneIds = timeline.tuneIds;
   const states = [...tuneIds, UNKNOWN_STATE];

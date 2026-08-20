@@ -24,8 +24,6 @@ const TEST_CFG: DetectionTemporalConfig = {
   bucketHighConfidence: 0.5,
   bucketMediumConfidence: 0.3,
   maxAlternates: 4,
-  // 2 windows at HOP=5 — small on purpose so tests don't need long tails.
-  finalizationLagSeconds: 10,
   minSegmentWindows: 2,
   // 0 by default — disabled, so existing tests that happen to reuse a
   // tuneId letter aren't silently affected. Overridden explicitly in the
@@ -123,25 +121,44 @@ describe('IncrementalViterbiSegmenter', () => {
     expect(anns[0]!.end).toBeNull(); // still "playing" as far as we know
   });
 
-  it('finalizes only once finalizationLagSeconds has elapsed after the tune ends', () => {
-    const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
+  it('finalizes as soon as the Viterbi decode provably converges — not after a fixed time lag (2026-08-21, replaces the old finalizationLagSeconds heuristic)', () => {
+    const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG); // sameTuneMergeGapWindows: 0
     const store = new Map<string, SessionAnnotation>();
-    // A plays windows 0-3, then goes silent long enough for UNKNOWN to take
-    // over and for the lag horizon to clear.
-    const windows = sequence([
-      { A: 0.9 }, { A: 0.92 }, { A: 0.9 }, { A: 0.88 }, {}, {}, {}, {}, {}, {}, {}, {},
-    ]);
-    let lastFinalizedAtStep = -1;
-    windows.forEach((w, i) => {
+    // A plays windows 0-3, then goes silent. Not finalized right when A's
+    // last real window lands (window 3 alone still leaves open "maybe this
+    // drops back to A next window" — no future evidence ruling that out
+    // yet). One single UNKNOWN window (index 4) is already enough for every
+    // possible current state's own backtrack path to agree windows 0-3 were
+    // A — see findConvergencePoint's doc — so finalization fires immediately
+    // then, not after padding out a fixed lag.
+    const windows = sequence([{ A: 0.9 }, { A: 0.92 }, { A: 0.9 }, { A: 0.88 }, {}]);
+    const finalizedAt = windows.map(w => {
       apply(store, seg.step(w));
-      const ann = [...store.values()].find(a => a.tuneId === 'A');
-      if (ann?.finalized && lastFinalizedAtStep < 0) lastFinalizedAtStep = i;
+      return [...store.values()].find(a => a.tuneId === 'A')?.finalized ?? false;
     });
 
-    expect(lastFinalizedAtStep).toBeGreaterThan(0);
+    expect(finalizedAt).toEqual([false, false, false, false, true]);
     const ann = [...store.values()].find(a => a.tuneId === 'A')!;
-    expect(ann.end).not.toBeNull();
-    expect(ann.finalized).toBe(true);
+    expect(ann.end).toBe(30);
+  });
+
+  it('finalization also waits out sameTuneMergeGapWindows past the segment — a same-tune neighbour could still merge in from later, even once the raw Viterbi path itself has converged', () => {
+    const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 3 };
+    const seg = new IncrementalViterbiSegmenter(HOP, cfg);
+    const store = new Map<string, SessionAnnotation>();
+    // Same shape as above (raw path converges at step 4), but now a same-tune
+    // reappearance up to 3 windows later could still retroactively merge into
+    // this segment — finality must wait for that margin to clear too, not
+    // just for Viterbi's own state assignment to settle.
+    const windows = sequence([
+      { A: 0.9 }, { A: 0.92 }, { A: 0.9 }, { A: 0.88 }, {}, {}, {}, {},
+    ]);
+    const finalizedAt = windows.map(w => {
+      apply(store, seg.step(w));
+      return [...store.values()].find(a => a.tuneId === 'A')?.finalized ?? false;
+    });
+
+    expect(finalizedAt).toEqual([false, false, false, false, false, false, false, true]);
   });
 
   it('produces the same net segments as a one-shot batch runViterbiDetection() call once fully finalized', () => {

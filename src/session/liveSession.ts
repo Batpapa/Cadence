@@ -236,6 +236,16 @@ export class LiveSession {
       const { events, tFinal } = await this.recognition!.stop();
       this.applyEvents(events);
 
+      // this.getAnnotations() is now trustworthy as the FINAL result, not
+      // just a live snapshot: viterbiSegmenter.ts only marks a segment
+      // `finalized` once ViterbiResult.convergedThroughIndex (an exact,
+      // provable property of the Viterbi decode — see its doc) shows no
+      // future window could ever revise it, rather than the old
+      // finalizationLagSeconds time guess. A clean stop() therefore already
+      // matches what a from-scratch recomputeAnnotations() replay (still
+      // used by recovery.ts for crash recovery, where the live annotation
+      // map is gone) would produce — no need to pay for that extra replay
+      // here too (2026-08-21).
       const session: RecordedSession = {
         id: this.sessionId,
         name: this.name,
