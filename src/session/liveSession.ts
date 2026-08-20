@@ -86,6 +86,13 @@ export class LiveSession {
     return [...this.annotations.values()].sort((a, b) => a.start - b.start);
   }
 
+  /** The MediaRecorder mime type once recording has actually started, '' before
+   *  then — used to assemble a playable Blob from collectChunks() mid-recording
+   *  (clip extraction on an already-finalized annotation, sessionModule.ts). */
+  get mimeType(): string {
+    return this.recorder?.mimeType ?? '';
+  }
+
   /** Mic level 0–1 for the VU meter (poll from UI). */
   getLevel(): number {
     return this.mic.getLevel();
