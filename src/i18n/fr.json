@@ -1,4 +1,6 @@
 {
+  "welcome.tagline": "La répétition espacée, pour tout ce que vous voulez retenir.",
+  "welcome.sourceTitle": "Voir le code source sur GitHub",
   "userSelector.title": "Qui utilise Cadence ?",
   "userSelector.new": "Nouvel utilisateur",
   "userSelector.namePlaceholder": "Votre nom",
@@ -314,6 +316,8 @@
   "settings.logout.message": "Vous serez renvoyé à l'écran de sélection d'utilisateur. Vos données ne sont pas supprimées.",
   "settings.logout.confirm": "Se déconnecter",
   "settings.logoutHint": "Vos données ne sont pas supprimées.",
+  "settings.privacyPolicy": "Politique de confidentialité",
+  "settings.termsOfService": "Conditions d'utilisation",
   "settings.backup": "Sauvegarde",
   "settings.backupHint": "Exportez ou importez toutes vos données.",
   "settings.resetHint": "Supprime définitivement toutes vos données.",
