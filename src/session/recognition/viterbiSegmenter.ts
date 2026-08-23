@@ -1,29 +1,31 @@
 import type { WindowResult, SessionAnnotation, AnnotationAlternate, AnnotationEvidence, AnnotationEvent } from '../model';
-import { runViterbiDetection, filterShortSegments, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
+import { StreamingViterbiDecoder, filterShortSegments, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
 import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
 // ── Incremental adapter over the Viterbi detector ───────────────────────────
-// runViterbiDetection() is a stateless global decode over the WHOLE recording;
-// this wraps it for the worker's window-by-window feed (both live and import
-// go through the exact same maybeAnalyzeLive() loop in ffWorker.ts — import is
-// just "faster than real time", not a different code path). Re-runs the full
-// decode over the FULL window history on every step — same "recompute is
-// cheap enough, don't bound it" call the segmenter.ts-era IncrementalSegmenter
-// this replaces made (2026-08-11 design discussion).
+// Wraps StreamingViterbiDecoder for the worker's window-by-window feed (both
+// live and import go through the exact same maybeAnalyzeLive() loop in
+// ffWorker.ts — import is just "faster than real time", not a different code
+// path).
 //
-// ⚠ This IS genuinely O(T²×S) summed over a whole session (T recomputes, each
-// itself O(T×S) per the 2026-08-14/15 benchmark) — confirmed directly
-// (2026-08-21): replaying a real 955-window/~80min session step-by-step, as
-// ffWorker.ts actually does, takes ~100-110s of pure compute (worker thread,
-// not the main thread — doesn't freeze the UI, but is a real, measured cost,
-// not the "nowhere near a concern" this comment used to claim). Accepted
-// as-is by design (2026-08-21 user call) rather than fixed: correctness and
-// the simplicity of "just recompute everything, no incremental DP state to
-// keep in sync" win over the cost here. Don't "fix" this without asking —
-// bounding/throttling the recompute would trade away exactly the property
-// (every step sees the true, fully-converged answer — see
-// ViterbiResult.convergedThroughIndex) this design deliberately bought.
+// 2026-08-23: used to call runViterbiDetection() — a stateless global decode
+// over the WHOLE recording — from scratch on every single window, which is
+// genuinely O(T²×S) summed over a session (T recomputes, each itself O(T×S)):
+// confirmed directly (2026-08-21) at ~100-110s of pure compute for a real
+// 955-window/~80min session. Accepted as a tradeoff for a while (2026-08-21
+// user call) on the theory that correctness and "no incremental DP state to
+// keep in sync" were worth the cost — but genuinely quadratic means a longer
+// import (2-3h) simply doesn't finish in reasonable time, so it was worth
+// fixing properly rather than continuing to accept it. `decoder` below
+// (StreamingViterbiDecoder, viterbiDetector.ts) makes this amortized O(T×S)
+// instead — see its header doc for the exact correctness argument (proof that
+// the incremental decode is byte-identical to the from-scratch one, not an
+// approximation) and the dev-only shadow-assert / streaming equivalence
+// tests that check this holds on real session fixtures. Same 955-window
+// fixture, streamed step-by-step as ffWorker.ts actually does: measured
+// (2026-08-23) at 103.2s before -> 2.1s after (shadow-assert off, matching
+// production — see StreamingViterbiDecoder's disableShadowAssert doc).
 //
 // UNKNOWN_STATE segments never become annotations — they represent silence,
 // talk, or noise, not a tune.
@@ -85,6 +87,10 @@ export class IncrementalViterbiSegmenter {
   private tracked: Tracked[] = [];
   private readonly cfg: DetectionTemporalConfig;
   private readonly hopS: number;
+  // Owns the incremental DP state for this segmenter's whole lifetime — reset
+  // naturally by session, since a new IncrementalViterbiSegmenter is already
+  // created per session (ffWorker.ts's handleInit/handleStop).
+  private readonly decoder = new StreamingViterbiDecoder();
 
   constructor(hopS: number, cfg: DetectionTemporalConfig = DETECTION_TEMPORAL_CONFIG) {
     this.hopS = hopS;
@@ -165,7 +171,7 @@ export class IncrementalViterbiSegmenter {
     const marginFiltered = filterFlatWindows(this.windows, this.cfg.flatWindowTopN, this.cfg.flatWindowMarginThreshold);
     const detectionWindows = filterByTempoSpread(marginFiltered, this.cfg.tempoSpreadThreshold);
     const timeline = buildTemporalTimeline(detectionWindows, this.cfg);
-    const result = runViterbiDetection(timeline, this.cfg);
+    const result = this.decoder.extend(timeline, this.cfg);
     // exemptLastSegment = !forceFinalizeAll: while a session (live or
     // import) is still streaming windows in, the most recent segment is
     // shown even if still short (user call: fine if it later disappears) —

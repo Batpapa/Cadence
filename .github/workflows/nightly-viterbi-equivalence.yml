@@ -1,0 +1,26 @@
+name: Nightly Viterbi streaming equivalence
+
+# Runs the 5 real-session streaming-vs-reference equivalence tests
+# (viterbiStreamingEquivalence.test.ts) that `npm test` deliberately skips —
+# the O(T×S²) reference decode alone takes minutes per fixture (~155s for the
+# largest, 955 windows), too slow to pay on every push. CADENCE_NIGHTLY=1 is
+# what un-skips them (see `it.skipIf(!process.env.CADENCE_NIGHTLY)` in that
+# file) — this is the ONLY place that variable should be set.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  streaming-equivalence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CADENCE_NIGHTLY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run test:nightly
