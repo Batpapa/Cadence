@@ -1,3 +1,19 @@
+/* Self-hosted IBM Plex (OFL-licensed) — vendored via @fontsource instead of
+ * linking fonts.googleapis.com/fonts.gstatic.com, so visiting Cadence no
+ * longer sends every visitor's IP/user-agent to Google on every load. Same
+ * weights as the old Google Fonts link; each file below still declares one
+ * @font-face per Unicode range (latin, latin-ext, cyrillic, …) with the
+ * matching unicode-range, so the browser only fetches what the page text
+ * actually needs — identical behaviour to the CDN version, just self-served. */
+@import '@fontsource/ibm-plex-sans/300.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

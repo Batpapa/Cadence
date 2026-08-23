@@ -1,6 +1,12 @@
 {
   "name": "cadence",
   "version": "1.0.0",
+  "description": "A local-first spaced repetition app for building and maintaining a long-term repertoire of anything, with extra tools for Irish traditional musicians.",
+  "author": "Batpapa",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Batpapa/Cadence.git"
+  },
   "private": true,
   "license": "AGPL-3.0-or-later",
   "scripts": {
@@ -32,6 +38,8 @@
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@preact/signals": "^2.9.0",
     "@soundtouchjs/audio-worklet": "^1.0.10",
     "abcjs": "^6.7.0",

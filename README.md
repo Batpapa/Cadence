@@ -33,9 +33,30 @@ npm run deploy   # build + push to GitHub Pages
 npm run deploy --msg="your message"   # with a custom commit message
 ```
 
+## Server dependency
+
+TheSession.org import talks directly to `thesession.org` from the browser. IrishTuneInfo import and the share-by-key
+feature depend on a small companion server ([`irishtuneinfo-scraper-api`](https://github.com/Batpapa/irishtuneinfo-scraper-api))
+run on a Render free-tier instance, which sleeps after inactivity — the first request after a while can take up to
+~1 minute to wake it back up (this is handled/surfaced in the UI; see `scraperServerStatus.ts`). If you fork Cadence,
+these two features will hit *the author's* instance unless you deploy your own and repoint `SCRAPER_BASE` (see
+Self-hosting below).
+
+## Self-hosting / configuration
+
+Cadence is AGPL-licensed specifically so it's easy to redeploy your own copy. Two values are hard-coded and should be
+changed if you do:
+
+- **`GOOGLE_CLIENT_ID`** (`src/config.ts`) — an OAuth 2.0 Client ID for the optional Google Drive sync feature. Create
+  your own at [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials, and add your
+  deployment's origin under "Authorized JavaScript origins".
+- **`SCRAPER_BASE`** (`src/services/scraperServerStatus.ts`) — the base URL of the companion scraper/share server
+  described above. Deploy your own copy of [`irishtuneinfo-scraper-api`](https://github.com/Batpapa/irishtuneinfo-scraper-api)
+  (e.g. on Render) and point this at it, or IrishTuneInfo import and sharing-by-key will hit the author's instance.
+
 ## Acknowledgments
 
-The session tune-recognition feature is powered by [FolkFriend](https://github.com/TomWyllie/folkfriend) by Tom Wyllie, compiled to WebAssembly and run fully on-device — no audio ever leaves the browser. FolkFriend is GPL-3.0-licensed; see [`vendor/folkfriend/README.md`](vendor/folkfriend/README.md) for the vendored build details.
+The session tune-recognition feature is powered by [FolkFriend](https://github.com/TomWyllie/folkfriend) by Tom Wyllie, compiled to WebAssembly and run fully on-device — no audio ever leaves the browser for *recognition*. (Audio does leave the browser if you explicitly share a recorded session with its audio attached — see the [Privacy Policy](https://batpapa.github.io/Cadence/privacy.html).) FolkFriend is GPL-3.0-licensed; see [`vendor/folkfriend/README.md`](vendor/folkfriend/README.md) for the vendored build details.
 
 ## License
 

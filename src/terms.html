@@ -15,28 +15,46 @@
 </head>
 <body>
   <h1>Terms of Service</h1>
-  <p class="updated">Last updated: April 2026</p>
+  <p class="updated">Last updated: August 2026</p>
 
   <p>By using Cadence, you agree to these terms. If you do not agree, please do not use the application.</p>
 
   <h2>Description</h2>
-  <p>Cadence is a free, open-source flashcard application for personal use. It runs entirely in your browser and stores data locally. An optional Google Drive sync feature is available to back up and synchronise your data across devices.</p>
+  <p>Cadence is a free, open-source flashcard application. It runs entirely in your browser and stores data locally.
+  A few optional features talk to a server: Google Drive sync (to back up and synchronise your data across devices),
+  a short-lived share relay operated by the author (to hand a card pack or session to someone else via a one-time
+  key), and lookups against TheSession.org / IrishTuneInfo.com when importing tunes. None of these servers keep a
+  durable copy of your data — see the <a href="./privacy.html">Privacy Policy</a> for the details of what each one
+  sees and for how long.</p>
 
   <h2>Use of the Application</h2>
   <ul>
-    <li>Cadence is provided free of charge for personal, non-commercial use.</li>
+    <li>Cadence is provided free of charge for personal, non-commercial use of the hosted app at
+    <a href="https://batpapa.github.io/Cadence/" target="_blank" rel="noopener">batpapa.github.io/Cadence</a>. This
+    restricts use of the hosted service — it does not narrow the rights the project's open-source licence (below)
+    grants over the code itself.</li>
     <li>You are responsible for the content you add to your flashcard decks.</li>
     <li>You must not use Cadence for any unlawful purpose.</li>
   </ul>
+
+  <h2>Shared Content</h2>
+  <p>If you use the share-by-key feature, you're solely responsible for what you share. The relay is provided on a
+  best-effort basis: it is intentionally ephemeral (see the Privacy Policy for the exact limits), carries no
+  availability guarantee, and the author may restrict or discontinue it at any time without notice.</p>
 
   <h2>Google Drive Integration</h2>
   <p>The Google Drive sync feature is entirely optional. When enabled, Cadence stores a single file (<code>cadence-data.json</code>) in your Google Drive using the <code>drive.file</code> scope. You can disconnect and delete this file at any time. Use of this feature is also subject to <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Google's Terms of Service</a>.</p>
 
   <h2>Data and Liability</h2>
-  <p>Cadence does not back up your data on any external server. You are solely responsible for keeping copies of your data. The application is provided <strong>as is</strong>, without any warranty. The author is not liable for any data loss resulting from browser storage clearing, application bugs, or any other cause.</p>
+  <p>Cadence does not keep a durable backup of your data on any external server — see the <a href="./privacy.html">Privacy Policy</a> for how the optional share relay and Google Drive sync handle data in transit. You are solely responsible for keeping copies of your data. The application is provided <strong>as is</strong>, without any warranty. The author is not liable for any data loss resulting from browser storage clearing, application bugs, or any other cause.</p>
 
   <h2>Open Source</h2>
-  <p>Cadence is open-source software. The source code is available on <a href="https://github.com/Batpapa/Cadence" target="_blank" rel="noopener">GitHub</a> under its respective licence.</p>
+  <p>Cadence is open-source software, licensed under the
+  <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL-3.0-or-later</a>. The
+  source code is available on <a href="https://github.com/Batpapa/Cadence" target="_blank" rel="noopener">GitHub</a>.
+  The "personal, non-commercial use" clause above applies to the hosted service at batpapa.github.io — the AGPL
+  license itself grants broader rights (including commercial use) over the code, subject to its terms (notably
+  section 13, which requires a network-facing modified version to also offer its source).</p>
 
   <h2>Changes to These Terms</h2>
   <p>These terms may be updated at any time. Continued use of the application after changes constitutes acceptance of the new terms.</p>
