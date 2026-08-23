@@ -74,23 +74,43 @@ function computeAlternates(
   end: number,
   cfg: DetectionTemporalConfig,
 ): AnnotationAlternate[] {
-  const stats = new Map<string, { settingId: string; displayName: string; sum: number; count: number }>();
+  // meanScore must be DENSE — averaged over every window in [start, end),
+  // treating a window where this tune wasn't even a top-N candidate as a 0
+  // for it — to stay the metric SessionAnnotation.meanScore's own doc
+  // promises it's "directly comparable" to (extractSegments/viterbiDetector.ts
+  // computes the WINNING tune's own meanScore the same dense way, off a
+  // zero-filled observations array). A 2026-08-25 bug (reported by the user
+  // eyeballing an implausibly high alternate: a tune that only spiked in 2-3
+  // windows out of a 27-window span showed as if it had been a consistently
+  // strong ~47% match) divided by how many windows the tune actually
+  // appeared in instead — a SPARSE average that ignores every window it was
+  // absent from, letting a couple of high-scoring flukes dominate.
+  let totalWindows = 0;
+  const stats = new Map<string, { settingId: string; displayName: string; dance: string; meter: string; sum: number }>();
   for (const w of windows) {
     if (w.tWindowStart < start || w.tWindowStart >= end) continue;
+    totalWindows++;
     for (const c of w.candidates) {
       if (c.tuneId === tuneId) continue;
       const s = stats.get(c.tuneId);
-      if (s) { s.sum += c.score; s.count++; }
-      else stats.set(c.tuneId, { settingId: c.settingId, displayName: c.displayName, sum: c.score, count: 1 });
+      if (s) { s.sum += c.score; }
+      else stats.set(c.tuneId, { settingId: c.settingId, displayName: c.displayName, dance: c.dance, meter: c.meter, sum: c.score });
     }
   }
   return [...stats.entries()]
-    .map(([id, s]) => ({ tuneId: id, settingId: s.settingId, displayName: s.displayName, meanScore: s.sum / s.count }))
+    .map(([id, s]) => ({ tuneId: id, settingId: s.settingId, displayName: s.displayName, dance: s.dance, meter: s.meter, meanScore: s.sum / totalWindows }))
     .sort((a, b) => b.meanScore - a.meanScore)
     .slice(0, cfg.maxAlternates);
 }
 
-function bucketOf(confidence: number, cfg: DetectionTemporalConfig): SessionAnnotation['bucket'] {
+/** Exported for AlternatesPopover.tsx — reused to color a raw meanScore
+ *  (SessionAnnotation.meanScore/AnnotationAlternate.meanScore) the same way
+ *  the confidence badge colors `ann.bucket`, even though that badge's own
+ *  bucket is actually computed from `confidence` (a different, win-rate-
+ *  style metric — see its own doc). Same 0-1 thresholds, reused as a rough
+ *  but consistent visual grammar across both metrics, not a claim they're
+ *  the same number. */
+export function bucketOf(confidence: number, cfg: DetectionTemporalConfig): SessionAnnotation['bucket'] {
   if (confidence >= cfg.bucketHighConfidence) return 'high';
   if (confidence >= cfg.bucketMediumConfidence) return 'medium';
   return 'low';
@@ -166,6 +186,15 @@ export class IncrementalViterbiSegmenter {
       meanScore: seg.averageProbability,
       evidence,
       alternates,
+      viterbiPick: {
+        tuneId: seg.tuneId, settingId: seg.settingId, displayName: seg.displayName,
+        dance: seg.dance, meter: seg.meter, meanScore: seg.averageProbability,
+      },
+      // Always false straight out of the segmenter — it never decides an
+      // identity override itself, only the orchestrators' applyEvents()
+      // (liveSession.ts/importSession.ts) do, by preserving a prior true
+      // across this fresh rebuild (see their own doc). A freshly (re)built
+      // annotation with no prior state starts unconfirmed.
       userConfirmed: false,
       liked: false,
       finalized,

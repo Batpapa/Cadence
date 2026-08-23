@@ -4,7 +4,7 @@ import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
-import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent } from './model';
+import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent, AnnotationAlternate } from './model';
 import type { IndexProgress } from './recognition/indexStore';
 
 // ── Import session orchestrator ───────────────────────────────────────────────
@@ -272,6 +272,19 @@ export class ImportSession {
     const ann = this.annotations.get(annotationId);
     if (!ann) return;
     this.annotations.set(annotationId, { ...ann, liked: !ann.liked });
+  }
+
+  /** Overrides which tune this annotation displays as — see LiveSession's
+   *  identical method for the full doc. */
+  selectAlternate(annotationId: string, pick: AnnotationAlternate): void {
+    const ann = this.annotations.get(annotationId);
+    if (!ann) return;
+    this.annotations.set(annotationId, {
+      ...ann,
+      tuneId: pick.tuneId, settingId: pick.settingId, displayName: pick.displayName,
+      dance: pick.dance, meter: pick.meter,
+      userConfirmed: pick.tuneId !== ann.viterbiPick.tuneId,
+    });
   }
 
   /** Filename without extension — the default name shown/persisted until renamed. */

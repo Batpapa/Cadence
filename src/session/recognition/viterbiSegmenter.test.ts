@@ -121,6 +121,42 @@ describe('IncrementalViterbiSegmenter', () => {
     expect(anns[0]!.end).toBeNull(); // still "playing" as far as we know
   });
 
+  it('viterbiPick mirrors the winning segment\'s own identity, and alternates carry dance/meter — the "explore alternatives" picker (2026-08-25) needs both', () => {
+    const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
+    const store = new Map<string, SessionAnnotation>();
+    // B loses every window (lower score) but still shows up as a real
+    // candidate throughout A's span — exactly the shape computeAlternates
+    // ranks by mean score.
+    const windows = sequence([{ A: 0.9, B: 0.3 }, { A: 0.92, B: 0.35 }, { A: 0.9, B: 0.32 }]);
+    for (const w of windows) apply(store, seg.step(w));
+
+    const ann = [...store.values()].find(a => a.tuneId === 'A')!;
+    expect(ann.viterbiPick).toEqual({
+      tuneId: 'A', settingId: 'sA', displayName: 'Tune A', dance: 'reel', meter: '4/4', meanScore: ann.meanScore,
+    });
+    expect(ann.alternates).toHaveLength(1);
+    expect(ann.alternates[0]).toMatchObject({ tuneId: 'B', settingId: 'sB', displayName: 'Tune B', dance: 'reel', meter: '4/4' });
+    expect(ann.alternates[0]!.meanScore).toBeCloseTo((0.3 + 0.35 + 0.32) / 3, 6);
+  });
+
+  it('alternates\' meanScore is averaged over EVERY window in the span (zero-filled where absent), not just the windows the tune happened to appear in — regression (2026-08-25, reported by the user eyeballing an implausibly high alternate)', () => {
+    const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
+    const store = new Map<string, SessionAnnotation>();
+    // A wins all 4 windows. B is only ever a candidate in ONE of them (a
+    // brief spike, score 0.8) — absent (not even a weak candidate) the other
+    // 3. A sparse average (old, buggy behavior) would report B at 0.8 (as if
+    // consistently strong); the correct dense average must treat the 3
+    // absent windows as 0 and report 0.8/4 = 0.2.
+    const windows = sequence([{ A: 0.9 }, { A: 0.92, B: 0.8 }, { A: 0.9 }, { A: 0.88 }]);
+    for (const w of windows) apply(store, seg.step(w));
+
+    const ann = [...store.values()].find(a => a.tuneId === 'A')!;
+    const b = ann.alternates.find(a => a.tuneId === 'B')!;
+    expect(b).toBeDefined();
+    expect(b.meanScore).toBeCloseTo(0.8 / 4, 6);
+    expect(b.meanScore).not.toBeCloseTo(0.8, 6); // the sparse-average bug's answer
+  });
+
   it('finalizes as soon as the Viterbi decode provably converges — not after a fixed time lag (2026-08-21, replaces the old finalizationLagSeconds heuristic)', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG); // sameTuneMergeGapWindows: 0
     const store = new Map<string, SessionAnnotation>();

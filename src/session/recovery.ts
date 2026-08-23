@@ -33,12 +33,12 @@ import type { AnnotationEvent, SessionAnnotation, WindowResult } from './model';
  *  to trust at all — a crash/refresh loses it entirely, leaving just the raw
  *  windows dump to replay.
  *
- *  Loses any userConfirmed/liked edits made before the crash — those only
- *  ever lived in the in-memory annotation map, never persisted independently
- *  of it, and userConfirmed has no UI path to ever become true anyway.
- *  Accepted tradeoff (explicit user call): correctness of the recognition
- *  result matters more than preserving mid-session manual edits across a
- *  crash. */
+ *  Loses any userConfirmed/liked edits made before the crash (including a
+ *  manual tune-identity override via selectAlternate(), 2026-08-25 — same
+ *  userConfirmed flag) — those only ever lived in the in-memory annotation
+ *  map, never persisted independently of it. Accepted tradeoff (explicit
+ *  user call): correctness of the recognition result matters more than
+ *  preserving mid-session manual edits across a crash. */
 export function recomputeAnnotations(windows: WindowResult[], hopS: number = ANALYSIS_HOP_S): SessionAnnotation[] {
   const segmenter = new IncrementalViterbiSegmenter(hopS);
   const store = new Map<string, SessionAnnotation>();

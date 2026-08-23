@@ -176,6 +176,8 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     ensureTargetDeckIds: ensureLiveTargetDeckIds,
     onTargetDeckIdsChanged: () => { titleControlsRef.current?.refreshDeckBtn(); setDeckIdsTick(x => x + 1); },
     onToggleLike: (id) => { live.toggleLike(id); setAnnotations(live.getAnnotations()); },
+    onSelectAlternate: (id, pick) => { live.selectAlternate(id, pick); setAnnotations(live.getAnnotations()); },
+    getLatestAnnotation: (id) => live.getAnnotations().find(a => a.id === id),
     // Clip extraction only once finalized (2026-08-21) — before that the
     // tune's own bounds/existence could still be revised.
     extraControls: ann.finalized ? (el) => {

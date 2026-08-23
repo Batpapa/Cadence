@@ -3,7 +3,7 @@ import { MicSource } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
-import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent } from './model';
+import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent, AnnotationAlternate } from './model';
 import type { IndexProgress } from './recognition/indexStore';
 
 // ── Live session orchestrator ─────────────────────────────────────────────────
@@ -213,6 +213,23 @@ export class LiveSession {
     const ann = this.annotations.get(annotationId);
     if (!ann) return;
     this.annotations.set(annotationId, { ...ann, liked: !ann.liked });
+    this.persistDraft();
+  }
+
+  /** Overrides which tune this annotation displays as — `pick` is either
+   *  `ann.viterbiPick` itself (picking the algorithm's own current answer —
+   *  clears the override, since viterbiPick tracks it live regardless) or
+   *  one of `ann.alternates` (freezes the identity going forward and
+   *  protects it from retraction — see model.ts's userConfirmed doc). */
+  selectAlternate(annotationId: string, pick: AnnotationAlternate): void {
+    const ann = this.annotations.get(annotationId);
+    if (!ann) return;
+    this.annotations.set(annotationId, {
+      ...ann,
+      tuneId: pick.tuneId, settingId: pick.settingId, displayName: pick.displayName,
+      dance: pick.dance, meter: pick.meter,
+      userConfirmed: pick.tuneId !== ann.viterbiPick.tuneId,
+    });
     this.persistDraft();
   }
 
