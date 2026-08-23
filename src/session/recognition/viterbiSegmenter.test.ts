@@ -161,6 +161,35 @@ describe('IncrementalViterbiSegmenter', () => {
     expect(finalizedAt).toEqual([false, false, false, false, false, false, false, true]);
   });
 
+  it('a superseded segment stops showing end:null ("playing…") the moment it is no longer the live tail, even though it is not finalized yet — regression (2026-08-24): the "nothing worth telling the UI about" shortcut only compared the segment\'s OWN fields (tuneId/bounds/confidence), which can legitimately stay identical across the very recompute where a LATER segment takes over the tail, silently swallowing the open->closed transition and leaving the annotation stuck at end:null indefinitely', () => {
+    const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 3 };
+    const seg = new IncrementalViterbiSegmenter(HOP, cfg);
+    const store = new Map<string, SessionAnnotation>();
+    // Same shape as the sibling "waits out sameTuneMergeGapWindows" test
+    // above: A's raw Viterbi assignment converges at step 4, but with
+    // sameTuneMergeGapWindows=3, finalization itself doesn't land until step
+    // 7 — so there are several steps in between where A is genuinely no
+    // longer the tail (window 4 onward decodes UNKNOWN) but still
+    // unfinalized, exactly the "pending confirmation" state the UI shows an
+    // hourglass for. A's own segment bounds (windows 0-3) never change again
+    // after step 3, which is precisely what let the bug hide.
+    const windows = sequence([
+      { A: 0.9 }, { A: 0.92 }, { A: 0.9 }, { A: 0.88 }, {}, {}, {}, {},
+    ]);
+    const endAt = windows.map(w => {
+      apply(store, seg.step(w));
+      const ann = [...store.values()].find(a => a.tuneId === 'A');
+      return ann ? ann.end : 'MISSING';
+    });
+
+    // Once it exists, it reads end:null ("playing…") while still the live tail.
+    expect(endAt[3]).toBeNull();
+    // The moment window 4 (first silent one) supersedes it, end must become
+    // real RIGHT THEN — not stay null for steps 4-6 while only `finalized`
+    // eventually flips at step 7 (already covered by the sibling test).
+    expect(endAt.slice(4)).toEqual([30, 30, 30, 30]); // windows[3].tWindowEnd
+  });
+
   it('produces the same net segments as a one-shot batch runViterbiDetection() call once fully finalized', () => {
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.85 }, { A: 0.4 }, { A: 0.1 },

@@ -15,6 +15,44 @@ import type { IndexProgress } from './recognition/indexStore';
 
 export type ImportPhase = 'idle' | 'initializing' | 'decoding' | 'analyzing' | 'saving' | 'done' | 'cancelled' | 'error';
 
+// ── ETA estimation ─────────────────────────────────────────────────────────
+// Pure helpers (exported for unit testing) backing onWindow()'s progress
+// callback — a TRAILING rate over the last RATE_WINDOW_S of wall time, not a
+// plain average since analysis started. That average-since-start version
+// (2026-08-25 bug, reported by the user: "j'ai l'impression qu'il sous-
+// estime systématiquement") anchored on whatever throughput the very first
+// few windows happened to show — and StreamingFileSource can have a few
+// chunks already decoded and queued (MAX_DECODE_QUEUE) the instant analysis
+// starts, so those first windows can land unusually fast. That early burst
+// permanently dragged the since-start average optimistic for the rest of
+// the run, even once the real, slower steady-state rate took over. A
+// trailing window self-corrects instead of anchoring on t=0 forever.
+
+export interface RateSample { t: number; analyzedS: number }
+
+export const RATE_WINDOW_S = 20;
+
+/** Drops samples older than RATE_WINDOW_S, always keeping at least one
+ *  (the most recent) so there's always something to compute against. */
+export function pruneRateSamples(samples: RateSample[], now: number): RateSample[] {
+  const cutoff = now - RATE_WINDOW_S * 1000;
+  let i = 0;
+  while (i < samples.length - 1 && samples[i]!.t < cutoff) i++;
+  return samples.slice(i);
+}
+
+/** null until the trailing window covers enough real time (>3s) to trust —
+ *  same "don't show a wild estimate from a single data point" gate the
+ *  since-start version had, just measured against the window's own span
+ *  instead of absolute elapsed time. */
+export function estimateEtaS(samples: RateSample[], totalS: number, analyzedS: number, now: number): number | null {
+  const oldest = samples[0];
+  if (!oldest) return null;
+  const spanS = (now - oldest.t) / 1000;
+  const coveredS = analyzedS - oldest.analyzedS;
+  return spanS > 3 && coveredS > 0 ? Math.max(0, (totalS - analyzedS) * (spanS / coveredS)) : null;
+}
+
 export interface ImportProgress {
   analyzedS: number;
   totalS: number;
@@ -43,7 +81,8 @@ export class ImportSession {
   /** Raw per-window results — the detectionTemporalConfig.ts calibration dump. */
   readonly windows: WindowResult[] = [];
   private cancelRequested = false;
-  private analysisStartedAt = 0;
+  /** Backs the ETA in onWindow() — see the RateSample/estimateEtaS doc above. */
+  private rateSamples: RateSample[] = [];
   /** Actual analyzed length (worker's own sample-accurate clock) — can exceed
    *  `source.duration` when that was only a pre-decode ESTIMATE (no Cues to
    *  compute it exactly for a Cue-less MediaRecorder webm) that undershot the
@@ -121,6 +160,17 @@ export class ImportSession {
       const version = await this.recognition.ready;
       console.debug(`[import] engine ready (FolkFriend ${version})`);
 
+      // cancel() only has anything to actually stop() once `source` exists
+      // (see its own doc) — a cancel requested during initializing/decoding
+      // would otherwise be silently dropped and only take effect once the
+      // FULL file finished analyzing normally, defeating the point of
+      // cancelling early. Bail out here before starting anything that would
+      // need stopping.
+      if (this.cancelRequested) {
+        this.setPhase('cancelled');
+        return null;
+      }
+
       this.setPhase('decoding');
       this.source = await createFileSource(this.file);
       console.debug(`[import] decoded: ${this.source.duration!.toFixed(1)}s @ ${this.source.sampleRate}Hz`);
@@ -128,9 +178,13 @@ export class ImportSession {
         throw new Error(`too-short:${Math.round(this.source.duration!)}`);
       }
 
+      if (this.cancelRequested) {
+        this.setPhase('cancelled');
+        return null;
+      }
+
       await this.wakeLock.start();
       this.setPhase('analyzing');
-      this.analysisStartedAt = Date.now();
       await this.source.start(this.recognition); // resolves when fully emitted or stopped
 
       const { events, tFinal } = await this.recognition.stop();
@@ -155,7 +209,12 @@ export class ImportSession {
     }
   }
 
-  /** Stop the analysis; start() then resolves null (nothing saved). */
+  /** Stop the analysis; start() then resolves null (nothing saved). Safe to
+   *  call at any phase — during initializing/decoding there's no `source`
+   *  yet to stop(), so the two cancelRequested checks in start() (right
+   *  after each of those phases) are what actually makes cancelling early
+   *  take effect immediately instead of only once the file finishes
+   *  analyzing on its own. */
   cancel(): void {
     this.cancelRequested = true;
     this.source?.stop();
@@ -171,11 +230,10 @@ export class ImportSession {
     this.windows.push(result);
     const totalS = this.source?.duration ?? 0;
     const analyzedS = result.tWindowEnd;
-    const elapsed = (Date.now() - this.analysisStartedAt) / 1000;
-    // Cumulative throughput is stable enough after a few windows for an ETA.
-    const etaS = elapsed > 3 && analyzedS > 0
-      ? Math.max(0, (totalS - analyzedS) * (elapsed / analyzedS))
-      : null;
+    const now = Date.now();
+
+    this.rateSamples = pruneRateSamples([...this.rateSamples, { t: now, analyzedS }], now);
+    const etaS = estimateEtaS(this.rateSamples, totalS, analyzedS, now);
     this.cb.onProgress?.({ analyzedS, totalS, etaS });
   }
 

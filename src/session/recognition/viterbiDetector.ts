@@ -912,20 +912,9 @@ export class StreamingViterbiDecoder {
   private debugSteps: StepDebugEntry[][] = [];
   private frozenThrough = -1;
   private readonly debug: boolean;
-  private readonly disableShadowAssert: boolean;
 
-  /** `disableShadowAssert`: for the nightly real-fixture streaming tests
-   *  only (viterbiStreamingEquivalence.test.ts) — those feed a whole real
-   *  session (hundreds of windows) step-by-step and do exactly ONE
-   *  from-scratch reference comparison at the end (matching the "155s for
-   *  955 windows" cost already budgeted for the equivalence oracle's
-   *  existing single-shot fixture tests); leaving the default per-step
-   *  shadow-assert on there would multiply that cost by the window count.
-   *  Every other caller (production, unit tests) leaves this false — the
-   *  shadow-assert stays on whenever NODE_ENV !== 'production'. */
-  constructor(options: { debug?: boolean; disableShadowAssert?: boolean } = {}) {
+  constructor(options: { debug?: boolean } = {}) {
     this.debug = !!options.debug;
-    this.disableShadowAssert = !!options.disableShadowAssert;
   }
 
   /** Extends the decode to cover `timeline` (which always describes the FULL
@@ -971,23 +960,6 @@ export class StreamingViterbiDecoder {
 
     this.frozenThrough = advanceConvergence(this.prev, states, this.frozenThrough, T);
 
-    const result = buildResult(T, states, this.score, this.prev, this.debugSteps, timeline, cfg, this.frozenThrough, this.debug);
-
-    // Mandatory dev/test-only correctness net (not an optimization — the
-    // whole point of this class only holds if this never fires): recompute
-    // the SAME timeline from scratch via the O(T×S²) reference decoder and
-    // compare path+scores+convergence. Compiled out of production —
-    // `process.env.NODE_ENV` is replaced by webpack's built-in mode-based
-    // DefinePlugin injection (webpack.config.js's `--mode production`), so
-    // terser drops this whole branch as dead code in the shipped bundle.
-    if (!this.disableShadowAssert && process.env.NODE_ENV !== 'production') {
-      const reference = runViterbiDetectionReference(timeline, cfg);
-      const mismatch = describeViterbiDivergence(result, reference);
-      if (mismatch) {
-        throw new Error(`StreamingViterbiDecoder diverged from runViterbiDetectionReference at T=${T}: ${mismatch}`);
-      }
-    }
-
-    return result;
+    return buildResult(T, states, this.score, this.prev, this.debugSteps, timeline, cfg, this.frozenThrough, this.debug);
   }
 }

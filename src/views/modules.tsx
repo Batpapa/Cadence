@@ -1,7 +1,7 @@
 import { navigate } from '../store';
 import { t } from '../services/i18nService';
 import { WaveformIcon, FlameIcon, RecordingPulseDot } from '../components/icons';
-import { sessionRecordingSignal } from '../session/ui/sessionModule';
+import { sessionRecordingSignal } from '../session/ui/sessionStore';
 
 // ── Modules page ──────────────────────────────────────────────────────────────
 // Was a modal (modulesModal.ts) — moved to a routed page for back/forward

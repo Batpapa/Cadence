@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { getContext } from '../store';
-import { renderTrendingList } from '../trending/ui/trendingModule';
-import type { SessionModuleHost } from '../session/ui/sessionModule';
+import { renderTrendingList, type TrendingModuleHost } from '../trending/ui/trendingModule';
 
 // ── Trending page (TheSession popularity explorer) ─────────────────────────────
 // Same routed-page / vanilla-DOM bridge as views/sessions.tsx.
@@ -14,7 +13,7 @@ function buildTrendingPage(ctx: ReturnType<typeof getContext>): HTMLElement {
   const body = document.createElement('div');
   root.append(header, body);
 
-  const host: SessionModuleHost = {
+  const host: TrendingModuleHost = {
     header, body, ctx,
     closeModal: () => { /* no-op on a page */ },
     registerCleanup: () => { /* nothing to clean up: no live audio/session state here */ },

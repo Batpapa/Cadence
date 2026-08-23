@@ -181,6 +181,20 @@ export function ClockIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** A closed-but-not-yet-finalized detection: the Viterbi decoder could still
+ *  retract or revise it as later windows arrive. See AnnotationCard.tsx's
+ *  "pending" state. */
+export function HourglassIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 2h12"/>
+      <path d="M6 22h12"/>
+      <path d="M6 2c0 5 5 6 6 8 1-2 6-3 6-8"/>
+      <path d="M6 22c0-5 5-6 6-8 1 2 6 3 6 8"/>
+    </svg>
+  );
+}
+
 export function CalendarPlusIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -210,15 +224,8 @@ export function HeartIcon({ size = 14, filled = false }: { size?: number; filled
   );
 }
 
-/** Like iconElement, but for HeartIcon's extra `filled` prop — a vanilla-TS
+/** Like iconElement, but for StarIcon's extra `filled` prop — a vanilla-TS
  *  caller can't pass it through iconElement's size-only signature. */
-export function heartIconElement(filled: boolean, size = 13): Element {
-  const wrap = document.createElement('span');
-  render(<HeartIcon size={size} filled={filled} />, wrap);
-  return wrap.firstElementChild ?? wrap;
-}
-
-/** Same as heartIconElement, for StarIcon. */
 export function starIconElement(filled: boolean, size = 13): Element {
   const wrap = document.createElement('span');
   render(<StarIcon size={size} filled={filled} />, wrap);
