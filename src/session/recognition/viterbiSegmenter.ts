@@ -21,11 +21,12 @@ import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detec
 // (StreamingViterbiDecoder, viterbiDetector.ts) makes this amortized O(T×S)
 // instead — see its header doc for the exact correctness argument (proof that
 // the incremental decode is byte-identical to the from-scratch one, not an
-// approximation) and the dev-only shadow-assert / streaming equivalence
-// tests that check this holds on real session fixtures. Same 955-window
-// fixture, streamed step-by-step as ffWorker.ts actually does: measured
-// (2026-08-23) at 103.2s before -> 2.1s after (shadow-assert off, matching
-// production — see StreamingViterbiDecoder's disableShadowAssert doc).
+// approximation) and viterbiStreamingEquivalence.test.ts's "mandatory
+// equivalence oracle" for the tests that check this holds on real session
+// fixtures (that verification only ever runs as part of that dedicated test
+// now, never as a side effect of dev/prod usage — see extend()'s own doc,
+// 2026-08-25). Same 955-window fixture, streamed step-by-step as ffWorker.ts
+// actually does: measured (2026-08-23) at 103.2s before -> 2.1s after.
 //
 // UNKNOWN_STATE segments never become annotations — they represent silence,
 // talk, or noise, not a tune.
@@ -51,6 +52,19 @@ interface Tracked {
   id: string;
   seg: DetectedTuneSegment;
   finalized: boolean;
+  /** Whether this segment was `lastSegment` (still the live tail, `end: null`
+   *  in the emitted annotation) the last time an event was emitted for it.
+   *  Tracked separately from `seg` because `openEnded` depends on this
+   *  segment's POSITION in the current recompute's array (is something else
+   *  now the tail?), not on any of `seg`'s own fields — `segEqual` alone
+   *  can't see this change, so without this the "nothing worth telling the
+   *  UI about" shortcut below would silently swallow the open→closed
+   *  transition whenever a segment's own bounds happen to stay identical
+   *  across the recompute where it gets superseded (2026-08-24 bug: a
+   *  detection kept showing "playing…" long after it had genuinely ended,
+   *  because the next tune's arrival didn't change ITS OWN start/end/score
+   *  at all — only where it sat in the array). */
+  openEnded: boolean;
 }
 
 function computeAlternates(
@@ -218,24 +232,25 @@ export class IncrementalViterbiSegmenter {
       if (matchIdx < 0) {
         const annotation = this.toAnnotation(crypto.randomUUID(), seg, openEnded, finalized);
         events.push({ type: 'open', annotation });
-        nextTracked.push({ id: annotation.id, seg, finalized });
+        nextTracked.push({ id: annotation.id, seg, finalized, openEnded });
         continue;
       }
 
       claimed.add(matchIdx);
       const prev = this.tracked[matchIdx]!;
       const justFinalized = finalized && !prev.finalized;
-      if (prev.finalized || (segEqual(prev.seg, seg) && !justFinalized)) {
+      const openEndedChanged = openEnded !== prev.openEnded;
+      if (prev.finalized || (segEqual(prev.seg, seg) && !justFinalized && !openEndedChanged)) {
         // Nothing worth telling the UI about — carry the tracking forward
         // under the same id without rebuilding an annotation (skips the
         // alternates/evidence scan for the common "unchanged history" case).
-        nextTracked.push({ id: prev.id, seg, finalized });
+        nextTracked.push({ id: prev.id, seg, finalized, openEnded });
         continue;
       }
 
       const annotation = this.toAnnotation(prev.id, seg, openEnded, finalized);
       events.push({ type: justFinalized ? 'close' : 'update', annotation });
-      nextTracked.push({ id: prev.id, seg, finalized });
+      nextTracked.push({ id: prev.id, seg, finalized, openEnded });
     }
 
     // Previously-tracked, still-provisional segments that vanished entirely

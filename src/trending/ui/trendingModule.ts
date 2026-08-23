@@ -1,4 +1,4 @@
-import type { SessionModuleHost } from '../../session/ui/sessionModule';
+import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { iconElement, FlameIcon, ResetIcon, MusicNoteIcon, PlusIcon } from '../../components/icons';
 import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
@@ -18,6 +18,18 @@ export interface TrendingRouteParams {
   to?: string;
   gainMode?: GainMode;
   minTunebooks?: number;
+}
+
+/** Same "imperative screen mounted into a routed page" shape the session
+ *  module used before its Preact migration — trending hasn't been converted
+ *  yet, so it keeps its own copy rather than reaching into session/ui for a
+ *  type that no longer means anything session-specific. */
+export interface TrendingModuleHost {
+  header: HTMLElement;
+  body: HTMLElement;
+  ctx: AppContext;
+  closeModal: () => void;
+  registerCleanup: (fn: () => void) => void;
 }
 
 // ── Trending module UI (hosted inside the Modules page) ──────────────────────
@@ -52,7 +64,7 @@ function closestSnapshotIndex(snapshots: string[], targetTime: number): number {
   return bestIdx;
 }
 
-export function renderTrendingList(host: SessionModuleHost, initial?: TrendingRouteParams): void {
+export function renderTrendingList(host: TrendingModuleHost, initial?: TrendingRouteParams): void {
   host.header.replaceChildren();
   host.body.replaceChildren();
 

@@ -7,7 +7,7 @@ import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
-import { sessionRecordingSignal } from '../session/ui/sessionModule';
+import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import {
   isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus,
 } from '../services/driveService';

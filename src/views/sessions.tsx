@@ -1,54 +1,89 @@
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { getContext } from '../store';
+import { t } from '../services/i18nService';
+import type { AppContext } from '../types';
 import { loadSessionMeta } from '../session/db';
-import { renderSessionModule, renderSummary, type SessionModuleHost } from '../session/ui/sessionModule';
+import type { RecordedSession } from '../session/model';
+import { activeLive, activeImport } from '../session/ui/sessionStore';
+import { SessionLibrary } from '../session/ui/SessionLibrary';
+import { LiveSessionScreen } from '../session/ui/LiveSession';
+import { ImportAnalysis } from '../session/ui/ImportAnalysis';
+import { SessionSummary } from '../session/ui/SessionSummary';
+import { startLiveSession, startImport, showImportSessionModal, startReanalyze } from '../session/ui/sessionModule';
 
 // ── Sessions page (the tune analyzer) ───────────────────────────────────────────
-// Route `{ view: 'sessions' }` = past-sessions library (or whichever local
-// screen — live/import — is currently running; see renderSessionModule).
+// Route `{ view: 'sessions' }` = past-sessions library, or whichever local
+// screen (live recording / file import) is currently running — activeLive/
+// activeImport are module-level signals (sessionStore.ts) read directly
+// below, so this tree re-renders on its own as they change; nothing here
+// imperatively triggers a screen switch.
 // Route `{ view: 'sessions', sessionId }` = a particular session, rendered
-// directly via renderSummary — deliberately bypassing the live/import
-// auto-redirect so viewing session history doesn't get hijacked by an
+// directly via <SessionSummary> — deliberately bypassing the live/import
+// auto-redirect above so viewing session history doesn't get hijacked by an
 // unrelated recording running in the background.
 
-function buildSessionsPage(ctx: ReturnType<typeof getContext>, sessionId: string | undefined): { root: HTMLElement; cleanup: () => void } {
-  const root = document.createElement('div');
-  root.className = 'p-6';
+const IMPORT_RUNNING_PHASES = ['initializing', 'decoding', 'analyzing', 'saving'];
 
-  const header = document.createElement('div');
-  const body = document.createElement('div');
-  root.append(header, body);
+function SessionByIdScreen({ ctx, sessionId }: { ctx: AppContext; sessionId: string }) {
+  const [session, setSession] = useState<RecordedSession | null>(null);
 
-  const cleanups: (() => void)[] = [];
-  const host: SessionModuleHost = {
-    header, body, ctx,
-    closeModal: () => { /* no-op on a page — callers navigate() right after */ },
-    registerCleanup: fn => cleanups.push(fn),
-  };
-
-  if (sessionId) {
-    void loadSessionMeta(sessionId).then(session => {
-      if (!session) { ctx.navigate({ view: 'sessions' }); return; }
-      renderSummary(host, session);
+  // Keyed on sessionId alone (not e.g. a generation counter) is deliberate:
+  // re-analyzing an existing session can navigate here again with the SAME
+  // id once it's done — see finishImportRun's own doc on why that always
+  // goes through a real navigate() via a different intermediate route
+  // rather than landing on this exact id twice in a row.
+  useEffect(() => {
+    let cancelled = false;
+    setSession(null);
+    void loadSessionMeta(sessionId).then(s => {
+      if (cancelled) return;
+      if (!s) { ctx.navigate({ view: 'sessions' }); return; }
+      setSession(s);
     });
-  } else {
-    renderSessionModule(host);
-  }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line
+  }, [sessionId]);
 
-  return { root, cleanup: () => cleanups.forEach(fn => fn()) };
+  if (!session) return null;
+
+  return (
+    <SessionSummary
+      session={session}
+      ctx={ctx}
+      onOpenCard={(cardId) => ctx.navigate({ view: 'card', cardId })}
+      onReanalyze={() => { void startReanalyze(ctx, session); }}
+    />
+  );
 }
 
 export function SessionsView({ sessionId }: { sessionId?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ctx = getContext();
+  const onOpenCard = (cardId: string) => ctx.navigate({ view: 'card', cardId });
 
-  // Built post-commit, not during render: sessionModule.ts's `iconElement()`
-  // mounts icons via a synchronous Preact `render()` call — safe from an
-  // effect, but corrupts hook state if run mid-render (see modules.tsx history).
-  useLayoutEffect(() => {
-    const { root, cleanup } = buildSessionsPage(getContext(), sessionId);
-    ref.current!.replaceChildren(root);
-    return cleanup;
-  }, [sessionId]);
+  let content;
+  if (sessionId) {
+    content = <SessionByIdScreen ctx={ctx} sessionId={sessionId} />;
+  } else if (activeLive.value && activeLive.value.getPhase() !== 'idle' && activeLive.value.getPhase() !== 'done') {
+    content = <LiveSessionScreen live={activeLive.value} ctx={ctx} onOpenCard={onOpenCard} />;
+  } else if (activeImport.value && IMPORT_RUNNING_PHASES.includes(activeImport.value.getPhase())) {
+    content = <ImportAnalysis imp={activeImport.value} ctx={ctx} onOpenCard={onOpenCard} />;
+  } else {
+    content = (
+      <>
+        <h1 class="text-xl font-semibold text-primary mb-4">{t('sessions.moduleTitle')}</h1>
+        <SessionLibrary
+          onStartLive={startLiveSession}
+          onImportFile={(file) => { void startImport(ctx, file); }}
+          onImportSession={() => showImportSessionModal(ctx)}
+          onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}
+        />
+      </>
+    );
+  }
 
-  return <div ref={ref} class="h-full overflow-y-auto view-enter" />;
+  return (
+    <div class="h-full overflow-y-auto view-enter">
+      <div class="p-6">{content}</div>
+    </div>
+  );
 }

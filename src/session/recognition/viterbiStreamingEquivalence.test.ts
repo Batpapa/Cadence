@@ -12,10 +12,18 @@ import type { WindowResult, WindowCandidate } from '../model';
 // history at EVERY step, not just once fully fed — that step-by-step
 // agreement is exactly what proves the incremental decode is exact, not an
 // approximation (see StreamingViterbiDecoder's header doc for the
-// correctness argument). This is deliberately independent of the decoder's
-// own internal dev-only shadow-assert (which does the same comparison on the
-// production code path, gated by NODE_ENV) — this suite's guarantee doesn't
-// depend on that env var being set correctly.
+// correctness argument).
+//
+// 2026-08-25: this used to be double-checked by a per-step shadow-assert
+// built into StreamingViterbiDecoder.extend() itself (active whenever
+// NODE_ENV !== 'production'), independent of this suite. That internal net
+// was removed on explicit user request — its own cost is O(T×S²) per call
+// (it re-runs the reference decoder from scratch every step), so it made
+// every real dev-mode import get slower and slower as the session grew,
+// which is exactly the "gets slower over a long import" behavior a user
+// reported and profiled. This suite is now the ONLY place this equivalence
+// property is checked at all — verification happens exclusively when this
+// test runs, never as a side effect of ordinary dev or production usage.
 
 const HOP = 5;
 
@@ -64,11 +72,10 @@ interface Mismatch { where: string; detail: string }
  *  EVERY step, compares its result against a from-scratch
  *  runViterbiDetectionReference() over the same growing prefix — this is the
  *  step-by-step check that proves the incremental decode, not just its final
- *  answer. Constructs the decoder with disableShadowAssert so a mismatch is
- *  reported here (aggregated, with context) rather than thrown mid-loop by
- *  the decoder's own internal net. */
+ *  answer. Mismatches are aggregated (with context) here rather than thrown
+ *  mid-loop, so one bad case doesn't hide the rest. */
 function stepByStepMismatches(windows: WindowResult[], cfg: DetectionTemporalConfig, label: string): Mismatch[] {
-  const decoder = new StreamingViterbiDecoder({ disableShadowAssert: true });
+  const decoder = new StreamingViterbiDecoder();
   const mismatches: Mismatch[] = [];
   for (let t = 1; t <= windows.length; t++) {
     const timeline = buildTemporalTimeline(windows.slice(0, t), cfg);
@@ -156,15 +163,14 @@ describe('StreamingViterbiDecoder == runViterbiDetectionReference at every step 
 
   // Real-session equivalence, streaming decoder specifically — nightly only
   // (scheduled GitHub Actions job, see .github/workflows/nightly.yml), NOT
-  // part of `npm test`: unlike the synthetic suites above, feeding a real
-  // multi-hundred-window fixture through disableShadowAssert:false at every
-  // single step would multiply the O(T×S²) reference cost by T (the whole
-  // problem this refactor exists to avoid) — so each of these does exactly
-  // ONE from-scratch reference decode over the FULL fixture at the end,
-  // after step-by-step streaming through every window (disableShadowAssert:
-  // true, matching production's own feed pattern). Timing budget carried
-  // over from viterbiDetectorEquivalence.test.ts's existing single-shot
-  // fixture tests (~35s for 434 windows, ~155s for 955).
+  // part of `npm test`: unlike the synthetic suites above, comparing against
+  // the O(T×S²) reference at EVERY step for a real multi-hundred-window
+  // fixture would multiply that cost by T (the whole problem the streaming
+  // decoder exists to avoid) — so each of these streams through every window
+  // first (cheap, no reference comparison at all along the way), then does
+  // exactly ONE from-scratch reference decode over the FULL fixture at the
+  // end. Timing budget carried over from viterbiDetectorEquivalence.test.ts's
+  // existing single-shot fixture tests (~35s for 434 windows, ~155s for 955).
   const FIXTURE_DIR = path.resolve(__dirname, '../../../test-fixtures/sessions');
   const REAL_FIXTURES = [
     'One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video-windows.json',
@@ -180,7 +186,7 @@ describe('StreamingViterbiDecoder == runViterbiDetectionReference at every step 
       if (!fs.existsSync(p)) { console.log('SKIP: fixture not found'); return; }
       const windows = JSON.parse(fs.readFileSync(p, 'utf-8')) as WindowResult[];
 
-      const decoder = new StreamingViterbiDecoder({ disableShadowAssert: true });
+      const decoder = new StreamingViterbiDecoder();
       let streaming: ViterbiResult = { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
       for (let t = 1; t <= windows.length; t++) {
         streaming = decoder.extend(buildTemporalTimeline(windows.slice(0, t), DETECTION_TEMPORAL_CONFIG), DETECTION_TEMPORAL_CONFIG);
