@@ -2,6 +2,7 @@ import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
+import { normalizeDisplayName } from './tuneNameNormalize';
 import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, AnnotationEvent } from '../model';
 import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW } from '../sessionConfig';
 
@@ -162,7 +163,7 @@ function mapCandidates(raw: RawQueryRecord[]): WindowCandidate[] {
   return raw.map(r => ({
     tuneId: r.setting.tune_id,
     settingId: r.setting_id,
-    displayName: r.display_name,
+    displayName: normalizeDisplayName(r.display_name),
     dance: r.setting.dance,
     meter: r.setting.meter,
     score: r.score,

@@ -142,6 +142,8 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     ensureTargetDeckIds: ensureImpTargetDeckIds,
     onTargetDeckIdsChanged: () => { titleControlsRef.current?.refreshDeckBtn(); setDeckIdsTick(x => x + 1); },
     onToggleLike: (id) => { imp.toggleLike(id); setAnnotations(imp.getAnnotations()); },
+    onSelectAlternate: (id, pick) => { imp.selectAlternate(id, pick); setAnnotations(imp.getAnnotations()); },
+    getLatestAnnotation: (id) => imp.getAnnotations().find(a => a.id === id),
     // Clip extraction only once finalized: the full file is already sitting
     // right there in imp.file from the very first instant, unlike a live
     // recording — no reason to make the user wait for the whole import to

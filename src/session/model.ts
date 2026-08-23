@@ -14,6 +14,8 @@ export interface AnnotationAlternate {
   tuneId: string;
   settingId: string;
   displayName: string;
+  dance: string;
+  meter: string;
   meanScore: number;
 }
 
@@ -40,7 +42,32 @@ export interface SessionAnnotation {
    *  in the detection-options panel (unlike `confidence`, which only this tune has). */
   meanScore: number;
   evidence: AnnotationEvidence[];
+  /** Up to detectionTemporalConfig.ts's maxAlternates other tunes seen as
+   *  window candidates over this annotation's span, ranked by mean score —
+   *  EXCLUDES viterbiPick's own tuneId (computeAlternates never scores the
+   *  segment against itself). Together with viterbiPick, this is the full
+   *  set of choices the "explore alternatives" picker offers (AnnotationCard.tsx). */
   alternates: AnnotationAlternate[];
+  /** Snapshot of what the Viterbi decoder itself currently picks for this
+   *  segment — same shape as an entry in `alternates` (and directly
+   *  comparable by meanScore), captured fresh on every segmenter-driven
+   *  update (viterbiSegmenter.ts's toAnnotation), so it keeps tracking the
+   *  algorithm's actual live answer even after the user has overridden the
+   *  DISPLAYED identity below via selectAlternate() (tuneId/settingId/
+   *  displayName/dance/meter, gated the same way as userConfirmed). Always
+   *  favored over any alternate with a higher meanScore when nothing has
+   *  been overridden — "Viterbi decides" takes transition costs/hysteresis
+   *  into account, not just this one span's raw mean score. */
+  viterbiPick: AnnotationAlternate;
+  /** True once the user has explicitly picked a specific tune identity for
+   *  this annotation via selectAlternate() (or, from before this feature,
+   *  hand-relabeled it some other way) — freezes tuneId/settingId/
+   *  displayName/dance/meter across future segmenter updates and protects
+   *  the annotation from ever being retracted (see viterbiSegmenter.ts's
+   *  vanish-cleanup and AnnotationEvent's 'retract' doc). Picking
+   *  viterbiPick itself (rather than one of `alternates`) clears this back
+   *  to false — "let the algorithm keep deciding" — since viterbiPick tracks
+   *  the live answer regardless of userConfirmed, there's nothing to freeze. */
   userConfirmed: boolean;
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */

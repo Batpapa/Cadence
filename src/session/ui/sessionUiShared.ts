@@ -9,7 +9,7 @@ import { extractClipMp3 } from '../audio/clipExtract';
 import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
 import { getContext } from '../../store';
 import type { IndexProgress } from '../recognition/indexStore';
-import type { SessionAnnotation } from '../model';
+import type { SessionAnnotation, AnnotationAlternate } from '../model';
 
 // ── Shared imperative UI helpers ──────────────────────────────────────────────
 // Small DOM-building utilities used by more than one of the session
@@ -46,6 +46,25 @@ export function toLocalInput(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Colors for SessionAnnotation['bucket'] — shared by AnnotationCard.tsx's
+ *  confidence badge and AlternatesPopover.tsx's per-option score (living here
+ *  rather than in either of those, since AnnotationCard.tsx imports
+ *  AlternatesPopover.tsx — a shared leaf avoids the circular import). */
+export const BUCKET_BADGE: Record<SessionAnnotation['bucket'], string> = {
+  high: 'bg-green-500/10 text-green-500',
+  medium: 'bg-amber-500/10 text-amber-500',
+  low: 'bg-elevated text-dim border border-border',
+};
+
+/** Same color code as BUCKET_BADGE, text-only (no pill background/border) —
+ *  for coloring a plain score readout, e.g. AlternatesPopover.tsx's per-option
+ *  percentage, without stacking a second badge-looking element next to it. */
+export const BUCKET_TEXT: Record<SessionAnnotation['bucket'], string> = {
+  high: 'text-green-500',
+  medium: 'text-amber-500',
+  low: 'text-dim',
+};
+
 export function indexProgressText(p: IndexProgress): string {
   if (p.phase === 'downloading') {
     const mb = (p.loadedBytes / 1048576).toFixed(1);
@@ -58,6 +77,21 @@ export function indexProgressText(p: IndexProgress): string {
 export function fmtEta(etaS: number): string {
   if (etaS >= 90) return `${Math.round(etaS / 60)} min`;
   return `${Math.round(etaS)} s`;
+}
+
+/** `viterbiPick` (2026-08-25) is absent on every session recorded before this
+ *  feature shipped — no migration, same "no UI path/no migration" convention
+ *  already established for `finalized` (model.ts). A live/import annotation
+ *  is always freshly built by the segmenter, which has populated this field
+ *  from day one of its own existence, so this fallback only ever matters for
+ *  a RecordedSession loaded from IndexedDB (SessionSummary.tsx) — for that
+ *  case, the current identity IS effectively what the algorithm originally
+ *  picked (there was no override mechanism yet when it was recorded). */
+export function viterbiPickOf(ann: SessionAnnotation): AnnotationAlternate {
+  return ann.viterbiPick ?? {
+    tuneId: ann.tuneId, settingId: ann.settingId, displayName: ann.displayName,
+    dance: ann.dance, meter: ann.meter, meanScore: ann.meanScore,
+  };
 }
 
 // Same glyph, small size — exact match of library.tsx's icon-only export trigger.

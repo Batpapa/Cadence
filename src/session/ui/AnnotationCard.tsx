@@ -6,8 +6,10 @@ import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
 import { AbcPreview } from './abcPreview';
+import { showAlternatesPopover } from './AlternatesPopover';
+import { BUCKET_BADGE } from './sessionUiShared';
 import { getContext } from '../../store';
-import type { SessionAnnotation } from '../model';
+import type { SessionAnnotation, AnnotationAlternate } from '../model';
 
 // ── AnnotationCard ────────────────────────────────────────────────────────────
 // The central unit of the session feed/summary: one recognised tune, with its
@@ -41,13 +43,21 @@ export interface AnnotationCardOptions {
   onTargetDeckIdsChanged?: () => void;
   /** "I liked this tune" marker — purely personal, unrelated to any card. */
   onToggleLike?: (annotationId: string) => void;
+  /** Overrides which tune this annotation displays as — shows the confidence
+   *  badge as clickable (opens the "explore alternatives" picker) when set.
+   *  Choosing an option is only allowed once the annotation is finalized
+   *  (see the picker's own doc) — requires `getLatestAnnotation` too. */
+  onSelectAlternate?: (annotationId: string, pick: AnnotationAlternate) => void;
+  /** Freshest copy of a still-live annotation, read on an interval while the
+   *  picker is open — a live/import annotation can still be revised (new
+   *  alternates/scores) or retracted entirely while the user is browsing it.
+   *  Reads straight from the engine (LiveSession/ImportSession.getAnnotations()),
+   *  never stale, unlike this card's own `ann` prop which only updates on
+   *  the container's next re-render. Omit for a finished session's summary,
+   *  where nothing can change out from under the picker. */
+  getLatestAnnotation?: (annotationId: string) => SessionAnnotation | undefined;
 }
 
-const BUCKET_BADGE: Record<SessionAnnotation['bucket'], string> = {
-  high: 'bg-green-500/10 text-green-500',
-  medium: 'bg-amber-500/10 text-amber-500',
-  low: 'bg-elevated text-dim border border-border',
-};
 
 function fmtLongTime(s: number): string {
   const h = Math.floor(s / 3600);
@@ -275,9 +285,20 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
 
         <NavigableName label={ann.displayName} tuneId={ann.tuneId} settingId={ann.settingId} knownCardId={known?.id} onOpenCard={opts.onOpenCard} />
 
-        <span class={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${BUCKET_BADGE[ann.bucket]}`}>
+        <button
+          class={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${BUCKET_BADGE[ann.bucket]} ${opts.onSelectAlternate ? 'cursor-pointer hover:brightness-110 transition-[filter]' : 'cursor-default'}`}
+          title={opts.onSelectAlternate ? t('sessions.alternates.trigger') : undefined}
+          onClick={opts.onSelectAlternate ? (e) => {
+            e.stopPropagation();
+            showAlternatesPopover(
+              ann,
+              opts.getLatestAnnotation ? () => opts.getLatestAnnotation!(ann.id) : undefined,
+              (pick) => opts.onSelectAlternate!(ann.id, pick),
+            );
+          } : undefined}
+        >
           {ann.userConfirmed ? '✓' : `${t(`sessions.confidence.${ann.bucket}`)} ${Math.round(ann.confidence * 100)}%`}
-        </span>
+        </button>
 
         {opts.onToggleLike && (
           <button
