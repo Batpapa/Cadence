@@ -1035,19 +1035,37 @@ async function finishImportRun(
     }
     // Cancelled: offer to keep the partial result when enough was recognised.
     if (imp.getClosedCount() > 1) {
-      confirmModal(
-        t('sessions.keepPartial.title'),
-        t('sessions.keepPartial.message', { n: imp.getClosedCount() }),
-        t('sessions.keepPartial.keep'),
-        () => {
-          void imp.keepPartial().then(session2 => {
-            lastImportDump = { sessionId: session2.id, windows: [...imp.windows] };
-            setActiveImport(null);
-            host.ctx.navigate({ view: 'sessions', sessionId: session2.id });
-          });
+      // Deliberately NOT falling through to the unconditional fallback below
+      // while this decision is pending (2026-08-23 bug fix): re-analyzing an
+      // existing session reuses the SAME sessionId for both outcomes, and
+      // SessionsView only reloads its data when the route's sessionId
+      // actually CHANGES (see sessions.tsx's `useLayoutEffect(..., [sessionId])`).
+      // Eagerly navigating to session.id here (to have "the fallback screen
+      // already rendered" if the user dismisses) used to run BEFORE the
+      // user's choice was known — so clicking "Keep" landed on the SAME
+      // sessionId a second time, sessionId-unchanged, no reload: the screen
+      // kept showing the stale pre-reanalysis result (A) instead of the
+      // freshly-saved partial one (B). Only ever navigate ONCE, after the
+      // outcome is known, so the sessionId always genuinely changes (or is
+      // the first navigation to it this run).
+      const dismiss = () => { setActiveImport(null); onCancelledOrError(); };
+      const body = document.createElement('p');
+      body.className = 'text-sm text-muted leading-relaxed';
+      body.textContent = t('sessions.keepPartial.message', { n: imp.getClosedCount() });
+      showModal(t('sessions.keepPartial.title'), body, [
+        { label: t('common.cancel'), onClick: () => { closeModal(); dismiss(); } },
+        {
+          label: t('sessions.keepPartial.keep'), danger: true, onClick: () => {
+            closeModal();
+            void imp.keepPartial().then(session2 => {
+              lastImportDump = { sessionId: session2.id, windows: [...imp.windows] };
+              setActiveImport(null);
+              host.ctx.navigate({ view: 'sessions', sessionId: session2.id });
+            });
+          },
         },
-      );
-      // If the user dismisses the modal, the fallback screen below is already rendered.
+      ], true, '28rem', dismiss); // onDismiss covers the X button / outside click too
+      return;
     }
     setActiveImport(null);
     onCancelledOrError();

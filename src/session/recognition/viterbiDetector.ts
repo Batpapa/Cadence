@@ -17,6 +17,13 @@ import { UNKNOWN_STATE, type TemporalTimeline } from './temporalObservationBuild
 // this is exact, not an approximation. runViterbiDetectionReference() is the
 // original O(T×S²) exhaustive-scan implementation, kept only as the
 // equivalence-test oracle — see viterbiDetectorEquivalence.test.ts.
+//
+// StreamingViterbiDecoder (2026-08-23) is the incremental, stateful sibling
+// used by viterbiSegmenter.ts's window-by-window feed: amortized O(T×S) over
+// a whole session instead of paying runViterbiDetection()'s O(T×S) again
+// from scratch on every single window (O(T²×S) summed). See its own header
+// doc for the correctness argument and viterbiStreamingEquivalence.test.ts
+// for the equivalence-test oracle that checks it holds at every step.
 
 export interface DetectedTuneSegment {
   /** UNKNOWN_STATE for a silence/talk/noise segment. */
@@ -362,10 +369,59 @@ function findConvergencePoint(T: number, states: string[], previousState: Map<st
   return -1;
 }
 
-/** Shared by both implementations: turns a completed (score, prevState) DP
- *  table into the final ViterbiResult (backtrack + segment extraction +
- *  optional debug payload). */
-function finalize(
+/** Bounded, monotone variant of findConvergencePoint, for the streaming
+ *  decoder: by invariant 4 (convergence only ever advances as more windows
+ *  arrive — see StreamingViterbiDecoder's doc), a window range already proven
+ *  converged through `oldFrozenThrough` by a PREVIOUS call never needs
+ *  re-checking — the backward scan can stop the instant it reaches that
+ *  point and simply trust it. This bounds each call's scan to
+ *  `T - 1 - oldFrozenThrough` steps (small once convergence is keeping pace
+ *  with T) instead of the full T, which is what turns the O(T²×S) repeated
+ *  full rescans into O(T×S) amortized over a whole session.
+ *
+ *  `previousState[t].get(state)` can be `undefined` for a `state` that
+ *  hadn't been discovered yet when column `t` was originally cached (an
+ *  older column computed before that tuneId's first appearance — see
+ *  StreamingViterbiDecoder.extend()'s seeding step, which only patches the
+ *  ONE boundary column each call, not the whole history). Per the
+ *  correctness theorem (module header), the actual traced backtrack chain
+ *  never visits such a cell — an unseeded/undiscovered state is never
+ *  anyone's chosen predecessor — so this should be unreachable in practice;
+ *  treated defensively as "this pointer hasn't resolved here" (held in
+ *  place) rather than trusted to be non-null, so a violated assumption fails
+ *  safe (never falsely reports convergence) instead of corrupting the walk. */
+function advanceConvergence(
+  previousState: Map<string, string | null>[],
+  states: string[],
+  oldFrozenThrough: number,
+  T: number,
+): number {
+  if (T === 0) return -1;
+  if (states.length <= 1) return T - 1;
+
+  let pointer = new Map<string, string>(states.map(s => [s, s]));
+  for (let t = T - 1; t >= 1; t--) {
+    const next = new Map<string, string>();
+    for (const s of states) {
+      const cur = pointer.get(s)!;
+      const prevOfCur = previousState[t]!.get(cur);
+      next.set(s, prevOfCur !== undefined ? prevOfCur! : cur);
+    }
+    pointer = next;
+    if (new Set(pointer.values()).size === 1) return t - 1;
+    if (t - 1 <= oldFrozenThrough) return oldFrozenThrough;
+  }
+  return -1;
+}
+
+/** Shared by both from-scratch implementations AND the streaming decoder:
+ *  turns a completed (score, prevState) DP table into the final ViterbiResult
+ *  (backtrack + segment extraction + optional debug payload).
+ *  `convergedThroughIndex` is passed in rather than recomputed here — the two
+ *  from-scratch implementations pass `findConvergencePoint(...)` (unbounded,
+ *  cheap enough for a one-shot full decode); the streaming decoder passes its
+ *  own incrementally-maintained value (see advanceConvergence). */
+function buildResult(
   T: number,
   states: string[],
   bestScore: Map<string, number>[],
@@ -373,6 +429,7 @@ function finalize(
   debugSteps: StepDebugEntry[][],
   timeline: TemporalTimeline,
   cfg: DetectionTemporalConfig,
+  convergedThroughIndex: number,
   debug: boolean,
 ): ViterbiResult {
   let bestFinal: string | null = null;
@@ -395,7 +452,7 @@ function finalize(
       numberOfTransitions: segments.length > 0 ? segments.length - 1 : 0,
       numberOfWindows: T,
     },
-    convergedThroughIndex: findConvergencePoint(T, states, previousState),
+    convergedThroughIndex,
   };
 
   if (debug) {
@@ -412,6 +469,21 @@ function finalize(
   }
 
   return result;
+}
+
+/** Thin wrapper kept for the two from-scratch implementations below: full
+ *  unbounded convergence scan (findConvergencePoint), same as always. */
+function finalize(
+  T: number,
+  states: string[],
+  bestScore: Map<string, number>[],
+  previousState: Map<string, string | null>[],
+  debugSteps: StepDebugEntry[][],
+  timeline: TemporalTimeline,
+  cfg: DetectionTemporalConfig,
+  debug: boolean,
+): ViterbiResult {
+  return buildResult(T, states, bestScore, previousState, debugSteps, timeline, cfg, findConvergencePoint(T, states, previousState), debug);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -627,6 +699,94 @@ function pickBest(candidates: Candidate[], stateIndex: Map<string, number>): Can
   return best;
 }
 
+interface Column {
+  score: Map<string, number>;
+  prev: Map<string, string | null>;
+  debugRow?: StepDebugEntry[];
+}
+
+/** Computes ONE column (window t) of the O(T×S) DP table from the previous
+ *  column alone — the single piece of per-window logic shared by the
+ *  from-scratch optimized decode below AND StreamingViterbiDecoder, so
+ *  there is exactly one implementation of "how a column is filled" to keep
+ *  correct (acceptance criterion #6). `prevScore`/`prevPrevState` are the
+ *  PREVIOUS column's (score, prevState) — `null` for t===0. Pass `states`/
+ *  `tuneIds` freshly each call (the streaming decoder's grow over time; the
+ *  from-scratch decode's are fixed for the whole run) — see
+ *  StreamingViterbiDecoder.extend()'s doc for why a state missing from
+ *  `prevScore` (present in `tuneIds` today, but not yet discovered when the
+ *  cached previous column was computed) must be seeded to -Infinity by the
+ *  CALLER before invoking this for t>0 — this function itself just reads
+ *  `prevScore.get(p)!`, trusting every current tuneId already has an entry. */
+function computeColumn(
+  states: string[],
+  tuneIds: string[],
+  prevScore: Map<string, number> | null,
+  prevPrevState: Map<string, string | null> | null,
+  timeline: TemporalTimeline,
+  t: number,
+  cfg: DetectionTemporalConfig,
+  debug: boolean,
+): Column {
+  const scoreRow = new Map<string, number>();
+  const prevRow = new Map<string, string | null>();
+  const debugRow: StepDebugEntry[] = [];
+  const pushEntry = (state: string, p: number, obsScore: number, bestPrevious: string | null, cost: number, total: number) => {
+    scoreRow.set(state, total);
+    prevRow.set(state, bestPrevious);
+    if (debug) debugRow.push({ state, observation: p, observationScore: obsScore, bestPrevious, transitionCost: cost, totalScore: total });
+  };
+
+  if (prevScore === null) {
+    for (const s of states) {
+      const p = s === UNKNOWN_STATE ? cfg.unknownObservationProbability : timeline.observations.get(s)![t]!;
+      const obsScore = observationScore(p, cfg);
+      pushEntry(s, p, obsScore, null, 0, obsScore);
+    }
+    return { score: scoreRow, prev: prevRow, debugRow: debug ? debugRow : undefined };
+  }
+
+  const stateIndex = new Map<string, number>(states.map((s, i) => [s, i]));
+  const idx = indexPrevRow(tuneIds, prevScore, prevPrevState!, cfg);
+  const unknownScorePrev = prevScore.get(UNKNOWN_STATE)!;
+
+  for (const cur of tuneIds) {
+    const candidates: Candidate[] = [
+      { state: cur, cost: cfg.sameTuneTransitionCost, value: prevScore.get(cur)! - cfg.sameTuneTransitionCost },
+      { state: UNKNOWN_STATE, cost: cfg.unknownToTunePenalty, value: unknownScorePrev - cfg.unknownToTunePenalty },
+    ];
+    // unpen.score / pen.score already have their cost baked in (see
+    // indexPrevRow's doc) — do NOT subtract cfg.tuneChangePenalty again here.
+    const unpen = bestUnpenalizedExcluding(cur, idx, tuneIds, prevScore, cfg);
+    if (unpen) candidates.push({ state: unpen.state, cost: cfg.tuneChangePenalty, value: unpen.score });
+    const pen = bestPenalizedFor(cur, idx);
+    if (pen) candidates.push({ state: pen.state, cost: cfg.tuneChangePenalty + cfg.rapidChangePenalty, value: pen.score });
+
+    const winner = pickBest(candidates, stateIndex);
+    const p = timeline.observations.get(cur)![t]!;
+    const obsScore = observationScore(p, cfg);
+    pushEntry(cur, p, obsScore, winner.state, winner.cost, obsScore + winner.value);
+  }
+
+  // UNKNOWN as the current state: same (stay in UNKNOWN) vs the single
+  // best tune -> UNKNOWN (no rebound consideration applies to this
+  // direction, so idx.bestToUnknown alone is always correct here — its own
+  // independent ranking, NOT idx.top1, which is adjusted by a different
+  // constant and can disagree at a rounding boundary).
+  {
+    const candidates: Candidate[] = [
+      { state: UNKNOWN_STATE, cost: cfg.unknownStayPenalty, value: unknownScorePrev - cfg.unknownStayPenalty },
+    ];
+    if (idx.bestToUnknown) candidates.push({ state: idx.bestToUnknown.state, cost: cfg.tuneToUnknownPenalty, value: idx.bestToUnknown.score });
+    const winner = pickBest(candidates, stateIndex);
+    const p = cfg.unknownObservationProbability;
+    const obsScore = observationScore(p, cfg);
+    pushEntry(UNKNOWN_STATE, p, obsScore, winner.state, winner.cost, obsScore + winner.value);
+  }
+
+  return { score: scoreRow, prev: prevRow, debugRow: debug ? debugRow : undefined };
+}
+
 export function runViterbiDetectionOptimized(
   timeline: TemporalTimeline,
   cfg: DetectionTemporalConfig,
@@ -637,77 +797,197 @@ export function runViterbiDetectionOptimized(
 
   const tuneIds = timeline.tuneIds;
   const states = [...tuneIds, UNKNOWN_STATE];
-  const stateIndex = new Map<string, number>(states.map((s, i) => [s, i]));
+  const debug = !!options.debug;
 
   const bestScore: Map<string, number>[] = [];
   const previousState: Map<string, string | null>[] = [];
   const debugSteps: StepDebugEntry[][] = [];
 
   for (let t = 0; t < T; t++) {
-    const scoreRow = new Map<string, number>();
-    const prevRow = new Map<string, string | null>();
-    const debugRow: StepDebugEntry[] = [];
-    const pushEntry = (state: string, p: number, obsScore: number, bestPrevious: string | null, cost: number, total: number) => {
-      scoreRow.set(state, total);
-      prevRow.set(state, bestPrevious);
-      if (options.debug) debugRow.push({ state, observation: p, observationScore: obsScore, bestPrevious, transitionCost: cost, totalScore: total });
-    };
-
-    if (t === 0) {
-      for (const s of states) {
-        const p = s === UNKNOWN_STATE ? cfg.unknownObservationProbability : timeline.observations.get(s)![t]!;
-        const obsScore = observationScore(p, cfg);
-        pushEntry(s, p, obsScore, null, 0, obsScore);
-      }
-      bestScore.push(scoreRow);
-      previousState.push(prevRow);
-      if (options.debug) debugSteps.push(debugRow);
-      continue;
-    }
-
-    const idx = indexPrevRow(tuneIds, bestScore[t - 1]!, previousState[t - 1]!, cfg);
-    const unknownScorePrev = bestScore[t - 1]!.get(UNKNOWN_STATE)!;
-
-    for (const cur of tuneIds) {
-      const candidates: Candidate[] = [
-        { state: cur, cost: cfg.sameTuneTransitionCost, value: bestScore[t - 1]!.get(cur)! - cfg.sameTuneTransitionCost },
-        { state: UNKNOWN_STATE, cost: cfg.unknownToTunePenalty, value: unknownScorePrev - cfg.unknownToTunePenalty },
-      ];
-      // unpen.score / pen.score already have their cost baked in (see
-      // indexPrevRow's doc) — do NOT subtract cfg.tuneChangePenalty again here.
-      const unpen = bestUnpenalizedExcluding(cur, idx, tuneIds, bestScore[t - 1]!, cfg);
-      if (unpen) candidates.push({ state: unpen.state, cost: cfg.tuneChangePenalty, value: unpen.score });
-      const pen = bestPenalizedFor(cur, idx);
-      if (pen) candidates.push({ state: pen.state, cost: cfg.tuneChangePenalty + cfg.rapidChangePenalty, value: pen.score });
-
-      const winner = pickBest(candidates, stateIndex);
-      const p = timeline.observations.get(cur)![t]!;
-      const obsScore = observationScore(p, cfg);
-      pushEntry(cur, p, obsScore, winner.state, winner.cost, obsScore + winner.value);
-    }
-
-    // UNKNOWN as the current state: same (stay in UNKNOWN) vs the single
-    // best tune -> UNKNOWN (no rebound consideration applies to this
-    // direction, so idx.bestToUnknown alone is always correct here — its own
-    // independent ranking, NOT idx.top1, which is adjusted by a different
-    // constant and can disagree at a rounding boundary).
-    {
-      const candidates: Candidate[] = [
-        { state: UNKNOWN_STATE, cost: cfg.unknownStayPenalty, value: unknownScorePrev - cfg.unknownStayPenalty },
-      ];
-      if (idx.bestToUnknown) candidates.push({ state: idx.bestToUnknown.state, cost: cfg.tuneToUnknownPenalty, value: idx.bestToUnknown.score });
-      const winner = pickBest(candidates, stateIndex);
-      const p = cfg.unknownObservationProbability;
-      const obsScore = observationScore(p, cfg);
-      pushEntry(UNKNOWN_STATE, p, obsScore, winner.state, winner.cost, obsScore + winner.value);
-    }
-
-    bestScore.push(scoreRow);
-    previousState.push(prevRow);
-    if (options.debug) debugSteps.push(debugRow);
+    const col = computeColumn(
+      states, tuneIds,
+      t === 0 ? null : bestScore[t - 1]!,
+      t === 0 ? null : previousState[t - 1]!,
+      timeline, t, cfg, debug,
+    );
+    bestScore.push(col.score);
+    previousState.push(col.prev);
+    if (debug) debugSteps.push(col.debugRow!);
   }
 
-  return finalize(T, states, bestScore, previousState, debugSteps, timeline, cfg, !!options.debug);
+  return finalize(T, states, bestScore, previousState, debugSteps, timeline, cfg, debug);
 }
 
 export const runViterbiDetection = runViterbiDetectionOptimized;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STREAMING decoder — incremental wrapper around computeColumn/advanceConvergence
+// for viterbiSegmenter.ts's window-by-window feed. Amortized O(T×S) over a
+// whole session instead of the O(T²×S) that repeatedly calling
+// runViterbiDetection() from scratch on every window costs (see
+// viterbiSegmenter.ts's header for the measured before/after).
+//
+// ── Correctness (why the incremental result is byte-identical to a from-scratch
+// decode over the same windows, not merely an approximation) ──
+//
+// Relies on four invariants already true of the existing pipeline (NOT
+// introduced by this class — see temporalObservationBuilder.ts):
+//  1. filterFlatWindows/filterByTempoSpread are pure per-window — window i's
+//     filtered form never depends on any other window, so it's fixed the
+//     instant it's produced.
+//  2. TemporalTimeline.tuneIds only grows (a tuneId's best-ever score is
+//     monotone), and buildTemporalTimeline appends newly-discovered tuneIds
+//     in first-appearance order (append-only, never reordered) — this order
+//     is the canonical tie-break pickBest/stateIndex depend on.
+//  3. bestScore[t] is a pure function of bestScore[t-1] and window t alone —
+//     never the future — so a cached column, once computed, never needs
+//     revising.
+//  4. Convergence (findConvergencePoint) is monotone: once two backtrack
+//     pointers merge, they never diverge again — see its doc.
+//
+// The correctness argument for seeding a newly-discovered state to
+// -Infinity in the previous cached column (rather than replaying its true
+// epsilon-floored history from t=0, as a from-scratch decode implicitly
+// does): when tune X first joins tuneIds at window t0, buildTemporalTimeline
+// zero-fills its observations for every window < t0. In a from-scratch
+// decode, X therefore "exists" from t=0 with a finite but massively negative
+// forward score there (log(epsilon) accumulated every step). The ONLY
+// question that matters is whether X's own epsilon-chain ever wins an argmax
+// — either as X's own best predecessor, or as some OTHER state's chosen
+// predecessor. It never does: entering X (or leaving X) is always dominated
+// by entering/leaving via a real predecessor (or UNKNOWN) paying the normal
+// transition cost, whose score is incomparably higher than epsilon's
+// log(1e-6)-ish accumulation. So: (a) a from-scratch decode always enters X
+// at t0 via a REAL predecessor, not X's own epsilon chain — the streaming
+// decoder's -Infinity seed produces the exact same choice; (b) a from-scratch
+// decode never routes any OTHER state's transition through X-epsilon — a
+// seeded -Infinity can't either, it always loses. So every column computed
+// WITHOUT X before t0 is numerically identical to a from-scratch column
+// computed WITH X before t0, for every state ≠ X. Corollary: no optimal
+// backtrack pointer ever targets a -Infinity-seeded cell (never argmax), so
+// backtracking and convergence-scanning never visit a state before its real
+// birth. This holds ONLY for a state joining at t0>0 (epsilon history to
+// seed away) — a state present since window 0 has real observations from
+// the start, nothing to seed.
+
+/** First mismatch description between two ViterbiResults over the SAME
+ *  timeline, or null if they agree — path (segments) AND scores
+ *  (per-segment probability stats) AND convergence. Used only by the
+ *  dev-only shadow-assert below; not part of the production hot path. */
+export function describeViterbiDivergence(streaming: ViterbiResult, reference: ViterbiResult): string | null {
+  if (streaming.segments.length !== reference.segments.length) {
+    return `segment count: streaming=${streaming.segments.length} reference=${reference.segments.length}`;
+  }
+  for (let i = 0; i < streaming.segments.length; i++) {
+    const s = streaming.segments[i]!, r = reference.segments[i]!;
+    // NaN-safe: `Math.abs(NaN - x) > tolerance` is always false (NaN
+    // comparisons never true), so a leaked NaN would otherwise silently
+    // read as "no difference" — checked explicitly first.
+    const probs = [s.confidence, s.averageProbability, s.minimumProbability, s.maximumProbability];
+    if (probs.some(v => !Number.isFinite(v))) {
+      return `segment[${i}]: non-finite probability leaked into streaming segment stats: ${JSON.stringify(s)}`;
+    }
+    if (
+      s.tuneId !== r.tuneId || s.startTime !== r.startTime || s.endTime !== r.endTime
+      || s.firstWindowIndex !== r.firstWindowIndex || s.windowCount !== r.windowCount
+      || Math.abs(s.averageProbability - r.averageProbability) > 1e-9
+      || Math.abs(s.minimumProbability - r.minimumProbability) > 1e-9
+      || Math.abs(s.maximumProbability - r.maximumProbability) > 1e-9
+    ) {
+      return `segment[${i}]: streaming=${JSON.stringify(s)} reference=${JSON.stringify(r)}`;
+    }
+  }
+  if (streaming.stats.numberOfTransitions !== reference.stats.numberOfTransitions) {
+    return `numberOfTransitions: streaming=${streaming.stats.numberOfTransitions} reference=${reference.stats.numberOfTransitions}`;
+  }
+  if (streaming.convergedThroughIndex !== reference.convergedThroughIndex) {
+    return `convergedThroughIndex: streaming=${streaming.convergedThroughIndex} reference=${reference.convergedThroughIndex}`;
+  }
+  return null;
+}
+
+export class StreamingViterbiDecoder {
+  private score: Map<string, number>[] = [];
+  private prev: Map<string, string | null>[] = [];
+  private debugSteps: StepDebugEntry[][] = [];
+  private frozenThrough = -1;
+  private readonly debug: boolean;
+  private readonly disableShadowAssert: boolean;
+
+  /** `disableShadowAssert`: for the nightly real-fixture streaming tests
+   *  only (viterbiStreamingEquivalence.test.ts) — those feed a whole real
+   *  session (hundreds of windows) step-by-step and do exactly ONE
+   *  from-scratch reference comparison at the end (matching the "155s for
+   *  955 windows" cost already budgeted for the equivalence oracle's
+   *  existing single-shot fixture tests); leaving the default per-step
+   *  shadow-assert on there would multiply that cost by the window count.
+   *  Every other caller (production, unit tests) leaves this false — the
+   *  shadow-assert stays on whenever NODE_ENV !== 'production'. */
+  constructor(options: { debug?: boolean; disableShadowAssert?: boolean } = {}) {
+    this.debug = !!options.debug;
+    this.disableShadowAssert = !!options.disableShadowAssert;
+  }
+
+  /** Extends the decode to cover `timeline` (which always describes the FULL
+   *  window history so far — see viterbiSegmenter.ts's recompute(), same
+   *  contract runViterbiDetection() always had) and returns the up-to-date
+   *  ViterbiResult. Cheap to call every window: only ever computes the
+   *  columns and convergence range that are actually new. */
+  extend(timeline: TemporalTimeline, cfg: DetectionTemporalConfig): ViterbiResult {
+    const T = timeline.windows.length;
+    if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
+
+    const tuneIds = timeline.tuneIds;
+    const states = [...tuneIds, UNKNOWN_STATE];
+
+    // Seed the ONE boundary column (the last one already cached) with
+    // -Infinity/null for any state that's new since it was computed — see
+    // this class's header doc. No-op (and unneeded) the first time through
+    // (this.score.length === 0, t===0 columns always cover every current
+    // state directly) or when nothing new has been discovered.
+    if (this.score.length > 0) {
+      const boundary = this.score.length - 1;
+      const boundaryScore = this.score[boundary]!;
+      const boundaryPrev = this.prev[boundary]!;
+      for (const s of states) {
+        if (!boundaryScore.has(s)) {
+          boundaryScore.set(s, -Infinity);
+          boundaryPrev.set(s, null);
+        }
+      }
+    }
+
+    for (let t = this.score.length; t < T; t++) {
+      const col = computeColumn(
+        states, tuneIds,
+        t === 0 ? null : this.score[t - 1]!,
+        t === 0 ? null : this.prev[t - 1]!,
+        timeline, t, cfg, this.debug,
+      );
+      this.score.push(col.score);
+      this.prev.push(col.prev);
+      if (this.debug) this.debugSteps.push(col.debugRow!);
+    }
+
+    this.frozenThrough = advanceConvergence(this.prev, states, this.frozenThrough, T);
+
+    const result = buildResult(T, states, this.score, this.prev, this.debugSteps, timeline, cfg, this.frozenThrough, this.debug);
+
+    // Mandatory dev/test-only correctness net (not an optimization — the
+    // whole point of this class only holds if this never fires): recompute
+    // the SAME timeline from scratch via the O(T×S²) reference decoder and
+    // compare path+scores+convergence. Compiled out of production —
+    // `process.env.NODE_ENV` is replaced by webpack's built-in mode-based
+    // DefinePlugin injection (webpack.config.js's `--mode production`), so
+    // terser drops this whole branch as dead code in the shipped bundle.
+    if (!this.disableShadowAssert && process.env.NODE_ENV !== 'production') {
+      const reference = runViterbiDetectionReference(timeline, cfg);
+      const mismatch = describeViterbiDivergence(result, reference);
+      if (mismatch) {
+        throw new Error(`StreamingViterbiDecoder diverged from runViterbiDetectionReference at T=${T}: ${mismatch}`);
+      }
+    }
+
+    return result;
+  }
+}
