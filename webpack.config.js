@@ -52,6 +52,11 @@ module.exports = (env, argv) => {
             'postcss-loader',
           ],
         },
+        {
+          test: /\.(woff2?|ttf)$/,
+          type: 'asset/resource',
+          generator: { filename: 'fonts/[name].[hash:8][ext]' },
+        },
       ],
     },
     plugins: [
@@ -74,6 +79,9 @@ module.exports = (env, argv) => {
     devServer: {
       port: 3002,
       hot: true,
+      // Mirrors the CopyPlugin patterns above (which only run in production) —
+      // without this, static files like privacy.html/terms.html 404 in dev.
+      static: { directory: path.resolve(__dirname, 'src') },
     },
     devtool: isDev ? 'eval-source-map' : false,
   };

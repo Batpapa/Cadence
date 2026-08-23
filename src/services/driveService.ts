@@ -177,9 +177,26 @@ export function onStatusChange(cb: (s: DriveStatus) => void): () => void {
   return () => { const i = listeners.indexOf(cb); if (i !== -1) listeners.splice(i, 1); };
 }
 
+const GIS_SCRIPT_ID = 'gis-client-script';
+
+/** Injects the Google Identity Services script on first use rather than on every
+ *  page load — most sessions never touch Drive at all, and there's no reason to
+ *  ship a request to accounts.google.com for those. Idempotent: safe to call
+ *  from every initDriveClient(). */
+function loadGisScript(): void {
+  if (document.getElementById(GIS_SCRIPT_ID)) return;
+  const script = document.createElement('script');
+  script.id = GIS_SCRIPT_ID;
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.async = true;
+  script.defer = true;
+  document.head.appendChild(script);
+}
+
 export function initDriveClient(): Promise<void> {
   if (!GOOGLE_CLIENT_ID) return Promise.resolve();
   if (driveReady) return driveReady;
+  loadGisScript();
   driveReady = new Promise<void>((resolve) => {
     const poll = () => {
       const g = (window as Gis).google;

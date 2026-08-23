@@ -141,19 +141,23 @@ function finishBoot(root: HTMLElement): void {
   initPWA();
   initDriveVisibilitySync();
 
-  void initDriveClient().then(async () => {
-    if (!isDriveConnected()) return;
-    try {
-      // Same three-way reconciliation as the manual connect flow: fast-forwards
-      // apply silently, real divergences raise the explicit conflict modal.
-      const result = reconcileDriveData(await loadFromCloud());
-      if (result.action === 'apply') {
-        await applyDriveState(result.state, result.driveTs);
-      } else if (result.action === 'conflict') {
-        showDriveConflictModal(result.state, result.driveTs);
-      }
-    } catch { /* offline or transient failure — keep local data */ }
-  });
+  // isDriveConnected() is a plain localStorage read — checking it first avoids
+  // ever loading the Google Identity script (and its request to Google) for the
+  // majority of sessions that have never connected Drive.
+  if (isDriveConnected()) {
+    void initDriveClient().then(async () => {
+      try {
+        // Same three-way reconciliation as the manual connect flow: fast-forwards
+        // apply silently, real divergences raise the explicit conflict modal.
+        const result = reconcileDriveData(await loadFromCloud());
+        if (result.action === 'apply') {
+          await applyDriveState(result.state, result.driveTs);
+        } else if (result.action === 'conflict') {
+          showDriveConflictModal(result.state, result.driveTs);
+        }
+      } catch { /* offline or transient failure — keep local data */ }
+    });
+  }
 
   mountApp(root);
   registerCommandPalette(getContext);

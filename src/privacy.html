@@ -10,17 +10,63 @@
     h2 { font-size: 1.1rem; margin-top: 2rem; }
     p, li { font-size: 0.95rem; color: #333; }
     a { color: #4f6ef7; }
+    code { background: #f0f0f0; padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; }
     .updated { font-size: 0.85rem; color: #888; margin-bottom: 2.5rem; }
   </style>
 </head>
 <body>
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: April 2026</p>
+  <p class="updated">Last updated: August 2026</p>
 
-  <p>Cadence is a personal flashcard application. This policy explains how Cadence handles your data.</p>
+  <p>Cadence is a personal flashcard application. This policy explains what happens to your data — and, just as
+  important, what doesn't. The short version: <strong>no server stores your data.</strong> Some features do talk to a
+  server, but only ever in passing, never to keep a copy.</p>
 
   <h2>Data Storage</h2>
-  <p>All your flashcard data (decks, cards, study history) is stored locally in your browser's IndexedDB. No data is sent to any Cadence server, because there is none.</p>
+  <p>All your flashcard data (decks, cards, study history) and any recorded session audio are stored locally in your
+  browser's IndexedDB. Nothing is uploaded there by default, and Cadence doesn't require an account.</p>
+
+  <h2>Microphone &amp; Session Recording</h2>
+  <p>If you use the session-recording feature, Cadence asks for microphone access to capture the audio. Tune
+  recognition runs entirely on-device (via <a href="https://github.com/TomWyllie/folkfriend" target="_blank" rel="noopener">FolkFriend</a>,
+  compiled to WebAssembly) — the audio itself is never sent anywhere for that. The recording is saved to your
+  browser's IndexedDB like any other attachment, and it only leaves your device if you explicitly choose to share
+  that session (see below).</p>
+
+  <h2>Sharing by Key (Ephemeral Relay)</h2>
+  <p>Cadence lets you share a card pack or a recorded session (optionally including its audio) with someone else via
+  a short one-time key, instead of sending a file. This goes through a small relay server the author operates. It
+  works more like a self-destructing drop-off than a server "storing" anything:</p>
+  <ul>
+    <li>Whatever you share is held only in the server's memory (RAM) — it is <strong>never written to disk</strong>.</li>
+    <li>It is automatically deleted after <strong>10 minutes</strong>, whether or not anyone downloaded it.</li>
+    <li>It's retrieved with a random 6-character key (letters and digits, ~2.18 billion combinations) — there's no
+    listing or browsing of what's currently shared.</li>
+    <li>Uploads are capped at 100 MB.</li>
+    <li>The content itself is never logged by the application. (The hosting infrastructure does log ordinary request
+    metadata — timestamp, IP, path — the way any web server does; see "Hosting &amp; Network" below.)</li>
+    <li>If a shared session includes its audio, that audio travels through this same relay, under the same rules,
+    for the same 10 minutes.</li>
+  </ul>
+  <p>If the server restarts for any reason (deploys, crashes), anything still held in memory at that moment is lost
+  — which, again, is the point: nothing here is meant to persist.</p>
+
+  <h2>TheSession.org Import</h2>
+  <p>Searching for or importing a tune from <a href="https://thesession.org" target="_blank" rel="noopener">TheSession.org</a>
+  sends that request straight from your browser to their servers — Cadence doesn't proxy it. This means your search
+  terms (and by extension, something about what you're learning) are visible to TheSession.org the same way they
+  would be if you searched their site directly. See their own privacy policy for how they handle that.</p>
+
+  <h2>IrishTuneInfo Import</h2>
+  <p>Importing a tune from IrishTuneInfo.com goes through the same relay server mentioned above (it also runs a small
+  scraper for this site, since IrishTuneInfo.com has no public API). Your search/import request passes through it;
+  nothing about it is stored beyond normal request handling — see "Hosting &amp; Network" below.</p>
+
+  <h2>Trending Data Sync</h2>
+  <p>To show tune popularity trends, Cadence fetches public data directly from GitHub (<code>api.github.com</code>
+  and <code>raw.githubusercontent.com</code>, reading the open <code>adactio/TheSession-data</code> repository). These
+  are read-only requests — no data about you or your library is sent, only the standard request metadata any GitHub
+  request carries (IP, etc.).</p>
 
   <h2>Google Drive Integration (Optional)</h2>
   <p>Cadence offers an optional Google Drive sync feature. If you choose to enable it:</p>
@@ -29,6 +75,7 @@
     <li>This file contains only your Cadence flashcard data.</li>
     <li>Cadence does not access any other files in your Drive.</li>
     <li>Your data is never sent to any third-party server — it travels directly between your browser and Google Drive.</li>
+    <li>The Google sign-in script itself is only loaded once you turn this feature on — not on every visit.</li>
     <li>You can revoke access at any time from your <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account settings</a>.</li>
   </ul>
 
@@ -37,15 +84,24 @@
   <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>,
   including the Limited Use requirements. Cadence only uses Google Drive data to provide and improve the sync feature within the app. It does not use this data for advertising, profiling, or any purpose unrelated to syncing your flashcards.</p>
 
-  <h2>Data We Do Not Collect</h2>
-  <p>Cadence does not collect, store, or transmit:</p>
-  <ul>
-    <li>Your name, email address, or any account information</li>
-    <li>Usage analytics or telemetry</li>
-    <li>Any data to external servers</li>
-  </ul>
+  <h2>Hosting &amp; Network</h2>
+  <p>Cadence is a static site served from GitHub Pages, and the relay/scraper above runs on Render. Like essentially
+  any website, both of these can see ordinary network-level request metadata (your IP address, timestamp, and the
+  path requested) simply by virtue of serving the request — this isn't specific to Cadence and isn't something any
+  website can avoid. Neither logs the actual content of what you share.</p>
 
-  <h2>Third-Party Services</h2>
+  <h2>What Cadence Does Not Collect</h2>
+  <p>Cadence has no analytics, no telemetry, no advertising, and no user accounts. It doesn't track you across
+  sessions or devices, and no server — including the relay described above — keeps a durable copy of your data.</p>
+
+  <h2>Third-Party Services, at a Glance</h2>
+  <ul>
+    <li><strong>Google Drive</strong> — optional, opt-in, only when you enable sync.</li>
+    <li><strong>Google Identity</strong> (sign-in) — only loaded once you enable Drive sync.</li>
+    <li><strong>thesession.org</strong> — when you search or import from TheSession.</li>
+    <li><strong>The author's relay/scraper</strong> (Render) — when you share by key, or import from IrishTuneInfo.</li>
+    <li><strong>GitHub</strong> (<code>api.github.com</code>, <code>raw.githubusercontent.com</code>) — read-only, for trending data.</li>
+  </ul>
   <p>When Google Drive sync is enabled, your data is subject to <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</p>
 
   <h2>Contact</h2>
