@@ -375,7 +375,6 @@
   "theSession.tabTune": "Tune",
   "theSession.tabMember": "Member",
   "theSession.tune.placeholder": "Tune name or ID…",
-  "theSession.mergeSettings": "Merge all settings into one file",
   "theSession.id.placeholder": "Tune ID…",
   "theSession.id.import": "Import",
   "theSession.id.notFound": "Tune not found.",
