@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread } from './temporalObservationBuilder';
+import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, IncrementalTimelineBuilder, describeTimelineDivergence } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG } from './detectionTemporalConfig';
 import type { WindowResult, WindowCandidate } from '../model';
 
@@ -138,5 +138,75 @@ describe('filterByTempoSpread', () => {
     const snapshot = JSON.parse(JSON.stringify(windows));
     filterByTempoSpread(windows, 0.10);
     expect(windows).toEqual(snapshot);
+  });
+});
+
+// ── IncrementalTimelineBuilder ──────────────────────────────────────────────
+// The broader randomized "matches buildTemporalTimeline at every step" oracle
+// lives in temporalTimelineStreamingEquivalence.test.ts (mirrors
+// viterbiStreamingEquivalence.test.ts's structure/role). These tests target
+// the two specific correctness traps called out in its header doc directly,
+// plus basic push()/current()/length behavior.
+describe('IncrementalTimelineBuilder', () => {
+  it('matches buildTemporalTimeline at every step for a simple growing sequence', () => {
+    const windows = [win(0, [cand('A', 0.9), cand('B', 0.3)]), win(1, [cand('B', 0.8)]), win(2, [cand('A', 0.1), cand('C', 0.5)])];
+    const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
+    for (let t = 1; t <= windows.length; t++) {
+      const incremental = builder.push(windows[t - 1]!);
+      const reference = buildTemporalTimeline(windows.slice(0, t), DETECTION_TEMPORAL_CONFIG);
+      expect(describeTimelineDivergence(incremental, reference)).toBeNull();
+    }
+  });
+
+  it('piège A: tuneIds are in FIRST-APPEARANCE order, not crossing-threshold order', () => {
+    // Window 0: A appears but stays below minCandidateProbability (0.20);
+    // B appears and clears it immediately. Window 1: A finally clears too.
+    // Crossing order would be [B, A]; first-appearance order (the correct
+    // one, matching buildTemporalTimeline's Map-insertion-order semantics)
+    // is [A, B].
+    const windows = [win(0, [cand('A', 0.05), cand('B', 0.9)]), win(1, [cand('A', 0.9)])];
+    const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
+    builder.push(windows[0]!);
+    const timeline = builder.push(windows[1]!);
+    expect(timeline.tuneIds).toEqual(['A', 'B']);
+    const reference = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
+    expect(reference.tuneIds).toEqual(['A', 'B']);
+    expect(describeTimelineDivergence(timeline, reference)).toBeNull();
+  });
+
+  it('piège B: a tuneId that crosses the threshold late keeps its real pre-crossing history, not zeros', () => {
+    const windows = [win(0, [cand('X', 0.05)]), win(1, [cand('X', 0.06)]), win(2, [cand('X', 0.9)])];
+    const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
+    let timeline;
+    for (const w of windows) timeline = builder.push(w);
+    expect(timeline!.observations.get('X')).toEqual([0.05, 0.06, 0.9]);
+    const reference = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
+    expect(describeTimelineDivergence(timeline!, reference)).toBeNull();
+  });
+
+  it('length reflects the number of windows pushed; current() returns the same view as the last push()', () => {
+    const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
+    expect(builder.length).toBe(0);
+    const pushed = builder.push(win(0, [cand('A', 0.9)]));
+    expect(builder.length).toBe(1);
+    expect(builder.current()).toEqual(pushed);
+  });
+
+  it('cleared tuneIds not present in a window are zero/null-filled for it, same as buildTemporalTimeline', () => {
+    const windows = [win(0, [cand('A', 0.9)]), win(1, []), win(2, [cand('A', 0.8)])];
+    const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
+    let timeline;
+    for (const w of windows) timeline = builder.push(w);
+    expect(timeline!.observations.get('A')).toEqual([0.9, 0, 0.8]);
+    expect(timeline!.ranks.get('A')).toEqual([1, null, 1]);
+  });
+
+  it('drops a tuneId whose best-ever score never clears minCandidateProbability, same as buildTemporalTimeline', () => {
+    const windows = [win(0, [cand('A', 0.05)]), win(1, [cand('A', 0.1)])];
+    const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
+    let timeline;
+    for (const w of windows) timeline = builder.push(w);
+    expect(timeline!.tuneIds).not.toContain('A');
+    expect(timeline!.observations.has('A')).toBe(false);
   });
 });
