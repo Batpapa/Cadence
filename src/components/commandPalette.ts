@@ -1,6 +1,6 @@
 import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
-import { focusIfDesktop, scoreMatch } from '../utils';
+import { focusIfDesktop, scoreMatch, NO_SCORE_MATCH } from '../utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   const items: PaletteItem[] = [];
 
   for (const card of Object.values(ctx.user.cards)) {
-    if (scoreMatch(card.name, q) < 4) items.push({
+    if (scoreMatch(card.name, q) < NO_SCORE_MATCH) items.push({
       label: card.name,
       sublabel: card.tags?.join(', ') || undefined,
       kind: 'card',
@@ -29,7 +29,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   }
 
   for (const deck of Object.values(ctx.user.decks)) {
-    if (scoreMatch(deck.name, q) < 4) items.push({
+    if (scoreMatch(deck.name, q) < NO_SCORE_MATCH) items.push({
       label: deck.name,
       sublabel: t(deck.entries.length !== 1 ? 'commandPalette.deckCountPlural' : 'commandPalette.deckCount', { count: deck.entries.length }),
       kind: 'deck',
@@ -38,7 +38,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   }
 
   for (const folder of Object.values(ctx.user.folders)) {
-    if (scoreMatch(folder.name, q) < 4) items.push({
+    if (scoreMatch(folder.name, q) < NO_SCORE_MATCH) items.push({
       label: folder.name,
       kind: 'folder',
       onSelect: (c) => c.navigate({ view: 'folder', folderId: folder.id }),

@@ -2,7 +2,7 @@ import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
-import { normalizeDisplayName } from './tuneNameNormalize';
+import { normalizeDisplayName } from '../../utils';
 import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, AnnotationEvent } from '../model';
 import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW } from '../sessionConfig';
 

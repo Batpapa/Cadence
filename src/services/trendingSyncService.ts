@@ -31,7 +31,13 @@ interface RawTuneEntry {
   tunebooks: string | number;
 }
 
-async function fetchAllCommits(): Promise<Commit[]> {
+/** `onPage` fires after each page lands, with the running commit count so
+ *  far — the UI has SOMETHING to show ("N found so far, still counting")
+ *  during this walk instead of a frozen 0/0, since the real total (how many
+ *  are actually still PENDING) can't be known until this whole walk finishes
+ *  and gets compared against what's already synced (see
+ *  syncPopularityHistory). */
+async function fetchAllCommits(onPage?: (foundSoFar: number) => void): Promise<Commit[]> {
   const commits: Commit[] = [];
   for (let page = 1; ; page++) {
     const url = `${API_BASE}/repos/${OWNER}/${REPO}/commits?path=${encodeURIComponent(FILE_PATH)}&per_page=100&page=${page}`;
@@ -40,6 +46,7 @@ async function fetchAllCommits(): Promise<Commit[]> {
     const data = (await res.json()) as Array<{ sha: string; commit: { committer: { date: string } } }>;
     if (data.length === 0) break;
     for (const c of data) commits.push({ sha: c.sha, date: c.commit.committer.date });
+    onPage?.(commits.length);
     if (data.length < 100) break;
   }
   commits.reverse(); // API returns newest-first; process oldest-first like Program.cs.
@@ -75,10 +82,13 @@ function applySnapshot(dbState: PopularityDb, date: string, entries: RawTuneEntr
   }
 }
 
-export interface SyncProgress {
-  done: number;
-  total: number;
-}
+export type SyncProgress =
+  // Still walking the commit-history pages — the eventual pending TOTAL
+  // isn't known yet (it depends on comparing against what's already synced,
+  // only possible once the full list is in), so this phase reports a running
+  // count instead of a done/total fraction.
+  | { phase: 'checking'; found: number }
+  | { phase: 'syncing'; done: number; total: number };
 
 /** Loads the local history, fetches+applies any commit published since the last
  *  sync (all of them, batched, on a device's very first run), persists after every
@@ -89,13 +99,13 @@ export async function syncPopularityHistory(onProgress?: (p: SyncProgress) => vo
   const dbState = await loadPopularityDb();
   const known = new Set(dbState.snapshots);
 
-  const allCommits = await fetchAllCommits();
+  const allCommits = await fetchAllCommits(found => onProgress?.({ phase: 'checking', found }));
   const pending = allCommits.filter(c => !known.has(c.date));
   if (pending.length === 0) return dbState;
 
   const total = pending.length;
   let done = 0;
-  onProgress?.({ done, total });
+  onProgress?.({ phase: 'syncing', done, total });
 
   for (let i = 0; i < pending.length; i += BATCH_SIZE) {
     const batch = pending.slice(i, i + BATCH_SIZE);
@@ -104,7 +114,7 @@ export async function syncPopularityHistory(onProgress?: (p: SyncProgress) => vo
       applySnapshot(dbState, batch[j]!.date, snapshots[j]!);
     }
     done += batch.length;
-    onProgress?.({ done, total });
+    onProgress?.({ phase: 'syncing', done, total });
 
     const batchIndex = Math.floor(i / BATCH_SIZE);
     if ((batchIndex + 1) % CHECKPOINT_EVERY_N_BATCHES === 0) {

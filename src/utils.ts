@@ -145,14 +145,62 @@ export function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+// ── Tune display name normalization ───────────────────────────────────────────
+// Both FolkFriend's tune index (ffWorker.ts) and TheSession's static GitHub
+// data dump (adactio/TheSession-data — trendingSyncService.ts's
+// json/tune_popularity.json, tuneNameIndexService.ts's json/tunes.json) store
+// names in library-catalog sort order — the leading article moved to the end
+// so the name alphabetizes under its real first word ("Kesh, The", so it
+// sorts under K, not T). That's a sorting convention, not how anyone actually
+// says or writes the name — flip it back for display ("The Kesh"). NOT
+// needed for thesession.org's own live JSON API (theSessionService.ts,
+// actual tune/card import) — verified (2026-08-24) it already returns
+// natural order ("The Kesh"), only the static data dump has this quirk.
+
+const TRAILING_ARTICLE = /^(.+),\s*(the|an?)$/i;
+
+export function normalizeDisplayName(name: string): string {
+  const m = TRAILING_ARTICLE.exec(name);
+  return m ? `${m[2]} ${m[1]}` : name;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** 0 (best) to 6 (no match), used by sortByRelevance to rank search results.
+ *  Ranks are anchored on WHERE/HOW the query sits relative to word
+ *  boundaries in `name` — a match at the very start beats one merely aligned
+ *  to a word boundary further in, which in turn beats a match buried
+ *  mid-word with no boundary alignment at all (e.g. querying "inch" against
+ *  "The Mystery Inch" — whole word — should outrank "The Goldfinch" — the
+ *  query is just a fragment of "finch" — even though neither starts with the
+ *  query). \b is JS's built-in word-boundary regex anchor (transition
+ *  between a \w character — letter/digit/underscore — and a non-\w one, or
+ *  string start/end) — cheap and good enough here; it doesn't know about
+ *  apostrophes/accents as "part of a word" the way a linguist would, but
+ *  that's an acceptable rough edge for tune-name search, not something this
+ *  needs to get perfectly right. */
+/** scoreMatch's fallback return value — no callsite should hardcode this
+ *  number to test "did it match at all" (`< NO_SCORE_MATCH`); a past bug
+ *  (commandPalette.ts hardcoding the OLD fallback value of 4 as its
+ *  match/no-match cutoff) silently started dropping real matches the moment
+ *  scoreMatch grew two more ranked tiers below the old ones, without any
+ *  type error to catch it — the threshold and the fallback value were never
+ *  actually tied together in the code, just coincidentally equal. */
+export const NO_SCORE_MATCH = 6;
+
 export function scoreMatch(name: string, query: string): number {
   const n = name.toLowerCase();
   const q = query.toLowerCase().trim();
   if (n === q)               return 0;
-  if (n.startsWith(q + ' ')) return 1;
-  if (n.startsWith(q))       return 2;
-  if (n.includes(q))         return 3;
-  return 4;
+  if (n.startsWith(q + ' ')) return 1; // starts with the query as its own whole first word
+  if (n.startsWith(q))       return 2; // starts with the query, mid-word (e.g. "inchindown" vs "inch")
+  const qEsc = escapeRegExp(q);
+  if (new RegExp(`\\b${qEsc}\\b`).test(n)) return 3; // query is a whole word somewhere else in the name
+  if (new RegExp(`\\b${qEsc}`).test(n))    return 4; // query starts some other word in the name, without completing it
+  if (n.includes(q))         return 5; // query is buried inside a word, no boundary alignment at all
+  return NO_SCORE_MATCH;
 }
 
 export function sortByRelevance<T extends { name: string }>(items: T[], query: string): T[] {
