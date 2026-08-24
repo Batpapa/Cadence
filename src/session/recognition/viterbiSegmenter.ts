@@ -1,6 +1,6 @@
 import type { WindowResult, SessionAnnotation, AnnotationAlternate, AnnotationEvidence, AnnotationEvent } from '../model';
 import { StreamingViterbiDecoder, filterShortSegments, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
-import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE } from './temporalObservationBuilder';
+import { IncrementalTimelineBuilder, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
 // ── Incremental adapter over the Viterbi detector ───────────────────────────
@@ -27,6 +27,16 @@ import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detec
 // now, never as a side effect of dev/prod usage — see extend()'s own doc,
 // 2026-08-25). Same 955-window fixture, streamed step-by-step as ffWorker.ts
 // actually does: measured (2026-08-23) at 103.2s before -> 2.1s after.
+//
+// 2026-08-24: recompute() itself still rebuilt the two pre-Viterbi filters
+// AND the whole TemporalTimeline from scratch over the FULL window history
+// on every call — O(T·S) per call, O(T²·S) summed (and since S grows
+// ~linearly with T in practice, closer to O(T³) — see
+// IncrementalTimelineBuilder's header doc in temporalObservationBuilder.ts
+// for the measured numbers). `timelineBuilder` below makes this amortized
+// O(T·S) too, same treatment as `decoder` above one step earlier — produces
+// a byte-identical TemporalTimeline, validated in
+// temporalTimelineStreamingEquivalence.test.ts.
 //
 // UNKNOWN_STATE segments never become annotations — they represent silence,
 // talk, or noise, not a tune.
@@ -125,10 +135,15 @@ export class IncrementalViterbiSegmenter {
   // naturally by session, since a new IncrementalViterbiSegmenter is already
   // created per session (ffWorker.ts's handleInit/handleStop).
   private readonly decoder = new StreamingViterbiDecoder();
+  // Owns the incremental timeline-construction state, same lifetime/reset
+  // reasoning as `decoder` above — needs `this.cfg`, so built in the
+  // constructor body rather than as a field initializer.
+  private readonly timelineBuilder: IncrementalTimelineBuilder;
 
   constructor(hopS: number, cfg: DetectionTemporalConfig = DETECTION_TEMPORAL_CONFIG) {
     this.hopS = hopS;
     this.cfg = cfg;
+    this.timelineBuilder = new IncrementalTimelineBuilder(cfg);
   }
 
   step(win: WindowResult): AnnotationEvent[] {
@@ -204,16 +219,19 @@ export class IncrementalViterbiSegmenter {
   private recompute(forceFinalizeAll: boolean): AnnotationEvent[] {
     if (this.windows.length === 0) return [];
 
-    // filterFlatWindows/filterByTempoSpread only shape what Viterbi sees as
-    // evidence — evidence/alternates displayed to the user
-    // (toAnnotation/computeAlternates below) still read from this.windows
-    // unfiltered, since a flattened window's real raw scores are still
-    // legitimate to show, just not to detect from. Order matters: the tempo
-    // filter was A/B tested STACKED on top of the margin filter, not in
-    // isolation — always margin first, then tempo.
-    const marginFiltered = filterFlatWindows(this.windows, this.cfg.flatWindowTopN, this.cfg.flatWindowMarginThreshold);
-    const detectionWindows = filterByTempoSpread(marginFiltered, this.cfg.tempoSpreadThreshold);
-    const timeline = buildTemporalTimeline(detectionWindows, this.cfg);
+    // filterFlatWindows/filterByTempoSpread (applied inside timelineBuilder,
+    // margin first then tempo — same order as before, still A/B tested
+    // stacked, not in isolation) only shape what Viterbi sees as evidence —
+    // evidence/alternates displayed to the user (toAnnotation/computeAlternates
+    // below) still read from this.windows unfiltered, since a flattened
+    // window's real raw scores are still legitimate to show, just not to
+    // detect from. Catch the builder up to this.windows (recompute() can run
+    // with no new windows at all — finalize() after a step() already caught
+    // it up — or with several at once — feedAll()'s batch replay).
+    for (let t = this.timelineBuilder.length; t < this.windows.length; t++) {
+      this.timelineBuilder.push(this.windows[t]!);
+    }
+    const timeline = this.timelineBuilder.current();
     const result = this.decoder.extend(timeline, this.cfg);
     // exemptLastSegment = !forceFinalizeAll: while a session (live or
     // import) is still streaming windows in, the most recent segment is

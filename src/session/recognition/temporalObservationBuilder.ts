@@ -86,6 +86,181 @@ export function filterByTempoSpread(windows: WindowResult[], threshold: number):
   });
 }
 
+// ── Incremental timeline builder (2026-08-24) ───────────────────────────────
+// buildTemporalTimeline above is O(T·S) PER CALL — fine once, but
+// viterbiSegmenter.ts's recompute() used to call it (plus the two filters)
+// on the WHOLE window history on every single new window, i.e. O(T²·S)
+// summed over a session — and since S (distinct tuneIds ever seen) grows
+// ~linearly with T in practice (measured: 1476 states/955 windows, 1960/1059
+// — S > T), the real cost trends toward O(T³). Measured before/after on a
+// real 955→1059-window fixture: recompute() cost 9.6s→20.75s, i.e. far
+// steeper than quadratic. IncrementalTimelineBuilder produces a
+// byte-identical TemporalTimeline to buildTemporalTimeline(sameWindows, cfg)
+// at every step, amortized O(T·S) over a whole session — see
+// temporalTimelineStreamingEquivalence.test.ts for the equivalence oracle
+// that proves this (same role as viterbiStreamingEquivalence.test.ts for
+// StreamingViterbiDecoder — no dev-only shadow-assert here either, on the
+// same 2026-08-25 precedent: an always-on from-scratch comparison this cheap
+// per call is still O(t·S) per call, i.e. exactly the quadratic blowup this
+// class exists to eliminate, just moved into dev mode instead of removed).
+//
+// Correctness rests on properties buildTemporalTimeline already has:
+//  1. filterFlatWindows/filterByTempoSpread are pure per-window (window t's
+//     filtered form depends only on window t) — so a window's filtered shape
+//     is fixed forever the instant it's produced; filtering one new raw
+//     window in isolation (via a length-1 array) is provably identical to
+//     filtering it as part of the full array, since neither filter looks at
+//     neighbours.
+//  2. tuneIds must be in FIRST-APPEARANCE order (buildTemporalTimeline's
+//     maxProbSeen is a Map, whose insertion order IS first-appearance order,
+//     independent of when a tuneId's score happens to clear
+//     minCandidateProbability) — NOT the order in which tuneIds cross the
+//     threshold. Getting this wrong reorders tuneIds, which changes the
+//     Viterbi decoder's tie-break order (pickBest/stateIndex) and breaks
+//     equivalence even though every individual score is still correct. Kept
+//     straight here via `firstSeenOrder` (append-only, on first sight
+//     regardless of score) separately from `cleared` (append-only, on
+//     crossing minCandidateProbability) — tuneIds is always
+//     firstSeenOrder ∩ cleared, in firstSeenOrder's order.
+//  3. maxProbSeen only ever increases (best-ever, not "current"), so a tuneId
+//     that scores weak early and strong later must NOT be dropped, and its
+//     dense observations/ranks arrays must contain its REAL pre-crossing
+//     history (buildTemporalTimeline reconstructs this for free by scanning
+//     the whole recording at once; the incremental builder must reconstruct
+//     it explicitly, since by the time a tuneId crosses, its earlier
+//     appearances already happened and can't be "replayed" from the current
+//     window alone). `appearances` (a sparse, append-only, per-tuneId log of
+//     every window it was ever a candidate in) exists exactly for this: when
+//     a tuneId crosses at window t, its dense arrays are materialized in one
+//     O(t) pass from this log, not by rescanning `filteredWindows`. Each
+//     tuneId is backfilled at most once (the moment it crosses), so the
+//     total backfill cost across a whole session is bounded by O(T·S), not
+//     quadratic.
+export class IncrementalTimelineBuilder {
+  private readonly cfg: DetectionTemporalConfig;
+  private readonly filteredWindows: WindowResult[] = [];
+  private readonly maxProbSeen = new Map<string, number>();
+  private readonly meta = new Map<string, TuneMeta>();
+  private readonly firstSeenOrder: string[] = [];
+  private readonly firstSeenSet = new Set<string>();
+  private readonly cleared = new Set<string>();
+  private readonly appearances = new Map<string, { t: number; score: number; rank: number }[]>();
+  private readonly observations = new Map<string, number[]>();
+  private readonly ranks = new Map<string, (number | null)[]>();
+  private tuneIds: string[] = [];
+
+  constructor(cfg: DetectionTemporalConfig) {
+    this.cfg = cfg;
+  }
+
+  /** Number of raw windows fed so far — lets a caller catch up a builder that
+   *  may have already processed a prefix (e.g. viterbiSegmenter.ts's
+   *  recompute(), called again with no new windows by finalize()). */
+  get length(): number {
+    return this.filteredWindows.length;
+  }
+
+  /** The current TemporalTimeline view, without processing anything new —
+   *  same object identity as the last push()'s return value. */
+  current(): TemporalTimeline {
+    return { windows: this.filteredWindows, tuneIds: this.tuneIds, meta: this.meta, observations: this.observations, ranks: this.ranks };
+  }
+
+  /** Feeds ONE new raw window (must be the NEXT one after every window fed so
+   *  far — this class has no notion of out-of-order or repeated windows) and
+   *  returns the up-to-date TemporalTimeline. */
+  push(rawWindow: WindowResult): TemporalTimeline {
+    const [afterMargin] = filterFlatWindows([rawWindow], this.cfg.flatWindowTopN, this.cfg.flatWindowMarginThreshold);
+    const [fw] = filterByTempoSpread([afterMargin!], this.cfg.tempoSpreadThreshold);
+    const t = this.filteredWindows.length;
+    this.filteredWindows.push(fw!);
+
+    // Every tuneId cleared BEFORE this window grows by exactly one
+    // zero/null slot by default — mirrors buildTemporalTimeline's Pass 2,
+    // which zero-fills every cleared tuneId's array for every window, then
+    // overwrites only where a candidate is actually present. O(|cleared|)
+    // per push, O(T·S) total over a session.
+    for (const id of this.cleared) {
+      this.observations.get(id)!.push(0);
+      this.ranks.get(id)!.push(null);
+    }
+
+    const newlyCleared: string[] = [];
+    fw!.candidates.forEach((c, idx) => {
+      const rank = idx + 1;
+      if (!this.firstSeenSet.has(c.tuneId)) {
+        this.firstSeenSet.add(c.tuneId);
+        this.firstSeenOrder.push(c.tuneId);
+      }
+      let log = this.appearances.get(c.tuneId);
+      if (!log) { log = []; this.appearances.set(c.tuneId, log); }
+      log.push({ t, score: c.score, rank });
+
+      const prevMax = this.maxProbSeen.get(c.tuneId) ?? -Infinity;
+      if (c.score > prevMax) {
+        this.maxProbSeen.set(c.tuneId, c.score);
+        this.meta.set(c.tuneId, { settingId: c.settingId, displayName: c.displayName, dance: c.dance, meter: c.meter });
+      }
+
+      if (this.cleared.has(c.tuneId)) {
+        // Already cleared before this window — write into the slot the
+        // growth loop above just appended.
+        this.observations.get(c.tuneId)![t] = c.score;
+        this.ranks.get(c.tuneId)![t] = rank;
+      } else if (this.maxProbSeen.get(c.tuneId)! >= this.cfg.minCandidateProbability) {
+        // Crosses the threshold for the first time THIS window — maxProbSeen
+        // only ever increases, so this is the only place a crossing can ever
+        // be detected (never missed, never a duplicate detection later).
+        newlyCleared.push(c.tuneId);
+      }
+    });
+
+    // Materialize each newly-cleared tuneId's dense history in one O(t) pass
+    // from its sparse appearance log — includes THIS window (already logged
+    // above), so it does not also go through the growth loop.
+    for (const id of newlyCleared) {
+      const obsArr = new Array<number>(t + 1).fill(0);
+      const rankArr: (number | null)[] = new Array(t + 1).fill(null);
+      for (const a of this.appearances.get(id)!) { obsArr[a.t] = a.score; rankArr[a.t] = a.rank; }
+      this.observations.set(id, obsArr);
+      this.ranks.set(id, rankArr);
+      this.cleared.add(id);
+    }
+
+    this.tuneIds = this.firstSeenOrder.filter(id => this.cleared.has(id));
+
+    return this.current();
+  }
+}
+
+/** Dev/test-only helper (not used on any hot path): first mismatch between
+ *  two TemporalTimelines built over the SAME windows, or null if they agree
+ *  — tuneIds (values AND order — see IncrementalTimelineBuilder's doc on why
+ *  order matters), meta, and every tuneId's observations/ranks arrays (length
+ *  and content). Used by temporalTimelineStreamingEquivalence.test.ts, the
+ *  same role describeViterbiDivergence plays for the streaming Viterbi
+ *  decoder. */
+export function describeTimelineDivergence(a: TemporalTimeline, b: TemporalTimeline): string | null {
+  if (a.tuneIds.length !== b.tuneIds.length || a.tuneIds.some((id, i) => id !== b.tuneIds[i])) {
+    return `tuneIds: a=${JSON.stringify(a.tuneIds)} b=${JSON.stringify(b.tuneIds)}`;
+  }
+  for (const id of a.tuneIds) {
+    const am = a.meta.get(id), bm = b.meta.get(id);
+    if (JSON.stringify(am) !== JSON.stringify(bm)) {
+      return `meta[${id}]: a=${JSON.stringify(am)} b=${JSON.stringify(bm)}`;
+    }
+    const ao = a.observations.get(id), bo = b.observations.get(id);
+    if (!ao || !bo || ao.length !== bo.length || ao.some((v, i) => v !== bo[i])) {
+      return `observations[${id}]: a=${JSON.stringify(ao)} b=${JSON.stringify(bo)}`;
+    }
+    const ar = a.ranks.get(id), br = b.ranks.get(id);
+    if (!ar || !br || ar.length !== br.length || ar.some((v, i) => v !== br[i])) {
+      return `ranks[${id}]: a=${JSON.stringify(ar)} b=${JSON.stringify(br)}`;
+    }
+  }
+  return null;
+}
+
 export function buildTemporalTimeline(windows: WindowResult[], cfg: DetectionTemporalConfig): TemporalTimeline {
   const T = windows.length;
 
