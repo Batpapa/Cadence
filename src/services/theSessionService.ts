@@ -61,7 +61,14 @@ export async function searchTunes(query: string): Promise<TuneSearchResult[]> {
 }
 
 export async function fetchTuneById(id: number): Promise<TuneResult> {
-  const res = await fetch(`${BASE}/tunes/${id}?format=json&order=popular`);
+  // `orderby` (not `order`) is TheSession API's actual parameter name for
+  // this — the previous `order=popular` was silently ignored (unrecognized
+  // param), so settings always came back in default (id-ascending) order
+  // despite the request looking like it asked for popularity order. Verified
+  // directly against the live API (2026-08-24): `order=popular` produces the
+  // exact same ordering as no param at all; `orderby=popular` produces a
+  // genuinely different one.
+  const res = await fetch(`${BASE}/tunes/${id}?format=json&orderby=popular`);
   if (!res.ok) throw new Error(`TheSession fetch failed: ${res.status}`);
   const data = (await res.json()) as RawTuneResponse;
   return {
@@ -209,12 +216,18 @@ function mostCommonKey(settings: Array<{ key: string }>): string | null {
   return best || null;
 }
 
-export function tuneResultToCard(tune: TuneResult, opts: { mergeSettings?: boolean } = {}): Card {
+export function tuneResultToCard(tune: TuneResult): Card {
   const tags: string[] = ['TheSession'];
   if (tune.type) tags.push(tune.type);
   if (tune.topKey) tags.push(tune.topKey);
   const settings = tune.settings;
-  const merge = (opts.mergeSettings ?? true) && settings.length > 1;
+  // Always merged (2026-08-24) — was previously a togglable option, but the
+  // only place that ever turned it off was theSessionImport.ts's checkbox;
+  // every other import path (trending, IrishTuneInfo, card refresh, session
+  // analyzer "add to library") always called this with merge on already.
+  // Merging is now unconditional, everywhere a TheSession tune becomes a
+  // card.
+  const merge = settings.length > 1;
   const attachments: Attachment[] = merge
     ? [{ type: 'file' as const, ...settingsToMergedAbcFile(settings, tune), generatedBy: 'thesession' as const }]
     : settings.map(s => ({ type: 'file' as const, ...settingToAbcFile(s, tune), generatedBy: 'thesession' as const })) as Attachment[];

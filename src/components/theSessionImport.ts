@@ -156,7 +156,6 @@ export function buildTheSessionBody(
   withDeckChoice: (onReady: () => void) => void = onReady => onReady(),
 ): HTMLElement {
   let activeTab: 'tune' | 'member' = 'tune';
-  let mergeSettings = true;
 
   const setImportedStatus = (cardId: string, cardName: string) => {
     const marker = '\x00';
@@ -172,15 +171,6 @@ export function buildTheSessionBody(
 
   const wrap = document.createElement('div');
   wrap.className = 'space-y-3';
-
-  // ── Options ───────────────────────────────────────────────────────────────
-  const mergeRow = document.createElement('label');
-  mergeRow.className = 'flex items-center gap-2 cursor-pointer select-none';
-  const mergeChk = document.createElement('input'); mergeChk.type = 'checkbox'; mergeChk.className = 'card-checkbox'; mergeChk.checked = true;
-  const mergeLbl = document.createElement('span'); mergeLbl.className = 'text-xs text-muted'; mergeLbl.textContent = t('theSession.mergeSettings');
-  mergeChk.onchange = () => { mergeSettings = mergeChk.checked; };
-  mergeRow.append(mergeChk, mergeLbl);
-  wrap.appendChild(mergeRow);
 
   const tabBar = document.createElement('div');
   tabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg';
@@ -205,7 +195,7 @@ export function buildTheSessionBody(
         status.textContent = t('theSession.status.alreadyInLibrary', { name: tune.name });
         btn.disabled = false;
       } else {
-        const card = tuneResultToCard(tune, { mergeSettings });
+        const card = tuneResultToCard(tune);
         await mutate(s => {
           s.cards[card.id] = card;
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
@@ -247,7 +237,7 @@ export function buildTheSessionBody(
     try {
       const existingCardIdByTuneId = buildExistingByTuneId();
       const { tunes, skippedIds } = await fetchTunesByIds(ids, onProgress, id => existingCardIdByTuneId.has(id));
-      const newCards = tunes.map(tune => tuneResultToCard(tune, { mergeSettings }));
+      const newCards = tunes.map(tune => tuneResultToCard(tune));
       await mutate(s => {
         for (const card of newCards) { s.cards[card.id] = card; }
         const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
@@ -519,7 +509,7 @@ export function buildTheSessionBody(
           progressFill.style.width = `${Math.round((loaded / total) * 100)}%`;
           status.textContent = phase === 'pages' ? t('theSession.status.collectingIds', { loaded, total }) : t('theSession.status.fetchingTunes', { loaded, total });
         }, id => existingCardIdByTuneId.has(id));
-        const newCards = tunes.map(tune => tuneResultToCard(tune, { mergeSettings }));
+        const newCards = tunes.map(tune => tuneResultToCard(tune));
         await mutate(s => {
           for (const card of newCards) { s.cards[card.id] = card; }
           // Already-owned tunes were skipped above (no re-fetch), but they

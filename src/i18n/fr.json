@@ -375,7 +375,6 @@
   "theSession.tabTune": "Morceau",
   "theSession.tabMember": "Membre",
   "theSession.tune.placeholder": "Nom ou ID du morceau…",
-  "theSession.mergeSettings": "Fusionner tous les settings en un seul fichier",
   "theSession.id.placeholder": "ID du morceau…",
   "theSession.id.import": "Importer",
   "theSession.id.notFound": "Morceau introuvable.",
