@@ -729,6 +729,7 @@
   "trending.moduleTitle": "Trending",
   "trending.moduleDesc": "TheSession tunes gaining popularity fastest",
   "trending.title": "Trending",
+  "trending.checking": "Checking for updates… ({n} found)",
   "trending.syncing": "Syncing history… {done}/{total}",
   "trending.updated": "Updated {time}",
   "trending.refresh": "Refresh",

@@ -1,5 +1,5 @@
 import { loadTuneNameIndexDb, saveTuneNameIndexDb, type LocalTune } from './tuneIndexDb';
-import { sortByRelevance } from '../utils';
+import { sortByRelevance, normalizeDisplayName } from '../utils';
 
 // ── Local TheSession tune-name search ─────────────────────────────────────────
 // Same adactio/TheSession-data repo as trendingSyncService.ts (both
@@ -88,6 +88,21 @@ function dedupeToTunes(entries: RawSettingEntry[]): LocalTune[] {
 let _memoryIndex: LocalTune[] | null = null;
 let _inFlight: Promise<LocalTune[]> | null = null;
 
+/** TheSession-data's tunes.json carries raw library-catalog names ("Kesh,
+ *  The") like tune_popularity.json does (see trendingService.ts) — normalized
+ *  here, once, right before the index is memoized, rather than in
+ *  dedupeToTunes: `stored.tunes` below is a straight IndexedDB cache keyed
+ *  off the upstream commit SHA (this file's own doc: normally only ONE
+ *  commit ever touches this file, so a device's cached copy can go a long
+ *  time without a reason to re-download) — normalizing only at construction
+ *  time would leave an already-cached device's names stuck in catalog order
+ *  indefinitely. Doing it here instead covers both the fresh-download and
+ *  the load-from-cache path, and only once per tab lifetime (`_memoryIndex`
+ *  is memoized), not once per keystroke in searchLocalTuneIndex. */
+function normalizeTunes(tunes: LocalTune[]): LocalTune[] {
+  return tunes.map(t => ({ ...t, name: normalizeDisplayName(t.name) }));
+}
+
 async function syncTuneNameIndex(onProgress?: (p: IndexSyncProgress) => void): Promise<LocalTune[]> {
   onProgress?.({ phase: 'checking' });
   const stored = await loadTuneNameIndexDb();
@@ -100,15 +115,17 @@ async function syncTuneNameIndex(onProgress?: (p: IndexSyncProgress) => void): P
   }
 
   if (stored.tunes.length > 0 && (latestSha === null || latestSha === stored.commitSha)) {
-    _memoryIndex = stored.tunes;
-    return stored.tunes;
+    _memoryIndex = normalizeTunes(stored.tunes);
+    return _memoryIndex;
   }
 
   const raw = await downloadTunesJson(onProgress);
   const tunes = dedupeToTunes(raw);
+  // Stored as fetched (raw catalog-order names) — a faithful mirror of
+  // upstream, normalized only at the in-memory presentation boundary above.
   await saveTuneNameIndexDb({ commitSha: latestSha, tunes });
-  _memoryIndex = tunes;
-  return tunes;
+  _memoryIndex = normalizeTunes(tunes);
+  return _memoryIndex;
 }
 
 /** Loads the local tune-name index, refreshing from adactio/TheSession-data's

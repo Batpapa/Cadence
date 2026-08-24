@@ -729,6 +729,7 @@
   "trending.moduleTitle": "Tendances",
   "trending.moduleDesc": "Les morceaux TheSession dont la popularité grimpe le plus vite",
   "trending.title": "Tendances",
+  "trending.checking": "Recherche des mises à jour… ({n} trouvés)",
   "trending.syncing": "Synchronisation de l'historique… {done}/{total}",
   "trending.updated": "Mis à jour {time}",
   "trending.refresh": "Rafraîchir",

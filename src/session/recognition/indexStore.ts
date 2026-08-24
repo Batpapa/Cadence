@@ -30,7 +30,7 @@ const KV_INDEX = 'tuneIndex';
 const KV_META = 'tuneIndexMeta';
 
 export type IndexProgress =
-  | { phase: 'downloading'; loadedBytes: number; totalBytes: number | null }
+  | { phase: 'downloading'; loadedBytes: number }
   | { phase: 'processing' };
 
 async function fetchMeta(): Promise<IndexMeta | null> {
@@ -47,7 +47,13 @@ async function fetchIndex(onProgress?: (p: IndexProgress) => void): Promise<Tune
   const res = await fetch(TUNE_INDEX_URL);
   if (!res.ok || !res.body) throw new Error(`Tune index download failed: ${res.status}`);
 
-  const totalBytes = Number(res.headers.get('Content-Length')) || null;
+  // No total shown: `Content-Length` here is the gzip-COMPRESSED transfer
+  // size (raw.githubusercontent.com compresses this response), while
+  // `loadedBytes` below accumulates DECOMPRESSED bytes off the auto-inflated
+  // fetch stream — the two are on different scales (measured 2026-08-24:
+  // ~8MB compressed header vs ~33MB actual decompressed payload). Showing
+  // that header as "of N MB" is actively misleading, not just imprecise, so
+  // only the live downloaded count is displayed (see indexProgressText).
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let loadedBytes = 0;
@@ -56,7 +62,7 @@ async function fetchIndex(onProgress?: (p: IndexProgress) => void): Promise<Tune
     if (done) break;
     chunks.push(value);
     loadedBytes += value.length;
-    onProgress?.({ phase: 'downloading', loadedBytes, totalBytes });
+    onProgress?.({ phase: 'downloading', loadedBytes });
   }
   onProgress?.({ phase: 'processing' });
 

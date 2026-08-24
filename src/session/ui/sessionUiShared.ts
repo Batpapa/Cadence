@@ -67,9 +67,11 @@ export const BUCKET_TEXT: Record<SessionAnnotation['bucket'], string> = {
 
 export function indexProgressText(p: IndexProgress): string {
   if (p.phase === 'downloading') {
+    // No "/ N MB" total — see fetchIndex's doc in indexStore.ts for why the
+    // download's Content-Length header can't be trusted as a decompressed
+    // total (it isn't one).
     const mb = (p.loadedBytes / 1048576).toFixed(1);
-    const total = p.totalBytes ? ` / ${(p.totalBytes / 1048576).toFixed(0)}` : '';
-    return t('sessions.downloadingIndex', { mb: `${mb}${total}` });
+    return t('sessions.downloadingIndex', { mb });
   }
   return t('sessions.processingIndex');
 }

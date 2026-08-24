@@ -427,7 +427,7 @@ export function renderTrendingList(host: TrendingModuleHost, initial?: TrendingR
     if (loading) return;
     loading = true;
     refreshBtn.classList.add('opacity-50', 'pointer-events-none');
-    status.textContent = t('trending.syncing', { done: 0, total: 0 });
+    status.textContent = t('trending.checking', { n: 0 });
 
     const isFirstLoad = dbState === null;
     const prevLen = dbState?.snapshots.length ?? 0;
@@ -435,7 +435,9 @@ export function renderTrendingList(host: TrendingModuleHost, initial?: TrendingR
 
     try {
       const onProgress = (p: SyncProgress) => {
-        if (p.total > 0) status.textContent = t('trending.syncing', { done: p.done, total: p.total });
+        status.textContent = p.phase === 'checking'
+          ? t('trending.checking', { n: p.found })
+          : t('trending.syncing', { done: p.done, total: p.total });
       };
       dbState = await syncPopularityHistory(onProgress);
 

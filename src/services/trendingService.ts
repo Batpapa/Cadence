@@ -1,5 +1,6 @@
 import type { PopularityDb } from '../trending/db';
 import type { TrendingGainMode } from '../types';
+import { normalizeDisplayName } from '../utils';
 
 // ── Trending table computation ──────────────────────────────────────────────
 // Pure local computation over a synced PopularityDb (see trendingSyncService) —
@@ -32,7 +33,13 @@ export function computeRows(dbState: PopularityDb, startIdx: number, endIdx: num
     const gain = endValue - startValue;
     const periodValues = allValues.slice(startIdx, endIdx + 1);
 
-    rows.push({ id: Number(idStr), name: dbState.names[idStr] ?? `#${idStr}`, gain, startValue, endValue, periodValues });
+    // dbState.names carries TheSession-data's raw library-catalog names
+    // as-is ("Kesh, The") — normalized here at read time, not at write time
+    // in trendingSyncService.ts, so an existing user's already-synced cache
+    // reads correctly immediately rather than waiting for a future commit to
+    // touch that tuneId again.
+    const name = dbState.names[idStr] ? normalizeDisplayName(dbState.names[idStr]!) : `#${idStr}`;
+    rows.push({ id: Number(idStr), name, gain, startValue, endValue, periodValues });
   }
 
   rows.sort((a, b) => b.gain - a.gain);
