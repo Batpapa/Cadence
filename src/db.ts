@@ -42,12 +42,44 @@ export async function initDb(): Promise<void> {
   _db = await withTimeout(dbPromise, DB_OPEN_TIMEOUT_MS, 'indexeddb_timeout');
 }
 
-/** Recovery path when initDb() times out (see main.ts's boot error screen) —
- *  wipes the local DB so the next attempt starts clean. Callers must warn the
- *  user that any local data not synced to Drive will be lost. */
-export async function resetDatabase(): Promise<void> {
-  try { _db?.close(); } catch { /* ignore */ }
-  await indexedDB.deleteDatabase(DB_NAME);
+/** Best-effort raw dump of every object store, keyed by store name — used
+ *  only from the boot error screen (main.ts) to let a user download their
+ *  data for a bug report. Must not depend on `_db` (initDb() is exactly what
+ *  may have failed) and must not trigger a version upgrade that could
+ *  deadlock the same way initDb() did, so it opens at the current on-disk
+ *  version via the raw IndexedDB API instead of going through `idb`. */
+export async function dumpRawDatabase(): Promise<Record<string, Array<{ key: unknown; value: unknown }>>> {
+  const openPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('indexeddb_blocked'));
+  });
+  const raw = await withTimeout(openPromise, DB_OPEN_TIMEOUT_MS, 'indexeddb_timeout');
+  try {
+    const dump: Record<string, Array<{ key: unknown; value: unknown }>> = {};
+    for (const storeName of Array.from(raw.objectStoreNames)) {
+      dump[storeName] = await dumpStore(raw, storeName);
+    }
+    return dump;
+  } finally {
+    raw.close();
+  }
+}
+
+function dumpStore(db: IDBDatabase, storeName: string): Promise<Array<{ key: unknown; value: unknown }>> {
+  return new Promise((resolve, reject) => {
+    const entries: Array<{ key: unknown; value: unknown }> = [];
+    const store = db.transaction(storeName, 'readonly').objectStore(storeName);
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) { resolve(entries); return; }
+      entries.push({ key: cursor.key, value: cursor.value });
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
 }
 
 export async function loadUser(id: string): Promise<User | undefined> {
