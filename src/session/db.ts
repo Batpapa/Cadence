@@ -26,6 +26,13 @@ const USER_DB_VERSION = 1;
 const SESSIONS_STORE = 'sessions'; // RecordedSession (metadata + audio blob)
 const CHUNKS_STORE   = 'chunks';   // in-flight recording chunks (crash recovery)
 
+/** Exported so callers that need to check for a user's session database
+ *  without going through this module's own routing (main.ts's Recovery
+ *  screen) can name it exactly the same way. */
+export function userDbName(userId: string): string {
+  return `cadence-sessions-user-${userId}`;
+}
+
 let _userId: string | null = null;
 let _sharedDb: IDBPDatabase | null = null;
 let _userDb: IDBPDatabase | null = null;
@@ -94,7 +101,7 @@ async function migrateLegacySessions(target: IDBPDatabase): Promise<void> {
 async function userDb(): Promise<IDBPDatabase> {
   if (!_userId) throw new Error('session/db.ts: initSessionDbForUser() not called yet');
   if (_userDb) return _userDb;
-  const d = await openDB(`cadence-sessions-user-${_userId}`, USER_DB_VERSION, {
+  const d = await openDB(userDbName(_userId), USER_DB_VERSION, {
     upgrade(db) {
       db.createObjectStore(SESSIONS_STORE);
       db.createObjectStore(CHUNKS_STORE, { autoIncrement: true });
@@ -103,6 +110,51 @@ async function userDb(): Promise<IDBPDatabase> {
   await migrateLegacySessions(d);
   _userDb = d;
   return _userDb;
+}
+
+/** Best-effort raw dump of a specific user's session database, for the
+ *  app-level Recovery screen (main.ts). Reads directly via the native
+ *  IndexedDB API, independent of userDb()/initSessionDbForUser(), so it works
+ *  for ANY local user regardless of who's actually logged in right now.
+ *  Returns null if that user has no session database on this device — opening
+ *  a name that doesn't exist would silently CREATE an empty one, which this
+ *  read-only helper must never do, so existence is checked first. */
+export async function dumpUserSessionDatabase(userId: string): Promise<Record<string, Array<{ key: unknown; value: unknown }>> | null> {
+  const name = userDbName(userId);
+  if (indexedDB.databases) {
+    const all = await indexedDB.databases();
+    if (!all.some(d => d.name === name)) return null;
+  }
+  const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(name);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('indexeddb_blocked'));
+  });
+  try {
+    const dump: Record<string, Array<{ key: unknown; value: unknown }>> = {};
+    for (const storeName of Array.from(raw.objectStoreNames)) {
+      dump[storeName] = await dumpRawStore(raw, storeName);
+    }
+    return dump;
+  } finally {
+    raw.close();
+  }
+}
+
+function dumpRawStore(db: IDBDatabase, storeName: string): Promise<Array<{ key: unknown; value: unknown }>> {
+  return new Promise((resolve, reject) => {
+    const entries: Array<{ key: unknown; value: unknown }> = [];
+    const store = db.transaction(storeName, 'readonly').objectStore(storeName);
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) { resolve(entries); return; }
+      entries.push({ key: cursor.key, value: cursor.value });
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
 }
 
 // ── KV (tune index cache) ─────────────────────────────────────────────────────
