@@ -8,7 +8,7 @@ import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser } from './services/driveService';
-import { initSessionDbForUser } from './session/db';
+import { initSessionDbForUser, dumpUserSessionDatabase, userDbName } from './session/db';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
 import { applyZoom } from './services/zoomService';
@@ -138,14 +138,14 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
   const message = err !== undefined ? (err instanceof Error ? err.message : String(err)) : null;
 
   root.innerHTML = `
-    <div class="p-8 max-w-lg mx-auto space-y-4">
+    <div class="p-8 max-w-3xl mx-auto space-y-4">
       <h1 class="text-lg font-semibold text-center">Recovery</h1>
       ${message
         ? `<p class="text-danger font-mono text-sm text-center">Failed to initialize: ${escapeHtml(message)}</p>
            <p class="text-xs text-muted text-center">This can happen if another tab got stuck holding your local data open, or if it became corrupted.</p>
            <div class="flex justify-center"><button id="recovery-retry" class="btn-primary text-sm">Retry</button></div>`
         : `<p class="text-xs text-muted text-center">Download your data below, then use "Report a bug" to send it over.</p>`}
-      <div id="recovery-users" class="space-y-2"></div>
+      <div id="recovery-users" class="space-y-2 overflow-x-auto"></div>
       <div class="flex gap-2 justify-center pt-2 border-t border-border">
         <button id="recovery-raw" class="btn-ghost text-sm">Download full raw dump</button>
         <button id="recovery-report" class="btn-ghost text-sm">Report a bug on GitHub</button>
@@ -167,27 +167,51 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
       usersEl.innerHTML = `<p class="text-xs text-muted text-center">No local users found on this device.</p>`;
       return;
     }
+    // One batched lookup instead of a per-user existence check — tells us
+    // which users actually have a session database on this device, so the
+    // "Download sessions" button only shows up where there's something to get.
+    const sessionDbNames = indexedDB.databases ? new Set((await indexedDB.databases()).map(d => d.name)) : null;
+
     for (const id of ids) {
       const user = await loadUser(id);
       const row = document.createElement('div');
-      row.className = 'flex items-center justify-between gap-2 p-2 rounded border border-border';
-      const label = document.createElement('span');
-      label.className = 'flex items-baseline gap-2 min-w-0';
-      const nameTag = document.createElement('span');
-      nameTag.className = 'text-sm truncate';
-      nameTag.textContent = user?.name ?? 'Unnamed';
+      row.className = 'flex items-center gap-3 p-2 rounded border border-border whitespace-nowrap';
       const idTag = document.createElement('span');
-      idTag.className = 'text-xs text-muted font-mono truncate';
+      // Always shown in full, never wrapped/truncated — the one thing this
+      // screen exists to make legible for debugging.
+      idTag.className = 'text-xs text-muted font-mono select-all shrink-0';
       idTag.textContent = id;
-      label.append(nameTag, idTag);
+      const nameTag = document.createElement('span');
+      nameTag.className = 'text-sm truncate min-w-0 flex-1';
+      nameTag.textContent = user?.name ?? 'Unnamed';
+
+      const safeName = (user?.name ?? 'unnamed').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const btns = document.createElement('span');
+      btns.className = 'flex gap-1 shrink-0';
+
       const btn = document.createElement('button');
-      btn.className = 'btn-ghost text-xs shrink-0';
-      btn.textContent = 'Download';
-      btn.onclick = () => {
-        const safeName = (user?.name ?? 'unnamed').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        downloadJson(user ?? { id }, `cadence-user-${safeName}-${id}.json`);
-      };
-      row.append(label, btn);
+      btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
+      btn.innerHTML = `${EXPORT_SVG}Data`;
+      btn.onclick = () => downloadJson(user ?? { id }, `cadence-user-${safeName}-${id}.json`);
+      btns.appendChild(btn);
+
+      // `?.has` may be true, false, or unknown (Safari lacks databases()) —
+      // when unknown, still offer the button and let the click itself
+      // discover there's nothing there (dumpUserSessionDatabase returns null).
+      if (sessionDbNames === null || sessionDbNames.has(userDbName(id))) {
+        const sessionsBtn = document.createElement('button');
+        sessionsBtn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
+        sessionsBtn.innerHTML = `${EXPORT_SVG}Sessions`;
+        sessionsBtn.onclick = () => {
+          void dumpUserSessionDatabase(id).then(dump => {
+            if (!dump) { alert('No session data found for this user.'); return; }
+            downloadJson(dump, `cadence-sessions-${safeName}-${id}.json`);
+          });
+        };
+        btns.appendChild(sessionsBtn);
+      }
+
+      row.append(idTag, nameTag, btns);
       usersEl.appendChild(row);
     }
   } catch (listErr) {
@@ -195,6 +219,9 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
     usersEl.innerHTML = `<p class="text-xs text-muted text-center">Couldn't list individual users — try "Download full raw dump" instead.</p>`;
   }
 }
+
+// Same icon as the "Export" button in settingsModal.ts, for the same action.
+const EXPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
 function escapeHtml(s: string): string {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
