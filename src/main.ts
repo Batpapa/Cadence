@@ -31,12 +31,15 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   ensureCurrentUser(user);
   ensureCurrentProfile(user);
   initDriveForUser(user.id);
-  initSessionDbForUser(user.id);
   await saveUser(user);
   setLastUserId(user.id);
   touchUserOrder(user.id);
   setLanguage(user.language);
   appState.value = user;
+  // Must run after appState.value is set — its migration path (a brand-new
+  // user never has legacy data, but the check itself still needs the right
+  // user in scope) reads/writes AppState via store.ts's mutate().
+  await initSessionDbForUser(user.id);
   initRoutePersistence(user.id);
   finishBoot(root);
   setTimeout(() => showHelpModal(getContext()), 0);
@@ -56,7 +59,6 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
 
 export async function openUser(id: string, root: HTMLElement): Promise<void> {
   initDriveForUser(id);
-  initSessionDbForUser(id);
 
   const saved = await loadUser(id);
   if (!saved) return;
@@ -68,6 +70,8 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
   setLastUserId(id);
   touchUserOrder(id);
   appState.value = saved;
+  // See createAndOpenUser's identical comment — must run after appState.value.
+  await initSessionDbForUser(id);
   const savedRoute = loadSavedRoute(saved);
   if (savedRoute) routeSignal.value = savedRoute;
   initRoutePersistence(saved.id);
@@ -97,12 +101,13 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
       const user = migrateLegacyToUser(legacy);
       ensureCurrentUser(user);
       ensureCurrentProfile(user);
-      initSessionDbForUser(user.id);
       await saveUser(user);
       await deleteLegacyState();
       setLastUserId(user.id);
       setLanguage(user.language);
       appState.value = user;
+      // See createAndOpenUser's identical comment — must run after appState.value.
+      await initSessionDbForUser(user.id);
       initRoutePersistence(user.id);
       finishBoot(root);
       return;

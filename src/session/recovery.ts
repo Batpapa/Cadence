@@ -1,5 +1,5 @@
 import fixWebmDuration from 'fix-webm-duration';
-import { listSessions, collectChunks, clearChunks, saveSessionAudio, saveSessionMeta, loadSessionWindows, deleteSessionWindows } from './db';
+import { listDraftSessions, collectChunks, clearChunks, saveSessionAudio, saveSessionMeta, loadSessionWindows, deleteSessionWindows } from './db';
 import { RECORDER_TIMESLICE_MS, ANALYSIS_HOP_S } from './sessionConfig';
 import { IncrementalViterbiSegmenter } from './recognition/viterbiSegmenter';
 import type { AnnotationEvent, SessionAnnotation, WindowResult } from './model';
@@ -54,8 +54,12 @@ export function recomputeAnnotations(windows: WindowResult[], hopS: number = ANA
 }
 
 export async function recoverOrphanedSessions(excludeId?: string): Promise<void> {
-  const sessions = await listSessions();
-  const orphaned = sessions.filter(s => s.status === 'recording' && s.id !== excludeId);
+  // Every row in the local draft store is by construction an orphan — a
+  // still-in-progress recording never makes it into AppState (see
+  // saveSessionMeta's doc in db.ts), so anything left here at library-load
+  // time is one a crash/refresh interrupted before it could finish.
+  const drafts = await listDraftSessions();
+  const orphaned = drafts.filter(s => s.id !== excludeId);
 
   for (const session of orphaned) {
     const chunks = await collectChunks(session.id);

@@ -115,8 +115,23 @@ export interface RecordedSession {
    *  (crash/refresh recovery); absent once the session is finalized. */
   status?: 'recording' | 'done';
   annotations: SessionAnnotation[];
-  // The audio Blob lives in IndexedDB under the session id (see session db).
+  // The audio Blob (+ in-progress crash-recovery scratch data) lives in a
+  // local-only, non-Drive-synced IndexedDB under the session id — see
+  // session/db.ts. This record itself is small (no audio), so it's kept
+  // directly on the user's synced AppState instead (see TuneAnalyserModuleData).
 }
+
+/** `AppState.modules['tune-analyser']` (see types.ts's User.modules) — the
+ *  tune-analyser/Sessions feature's own slice of the synced-via-Drive user
+ *  blob (2026-08-26). Deliberately holds only small, meaningful-to-sync data
+ *  (session metadata + annotations); audio and crash-recovery scratch data
+ *  (raw per-window results, MediaRecorder chunks) are local-only and never
+ *  touch this — see session/db.ts's local database. */
+export interface TuneAnalyserModuleData {
+  sessions: Record<string, RecordedSession>;
+}
+
+export const TUNE_ANALYSER_MODULE_KEY = 'tune-analyser';
 
 // ── Recognition window results (worker → Viterbi detector) ─────────────────────
 
