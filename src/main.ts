@@ -8,6 +8,7 @@ import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser } from './services/driveService';
+import { initSessionDbForUser } from './session/db';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
 import { applyZoom } from './services/zoomService';
@@ -30,6 +31,7 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   ensureCurrentUser(user);
   ensureCurrentProfile(user);
   initDriveForUser(user.id);
+  initSessionDbForUser(user.id);
   await saveUser(user);
   setLastUserId(user.id);
   touchUserOrder(user.id);
@@ -54,6 +56,7 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
 
 export async function openUser(id: string, root: HTMLElement): Promise<void> {
   initDriveForUser(id);
+  initSessionDbForUser(id);
 
   const saved = await loadUser(id);
   if (!saved) return;
@@ -94,6 +97,7 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
       const user = migrateLegacyToUser(legacy);
       ensureCurrentUser(user);
       ensureCurrentProfile(user);
+      initSessionDbForUser(user.id);
       await saveUser(user);
       await deleteLegacyState();
       setLastUserId(user.id);
