@@ -122,6 +122,17 @@ export interface User {
   rootFolderIds: string[];
   rootDeckIds: string[];
 
+  /** Per-module extension data, synced with the rest of this blob (Drive,
+   *  IndexedDB) — e.g. the Sessions feature's recorded-session metadata
+   *  (see session/model.ts's TuneAnalyserModuleData). Loosely typed here
+   *  (types.ts is foundational and shouldn't depend on any one module's
+   *  shape); each module casts its own key via its own typed accessor. Keep
+   *  entries small — this whole object is structuredClone'd on every
+   *  mutate() call across the app (store.ts) — large/binary data (audio,
+   *  crash-recovery scratch) belongs in a module's own local-only database
+   *  instead, never here. */
+  modules?: Record<string, unknown>;
+
   // Schema versioning
   schemaVersion?: number;
 }
