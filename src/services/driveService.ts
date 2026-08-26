@@ -23,6 +23,7 @@ const SCOPE         = 'https://www.googleapis.com/auth/drive.file';
  *  forever. Generous on purpose — a real consent flow (picking an account,
  *  entering a password, 2FA) can legitimately take a while. */
 const OAUTH_TIMEOUT_MS = 60_000;
+const GIS_LOAD_TIMEOUT_MS = 8_000;
 const LS_DEVICE_ID  = 'cadence_device_id';
 const SS_TOKEN      = 'cadence_access_token';
 const SS_EXPIRES_AT = 'cadence_token_expires_at';
@@ -51,6 +52,7 @@ const lsLocalTs   = (uid = _state.userId) => `cadence_local_modified_${uid}`;
 const lsSyncedTs  = (uid = _state.userId) => `cadence_drive_synced_ts_${uid}`;
 const lsHint      = (uid = _state.userId) => `cadence_drive_hint_${uid}`;
 const lsOwner     = (uid = _state.userId) => `cadence_drive_owner_${uid}`;
+const lsFailed    = (uid = _state.userId) => `cadence_drive_sync_failed_${uid}`;
 
 // ── Session-level state (shared across users in the same tab) ─────────────────
 
@@ -69,14 +71,32 @@ function setStatus(s: DriveStatus): void {
   for (const cb of listeners) cb(s);
 }
 
+/** Are there local edits that never made it to Drive? Derived from the two
+ *  timestamps rather than in-memory state, so it survives a reload — which is
+ *  the whole point: the tab that made the edits may be long gone. */
+function hasUnsyncedChanges(uid = _state.userId): boolean {
+  const local  = parseInt(localStorage.getItem(lsLocalTs(uid))  ?? '0');
+  const synced = parseInt(localStorage.getItem(lsSyncedTs(uid)) ?? '0');
+  return local > synced;
+}
+
 /** Call once per user open, before finishBoot. Reinitialises per-user Drive state. */
 export function initDriveForUser(userId: string): void {
   if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  }
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); }
+  // Reopening must not claim everything is safely in the cloud when it isn't:
+  // the connected flag alone says nothing about whether the last edits were
+  // ever pushed. Reconstruct the real state from the durable bookkeeping —
+  // unsynced edits are 'pending', and 'error' if the last attempt also failed,
+  // so a sync that died offline still looks wrong after a restart.
+  const connected = localStorage.getItem(lsConnected(userId)) === '1';
+  const unsynced  = connected && hasUnsyncedChanges(userId);
   _state = {
     userId,
     fileId:          localStorage.getItem(lsFileId(userId)),
-    status:          localStorage.getItem(lsConnected(userId)) === '1' ? 'connected' : 'disconnected',
+    status:          !connected ? 'disconnected'
+                   : !unsynced  ? 'connected'
+                   : localStorage.getItem(lsFailed(userId)) === '1' ? 'error' : 'pending',
     syncTimer:       null,
     retryTimer:      null,
     pendingState:    null,
@@ -95,6 +115,7 @@ export function clearDriveStateForUser(userId: string): void {
   localStorage.removeItem(lsSyncedTs(userId));
   localStorage.removeItem(lsHint(userId));
   localStorage.removeItem(lsOwner(userId));
+  localStorage.removeItem(lsFailed(userId));
 }
 
 export function getDeviceId(): string {
@@ -129,6 +150,23 @@ function getSyncedTimestamp(): number {
 export function markSynced(driveTs: number): void {
   localStorage.setItem(lsSyncedTs(), String(driveTs));
   localStorage.setItem(lsLocalTs(), String(driveTs));
+  localStorage.removeItem(lsFailed());
+}
+
+/**
+ * Re-arm the upload buffer after a reload that found unpushed local edits.
+ * `pendingState` only ever lived in memory, so without this a restart leaves
+ * flushSync() with nothing to send: the retry timer is gone, the manual sync
+ * button is a no-op, and the edits sit local until some unrelated change
+ * happens to call syncToCloud() again. Call it once the boot reconciliation
+ * has decided local is the version to keep.
+ */
+export function resumePendingSync(state: AppState): void {
+  if (!isDriveConnected() || !hasUnsyncedChanges() || _state.pendingState) return;
+  _state.pendingState = state;
+  setStatus(localStorage.getItem(lsFailed()) === '1' ? 'error' : 'pending');
+  if (_state.syncTimer) clearTimeout(_state.syncTimer);
+  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(); }, 5_000);
 }
 
 /**
@@ -197,7 +235,7 @@ export function initDriveClient(): Promise<void> {
   if (!GOOGLE_CLIENT_ID) return Promise.resolve();
   if (driveReady) return driveReady;
   loadGisScript();
-  driveReady = new Promise<void>((resolve) => {
+  const ready = new Promise<void>((resolve) => {
     const poll = () => {
       const g = (window as Gis).google;
       if (g?.accounts?.oauth2) {
@@ -213,6 +251,13 @@ export function initDriveClient(): Promise<void> {
     };
     poll();
   });
+  // Offline, the script never arrives and the poll above would spin forever —
+  // leaving every caller awaiting a promise that never settles (a boot with no
+  // network used to hang here silently, and a manual sync never even reached
+  // its own error handling). Bound the wait, and drop the memo on failure so a
+  // later attempt can retry once the network is back.
+  driveReady = withTimeout(ready, GIS_LOAD_TIMEOUT_MS, 'gis_unavailable')
+    .catch((e: Error) => { driveReady = null; throw e; });
   return driveReady;
 }
 
@@ -337,6 +382,7 @@ export function disconnectDrive(): void {
   localStorage.removeItem(lsConnected());
   localStorage.removeItem(lsHint());
   localStorage.removeItem(lsSyncedTs()); // merge base is meaningless once detached
+  localStorage.removeItem(lsFailed());
   setStatus('disconnected');
 }
 
@@ -368,6 +414,10 @@ async function flushSync(): Promise<void> {
     setStatus(_state.pendingState ? 'pending' : 'connected');
   } catch {
     _state.pendingState = _state.pendingState ?? state;
+    // Persisted so the failure outlives the tab — otherwise a reload would
+    // downgrade a known-failed sync to a merely-pending one (or, before the
+    // status was derived from the timestamps at all, to a reassuring green).
+    localStorage.setItem(lsFailed(), '1');
     setStatus('error');
     _state.retryTimer = setTimeout(() => { _state.retryTimer = null; void flushSync(); }, 30_000);
   } finally {

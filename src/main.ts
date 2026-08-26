@@ -7,7 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser } from './services/driveService';
+import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync } from './services/driveService';
 import { initSessionDbForUser, dumpUserSessionDatabase, userDbName } from './session/db';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
@@ -282,8 +282,17 @@ function finishBoot(root: HTMLElement): void {
   // ever loading the Google Identity script (and its request to Google) for the
   // majority of sessions that have never connected Drive.
   if (isDriveConnected()) {
-    void initDriveClient().then(async () => {
+    void (async () => {
       try {
+        // Known-offline needs no round trip: waiting out the Drive client's
+        // load timeout would leave the sync button inert for seconds after a
+        // reload, which is precisely when someone checks whether their offline
+        // edits are safe. Fall through to the fallback immediately instead.
+        if (!navigator.onLine) throw new Error('offline');
+        // initDriveClient() rejects if Google's script never arrives, so this
+        // must be inside the try: on a flaky connection it is the step that
+        // fails, and the fallback below is exactly what should run then.
+        await initDriveClient();
         // Same three-way reconciliation as the manual connect flow: fast-forwards
         // apply silently, real divergences raise the explicit conflict modal.
         const result = reconcileDriveData(await loadFromCloud());
@@ -291,9 +300,19 @@ function finishBoot(root: HTMLElement): void {
           await applyDriveState(result.state, result.driveTs);
         } else if (result.action === 'conflict') {
           showDriveConflictModal(result.state, result.driveTs);
+        } else {
+          // 'none' means local is the version to keep. If it also holds edits
+          // that never reached Drive (the tab that made them was closed before
+          // a flush succeeded), push them now — nothing else would.
+          resumePendingSync(appState.value);
         }
-      } catch { /* offline or transient failure — keep local data */ }
-    });
+      } catch {
+        // Offline or transient failure — keep local data, but still re-arm the
+        // upload buffer so the manual sync button works and the retry fires
+        // once the network comes back.
+        resumePendingSync(appState.value);
+      }
+    })();
   }
 
   mountApp(root);
