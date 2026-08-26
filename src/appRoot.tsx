@@ -1,11 +1,13 @@
 import { render } from 'preact';
-import { useState, useRef, useLayoutEffect, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect } from 'preact/hooks';
 import { appState, routeSignal, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
-import { renderSidebar } from './components/sidebar';
+import { Sidebar } from './components/sidebar';
 import { AppHeader, BottomNav } from './components/header';
-import { confirmModal } from './components/modal';
+import { confirmModal, ModalHost } from './components/modal';
+import { CommandPaletteHost } from './components/commandPalette';
+import { DeckPickerHost } from './components/deckSelector';
 import { GithubIcon } from './components/icons';
 import { t } from './services/i18nService';
 import type { User } from './types';
@@ -40,7 +42,6 @@ function ContentSwitch() {
 }
 
 function AppRoot() {
-  const sidebarRef    = useRef<HTMLDivElement>(null);
   const wrapperRef    = useRef<HTMLDivElement>(null);
   const resizeLineRef = useRef<HTMLDivElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -98,10 +99,6 @@ function AppRoot() {
     mutate,
   };
 
-  useLayoutEffect(() => {
-    sidebarRef.current!.replaceChildren(renderSidebar(ctx));
-  });
-
   const startResize = (startX: number) => {
     const startW = wrapperRef.current!.offsetWidth;
     wrapperRef.current!.style.transition = 'none';
@@ -154,7 +151,9 @@ function AppRoot() {
             ? `absolute top-0 bottom-0 left-0 z-30 overflow-hidden transition-transform duration-200 ease-in-out ${sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'}`
             : `shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out`}
         >
-          <div ref={sidebarRef} class="h-full" />
+          <div class="h-full">
+            <Sidebar ctx={ctx} />
+          </div>
         </div>
         {!sidebarCollapsed && (
           <div
@@ -171,6 +170,9 @@ function AppRoot() {
         </main>
       </div>
       {isPortraitPhone && <BottomNav ctx={ctx} />}
+      <ModalHost />
+      <CommandPaletteHost />
+      <DeckPickerHost />
     </div>
   );
 }
@@ -360,6 +362,7 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
           </div>
         </div>
       </div>
+      <ModalHost />
     </div>
   );
 }

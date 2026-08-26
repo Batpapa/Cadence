@@ -1,44 +1,25 @@
 import type { EmbedEntry } from '../types';
 import { detectPlatform, IFRAME_DIMS } from '../services/embedService';
 import { t } from '../services/i18nService';
-import { modalMaxH, modalMaxW } from '../services/zoomService';
+import { modalMaxH } from '../services/zoomService';
+import { showModal } from './modal';
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
+// Delegates the overlay/dialog/close/outside-click/Escape shell to the shared
+// Preact modal (modal.tsx, 2026-08-26) instead of building its own — only the
+// iframe-vs-error body is still hand-built here.
 
 export function showEmbedModal(entry: EmbedEntry): void {
   const platform = detectPlatform(entry.url);
   const dims = platform ? IFRAME_DIMS[platform] : { width: '600px', height: '400px' };
 
-  const overlay = document.createElement('div');
-  overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm';
-
-  const dialog = document.createElement('div');
-  dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden mx-4';
-  dialog.style.maxWidth = modalMaxW(0.9);
-  dialog.style.maxHeight = modalMaxH(0.9);
-  dialog.style.width = dims.width;
-
-  const header = document.createElement('div');
-  header.className = 'flex items-center justify-between px-5 py-3 border-b border-border shrink-0';
-  const titleEl = document.createElement('span');
-  titleEl.className = 'text-xs font-mono text-muted truncate';
-  titleEl.textContent = entry.title ?? entry.url;
-
-  let onKey: (e: KeyboardEvent) => void;
-  const closeModal = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0 ml-4';
-  closeBtn.textContent = '✕'; closeBtn.onclick = closeModal;
-  header.append(titleEl, closeBtn);
-
   const body = document.createElement('div');
-  body.className = 'flex-1 flex items-center justify-center p-4';
+  body.className = 'flex-1 flex items-center justify-center';
 
   if (entry.embedUrl) {
     const iframe = document.createElement('iframe');
     iframe.src = entry.embedUrl;
-    iframe.style.cssText = `width:100%;height:min(${dims.height}, calc(${modalMaxH(0.9)} - 80px));border:none;`;
+    iframe.style.cssText = `width:100%;height:min(${dims.height}, calc(${modalMaxH(0.85)} - 80px));border:none;`;
     iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
     body.appendChild(iframe);
   } else {
@@ -48,14 +29,5 @@ export function showEmbedModal(entry: EmbedEntry): void {
     body.appendChild(msg);
   }
 
-  dialog.append(header, body);
-  overlay.appendChild(dialog);
-
-  let mouseDownOnOverlay = false;
-  overlay.addEventListener('mousedown', (e) => { mouseDownOnOverlay = e.target === overlay; });
-  overlay.onclick = (e) => { if (e.target === overlay && mouseDownOnOverlay) closeModal(); };
-  onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeModal(); };
-  document.addEventListener('keydown', onKey);
-  document.body.appendChild(overlay);
+  showModal(entry.title ?? entry.url, body, [], true, dims.width);
 }
-

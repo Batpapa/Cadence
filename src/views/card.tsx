@@ -4,7 +4,7 @@ import { pct, focusIfDesktop, externalSourceLink } from '../utils';
 import { TrashIcon, ExternalLinkIcon, iconElement } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
-import { renderAttachmentList } from '../components/attachmentList';
+import { AttachmentList } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { fetchTuneById, tuneResultToCard, settingsToMergedAbcFile } from '../services/theSessionService';
@@ -576,7 +576,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       </div>
 
       {/* ── Attachments ── */}
-      <VanillaEl el={renderAttachmentList({
+      <AttachmentList options={{
         attachments: card.content.attachments,
         editable: true,
         onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); }),
@@ -594,7 +594,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           const [moved] = atts.splice(from, 1);
           atts.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
         }),
-      })} />
+      }} />
 
       {/* ── Review history ── */}
       <div class="space-y-2">

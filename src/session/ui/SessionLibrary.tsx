@@ -71,7 +71,7 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
 
       {/* No `accept` filter: on iOS Safari it's known to hide some m4a containers
          depending on provenance (iCloud/Messages/third-party apps) — the card
-         attachment picker (attachmentList.ts) has never had this filter either. */}
+         attachment picker (attachmentList.tsx) has never had this filter either. */}
       <input
         ref={fileInputRef}
         type="file"

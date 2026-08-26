@@ -6,6 +6,7 @@ import { mkCustomSelect } from './customSelectVanilla';
 import { starIconElement, iconElement, ExternalLinkIcon } from './icons';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
+import { showModal } from './modal';
 
 // ── ABC Transcription Tools share-link integration ────────────────────────────
 // https://michaeleskin.com/abctools/userguide.html#generate_share_link — the
@@ -120,34 +121,23 @@ export interface PreviewModalOpts {
 }
 
 export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => void, opts?: PreviewModalOpts): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm';
-
-  const dialog = document.createElement('div');
-  dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden mx-4';
-  dialog.style.maxWidth = modalMaxW(0.9);
-  dialog.style.maxHeight = modalMaxH(0.9);
-  dialog.style.width = modalWidth(entry);
-
-  const header = document.createElement('div');
-  header.className = 'flex items-center justify-between px-5 py-3 border-b border-border shrink-0';
-  const titleEl = document.createElement('span');
-  titleEl.className = 'text-xs font-mono text-muted truncate'; titleEl.textContent = entry.name;
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0 ml-4';
+  // Overlay/dialog/header/close-button/outside-click/Escape are the shared
+  // Preact modal shell (modal.tsx, 2026-08-26) now — only this format-specific
+  // body is still hand-built here. `stopAudio`/`closed` (assigned deeper in
+  // the audio/abc branches below) are read by onDismiss, called once the
+  // modal actually closes for any reason (✕, outside click, Escape).
   let stopAudio: () => void = () => {};
   let closed = false;
-  const closeModal = () => { closed = true; stopAudio(); overlay.remove(); document.removeEventListener('keydown', onKey); };
-  let onKey: (e: KeyboardEvent) => void;
-
-  closeBtn.textContent = '✕'; closeBtn.onclick = closeModal;
-  header.append(titleEl, closeBtn);
+  const onDismiss = () => { closed = true; stopAudio(); };
 
   const body = document.createElement('div');
-  body.className = 'flex-1 min-h-0 overflow-auto p-4 flex items-center justify-center';
+  body.className = 'w-full flex items-center justify-center';
 
   const m = entry.mimeType;
-  const mediaMaxH = `calc(${modalMaxH(0.9)} - 80px)`;
+  // 0.85 (not 0.9) to match the shared modal shell's own dialog max-height
+  // (modal.tsx) now that this modal is portaled through it — media sized
+  // against a bigger budget than the dialog actually allows would overflow.
+  const mediaMaxH = `calc(${modalMaxH(0.85)} - 80px)`;
 
   if (m.startsWith('audio/')) {
     body.classList.replace('items-center', 'items-start');
@@ -513,16 +503,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     }
   }
 
-  dialog.append(header, body);
-  overlay.appendChild(dialog);
-
-  let mouseDownOnOverlay = false;
-  overlay.addEventListener('mousedown', (e) => { mouseDownOnOverlay = e.target === overlay; });
-  overlay.onclick = (e) => { if (e.target === overlay && mouseDownOnOverlay) closeModal(); };
-  onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeModal(); };
-  document.addEventListener('keydown', onKey);
-
-  document.body.appendChild(overlay);
+  showModal(entry.name, body, [], true, modalWidth(entry), onDismiss);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

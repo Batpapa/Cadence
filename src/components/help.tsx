@@ -1,5 +1,6 @@
+import { useState } from 'preact/hooks';
 import type { AppContext, Route } from '../types';
-import { showModal } from './modal';
+import { showModal, renderModalBody } from './modal';
 import { t } from '../services/i18nService';
 
 type SectionStyle = 'definition' | 'logic' | 'metrics';
@@ -116,58 +117,31 @@ const FALLBACK_STYLES: SectionStyle[] = ['definition', 'logic', 'metrics'];
 
 const CHECK_SVG = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 
-function buildInfoBody(sections: HelpSection[]): HTMLElement {
-  const body = document.createElement('div');
-  body.className = 'flex flex-col gap-3';
-
-  sections.forEach((section, i) => {
-    const sectionStyle = section.style ?? FALLBACK_STYLES[i % FALLBACK_STYLES.length]!;
-    const accent  = STYLE_ACCENTS[sectionStyle];
-    const iconSvg = STYLE_ICONS[sectionStyle];
-
-    const card = document.createElement('div');
-    card.className = 'bg-bg border border-border rounded-lg p-3.5';
-    card.style.borderLeft = `3px solid ${accent}`;
-
-    const header = document.createElement('div');
-    header.className = 'flex items-center gap-2 mb-2';
-
-    const iconEl = document.createElement('span');
-    iconEl.className = 'shrink-0 flex items-center';
-    iconEl.style.color = accent;
-    iconEl.innerHTML = iconSvg;
-
-    const headingEl = document.createElement('span');
-    headingEl.className = 'text-sm font-semibold text-primary';
-    headingEl.textContent = section.heading;
-
-    header.append(iconEl, headingEl);
-    card.appendChild(header);
-
-    const list = document.createElement('ul');
-    list.className = 'flex flex-col gap-1.5 list-none';
-
-    for (const item of section.items) {
-      const li = document.createElement('li');
-      li.className = 'flex gap-2 text-xs leading-relaxed text-primary/75';
-
-      const check = document.createElement('span');
-      check.className = 'shrink-0 flex items-center mt-0.5';
-      check.style.color = accent;
-      check.innerHTML = CHECK_SVG;
-
-      const text = document.createElement('span');
-      text.textContent = item;
-
-      li.append(check, text);
-      list.appendChild(li);
-    }
-
-    card.appendChild(list);
-    body.appendChild(card);
-  });
-
-  return body;
+function InfoBody({ sections }: { sections: HelpSection[] }) {
+  return (
+    <div class="flex flex-col gap-3">
+      {sections.map((section, i) => {
+        const sectionStyle = section.style ?? FALLBACK_STYLES[i % FALLBACK_STYLES.length]!;
+        const accent = STYLE_ACCENTS[sectionStyle];
+        return (
+          <div key={section.heading} class="bg-bg border border-border rounded-lg p-3.5" style={{ borderLeft: `3px solid ${accent}` }}>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="shrink-0 flex items-center" style={{ color: accent }} dangerouslySetInnerHTML={{ __html: STYLE_ICONS[sectionStyle] }} />
+              <span class="text-sm font-semibold text-primary">{section.heading}</span>
+            </div>
+            <ul class="flex flex-col gap-1.5 list-none">
+              {section.items.map(item => (
+                <li key={item} class="flex gap-2 text-xs leading-relaxed text-primary/75">
+                  <span class="shrink-0 flex items-center mt-0.5" style={{ color: accent }} dangerouslySetInnerHTML={{ __html: CHECK_SVG }} />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 const STEP_COLORS = [
@@ -176,49 +150,30 @@ const STEP_COLORS = [
   'var(--color-warn)',
 ];
 
-function buildGuideBody(steps: HelpSection[]): HTMLElement {
-  const body = document.createElement('div');
-  body.className = 'flex flex-col gap-3';
-
-  steps.forEach((step, i) => {
-    const color = STEP_COLORS[i % STEP_COLORS.length]!;
-
-    const card = document.createElement('div');
-    card.className = 'bg-bg border border-border rounded-lg p-3.5';
-    card.style.borderLeft = `3px solid ${color}`;
-
-    const header = document.createElement('div');
-    header.className = 'flex items-center gap-2 mb-2';
-
-    const badge = document.createElement('span');
-    badge.className = 'shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold';
-    badge.style.cssText = `background:${color};color:#fff;`;
-    badge.textContent = String(i + 1);
-
-    const headingEl = document.createElement('span');
-    headingEl.className = 'text-sm font-semibold text-primary';
-    headingEl.textContent = step.heading;
-
-    header.append(badge, headingEl);
-    card.appendChild(header);
-
-    const list = document.createElement('ul');
-    list.className = 'flex flex-col gap-1.5 list-none';
-
-    for (const item of step.items) {
-      const li = document.createElement('li');
-      li.className = 'flex gap-2 text-xs leading-relaxed text-primary/75';
-      const dot = document.createElement('span'); dot.className = 'text-dim shrink-0 mt-0.5'; dot.textContent = '·';
-      const text = document.createElement('span'); text.textContent = item;
-      li.append(dot, text);
-      list.appendChild(li);
-    }
-
-    card.appendChild(list);
-    body.appendChild(card);
-  });
-
-  return body;
+function GuideBody({ steps }: { steps: HelpSection[] }) {
+  return (
+    <div class="flex flex-col gap-3">
+      {steps.map((step, i) => {
+        const color = STEP_COLORS[i % STEP_COLORS.length]!;
+        return (
+          <div key={step.heading} class="bg-bg border border-border rounded-lg p-3.5" style={{ borderLeft: `3px solid ${color}` }}>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: color, color: '#fff' }}>{i + 1}</span>
+              <span class="text-sm font-semibold text-primary">{step.heading}</span>
+            </div>
+            <ul class="flex flex-col gap-1.5 list-none">
+              {step.items.map(item => (
+                <li key={item} class="flex gap-2 text-xs leading-relaxed text-primary/75">
+                  <span class="text-dim shrink-0 mt-0.5">·</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function getGuideSteps(): HelpSection[] {
@@ -232,49 +187,36 @@ function getGuideSteps(): HelpSection[] {
   ];
 }
 
-function mkTab(label: string, active: boolean, onClick: () => void): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.textContent = label;
-  btn.className = `px-3 py-2.5 text-xs font-medium cursor-pointer transition-colors border-none bg-transparent ${
-    active ? 'text-accent' : 'text-dim hover:text-primary'
-  }`;
-  btn.style.borderBottom = active ? '2px solid var(--color-accent)' : '2px solid transparent';
-  btn.style.marginBottom = '-1px';
-  btn.onclick = onClick;
-  return btn;
+function HelpTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      class={`px-3 py-2.5 text-xs font-medium cursor-pointer transition-colors border-none bg-transparent ${active ? 'text-accent' : 'text-dim hover:text-primary'}`}
+      style={{ borderBottom: active ? '2px solid var(--color-accent)' : '2px solid transparent', marginBottom: '-1px' }}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+function HelpModalContent({ sections }: { sections: HelpSection[] }) {
+  const [activeTab, setActiveTab] = useState<'info' | 'guide'>('info');
+
+  return (
+    <div class="flex flex-col gap-4 -mx-5 -my-4">
+      <div class="flex border-b border-border px-5">
+        <HelpTab label={t('help.tabInfo')}  active={activeTab === 'info'}  onClick={() => setActiveTab('info')} />
+        <HelpTab label={t('help.tabGuide')} active={activeTab === 'guide'} onClick={() => setActiveTab('guide')} />
+      </div>
+      <div class="px-5 pb-4">
+        {activeTab === 'info' ? <InfoBody sections={sections} /> : <GuideBody steps={getGuideSteps()} />}
+      </div>
+    </div>
+  );
 }
 
 export function showHelpModal(ctx: AppContext): void {
   const { title, sections } = getInfoContent(ctx.route);
-  let activeTab: 'info' | 'guide' = 'info';
-
-  const wrap = document.createElement('div');
-  wrap.className = 'flex flex-col gap-4 -mx-5 -my-4';
-
-  const tabBar = document.createElement('div');
-  tabBar.className = 'flex border-b border-border px-5';
-
-  const content = document.createElement('div');
-  content.className = 'px-5 pb-4';
-
-  const renderTabs = () => {
-    tabBar.innerHTML = '';
-    tabBar.appendChild(mkTab(t('help.tabInfo'),  activeTab === 'info',  () => { activeTab = 'info';  renderTabs(); renderContent(); }));
-    tabBar.appendChild(mkTab(t('help.tabGuide'), activeTab === 'guide', () => { activeTab = 'guide'; renderTabs(); renderContent(); }));
-  };
-
-  const renderContent = () => {
-    content.innerHTML = '';
-    if (activeTab === 'info') {
-      content.appendChild(buildInfoBody(sections));
-    } else {
-      content.appendChild(buildGuideBody(getGuideSteps()));
-    }
-  };
-
-  renderTabs();
-  renderContent();
-  wrap.append(tabBar, content);
-
-  showModal(t('help.title', { context: title }), wrap, [], true, '36rem');
+  const { el, cleanup } = renderModalBody(<HelpModalContent sections={sections} />);
+  showModal(t('help.title', { context: title }), el, [], true, '36rem', cleanup);
 }
