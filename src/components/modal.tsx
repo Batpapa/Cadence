@@ -1,4 +1,4 @@
-import { signal } from '@preact/signals';
+import { signal, type Signal } from '@preact/signals';
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { render } from 'preact';
@@ -28,6 +28,11 @@ export interface ModalAction {
   danger?: boolean;
   icon?: Element;
   align?: 'start';
+  /** A signal rather than a plain boolean because the footer buttons are
+   *  declared up front, outside the body's Preact tree: a body that decides
+   *  whether its action would do anything (nothing ticked, empty field) writes
+   *  here, and ModalDialog re-renders on it by virtue of reading `.value`. */
+  disabled?: Signal<boolean>;
   onClick: () => void | Promise<void>;
 }
 
@@ -193,6 +198,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
               <button
                 key={i}
                 class={(action.primary ? 'btn-primary' : action.danger ? 'btn-danger px-2' : 'btn-ghost') + (action.align === 'start' ? ' mr-auto' : '')}
+                disabled={action.disabled?.value}
                 onClick={async () => { await action.onClick(); }}
               >
                 {action.icon && <IconMount el={action.icon} />}

@@ -235,7 +235,7 @@ export function tuneResultToCard(tune: TuneResult): Card {
     id: generateId(),
     guid: generateId(),
     name: tune.name,
-    defaultImportance: tune.tunebooks > 0 ? tune.tunebooks : 1,
+    defaultImportance: theSessionImportance(tune),
     tags,
     externalId: `thesession:${tune.id}`,
     content: {
@@ -244,6 +244,48 @@ export function tuneResultToCard(tune: TuneResult): Card {
       attachments,
     },
   };
+}
+
+// ── Refreshing an already-imported card ──────────────────────────────────────
+// A card's TheSession-derived fields are frozen at import time, but upstream
+// they keep moving: tunes get renamed, settings are added, popularity drifts.
+// These apply one freshly fetched tune onto an existing card, each touching a
+// single field so a refresh never clobbers anything the user has since edited.
+// Shared by the card page's source-pin menu and the library's bulk refresh, so
+// both stay one rule rather than two drifting copies.
+
+/** Popularity, as importance: a tune in 400 tunebooks matters more than one in 3. */
+export function theSessionImportance(tune: TuneResult): number {
+  return tune.tunebooks > 0 ? tune.tunebooks : 1;
+}
+
+/** Replaces only `name` — tags/notes/attachments untouched. */
+export function applyTheSessionName(card: Card, tune: TuneResult): void {
+  card.name = tune.name;
+}
+
+/** Replaces only `defaultImportance`. Per-deck overrides are left alone: those
+ *  are the user's own judgement about a deck, not TheSession's about the world. */
+export function applyTheSessionImportance(card: Card, tune: TuneResult): void {
+  card.defaultImportance = theSessionImportance(tune);
+}
+
+/** Replaces only the ABC attachment(s) this card got from a previous
+ *  TheSession fetch (found via `generatedBy`). If none are tagged (a card
+ *  imported before that field existed, or whose ABC was removed manually), the
+ *  fresh one is appended instead — never blocked on finding an original. */
+export function applyTheSessionAbc(card: Card, tune: TuneResult): void {
+  const fresh = settingsToMergedAbcFile(tune.settings, tune);
+  const old = card.content.attachments.find(a => a.type === 'file' && a.generatedBy === 'thesession');
+  const oldPreferredIndex = old?.type === 'file' ? old.preferredIndex : undefined;
+  // Only carried over if it's still a valid tune index in the freshly fetched
+  // ABC (settingsToMergedAbcFile emits one tune per setting) — a setting
+  // removed on TheSession since shouldn't leave the card pointing at a version
+  // that no longer exists.
+  const preferredIndex = oldPreferredIndex !== undefined && oldPreferredIndex < tune.settings.length ? oldPreferredIndex : undefined;
+  const kept = card.content.attachments.filter(a => !(a.type === 'file' && a.generatedBy === 'thesession'));
+  kept.push({ type: 'file', ...fresh, generatedBy: 'thesession', ...(preferredIndex !== undefined ? { preferredIndex } : {}) });
+  card.content.attachments = kept;
 }
 
 export interface MemberSearchResult {

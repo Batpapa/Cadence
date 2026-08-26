@@ -7,14 +7,14 @@ import { renderNotes } from '../components/fileViewer';
 import { AttachmentList } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
-import { fetchTuneById, tuneResultToCard, settingsToMergedAbcFile } from '../services/theSessionService';
+import { fetchTuneById, tuneResultToCard, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, type TuneResult } from '../services/theSessionService';
 import { lookupItiMapping } from '../services/itiMappingService';
 import type { ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu, type ContextMenuItem } from '../components/contextMenu';
 import { t } from '../services/i18nService';
 import { CustomSelect } from '../components/customSelect';
 import { showDeckPickerPopover } from '../components/deckSelector';
-import type { SessionRating } from '../types';
+import type { Card, SessionRating } from '../types';
 
 // ── Local bridges ─────────────────────────────────────────────────────────────
 
@@ -137,47 +137,23 @@ function showContextMenuError(message: string): void {
   showModal(t('card.contextMenu.errorTitle'), p, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
 }
 
-/** Re-fetches the tune from TheSession and replaces only the ABC attachment(s)
- *  this card got from a previous TheSession fetch (found via `generatedBy`) —
- *  name/tags/notes/other attachments are untouched. If none are tagged (a card
- *  imported before this field existed, or whose ABC was removed manually), the
- *  fresh one is simply appended instead — never blocked on finding an original
- *  to overwrite. */
-async function refreshAbcFromTheSession(cardId: string, sessionId: number): Promise<void> {
-  try {
-    const tune = await fetchTuneById(sessionId);
-    const fresh = settingsToMergedAbcFile(tune.settings, tune);
-    await mutate(s => {
-      const card = s.cards[cardId]; if (!card) return;
-      const old = card.content.attachments.find(a => a.type === 'file' && a.generatedBy === 'thesession');
-      const oldPreferredIndex = old?.type === 'file' ? old.preferredIndex : undefined;
-      // Only carried over if it's still a valid tune index in the freshly
-      // fetched ABC (settingsToMergedAbcFile emits one tune per setting) —
-      // a setting removed on TheSession since the last fetch shouldn't leave
-      // the card pointing at a version that no longer exists.
-      const preferredIndex = oldPreferredIndex !== undefined && oldPreferredIndex < tune.settings.length ? oldPreferredIndex : undefined;
-      const kept = card.content.attachments.filter(a => !(a.type === 'file' && a.generatedBy === 'thesession'));
-      kept.push({ type: 'file', ...fresh, generatedBy: 'thesession', ...(preferredIndex !== undefined ? { preferredIndex } : {}) });
-      card.content.attachments = kept;
-    });
-  } catch (e) {
-    showContextMenuError(t('card.contextMenu.refreshError', { message: e instanceof Error ? e.message : String(e) }));
-  }
-}
-
-/** Re-fetches the tune from TheSession and replaces only the card's `name` —
- *  tags/notes/attachments untouched. The name is otherwise frozen at import
- *  time (fetchTuneById only ever runs then), so a tune renamed upstream on
- *  TheSession since never reaches an already-imported card without this. */
-async function refreshNameFromTheSession(cardId: string, sessionId: number): Promise<void> {
+/** Re-fetches the tune and applies one field back onto the card. The field
+ *  itself is decided by `apply` (see theSessionService), so the card page and
+ *  the library's bulk refresh share the same rules. */
+async function refreshFromTheSession(
+  cardId: string,
+  sessionId: number,
+  apply: (card: Card, tune: TuneResult) => void,
+  errorKey: 'card.contextMenu.refreshError' | 'card.contextMenu.refreshNameError' | 'card.contextMenu.refreshImportanceError',
+): Promise<void> {
   try {
     const tune = await fetchTuneById(sessionId);
     await mutate(s => {
       const card = s.cards[cardId]; if (!card) return;
-      card.name = tune.name;
+      apply(card, tune);
     });
   } catch (e) {
-    showContextMenuError(t('card.contextMenu.refreshNameError', { message: e instanceof Error ? e.message : String(e) }));
+    showContextMenuError(t(errorKey, { message: e instanceof Error ? e.message : String(e) }));
   }
 }
 
@@ -252,11 +228,15 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         { label: t('card.contextMenu.browse'), onClick: () => window.open(source.url, '_blank', 'noopener') },
         { label: t('card.contextMenu.refreshAbc'), onClick: () => {
           const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
-          if (!isNaN(sessionId)) void refreshAbcFromTheSession(cardId, sessionId);
+          if (!isNaN(sessionId)) void refreshFromTheSession(cardId, sessionId, applyTheSessionAbc, 'card.contextMenu.refreshError');
         } },
         { label: t('card.contextMenu.refreshName'), onClick: () => {
           const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
-          if (!isNaN(sessionId)) void refreshNameFromTheSession(cardId, sessionId);
+          if (!isNaN(sessionId)) void refreshFromTheSession(cardId, sessionId, applyTheSessionName, 'card.contextMenu.refreshNameError');
+        } },
+        { label: t('card.contextMenu.refreshImportance'), onClick: () => {
+          const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
+          if (!isNaN(sessionId)) void refreshFromTheSession(cardId, sessionId, applyTheSessionImportance, 'card.contextMenu.refreshImportanceError');
         } },
       ]
     : [
