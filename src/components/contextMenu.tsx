@@ -22,6 +22,19 @@ export interface ContextMenuItem {
   danger?: boolean;
 }
 
+/** A labelled divider grouping the items that follow it. Used where a menu
+ *  mixes actions of different natures — the library's bulk menu ends with the
+ *  operations that only apply to cards imported from a given site, and the
+ *  heading is what says which site (and how many of the selection it covers)
+ *  before you commit to a network round trip. */
+export interface ContextMenuHeading {
+  heading: string;
+}
+
+export type ContextMenuEntry = ContextMenuItem | ContextMenuHeading;
+
+const isHeading = (e: ContextMenuEntry): e is ContextMenuHeading => 'heading' in e;
+
 /** Anchor point + which corner of the menu it pins, in CSS-pixel space (already
  *  zoom-divided). Pinning the corner nearest the click/touch — rather than
  *  always the top-left — means the menu grows back toward the center of the
@@ -33,7 +46,7 @@ interface MenuAnchor {
   bottom?: number;
 }
 
-export function useContextMenu(items: ContextMenuItem[]) {
+export function useContextMenu(items: ContextMenuEntry[]) {
   const [pos, setPos] = useState<MenuAnchor | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -91,7 +104,16 @@ export function useContextMenu(items: ContextMenuItem[]) {
         bottom: pos.bottom !== undefined ? `${pos.bottom}px` : undefined,
       }}
     >
-      {items.map(item => (
+      {items.map((item, i) => isHeading(item) ? (
+        <div
+          key={`h:${item.heading}`}
+          class={`px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-dim ${
+            i === 0 ? 'pt-1' : 'mt-1 pt-2 border-t border-border'
+          }`}
+        >
+          {item.heading}
+        </div>
+      ) : (
         <button
           key={item.label}
           class={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left cursor-pointer border-none bg-transparent transition-colors ${
@@ -105,5 +127,9 @@ export function useContextMenu(items: ContextMenuItem[]) {
     </div>
   ), document.body) : null;
 
-  return { menu, triggerProps };
+  // `open` is returned too so a plain button can raise the same menu on a left
+  // click (the library's ⋯ overflow), not just right-click/long-press. Safe to
+  // call from onClick: the outside-click listener is only attached once `pos`
+  // is set, by which point this click's own mousedown has already passed.
+  return { menu, triggerProps, open };
 }

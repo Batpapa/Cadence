@@ -6,7 +6,10 @@ import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckI
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
-import { confirmModal, showModal, closeModal } from '../components/modal';
+import { confirmModal } from '../components/modal';
+import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showRefreshModal } from '../components/batchEdit';
+import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance } from '../services/theSessionService';
+import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath } from '../services/deckService';
@@ -144,37 +147,6 @@ const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
   recall: GaugeIcon,
   difficulty: FlameIcon,
 };
-
-// ── Deck picker modal (vanilla) ───────────────────────────────────────────────
-
-function showDeckPickerModal(
-  titleKey: string,
-  confirmKey: string,
-  eligibleDecks: { id: string; info: string }[],
-  onConfirm: (deckIds: string[]) => void,
-): void {
-  const user   = appState.value;
-  const body   = document.createElement('div'); body.className = 'space-y-1';
-  const checks = new Map<string, HTMLInputElement>();
-  for (const { id, info } of eligibleDecks) {
-    const deck = user.decks[id]; if (!deck) continue;
-    const row    = document.createElement('label'); row.className = 'flex items-center gap-2 px-2 py-1.5 rounded hover:bg-elevated cursor-pointer';
-    const chk    = document.createElement('input'); chk.type = 'checkbox'; chk.className = 'card-checkbox'; chk.checked = false;
-    const nameEl = document.createElement('span'); nameEl.className = 'text-sm text-primary flex-1 truncate'; nameEl.textContent = deck.name;
-    const infoEl = document.createElement('span'); infoEl.className = 'text-xs text-dim shrink-0'; infoEl.textContent = info;
-    checks.set(id, chk);
-    row.append(chk, nameEl, infoEl);
-    body.appendChild(row);
-  }
-  showModal(t(titleKey), body, [
-    { label: t('common.cancel'), onClick: closeModal },
-    { label: t(confirmKey), primary: true, onClick: () => {
-      const chosen = [...checks.entries()].filter(([, chk]) => chk.checked).map(([id]) => id);
-      if (chosen.length > 0) onConfirm(chosen);
-      closeModal();
-    }},
-  ]);
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -339,6 +311,70 @@ export function LibraryView() {
     }))
     .sort((a, b) => (user.decks[a.id]?.name ?? '').localeCompare(user.decks[b.id]?.name ?? ''));
 
+  // Every bulk edit lives behind one ⋯ menu: the toolbar keeps only what you
+  // reach for constantly (export, study, delete), so it stays readable on a
+  // portrait phone. Declared after the eligibility lists above so the deck
+  // entries can be dropped when no selected card can join or leave a deck —
+  // same condition that used to hide their toolbar buttons. Reuses the
+  // right-click menu's hook (anchoring, dismissal, zoom) on a left click.
+  const theSessionIds = selectedArr.filter(id => user.cards[id]?.externalId?.startsWith('thesession:'));
+
+  const bulkMenu = useContextMenu([
+    ...(addEligible.length > 0 ? [{
+      label: t('library.batch.addToDecks'),
+      onClick: () => showDeckPickerModal(
+        'library.addToDecks.title', 'library.addToDecks.confirm', addEligible,
+        (deckIds) => mutate(s => {
+          for (const deckId of deckIds) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            for (const cardId of selectedArr)
+              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+          }
+        }),
+      ),
+    }] : []),
+    ...(removeEligible.length > 0 ? [{
+      label: t('library.batch.removeFromDecks'),
+      onClick: () => showDeckPickerModal(
+        'library.removeFromDecks.title', 'library.removeFromDecks.confirm', removeEligible,
+        (deckIds) => mutate(s => {
+          for (const deckId of deckIds) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            deck.entries = deck.entries.filter(e => !selectedArr.includes(e.cardId));
+          }
+        }),
+      ),
+    }] : []),
+    { label: t('library.batch.addTag'), onClick: () => showAddTagModal(selectedArr) },
+    // Nothing to offer when the selection carries no tags at all — the modal
+    // would open on an empty list.
+    ...(selectedArr.some(cId => (user.cards[cId]?.tags ?? []).length > 0) ? [{
+      label: t('library.batch.removeTag'), onClick: () => showRemoveTagModal(selectedArr),
+    }] : []),
+    { label: t('library.batch.importance'), onClick: () => showImportanceModal(selectedArr) },
+    // Source-specific block, only when the selection actually contains cards
+    // from that site. The heading carries the count because a mixed selection
+    // is the normal case — "TheSession · 4" says up front that the other 8
+    // cards will be left alone. IrishTuneInfo has no refreshable field yet
+    // (its import sets no data that drifts upstream), hence no section.
+    ...(theSessionIds.length > 0 ? [
+      { heading: t('library.batch.source.thesession', { n: theSessionIds.length }) },
+      { label: t('library.batch.refresh.entry'), onClick: () => showRefreshModal({
+        cardIds: theSessionIds,
+        titleKey: 'library.batch.refresh.title',
+        prefix: 'thesession:',
+        fetch: fetchTuneById,
+        // Ticked together, written from a single fetch per card — the whole
+        // reason this is one entry rather than three.
+        fields: [
+          { key: 'name',       labelKey: 'library.batch.refresh.fieldName',       apply: applyTheSessionName },
+          { key: 'abc',        labelKey: 'library.batch.refresh.fieldAbc',        apply: applyTheSessionAbc },
+          { key: 'importance', labelKey: 'library.batch.refresh.fieldImportance', apply: applyTheSessionImportance },
+        ],
+      }) },
+    ] : []),
+  ]);
+
   return (
     <div class="overflow-y-auto h-full view-enter">
 
@@ -480,33 +516,13 @@ export function LibraryView() {
             <button class="btn-ghost text-xs inline-flex items-center justify-center" title={t('library.exportSelected')} onClick={() => showExportModal(allCards.filter(c => selected.has(c.id)), user)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
-            {addEligible.length > 0 && (
-              <button class="btn-ghost text-xs flex items-center gap-1" title={t('library.addToDecks')} onClick={() => showDeckPickerModal(
-                'library.addToDecks.title', 'library.addToDecks.confirm', addEligible,
-                (deckIds) => mutate(s => {
-                  for (const deckId of deckIds) {
-                    const deck = s.decks[deckId]; if (!deck) continue;
-                    for (const cardId of selectedArr)
-                      if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
-                  }
-                }),
-              )}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-              </button>
-            )}
-            {removeEligible.length > 0 && (
-              <button class="btn-ghost text-xs flex items-center gap-1" title={t('library.removeFromDecks')} onClick={() => showDeckPickerModal(
-                'library.removeFromDecks.title', 'library.removeFromDecks.confirm', removeEligible,
-                (deckIds) => mutate(s => {
-                  for (const deckId of deckIds) {
-                    const deck = s.decks[deckId]; if (!deck) continue;
-                    deck.entries = deck.entries.filter(e => !selectedArr.includes(e.cardId));
-                  }
-                }),
-              )}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
-              </button>
-            )}
+            <button
+              class="btn-ghost text-xs inline-flex items-center justify-center"
+              title={t('library.batch.more')}
+              onClick={(e) => bulkMenu.open(e.clientX, e.clientY)}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+            </button>
             <button
               class="btn bg-success/80 hover:bg-success text-white text-xs flex items-center"
               title={t('library.study')}
@@ -541,6 +557,7 @@ export function LibraryView() {
           </>}
         </div>
       </div>
+      {bulkMenu.menu}
 
       {/* ── Card list ── */}
       <div class="px-6 pb-6">
