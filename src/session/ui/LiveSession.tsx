@@ -12,8 +12,8 @@ import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import {
-  fmtLongTime, defaultSessionName, indexProgressText, titleAndDeleteRow,
-  appendBoundControls, appendClipControls, type ClipSessionRef,
+  fmtLongTime, defaultSessionName, indexProgressText, TitleRow,
+  BoundControls, ClipControls, type ClipSessionRef,
 } from './sessionUiShared';
 import { setActiveLive, lastLiveDump } from './sessionStore';
 
@@ -38,8 +38,6 @@ interface LiveSessionScreenProps {
 }
 
 export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenProps) {
-  const titleRowRef = useRef<HTMLDivElement>(null);
-  const titleControlsRef = useRef<{ refreshTitle: () => void; refreshDeckBtn: () => void } | null>(null);
   const feedAnchorRef = useRef<HTMLDivElement>(null);
   const chronoRef = useRef<HTMLSpanElement>(null);
   const vuFillRef = useRef<HTMLDivElement>(null);
@@ -57,23 +55,6 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   const [stopping, setStopping] = useState(false);
 
   const ensureLiveTargetDeckIds = () => { if (!live.targetDeckIds) live.targetDeckIds = new Set(); return live.targetDeckIds; };
-
-  useEffect(() => {
-    if (titleRowRef.current) {
-      titleControlsRef.current = titleAndDeleteRow(titleRowRef.current, {
-        getName: () => live.name,
-        getDefaultName: () => defaultSessionName(effectiveDate()),
-        onRename: (val) => { live.name = val; },
-        // No explicit "go back to the library" call needed: sessions.tsx
-        // reads activeLive reactively, so clearing it alone switches the
-        // screen on its own.
-        onDelete: () => { void live.cancel().then(() => setActiveLive(null)); },
-        getTargetDeckIds: () => live.targetDeckIds,
-        ensureTargetDeckIds: ensureLiveTargetDeckIds,
-      });
-    }
-    // eslint-disable-next-line
-  }, []);
 
   useEffect(() => {
     live.setCallbacks({
@@ -174,23 +155,20 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     sessionStartMs: live.startedAt || undefined,
     getTargetDeckIds: () => live.targetDeckIds,
     ensureTargetDeckIds: ensureLiveTargetDeckIds,
-    onTargetDeckIdsChanged: () => { titleControlsRef.current?.refreshDeckBtn(); setDeckIdsTick(x => x + 1); },
+    onTargetDeckIdsChanged: () => setDeckIdsTick(x => x + 1),
     onToggleLike: (id) => { live.toggleLike(id); setAnnotations(live.getAnnotations()); },
     onSelectAlternate: (id, pick) => { live.selectAlternate(id, pick); setAnnotations(live.getAnnotations()); },
     getLatestAnnotation: (id) => live.getAnnotations().find(a => a.id === id),
     // Clip extraction only once finalized (2026-08-21) — before that the
     // tune's own bounds/existence could still be revised.
-    extraControls: ann.finalized ? (el) => {
-      const controls = document.createElement('div');
-      controls.className = 'flex items-center gap-2 flex-wrap pt-1 border-t border-border/50';
-      // No previewBound here — a live recording has no seekable file to
-      // preview from (raw mic capture), unlike summary/import.
-      appendBoundControls(controls, ann, () => live.getElapsedMs() / 1000, {
-        refresh: () => setAnnotations([...live.getAnnotations()]),
-      });
-      appendClipControls(controls, ann, liveRef(), true, getLiveAudioBlob, ctx, () => setAnnotations([...live.getAnnotations()]));
-      el.appendChild(controls);
-    } : undefined,
+    extraControls: ann.finalized ? () => (
+      <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
+        {/* No previewBound here — a live recording has no seekable file to
+           preview from (raw mic capture), unlike summary/import. */}
+        <BoundControls ann={ann} getDuration={() => live.getElapsedMs() / 1000} refresh={() => setAnnotations([...live.getAnnotations()])} />
+        <ClipControls ann={ann} session={liveRef()} audioAvailable={true} getAudio={getLiveAudioBlob} ctx={ctx} onAttached={() => setAnnotations([...live.getAnnotations()])} />
+      </div>
+    ) : undefined,
   });
 
   useAutoFollowScroll(feedAnchorRef, [annotations, deckIdsTick]);
@@ -217,7 +195,17 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
 
   return (
     <>
-      <div ref={titleRowRef} />
+      <TitleRow
+        getName={() => live.name}
+        getDefaultName={() => defaultSessionName(effectiveDate())}
+        onRename={(val) => { live.name = val; }}
+        // No explicit "go back to the library" call needed: sessions.tsx
+        // reads activeLive reactively, so clearing it alone switches the
+        // screen on its own.
+        onDelete={() => { void live.cancel().then(() => setActiveLive(null)); }}
+        getTargetDeckIds={() => live.targetDeckIds}
+        ensureTargetDeckIds={ensureLiveTargetDeckIds}
+      />
       <p class="text-sm text-primary mt-2 mb-3">{dateText}</p>
 
       <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg sticky top-0">

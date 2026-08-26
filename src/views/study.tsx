@@ -4,7 +4,7 @@ import { pickRandom, pickOptimal, pickStochastic, decksContainingCard } from '..
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
-import { renderAttachmentList } from '../components/attachmentList';
+import { AttachmentList } from '../components/attachmentList';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
 
 const STRATEGY_LABEL_KEYS: Record<StudyStrategy, string> = {
@@ -246,7 +246,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           )}
 
           {card.content.attachments.length > 0 && (
-            <VanillaEl el={renderAttachmentList({
+            <AttachmentList options={{
               attachments: card.content.attachments,
               editable: false,
               // Picking a favorite ABC version is a viewing preference, not a
@@ -255,7 +255,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
                 const att = s.cards[cardId!]?.content.attachments[i];
                 if (att && att.type === 'file') att.preferredIndex = index;
               }),
-            })} />
+            }} />
           )}
 
           {(() => {

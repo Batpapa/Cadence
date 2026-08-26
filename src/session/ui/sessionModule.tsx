@@ -1,7 +1,8 @@
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { focusIfDesktop } from '../../utils';
-import { showModal, closeModal } from '../../components/modal';
+import { showModal, closeModal, renderModalBody } from '../../components/modal';
 import { LiveSession } from '../liveSession';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile } from '../audio/sources';
@@ -40,95 +41,114 @@ function alertModal(title: string, message: string): void {
 // ── Share a session (annotations + optionally the audio) via a short key —
 // same mechanism as card sharing (shareService.ts). ─────────────────────────
 
-function mkShareChoiceCard(icon: string, label: string, desc: string, accentColor: string, onClick: () => void): HTMLElement {
-  const btn = document.createElement('button');
-  btn.className = 'flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer';
-  btn.style.cssText = 'transition: border-color 0.15s, background 0.15s;';
-  btn.title = desc;
-  const iconWrap = document.createElement('span');
-  iconWrap.style.color = accentColor;
-  iconWrap.className = 'shrink-0 flex items-center';
-  iconWrap.innerHTML = icon;
-  const labelEl = document.createElement('div');
-  labelEl.className = 'flex-1 text-sm font-medium text-primary';
-  labelEl.textContent = label;
-  const arrow = document.createElement('span');
-  arrow.className = 'text-dim text-base leading-none shrink-0';
-  arrow.textContent = '›';
-  btn.append(iconWrap, labelEl, arrow);
-  btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
-  btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
-  btn.onclick = onClick;
-  return btn;
+function ShareChoiceCard({ icon, label, desc, accentColor, onClick }: {
+  icon: string; label: string; desc: string; accentColor: string; onClick: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      class="flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer"
+      style={{ transition: 'border-color 0.15s, background 0.15s', borderColor: hover ? accentColor : undefined, background: hover ? `${accentColor}12` : undefined }}
+      title={desc}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={onClick}
+    >
+      <span class="shrink-0 flex items-center" style={{ color: accentColor }} dangerouslySetInnerHTML={{ __html: icon }} />
+      <div class="flex-1 text-sm font-medium text-primary">{label}</div>
+      <span class="text-dim text-base leading-none shrink-0">›</span>
+    </button>
+  );
 }
 
 /** Same look as theSessionImport.ts's mkInputRow, without the unused info span. */
-function mkShareInputRow(placeholder: string): { wrap: HTMLDivElement; inp: HTMLInputElement } {
-  const wrap = document.createElement('div');
-  wrap.className = 'flex-1 flex items-center bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent';
-  const inp = document.createElement('input');
-  inp.type = 'text';
-  inp.className = 'flex-1 min-w-0 bg-transparent outline-none text-sm text-primary placeholder:text-dim';
-  inp.placeholder = placeholder;
-  wrap.appendChild(inp);
-  return { wrap, inp };
+function KeyEntryStep({ onImported }: { onImported: (session: RecordedSession) => void }) {
+  const [key, setKey] = useState('');
+  const [status, setStatus] = useState('');
+  const [importing, setImporting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
+
+  const doImport = () => {
+    setImporting(true);
+    setStatus(t('newCard.import.importing'));
+    void importSharedSession(key.trim()).then(session => {
+      closeModal();
+      onImported(session);
+    }).catch(e => {
+      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setImporting(false);
+    });
+  };
+
+  return (
+    <>
+      <div class="flex gap-2">
+        <div class="flex-1 flex items-center bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent">
+          <input
+            ref={inputRef}
+            type="text"
+            maxLength={6}
+            class="flex-1 min-w-0 bg-transparent outline-none text-sm text-primary placeholder:text-dim"
+            placeholder={t('newCard.share.placeholder')}
+            value={key}
+            onInput={(e) => setKey((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && key.trim().length === 6) doImport(); }}
+          />
+        </div>
+        <button class="btn-primary text-xs shrink-0" disabled={importing || key.trim().length !== 6} onClick={doImport}>
+          {t('newCard.share.importBtn')}
+        </button>
+      </div>
+      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
+    </>
+  );
+}
+
+function ImportSessionBody({ ctx }: { ctx: AppContext }) {
+  const [step, setStep] = useState<'choice' | 'key'>('choice');
+
+  if (step === 'key') {
+    return <KeyEntryStep onImported={(session) => ctx.navigate({ view: 'sessions', sessionId: session.id })} />;
+  }
+
+  return (
+    <div class="space-y-2">
+      <ShareChoiceCard
+        icon={SHARE_ICON_FILE_DOWN}
+        label={t('library.export.file')}
+        desc={t('sessions.share.fileImportDesc')}
+        accentColor="var(--color-warn)"
+        onClick={() => {
+          closeModal();
+          const inp = document.createElement('input');
+          inp.type = 'file';
+          inp.accept = '.cds';
+          inp.onchange = () => {
+            const file = inp.files?.[0];
+            if (!file) return;
+            void importSessionFile(file).then(session => {
+              ctx.navigate({ view: 'sessions', sessionId: session.id });
+            }).catch(e => alertModal(t('sessions.share.importTitle'), e instanceof Error ? e.message : String(e)));
+          };
+          inp.click();
+        }}
+      />
+      <ShareChoiceCard
+        icon={SHARE_ICON_SHARE}
+        label={t('newCard.share.label')}
+        desc={t('newCard.share.desc')}
+        accentColor="var(--color-accent)"
+        onClick={() => setStep('key')}
+      />
+    </div>
+  );
 }
 
 export function showImportSessionModal(ctx: AppContext): void {
-  const body = document.createElement('div');
-  body.className = 'space-y-2';
-
-  body.appendChild(mkShareChoiceCard(SHARE_ICON_FILE_DOWN, t('library.export.file'), t('sessions.share.fileImportDesc'), 'var(--color-warn)', () => {
-    closeModal();
-    const inp = document.createElement('input');
-    inp.type = 'file';
-    inp.accept = '.cds';
-    inp.onchange = () => {
-      const file = inp.files?.[0];
-      if (!file) return;
-      void importSessionFile(file).then(session => {
-        ctx.navigate({ view: 'sessions', sessionId: session.id });
-      }).catch(e => alertModal(t('sessions.share.importTitle'), e instanceof Error ? e.message : String(e)));
-    };
-    inp.click();
-  }));
-
-  body.appendChild(mkShareChoiceCard(SHARE_ICON_SHARE, t('newCard.share.label'), t('newCard.share.desc'), 'var(--color-accent)', () => {
-    renderKeyEntry();
-  }));
-
-  showModal(t('sessions.share.importTitle'), body, []);
-
-  const renderKeyEntry = () => {
-    body.innerHTML = '';
-    const status = document.createElement('p');
-    status.className = 'text-xs text-muted min-h-[1.25rem]';
-    const { wrap: inputWrap, inp } = mkShareInputRow(t('newCard.share.placeholder'));
-    inp.maxLength = 6;
-    const importBtn = document.createElement('button');
-    importBtn.className = 'btn-primary text-xs shrink-0';
-    importBtn.textContent = t('newCard.share.importBtn');
-    importBtn.disabled = true;
-    const row = document.createElement('div');
-    row.className = 'flex gap-2';
-    row.append(inputWrap, importBtn);
-    inp.addEventListener('input', () => { importBtn.disabled = inp.value.trim().length !== 6; });
-    const doImport = () => {
-      importBtn.disabled = true;
-      status.textContent = t('newCard.import.importing');
-      void importSharedSession(inp.value.trim()).then(session => {
-        closeModal();
-        ctx.navigate({ view: 'sessions', sessionId: session.id });
-      }).catch(e => {
-        status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
-        importBtn.disabled = false;
-      });
-    };
-    importBtn.onclick = doImport;
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim().length === 6) doImport(); });
-    body.append(row, status);
-    focusIfDesktop(inp);
-  };
+  const { el, cleanup } = renderModalBody(<ImportSessionBody ctx={ctx} />);
+  showModal(t('sessions.share.importTitle'), el, [], true, '28rem', cleanup);
 }
 
 export async function startImport(ctx: AppContext, file: File): Promise<void> {

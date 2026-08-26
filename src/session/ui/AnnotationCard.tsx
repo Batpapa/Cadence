@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
+import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { PlusIcon, HeartIcon, HourglassIcon } from '../../components/icons';
@@ -29,7 +30,9 @@ export interface AnnotationCardOptions {
   /** Play/stop this annotation's audio slice; shows a ▶ button when provided. */
   onPlay?: (ann: SessionAnnotation) => void;
   playingId?: string | null;
-  extraControls?: (el: HTMLElement) => void; // summary-only controls appended to the card
+  /** Extra controls rendered at the bottom of the card (bound-adjust/clip
+   *  buttons — finalized annotations only, gated by the caller). */
+  extraControls?: () => ComponentChild;
   /** Unix ms of the session's t=0. When set, closed annotations of known cards
    *  get the "log this as a review" control (summary + live feed; the import
    *  feed has no date until the user sets one in the summary). */
@@ -231,23 +234,8 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
 
   const showReviewLog = known && opts.sessionStartMs !== undefined && ann.end !== null;
 
-  // extraControls (bound/clip-extraction controls — sessionUiShared.ts) is an
-  // IMPERATIVE callback that appends raw DOM as a child of this card's own
-  // root element — a leftover interop point from before this was a real
-  // component. Runs after every render (extraControls' own closures capture
-  // fresh `ann`/state each time, same as the old renderFeed's full rebuild),
-  // with the previous run's nodes removed first so they don't accumulate.
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!rootRef.current || !opts.extraControls) return;
-    const before = rootRef.current.childNodes.length;
-    opts.extraControls(rootRef.current);
-    const added = Array.from(rootRef.current.childNodes).slice(before);
-    return () => { for (const node of added) node.parentNode?.removeChild(node); };
-  });
-
   return (
-    <div ref={rootRef} class={`p-3 rounded-lg border bg-bg space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
+    <div class={`p-3 rounded-lg border bg-bg space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
       <div class="flex items-center gap-2">
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.pendingConfirmation')}><HourglassIcon size={12} /></span>}
@@ -318,6 +306,8 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
           <ReviewLogControl cardId={known!.id} ts={opts.sessionStartMs! + ann.end! * 1000} ctx={opts.ctx} />
         </div>
       )}
+
+      {opts.extraControls?.()}
     </div>
   );
 }

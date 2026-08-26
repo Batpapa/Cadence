@@ -7,8 +7,8 @@ import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import {
-  fmtLongTime, titleAndDeleteRow, editableDateRow, indexProgressText, fmtEta,
-  appendBoundControls, appendClipControls, type ClipSessionRef,
+  fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta,
+  BoundControls, ClipControls, type ClipSessionRef,
 } from './sessionUiShared';
 import { importPlaybackWarn } from './sessionStore';
 
@@ -36,9 +36,6 @@ interface ImportAnalysisProps {
 }
 
 export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
-  const titleRowRef = useRef<HTMLDivElement>(null);
-  const dateRowRef = useRef<HTMLDivElement>(null);
-  const titleControlsRef = useRef<{ refreshTitle: () => void; refreshDeckBtn: () => void } | null>(null);
   const feedAnchorRef = useRef<HTMLDivElement>(null);
 
   const [deckIdsTick, setDeckIdsTick] = useState(0);
@@ -54,26 +51,6 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   const [playingId, setPlayingId] = useState<string | null>(null);
 
   const ensureImpTargetDeckIds = () => { if (!imp.targetDeckIds) imp.targetDeckIds = new Set(); return imp.targetDeckIds; };
-
-  useEffect(() => {
-    if (titleRowRef.current) {
-      titleControlsRef.current = titleAndDeleteRow(titleRowRef.current, {
-        getName: () => imp.name,
-        getDefaultName: () => imp.defaultName(),
-        onRename: (val) => { imp.name = val; },
-        onDelete: () => imp.cancel(),
-        getTargetDeckIds: () => imp.targetDeckIds,
-        ensureTargetDeckIds: ensureImpTargetDeckIds,
-      });
-    }
-    if (dateRowRef.current) {
-      editableDateRow(dateRowRef.current, {
-        getDate: () => imp.dateOverride,
-        setDate: (date) => { imp.dateOverride = date; },
-      });
-    }
-    // eslint-disable-next-line
-  }, []);
 
   // ── Slice playback straight from the original file, while analysis runs.
   const [audio] = useState(() => new Audio(URL.createObjectURL(imp.file)));
@@ -140,7 +117,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     onCardAdded: () => setAnnotations(imp.getAnnotations()),
     getTargetDeckIds: () => imp.targetDeckIds,
     ensureTargetDeckIds: ensureImpTargetDeckIds,
-    onTargetDeckIdsChanged: () => { titleControlsRef.current?.refreshDeckBtn(); setDeckIdsTick(x => x + 1); },
+    onTargetDeckIdsChanged: () => setDeckIdsTick(x => x + 1),
     onToggleLike: (id) => { imp.toggleLike(id); setAnnotations(imp.getAnnotations()); },
     onSelectAlternate: (id, pick) => { imp.selectAlternate(id, pick); setAnnotations(imp.getAnnotations()); },
     getLatestAnnotation: (id) => imp.getAnnotations().find(a => a.id === id),
@@ -150,16 +127,17 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     // finish just to grab a proven-stable tune's clip. Provisional
     // (not-yet-finalized) annotations still don't get the buttons, since
     // their bounds/existence could still change.
-    extraControls: ann.finalized ? (el) => {
-      const controls = document.createElement('div');
-      controls.className = 'flex items-center gap-2 flex-wrap pt-1 border-t border-border/50';
-      appendBoundControls(controls, ann, () => progress.totalS, {
-        refresh: () => setAnnotations([...imp.getAnnotations()]),
-        previewBound: (tSec) => { audio.currentTime = Math.max(0, tSec); void audio.play().catch(() => { /* not loaded yet */ }); setTimeout(() => audio.pause(), 3000); },
-      });
-      appendClipControls(controls, ann, impRef(), true, async () => imp.file, ctx, () => setAnnotations([...imp.getAnnotations()]));
-      el.appendChild(controls);
-    } : undefined,
+    extraControls: ann.finalized ? () => (
+      <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
+        <BoundControls
+          ann={ann}
+          getDuration={() => progress.totalS}
+          refresh={() => setAnnotations([...imp.getAnnotations()])}
+          previewBound={(tSec) => { audio.currentTime = Math.max(0, tSec); void audio.play().catch(() => { /* not loaded yet */ }); setTimeout(() => audio.pause(), 3000); }}
+        />
+        <ClipControls ann={ann} session={impRef()} audioAvailable={true} getAudio={async () => imp.file} ctx={ctx} onAttached={() => setAnnotations([...imp.getAnnotations()])} />
+      </div>
+    ) : undefined,
   });
 
   useAutoFollowScroll(feedAnchorRef, [annotations, playingId, deckIdsTick]);
@@ -168,8 +146,18 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
 
   return (
     <>
-      <div ref={titleRowRef} />
-      <div ref={dateRowRef} />
+      <TitleRow
+        getName={() => imp.name}
+        getDefaultName={() => imp.defaultName()}
+        onRename={(val) => { imp.name = val; }}
+        onDelete={() => imp.cancel()}
+        getTargetDeckIds={() => imp.targetDeckIds}
+        ensureTargetDeckIds={ensureImpTargetDeckIds}
+      />
+      <DateRow
+        getDate={() => imp.dateOverride}
+        setDate={(date) => { imp.dateOverride = date; }}
+      />
 
       <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg sticky top-0">
         <span class="text-xs font-mono text-muted shrink-0 tabular-nums">{fmtLongTime(progress.analyzedS)} / {fmtLongTime(progress.totalS)}</span>

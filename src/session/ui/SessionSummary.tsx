@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import { TrashIcon, ResetIcon, iconElement } from '../../components/icons';
+import { TrashIcon, ResetIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
 import { deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
@@ -9,8 +9,8 @@ import type { RecordedSession, SessionAnnotation } from '../model';
 import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { showShareSessionModal } from './ShareSessionModal';
 import {
-  fmtLongTime, defaultSessionName, titleAndDeleteRow, editableDateRow,
-  appendBoundControls, appendClipControls, viterbiPickOf,
+  fmtLongTime, defaultSessionName, TitleRow, DateRow,
+  BoundControls, ClipControls, viterbiPickOf,
 } from './sessionUiShared';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 
@@ -41,9 +41,6 @@ interface SessionSummaryProps {
 }
 
 export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: SessionSummaryProps) {
-  const titleRowRef = useRef<HTMLDivElement>(null);
-  const dateRowRef = useRef<HTMLDivElement>(null);
-  const titleControlsRef = useRef<{ refreshTitle: () => void; refreshDeckBtn: () => void } | null>(null);
   const listWrapRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const seekInpRef = useRef<HTMLInputElement>(null);
@@ -68,28 +65,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
   const sliceEndRef = useRef(0);
 
   const persist = () => { void saveSessionMeta(session); };
-
-  useEffect(() => {
-    if (titleRowRef.current) {
-      titleControlsRef.current = titleAndDeleteRow(titleRowRef.current, {
-        getName: () => session.name,
-        getDefaultName: () => defaultSessionName(session.date),
-        onRename: (val) => { session.name = val; persist(); },
-        onDelete: () => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); },
-        onShare: () => showShareSessionModal(session),
-        getTargetDeckIds: () => targetDeckIdsRef.current,
-        ensureTargetDeckIds: ensureSummaryTargetDeckIds,
-      });
-    }
-    if (dateRowRef.current) {
-      editableDateRow(dateRowRef.current, {
-        getDate: () => session.date,
-        setDate: (date) => { session.date = date; persist(); },
-        onChange: () => { titleControlsRef.current?.refreshTitle(); bump(); },
-      });
-    }
-    // eslint-disable-next-line
-  }, []);
 
   // ── Audio load: streamed via a native <audio> element (no
   // decodeAudioData/waveform — sessions can run for hours). Revokes the
@@ -179,7 +154,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
     onCardAdded: bump,
     getTargetDeckIds: () => targetDeckIdsRef.current,
     ensureTargetDeckIds: ensureSummaryTargetDeckIds,
-    onTargetDeckIdsChanged: () => { titleControlsRef.current?.refreshDeckBtn(); bump(); },
+    onTargetDeckIdsChanged: bump,
     onToggleLike: (id) => {
       const target = session.annotations.find(a => a.id === id);
       if (!target) return;
@@ -204,48 +179,49 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
       persist();
       bump();
     },
-    extraControls: (el) => {
-      const controls = document.createElement('div');
-      controls.className = 'flex items-center gap-2 flex-wrap pt-1 border-t border-border/50';
-
-      // Bound adjustment: ±5 s with a 3 s audio preview at the new bound.
-      appendBoundControls(controls, ann, () => session.duration, { persist, refresh: bump, previewBound });
-
-      // Download/attach clip — hidden (download) or reduced to just the
-      // "already attached" label (attach) once the session's audio has been
-      // forgotten (nothing left to extract from).
-      appendClipControls(controls, ann, session, !!audioUrl, () => loadSessionAudio(session.id), ctx, bump);
-
+    extraControls: () => {
       // Merge with previous annotation of the same tune (false set change).
       const prev = session.annotations[i - 1];
-      if (prev && prev.tuneId === ann.tuneId) {
-        const mergeBtn = document.createElement('button');
-        mergeBtn.className = 'text-[11px] text-accent hover:underline cursor-pointer';
-        mergeBtn.textContent = t('sessions.merge');
-        mergeBtn.onclick = () => {
-          prev.end = ann.end;
-          prev.evidence = [...prev.evidence, ...ann.evidence];
-          prev.confidence = Math.max(prev.confidence, ann.confidence);
-          prev.bucket = prev.confidence >= 0.7 ? 'high' : prev.confidence >= 0.5 ? 'medium' : 'low';
-          session.annotations.splice(i, 1);
-          persist();
-          bump();
-        };
-        controls.appendChild(mergeBtn);
-      }
+      return (
+        <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
+          {/* Bound adjustment: ±5 s with a 3 s audio preview at the new bound. */}
+          <BoundControls ann={ann} getDuration={() => session.duration} persist={persist} refresh={bump} previewBound={previewBound} />
 
-      const delBtn = document.createElement('button');
-      delBtn.className = 'text-dim hover:text-danger transition-colors cursor-pointer ml-auto';
-      delBtn.title = t('common.delete');
-      delBtn.appendChild(iconElement(TrashIcon, 11));
-      delBtn.onclick = () => {
-        session.annotations.splice(i, 1);
-        persist();
-        bump();
-      };
-      controls.appendChild(delBtn);
+          {/* Download/attach clip — hidden (download) or reduced to just the
+             "already attached" label (attach) once the session's audio has
+             been forgotten (nothing left to extract from). */}
+          <ClipControls ann={ann} session={session} audioAvailable={!!audioUrl} getAudio={() => loadSessionAudio(session.id)} ctx={ctx} onAttached={bump} />
 
-      el.appendChild(controls);
+          {prev && prev.tuneId === ann.tuneId && (
+            <button
+              class="text-[11px] text-accent hover:underline cursor-pointer"
+              onClick={() => {
+                prev.end = ann.end;
+                prev.evidence = [...prev.evidence, ...ann.evidence];
+                prev.confidence = Math.max(prev.confidence, ann.confidence);
+                prev.bucket = prev.confidence >= 0.7 ? 'high' : prev.confidence >= 0.5 ? 'medium' : 'low';
+                session.annotations.splice(i, 1);
+                persist();
+                bump();
+              }}
+            >
+              {t('sessions.merge')}
+            </button>
+          )}
+
+          <button
+            class="text-dim hover:text-danger transition-colors cursor-pointer ml-auto"
+            title={t('common.delete')}
+            onClick={() => {
+              session.annotations.splice(i, 1);
+              persist();
+              bump();
+            }}
+          >
+            <TrashIcon size={11} />
+          </button>
+        </div>
+      );
     },
   });
 
@@ -253,8 +229,20 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
 
   return (
     <>
-      <div ref={titleRowRef} />
-      <div ref={dateRowRef} />
+      <TitleRow
+        getName={() => session.name}
+        getDefaultName={() => defaultSessionName(session.date)}
+        onRename={(val) => { session.name = val; persist(); }}
+        onDelete={() => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); }}
+        onShare={() => showShareSessionModal(session)}
+        getTargetDeckIds={() => targetDeckIdsRef.current}
+        ensureTargetDeckIds={ensureSummaryTargetDeckIds}
+      />
+      <DateRow
+        getDate={() => session.date}
+        setDate={(date) => { session.date = date; persist(); }}
+        onChange={bump}
+      />
 
       <audio ref={audioRef} class="hidden" src={audioUrl ?? undefined} />
 
