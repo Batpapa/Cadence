@@ -25,8 +25,32 @@ const SCOPE         = 'https://www.googleapis.com/auth/drive.file';
 const OAUTH_TIMEOUT_MS = 60_000;
 const GIS_LOAD_TIMEOUT_MS = 8_000;
 const LS_DEVICE_ID  = 'cadence_device_id';
-const SS_TOKEN      = 'cadence_access_token';
-const SS_EXPIRES_AT = 'cadence_token_expires_at';
+// Access tokens live in localStorage, not sessionStorage: they last about an
+// hour, and Google's token model has no silent renewal — a new one can only be
+// obtained from a user gesture. Keeping them per-tab meant every single app
+// launch had to raise a consent window. Surviving a restart turns that into at
+// most one window per hour. The trade-off is XSS exposure, bounded by the
+// `drive.file` scope: only files Cadence itself created are reachable.
+const LS_TOKEN      = 'cadence_access_token';
+const LS_EXPIRES_AT = 'cadence_token_expires_at';
+/** Which Google account the stored token belongs to — a device with two local
+ *  users on two Google accounts must not reuse one's token for the other. */
+const LS_TOKEN_OWNER = 'cadence_token_owner';
+
+/** Thrown when a token is needed but this particular path may not raise a
+ *  window (the tab is being hidden, or an automatic prompt was already
+ *  declined). Not an error to report — the cloud button turns yellow. */
+const NEEDS_AUTH = 'needs_auth';
+/** Thrown when a token *was* asked for and the attempt failed — window blocked,
+ *  closed, denied, timed out. Distinct from a network error, because it is the
+ *  one that must stop the automatic paths from asking on a loop. */
+const AUTH_FAILED = 'auth_failed';
+
+/** An automatic (non-clicked) token request has already failed once. Until
+ *  something changes — a granted token, a click, a fresh boot — the timers stop
+ *  asking, so a declined window doesn't come back every 30 seconds. That was
+ *  literally the "la fenêtre s'affiche très souvent" complaint. */
+let autoPromptFailed = false;
 
 // ── Per-user state ────────────────────────────────────────────────────────────
 
@@ -61,14 +85,57 @@ type Gis = any;
 
 let tokenClient:    Gis    = null;
 let driveReady:     Promise<void> | null = null;
-let accessToken:    string | null = sessionStorage.getItem(SS_TOKEN);
-let tokenExpiresAt: number = parseInt(sessionStorage.getItem(SS_EXPIRES_AT) ?? '0');
+let accessToken:    string | null = localStorage.getItem(LS_TOKEN);
+let tokenExpiresAt: number = parseInt(localStorage.getItem(LS_EXPIRES_AT) ?? '0');
 
 const listeners: Array<(s: DriveStatus) => void> = [];
 
 function setStatus(s: DriveStatus): void {
   _state.status = s;
   for (const cb of listeners) cb(s);
+}
+
+function clearStoredToken(): void {
+  accessToken = null;
+  tokenExpiresAt = 0;
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_EXPIRES_AT);
+  localStorage.removeItem(LS_TOKEN_OWNER);
+}
+
+function hasValidToken(): boolean {
+  return !!accessToken && Date.now() < tokenExpiresAt;
+}
+
+// ── Have we actually seen Drive this session? ────────────────────────────────
+// Boot reads Drive so that another device's edits arrive *before* the user
+// starts editing on top of stale data. If that read never happened, pushing
+// local up would overwrite a newer Drive copy we have never looked at — worse
+// than a conflict, because nobody gets asked. So the flag gates the manual
+// sync: read first, push second.
+let reconciled = false;
+let reconcileHook: (() => Promise<boolean>) | null = null;
+
+/** Registered by main.ts (which owns the apply/conflict UI this can't import).
+ *  Resolves true only when the reconciliation concluded that local is the
+ *  version to keep — i.e. the one case where pushing it up is correct. */
+export function setReconcileHook(fn: () => Promise<boolean>): void { reconcileHook = fn; }
+
+/** Has Drive actually been read this session? A failed read returns null from
+ *  loadFromCloud() just like an empty Drive does, so callers need this to tell
+ *  "nothing there" from "never got to look". */
+export function hasSeenDrive(): boolean { return reconciled; }
+
+/** Drop the buffered upload — its contents no longer match what the user sees
+ *  (Drive's version was just applied over it). */
+export function discardPendingSync(): void { _state.pendingState = null; }
+
+/** Boot could not read Drive. Local may be behind another device, so don't
+ *  leave the cloud reassuringly green — an edit made now is precisely what
+ *  turns "behind" into a divergence someone has to arbitrate. */
+export function markReconcileFailed(): void {
+  if (!isDriveConnected()) return;
+  if (_state.status === 'connected') setStatus('error');
 }
 
 /** Are there local edits that never made it to Drive? Derived from the two
@@ -84,11 +151,19 @@ function hasUnsyncedChanges(uid = _state.userId): boolean {
 export function initDriveForUser(userId: string): void {
   if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  }
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); }
+  // Now that the token outlives the tab, opening a *different* local user must
+  // not inherit the previous one's authorisation: two people on one device may
+  // well be on two Google accounts, and the token decides whose Drive is written.
+  const owner      = localStorage.getItem(lsOwner(userId));
+  const tokenOwner = localStorage.getItem(LS_TOKEN_OWNER);
+  if (owner && tokenOwner && owner !== tokenOwner) clearStoredToken();
   // Reopening must not claim everything is safely in the cloud when it isn't:
   // the connected flag alone says nothing about whether the last edits were
   // ever pushed. Reconstruct the real state from the durable bookkeeping —
   // unsynced edits are 'pending', and 'error' if the last attempt also failed,
   // so a sync that died offline still looks wrong after a restart.
+  reconciled = false;      // a different user's Drive file has certainly not been read
+  autoPromptFailed = false; // a fresh boot may prompt again
   const connected = localStorage.getItem(lsConnected(userId)) === '1';
   const unsynced  = connected && hasUnsyncedChanges(userId);
   _state = {
@@ -166,7 +241,7 @@ export function resumePendingSync(state: AppState): void {
   _state.pendingState = state;
   setStatus(localStorage.getItem(lsFailed()) === '1' ? 'error' : 'pending');
   if (_state.syncTimer) clearTimeout(_state.syncTimer);
-  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(); }, 5_000);
+  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(autoMayPrompt()); }, 5_000);
 }
 
 /**
@@ -269,16 +344,21 @@ function requestToken(prompt = ''): Promise<string> {
       if (resp.error) { reject(new Error(resp.error_description ?? resp.error)); return; }
       accessToken    = resp.access_token as string;
       tokenExpiresAt = Date.now() + ((resp.expires_in as number ?? 3600) * 1000) - 60_000;
-      sessionStorage.setItem(SS_TOKEN, accessToken);
-      sessionStorage.setItem(SS_EXPIRES_AT, String(tokenExpiresAt));
+      localStorage.setItem(LS_TOKEN, accessToken);
+      localStorage.setItem(LS_EXPIRES_AT, String(tokenExpiresAt));
+      const owner = localStorage.getItem(lsOwner());
+      if (owner) localStorage.setItem(LS_TOKEN_OWNER, owner);
       resolve(accessToken);
     };
     tokenClient.error_callback = (err: Gis) => {
       cleanup();
       reject(new Error(err.type ?? 'popup_closed'));
     };
-    const hint = localStorage.getItem(lsHint()) ?? undefined;
-    tokenClient.requestAccessToken({ prompt, ...(hint ? { hint } : {}) });
+    // `login_hint`, not the older `hint` (deprecated in TokenClientConfig):
+    // this is the parameter Google documents as skipping account selection,
+    // and the app was passing the superseded spelling.
+    const loginHint = localStorage.getItem(lsHint()) ?? undefined;
+    tokenClient.requestAccessToken({ prompt, ...(loginHint ? { login_hint: loginHint } : {}) });
   });
   return withTimeout(attempt, OAUTH_TIMEOUT_MS, 'oauth_timeout').catch((e: Error) => {
     // Neither callback will ever fire now — drop them so a very late,
@@ -289,32 +369,53 @@ function requestToken(prompt = ''): Promise<string> {
   });
 }
 
-async function getToken(): Promise<string> {
-  if (accessToken && Date.now() < tokenExpiresAt) return accessToken;
-  accessToken = null;
-  sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
+/**
+ * Google's token model has no silent renewal: obtaining a token opens a window.
+ * Syncing must still be something users get for free rather than something they
+ * have to remember to trigger, so the automatic paths DO ask — boot and the
+ * post-edit timer both pass `interactive`. With the token now surviving in
+ * localStorage for its full hour, the common case needs no window at all.
+ *
+ * The one thing that must not happen is asking again and again: see
+ * `autoPromptFailed`. And `visibilitychange` stays silent — raising a window
+ * as the user leaves the tab helps nobody.
+ */
+async function getToken(interactive: boolean): Promise<string> {
+  if (hasValidToken()) return accessToken!;
+  if (!interactive) throw new Error(NEEDS_AUTH);
+  clearStoredToken();
   await initDriveClient();
-  return requestToken('');
+  try {
+    const tok = await requestToken('');
+    autoPromptFailed = false;     // it worked — automatic paths may ask again
+    return tok;
+  } catch (e) {
+    // Distinguishable from a network failure so the caller can decide whether
+    // to keep prompting; a declined or blocked window must not become a loop.
+    throw new Error(`${AUTH_FAILED}: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
-async function driveRequest(url: string, options: RequestInit = {}): Promise<Response> {
+async function driveRequest(url: string, options: RequestInit = {}, interactive = false): Promise<Response> {
   const doFetch = (tok: string) => fetch(url, {
     ...options,
     headers: { ...(options.headers as Record<string, string> ?? {}), Authorization: `Bearer ${tok}` },
   });
-  const resp = await doFetch(await getToken());
+  const resp = await doFetch(await getToken(interactive));
   if (resp.status === 401) {
-    accessToken = null;
-    sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
+    clearStoredToken();
+    // A token rejected mid-flight needs a fresh one, which needs a gesture.
+    if (!interactive) throw new Error(NEEDS_AUTH);
     return doFetch(await requestToken(''));
   }
   return resp;
 }
 
+/** Only ever runs from connectDrive(), i.e. behind a button — interactive. */
 async function findOrCreateFile(): Promise<string> {
   const q = encodeURIComponent(`name='${FILE_NAME}' and trashed=false`);
   const search = await driveRequest(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`, {}, true
   );
   const data = await search.json() as { files?: Array<{ id: string }> };
   if (data.files?.length) return data.files[0]!.id;
@@ -322,7 +423,7 @@ async function findOrCreateFile(): Promise<string> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' }),
-  });
+  }, true);
   return ((await create.json()) as { id: string }).id;
 }
 
@@ -344,20 +445,25 @@ export async function connectDrive(): Promise<ConnectResult> {
 
     const existingOwner = localStorage.getItem(lsOwner());
     if (existingOwner && googleId && existingOwner !== googleId) {
-      accessToken = null;
-      sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
+      clearStoredToken();
       setStatus('disconnected');
       return { action: 'wrong_account', existingEmail: localStorage.getItem(lsHint()) ?? '', newEmail: email };
     }
 
     if (email)    localStorage.setItem(lsHint(), email);
-    if (googleId) localStorage.setItem(lsOwner(), googleId);
+    if (googleId) {
+      localStorage.setItem(lsOwner(), googleId);
+      // The token was obtained before the owner was known (first connect), so
+      // stamp it here too — otherwise the cross-account guard in
+      // initDriveForUser has nothing to compare against for this very token.
+      localStorage.setItem(LS_TOKEN_OWNER, googleId);
+    }
 
     _state.fileId = await findOrCreateFile();
     localStorage.setItem(lsFileId(), _state.fileId);
     localStorage.setItem(lsConnected(), '1');
 
-    const driveData = await loadFromCloud();
+    const driveData = await loadFromCloud(true);
     setStatus('connected');
     return reconcileDriveData(driveData);
 
@@ -374,8 +480,7 @@ export function disconnectDrive(): void {
   _state.pendingState = null;
   if (accessToken) {
     (window as Gis).google?.accounts?.oauth2?.revoke(accessToken, () => {});
-    accessToken = null;
-    sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_EXPIRES_AT); tokenExpiresAt = 0;
+    clearStoredToken();
   }
   _state.fileId = null;
   localStorage.removeItem(lsFileId());
@@ -386,9 +491,28 @@ export function disconnectDrive(): void {
   setStatus('disconnected');
 }
 
-async function flushSync(): Promise<void> {
+async function flushSync(interactive = false): Promise<void> {
   if (!_state.fileId || !_state.pendingState || _state.flushInProgress) return;
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
+  _state.flushInProgress = true;
+  try {
+    // Never push over a Drive copy this session has never read: if boot failed
+    // to read it, another device's newer data would vanish without anyone being
+    // asked. Applies to the automatic paths too, not just the button — they are
+    // now equally able to obtain a token, so equally able to do the damage.
+    if (!reconciled && reconcileHook && interactive && navigator.onLine) {
+      let localWins = false;
+      try { localWins = await reconcileHook(); } catch { /* still unread */ }
+      // Only "local is the version to keep" may proceed. If Drive's copy was
+      // applied, what is buffered is no longer what the user sees; if the
+      // conflict modal went up, they are mid-decision and uploading either way
+      // would answer for them.
+      if (!localWins) return;
+    }
+  } finally {
+    _state.flushInProgress = false;
+  }
+  if (!_state.pendingState) return;      // the reconciliation may have cleared it
   _state.flushInProgress = true;
   const state = _state.pendingState;
   _state.pendingState = null;
@@ -407,23 +531,39 @@ async function flushSync(): Promise<void> {
     form.append('file', blob);
     await driveRequest(
       `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=multipart`,
-      { method: 'PATCH', body: form }
+      { method: 'PATCH', body: form },
+      interactive,
     );
     // Successful upload: local and Drive are identical again — new merge base.
     markSynced(ts);
     setStatus(_state.pendingState ? 'pending' : 'connected');
-  } catch {
+  } catch (e) {
     _state.pendingState = _state.pendingState ?? state;
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === NEEDS_AUTH || msg.startsWith(AUTH_FAILED)) {
+      // Authorisation, not a sync failure: the data is safe locally, we just
+      // don't have a usable token. Stay yellow — the cloud button reads as
+      // "click to sync" — and don't persist a failure flag.
+      if (msg.startsWith(AUTH_FAILED)) autoPromptFailed = true;
+      setStatus('pending');
+      return;                            // no timer retry: it would only re-ask
+    }
     // Persisted so the failure outlives the tab — otherwise a reload would
     // downgrade a known-failed sync to a merely-pending one (or, before the
     // status was derived from the timestamps at all, to a reassuring green).
     localStorage.setItem(lsFailed(), '1');
     setStatus('error');
-    _state.retryTimer = setTimeout(() => { _state.retryTimer = null; void flushSync(); }, 30_000);
+    _state.retryTimer = setTimeout(() => { _state.retryTimer = null; void flushSync(autoMayPrompt()); }, 30_000);
   } finally {
     _state.flushInProgress = false;
   }
 }
+
+/** Automatic paths ask for a token as readily as a click does — syncing should
+ *  not be something users have to remember to do. The one exception is after an
+ *  automatic prompt has already been declined or blocked, so it isn't reopened
+ *  every 30 seconds. */
+const autoMayPrompt = () => !autoPromptFailed;
 
 export function syncToCloud(state: AppState): void {
   localStorage.setItem(lsLocalTs(), String(Date.now()));
@@ -431,13 +571,16 @@ export function syncToCloud(state: AppState): void {
   _state.pendingState = state;
   setStatus('pending');
   if (_state.syncTimer) clearTimeout(_state.syncTimer);
-  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(); }, 30_000);
+  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(autoMayPrompt()); }, 30_000);
 }
 
+/** The header's cloud button. A click clears any earlier refusal: the user is
+ *  explicitly asking, so the automatic paths get to try again afterwards too. */
 export async function manualSync(): Promise<void> {
   if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  _state.syncTimer  = null; }
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
-  await flushSync();
+  autoPromptFailed = false;
+  await flushSync(true);
 }
 
 export function initDriveVisibilitySync(): void {
@@ -449,11 +592,16 @@ export function initDriveVisibilitySync(): void {
   });
 }
 
-export async function loadFromCloud(): Promise<(AppState & { _lastModified?: number; _deviceId?: string }) | null> {
+/** `interactive` at boot: page load is the one moment Google's flow tolerates a
+ *  token request without a click, and it is where the whole reconciliation
+ *  hangs. Elsewhere (a background refresh) leave it false. */
+export async function loadFromCloud(interactive = false): Promise<(AppState & { _lastModified?: number; _deviceId?: string }) | null> {
   if (!_state.fileId) return null;
   try {
-    const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${_state.fileId}?alt=media`);
+    const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${_state.fileId}?alt=media`, {}, interactive);
     if (!resp.ok) return null;
+    // We have now genuinely seen what Drive holds — the manual sync may push.
+    reconciled = true;
     return await resp.json() as AppState & { _lastModified?: number; _deviceId?: string };
   } catch {
     return null;

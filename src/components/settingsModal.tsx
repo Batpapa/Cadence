@@ -273,7 +273,9 @@ function StudySection({ ctx }: { ctx: AppContext }) {
 
 function DriveRow() {
   const [status, setStatus] = useState<DriveStatus>(getDriveStatus);
-  useEffect(() => onStatusChange(setStatus), []);
+  // Re-read after subscribing — see header.tsx: a status change between first
+  // render and this effect would otherwise never reach the component.
+  useEffect(() => { setStatus(getDriveStatus()); return onStatusChange(setStatus); }, []);
 
   const handleConnect = async () => {
     try {
@@ -357,7 +359,6 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
   const user = appState.value;
   const [nameDraft, setNameDraft] = useState(user.name ?? '');
   useEffect(() => { setNameDraft(user.name ?? ''); }, [user.name]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const commitName = () => {
     const val = nameDraft.trim();
@@ -376,7 +377,6 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
     } catch (e) {
       alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -405,13 +405,24 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
             dangerouslySetInnerHTML={{ __html: `${EXPORT_SVG}${t('settings.export')}` }}
             onClick={() => exportBackup(getContext().user)}
           />
-          <label class="btn-ghost text-xs cursor-pointer inline-flex items-center justify-center gap-1.5" dangerouslySetInnerHTML={{ __html: `${IMPORT_SVG}${t('settings.import')}` }}>
+          {/* The icon markup goes on an inner span, never on the <label> itself:
+              dangerouslySetInnerHTML replaces an element's children, so putting
+              it on the label wiped out the file input and the button did
+              nothing at all. */}
+          <label class="btn-ghost text-xs cursor-pointer inline-flex items-center justify-center gap-1.5">
+            <span class="inline-flex items-center gap-1.5" dangerouslySetInnerHTML={{ __html: `${IMPORT_SVG}${t('settings.import')}` }} />
             <input
-              ref={fileInputRef}
               type="file"
               accept=".cdb"
               class="hidden"
-              onChange={() => { const file = fileInputRef.current?.files?.[0]; if (file) void doImportFile(file); }}
+              onChange={(e) => {
+                const input = e.currentTarget;
+                const file = input.files?.[0];
+                // Clear it, or picking the same file twice in a row fires no
+                // change event and the second import silently does nothing.
+                input.value = '';
+                if (file) void doImportFile(file);
+              }}
             />
           </label>
         </div>
