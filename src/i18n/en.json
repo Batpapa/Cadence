@@ -26,6 +26,9 @@
   "common.replace": "Replace",
   "common.reset": "Reset",
   "common.alreadyInLibrary": "Already in your library",
+  "common.tuneFetchError": "Error on tune {ref}: {message}",
+  "common.tuneUnavailable": "This tune is not publicly available for legal reasons ({ref}).",
+  "common.tuneFetchErrorNamed": "Error on tune \"{name}\" ({ref}): {message}",
   "common.deleteOrphanCards": "Also delete the orphaned card (which would no longer be in any deck)",
   "common.deleteOrphanCardsPlural": "Also delete the {count} orphaned cards (which would no longer be in any deck)",
 
@@ -417,6 +420,7 @@
   "theSession.id.placeholder": "Tune ID…",
   "theSession.id.import": "Import",
   "theSession.id.notFound": "Tune not found.",
+  "theSession.id.unavailable": "This tune is not publicly available for legal reasons.",
   "theSession.ids.hint": "You can also paste a list of IDs (e.g. 1;5;97) to import several at once",
   "theSession.ids.preview": "{count} valid ID",
   "theSession.ids.previewPlural": "{count} valid IDs",
@@ -437,6 +441,8 @@
   "theSession.status.batchDone": "✓ {count} imported.",
   "theSession.status.batchLinked": ", {linked} already in library linked to deck",
   "theSession.status.batchSkipped": ", {count} already in library skipped",
+  "theSession.status.batchBlocked": ", {count} skipped — not publicly available: {tunes}",
+  "theSession.status.batchBlockedPlural": ", {count} skipped — not publicly available: {tunes}",
   "theSession.error": "Error: {message}",
   "theSession.noResults": "No results.",
 
@@ -446,6 +452,7 @@
   "irishTuneInfo.tune.placeholder": "Tune name or ID…",
   "irishTuneInfo.id.import": "Import",
   "irishTuneInfo.id.notFound": "Tune not found.",
+  "irishTuneInfo.redirect.unavailable": "This tune is not publicly available on TheSession — import it from IrishTuneInfo instead.",
   "irishTuneInfo.ids.hint": "You can also paste a list of IDs (e.g. 1;5;97) to import several at once",
   "irishTuneInfo.ids.preview": "{count} valid ID",
   "irishTuneInfo.ids.previewPlural": "{count} valid IDs",
@@ -508,7 +515,6 @@
   "newCard.ai.pasteLabel": "Paste the AI's JSON reply here",
   "newCard.ai.pastePlaceholder": "Paste the JSON the AI gave you…",
   "newCard.ai.pasteBtn": "Import",
-  "newCard.ai.fetchFailed": "{count} couldn't be found and were skipped.",
 
   "commandPalette.placeholder": "Search cards, decks, folders…",
   "commandPalette.typeToSearch": "Type to search…",

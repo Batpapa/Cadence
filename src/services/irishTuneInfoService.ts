@@ -1,5 +1,6 @@
 import type { Attachment, Card, FileEntry } from '../types';
 import { arrayBufferToBase64, generateId } from '../utils';
+import { withTuneIdentity } from './tuneFetchError';
 import { SCRAPER_BASE as BASE, markScraperServerWarm } from './scraperServerStatus';
 export { isScraperServerWarm as isServerWarm } from './scraperServerStatus';
 
@@ -105,13 +106,19 @@ export async function fetchTunesByIds(
   onProgress: (loaded: number, total: number) => void,
   skipId?: (id: number) => boolean,
   includeAudio = false,
+  /** Names the caller already knows (a playlist listing), so a failure here can
+   *  be reported by name rather than by bare id. */
+  names?: Map<number, string>,
 ): Promise<{ tunes: PlaylistTuneResult[]; skippedIds: number[] }> {
   const unique = [...new Set(ids)];
   const toFetch = skipId ? unique.filter(id => !skipId(id)) : unique;
   const skippedIds = skipId ? unique.filter(id => skipId(id)) : [];
   const tunes: PlaylistTuneResult[] = [];
   for (let i = 0; i < toFetch.length; i++) {
-    const tune = await fetchTuneById(toFetch[i]!);
+    const id = toFetch[i]!;
+    const tune = await withTuneIdentity(`irishtuneinfo:${id}`, names?.get(id), () => fetchTuneById(id));
+    // Audio is optional — fetchAudioFile swallows its own failures and returns
+    // null — so it is deliberately outside the identity wrapper.
     const audioFile = includeAudio && tune.featuredAudioUrl ? await fetchAudioFile(tune.featuredAudioUrl, `${tune.name}.mp3`) : null;
     tunes.push({ tune, audioFile });
     onProgress(i + 1, toFetch.length);
