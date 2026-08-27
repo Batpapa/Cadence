@@ -12,6 +12,7 @@ import {
   tuneResultToCard, findByExternalId,
   type MemberSearchResult, type TuneSetting,
 } from '../services/theSessionService';
+import { describeTune, tuneFetchStatus, TuneUnavailableError, withTuneIdentity, type SkippedTune } from '../services/tuneFetchError';
 import { ensureTuneNameIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
@@ -50,14 +51,17 @@ function resolvePreferredSettingIndex(pref: unknown, settings: TuneSetting[]): n
   return undefined;
 }
 
-async function hydrateExternalCard(card: Card): Promise<Card | null> {
+async function hydrateExternalCard(card: Card): Promise<Card> {
   const ext = card.externalId;
   if (!ext) return card;
   const sep = ext.indexOf(':');
   const source = ext.slice(0, sep);
   const id = parseInt(ext.slice(sep + 1), 10);
   if (isNaN(id)) return card;
-  try {
+  // A failure here aborts the whole paste (see doImportPasted) rather than
+  // quietly dropping this one card, so it has to say which card it was on —
+  // and an AI package can mix both sources, hence the full externalId.
+  return withTuneIdentity(ext, card.name || undefined, async () => {
     let fetched: Card | null = null;
     if (source === 'thesession') {
       const tune = await fetchTuneById(id);
@@ -70,6 +74,8 @@ async function hydrateExternalCard(card: Card): Promise<Card | null> {
     } else if (source === 'irishtuneinfo') {
       fetched = iriTuneToCard(await fetchIriTuneById(id));
     }
+    // An externalId naming a source this build doesn't know is not a failure —
+    // there is simply nothing to hydrate it with.
     if (!fetched) return card;
     return {
       ...fetched,
@@ -82,9 +88,7 @@ async function hydrateExternalCard(card: Card): Promise<Card | null> {
         attachments: [...fetched.content.attachments, ...card.content.attachments],
       },
     };
-  } catch {
-    return null;
-  }
+  });
 }
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
@@ -109,6 +113,21 @@ async function importCardPackage(cards: Card[], deckIds: Iterable<string>): Prom
   let summary = t('theSession.status.batchDone', { count: imported });
   if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';
   return summary;
+}
+
+/** "✓ 3 imported, 2 already in library skipped, 1 removed from TheSession: …"
+ *  — every extra clause is appended to the base sentence so the full stop
+ *  lands once, at the end (same shape as irishTuneInfoImport's
+ *  buildBatchSummary). */
+function batchSummary(imported: number, skipped: number, blocked: SkippedTune[]): string {
+  const base = t('theSession.status.batchDone', { count: imported });
+  const extras: string[] = [];
+  if (skipped > 0) extras.push(t('theSession.status.batchSkipped', { count: skipped }));
+  if (blocked.length > 0) {
+    extras.push(t(blocked.length === 1 ? 'theSession.status.batchBlocked' : 'theSession.status.batchBlockedPlural',
+      { count: blocked.length, tunes: blocked.map(describeTune).join(', ') }));
+  }
+  return extras.length > 0 ? base.replace('.', '') + extras.join('') + '.' : base;
 }
 
 /** Cards already owned, by TheSession tune ID — shared by every batch path
@@ -305,7 +324,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
     setStatus(t('theSession.status.fetching'));
     try {
       const existingCardIdByTuneId = buildExistingByTuneId();
-      const { tunes, skippedIds } = await fetchTunesByIds(ids, onProgress, id => existingCardIdByTuneId.has(id));
+      const { tunes, skippedIds, blocked } = await fetchTunesByIds(ids, onProgress, id => existingCardIdByTuneId.has(id));
       const newCards = tunes.map(tune => tuneResultToCard(tune));
       await mutate(s => {
         for (const card of newCards) { s.cards[card.id] = card; }
@@ -317,11 +336,9 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
           }
         }
       });
-      let summary = t('theSession.status.batchDone', { count: newCards.length });
-      if (skippedIds.length > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skippedIds.length }) + '.';
-      setStatus(summary);
+      setStatus(batchSummary(newCards.length, skippedIds.length, blocked));
     } catch (e) {
-      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setStatus(tuneFetchStatus(e, 'theSession.error'));
     } finally {
       onDone();
     }
@@ -427,7 +444,11 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
           setPendingId(tune.id); setPendingIds(null);
           setInfo(`${tune.name} · ${tune.type}`);
           setStatus('');
-        } catch { setStatus(t('theSession.id.notFound')); }
+        } catch (e) {
+          // 451 is not "no such tune": it exists and was taken down. Calling
+          // that "not found" sends the user hunting for a typo they didn't make.
+          setStatus(e instanceof TuneUnavailableError ? t('theSession.id.unavailable') : t('theSession.id.notFound'));
+        }
       }, 150);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
@@ -439,6 +460,13 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
             // unreliable in practice. Falls back to it below only if the
             // local index genuinely isn't available (offline on a device
             // that has never synced it, or the sync itself failed).
+            //
+            // Deliberately NOT extended to "the index returned no match":
+            // the index mirrors adactio/TheSession-data and lags the live
+            // site, so a tune added in the last few days is absent from it —
+            // but querying the unreliable remote search on every empty result
+            // is a worse trade than missing those few. Settled call, don't
+            // re-add it.
             const index = await ensureTuneNameIndex();
             tunes = searchLocalTuneIndex(index, trimmed);
           } catch {
@@ -562,7 +590,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     setStatus(t('theSession.status.fetchingPage'));
     try {
       const existingCardIdByTuneId = buildExistingByTuneId();
-      const { tunes, skippedIds } = await fetchMemberTunes(memberId, (loaded, total, phase) => {
+      const { tunes, skippedIds, blocked } = await fetchMemberTunes(memberId, (loaded, total, phase) => {
         setProgress(Math.round((loaded / total) * 100));
         setStatus(phase === 'pages' ? t('theSession.status.collectingIds', { loaded, total }) : t('theSession.status.fetchingTunes', { loaded, total }));
       }, id => existingCardIdByTuneId.has(id));
@@ -580,11 +608,9 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         }
       });
       setProgress(100);
-      let summary = t('theSession.status.batchDone', { count: newCards.length });
-      if (skippedIds.length > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skippedIds.length }) + '.';
-      setStatus(summary);
+      setStatus(batchSummary(newCards.length, skippedIds.length, blocked));
     } catch (e) {
-      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setStatus(tuneFetchStatus(e, 'theSession.error'));
     } finally {
       setBusy(false);
     }
@@ -887,17 +913,17 @@ function AiStep({ ensureSelectedDeckIds, withDeckChoice }: {
       const cards = parseCardPackageFromText(pasted);
       const toHydrate = cards.filter(c => c.externalId);
       const hydrated: Card[] = cards.filter(c => !c.externalId);
-      let failed = 0;
+      // All-or-nothing, like every other batch path: the first tune that won't
+      // fetch aborts the whole paste and nothing reaches the library. A
+      // half-imported package is the worse outcome — the user can't tell which
+      // half they got, and re-pasting would then double up what did land.
       for (let i = 0; i < toHydrate.length; i++) {
         if (toHydrate.length > 1) setStatus(t('theSession.status.fetchingTunes', { loaded: i, total: toHydrate.length }));
-        const h = await hydrateExternalCard(toHydrate[i]!);
-        if (h) hydrated.push(h); else failed++;
+        hydrated.push(await hydrateExternalCard(toHydrate[i]!));
       }
-      let summary = await importCardPackage(hydrated, ensureSelectedDeckIds());
-      if (failed > 0) summary += ' ' + t('newCard.ai.fetchFailed', { count: failed });
-      setStatus(summary);
+      setStatus(await importCardPackage(hydrated, ensureSelectedDeckIds()));
     } catch (e) {
-      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setStatus(tuneFetchStatus(e, 'theSession.error'));
     } finally { setBusy(false); }
   };
 

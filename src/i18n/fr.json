@@ -26,6 +26,9 @@
   "common.replace": "Remplacer",
   "common.reset": "Réinitialiser",
   "common.alreadyInLibrary": "Déjà dans ta bibliothèque",
+  "common.tuneFetchError": "Erreur sur le morceau {ref} : {message}",
+  "common.tuneUnavailable": "Ce morceau n'est pas disponible publiquement pour raisons légales ({ref}).",
+  "common.tuneFetchErrorNamed": "Erreur sur le morceau « {name} » ({ref}) : {message}",
   "common.deleteOrphanCards": "Aussi supprimer la carte orpheline (qui ne serait plus dans aucun paquet)",
   "common.deleteOrphanCardsPlural": "Aussi supprimer les {count} cartes orphelines (qui ne seraient plus dans aucun paquet)",
 
@@ -417,6 +420,7 @@
   "theSession.id.placeholder": "ID du morceau…",
   "theSession.id.import": "Importer",
   "theSession.id.notFound": "Morceau introuvable.",
+  "theSession.id.unavailable": "Ce morceau n'est pas disponible publiquement pour raisons légales.",
   "theSession.ids.hint": "Tu peux aussi coller une liste d'IDs (ex. 1;5;97) pour en importer plusieurs d'un coup",
   "theSession.ids.preview": "{count} ID valide",
   "theSession.ids.previewPlural": "{count} IDs valides",
@@ -437,6 +441,8 @@
   "theSession.status.batchDone": "✓ {count} importé(s).",
   "theSession.status.batchLinked": ", {linked} déjà dans la bibliothèque, lié(s) au paquet",
   "theSession.status.batchSkipped": ", {count} déjà dans la bibliothèque, ignoré(s)",
+  "theSession.status.batchBlocked": ", {count} ignoré — non disponible publiquement : {tunes}",
+  "theSession.status.batchBlockedPlural": ", {count} ignorés — non disponibles publiquement : {tunes}",
   "theSession.error": "Erreur : {message}",
   "theSession.noResults": "Aucun résultat.",
 
@@ -446,6 +452,7 @@
   "irishTuneInfo.tune.placeholder": "Nom ou ID du morceau…",
   "irishTuneInfo.id.import": "Importer",
   "irishTuneInfo.id.notFound": "Morceau introuvable.",
+  "irishTuneInfo.redirect.unavailable": "Ce morceau n'est pas disponible publiquement sur TheSession — importe-le depuis IrishTuneInfo à la place.",
   "irishTuneInfo.ids.hint": "Tu peux aussi coller une liste d'IDs (ex. 1;5;97) pour en importer plusieurs d'un coup",
   "irishTuneInfo.ids.preview": "{count} ID valide",
   "irishTuneInfo.ids.previewPlural": "{count} IDs valides",
@@ -508,7 +515,6 @@
   "newCard.ai.pasteLabel": "Colle ici la réponse JSON de l'IA",
   "newCard.ai.pastePlaceholder": "Colle le JSON donné par l'IA…",
   "newCard.ai.pasteBtn": "Importer",
-  "newCard.ai.fetchFailed": "{count} n'ont pas pu être trouvées et ont été ignorées.",
 
   "commandPalette.placeholder": "Rechercher des cartes, paquets, dossiers…",
   "commandPalette.typeToSearch": "Tapez pour rechercher…",

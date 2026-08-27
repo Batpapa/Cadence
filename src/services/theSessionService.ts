@@ -1,5 +1,6 @@
 import type { Card, FileEntry, Attachment } from '../types';
 import { generateId } from '../utils';
+import { TuneUnavailableError, withTuneIdentity, type SkippedTune } from './tuneFetchError';
 
 const BASE = 'https://thesession.org';
 
@@ -48,7 +49,11 @@ interface RawTuneResponse {
 
 interface MemberTunesResponse {
   pages: number;
-  tunes: Array<{ id: number }>;
+  // `name` is present on the real tunebook payload, and it is the only place a
+  // batch import ever learns a tune's name *before* fetching it — which is what
+  // lets a phase-2 failure be reported by name rather than by bare number.
+  // Optional so a trimmed response still parses.
+  tunes: Array<{ id: number; name?: string }>;
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────
@@ -69,6 +74,7 @@ export async function fetchTuneById(id: number): Promise<TuneResult> {
   // exact same ordering as no param at all; `orderby=popular` produces a
   // genuinely different one.
   const res = await fetch(`${BASE}/tunes/${id}?format=json&orderby=popular`);
+  if (res.status === 451) throw new TuneUnavailableError(`thesession:${id}`);
   if (!res.ok) throw new Error(`TheSession fetch failed: ${res.status}`);
   const data = (await res.json()) as RawTuneResponse;
   return {
@@ -82,6 +88,11 @@ export async function fetchTuneById(id: number): Promise<TuneResult> {
   };
 }
 
+/** fetchTuneById for the batch paths: a failure names the tune it happened on. */
+function fetchTuneForBatch(id: number, name?: string): Promise<TuneResult> {
+  return withTuneIdentity(`thesession:${id}`, name, () => fetchTuneById(id));
+}
+
 export async function fetchMemberInfo(memberId: number): Promise<{ name: string; total: number }> {
   const res = await fetch(`${BASE}/members/${memberId}/tunebook?format=json`);
   if (!res.ok) throw new Error(`Member not found`);
@@ -93,16 +104,17 @@ export async function fetchMemberTunes(
   memberId: number,
   onProgress: (loaded: number, total: number, phase: 'pages' | 'tunes') => void,
   skipId?: (id: number) => boolean
-): Promise<{ tunes: TuneResult[]; skippedIds: number[] }> {
+): Promise<{ tunes: TuneResult[]; skippedIds: number[]; blocked: SkippedTune[] }> {
   // Phase 1 — collect unique tune IDs by paginating tunebook
   const first = await fetch(`${BASE}/members/${memberId}/tunebook?format=json`);
   if (!first.ok) throw new Error(`TheSession member fetch failed: ${first.status}`);
   const firstData = (await first.json()) as MemberTunesResponse;
   const pages = firstData.pages ?? 1;
 
-  const seen = new Set<number>();
+  // id → name from the listing, so a phase-2 failure can be named, not just numbered.
+  const seen = new Map<number, string | undefined>();
   const addIds = (d: MemberTunesResponse) => {
-    for (const t of d.tunes ?? []) seen.add(t.id);
+    for (const t of d.tunes ?? []) if (!seen.has(t.id)) seen.set(t.id, t.name);
   };
   addIds(firstData);
   onProgress(1, pages, 'pages');
@@ -115,14 +127,22 @@ export async function fetchMemberTunes(
   }
 
   // Phase 2 — fetch only tunes not already in the library
-  const ids = skipId ? [...seen].filter(id => !skipId(id)) : [...seen];
-  const skippedIds = skipId ? [...seen].filter(id => skipId(id)) : [];
+  const allIds = [...seen.keys()];
+  const ids = skipId ? allIds.filter(id => !skipId(id)) : allIds;
+  const skippedIds = skipId ? allIds.filter(id => skipId(id)) : [];
   const tunes: TuneResult[] = [];
+  const blocked: SkippedTune[] = [];
   for (let i = 0; i < ids.length; i++) {
-    tunes.push(await fetchTuneById(ids[i]!));
+    const id = ids[i]!;
+    try {
+      tunes.push(await fetchTuneForBatch(id, seen.get(id)));
+    } catch (e) {
+      if (!(e instanceof TuneUnavailableError)) throw e;
+      blocked.push({ id, name: seen.get(id) });
+    }
     onProgress(i + 1, ids.length, 'tunes');
   }
-  return { tunes, skippedIds };
+  return { tunes, skippedIds, blocked };
 }
 
 /** Fetches a user-supplied list of tune IDs (e.g. pasted "1;5;97"), skipping
@@ -130,17 +150,27 @@ export async function fetchMemberTunes(
 export async function fetchTunesByIds(
   ids: number[],
   onProgress: (loaded: number, total: number) => void,
-  skipId?: (id: number) => boolean
-): Promise<{ tunes: TuneResult[]; skippedIds: number[] }> {
+  skipId?: (id: number) => boolean,
+  /** Names the caller already knows (an IrishTuneInfo→TheSession mapping), so
+   *  a failure here can be reported by name rather than by bare id. */
+  names?: Map<number, string>,
+): Promise<{ tunes: TuneResult[]; skippedIds: number[]; blocked: SkippedTune[] }> {
   const unique = [...new Set(ids)];
   const toFetch = skipId ? unique.filter(id => !skipId(id)) : unique;
   const skippedIds = skipId ? unique.filter(id => skipId(id)) : [];
   const tunes: TuneResult[] = [];
+  const blocked: SkippedTune[] = [];
   for (let i = 0; i < toFetch.length; i++) {
-    tunes.push(await fetchTuneById(toFetch[i]!));
+    const id = toFetch[i]!;
+    try {
+      tunes.push(await fetchTuneForBatch(id, names?.get(id)));
+    } catch (e) {
+      if (!(e instanceof TuneUnavailableError)) throw e;
+      blocked.push({ id, name: names?.get(id) });
+    }
     onProgress(i + 1, toFetch.length);
   }
-  return { tunes, skippedIds };
+  return { tunes, skippedIds, blocked };
 }
 
 // ── ABC generation ────────────────────────────────────────────────────────────
