@@ -7,7 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync } from './services/driveService';
+import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed, hasSeenDrive, discardPendingSync } from './services/driveService';
 import { initSessionDbForUser, dumpUserSessionDatabase, userDbName } from './session/db';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
@@ -272,6 +272,42 @@ function downloadJson(data: unknown, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Read Drive and settle it against local: fast-forwards apply silently, real
+ * divergences raise the explicit conflict modal. Runs at boot — the point being
+ * that another device's edits land *before* the user starts editing on top of
+ * stale data — and again from the cloud button if that boot attempt failed.
+ * Throws if Drive could not be read, so callers can tell "settled" from "never
+ * saw it"; the interactive flag is on because both callers are moments where a
+ * consent window is allowed (page load, or a click).
+ */
+async function reconcileWithDrive(): Promise<boolean> {
+  // initDriveClient() rejects if Google's script never arrives, so it belongs
+  // inside the caller's try: on a flaky connection it is the step that fails.
+  await initDriveClient();
+  const data = await loadFromCloud(true);
+  // loadFromCloud returns null both for "Drive is empty" and for "the read
+  // failed", so ask explicitly which one happened — treating a failure as an
+  // empty Drive is how local silently becomes the winner.
+  if (!hasSeenDrive()) throw new Error('drive_unreadable');
+  const result = reconcileDriveData(data);
+  if (result.action === 'apply') {
+    await applyDriveState(result.state, result.driveTs);
+    // Local was just replaced; anything buffered for upload predates that.
+    discardPendingSync();
+    return false;
+  }
+  if (result.action === 'conflict') {
+    showDriveConflictModal(result.state, result.driveTs);
+    return false;                       // the user is choosing; don't pre-empt them
+  }
+  // 'none' means local is the version to keep. If it also holds edits that
+  // never reached Drive (the tab that made them was closed before a flush
+  // succeeded), push them now — nothing else would.
+  resumePendingSync(appState.value);
+  return true;
+}
+
 function finishBoot(root: HTMLElement): void {
   applyTheme();
   applyZoom();
@@ -282,34 +318,25 @@ function finishBoot(root: HTMLElement): void {
   // ever loading the Google Identity script (and its request to Google) for the
   // majority of sessions that have never connected Drive.
   if (isDriveConnected()) {
+    // Registered so the cloud button can run the same reconciliation later if
+    // this one fails: pushing local without ever having read Drive is how
+    // another device's newer data disappears unnoticed.
+    setReconcileHook(reconcileWithDrive);
     void (async () => {
       try {
         // Known-offline needs no round trip: waiting out the Drive client's
         // load timeout would leave the sync button inert for seconds after a
         // reload, which is precisely when someone checks whether their offline
-        // edits are safe. Fall through to the fallback immediately instead.
-        if (!navigator.onLine) throw new Error('offline');
-        // initDriveClient() rejects if Google's script never arrives, so this
-        // must be inside the try: on a flaky connection it is the step that
-        // fails, and the fallback below is exactly what should run then.
-        await initDriveClient();
-        // Same three-way reconciliation as the manual connect flow: fast-forwards
-        // apply silently, real divergences raise the explicit conflict modal.
-        const result = reconcileDriveData(await loadFromCloud());
-        if (result.action === 'apply') {
-          await applyDriveState(result.state, result.driveTs);
-        } else if (result.action === 'conflict') {
-          showDriveConflictModal(result.state, result.driveTs);
-        } else {
-          // 'none' means local is the version to keep. If it also holds edits
-          // that never reached Drive (the tab that made them was closed before
-          // a flush succeeded), push them now — nothing else would.
-          resumePendingSync(appState.value);
-        }
+        // edits are safe. Nothing is stale-by-surprise here — the user knows
+        // they are offline — so this is not the failure case below.
+        if (!navigator.onLine) { resumePendingSync(appState.value); return; }
+        await reconcileWithDrive();
       } catch {
-        // Offline or transient failure — keep local data, but still re-arm the
-        // upload buffer so the manual sync button works and the retry fires
-        // once the network comes back.
+        // Reading Drive failed while online — a blocked consent window, a
+        // flaky connection. Local data is kept, but it may be behind another
+        // device and the user must not be told everything is fine: editing now
+        // is what turns "behind" into a divergence to arbitrate.
+        markReconcileFailed();
         resumePendingSync(appState.value);
       }
     })();

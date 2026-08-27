@@ -94,6 +94,11 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
   const [driveStatus, setDriveStatus] = useState<DriveStatus>(getDriveStatus);
   useEffect(() => {
     if (!isDriveFeatureEnabled()) return;
+    // Re-read after subscribing: the boot sync starts before this effect runs,
+    // so a status set in that gap (a Drive read that failed fast) would only
+    // ever exist in the value captured at first render, and the icon would sit
+    // on a stale — reassuring — green.
+    setDriveStatus(getDriveStatus());
     return onStatusChange(setDriveStatus);
   }, []);
 
