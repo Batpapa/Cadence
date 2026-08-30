@@ -1,17 +1,21 @@
 import type { AppState } from '../types';
 import { GOOGLE_CLIENT_ID } from '../config';
 import { withTimeout } from '../utils';
+import { decideReconcile } from './reconcilePolicy';
 
 export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' | 'connected' | 'error';
 
 export type ReconcileResult =
   | { action: 'none' }
-  | { action: 'apply';    state: AppState; driveTs: number }  // fast-forward from Drive
-  | { action: 'conflict'; state: AppState; driveTs: number }; // both sides moved — ask the user
+  | { action: 'apply';    state: AppState; driveTs: number; version: string }  // fast-forward from Drive
+  | { action: 'conflict'; state: AppState; driveTs: number; version: string }; // both sides moved — ask the user
 
 export type ConnectResult =
   | ReconcileResult
-  | { action: 'wrong_account'; existingEmail: string; newEmail: string };
+  | { action: 'wrong_account'; existingEmail: string; newEmail: string }
+  // Another local user on this device already syncs with this same Google
+  // account — both would bind to the same Drive file and overwrite each other.
+  | { action: 'shared_account'; email: string };
 
 const FILE_NAME     = 'cadence-data.json';
 const SCOPE         = 'https://www.googleapis.com/auth/drive.file';
@@ -24,6 +28,11 @@ const SCOPE         = 'https://www.googleapis.com/auth/drive.file';
  *  entering a password, 2FA) can legitimately take a while. */
 const OAUTH_TIMEOUT_MS = 60_000;
 const GIS_LOAD_TIMEOUT_MS = 8_000;
+const SYNC_DEBOUNCE_MS = 30_000;
+/** Ceiling on the debounce: a steady edit stream (a long study session) keeps
+ *  resetting the 30 s timer, so without this nothing would be pushed for the
+ *  whole session — hours of work with no copy anywhere else. */
+const MAX_PENDING_MS = 5 * 60_000;
 const LS_DEVICE_ID  = 'cadence_device_id';
 // Access tokens live in localStorage, not sessionStorage: they last about an
 // hour, and Google's token model has no silent renewal — a new one can only be
@@ -62,11 +71,14 @@ interface DriveUserState {
   retryTimer:     ReturnType<typeof setTimeout> | null;
   pendingState:   AppState | null;
   flushInProgress: boolean;
+  /** When the OLDEST currently-unpushed edit happened — anchors the debounce ceiling. */
+  firstPendingAt: number | null;
 }
 
 let _state: DriveUserState = {
   userId: '', fileId: null, status: 'disconnected',
   syncTimer: null, retryTimer: null, pendingState: null, flushInProgress: false,
+  firstPendingAt: null,
 };
 
 // Key helpers — accept an explicit userId for cross-user operations (e.g. clear on delete).
@@ -77,6 +89,27 @@ const lsSyncedTs  = (uid = _state.userId) => `cadence_drive_synced_ts_${uid}`;
 const lsHint      = (uid = _state.userId) => `cadence_drive_hint_${uid}`;
 const lsOwner     = (uid = _state.userId) => `cadence_drive_owner_${uid}`;
 const lsFailed    = (uid = _state.userId) => `cadence_drive_sync_failed_${uid}`;
+// ── 2026-08-31 redesign (see reconcilePolicy.ts for the trust model) ──
+/** Drive's server-side file `version` at the last sync point — the exact,
+ *  clock-free answer to "has Drive moved since we last agreed?". */
+const lsSyncedVersion = (uid = _state.userId) => `cadence_drive_synced_version_${uid}`;
+/** Local edit counter and its value at the last sync point — the exact,
+ *  clock-free answer to "has local moved since we last agreed?". */
+const lsEditSeq   = (uid = _state.userId) => `cadence_edit_seq_${uid}`;
+const lsSyncedSeq = (uid = _state.userId) => `cadence_synced_seq_${uid}`;
+
+function getSyncedVersion(): string | null { return localStorage.getItem(lsSyncedVersion()); }
+function getEditSeq(uid = _state.userId): number { return parseInt(localStorage.getItem(lsEditSeq(uid)) ?? '0'); }
+function getSyncedSeq(uid = _state.userId): number { return parseInt(localStorage.getItem(lsSyncedSeq(uid)) ?? '0'); }
+function bumpEditSeq(): void { localStorage.setItem(lsEditSeq(), String(getEditSeq() + 1)); }
+
+/** An explicit user arbitration ("keep local" on the conflict modal) makes the
+ *  version the user just LOOKED AT the new base, so the follow-up push's
+ *  precondition passes over exactly the content that was arbitrated — while a
+ *  third write landing in between still fails it and re-raises the question. */
+export function adoptDriveVersionAsBase(version: string): void {
+  localStorage.setItem(lsSyncedVersion(), version);
+}
 
 // ── Session-level state (shared across users in the same tab) ─────────────────
 
@@ -107,24 +140,21 @@ function hasValidToken(): boolean {
   return !!accessToken && Date.now() < tokenExpiresAt;
 }
 
-// ── Have we actually seen Drive this session? ────────────────────────────────
-// Boot reads Drive so that another device's edits arrive *before* the user
-// starts editing on top of stale data. If that read never happened, pushing
-// local up would overwrite a newer Drive copy we have never looked at — worse
-// than a conflict, because nobody gets asked. So the flag gates the manual
-// sync: read first, push second.
-let reconciled = false;
-let reconcileHook: (() => Promise<boolean>) | null = null;
+let reconcileHook: ((interactive: boolean) => Promise<boolean>) | null = null;
 
 /** Registered by main.ts (which owns the apply/conflict UI this can't import).
  *  Resolves true only when the reconciliation concluded that local is the
- *  version to keep — i.e. the one case where pushing it up is correct. */
-export function setReconcileHook(fn: () => Promise<boolean>): void { reconcileHook = fn; }
+ *  version to keep — i.e. the one case where pushing it up is correct. The
+ *  `interactive` flag propagates down to the token request: a background
+ *  flush (visibilitychange) must never raise a consent window from here. */
+export function setReconcileHook(fn: (interactive: boolean) => Promise<boolean>): void { reconcileHook = fn; }
 
-/** Has Drive actually been read this session? A failed read returns null from
- *  loadFromCloud() just like an empty Drive does, so callers need this to tell
- *  "nothing there" from "never got to look". */
-export function hasSeenDrive(): boolean { return reconciled; }
+/** True while the conflict modal is on screen. Freezes every flush path: the
+ *  user is arbitrating, and a background push (the visibilitychange flush was
+ *  the culprit) would answer in their place — and then be silently reverted by
+ *  their answer, losing whichever side it had pushed. */
+let conflictPending = false;
+export function setConflictPending(b: boolean): void { conflictPending = b; }
 
 /** Drop the buffered upload — its contents no longer match what the user sees
  *  (Drive's version was just applied over it). */
@@ -138,13 +168,13 @@ export function markReconcileFailed(): void {
   if (_state.status === 'connected') setStatus('error');
 }
 
-/** Are there local edits that never made it to Drive? Derived from the two
- *  timestamps rather than in-memory state, so it survives a reload — which is
- *  the whole point: the tab that made the edits may be long gone. */
+/** Are there local edits that never made it to Drive? Derived from the durable
+ *  edit counters rather than in-memory state, so it survives a reload — which
+ *  is the whole point: the tab that made the edits may be long gone. (Counters,
+ *  not the old timestamps: a successful upload used to rewind the local stamp
+ *  over edits made DURING the upload, silently marking them synced.) */
 function hasUnsyncedChanges(uid = _state.userId): boolean {
-  const local  = parseInt(localStorage.getItem(lsLocalTs(uid))  ?? '0');
-  const synced = parseInt(localStorage.getItem(lsSyncedTs(uid)) ?? '0');
-  return local > synced;
+  return getEditSeq(uid) > getSyncedSeq(uid);
 }
 
 /** Call once per user open, before finishBoot. Reinitialises per-user Drive state. */
@@ -157,12 +187,19 @@ export function initDriveForUser(userId: string): void {
   const owner      = localStorage.getItem(lsOwner(userId));
   const tokenOwner = localStorage.getItem(LS_TOKEN_OWNER);
   if (owner && tokenOwner && owner !== tokenOwner) clearStoredToken();
+  // Seed the edit counters for installs predating them (2026-08-31), keeping
+  // the one bit the old timestamp bookkeeping carried: "unsynced edits exist".
+  if (localStorage.getItem(lsEditSeq(userId)) === null) {
+    const local  = parseInt(localStorage.getItem(lsLocalTs(userId))  ?? '0');
+    const synced = parseInt(localStorage.getItem(lsSyncedTs(userId)) ?? '0');
+    localStorage.setItem(lsEditSeq(userId), local > synced ? '1' : '0');
+    localStorage.setItem(lsSyncedSeq(userId), '0');
+  }
   // Reopening must not claim everything is safely in the cloud when it isn't:
   // the connected flag alone says nothing about whether the last edits were
   // ever pushed. Reconstruct the real state from the durable bookkeeping —
   // unsynced edits are 'pending', and 'error' if the last attempt also failed,
   // so a sync that died offline still looks wrong after a restart.
-  reconciled = false;      // a different user's Drive file has certainly not been read
   autoPromptFailed = false; // a fresh boot may prompt again
   const connected = localStorage.getItem(lsConnected(userId)) === '1';
   const unsynced  = connected && hasUnsyncedChanges(userId);
@@ -176,6 +213,7 @@ export function initDriveForUser(userId: string): void {
     retryTimer:      null,
     pendingState:    null,
     flushInProgress: false,
+    firstPendingAt:  null,
   };
 }
 
@@ -191,6 +229,9 @@ export function clearDriveStateForUser(userId: string): void {
   localStorage.removeItem(lsHint(userId));
   localStorage.removeItem(lsOwner(userId));
   localStorage.removeItem(lsFailed(userId));
+  localStorage.removeItem(lsSyncedVersion(userId));
+  localStorage.removeItem(lsEditSeq(userId));
+  localStorage.removeItem(lsSyncedSeq(userId));
 }
 
 export function getDeviceId(): string {
@@ -221,11 +262,27 @@ function getSyncedTimestamp(): number {
   return parseInt(localStorage.getItem(lsSyncedTs()) ?? '0');
 }
 
-/** Record that local and Drive are identical at this content timestamp. */
-export function markSynced(driveTs: number): void {
+/** Record a sync point: local and Drive agreed on this content.
+ *  `version` null = the upload succeeded but its response didn't yield the new
+ *  file version — drop the base so the next flush re-reads before pushing
+ *  (safe direction) instead of trusting a stale one.
+ *  `syncedSeq` = the edit counter FOR THE CONTENT THAT WAS SYNCED — captured
+ *  before an upload starts, so edits made during it stay counted as unsynced. */
+function recordSyncPoint(driveTs: number, version: string | null, syncedSeq: number): void {
   localStorage.setItem(lsSyncedTs(), String(driveTs));
-  localStorage.setItem(lsLocalTs(), String(driveTs));
+  // Never move the local stamp backwards: edits made while an upload was in
+  // flight are newer than the upload's timestamp.
+  localStorage.setItem(lsLocalTs(), String(Math.max(getLocalTimestamp(), driveTs)));
+  localStorage.setItem(lsSyncedSeq(), String(syncedSeq));
+  if (version !== null) localStorage.setItem(lsSyncedVersion(), version);
+  else localStorage.removeItem(lsSyncedVersion());
   localStorage.removeItem(lsFailed());
+}
+
+/** After Drive's copy was applied locally: local now IS the Drive content, so
+ *  nothing is unsynced — the current edit counter becomes the sync point. */
+export function markSyncedAfterApply(driveTs: number, version: string): void {
+  recordSyncPoint(driveTs, version, getEditSeq());
 }
 
 /**
@@ -239,53 +296,34 @@ export function markSynced(driveTs: number): void {
 export function resumePendingSync(state: AppState): void {
   if (!isDriveConnected() || !hasUnsyncedChanges() || _state.pendingState) return;
   _state.pendingState = state;
+  _state.firstPendingAt ??= Date.now();
   setStatus(localStorage.getItem(lsFailed()) === '1' ? 'error' : 'pending');
   if (_state.syncTimer) clearTimeout(_state.syncTimer);
   _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(autoMayPrompt()); }, 5_000);
 }
 
-/**
- * Three-way reconciliation between local state and the Drive copy, using the
- * last-synced timestamp as merge base:
- *  - Drive unchanged since base → keep local ('none'; a later flush uploads it)
- *  - Drive moved, local didn't  → safe fast-forward ('apply')
- *  - both moved                 → real divergence ('conflict', user decides)
- * With no base recorded (fresh or re-connect, pre-base installs), nothing can
- * be decided silently: conflict, unless local was never modified.
- */
-export function reconcileDriveData(
-  driveData: (AppState & { _lastModified?: number; _deviceId?: string }) | null,
-): ReconcileResult {
-  if (!driveData) return { action: 'none' };
-
-  const driveTs     = driveData._lastModified ?? 0;
-  const driveDevice = driveData._deviceId;
-  const { _lastModified: _a, _deviceId: _b, ...clean } = driveData;
-  const state      = clean as AppState;
-  const localTs    = getLocalTimestamp();
-  const syncedTs   = getSyncedTimestamp();
-  const sameDevice = driveDevice === getDeviceId();
-
-  if (syncedTs > 0) {
-    const driveMoved = driveTs > syncedTs;
-    const localMoved = localTs > syncedTs;
-    if (!driveMoved) return { action: 'none' };
-    if (!localMoved) return { action: 'apply', state, driveTs };
-    // Same device writing on both sides means another tab of this browser —
-    // the newer content wins, there is no cross-device divergence to arbitrate.
-    if (sameDevice) return driveTs > localTs ? { action: 'apply', state, driveTs } : { action: 'none' };
-    return { action: 'conflict', state, driveTs };
-  }
-
-  // No merge base: nothing proves how these two copies are related, so nothing
-  // may be decided silently. There used to be a device-id heuristic here
-  // ("Drive's last writer is this device → newer timestamp wins") — removed
-  // 2026-08-31: last writer says nothing about lineage (a reverted Drive
-  // revision is older-stamped yet is exactly what the user is trying to make
-  // win), and this is the branch every reconnect and half-finished connect
-  // lands on. The user decides; only a never-modified local has nothing to say.
-  if (localTs === 0) return { action: 'apply', state, driveTs };
-  return { action: 'conflict', state, driveTs };
+/** Three-way reconciliation between local state and a Drive read. The whole
+ *  decision table lives in reconcilePolicy.ts (pure, exhaustively unit-tested);
+ *  this only feeds it from the durable bookkeeping and applies its verdict. */
+export function reconcileDriveData(read: DriveFileRead): ReconcileResult {
+  const driveTs = read.status === 'ok' ? (read.data._lastModified ?? 0) : 0;
+  const decision = decideReconcile({
+    hasData:       read.status === 'ok',
+    driveTs,
+    driveVersion:  read.version,
+    syncedVersion: getSyncedVersion(),
+    syncedTs:      getSyncedTimestamp(),
+    localTs:       getLocalTimestamp(),
+    editSeq:       getEditSeq(),
+    syncedSeq:     getSyncedSeq(),
+  });
+  // Legacy install proven in sync content-wise: graduate to version-based
+  // tracking on the spot — this is the no-op path virtually every existing
+  // install takes on its first boot after this deploy.
+  if (decision.adoptVersion) localStorage.setItem(lsSyncedVersion(), read.version);
+  if (decision.action === 'none' || read.status !== 'ok') return { action: 'none' };
+  const { _lastModified: _a, _deviceId: _b, ...clean } = read.data;
+  return { action: decision.action, state: clean as AppState, driveTs, version: read.version };
 }
 
 export function onStatusChange(cb: (s: DriveStatus) => void): () => void {
@@ -434,7 +472,7 @@ async function findOrCreateFile(): Promise<{ id: string; created: boolean }> {
   return { id: ((await create.json()) as { id: string }).id, created: true };
 }
 
-export async function connectDrive(): Promise<ConnectResult> {
+export async function connectDrive(allowSharedAccount = false): Promise<ConnectResult> {
   await initDriveClient();
   if (!tokenClient) throw new Error('Drive client not ready');
   setStatus('connecting');
@@ -444,8 +482,8 @@ export async function connectDrive(): Promise<ConnectResult> {
   // stale base would let the timestamp logic silently pick a side (2026-08-31:
   // this is exactly how a user lost hours — see the decision below).
   localStorage.removeItem(lsSyncedTs());
+  localStorage.removeItem(lsSyncedVersion());
   localStorage.removeItem(lsFailed());
-  reconciled = false; // any read from a previous connection is void too
   try {
     const token = await requestToken('consent');
     let googleId = '';
@@ -463,6 +501,24 @@ export async function connectDrive(): Promise<ConnectResult> {
       clearStoredToken();
       setStatus('disconnected');
       return { action: 'wrong_account', existingEmail: localStorage.getItem(lsHint()) ?? '', newEmail: email };
+    }
+
+    // The Drive file is looked up by a constant name within this account, so
+    // two local users syncing with the SAME Google account would bind to the
+    // SAME file and wholesale-overwrite each other. Surface it before binding
+    // anything; the user may still insist (allowSharedAccount).
+    if (!allowSharedAccount && googleId) {
+      const ownerPrefix = 'cadence_drive_owner_';
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)!;
+        if (!key.startsWith(ownerPrefix)) continue;
+        const uid = key.slice(ownerPrefix.length);
+        if (uid === _state.userId) continue;
+        if (localStorage.getItem(key) === googleId && localStorage.getItem(lsConnected(uid)) === '1') {
+          setStatus('disconnected');
+          return { action: 'shared_account', email };
+        }
+      }
     }
 
     if (email)    localStorage.setItem(lsHint(), email);
@@ -483,30 +539,26 @@ export async function connectDrive(): Promise<ConnectResult> {
     // local is the only copy and the connect flow pushes it.
     if (created) { setStatus('connected'); return { action: 'none' }; }
 
-    const driveData = await loadFromCloud(true);
-    // The file EXISTS but null came back. hasSeenDrive() splits the two causes:
-    // the read failed (never got to look — abort, pushing would erase data
-    // nobody has seen) vs the body was empty/unparseable (looked, nothing
-    // usable there — an empty husk from an interrupted first connect; local
-    // may push, Drive's revision history keeps the husk anyway).
-    if (driveData === null && !hasSeenDrive()) throw new Error('drive_unreadable');
+    // A FOUND file must be read; readDriveFile throws if it can't be (pushing
+    // over data nobody has seen would erase it), and reports an unparseable
+    // husk as 'empty' (looked, nothing usable — local may push, Drive's
+    // revision history keeps the husk anyway).
+    const file = await readDriveFile(true);
     setStatus('connected');
     // Deliberately NOT reconcileDriveData: connecting must behave as if this
-    // device had never been connected. Across a disconnect gap, no timestamp
-    // comparison and no device-id heuristic holds — "Drive's last writer is
-    // this device" says nothing when the file may since have been reverted to
-    // an older revision (which then LOSES to any local timestamp and can never
-    // be made to win), and "local is newer" says nothing about which side the
-    // user wants. So: if both sides hold anything, it is always the user's
-    // call — force the conflict modal. The only two cases decided here are the
-    // ones with genuinely nothing to arbitrate: an empty Drive (keep local,
-    // the connect flow pushes it) and a never-modified local (take Drive's).
-    if (!driveData) return { action: 'none' };
-    const { _lastModified, _deviceId: _dev, ...clean } = driveData;
+    // device had never been connected. Across a disconnect gap, no bookkeeping
+    // comparison holds — the file may since have been reverted to an older
+    // revision, which is exactly what the user may be trying to make win. So:
+    // if both sides hold anything, it is always the user's call — force the
+    // conflict modal. The only two cases decided here are the ones with
+    // genuinely nothing to arbitrate: an empty Drive (keep local, the connect
+    // flow pushes it) and a never-modified local (take Drive's).
+    if (file.status === 'empty') return { action: 'none' };
+    const { _lastModified, _deviceId: _dev, ...clean } = file.data;
     const driveTs = _lastModified ?? 0;
     const state = clean as AppState;
-    if (getLocalTimestamp() === 0) return { action: 'apply', state, driveTs };
-    return { action: 'conflict', state, driveTs };
+    if (getLocalTimestamp() === 0 && getEditSeq() === 0) return { action: 'apply', state, driveTs, version: file.version };
+    return { action: 'conflict', state, driveTs, version: file.version };
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -527,40 +579,56 @@ export function disconnectDrive(): void {
   localStorage.removeItem(lsFileId());
   localStorage.removeItem(lsConnected());
   localStorage.removeItem(lsHint());
-  localStorage.removeItem(lsSyncedTs()); // merge base is meaningless once detached
+  localStorage.removeItem(lsSyncedTs());      // merge bases are void once detached:
+  localStorage.removeItem(lsSyncedVersion()); // the file may be reverted/replaced meanwhile
   localStorage.removeItem(lsFailed());
   setStatus('disconnected');
 }
 
 async function flushSync(interactive = false): Promise<void> {
+  // The user is arbitrating a conflict: NOTHING may push. A background flush
+  // here used to answer in their place — and then be silently reverted by
+  // their answer, losing whichever side it had pushed.
+  if (conflictPending) return;
   if (!_state.fileId || !_state.pendingState || _state.flushInProgress) return;
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
   _state.flushInProgress = true;
+  // Consumed only once the push is committed to — restored by the catch if the
+  // upload itself fails, untouched when we bail out before it.
+  let consumed: AppState | null = null;
   try {
-    // Never push over a Drive copy this session has never read: if boot failed
-    // to read it, another device's newer data would vanish without anyone being
-    // asked. Applies to the automatic paths too, not just the button — they are
-    // now equally able to obtain a token, so equally able to do the damage.
-    if (!reconciled && reconcileHook && interactive && navigator.onLine) {
-      let localWins = false;
-      try { localWins = await reconcileHook(); } catch { /* still unread */ }
-      // Only "local is the version to keep" may proceed. If Drive's copy was
-      // applied, what is buffered is no longer what the user sees; if the
-      // conflict modal went up, they are mid-decision and uploading either way
-      // would answer for them.
+    // ── Precondition: never overwrite a Drive nobody has looked at. ──
+    // A push is a WHOLE-FILE replacement, so it is only safe over content we
+    // can prove is our own last sync point: Drive's server-side version must
+    // equal the recorded base. Anything else — no base (fresh connect,
+    // pre-redesign install), or a version moved by another device/tab/session,
+    // however long ago this session last looked — goes through a full
+    // reconciliation first, and only "local is the version to keep" may
+    // proceed to push. This runs on EVERY flush: a session's age no longer
+    // buys it the right to overwrite blind (a tab left open overnight was
+    // exactly how a user lost hours of work).
+    const base = getSyncedVersion();
+    const mustReconcile = base === null || (await getDriveVersion(interactive)) !== base;
+    if (mustReconcile) {
+      if (!reconcileHook) return;        // registered at boot; nothing sane to do without it
+      const localWins = await reconcileHook(interactive);
+      // 'apply' replaced what the buffer holds; 'conflict' means the user is
+      // mid-decision (conflictPending now blocks re-entry) — either way the
+      // buffered state must not be pushed.
       if (!localWins) return;
+      if (!_state.pendingState) return;  // the reconciliation may have cleared it
     }
-  } finally {
-    _state.flushInProgress = false;
-  }
-  if (!_state.pendingState) return;      // the reconciliation may have cleared it
-  _state.flushInProgress = true;
-  const state = _state.pendingState;
-  _state.pendingState = null;
-  setStatus('syncing');
-  try {
+
+    consumed = _state.pendingState;
+    if (!consumed) return;
+    const seq = getEditSeq();            // counter for the content being pushed, captured NOW:
+    _state.pendingState = null;          // edits landing during the upload stay counted as unsynced
+    setStatus('syncing');
+
     const ts = Date.now();
-    const { id: _id, ...stateWithoutId } = state;
+    const { id: _id, ...stateWithoutId } = consumed;
+    // _lastModified/_deviceId still stamped: clients running the pre-redesign
+    // code read them, and the transitional reconcile path does too.
     const payload = JSON.stringify({ ...stateWithoutId, _lastModified: ts, _deviceId: getDeviceId() });
     const blob = new Blob([payload], { type: 'application/json' });
     const meta = new Blob(
@@ -570,16 +638,22 @@ async function flushSync(interactive = false): Promise<void> {
     const form = new FormData();
     form.append('metadata', meta);
     form.append('file', blob);
-    await driveRequest(
-      `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=multipart`,
+    const resp = await driveRequest(
+      `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=multipart&fields=version`,
       { method: 'PATCH', body: form },
       interactive,
     );
-    // Successful upload: local and Drive are identical again — new merge base.
-    markSynced(ts);
+    if (!resp.ok) throw new Error(`upload failed: ${resp.status}`);
+    // The response carries the file's post-write version — the next flush's
+    // precondition. If it can't be parsed, record no base: the next flush then
+    // re-reads before pushing (safe), instead of trusting a stale one.
+    let version: string | null = null;
+    try { version = ((await resp.json()) as { version?: string }).version ?? null; } catch { /* keep null */ }
+    recordSyncPoint(ts, version, seq);
+    _state.firstPendingAt = _state.pendingState ? Date.now() : null;
     setStatus(_state.pendingState ? 'pending' : 'connected');
   } catch (e) {
-    _state.pendingState = _state.pendingState ?? state;
+    if (consumed && !_state.pendingState) _state.pendingState = consumed;
     const msg = e instanceof Error ? e.message : String(e);
     if (msg === NEEDS_AUTH || msg.startsWith(AUTH_FAILED)) {
       // Authorisation, not a sync failure: the data is safe locally, we just
@@ -591,7 +665,7 @@ async function flushSync(interactive = false): Promise<void> {
     }
     // Persisted so the failure outlives the tab — otherwise a reload would
     // downgrade a known-failed sync to a merely-pending one (or, before the
-    // status was derived from the timestamps at all, to a reassuring green).
+    // status was derived from the bookkeeping at all, to a reassuring green).
     localStorage.setItem(lsFailed(), '1');
     setStatus('error');
     _state.retryTimer = setTimeout(() => { _state.retryTimer = null; void flushSync(autoMayPrompt()); }, 30_000);
@@ -606,13 +680,23 @@ async function flushSync(interactive = false): Promise<void> {
  *  every 30 seconds. */
 const autoMayPrompt = () => !autoPromptFailed;
 
+// TODO(2026-08-31): two tabs of the same browser still diverge silently until
+// one of them pushes — the divergence now SURFACES as a conflict instead of
+// being silently "resolved" by wall-clock order, but it still happens. A
+// BroadcastChannel "state changed — reload from IndexedDB" between tabs would
+// remove it at the source. Deliberately postponed.
 export function syncToCloud(state: AppState): void {
-  localStorage.setItem(lsLocalTs(), String(Date.now()));
+  const now = Date.now();
+  localStorage.setItem(lsLocalTs(), String(now));
+  bumpEditSeq();
   if (!isDriveConnected()) return;
   _state.pendingState = state;
+  _state.firstPendingAt ??= now;
   setStatus('pending');
   if (_state.syncTimer) clearTimeout(_state.syncTimer);
-  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(autoMayPrompt()); }, 30_000);
+  // Debounced — but never past MAX_PENDING_MS after the oldest unpushed edit.
+  const delay = Math.max(0, Math.min(SYNC_DEBOUNCE_MS, _state.firstPendingAt + MAX_PENDING_MS - now));
+  _state.syncTimer = setTimeout(() => { _state.syncTimer = null; void flushSync(autoMayPrompt()); }, delay);
 }
 
 /** The header's cloud button. A click clears any earlier refusal: the user is
@@ -633,18 +717,45 @@ export function initDriveVisibilitySync(): void {
   });
 }
 
-/** `interactive` at boot: page load is the one moment Google's flow tolerates a
- *  token request without a click, and it is where the whole reconciliation
- *  hangs. Elsewhere (a background refresh) leave it false. */
-export async function loadFromCloud(interactive = false): Promise<(AppState & { _lastModified?: number; _deviceId?: string }) | null> {
-  if (!_state.fileId) return null;
-  try {
-    const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${_state.fileId}?alt=media`, {}, interactive);
-    if (!resp.ok) return null;
-    // We have now genuinely seen what Drive holds — the manual sync may push.
-    reconciled = true;
-    return await resp.json() as AppState & { _lastModified?: number; _deviceId?: string };
-  } catch {
-    return null;
-  }
+export type DriveFileRead =
+  | { status: 'ok';    data: AppState & { _lastModified?: number; _deviceId?: string }; version: string }
+  // The file exists but holds nothing parseable — the empty husk of an
+  // interrupted first connect. Distinct from a FAILED read, which throws:
+  // "looked and found nothing usable" may let local win; "never got to look"
+  // must never.
+  | { status: 'empty'; version: string };
+
+/** Drive's server-side `version` for our file — a monotonic write counter,
+ *  the clock-free ground truth for "has anyone written since we last agreed?". */
+async function getDriveVersion(interactive: boolean): Promise<string> {
+  if (!_state.fileId) throw new Error('drive_unreadable');
+  const resp = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${_state.fileId}?fields=version`, {}, interactive
+  );
+  if (!resp.ok) throw new Error(`drive_unreadable: version ${resp.status}`);
+  const version = ((await resp.json()) as { version?: string }).version;
+  if (!version) throw new Error('drive_unreadable: no version');
+  return version;
+}
+
+/** The one read primitive: version + content, or a throw. `interactive` at
+ *  boot: page load is the one moment Google's flow tolerates a token request
+ *  without a click. Elsewhere (a background flush) leave it false.
+ *
+ *  Version is fetched BEFORE the content on purpose: if a write lands between
+ *  the two requests, we hold content NEWER than the recorded version, and the
+ *  next precondition check simply re-reads — the safe direction. The reverse
+ *  order could pair a new version with old content and mask a write. */
+export async function readDriveFile(interactive = false): Promise<DriveFileRead> {
+  if (!_state.fileId) throw new Error('drive_unreadable');
+  const version = await getDriveVersion(interactive);
+  const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files/${_state.fileId}?alt=media`, {}, interactive);
+  if (!resp.ok) throw new Error(`drive_unreadable: content ${resp.status}`);
+  let data: unknown = null;
+  // A truncated/corrupt body is 'empty' (looked, nothing usable), never
+  // silently conflated with a FAILED read — those throw above, before the
+  // parse, and keep their "never got to look" meaning.
+  try { data = await resp.json(); } catch { /* husk or corrupt — 'empty' below */ }
+  if (!data || typeof data !== 'object') return { status: 'empty', version };
+  return { status: 'ok', data: data as AppState & { _lastModified?: number; _deviceId?: string }, version };
 }

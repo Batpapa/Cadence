@@ -21,6 +21,14 @@ export function exportBackup(user: AppState): void {
   download(JSON.stringify(data, null, 2), `cadence-backup-${toDateStr(new Date())}.cdb`);
 }
 
+/** Same format as exportBackup, for a stored safety-net snapshot: restoring
+ *  one goes through the ordinary Settings → Backup → Import path, so no
+ *  second restore machinery exists to drift out of sync with the first. */
+export function exportSnapshotBackup(state: AppState, ts: number): void {
+  const { id: _id, ...data } = state as AppState & { id?: string };
+  download(JSON.stringify(data, null, 2), `cadence-snapshot-${toDateStr(new Date(ts))}.cdb`);
+}
+
 /** Serializes cards to CDC JSON string without downloading. */
 export function cardPackageText(cards: Card[]): string {
   return JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards }, null, 2);

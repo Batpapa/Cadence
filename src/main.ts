@@ -7,7 +7,8 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, loadFromCloud, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed, hasSeenDrive, discardPendingSync } from './services/driveService';
+import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed, discardPendingSync } from './services/driveService';
+import { clearSnapshotsForUser } from './services/snapshotService';
 import { initSessionDbForUser, dumpUserSessionDatabase, userDbName } from './session/db';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
@@ -53,7 +54,7 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
   mountUserSelector(root, users,
     (id)   => openUser(id, root),
     (name) => createAndOpenUser(name, root),
-    async (id) => { clearDriveStateForUser(id); removeUserFromOrder(id); await deleteUser(id); await showUserSelector(root); },
+    async (id) => { clearDriveStateForUser(id); await clearSnapshotsForUser(id); removeUserFromOrder(id); await deleteUser(id); await showUserSelector(root); },
   );
 }
 
@@ -281,24 +282,22 @@ function downloadJson(data: unknown, filename: string): void {
  * saw it"; the interactive flag is on because both callers are moments where a
  * consent window is allowed (page load, or a click).
  */
-async function reconcileWithDrive(): Promise<boolean> {
+async function reconcileWithDrive(interactive = true): Promise<boolean> {
   // initDriveClient() rejects if Google's script never arrives, so it belongs
   // inside the caller's try: on a flaky connection it is the step that fails.
   await initDriveClient();
-  const data = await loadFromCloud(true);
-  // loadFromCloud returns null both for "Drive is empty" and for "the read
-  // failed", so ask explicitly which one happened — treating a failure as an
-  // empty Drive is how local silently becomes the winner.
-  if (!hasSeenDrive()) throw new Error('drive_unreadable');
-  const result = reconcileDriveData(data);
+  // Throws when the file can't be read — treating a failed read as an empty
+  // Drive is how local silently becomes the winner over unread data.
+  const file = await readDriveFile(interactive);
+  const result = reconcileDriveData(file);
   if (result.action === 'apply') {
-    await applyDriveState(result.state, result.driveTs);
+    await applyDriveState(result.state, result.driveTs, result.version);
     // Local was just replaced; anything buffered for upload predates that.
     discardPendingSync();
     return false;
   }
   if (result.action === 'conflict') {
-    showDriveConflictModal(result.state, result.driveTs);
+    showDriveConflictModal(result.state, result.driveTs, result.version);
     return false;                       // the user is choosing; don't pre-empt them
   }
   // 'none' means local is the version to keep. If it also holds edits that
@@ -317,11 +316,11 @@ function finishBoot(root: HTMLElement): void {
   // isDriveConnected() is a plain localStorage read — checking it first avoids
   // ever loading the Google Identity script (and its request to Google) for the
   // majority of sessions that have never connected Drive.
+  // Registered UNCONDITIONALLY — not just when Drive is already connected:
+  // every flush now runs a version precondition, and a first-ever connect made
+  // in this same session needs the hook for its own first push.
+  setReconcileHook(reconcileWithDrive);
   if (isDriveConnected()) {
-    // Registered so the cloud button can run the same reconciliation later if
-    // this one fails: pushing local without ever having read Drive is how
-    // another device's newer data disappears unnoticed.
-    setReconcileHook(reconcileWithDrive);
     void (async () => {
       try {
         // Known-offline needs no round trip: waiting out the Drive client's
