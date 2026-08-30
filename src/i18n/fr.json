@@ -384,7 +384,7 @@
   "settings.sync.inAppBrowserTitle": "La connexion Google n'a pas fonctionné",
   "settings.sync.inAppBrowserError": "Ça ressemble à un navigateur intégré à une autre appli (WhatsApp, Instagram…), qui bloque souvent l'écran de connexion Google. Essaie d'ouvrir cette page dans un navigateur autonome — sur la plupart des téléphones, cherche un menu \"⋮\" ou une option \"Ouvrir dans le navigateur\" dans la barre de l'appli.",
   "settings.sync.conflict.title": "Conflit de données",
-  "settings.sync.conflict.message": "Le Drive contient des données d'un autre appareil. Les données locales et celles du Drive ne peuvent pas être fusionnées automatiquement — vous devez choisir l'une des deux.",
+  "settings.sync.conflict.message": "Les données locales et celles du Drive ont divergé. Elles ne peuvent pas être fusionnées automatiquement — vous devez choisir l'une des deux.",
   "settings.sync.conflict.keepLocal": "Garder local",
   "settings.sync.conflict.useDrive": "Utiliser Drive",
   "settings.sync.wrongAccount.title": "Mauvais compte Google",

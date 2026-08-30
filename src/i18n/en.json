@@ -384,7 +384,7 @@
   "settings.sync.inAppBrowserTitle": "Google sign-in didn't work",
   "settings.sync.inAppBrowserError": "This looks like it's running inside another app's built-in browser (WhatsApp, Instagram…), which commonly blocks Google's sign-in screen. Try opening this page in a standalone browser instead — on most phones, look for a \"⋮\" or \"Open in browser\" option in the in-app browser's menu.",
   "settings.sync.conflict.title": "Data conflict",
-  "settings.sync.conflict.message": "Drive contains data from another device. Your local data and the Drive data cannot be merged automatically — you must choose one.",
+  "settings.sync.conflict.message": "Your local data and the data on Drive have diverged. They cannot be merged automatically — you must choose one.",
   "settings.sync.conflict.keepLocal": "Keep local",
   "settings.sync.conflict.useDrive": "Use Drive",
   "settings.sync.wrongAccount.title": "Wrong Google account",
