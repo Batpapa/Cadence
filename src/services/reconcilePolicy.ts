@@ -61,6 +61,17 @@ export function decideReconcile(i: ReconcileInputs): ReconcileDecision {
     // ── Version-based (normal regime) ──
     const driveMoved = i.driveVersion !== i.syncedVersion;
     if (!driveMoved) return { action: 'none', adoptVersion: false };
+    // Phantom bump: Drive's `version` reflects EVERY server-side change, not
+    // just writes ("even those not visible to the user" — indexing and other
+    // post-processing), so it can advance right after our own upload with
+    // nobody having written anything. The content stamp is the ground truth:
+    // if the file still carries exactly the `_lastModified` we recorded at our
+    // last sync point, no one wrote — adopt the new version and move on.
+    // (2026-08-31: without this, a single device hit the conflict modal on its
+    // SECOND push — precondition mismatch → reconcile → "both moved".)
+    if (i.hasData && i.driveTs > 0 && i.driveTs === i.syncedTs) {
+      return { action: 'none', adoptVersion: true };
+    }
     if (!localMoved) return { action: 'apply', adoptVersion: false };
     return { action: 'conflict', adoptVersion: false };
   }
