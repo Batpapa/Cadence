@@ -630,17 +630,9 @@ async function flushSync(interactive = false): Promise<void> {
     // _lastModified/_deviceId still stamped: clients running the pre-redesign
     // code read them, and the transitional reconcile path does too.
     const payload = JSON.stringify({ ...stateWithoutId, _lastModified: ts, _deviceId: getDeviceId() });
-    const blob = new Blob([payload], { type: 'application/json' });
-    const meta = new Blob(
-      [JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })],
-      { type: 'application/json' }
-    );
-    const form = new FormData();
-    form.append('metadata', meta);
-    form.append('file', blob);
     const resp = await driveRequest(
-      `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=multipart&fields=version`,
-      { method: 'PATCH', body: form },
+      `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=media&fields=version`,
+      { method: 'PATCH', body: payload, headers: { 'Content-Type': 'application/json' } },
       interactive,
     );
     if (!resp.ok) throw new Error(`upload failed: ${resp.status}`);
@@ -648,7 +640,10 @@ async function flushSync(interactive = false): Promise<void> {
     // precondition. If it can't be parsed, record no base: the next flush then
     // re-reads before pushing (safe), instead of trusting a stale one.
     let version: string | null = null;
-    try { version = ((await resp.json()) as { version?: string }).version ?? null; } catch { /* keep null */ }
+    try {
+      const v = ((await resp.json()) as { version?: string | number }).version;
+      version = v != null ? String(v) : null;
+    } catch { /* keep null */ }
     recordSyncPoint(ts, version, seq);
     _state.firstPendingAt = _state.pendingState ? Date.now() : null;
     setStatus(_state.pendingState ? 'pending' : 'connected');
@@ -733,9 +728,9 @@ async function getDriveVersion(interactive: boolean): Promise<string> {
     `https://www.googleapis.com/drive/v3/files/${_state.fileId}?fields=version`, {}, interactive
   );
   if (!resp.ok) throw new Error(`drive_unreadable: version ${resp.status}`);
-  const version = ((await resp.json()) as { version?: string }).version;
-  if (!version) throw new Error('drive_unreadable: no version');
-  return version;
+  const version = ((await resp.json()) as { version?: string | number }).version;
+  if (version == null || version === '') throw new Error('drive_unreadable: no version');
+  return String(version);
 }
 
 /** The one read primitive: version + content, or a throw. `interactive` at

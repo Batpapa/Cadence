@@ -25,12 +25,25 @@ describe('decideReconcile — version regime', () => {
     expect(decideReconcile(base({ editSeq: 5 })).action).toBe('none');
   });
 
-  it('only Drive moved → apply', () => {
-    expect(decideReconcile(base({ driveVersion: '9' })).action).toBe('apply');
+  it('only Drive moved (real content change) → apply', () => {
+    expect(decideReconcile(base({ driveVersion: '9', driveTs: 2000 })).action).toBe('apply');
   });
 
-  it('both moved → conflict, even with identical timestamps', () => {
-    expect(decideReconcile(base({ driveVersion: '9', editSeq: 5 })).action).toBe('conflict');
+  it('both moved → conflict', () => {
+    expect(decideReconcile(base({ driveVersion: '9', driveTs: 2000, editSeq: 5 })).action).toBe('conflict');
+  });
+
+  it('phantom version bump (server-side churn, content untouched) → none + adopt', () => {
+    // Drive's version advanced but the file still carries exactly the
+    // _lastModified we recorded — nobody wrote. This was the single-device
+    // "conflict modal on my second push" bug (2026-08-31).
+    expect(decideReconcile(base({ driveVersion: '9' , driveTs: 1000 })))
+      .toEqual({ action: 'none', adoptVersion: true });
+  });
+
+  it('phantom bump with local edits pending → still none + adopt (push may proceed)', () => {
+    expect(decideReconcile(base({ driveVersion: '9', driveTs: 1000, editSeq: 5 })))
+      .toEqual({ action: 'none', adoptVersion: true });
   });
 
   it('a REVERTED Drive file (older content, new version) still registers as moved', () => {
@@ -42,7 +55,7 @@ describe('decideReconcile — version regime', () => {
 
   it('clock skew is irrelevant: local edits counted, not dated', () => {
     // Device clock rewound far before the sync point — editSeq still says moved.
-    const d = decideReconcile(base({ driveVersion: '9', localTs: 1, editSeq: 5 }));
+    const d = decideReconcile(base({ driveVersion: '9', driveTs: 2000, localTs: 1, editSeq: 5 }));
     expect(d.action).toBe('conflict');
   });
 });
