@@ -250,8 +250,8 @@ export function resumePendingSync(state: AppState): void {
  *  - Drive unchanged since base → keep local ('none'; a later flush uploads it)
  *  - Drive moved, local didn't  → safe fast-forward ('apply')
  *  - both moved                 → real divergence ('conflict', user decides)
- * Falls back to the device-id heuristic when no base was recorded yet
- * (pre-existing installs, fresh connects).
+ * With no base recorded (fresh or re-connect, pre-base installs), nothing can
+ * be decided silently: conflict, unless local was never modified.
  */
 export function reconcileDriveData(
   driveData: (AppState & { _lastModified?: number; _deviceId?: string }) | null,
@@ -277,10 +277,13 @@ export function reconcileDriveData(
     return { action: 'conflict', state, driveTs };
   }
 
-  // No merge base yet: legacy heuristic (deviceId + timestamps).
-  if (sameDevice) {
-    return driveTs > localTs ? { action: 'apply', state, driveTs } : { action: 'none' };
-  }
+  // No merge base: nothing proves how these two copies are related, so nothing
+  // may be decided silently. There used to be a device-id heuristic here
+  // ("Drive's last writer is this device → newer timestamp wins") — removed
+  // 2026-08-31: last writer says nothing about lineage (a reverted Drive
+  // revision is older-stamped yet is exactly what the user is trying to make
+  // win), and this is the branch every reconnect and half-finished connect
+  // lands on. The user decides; only a never-modified local has nothing to say.
   if (localTs === 0) return { action: 'apply', state, driveTs };
   return { action: 'conflict', state, driveTs };
 }
@@ -411,26 +414,38 @@ async function driveRequest(url: string, options: RequestInit = {}, interactive 
   return resp;
 }
 
-/** Only ever runs from connectDrive(), i.e. behind a button — interactive. */
-async function findOrCreateFile(): Promise<string> {
+/** Only ever runs from connectDrive(), i.e. behind a button — interactive.
+ *  `created` matters: a file we just created is empty BY CONSTRUCTION, so
+ *  local may push without reading it — whereas a *found* file holds someone's
+ *  data, and failing to read it must abort the connect, never default to
+ *  "push local over it". */
+async function findOrCreateFile(): Promise<{ id: string; created: boolean }> {
   const q = encodeURIComponent(`name='${FILE_NAME}' and trashed=false`);
   const search = await driveRequest(
     `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`, {}, true
   );
   const data = await search.json() as { files?: Array<{ id: string }> };
-  if (data.files?.length) return data.files[0]!.id;
+  if (data.files?.length) return { id: data.files[0]!.id, created: false };
   const create = await driveRequest('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' }),
   }, true);
-  return ((await create.json()) as { id: string }).id;
+  return { id: ((await create.json()) as { id: string }).id, created: true };
 }
 
 export async function connectDrive(): Promise<ConnectResult> {
   await initDriveClient();
   if (!tokenClient) throw new Error('Drive client not ready');
   setStatus('connecting');
+  // A (re)connect starts from zero: whatever merge base or failure flag might
+  // linger from a previous connection is void — the Drive file may have been
+  // reverted, replaced, or written by anything while we were detached, and a
+  // stale base would let the timestamp logic silently pick a side (2026-08-31:
+  // this is exactly how a user lost hours — see the decision below).
+  localStorage.removeItem(lsSyncedTs());
+  localStorage.removeItem(lsFailed());
+  reconciled = false; // any read from a previous connection is void too
   try {
     const token = await requestToken('consent');
     let googleId = '';
@@ -459,13 +474,39 @@ export async function connectDrive(): Promise<ConnectResult> {
       localStorage.setItem(LS_TOKEN_OWNER, googleId);
     }
 
-    _state.fileId = await findOrCreateFile();
+    const { id: fileId, created } = await findOrCreateFile();
+    _state.fileId = fileId;
     localStorage.setItem(lsFileId(), _state.fileId);
     localStorage.setItem(lsConnected(), '1');
 
+    // Just-created file: empty by construction, nothing to read or arbitrate —
+    // local is the only copy and the connect flow pushes it.
+    if (created) { setStatus('connected'); return { action: 'none' }; }
+
     const driveData = await loadFromCloud(true);
+    // The file EXISTS but null came back. hasSeenDrive() splits the two causes:
+    // the read failed (never got to look — abort, pushing would erase data
+    // nobody has seen) vs the body was empty/unparseable (looked, nothing
+    // usable there — an empty husk from an interrupted first connect; local
+    // may push, Drive's revision history keeps the husk anyway).
+    if (driveData === null && !hasSeenDrive()) throw new Error('drive_unreadable');
     setStatus('connected');
-    return reconcileDriveData(driveData);
+    // Deliberately NOT reconcileDriveData: connecting must behave as if this
+    // device had never been connected. Across a disconnect gap, no timestamp
+    // comparison and no device-id heuristic holds — "Drive's last writer is
+    // this device" says nothing when the file may since have been reverted to
+    // an older revision (which then LOSES to any local timestamp and can never
+    // be made to win), and "local is newer" says nothing about which side the
+    // user wants. So: if both sides hold anything, it is always the user's
+    // call — force the conflict modal. The only two cases decided here are the
+    // ones with genuinely nothing to arbitrate: an empty Drive (keep local,
+    // the connect flow pushes it) and a never-modified local (take Drive's).
+    if (!driveData) return { action: 'none' };
+    const { _lastModified, _deviceId: _dev, ...clean } = driveData;
+    const driveTs = _lastModified ?? 0;
+    const state = clean as AppState;
+    if (getLocalTimestamp() === 0) return { action: 'apply', state, driveTs };
+    return { action: 'conflict', state, driveTs };
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
