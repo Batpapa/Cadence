@@ -9,7 +9,8 @@ import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW }
 import { getTheme, setTheme, type Theme } from '../services/themeService';
 import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { applyExternalData } from '../services/migration';
-import { exportBackup, parseImport } from '../services/importExport';
+import { exportBackup, exportSnapshotBackup, parseImport } from '../services/importExport';
+import { listSnapshots, getSnapshotState, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
 import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
@@ -277,16 +278,31 @@ function DriveRow() {
   // render and this effect would otherwise never reach the component.
   useEffect(() => { setStatus(getDriveStatus()); return onStatusChange(setStatus); }, []);
 
-  const handleConnect = async () => {
+  const handleConnect = async (allowSharedAccount = false) => {
     try {
-      const result = await connectDrive();
+      const result = await connectDrive(allowSharedAccount);
       if (result.action === 'apply') {
-        await applyDriveState(result.state, result.driveTs);
+        await applyDriveState(result.state, result.driveTs, result.version);
       } else if (result.action === 'conflict') {
-        showDriveConflictModal(result.state, result.driveTs);
+        showDriveConflictModal(result.state, result.driveTs, result.version);
       } else if (result.action === 'none') {
         syncToCloud(getContext().user);
         void manualSync();
+      } else if (result.action === 'shared_account') {
+        // Same Google account already syncs another local user on this device
+        // — both would write the same Drive file over each other.
+        const body = document.createElement('p');
+        body.className = 'text-sm text-muted leading-relaxed';
+        body.textContent = t('settings.sync.sharedAccount.message');
+        showModal(t('settings.sync.sharedAccount.title'), body, [
+          { label: t('common.cancel'), onClick: closeModal },
+          {
+            label: t('settings.sync.sharedAccount.connectAnyway'), danger: true, onClick: async () => {
+              closeModal();
+              await handleConnect(true);
+            },
+          },
+        ], false);
       } else if (result.action === 'wrong_account') {
         const body = document.createElement('p');
         body.className = 'text-sm text-muted leading-relaxed';
@@ -354,6 +370,36 @@ function DriveRow() {
 
 const EXPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 const IMPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+
+/** Safety-net snapshots (the side set aside by a sync decision), downloadable
+ *  as ordinary .cdb backups so restoring one reuses the battle-tested
+ *  Backup → Import path. Renders nothing until a snapshot exists. */
+function SnapshotsRow({ userId }: { userId: string }) {
+  const [snaps, setSnaps] = useState<SnapshotMeta[]>([]);
+  useEffect(() => { void listSnapshots(userId).then(setSnaps); }, [userId]);
+  if (snaps.length === 0) return null;
+  return (
+    <>
+      <Sep />
+      <Row label={t('settings.snapshots')} hint={t('settings.snapshotsHint')}>
+        <div class="flex flex-col items-end gap-1 shrink-0">
+          {snaps.map(s => (
+            <button
+              key={s.key}
+              class="btn-ghost text-xs whitespace-nowrap"
+              title={`${t('settings.sync.conflict.stats', { cards: s.cards, reviews: s.reviews })} — ${t('settings.snapshots.download')}`}
+              onClick={() => {
+                void getSnapshotState(s.key).then(state => { if (state) exportSnapshotBackup(state, s.ts); });
+              }}
+            >
+              {new Date(s.ts).toLocaleString()} · {t(`settings.snapshots.reason.${s.reason}`)}
+            </button>
+          ))}
+        </div>
+      </Row>
+    </>
+  );
+}
 
 function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: () => void }) {
   const user = appState.value;
@@ -427,6 +473,8 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
           </label>
         </div>
       </Row>
+
+      <SnapshotsRow userId={user.id} />
 
       <Sep />
       <Row label={t('settings.reset')} hint={t('settings.resetHint')}>
