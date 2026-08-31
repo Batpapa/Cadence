@@ -9,7 +9,8 @@ import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
 import { clearSnapshotsForUser } from './services/snapshotService';
-import { initSessionDbForUser, dumpUserSessionDatabase, userDbName } from './session/db';
+import { initSessionDbForUser, collectUserSessionAudio, userDbName } from './session/db';
+import { buildZip, audioExtension } from './services/zip';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
 import { applyZoom } from './services/zoomService';
@@ -198,23 +199,23 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
       const btn = document.createElement('button');
       btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
       btn.innerHTML = `${EXPORT_SVG}Data`;
-      btn.onclick = () => downloadJson(user ?? { id }, `cadence-user-${safeName}-${id}.json`);
+      // Downloaded as .cdb, id stripped — the exact shape Settings → Backup →
+      // Import accepts, so recovery-to-restore is: download here, import there.
+      btn.onclick = () => {
+        const { id: _id, ...data } = (user ?? { id }) as Record<string, unknown> & { id?: string };
+        downloadJson(data, `cadence-user-${safeName}-${id}.cdb`);
+      };
       btns.appendChild(btn);
 
       // `?.has` may be true, false, or unknown (Safari lacks databases()) —
       // when unknown, still offer the button and let the click itself
-      // discover there's nothing there (dumpUserSessionDatabase returns null).
+      // discover there's nothing there (collectUserSessionAudio returns null).
       if (sessionDbNames === null || sessionDbNames.has(userDbName(id))) {
-        const sessionsBtn = document.createElement('button');
-        sessionsBtn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
-        sessionsBtn.innerHTML = `${EXPORT_SVG}Sessions`;
-        sessionsBtn.onclick = () => {
-          void dumpUserSessionDatabase(id).then(dump => {
-            if (!dump) { alert('No session data found for this user.'); return; }
-            downloadJson(dump, `cadence-sessions-${safeName}-${id}.json`);
-          });
-        };
-        btns.appendChild(sessionsBtn);
+        const audioBtn = document.createElement('button');
+        audioBtn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
+        audioBtn.innerHTML = `${EXPORT_SVG}Audio`;
+        audioBtn.onclick = () => { void downloadSessionAudioZip(id, safeName, user); };
+        btns.appendChild(audioBtn);
       }
 
       row.append(idTag, nameTag, btns);
@@ -223,6 +224,51 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
   } catch (listErr) {
     console.error('Recovery: failed to list users:', listErr);
     usersEl.innerHTML = `<p class="text-xs text-muted text-center">Couldn't list individual users — try "Download full raw dump" instead.</p>`;
+  }
+}
+
+/** Every audio this user has on this device, zipped: finalized sessions,
+ *  imports, and crash-orphaned recordings reassembled from their chunks. A
+ *  raw DB dump was useless here — Blobs JSON-serialize to {} — where actual
+ *  files play anywhere. Session names come from AppState metadata when
+ *  available, from the local draft otherwise, from the id as a last resort. */
+async function downloadSessionAudioZip(id: string, safeName: string, user: Awaited<ReturnType<typeof loadUser>>): Promise<void> {
+  try {
+    const collected = await collectUserSessionAudio(id);
+    if (!collected || (collected.audio.length === 0 && collected.orphans.length === 0)) {
+      alert('No session audio found for this user.');
+      return;
+    }
+    const metaSessions = ((user?.modules?.['tune-analyser'] as { sessions?: Record<string, { name?: string; mimeType?: string }> } | undefined)?.sessions) ?? {};
+    const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
+    const seen = new Map<string, number>();
+    const unique = (base: string): string => {
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      return n === 1 ? base : `${base}-${n}`;
+    };
+    const entries: Array<{ name: string; data: Uint8Array }> = [];
+    for (const { sessionId, blob } of collected.audio) {
+      const meta = metaSessions[sessionId];
+      const nice = clean(meta?.name ?? collected.draftNames[sessionId] ?? sessionId);
+      const ext = audioExtension(blob.type || meta?.mimeType || collected.draftMimes[sessionId]);
+      entries.push({ name: `${unique(nice)}.${ext}`, data: new Uint8Array(await blob.arrayBuffer()) });
+    }
+    for (const { recordingId, blob } of collected.orphans) {
+      const nice = clean(collected.draftNames[recordingId] ?? recordingId);
+      const ext = audioExtension(blob.type || collected.draftMimes[recordingId]);
+      entries.push({ name: `recovered-${unique(nice)}.${ext}`, data: new Uint8Array(await blob.arrayBuffer()) });
+    }
+    const zip = buildZip(entries);
+    const url = URL.createObjectURL(new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cadence-audio-${safeName}-${id}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.error('Recovery: audio zip failed:', e);
+    alert(`Couldn't collect this user's audio: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

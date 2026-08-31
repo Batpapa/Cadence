@@ -288,16 +288,20 @@ async function migrateToFinalShape(userId: string): Promise<void> {
   }
 }
 
-/** Best-effort raw dump of a specific user's LOCAL session database (audio +
- *  crash-recovery scratch data only — metadata/annotations live on the
- *  synced AppState now, see the "Download data" button next to this one in
- *  main.ts's Recovery screen). Reads directly via the native IndexedDB API,
- *  independent of localDb()/initSessionDbForUser(), so it works for ANY
- *  local user regardless of who's actually logged in right now. Returns null
- *  if that user has no local database on this device — opening a name that
- *  doesn't exist would silently CREATE an empty one, which this read-only
- *  helper must never do, so existence is checked first. */
-export async function dumpUserSessionDatabase(userId: string): Promise<Record<string, Array<{ key: unknown; value: unknown }>> | null> {
+/** Every playable audio this user's local DB holds, for the recovery screen's
+ *  zip download: finalized/imported audio (AUDIO_STORE) plus any orphaned
+ *  in-flight recording reassembled from its chunks — the "app crashed
+ *  mid-session and won't boot any more" case is exactly what recovery exists
+ *  for. Same read-only raw-IDB discipline as dumpUserSessionDatabase: never
+ *  goes through the idb layer (it may be what's broken), never creates a
+ *  database that isn't there. Draft names ride along so the caller can name
+ *  files without touching AppState. */
+export async function collectUserSessionAudio(userId: string): Promise<{
+  audio: Array<{ sessionId: string; blob: Blob }>;
+  orphans: Array<{ recordingId: string; blob: Blob }>;
+  draftNames: Record<string, string>;
+  draftMimes: Record<string, string>;
+} | null> {
   const name = localDbName(userId);
   if (indexedDB.databases) {
     const all = await indexedDB.databases();
@@ -310,11 +314,41 @@ export async function dumpUserSessionDatabase(userId: string): Promise<Record<st
     req.onblocked = () => reject(new Error('indexeddb_blocked'));
   });
   try {
-    const dump: Record<string, Array<{ key: unknown; value: unknown }>> = {};
-    for (const storeName of Array.from(raw.objectStoreNames)) {
-      dump[storeName] = await dumpRawStore(raw, storeName);
+    const stores = new Set(Array.from(raw.objectStoreNames));
+    const audio: Array<{ sessionId: string; blob: Blob }> = [];
+    if (stores.has(AUDIO_STORE)) {
+      for (const { key, value } of await dumpRawStore(raw, AUDIO_STORE)) {
+        if (value instanceof Blob && value.size > 0) audio.push({ sessionId: String(key), blob: value });
+      }
     }
-    return dump;
+    const haveAudio = new Set(audio.map(a => a.sessionId));
+    const orphans: Array<{ recordingId: string; blob: Blob }> = [];
+    if (stores.has(CHUNKS_STORE)) {
+      const bySession = new Map<string, Array<{ seq: number; blob: Blob }>>();
+      for (const { value } of await dumpRawStore(raw, CHUNKS_STORE)) {
+        const c = value as { recordingId?: string; seq?: number; blob?: Blob };
+        if (!c?.recordingId || !(c.blob instanceof Blob)) continue;
+        if (!bySession.has(c.recordingId)) bySession.set(c.recordingId, []);
+        bySession.get(c.recordingId)!.push({ seq: c.seq ?? 0, blob: c.blob });
+      }
+      for (const [recordingId, chunks] of bySession) {
+        // A recording whose audio was already finalized doesn't need its chunks.
+        if (haveAudio.has(recordingId)) continue;
+        chunks.sort((a, b) => a.seq - b.seq);
+        const blob = new Blob(chunks.map(c => c.blob), { type: chunks[0]!.blob.type });
+        if (blob.size > 0) orphans.push({ recordingId, blob });
+      }
+    }
+    const draftNames: Record<string, string> = {};
+    const draftMimes: Record<string, string> = {};
+    if (stores.has(DRAFT_STORE)) {
+      for (const { key, value } of await dumpRawStore(raw, DRAFT_STORE)) {
+        const d = value as { name?: string; mimeType?: string };
+        if (d?.name) draftNames[String(key)] = d.name;
+        if (d?.mimeType) draftMimes[String(key)] = d.mimeType;
+      }
+    }
+    return { audio, orphans, draftNames, draftMimes };
   } finally {
     raw.close();
   }
