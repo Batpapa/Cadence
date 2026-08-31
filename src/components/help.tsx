@@ -74,8 +74,11 @@ function getInfoContent(route: Route): { title: string; sections: HelpSection[] 
       return {
         title: t('help.context.modules'),
         sections: [
-          { style: 'definition', heading: t('help.modules.what.heading'),     items: [t('help.modules.what.1'), t('help.modules.what.2'), t('help.modules.what.3')] },
-          { style: 'logic',      heading: t('help.modules.sessions.heading'), items: [t('help.modules.sessions.1'), t('help.modules.sessions.2'), t('help.modules.sessions.3'), t('help.modules.sessions.4')] },
+          { style: 'definition', heading: t('help.modules.what.heading'),      items: [t('help.modules.what.1'), t('help.modules.what.2'), t('help.modules.what.3')] },
+          // This page is a picker: it lists what each module is for and sends
+          // you to its own help. The per-module detail lives in the 'sessions'
+          // and 'trending' cases below — don't duplicate it here.
+          { style: 'logic',      heading: t('help.modules.available.heading'), items: [t('help.modules.available.1'), t('help.modules.available.2'), t('help.modules.available.3')] },
         ],
       };
 
