@@ -389,6 +389,20 @@ export function PanelLeftIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** A screen taking an arrow in — "put this on your device", distinct from
+ *  ImportTrayIcon's plain download tray (which already means "import data").
+ *  Deliberately near-square rather than tall: a portrait rectangle reads as a
+ *  phone specifically, and this offer is for desktops too. */
+export function InstallIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="3" width="16" height="18" rx="2"/>
+      <path d="M12 7v8"/>
+      <polyline points="9 12 12 15 15 12"/>
+    </svg>
+  );
+}
+
 export function GithubIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

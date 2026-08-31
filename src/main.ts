@@ -24,6 +24,12 @@ if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
 }
 
+// Top-level, next to the service worker it depends on — NOT from finishBoot().
+// `beforeinstallprompt` fires once, shortly after the worker takes control, and
+// is lost if no listener exists yet; boot is async and, on the user-selector
+// screen, never reaches finishBoot() at all. See pwaService's own comment.
+initPWA();
+
 screen.orientation?.unlock?.();
 
 export async function createAndOpenUser(name: string, root: HTMLElement): Promise<void> {
@@ -356,7 +362,6 @@ async function reconcileWithDrive(interactive = true): Promise<boolean> {
 function finishBoot(root: HTMLElement): void {
   applyTheme();
   applyZoom();
-  initPWA();
   initDriveVisibilitySync();
 
   // isDriveConnected() is a plain localStorage read — checking it first avoids

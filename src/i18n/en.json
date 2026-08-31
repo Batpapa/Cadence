@@ -53,6 +53,8 @@
   "sidebar.back": "Back [Alt+←]",
   "sidebar.forward": "Forward [Alt+→]",
   "sidebar.help": "Help",
+  "sidebar.install": "App",
+  "sidebar.installTitle": "Install Cadence as an app on this device",
   "sidebar.addSubfolder": "Add subfolder",
   "sidebar.addDeck": "Add deck",
   "sidebar.sync.pending": "Unsynced changes — click to sync now",
@@ -374,7 +376,6 @@
   "settings.import": "Import",
   "settings.reset": "Reset",
   "settings.install": "Install App",
-  "settings.installHint": "Add to your home screen for the best experience",
   "settings.installIOS": "Tap the Share button in Safari, then \"Add to Home Screen\"",
   "settings.alreadyInstalled": "App already installed",
 

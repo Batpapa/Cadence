@@ -53,6 +53,8 @@
   "sidebar.back": "Retour [Alt+←]",
   "sidebar.forward": "Suivant [Alt+→]",
   "sidebar.help": "Aide",
+  "sidebar.install": "App",
+  "sidebar.installTitle": "Installer Cadence comme une app sur cet appareil",
   "sidebar.addSubfolder": "Ajouter un sous-dossier",
   "sidebar.addDeck": "Ajouter un paquet",
   "sidebar.sync.pending": "Modifications non synchronisées — cliquer pour synchroniser",
@@ -374,7 +376,6 @@
   "settings.import": "Importer",
   "settings.reset": "Réinitialiser",
   "settings.install": "Installer l'app",
-  "settings.installHint": "Ajoutez à l'écran d'accueil pour la meilleure expérience",
   "settings.installIOS": "Appuyez sur le bouton Partager dans Safari, puis « Sur l'écran d'accueil »",
   "settings.alreadyInstalled": "Application déjà installée",
 

@@ -12,7 +12,6 @@ import { applyExternalData } from '../services/migration';
 import { exportBackup, exportSnapshotBackup, parseImport } from '../services/importExport';
 import { listSnapshots, getSnapshotState, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
-import { isStandalone, isIOS, canInstall, triggerInstall } from '../services/pwaService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
@@ -566,7 +565,7 @@ function AboutLine({ textKey, href }: { textKey: string; href?: string }) {
   );
 }
 
-function AboutSection({ closeSettings }: { closeSettings: () => void }) {
+function AboutSection() {
   return (
     <>
       <div class="space-y-1.5">
@@ -584,19 +583,9 @@ function AboutSection({ closeSettings }: { closeSettings: () => void }) {
         </p>
       </div>
 
-      {!isStandalone() && (
-        <>
-          <Sep />
-          {isIOS() ? (
-            <p class="text-xs text-muted leading-relaxed">{t('settings.installIOS')}</p>
-          ) : canInstall() ? (
-            <>
-              <button class="btn-primary w-full text-sm" onClick={() => { void triggerInstall(); closeSettings(); }}>{t('settings.install')}</button>
-              <p class="text-xs text-dim mt-1">{t('settings.installHint')}</p>
-            </>
-          ) : null}
-        </>
-      )}
+      {/* No install offer here any more — the header carries it (both the
+          native prompt and the iOS Share-sheet steps), and buried in About it
+          was the reason nobody knew Cadence was installable. */}
     </>
   );
 }
@@ -667,7 +656,7 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
             {section === 'study' && <StudySection ctx={ctx} />}
             {section === 'user' && <UserSection ctx={ctx} closeSettings={onClose} />}
             {section === 'display' && <DisplaySection ctx={ctx} onZoomChange={() => bumpDialog(x => x + 1)} />}
-            {section === 'about' && <AboutSection closeSettings={onClose} />}
+            {section === 'about' && <AboutSection />}
           </div>
         </div>
       </div>
