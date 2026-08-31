@@ -5,6 +5,8 @@ import type { AppContext } from '../types';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
+import { showModal, closeModal } from './modal';
+import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
@@ -14,7 +16,7 @@ import {
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon, ModulesIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
-  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot,
+  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon,
 } from './icons';
 
 const initialsOf = (name: string) =>
@@ -58,6 +60,36 @@ function SyncBtn({ status }: { status: DriveStatus }) {
       onClick={clickable ? () => void manualSync() : undefined}
     >
       <CloudUpIcon size={14} />
+    </button>
+  );
+}
+
+/** Offer to install the PWA, right in the header: most people never open
+ *  Settings → About and so never learn Cadence is installable at all. Only
+ *  rendered when it can actually do something — a live `beforeinstallprompt`
+ *  (Chrome/Edge/Android), or iOS where the prompt does not exist and the
+ *  Share-sheet steps have to be spelled out. Self-erasing: once installed the
+ *  app runs standalone and the button is gone. */
+function InstallBtn() {
+  const canPrompt = canInstallSignal.value;
+  if (isStandalone() || (!canPrompt && !isIOS())) return null;
+
+  const onClick = () => {
+    if (canPrompt) { void triggerInstall(); return; }
+    const body = document.createElement('p');
+    body.className = 'text-sm text-muted leading-relaxed';
+    body.textContent = t('settings.installIOS');
+    showModal(t('settings.install'), body, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
+  };
+
+  return (
+    <button
+      class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer shrink-0"
+      title={t('sidebar.installTitle')}
+      onClick={onClick}
+    >
+      <InstallIcon size={14} />
+      <span class="text-xs font-medium">{t('sidebar.install')}</span>
     </button>
   );
 }
@@ -146,6 +178,10 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
           <SyncBtn status={driveStatus} />
         )}
+        {/* Left side on purpose: the right group is already crowded, and the
+            centred profile chip is absolutely positioned — anything added on
+            the right runs under it on a phone. */}
+        <InstallBtn />
       </div>
 
       {/* Center: ← profil → */}
