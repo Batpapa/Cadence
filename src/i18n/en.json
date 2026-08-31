@@ -851,6 +851,8 @@
   "sessions.delete.title": "Delete session",
   "sessions.delete.message": "Delete \"{name}\"? The audio recording and its annotations will be lost.",
   "sessions.deleteTitle": "Delete session",
+  "sessions.annotation.delete.title": "Delete result",
+  "sessions.annotation.delete.message": "Remove \"{name}\" from this analysis? Its bound adjustments and choices will be lost.",
   "sessions.search": "Search sessions…",
   "sessions.downloadAudio": "Download audio",
   "sessions.forgetAudio": "Forget audio",
