@@ -209,14 +209,21 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
             </button>
           )}
 
+          {/* Confirmed: the row carries hand-made work (bound adjustments,
+              alternate picks, attached clips) and there is no undo. */}
           <button
             class="text-dim hover:text-danger transition-colors cursor-pointer ml-auto"
             title={t('common.delete')}
-            onClick={() => {
-              session.annotations.splice(i, 1);
-              persist();
-              bump();
-            }}
+            onClick={() => confirmModal(
+              t('sessions.annotation.delete.title'),
+              t('sessions.annotation.delete.message', { name: ann.displayName }),
+              t('common.delete'),
+              () => {
+                session.annotations.splice(i, 1);
+                persist();
+                bump();
+              },
+            )}
           >
             <TrashIcon size={11} />
           </button>

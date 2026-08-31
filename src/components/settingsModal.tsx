@@ -408,19 +408,28 @@ function SnapshotsRow({ userId }: { userId: string }) {
   return (
     <>
       <Sep />
-      <Row label={t('settings.snapshots')} hint={t('settings.snapshotsHint')}>
-        <div class="flex flex-col items-end gap-1 shrink-0">
+      <Row label={t('settings.snapshots')} hint={t('settings.snapshotsHint')} stacked>
+        <div class="flex flex-col gap-1">
           {snaps.map(s => (
-            <button
-              key={s.key}
-              class="btn-ghost text-xs whitespace-nowrap"
-              title={`${t('settings.sync.conflict.stats', { cards: s.cards, reviews: s.reviews })} — ${t('settings.snapshots.download')}`}
-              onClick={() => {
-                void getSnapshotState(s.key).then(state => { if (state) exportSnapshotBackup(state, s.ts); });
-              }}
-            >
-              {new Date(s.ts).toLocaleString()} · {t(`settings.snapshots.reason.${s.reason}`)}
-            </button>
+            <div key={s.key} class="flex items-center gap-2 pl-2.5 pr-1 py-1 rounded-lg border border-border bg-bg">
+              <span class="text-xs text-muted flex-1 min-w-0 truncate">
+                {new Date(s.ts).toLocaleString()} · {t(`settings.snapshots.reason.${s.reason}`)}
+              </span>
+              <span class="text-[11px] text-dim tabular-nums shrink-0">
+                {t('settings.sync.conflict.stats', { cards: s.cards, reviews: s.reviews })}
+              </span>
+              {/* Explicit download button: the whole line used to BE the button,
+                  which gave no clue that clicking it saved a file. */}
+              <button
+                class="btn-ghost p-1 shrink-0"
+                title={t('settings.snapshots.download')}
+                onClick={() => {
+                  void getSnapshotState(s.key).then(state => { if (state) exportSnapshotBackup(state, s.ts); });
+                }}
+              >
+                <span class="flex items-center" dangerouslySetInnerHTML={{ __html: EXPORT_SVG }} />
+              </button>
+            </div>
           ))}
         </div>
       </Row>
@@ -705,7 +714,10 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
                 manualSync().finally(() => { clearLastUserId(); location.reload(); });
               })}
             >
-              <span class="shrink-0 flex items-center" dangerouslySetInnerHTML={{ __html: LOGOUT_ICON }} />
+              <span
+                class="shrink-0 flex items-center justify-center w-[22px] h-[22px] rounded-md bg-danger/15 text-danger"
+                dangerouslySetInnerHTML={{ __html: LOGOUT_ICON }}
+              />
               {!compactNav && <span class="text-sm">{t('settings.logout')}</span>}
             </button>
           </div>

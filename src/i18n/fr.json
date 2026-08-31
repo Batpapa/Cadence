@@ -851,6 +851,8 @@
   "sessions.delete.title": "Supprimer la session",
   "sessions.delete.message": "Supprimer « {name} » ? L'enregistrement audio et ses annotations seront perdus.",
   "sessions.deleteTitle": "Supprimer la session",
+  "sessions.annotation.delete.title": "Supprimer le résultat",
+  "sessions.annotation.delete.message": "Retirer « {name} » de cette analyse ? Ses ajustements de bornes et ses choix seront perdus.",
   "sessions.search": "Rechercher des sessions…",
   "sessions.downloadAudio": "Télécharger l'audio",
   "sessions.forgetAudio": "Oublier l'audio",
