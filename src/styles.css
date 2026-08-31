@@ -184,6 +184,18 @@
   to   { opacity: 1; transform: none; }
 }
 
+/* Dépliage du bloc « trad irlandais ». max-height n'est qu'une borne
+   d'animation (couvre les 4 lignes en anglais à fort zoom) : une fois
+   l'animation finie le contenu n'est plus contraint ni rogné. */
+.irish-expand {
+  overflow: hidden;
+  animation: irishExpand .26s cubic-bezier(.2, .7, .3, 1);
+}
+@keyframes irishExpand {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 260px; }
+}
+
 /* Respect de la préférence système : on montre l'écran final, sans mouvement */
 @media (prefers-reduced-motion: reduce) {
   .cadence-mark path,
@@ -191,6 +203,7 @@
     animation-duration: .01ms !important;
     animation-delay: 0ms !important;
   }
+  .irish-expand { animation: none; }
 }
 
 /* Markdown */

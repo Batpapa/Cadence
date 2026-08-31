@@ -389,6 +389,19 @@ export function PanelLeftIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** Rising line with a corner arrow — the trending module on the welcome
+ *  screen's feature list. Not FlameIcon (which labels the module itself in
+ *  views/modules.tsx): here it sits in a row of four line icons and a filled
+ *  flame would break that row's weight. */
+export function TrendIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+      <polyline points="16 7 22 7 22 13"/>
+    </svg>
+  );
+}
+
 /** A screen taking an arrow in — "put this on your device", distinct from
  *  ImportTrayIcon's plain download tray (which already means "import data").
  *  Deliberately near-square rather than tall: a portrait rectangle reads as a
