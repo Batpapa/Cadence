@@ -3,7 +3,7 @@ import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
 import type { AppContext } from '../types';
 import { generateId, emptyState } from '../utils';
-import { TrashIcon, ResetIcon } from './icons';
+import { TrashIcon, ResetIcon, HelpIcon } from './icons';
 import { confirmModal, closeModal, showModal, renderModalBody } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
@@ -171,14 +171,42 @@ const SECTION_ICONS: Record<SectionId, string> = {
 
 const LOGOUT_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`;
 
-function Row({ label, hint, children }: { label: string; hint?: string | null; children: ComponentChildren }) {
+/** One setting per row: label on the left, control on the right. An explanation
+ *  is opt-in — a `?` pinned to the end of the label toggles it open below the
+ *  row, instead of every setting carrying a permanent paragraph, which turned
+ *  this screen into a wall of small grey text. Only rows that actually pass a
+ *  `hint` get the button. */
+function Row({ label, hint, stacked, children }: {
+  label: string; hint?: string | null; stacked?: boolean; children: ComponentChildren;
+}) {
+  const [hintOpen, setHintOpen] = useState(false);
   return (
-    <div class="flex items-center justify-between gap-4 py-2">
-      <div>
-        <div class="text-sm text-primary">{label}</div>
-        {hint && <div class="text-xs text-dim mt-0.5 leading-relaxed">{hint}</div>}
+    <div class="py-2">
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="text-sm text-primary">{label}</span>
+          {hint && (
+            <button
+              class={`flex items-center p-0.5 rounded-full transition-colors cursor-pointer shrink-0 ${
+                hintOpen ? 'text-accent' : 'text-dim hover:text-primary'
+              }`}
+              title={t('settings.explain')}
+              aria-expanded={hintOpen}
+              onClick={() => setHintOpen(o => !o)}
+            >
+              <HelpIcon size={14} />
+            </button>
+          )}
+        </div>
+        {!stacked && <div class="flex items-center gap-2 shrink-0">{children}</div>}
       </div>
-      {children}
+      {/* `stacked`: the control is too wide to share the label's line (the
+          forgetting-rate slider) — give it the full width underneath instead
+          of squeezing it into a fixed-width column. */}
+      {stacked && <div class="mt-1.5">{children}</div>}
+      {hint && hintOpen && (
+        <p class="text-xs text-dim leading-relaxed mt-2 px-3 py-2 rounded-lg border border-border bg-bg">{hint}</p>
+      )}
     </div>
   );
 }
@@ -236,7 +264,7 @@ function StudySection({ ctx }: { ctx: AppContext }) {
       <Row label={t('settings.availabilityThreshold')} hint={t('settings.availabilityThresholdHint')}>
         <input
           type="number" min="0" max="100" step="1"
-          class="input w-16 text-right font-mono text-sm"
+          class="input w-12 px-2 py-1 text-right font-mono text-sm"
           value={threshDraft}
           onInput={(e) => setThreshDraft((e.target as HTMLInputElement).value)}
           onBlur={commitThresh}
@@ -250,8 +278,8 @@ function StudySection({ ctx }: { ctx: AppContext }) {
       </Row>
       <Sep />
 
-      <Row label={t('settings.forgettingRate')} hint={t('settings.forgettingRateHint')}>
-        <div class="flex items-center gap-2 w-52">
+      <Row label={t('settings.forgettingRate')} hint={t('settings.forgettingRateHint')} stacked>
+        <div class="flex items-center gap-2 w-full">
           <span class="text-sm font-mono w-10 text-right tabular-nums shrink-0">×{lambdaDraft.toFixed(2)}</span>
           <input
             type="range" min="0.3" max="3" step="0.05"
@@ -429,7 +457,7 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
       <Row label={t('settings.username')}>
         <input
           type="text"
-          class="input text-sm w-36"
+          class="input text-sm w-36 px-2 py-1"
           value={nameDraft}
           onInput={(e) => setNameDraft((e.target as HTMLInputElement).value)}
           onBlur={commitName}
@@ -592,10 +620,28 @@ function AboutSection() {
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
+/** Below this dialog width the section list drops its labels and keeps only the
+ *  icons. Measured on the dialog itself rather than the viewport: its width is
+ *  `min(660px, 90dvw / zoom)`, so a media query would have to re-derive the
+ *  zoom factor to say anything true about the space actually left inside. */
+const NAV_LABELS_MIN_W = 420;
+
 function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void }) {
   const [section, setSection] = useState<SectionId>('study');
   const [, bumpDialog] = useState(0);
   const mouseDownOnOverlay = useRef(false);
+
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [compactNav, setCompactNav] = useState(false);
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setCompactNav((entry?.contentRect.width ?? 0) < NAV_LABELS_MIN_W);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -618,37 +664,49 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
       onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onClose(); }}
     >
       <div
+        ref={dialogRef}
         class="bg-elevated border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ width: '560px', maxWidth: modalMaxW(0.9), height: '520px', maxHeight: modalMaxH(0.9) }}
+        style={{ width: '660px', maxWidth: modalMaxW(0.9), height: '520px', maxHeight: modalMaxH(0.9) }}
       >
         <div class="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
-          <span class="text-sm font-semibold text-primary">{t('settings.title')}</span>
+          <span class="text-sm font-semibold text-primary truncate">
+            {t('settings.title')} — {t(SECTIONS.find(s => s.id === section)!.labelKey)}
+          </span>
           <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={onClose}>✕</button>
         </div>
 
         <div class="flex flex-1 overflow-hidden" style="min-height:0">
-          <div class="shrink-0 flex flex-col gap-0.5 p-2 bg-surface border-r border-border overflow-y-auto" style="width:148px">
+          <div
+            class="shrink-0 flex flex-col gap-0.5 p-2 bg-surface border-r border-border overflow-y-auto"
+            style={{ width: compactNav ? '48px' : '148px' }}
+          >
             {SECTIONS.map(sec => (
               <button
                 key={sec.id}
                 class={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer ${
+                  compactNav ? 'justify-center' : ''
+                } ${
                   sec.id === section ? 'bg-accent/10 text-accent' : 'text-muted hover:bg-elevated hover:text-primary'
                 }`}
+                title={compactNav ? t(sec.labelKey) : undefined}
                 onClick={() => setSection(sec.id)}
               >
                 <span class="shrink-0 flex items-center" dangerouslySetInnerHTML={{ __html: SECTION_ICONS[sec.id] }} />
-                <span class={`text-sm ${sec.id === section ? 'font-medium' : ''}`}>{t(sec.labelKey)}</span>
+                {!compactNav && <span class={`text-sm ${sec.id === section ? 'font-medium' : ''}`}>{t(sec.labelKey)}</span>}
               </button>
             ))}
             <button
-              class="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer mt-auto text-muted hover:bg-elevated hover:text-danger"
+              class={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer mt-auto text-muted hover:bg-elevated hover:text-danger ${
+                compactNav ? 'justify-center' : ''
+              }`}
+              title={compactNav ? t('settings.logout') : undefined}
               onClick={() => confirmModal(t('settings.logout'), t('settings.logout.message'), t('settings.logout.confirm'), () => {
                 closeModal(); onClose();
                 manualSync().finally(() => { clearLastUserId(); location.reload(); });
               })}
             >
               <span class="shrink-0 flex items-center" dangerouslySetInnerHTML={{ __html: LOGOUT_ICON }} />
-              <span class="text-sm">{t('settings.logout')}</span>
+              {!compactNav && <span class="text-sm">{t('settings.logout')}</span>}
             </button>
           </div>
 
