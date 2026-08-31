@@ -1,5 +1,10 @@
 {
   "welcome.tagline": "La répétition espacée, pour tout ce que vous voulez retenir.",
+  "welcome.irish.lead": "Vous jouez du trad irlandais ?",
+  "welcome.irish.1": "Import TheSession",
+  "welcome.irish.2": "Reconnaissance en session",
+  "welcome.irish.3": "Partitions ABC jouables",
+  "welcome.irish.4": "Morceaux en vogue",
   "welcome.sourceTitle": "Voir le code source sur GitHub",
   "userSelector.title": "Qui utilise Cadence ?",
   "userSelector.new": "Nouvel utilisateur",

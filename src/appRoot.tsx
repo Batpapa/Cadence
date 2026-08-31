@@ -8,7 +8,7 @@ import { AppHeader, BottomNav } from './components/header';
 import { confirmModal, ModalHost } from './components/modal';
 import { CommandPaletteHost } from './components/commandPalette';
 import { DeckPickerHost } from './components/deckSelector';
-import { GithubIcon } from './components/icons';
+import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon } from './components/icons';
 import { t } from './services/i18nService';
 import type { User } from './types';
 import { FolderView } from './views/folder';
@@ -230,6 +230,17 @@ function CadenceMark({ size = 78 }: { size?: number }) {
   );
 }
 
+/** The Irish-trad toolkit, folded away behind a question on the welcome
+ *  screen: Cadence is general-purpose first, so this stays a post-scriptum
+ *  addressed to the people it concerns rather than a second sales pitch.
+ *  Module scope — constant, no reason to rebuild it on every render. */
+const IRISH_FEATURES = [
+  { key: 'welcome.irish.1', Icon: ImportTrayIcon },
+  { key: 'welcome.irish.2', Icon: MicIcon },
+  { key: 'welcome.irish.3', Icon: MusicNoteIcon },
+  { key: 'welcome.irish.4', Icon: TrendIcon },
+] as const;
+
 function UserSelector({ users, onSelect, onCreate, onDelete }: {
   users: User[];
   onSelect: (id: string) => Promise<void>;
@@ -239,6 +250,8 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
   const [loading,  setLoading]  = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState('');
+  // Deliberately not persisted: it reopens closed on every visit.
+  const [irishOpen, setIrishOpen] = useState(false);
 
   const select = async (id: string) => {
     setLoading(id);
@@ -347,6 +360,43 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
               </button>
             )}
           </div>
+
+          {/* See IRISH_FEATURES. Stays inside the selection block's `rise-in`
+              so the entrance cascade above keeps its hard-coded delays. */}
+          <div class="w-11 h-px bg-border mx-auto mt-[26px] mb-[22px]" />
+
+          <button
+            type="button"
+            aria-expanded={irishOpen}
+            aria-controls="irish-features"
+            onClick={() => setIrishOpen(o => !o)}
+            class={`w-full flex items-center justify-center gap-1.5 py-1 text-[11px] transition-colors cursor-pointer ${
+              irishOpen ? 'text-muted' : 'text-dim hover:text-muted'
+            }`}
+          >
+            <span>{t('welcome.irish.lead')}</span>
+            <span class={`flex transition-transform duration-200 ${irishOpen ? 'rotate-180' : ''}`}>
+              <ChevronDownIcon size={12} />
+            </span>
+          </button>
+
+          {irishOpen && (
+            <div id="irish-features" class="irish-expand">
+              <div class="flex flex-col gap-2.5 mt-3 px-3.5 py-3 rounded-xl bg-surface border border-border">
+                {IRISH_FEATURES.map(({ key, Icon }) => (
+                  // Brand cyan on the parent so `currentColor` carries it into
+                  // the icon — same literal as CadenceMark, deliberately not
+                  // theme-driven (see its comment).
+                  <div key={key} class="flex items-center gap-2.5">
+                    <span class="flex shrink-0 text-[#6cf6e9]">
+                      <Icon size={14} />
+                    </span>
+                    <span class="text-[11.5px] text-muted leading-snug">{t(key)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div class="flex flex-col items-center gap-2.5 mt-5">
             <div class="flex justify-center gap-3.5">
