@@ -377,7 +377,6 @@
   "settings.reset": "Reset",
   "settings.install": "Install App",
   "settings.installIOS": "Tap the Share button in Safari, then \"Add to Home Screen\"",
-  "settings.alreadyInstalled": "App already installed",
 
   "settings.sync": "Sync",
   "settings.sync.connect": "Connect",

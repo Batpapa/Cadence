@@ -377,7 +377,6 @@
   "settings.reset": "Réinitialiser",
   "settings.install": "Installer l'app",
   "settings.installIOS": "Appuyez sur le bouton Partager dans Safari, puis « Sur l'écran d'accueil »",
-  "settings.alreadyInstalled": "Application déjà installée",
 
   "settings.sync": "Synchronisation",
   "settings.sync.connect": "Connecter",
