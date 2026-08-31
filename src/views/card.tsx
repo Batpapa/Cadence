@@ -269,8 +269,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   return (
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
 
-      {/* ── Header ── */}
-      <div class="flex items-start justify-between gap-4">
+      {/* ── Header ── One wrapping row, not two columns: the deck chips are a
+           `basis-full` item, so they break to their own line and run the full
+           width — under the pin and the delete button, not beside them. Those
+           two never wrap: the title column is `flex-1` (basis 0), so it just
+           narrows and the name wraps inside it. */}
+      <div class="flex flex-wrap items-start gap-x-4 gap-y-1.5">
         <div class="flex-1 min-w-0">
           {isEditingName ? (
             <input
@@ -298,43 +302,21 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               {card.name}
             </h1>
           )}
-
-          {/* Deck chips */}
-          <div class="flex flex-wrap gap-1.5 mt-1.5">
-            {deckIds.map(dId => {
-              const deck = user.decks[dId]; if (!deck) return null;
-              return (
-                <span
-                  key={dId}
-                  class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
-                  title={deckPath(dId, user)}
-                  onClick={() => navigate({ view: 'deck', deckId: dId })}
-                >
-                  {deck.name}
-                </span>
-              );
-            })}
-            <span
-              class="inline-flex items-center gap-1 text-xs text-dim hover:text-primary transition-colors cursor-pointer"
-              title={t('card.manageDecks')}
-              onClick={() => showManageDecksModal(cardId)}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            </span>
-          </div>
         </div>
 
         <div class="flex items-center gap-2 shrink-0">
+          {/* Just the id, not the spelled-out source: the pin's colour already
+              says which site, and `title` spells it out on hover. */}
           {source && (
             <a
               href={source.url}
               target="_blank"
               rel="noopener"
               class={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-elevated border transition-colors shrink-0 ${SOURCE_PIN_COLORS[source.source] ?? 'text-dim border-border'}`}
-              title={source.url}
+              title={source.label}
               {...pinTriggerProps}
             >
-              {source.label}
+              {source.id}
               <ExternalLinkIcon size={9} />
             </a>
           )}
@@ -358,6 +340,30 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           >
             <TrashIcon />
           </button>
+        </div>
+
+        {/* Deck chips */}
+        <div class="basis-full flex flex-wrap gap-1.5">
+          {deckIds.map(dId => {
+            const deck = user.decks[dId]; if (!deck) return null;
+            return (
+              <span
+                key={dId}
+                class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+                title={deckPath(dId, user)}
+                onClick={() => navigate({ view: 'deck', deckId: dId })}
+              >
+                {deck.name}
+              </span>
+            );
+          })}
+          <span
+            class="inline-flex items-center gap-1 text-xs text-dim hover:text-primary transition-colors cursor-pointer"
+            title={t('card.manageDecks')}
+            onClick={() => showManageDecksModal(cardId)}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </span>
         </div>
       </div>
 

@@ -24,17 +24,20 @@ const EXTERNAL_SOURCES: Record<string, { label: string; url: (id: string) => str
   irishtuneinfo: { label: 'IrishTuneInfo', url: id => `https://www.irishtune.info/tune/${id}/` },
 };
 
-/** "thesession:52302" → { source: "thesession", label: "TheSession:52302", url: "https://thesession.org/tunes/52302" }.
+/** "thesession:52302" → { source: "thesession", id: "52302", label: "TheSession:52302",
+ *  url: "https://thesession.org/tunes/52302" }. `id` alone is what the card page's pin
+ *  shows (the source is already carried by the pin's colour); `label` is the spelled-out
+ *  form for tooltips and denser listings.
  *  Reconstructed from the id alone (no slug needed by either source) — independent of
  *  `content.notes`, which the user can freely edit away. */
-export function externalSourceLink(externalId: string | undefined): { source: string; label: string; url: string } | null {
+export function externalSourceLink(externalId: string | undefined): { source: string; id: string; label: string; url: string } | null {
   if (!externalId) return null;
   const sep = externalId.indexOf(':');
   if (sep === -1) return null;
   const source = externalId.slice(0, sep);
   const id = externalId.slice(sep + 1);
   const def = EXTERNAL_SOURCES[source];
-  return def ? { source, label: `${def.label}:${id}`, url: def.url(id) } : null;
+  return def ? { source, id, label: `${def.label}:${id}`, url: def.url(id) } : null;
 }
 
 export function isMobileDevice(): boolean {
