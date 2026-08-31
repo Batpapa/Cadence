@@ -337,6 +337,7 @@
   "study.strategy.stochastic": "Stochastique",
 
   "settings.title": "Paramètres",
+  "settings.explain": "Afficher l’explication",
   "settings.profile": "Profil",
   "settings.study": "Révision",
   "settings.user": "Utilisateur",
