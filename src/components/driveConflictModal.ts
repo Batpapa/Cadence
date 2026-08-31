@@ -4,7 +4,7 @@ import { showModal, closeModal } from './modal';
 import { applyExternalData } from '../services/migration';
 import {
   markSyncedAfterApply, adoptDriveVersionAsBase, setConflictPending,
-  syncToCloud, manualSync, discardPendingSync, getLocalTimestamp,
+  syncToCloud, manualSync, getLocalTimestamp,
 } from '../services/driveService';
 import { applyFromDrive, appState } from '../store';
 import { saveSnapshot, countReviews, type SnapshotReason } from '../services/snapshotService';
@@ -93,9 +93,9 @@ export function showDriveConflictModal(remote: AppState, driveTs: number, versio
         void (async () => {
           setConflictPending(false);
           closeModal();
+          // Also discards any buffered upload and settles the status (green) —
+          // see markSyncedAfterApply.
           await applyDriveState(remote, driveTs, version, 'conflict-use-drive');
-          // Anything buffered for upload predates the user's choice.
-          discardPendingSync();
         })();
       },
     },

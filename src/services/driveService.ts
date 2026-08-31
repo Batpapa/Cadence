@@ -156,10 +156,6 @@ export function setReconcileHook(fn: (interactive: boolean) => Promise<boolean>)
 let conflictPending = false;
 export function setConflictPending(b: boolean): void { conflictPending = b; }
 
-/** Drop the buffered upload — its contents no longer match what the user sees
- *  (Drive's version was just applied over it). */
-export function discardPendingSync(): void { _state.pendingState = null; }
-
 /** Boot could not read Drive. Local may be behind another device, so don't
  *  leave the cloud reassuringly green — an edit made now is precisely what
  *  turns "behind" into a divergence someone has to arbitrate. */
@@ -280,9 +276,18 @@ function recordSyncPoint(driveTs: number, version: string | null, syncedSeq: num
 }
 
 /** After Drive's copy was applied locally: local now IS the Drive content, so
- *  nothing is unsynced — the current edit counter becomes the sync point. */
+ *  nothing is unsynced — the current edit counter becomes the sync point, any
+ *  buffered upload predates what the user now sees, the timers have nothing
+ *  left to flush, and the cloud is genuinely green. All of it settled HERE, so
+ *  no caller can apply Drive and forget half the bookkeeping (choosing "Use
+ *  Drive" used to leave the cloud stuck on yellow). */
 export function markSyncedAfterApply(driveTs: number, version: string): void {
   recordSyncPoint(driveTs, version, getEditSeq());
+  _state.pendingState = null;
+  _state.firstPendingAt = null;
+  if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  _state.syncTimer  = null; }
+  if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
+  setStatus('connected');
 }
 
 /**

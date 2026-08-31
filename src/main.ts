@@ -7,7 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed, discardPendingSync } from './services/driveService';
+import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
 import { clearSnapshotsForUser } from './services/snapshotService';
 import { initSessionDbForUser, dumpUserSessionDatabase, userDbName } from './session/db';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
@@ -291,9 +291,9 @@ async function reconcileWithDrive(interactive = true): Promise<boolean> {
   const file = await readDriveFile(interactive);
   const result = reconcileDriveData(file);
   if (result.action === 'apply') {
+    // Also discards any buffered upload and settles the status (green) —
+    // see markSyncedAfterApply.
     await applyDriveState(result.state, result.driveTs, result.version);
-    // Local was just replaced; anything buffered for upload predates that.
-    discardPendingSync();
     return false;
   }
   if (result.action === 'conflict') {
