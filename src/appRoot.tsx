@@ -1,6 +1,6 @@
 import { render } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { appState, routeSignal, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
+import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
 import { Sidebar } from './components/sidebar';
@@ -27,17 +27,22 @@ const SIDEBAR_MIN           = 120;
 const SIDEBAR_MAX           = 400;
 
 // Routes to the appropriate Preact component.
-// key= on stateful views forces a remount when the ID changes (resets local state).
+// key= on stateful views forces a remount when the ID changes (resets local
+// state) — and, via stateEpoch, when a Drive apply replaces the whole state
+// (mount-time drafts would otherwise keep showing the pre-apply data).
+// SessionsView is deliberately OUTSIDE the epoch: a remount there would tear
+// down a live recording in progress, and its library reads reactively anyway.
 function ContentSwitch() {
   const route = routeSignal.value;
-  if (route.view === 'study')   return <StudyView deckId={route.deckId} cardIds={route.cardIds} studyTitle={route.studyTitle} strategy={route.strategy} currentCardId={route.currentCardId} contextDeckId={route.contextDeckId} />;
-  if (route.view === 'deck')    return <DeckView   key={route.deckId}   deckId={route.deckId} />;
-  if (route.view === 'library') return <LibraryView />;
-  if (route.view === 'card')    return <CardView   key={route.cardId}   cardId={route.cardId} contextDeckId={route.contextDeckId} />;
-  if (route.view === 'folder')  return <FolderView key={route.folderId ?? 'root'} folderId={route.folderId} />;
-  if (route.view === 'modules') return <ModulesView />;
+  const e = `e${stateEpoch.value}:`;
+  if (route.view === 'study')   return <StudyView key={e} deckId={route.deckId} cardIds={route.cardIds} studyTitle={route.studyTitle} strategy={route.strategy} currentCardId={route.currentCardId} contextDeckId={route.contextDeckId} />;
+  if (route.view === 'deck')    return <DeckView   key={e + route.deckId}   deckId={route.deckId} />;
+  if (route.view === 'library') return <LibraryView key={e} />;
+  if (route.view === 'card')    return <CardView   key={e + route.cardId}   cardId={route.cardId} contextDeckId={route.contextDeckId} />;
+  if (route.view === 'folder')  return <FolderView key={e + (route.folderId ?? 'root')} folderId={route.folderId} />;
+  if (route.view === 'modules') return <ModulesView key={e} />;
   if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? 'library'} sessionId={route.sessionId} />;
-  if (route.view === 'trending') return <TrendingView />;
+  if (route.view === 'trending') return <TrendingView key={e} />;
   const _: never = route; return _;
 }
 

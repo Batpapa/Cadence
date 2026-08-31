@@ -6,6 +6,13 @@ import { syncToCloud } from './services/driveService';
 
 export const appState    = signal<AppState>(emptyState());
 export const routeSignal = signal<Route>({ view: 'folder', folderId: null });
+/** Bumped ONLY when the whole state is replaced from OUTSIDE (a Drive apply) —
+ *  never on ordinary local mutations. Views hold mount-time copies of the data
+ *  they edit (drafts, edit modes: e.g. card.tsx's notesDraft, read even for
+ *  display), so a wholesale replacement must remount them to be visible —
+ *  appRoot keys the view tree on this. A local mutation must NOT remount:
+ *  it would wipe the very draft being typed. */
+export const stateEpoch  = signal(0);
 export const canGoBack   = signal(false);
 export const canGoForward = signal(false);
 
@@ -92,6 +99,11 @@ export async function applyFromDrive(fn: (user: AppState) => void): Promise<void
   const next = structuredClone(appState.value);
   fn(next);
   appState.value = next;
+  // The world changed under the user's feet: remount the current view so its
+  // mount-time drafts re-derive from the applied state. If what it showed no
+  // longer exists (a card deleted on another device), the view's own
+  // not-found fallback handles it — no forced navigation.
+  stateEpoch.value++;
   await saveUser(next);
 }
 
