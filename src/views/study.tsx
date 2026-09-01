@@ -1,15 +1,23 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, goBack } from '../store';
-import { pickRandom, pickOptimal, pickStochastic, decksContainingCard } from '../services/deckService';
+import { pickRandom, pickOptimal, pickStochastic, pickSequential, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
 import { AttachmentList } from '../components/attachmentList';
+import { STRATEGY_ICONS } from '../components/studyModal';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
 
 const STRATEGY_LABEL_KEYS: Record<StudyStrategy, string> = {
   random: 'study.strategy.random', optimal: 'study.strategy.optimal', stochastic: 'study.strategy.stochastic',
+  sequential: 'study.strategy.sequential',
 };
+
+/** The strategies that draw at random — the only ones an anti-repeat re-roll
+ *  means anything for. `optimal` and `sequential` are deterministic. */
+function isRandomDraw(strategy: StudyStrategy): boolean {
+  return strategy === 'random' || strategy === 'stochastic';
+}
 
 const RATINGS: Array<{ rating: SessionRating; key: string; cls: string; shortcut: string }> = [
   { rating: 'again', key: 'rating.again', cls: 'btn py-2.5 text-sm font-semibold bg-danger/10 hover:bg-danger/20 text-danger',   shortcut: '1' },
@@ -24,11 +32,15 @@ function buildDeck(user: AppState, deckId?: string, cardIds?: string[], studyTit
   return undefined;
 }
 
+/** `afterCardId` is only read by the sequential strategy, which derives its
+ *  position from the card on screen (see pickSequential). The other three
+ *  ignore it — they are stateless. */
 function pickNextCard(
   user: AppState,
   deck: Deck,
   strategy: StudyStrategy,
   contextDeckId: string | null | undefined,
+  afterCardId?: string | null,
 ): DeckEntry | null {
   const profileId = user.currentProfileId;
   const w    = user.weightByImportance ?? true;
@@ -38,6 +50,7 @@ function pickNextCard(
   if (strategy === 'random')     return pickRandom(user, profileId, ctxDeck, user.cardWorks, excl);
   if (strategy === 'optimal')    return pickOptimal(user, profileId, ctxDeck, user.cards, user.cardWorks, w, excl);
   if (strategy === 'stochastic') return pickStochastic(user, profileId, ctxDeck, user.cards, user.cardWorks, w, excl);
+  if (strategy === 'sequential') return pickSequential(user, profileId, ctxDeck, user.cardWorks, excl, afterCardId);
   return null;
 }
 
@@ -75,7 +88,19 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])
   ).length;
   const candidateCount = (user.excludeMastered ?? true) ? ctxTotal - mastered : ctxTotal;
-  const canSkip  = candidateCount > 1;
+  // Skipping logs no rating, so it changes nothing that `optimal` reads: it
+  // would re-pick the very same highest-gain card. `sequential` is
+  // deterministic too, but it advances by position — skipping means something
+  // there, and is the natural way to step through a deck without grading it.
+  const canSkip  = candidateCount > 1 && strategy !== 'optimal';
+
+  // Position in the deck's own order. Sequential only: it is the one mode that
+  // loops with nothing else to mark where you are — with "exclude mastered" off
+  // it never even reaches an end screen. 0 = don't show (other strategies, or
+  // the card is no longer in the list).
+  const seqPos = strategy === 'sequential' && cardId
+    ? ctxEntries.findIndex(e => e.cardId === cardId) + 1
+    : 0;
 
   // Base route shape — carries full context for each navigate() call
   const routeBase = { view: 'study' as const, deckId, cardIds, studyTitle, strategy, contextDeckId };
@@ -86,8 +111,10 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     const d    = buildDeck(u, deckId, cardIds, studyTitle);
     if (!d) return;
     const ctxLen = buildContextualEntries(d, contextDeckId, u).length;
-    let   next   = pickNextCard(u, d, strategy, contextDeckId);
-    if (next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
+    let   next   = pickNextCard(u, d, strategy, contextDeckId, cardId);
+    // Anti-repeat re-roll: only a random draw can land back on the card we
+    // just left, and only a random draw can land elsewhere on a second try.
+    if (isRandomDraw(strategy) && next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
     navigate({ ...routeBase, currentCardId: next?.cardId ?? null });
   };
 
@@ -96,8 +123,10 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     const d = buildDeck(u, deckId, cardIds, studyTitle);
     if (!d) return;
     const ctxLen = buildContextualEntries(d, contextDeckId, u).length;
-    let   next   = pickNextCard(u, d, strategy, contextDeckId);
-    if (next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
+    let   next   = pickNextCard(u, d, strategy, contextDeckId, cardId);
+    // Anti-repeat re-roll: only a random draw can land back on the card we
+    // just left, and only a random draw can land elsewhere on a second try.
+    if (isRandomDraw(strategy) && next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
     navigate({ ...routeBase, currentCardId: next?.cardId ?? null });
   };
 
@@ -134,11 +163,26 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     ? (user.decks[contextDeckId]?.name ?? contextDeckId)
     : t('deck.context.default');
 
+  const StrategyIcon = STRATEGY_ICONS[strategy].Icon;
+
   const topBar = (
     <div class="flex items-center justify-between px-6 py-3 border-b border-border bg-surface shrink-0">
       <div class="flex items-center gap-3 flex-wrap">
+        {/* Mode first, and as an icon rather than a spelled-out chip: it is
+            the same glyph the picker showed a moment ago, it costs a fraction
+            of the width on a phone, and the tooltip still spells it out. Icon
+            and position are one unit — in sequential mode the count is that
+            mode's own state — so they never break apart from each other. */}
+        <div
+          class={`flex items-center gap-1.5 shrink-0 ${STRATEGY_ICONS[strategy].color}`}
+          title={seqPos > 0
+            ? t('study.strategy.sequentialWithPos', { pos: seqPos, total: ctxTotal })
+            : t(STRATEGY_LABEL_KEYS[strategy])}
+        >
+          <StrategyIcon size={15} />
+          {seqPos > 0 && <span class="text-xs font-mono tabular-nums">{seqPos}/{ctxTotal}</span>}
+        </div>
         <span class="text-xs font-semibold text-muted uppercase tracking-widest">{t('study.header', { deck: deckName })}</span>
-        <span class="text-xs px-2 py-0.5 rounded bg-accent/10 text-accent font-mono">{t(STRATEGY_LABEL_KEYS[strategy])}</span>
         <span class="text-xs text-dim">{t('study.context')} <span class="text-primary">{ctxName}</span></span>
         {excludedByCtx > 0 && (
           <span class="text-xs text-warn">{t('study.excludedByContext', { n: excludedByCtx })}</span>
@@ -220,9 +264,14 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
                 </button>
               ))}
             </div>
-            <button class="btn-ghost py-1.5 text-xs w-full" disabled={!canSkip} title={t('study.skipTitle')} onClick={skipCard}>
-              {t('study.skip')}
-            </button>
+            {/* Absent under `optimal`, not merely disabled: there it could
+                never do anything. Elsewhere it greys out while a single
+                candidate is left, which is a passing state worth showing. */}
+            {strategy !== 'optimal' && (
+              <button class="btn-ghost py-1.5 text-xs w-full" disabled={!canSkip} title={t('study.skipTitle')} onClick={skipCard}>
+                {t('study.skip')}
+              </button>
+            )}
           </div>
 
           {card.tags.length > 0 && (

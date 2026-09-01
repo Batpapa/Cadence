@@ -142,7 +142,11 @@ export type AppState = User;
 
 // ── Routing ──────────────────────────────────────────────────────────────────
 
-export type StudyStrategy = 'random' | 'optimal' | 'stochastic';
+/** `sequential` walks the deck's own entry order (the one set by drag-and-drop
+ *  in the deck view) and loops at the end. Unlike the other three it is only
+ *  offered when studying an actual deck: a folder or library pool has no order
+ *  the user deliberately chose. */
+export type StudyStrategy = 'random' | 'optimal' | 'stochastic' | 'sequential';
 
 export type FilterState = 'include' | 'exclude';
 

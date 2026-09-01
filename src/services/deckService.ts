@@ -88,6 +88,41 @@ export function pickStochastic(
   return candidates[candidates.length - 1] ?? null;
 }
 
+/** Next entry in the deck's own order, wrapping around at the end.
+ *
+ *  `afterCardId` is the card currently on screen — the position is *derived*
+ *  from it rather than kept in a cursor, so the walk survives a reload, a
+ *  reorder, or a deletion mid-session with nothing to resynchronise.
+ *
+ *  The position is read from the FULL entry list, never from the eligible
+ *  subset: rating a card "Easy" can master it and drop it out of that subset,
+ *  and looking the position up there would then silently restart at the top of
+ *  the deck. Mastery only decides where we land, never where we are.
+ *
+ *  Returns the current card again when it is the only eligible one left (same
+ *  as the other pickers), and null when none is. */
+export function pickSequential(
+  user: User,
+  profileId: string,
+  deck: Deck,
+  cardWorks: Record<string, CardWork>,
+  excludeMastered = true,
+  afterCardId?: string | null,
+): DeckEntry | null {
+  const entries = deck.entries;
+  if (entries.length === 0) return null;
+  // -1 when there is no current card, or when it just left the deck: `from + 1`
+  // then starts the walk at index 0.
+  const from = afterCardId ? entries.findIndex(e => e.cardId === afterCardId) : -1;
+  for (let i = 1; i <= entries.length; i++) {
+    const entry = entries[(from + i) % entries.length];
+    if (!entry) continue;
+    if (!excludeMastered) return entry;
+    if (!isAvailable(user, cardWorks[`${profileId}:${entry.cardId}`])) return entry;
+  }
+  return null;
+}
+
 // ── Navigation helpers ────────────────────────────────────────────────────────
 
 export function findParentFolder(

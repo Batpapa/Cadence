@@ -1,10 +1,12 @@
+import type { ComponentType } from 'preact';
 import { useState } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { CustomSelect } from './customSelect';
-import { pickRandom, pickOptimal, pickStochastic } from '../services/deckService';
+import { pickRandom, pickOptimal, pickStochastic, pickSequential } from '../services/deckService';
 import { buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { showModal, closeModal, renderModalBody } from './modal';
+import { DiceIcon, BullseyeIcon, WeightedBarsIcon, SequentialIcon } from './icons';
 import type { Deck, StudyStrategy, DeckEntry } from '../types';
 
 export interface StudyModalOpts {
@@ -18,28 +20,24 @@ export interface StudyModalOpts {
   deckId?: string;
 }
 
-const STRATEGY_ICONS: Record<StudyStrategy, { svg: string; color: string; bg: string }> = {
-  random: {
-    svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="4"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" stroke="none"/></svg>`,
-    color: 'text-sky-400',
-    bg:    'bg-sky-400/10',
-  },
-  optimal: {
-    svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/></svg>`,
-    color: 'text-emerald-400',
-    bg:    'bg-emerald-400/10',
-  },
-  stochastic: {
-    svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="2" y="12" width="5" height="10" rx="1"/><rect x="9.5" y="4" width="5" height="18" rx="1"/><rect x="17" y="8" width="5" height="14" rx="1"/></svg>`,
-    color: 'text-violet-400',
-    bg:    'bg-violet-400/10',
-  },
+/** Icon and colour for each strategy. Exported because the study header shows
+ *  the same glyph the picker did — that icon is how you recognise, mid-session,
+ *  which mode you started. */
+export const STRATEGY_ICONS: Record<StudyStrategy, { Icon: ComponentType<{ size?: number }>; color: string; bg: string }> = {
+  random:     { Icon: DiceIcon,         color: 'text-sky-400',     bg: 'bg-sky-400/10' },
+  optimal:    { Icon: BullseyeIcon,     color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+  stochastic: { Icon: WeightedBarsIcon, color: 'text-violet-400',  bg: 'bg-violet-400/10' },
+  sequential: { Icon: SequentialIcon,   color: 'text-amber-400',   bg: 'bg-amber-400/10' },
 };
 
+// `sequential` last on purpose: it is the only one that can be absent (deck
+// study only), and a list whose LAST item comes and goes is far less jarring
+// than one whose first does.
 const STRATEGIES: Array<{ id: StudyStrategy; labelKey: string; subKey: string }> = [
   { id: 'random',     labelKey: 'deck.strategy.random',     subKey: 'deck.strategy.random.sub' },
   { id: 'optimal',    labelKey: 'deck.strategy.optimal',    subKey: 'deck.strategy.optimal.sub' },
   { id: 'stochastic', labelKey: 'deck.strategy.stochastic', subKey: 'deck.strategy.stochastic.sub' },
+  { id: 'sequential', labelKey: 'deck.strategy.sequential', subKey: 'deck.strategy.sequential.sub' },
 ];
 
 function Switch({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
@@ -95,6 +93,8 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
       random:     () => pickRandom(u, pid, ctxPool, u.cardWorks, exclMastered),
       optimal:    () => pickOptimal(u, pid, ctxPool, u.cards, u.cardWorks, useWeight, exclMastered),
       stochastic: () => pickStochastic(u, pid, ctxPool, u.cards, u.cardWorks, useWeight, exclMastered),
+      // No current card yet — the walk starts at the top of the deck.
+      sequential: () => pickSequential(u, pid, ctxPool, u.cardWorks, exclMastered, null),
     };
     const firstCard = pickers[id]();
 
@@ -140,7 +140,11 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
       <div>
         <div class="text-xs font-semibold text-muted uppercase tracking-widest mb-2">{t('deck.strategy.title')}</div>
         <div class="space-y-2">
-          {STRATEGIES.map(s => {
+          {/* Sequential needs an order the user actually chose. A folder or
+              library pool has none — at the root it is literally the cards
+              object's insertion order — so the option is only offered when a
+              real deck is being studied. */}
+          {STRATEGIES.filter(s => s.id !== 'sequential' || !!deckId).map(s => {
             const ic = STRATEGY_ICONS[s.id];
             return (
               <button
@@ -149,7 +153,7 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
                 onClick={() => pickStrategy(s.id)}
               >
                 <div class="flex gap-3.5 items-center">
-                  <div class={`shrink-0 w-10 h-10 rounded-xl ${ic.bg} ${ic.color} flex items-center justify-center`} dangerouslySetInnerHTML={{ __html: ic.svg }} />
+                  <div class={`shrink-0 w-10 h-10 rounded-xl ${ic.bg} ${ic.color} flex items-center justify-center`}><ic.Icon size={20} /></div>
                   <div class="flex-1 min-w-0">
                     <div class="text-sm font-medium text-primary">{t(s.labelKey)}</div>
                     <div class="text-xs text-muted mt-0.5">{t(s.subKey)}</div>
