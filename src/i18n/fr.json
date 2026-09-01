@@ -320,8 +320,6 @@
   "library.batch.importance.hintClear": "Vide : efface la valeur propre au paquet de la carte sélectionnée qui s'y trouve, elle reprend son importance de base.",
   "library.batch.importance.hintClearPlural": "Vide : efface la valeur propre au paquet des {count} cartes sélectionnées qui s'y trouvent, elles reprennent leur importance de base.",
 
-  "study.modal.pickDeck": "Choisir un paquet",
-  "study.modal.noDecks": "Aucun paquet disponible",
   "study.notFound": "Paquet introuvable.",
   "study.header": "Étude · {deck}",
   "study.complete.title": "Session terminée !",
@@ -329,9 +327,6 @@
   "study.mastered.title": "Toutes les cartes de ce paquet dépassent le seuil — rien à réviser !",
   "study.mastered.back": "Retour au paquet",
   "study.viewCard": "Voir la carte ↗",
-  "study.currentAvailability": "Disponibilité actuelle :",
-  "study.neverReviewed": "· jamais révisé",
-  "study.lastReview": "· {ago}",
   "study.ratingHint": "À quel point vous en êtes-vous souvenu ?",
   "study.skip": "Passer (sans noter)",
   "study.skipTitle": "Passer (sans noter) [Tab]",
