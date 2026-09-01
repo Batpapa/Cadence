@@ -423,3 +423,59 @@ export function GithubIcon({ size = 12 }: { size?: number }) {
     </svg>
   );
 }
+
+// ── Study strategies ──────────────────────────────────────────────────────────
+// One per StudyStrategy. Sized by their two callers: 20px in the strategy
+// picker's tiles, 15px in the study header. The colour comes from the caller
+// via currentColor (see STRATEGY_ICONS in studyModal.tsx).
+
+/** Five pips on a die — a uniform draw. */
+export function DiceIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="4"/>
+      <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="8.5" cy="15.5" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
+/** Concentric rings on a filled centre — always the single best card. */
+export function BullseyeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+      <circle cx="12" cy="12" r="10"/>
+      <circle cx="12" cy="12" r="6"/>
+      <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/>
+    </svg>
+  );
+}
+
+/** Bars of unequal height — a draw weighted by learning gain. */
+export function WeightedBarsIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <rect x="2" y="12" width="5" height="10" rx="1"/>
+      <rect x="9.5" y="4" width="5" height="18" rx="1"/>
+      <rect x="17" y="8" width="5" height="14" rx="1"/>
+    </svg>
+  );
+}
+
+/** A list read top to bottom: rows on the right, a down arrow running past
+ *  them on the left. Deliberately not a repeat/loop glyph — the looping is
+ *  the footnote, "the deck's own order" is what the mode actually is. */
+export function SequentialIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="10" y1="6" x2="21" y2="6"/>
+      <line x1="10" y1="12" x2="21" y2="12"/>
+      <line x1="10" y1="18" x2="21" y2="18"/>
+      <path d="M4 4v15"/>
+      <polyline points="1.8 16.6 4 19 6.2 16.6"/>
+    </svg>
+  );
+}
