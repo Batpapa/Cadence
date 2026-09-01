@@ -94,10 +94,64 @@ function post(msg: FFWorkerResponse): void {
   ctx.postMessage(msg);
 }
 
+/** A minimal module — one function `[] -> []` whose body is
+ *  `i32.const 0; i8x16.splat; drop; end` — that only validates where
+ *  WebAssembly SIMD is supported, because `i8x16.splat` (opcode 0xfd 0x0f) is
+ *  an unknown instruction otherwise. Detection must happen BEFORE
+ *  instantiating: a module containing SIMD fails to validate outright on a
+ *  browser without it, so there is no graceful degradation to fall back on,
+ *  only a dead Sessions feature. Safari shipped SIMD in 16.4 (March 2023).
+ *
+ *  Do not "simplify" these bytes. The snippet widely copied around for this
+ *  declares the function as returning a v128 and then drops it, which leaves
+ *  the stack empty at `end` — malformed regardless of SIMD support, so it
+ *  answers false everywhere and silently sends every browser to the slow path.
+ *  Verified here: this module validates on a runtime where the real SIMD
+ *  binary also validates. */
+const WASM_SIMD_TEST = new Uint8Array([
+  0, 97, 115, 109, 1, 0, 0, 0,   // magic + version
+  1, 4, 1, 96, 0, 0,             // type:     () -> ()
+  3, 2, 1, 0,                    // function: one, of that type
+  10, 9, 1, 7, 0, 65, 0, 253, 15, 26, 11, // code: i32.const 0; i8x16.splat; drop; end
+]);
+
+function supportsSimd(): boolean {
+  try {
+    return WebAssembly.validate(WASM_SIMD_TEST);
+  } catch {
+    return false;
+  }
+}
+
 async function handleInit(sr: number, hop?: number): Promise<void> {
   sampleRate = sr;
   hopS = hop ?? ANALYSIS_HOP_S;
-  await init(new URL('../../../vendor/folkfriend/folkfriend_bg.wasm', import.meta.url));
+  // Two builds of the same engine, bit-identical in their results — the SIMD
+  // one scores four index candidates per vector instruction and is ~1.7x
+  // faster overall. Both URLs are written out literally so the bundler emits
+  // both files; only the chosen one is ever fetched.
+  const scalarUrl = new URL('../../../vendor/folkfriend/folkfriend_bg.wasm', import.meta.url);
+  const simdUrl = new URL('../../../vendor/folkfriend/folkfriend_bg_simd.wasm', import.meta.url);
+  let usingSimd = supportsSimd();
+  if (usingSimd) {
+    try {
+      await init(simdUrl);
+    } catch {
+      // Belt and braces: if the probe is ever wrong, or a browser validates
+      // SIMD but refuses this particular module, fall back rather than leave
+      // the feature dead. Safe to retry — the glue only latches its instance
+      // on success, so a failed init leaves nothing behind.
+      usingSimd = false;
+      await init(scalarUrl);
+    }
+  } else {
+    await init(scalarUrl);
+  }
+  // Which build loaded is otherwise invisible: the bundler hashes both
+  // filenames and they are within 2 KB of each other, so the network tab
+  // cannot tell them apart. Results are identical either way — this is purely
+  // about speed.
+  console.info(`[folkfriend] moteur ${usingSimd ? 'SIMD (rapide)' : 'scalaire (repli — navigateur sans SIMD)'}`);
   ff = new FolkFriendWASM();
   ff.set_sample_rate(sampleRate);
   pcmPtr = ff.alloc_single_pcm_window();
