@@ -148,6 +148,38 @@ const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
   difficulty: FlameIcon,
 };
 
+/** The sort the user last *chose*, per user and per device. Local only, never
+ *  synced: it is a habit of this device's UI, not user data.
+ *
+ *  Written ONLY from the sort controls' click handlers — deliberately not from
+ *  an effect on `sortMode`. An effect would also fire when the view mounts on a
+ *  route that carries its own sort (the back button, or the route restored at
+ *  boot), which would silently overwrite the remembered default with wherever
+ *  the user happened to navigate back to. */
+const SORT_PREF_KEY = 'cadence_library_sort';
+
+type SortPref = { sort: LibrarySort; asc: boolean };
+
+function loadSortPref(userId: string): SortPref | null {
+  try {
+    const raw = localStorage.getItem(`${SORT_PREF_KEY}:${userId}`);
+    if (!raw) return null;
+    const pref = JSON.parse(raw) as SortPref;
+    // A stored mode may have been renamed or dropped since it was written.
+    return SORT_MODES.includes(pref?.sort) ? { sort: pref.sort, asc: !!pref.asc } : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSortPref(userId: string, sort: LibrarySort, asc: boolean): void {
+  try {
+    localStorage.setItem(`${SORT_PREF_KEY}:${userId}`, JSON.stringify({ sort, asc }));
+  } catch {
+    // Private mode, quota exhausted — losing a UI preference must never break sorting.
+  }
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function LibraryView() {
@@ -158,8 +190,14 @@ export function LibraryView() {
   const [searchQuery, setSearchQuery] = useState(savedRoute?.search ?? '');
   const [activeTags,  setActiveTags]  = useState<FilterMap>(() => new Map(savedRoute?.tags ?? []));
   const [activeDecks, setActiveDecks] = useState<FilterMap>(() => new Map(savedRoute?.decks ?? []));
-  const [sortMode,    setSortMode]    = useState<LibrarySort>(savedRoute?.sort ?? 'alpha');
-  const [sortAsc,     setSortAsc]     = useState(savedRoute?.sortAsc ?? false);
+  // `sort` and `sortAsc` are written to the route as a pair, so a route carries
+  // both or neither. A history entry (back/forward, or the route restored at
+  // boot) therefore replays exactly what was on screen; a fresh navigation here
+  // — the header button, or a deck's "show these cards" — carries neither, and
+  // falls back to what the user last chose. Lazy initialisers: this reads
+  // localStorage at mount, not on every keystroke in the search box.
+  const [sortMode,    setSortMode]    = useState<LibrarySort>(() => savedRoute?.sort ?? loadSortPref(user.id)?.sort ?? 'alpha');
+  const [sortAsc,     setSortAsc]     = useState(() => savedRoute?.sortAsc ?? loadSortPref(user.id)?.asc ?? false);
   const [sortOpen,    setSortOpen]    = useState(false);
   const [tagFilterOr, setTagFilterOr] = useState(savedRoute?.tagOr ?? false);
   const [deckFilterOr, setDeckFilterOr] = useState(savedRoute?.deckOr ?? false);
@@ -489,7 +527,7 @@ export function LibraryView() {
                     <button
                       key={m}
                       class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
-                      onClick={() => { setSortMode(m); setSortOpen(false); }}
+                      onClick={() => { setSortMode(m); saveSortPref(user.id, m, sortAsc); setSortOpen(false); }}
                     >
                       <span class="shrink-0 flex items-center"><Icon size={12} /></span>
                       <span class="flex-1">{t(`library.sort.${m}`)}</span>
@@ -504,7 +542,7 @@ export function LibraryView() {
             type="button"
             class="btn-ghost text-xs inline-flex items-center justify-center"
             title={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
-            onClick={() => setSortAsc(a => !a)}
+            onClick={() => { const next = !sortAsc; setSortAsc(next); saveSortPref(user.id, sortMode, next); }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${sortAsc ? 'rotate-180' : ''}`}>
               <line x1="12" y1="5" x2="12" y2="19"/>
