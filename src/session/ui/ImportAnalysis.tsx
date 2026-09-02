@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import type { ImportSession } from '../importSession';
+import type { ImportSession, ImportProgress } from '../importSession';
 import type { SessionAnnotation } from '../model';
 import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { PitchShiftControl } from './PitchShiftControl';
@@ -11,6 +11,7 @@ import {
   BoundControls, ClipControls, type ClipSessionRef,
 } from './sessionUiShared';
 import { importPlaybackWarn } from './sessionStore';
+import { useThrottled } from './throttle';
 
 // ── Screen: file import ───────────────────────────────────────────────────────
 // Turns an audio file into a full session: same recognition pipeline as live,
@@ -89,6 +90,16 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   // satisfying ClipSessionRef's shape.
   const impRef = (): ClipSessionRef => ({ id: imp.sessionId, name: imp.name || imp.defaultName(), date: imp.dateOverride, duration: progress.totalS });
 
+  // Analysis emits a window roughly every 60ms — both feeds below would
+  // otherwise re-render this screen a dozen-plus times a second. The session
+  // itself still receives every event; only the redraw is coalesced.
+  //
+  // The progress bar reads smoothly at this rate rather than stepping, because
+  // its `transition-[width] duration-200` very nearly bridges the 250ms between
+  // updates. Change one and look at the other.
+  const onProgress = useThrottled((p: ImportProgress) => setProgress(p));
+  const onAnnotations = useThrottled((all: SessionAnnotation[]) => setAnnotations(all));
+
   useEffect(() => {
     imp.setCallbacks({
       onPhase: (phase) => {
@@ -97,8 +108,8 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         else if (phase === 'analyzing') setStatusText('');
       },
       onIndexProgress: p => setStatusText(indexProgressText(p)),
-      onProgress: (p) => setProgress(p),
-      onAnnotations: (_events, all) => setAnnotations(all),
+      onProgress,
+      onAnnotations: (_events, all) => onAnnotations(all),
       onError: (message) => setStatusText(`⚠ ${message}`),
     });
     // First render happens just before start() (phase 'idle'), or as a

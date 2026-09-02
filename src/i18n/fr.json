@@ -12,7 +12,6 @@
   "userSelector.delete.title": "Retirer de cet appareil",
   "userSelector.delete.message": "Retirer « {name} » de cet appareil ? Les données resteront disponibles sur les autres appareils connectés.",
   "userSelector.delete.confirm": "Retirer",
-
   "common.durationYears": "{n}a",
   "common.durationMonths": "{n}m",
   "common.durationDays": "{n}j",
@@ -36,7 +35,6 @@
   "common.tuneFetchErrorNamed": "Erreur sur le morceau « {name} » ({ref}) : {message}",
   "common.deleteOrphanCards": "Aussi supprimer la carte orpheline (qui ne serait plus dans aucun paquet)",
   "common.deleteOrphanCardsPlural": "Aussi supprimer les {count} cartes orphelines (qui ne seraient plus dans aucun paquet)",
-
   "time.ago.months": "il y a {n} mois",
   "time.ago.days": "il y a {n}j",
   "time.ago.hours": "il y a {n}h",
@@ -49,7 +47,6 @@
   "time.days.thu": "Jeu",
   "time.days.fri": "Ven",
   "time.days.sat": "Sam",
-
   "sidebar.logo": "Cadence",
   "sidebar.home": "Accueil",
   "sidebar.library": "Bibliothèque de cartes",
@@ -75,12 +72,10 @@
   "sidebar.manageProfiles": "Gérer les profils",
   "sidebar.collapse": "Réduire la barre latérale",
   "sidebar.expand": "Afficher la barre latérale",
-
   "modal.newFolder.title": "Nouveau dossier",
   "modal.newFolder.label": "Nom du dossier",
   "modal.newDeck.title": "Nouveau paquet",
   "modal.newDeck.label": "Nom du paquet",
-
   "folder.title.home": "Accueil",
   "folder.parent.label": "Emplacement :",
   "folder.section.folders": "Dossiers",
@@ -97,7 +92,6 @@
   "folder.deckMeta": "{count} cartes",
   "folder.delete.title": "Supprimer le dossier",
   "folder.delete.message": "Supprimer « {name} » et tout son contenu ?",
-
   "dashboard.cards": "Cartes",
   "dashboard.thisWeek": "Cette semaine",
   "dashboard.streak": "Série",
@@ -123,7 +117,6 @@
   "dashboard.filterNone": "aucun",
   "dashboard.session": "{count} session",
   "dashboard.sessions": "{count} sessions",
-
   "deck.notFound": "Paquet introuvable.",
   "deck.section.availability": "Rappel",
   "deck.section.stability": "Ancrage",
@@ -149,7 +142,6 @@
   "deck.context.default": "Défaut",
   "deck.delete.title": "Supprimer le paquet",
   "deck.delete.message": "Supprimer « {name} » ? Les cartes ne seront pas supprimées.",
-
   "deck.strategy.title": "Stratégie d'étude",
   "deck.strategy.random": "Aléatoire",
   "deck.strategy.random.sub": "Tirage uniforme — toutes les cartes sont équiprobables",
@@ -159,7 +151,6 @@
   "deck.strategy.stochastic.sub": "Tirage aléatoire pondéré par le gain d'apprentissage",
   "deck.strategy.sequential": "Séquentiel",
   "deck.strategy.sequential.sub": "Suit l'ordre du paquet, en boucle",
-
   "deck.link.title": "Lier une carte existante",
   "deck.link.allLinked": "Toutes les cartes existantes sont déjà liées à ce paquet.",
   "deck.link.search": "Rechercher…",
@@ -172,7 +163,6 @@
   "deck.neverReviewed": "Jamais révisé",
   "deck.favorite": "Ajouter aux favoris",
   "deck.unfavorite": "Retirer des favoris",
-
   "card.notFound": "Carte introuvable.",
   "card.section.availability": "Rappel",
   "card.section.stability": "Ancrage",
@@ -224,14 +214,12 @@
   "card.logSession.dateLabel": "Date et heure",
   "card.logSession.qualityLabel": "Qualité",
   "card.logSession.chip": "+ Enregistrer",
-
   "sessions.review.log": "Noter la révision :",
   "sessions.review.remove": "supprimer la révision",
   "rating.again": "✗ À revoir",
   "rating.hard": "△ Difficile",
   "rating.good": "○ Bien",
   "rating.easy": "✓ Facile",
-
   "library.title": "Bibliothèque",
   "library.study": "Étudier la sélection",
   "library.cardCount": "{count} carte",
@@ -280,7 +268,6 @@
   "library.delete.title": "Supprimer les cartes",
   "library.delete.message": "Supprimer définitivement {count} carte ? Elle sera retirée de tous les paquets.",
   "library.delete.messagePlural": "Supprimer définitivement {count} cartes ? Elles seront retirées de tous les paquets.",
-
   "library.batch.more": "Autres actions",
   "library.batch.addTag": "Ajouter une étiquette…",
   "library.batch.addTag.title": "Ajouter une étiquette",
@@ -319,7 +306,6 @@
   "library.batch.importance.hintDeckPlural": "S'applique aux {count} cartes sélectionnées présentes dans ce paquet.",
   "library.batch.importance.hintClear": "Vide : efface la valeur propre au paquet de la carte sélectionnée qui s'y trouve, elle reprend son importance de base.",
   "library.batch.importance.hintClearPlural": "Vide : efface la valeur propre au paquet des {count} cartes sélectionnées qui s'y trouvent, elles reprennent leur importance de base.",
-
   "study.notFound": "Paquet introuvable.",
   "study.header": "Étude · {deck}",
   "study.complete.title": "Session terminée !",
@@ -339,7 +325,6 @@
   "study.strategy.stochastic": "Stochastique",
   "study.strategy.sequential": "Séquentiel",
   "study.strategy.sequentialWithPos": "Séquentiel : {pos}/{total}",
-
   "settings.title": "Paramètres",
   "settings.explain": "Afficher l’explication",
   "settings.profile": "Profil",
@@ -382,7 +367,6 @@
   "settings.reset": "Réinitialiser",
   "settings.install": "Installer l'app",
   "settings.installIOS": "Appuyez sur le bouton Partager dans Safari, puis « Sur l'écran d'accueil »",
-
   "settings.sync": "Synchronisation",
   "settings.sync.connect": "Connecter",
   "settings.sync.disconnect": "Déconnecter",
@@ -396,10 +380,10 @@
   "settings.sync.inAppBrowserError": "Ça ressemble à un navigateur intégré à une autre appli (WhatsApp, Instagram…), qui bloque souvent l'écran de connexion Google. Essaie d'ouvrir cette page dans un navigateur autonome — sur la plupart des téléphones, cherche un menu \"⋮\" ou une option \"Ouvrir dans le navigateur\" dans la barre de l'appli.",
   "settings.sync.conflict.title": "Conflit de données",
   "settings.sync.conflict.message": "Les données locales et celles du Drive ont divergé. Elles ne peuvent pas être fusionnées automatiquement — vous devez choisir l'une des deux.",
-  "settings.sync.conflict.keepLocal": "Garder cet appareil (écrase le Drive)",
-  "settings.sync.conflict.useDrive": "Prendre le Drive (écrase cet appareil)",
   "settings.sync.conflict.local": "Cet appareil",
   "settings.sync.conflict.drive": "Drive",
+  "settings.sync.conflict.localOverwrites": "Écrase la version du Drive",
+  "settings.sync.conflict.driveOverwrites": "Écrase la version de cet appareil",
   "settings.sync.conflict.stats": "Cartes : {cards} · Révisions : {reviews}",
   "settings.sync.conflict.lastModified": "Dernière modification : {date}",
   "settings.sync.conflict.lastModifiedUnknown": "Dernière modification : inconnue",
@@ -410,7 +394,6 @@
   "settings.sync.wrongAccount.title": "Mauvais compte Google",
   "settings.sync.wrongAccount.message": "Ce compte ({new}) est différent de celui précédemment associé à cet utilisateur ({existing}). La connexion liera vos données à un autre compte.",
   "settings.sync.wrongAccount.switchAnyway": "Connecter quand même",
-
   "settings.about": "À propos",
   "settings.aboutLine1": "Cadence — application de répétition espacée open-source",
   "settings.aboutLine2": "Auteur : Antoine Lucat — antl@hotmail.fr",
@@ -433,7 +416,6 @@
   "settings.profiles.delete.title": "Supprimer le profil",
   "settings.profiles.delete.message": "Supprimer le profil « {name} » ? Tout l'historique d'étude de ce profil sera perdu.",
   "settings.profiles.modalTitle": "Profils",
-
   "theSession.tabTune": "Morceau",
   "theSession.tabMember": "Membre",
   "theSession.tune.placeholder": "Nom ou ID du morceau…",
@@ -465,7 +447,6 @@
   "theSession.status.batchBlockedPlural": ", {count} ignorés — non disponibles publiquement : {tunes}",
   "theSession.error": "Erreur : {message}",
   "theSession.noResults": "Aucun résultat.",
-
   "irishTuneInfo.includeAudio": "Importer l'extrait audio (peut prendre du temps)",
   "irishTuneInfo.tabTune": "Morceau",
   "irishTuneInfo.tabPlaylist": "Playlist",
@@ -495,13 +476,11 @@
   "irishTuneInfo.status.checkingMappingProgress": "Vérification du catalogue TheSession — {done}/{total}…",
   "irishTuneInfo.error": "Erreur : {message}",
   "irishTuneInfo.noResults": "Aucun résultat.",
-
   "irishTuneInfo.mapping.title": "Disponible sur TheSession",
   "irishTuneInfo.mapping.offerSingle": "« {name} » est aussi disponible sur TheSession : une communauté plus grande, des morceaux que l'analyseur de session sait reconnaître, et plus de doublons IrishTuneInfo/TheSession dans ta bibliothèque. On te conseille de l'importer depuis là-bas à la place.",
   "irishTuneInfo.mapping.offerPlural": "{count} des {total} morceaux que tu es sur le point d'importer sont aussi disponibles sur TheSession : une communauté plus grande, des morceaux que l'analyseur de session sait reconnaître, et plus de doublons IrishTuneInfo/TheSession dans ta bibliothèque. On te conseille de les importer depuis là-bas à la place.",
   "irishTuneInfo.mapping.useTheSession": "Utiliser TheSession (conseillé)",
   "irishTuneInfo.mapping.keepIti": "Garder IrishTuneInfo",
-
   "newCard.title": "Nouvelle carte",
   "newCard.tabCreate": "Créer",
   "newCard.tabTheSession": "TheSession",
@@ -535,7 +514,6 @@
   "newCard.ai.pasteLabel": "Colle ici la réponse JSON de l'IA",
   "newCard.ai.pastePlaceholder": "Colle le JSON donné par l'IA…",
   "newCard.ai.pasteBtn": "Importer",
-
   "commandPalette.placeholder": "Rechercher des cartes, paquets, dossiers…",
   "commandPalette.typeToSearch": "Tapez pour rechercher…",
   "commandPalette.noResults": "Aucun résultat.",
@@ -544,7 +522,6 @@
   "commandPalette.kind.folder": "dossier",
   "commandPalette.deckCount": "{count} carte",
   "commandPalette.deckCountPlural": "{count} cartes",
-
   "embed.section": "Liens",
   "embed.add": "+ Ajouter",
   "embed.addTitle": "Ajouter un lien",
@@ -556,7 +533,6 @@
   "embed.unsupported": "Plateforme non supportée (YouTube, Spotify, Deezer, SoundCloud uniquement)",
   "embed.checking": "Vérification…",
   "embed.remove": "Supprimer",
-
   "fileViewer.attachments": "Pièces jointes",
   "fileViewer.attachmentsCount": "Pièces jointes ({count})",
   "fileViewer.addFile": "+ Fichier",
@@ -598,7 +574,6 @@
   "fileViewer.abc.instrument.banjo": "Banjo",
   "fileViewer.abc.instrument.pipes": "Cornemuse",
   "fileViewer.abc.instrument.guitar": "Guitare",
-
   "help.title": "Aide — {context}",
   "help.tabInfo": "Infos",
   "help.tabGuide": "Guide",
@@ -607,32 +582,27 @@
   "help.guide.step1.2": "Plus tu révises régulièrement, plus l'intervalle s'allonge — et moins l'apprentissage demande d'effort.",
   "help.guide.step1.3": "Chaque élément à apprendre devient une « carte » : un morceau, un mot, une notion, etc.",
   "help.guide.step1.4": "Les cartes sont regroupées dans des paquets que tu peux réviser séparément.",
-
   "help.guide.step2.heading": "Créer ta première carte",
   "help.guide.step2.1": "Clique sur le bouton « + » en haut à droite de la bibliothèque pour créer une carte.",
   "help.guide.step2.2": "Donne-lui un nom, puis ouvre la carte pour ajouter des notes, fichiers ou liens.",
   "help.guide.step2.3": "Astuce : si tu travailles des morceaux de TheSession, utilise l'import dédié pour les intégrer avec leur notation ABC en un clic !",
-
   "help.guide.step3.heading": "Organiser en paquets",
   "help.guide.step3.1": "Un paquet est un groupe de cartes à étudier ensemble (ex. « Jazz », « Musique traditionnelle », « Vocabulaire espagnol »).",
   "help.guide.step3.2": "Crée un paquet avec le bouton dédié dans la barre latérale, puis ajoute-y des cartes.",
   "help.guide.step3.3": "Ajoute une carte à un paquet depuis la bibliothèque, ou directement lors de sa création.",
   "help.guide.step3.4": "Une carte peut appartenir à plusieurs paquets — pratique pour croiser les thèmes !",
-
   "help.guide.step4.heading": "Lancer une session d'étude",
   "help.guide.step4.1": "Clique sur « Étudier » sur n'importe quel paquet pour commencer.",
   "help.guide.step4.2": "L'application affiche uniquement les cartes à réviser maintenant, afin d'éviter les répétitions inutiles.",
   "help.guide.step4.3": "Si aucune carte n'est disponible, reviens plus tard : ton cerveau consolide en ce moment !",
-
   "help.guide.step5.heading": "Te noter honnêtement",
   "help.guide.step5.1": "Again : tu n'as pas réussi. La carte revient très vite.",
   "help.guide.step5.2": "Hard : tu t'en souvenais, mais c'était laborieux. La carte reviendra assez vite.",
   "help.guide.step5.3": "Good : tu t'en es souvenu correctement. La prochaine révision est repoussée.",
   "help.guide.step5.4": "Easy : c'était évident ! L'application attendra bien plus longtemps avant de te la redonner.",
-
   "help.guide.step6.heading": "Suivre tes progrès",
   "help.guide.step6.1": "La page d'accueil est un tableau de bord : elle donne une estimation de ce que tu maîtrises actuellement.",
-"help.guide.step6.2": "Consulte la page d'un paquet pour voir ses métriques globales et l'état de chaque carte.",
+  "help.guide.step6.2": "Consulte la page d'un paquet pour voir ses métriques globales et l'état de chaque carte.",
   "help.guide.step6.3": "Clique sur une carte pour voir le détail de ses métriques : rappel, stabilité, facilité.",
   "help.context.home": "Accueil",
   "help.context.folder": "Dossier",
@@ -642,7 +612,6 @@
   "help.context.study": "Session d'étude",
   "help.context.modules": "Modules",
   "help.context.trending": "Tendances",
-
   "help.home.welcome.heading": "Qu'est-ce que Cadence ?",
   "help.home.welcome.1": "Cadence est un outil de répétition espacée — il vous aide à apprendre et retenir n'importe quoi sur la durée, en vous montrant quoi réviser au moment exact où c'est nécessaire.",
   "help.home.welcome.2": "Créez des cartes pour ce que vous voulez apprendre, regroupez-les en paquets et révisez régulièrement. Cadence gère la planification.",
@@ -664,7 +633,6 @@
   "help.folder.actions.1": "Cliquez sur le nom du dossier pour le renommer.",
   "help.folder.actions.2": "« Emplacement » affiche le dossier parent actuel — cliquez dessus pour déplacer ce dossier ailleurs instantanément.",
   "help.folder.actions.3": "Supprimer un dossier le retire ainsi que tout son contenu ; vous pourrez aussi choisir de supprimer les cartes qui deviendraient orphelines (dans aucun paquet) suite à cette suppression.",
-
   "help.library.browse.heading": "Qu'est-ce que la bibliothèque ?",
   "help.library.browse.1": "La bibliothèque est la liste complète de toutes vos cartes, tous paquets confondus. Une carte peut appartenir à plusieurs paquets simultanément.",
   "help.library.browse.2": "Chaque carte affiche deux points : le score de rappel (rouge/jaune/vert) et l'aisance. Ils reflètent votre historique de révisions.",
@@ -675,7 +643,6 @@
   "help.library.tools.2": "La carte visuelle (icône en haut à droite) place vos cartes visuellement — la position reflète le rappel et la stabilité.",
   "help.library.tools.3": "Sélectionnez plusieurs cartes (cases à cocher, ou shift-clic pour une plage) pour les étudier, exporter, déplacer entre paquets, ou supprimer d'un coup.",
   "help.library.tools.4": "« Nouvelle carte » permet d'en créer une à la main, d'importer depuis TheSession/IrishTuneInfo, de générer des cartes avec une IA, ou de restaurer un paquet partagé/exporté.",
-
   "help.deck.study.heading": "Qu'est-ce qu'un paquet ?",
   "help.deck.study.1": "Un paquet est un ensemble de cartes que vous étudiez ensemble.",
   "help.deck.study.2": "Une carte peut appartenir à plusieurs paquets simultanément — organisez le même contenu de différentes façons sans rien dupliquer.",
@@ -695,7 +662,6 @@
   "help.deck.location.2": "« Emplacement » affiche le dossier parent actuel — cliquez dessus pour déplacer ce paquet ailleurs instantanément.",
   "help.deck.location.3": "« Voir dans la bibliothèque » ouvre la bibliothèque filtrée sur les cartes de ce paquet.",
   "help.deck.location.4": "Utilisez le champ de recherche à côté de la liste de cartes pour lier une carte existante à ce paquet, ou « + » pour en créer/importer une directement dedans.",
-
   "help.card.edit.heading": "Qu'est-ce qu'une carte ?",
   "help.card.edit.1": "Une carte représente une chose que vous voulez apprendre — un morceau, un concept, un mot, n'importe quoi avec un nom.",
   "help.card.edit.2": "Chaque carte possède des étiquettes (pour la catégoriser), une importance (pour la prioriser) et des pièces jointes optionnelles : notes, fichiers audio, notation ABC, liens.",
@@ -722,7 +688,6 @@
   "help.card.history.heading": "Historique des révisions",
   "help.card.history.1": "Cliquez sur « + » dans l'historique pour enregistrer manuellement une session passée.",
   "help.card.history.2": "Survolez une entrée et cliquez ✕ pour la supprimer.",
-
   "help.study.launch.heading": "Avant de commencer",
   "help.study.launch.1": "Le contexte restreint la sélection aux cartes partagées avec un autre paquet, et utilise les importances spécifiques de ce paquet plutôt que celles par défaut.",
   "help.study.launch.2": "« Pondérer par importance » et « Exclure les maîtrisées » déterminent si l'importance et la maîtrise influencent les cartes affichées.",
@@ -775,7 +740,6 @@
   "help.sessions.summary.3": "Extrayez un segment en MP3 et attachez-le directement à sa carte.",
   "help.sessions.summary.4": "Renommez la session, modifiez sa date, ou « oubliez » son audio pour économiser de la place — les morceaux détectés et annotations restent dans tous les cas.",
   "help.sessions.summary.5": "Partagez une session, avec ou sans son audio, via un fichier ou une clé temporaire — même mécanisme que le partage de cartes.",
-
   "help.trending.what.heading": "Ce qu'on trouve ici",
   "help.trending.what.1": "Un explorateur de l'historique de popularité TheSession — voyez quels morceaux ont le plus progressé (en absolu ou en %) sur la période de votre choix.",
   "help.trending.what.2": "L'historique complet de popularité est synchronisé depuis les données publiques de TheSession dès la première ouverture du module — un peu long la toute première fois sur un appareil, quasi instantané ensuite.",
@@ -784,11 +748,8 @@
   "help.trending.actions.1": "\"Depuis\"/\"Jusqu'à\" choisissent la période ; la bascule abs/% passe du gain brut à la croissance en pourcentage ; \"Min tunebooks\" filtre les morceaux trop confidentiels.",
   "help.trending.actions.2": "L'icône de note sur un morceau prévisualise sa partition (tous les settings, jouable) sans quitter la liste.",
   "help.trending.actions.3": "\"+\" ajoute un morceau à votre bibliothèque, lié au(x) deck(s) choisi(s) via l'icône deck en haut — réglé une fois, réutilisé pour chaque ajout depuis cet écran.",
-
   "sidebar.modules": "Modules",
-
   "modules.title": "Modules",
-
   "trending.moduleTitle": "Tendances",
   "trending.moduleDesc": "Les morceaux TheSession dont la popularité grimpe le plus vite",
   "trending.title": "Tendances",
@@ -810,7 +771,6 @@
   "trending.rowCount": "{n} morceaux",
   "trending.viewSheet": "Voir la partition",
   "trending.detailLoadError": "Impossible de charger la partition de ce morceau.",
-
   "sessions.initializing": "Chargement du moteur de reconnaissance…",
   "sessions.downloadingIndex": "Téléchargement de l'index ({mb} Mo)…",
   "sessions.processingIndex": "Préparation de l'index…",
@@ -821,7 +781,6 @@
   "sessions.confidence.high": "Fiable",
   "sessions.confidence.medium": "Moyen",
   "sessions.confidence.low": "À confirmer",
-
   "sessions.moduleTitle": "Analyseur de morceaux",
   "sessions.moduleDesc": "Reconnaître des morceaux depuis un fichier audio ou en enregistrant une session live",
   "sessions.recordingIndicator": "Une session est en cours d'enregistrement ou d'import — cliquer pour y retourner",
