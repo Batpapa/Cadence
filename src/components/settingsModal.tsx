@@ -311,7 +311,7 @@ function DriveRow() {
       if (result.action === 'apply') {
         await applyDriveState(result.state, result.driveTs, result.version);
       } else if (result.action === 'conflict') {
-        showDriveConflictModal(result.state, result.driveTs, result.version);
+        showDriveConflictModal(result.state, result.driveTs, result.version, result.driveDeviceId);
       } else if (result.action === 'none') {
         syncToCloud(getContext().user);
         void manualSync();

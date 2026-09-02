@@ -349,8 +349,12 @@ async function reconcileWithDrive(interactive = true): Promise<boolean> {
     return false;
   }
   if (result.action === 'conflict') {
-    showDriveConflictModal(result.state, result.driveTs, result.version);
-    return false;                       // the user is choosing; don't pre-empt them
+    // May resolve without asking anything when the two copies turn out to hold
+    // the same content — see showDriveConflictModal. Either way local does not
+    // "win" here: the user is mid-decision, or the sync point has just been
+    // recorded and there is nothing left to push.
+    showDriveConflictModal(result.state, result.driveTs, result.version, result.driveDeviceId);
+    return false;
   }
   // 'none' means local is the version to keep. If it also holds edits that
   // never reached Drive (the tab that made them was closed before a flush

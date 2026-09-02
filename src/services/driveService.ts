@@ -7,8 +7,13 @@ export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' 
 
 export type ReconcileResult =
   | { action: 'none' }
-  | { action: 'apply';    state: AppState; driveTs: number; version: string }  // fast-forward from Drive
-  | { action: 'conflict'; state: AppState; driveTs: number; version: string }; // both sides moved — ask the user
+  | { action: 'apply';    state: AppState; driveTs: number; version: string; driveDeviceId: string | null }  // fast-forward from Drive
+  // Both sides moved — ask the user. `driveDeviceId` is who WROTE the Drive
+  // copy: when it is this very device, the "conflict" is almost certainly our
+  // own push whose acknowledgement never came back (the tab died between
+  // Drive committing the write and recordSyncPoint running), not a second
+  // writer. The conflict screen says so, because it changes how to read it.
+  | { action: 'conflict'; state: AppState; driveTs: number; version: string; driveDeviceId: string | null };
 
 export type ConnectResult =
   | ReconcileResult
@@ -327,8 +332,8 @@ export function reconcileDriveData(read: DriveFileRead): ReconcileResult {
   // install takes on its first boot after this deploy.
   if (decision.adoptVersion) localStorage.setItem(lsSyncedVersion(), read.version);
   if (decision.action === 'none' || read.status !== 'ok') return { action: 'none' };
-  const { _lastModified: _a, _deviceId: _b, ...clean } = read.data;
-  return { action: decision.action, state: clean as AppState, driveTs, version: read.version };
+  const { _lastModified: _a, _deviceId: driveDeviceId, ...clean } = read.data;
+  return { action: decision.action, state: clean as AppState, driveTs, version: read.version, driveDeviceId: driveDeviceId ?? null };
 }
 
 export function onStatusChange(cb: (s: DriveStatus) => void): () => void {
@@ -559,11 +564,12 @@ export async function connectDrive(allowSharedAccount = false): Promise<ConnectR
     // genuinely nothing to arbitrate: an empty Drive (keep local, the connect
     // flow pushes it) and a never-modified local (take Drive's).
     if (file.status === 'empty') return { action: 'none' };
-    const { _lastModified, _deviceId: _dev, ...clean } = file.data;
+    const { _lastModified, _deviceId, ...clean } = file.data;
     const driveTs = _lastModified ?? 0;
     const state = clean as AppState;
-    if (getLocalTimestamp() === 0 && getEditSeq() === 0) return { action: 'apply', state, driveTs, version: file.version };
-    return { action: 'conflict', state, driveTs, version: file.version };
+    const driveDeviceId = _deviceId ?? null;
+    if (getLocalTimestamp() === 0 && getEditSeq() === 0) return { action: 'apply', state, driveTs, version: file.version, driveDeviceId };
+    return { action: 'conflict', state, driveTs, version: file.version, driveDeviceId };
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
