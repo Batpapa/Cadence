@@ -390,9 +390,13 @@ export function FolderView({ folderId }: { folderId: string | null }) {
           )}
         </div>
         <div class="flex gap-2 shrink-0">
+          {/* Only the folder view carries the tooltip: its label was shortened
+              to "Study", while the home button keeps the self-explanatory
+              "Study all" and a tooltip there would just repeat the label. */}
           {folderEntries.length > 0 && (
             <button
               class="btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium"
+              title={folderId ? t('folder.studyTitle') : undefined}
               onClick={() => showStudyModal({ entries: folderEntries, title: folderTitle, defaultContext: null })}
             >
               {folderId ? t('folder.study') : t('folder.studyAll')}
