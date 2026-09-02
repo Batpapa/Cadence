@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
+import { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { pct, focusIfDesktop, externalSourceLink } from '../utils';
 import { TrashIcon, ExternalLinkIcon, iconElement } from '../components/icons';
@@ -6,6 +6,7 @@ import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
 import { AttachmentList } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
+import { findBacklinks } from '../services/cardRefService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { fetchTuneById, tuneResultToCard, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, type TuneResult } from '../services/theSessionService';
 import { lookupItiMapping } from '../services/itiMappingService';
@@ -262,6 +263,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const ease       = fsrsState?.difficulty !== undefined ? (10 - fsrsState.difficulty) / 9 : undefined;
   const deckIds    = decksContainingCard(cardId, user);
   const sorted     = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
+  // One pass over the library's attachments. Memoised on the cards object,
+  // which store.ts replaces wholesale on every mutate — so this recomputes
+  // whenever anything changes (including another card gaining a reference to
+  // this one, which is exactly what should refresh the list) and not on
+  // renders that change nothing else.
+  const backlinks  = useMemo(() => findBacklinks(cardId, user.cards), [user.cards, cardId]);
 
   const rColor    = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
   const easeColor = ease === undefined ? 'text-dim' : ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : 'text-danger';
@@ -581,6 +588,29 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           atts.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
         }),
       }} />
+
+      {/* ── Referenced by (read-only) ── */}
+      {/* Sits right after the attachments so outgoing and incoming references
+          read as one block. Derived, never stored — see findBacklinks. Hidden
+          entirely when empty: most cards have no backlink and an empty section
+          would just be noise. */}
+      {backlinks.length > 0 && (
+        <div class="space-y-2">
+          <span class="section-title">{t('card.section.backlinks')}</span>
+          <div class="space-y-1">
+            {backlinks.map(src => (
+              <div key={src.id} class="flex items-center gap-2">
+                <span class="text-[11px] text-dim shrink-0 w-4 text-center font-mono">↙</span>
+                <span
+                  class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
+                  title={t('card.backlinks.open')}
+                  onClick={() => navigate({ view: 'card', cardId: src.id })}
+                >{src.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Review history ── */}
       <div class="space-y-2">

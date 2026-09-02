@@ -175,6 +175,8 @@
   "card.section.tags": "Étiquettes",
   "card.section.notes": "Notes",
   "card.section.reviewHistory": "Historique des révisions",
+  "card.section.backlinks": "Référencée par",
+  "card.backlinks.open": "Ouvrir cette carte",
   "card.section.reviewHistoryCount": "Historique des révisions ({count} session)",
   "card.section.reviewHistoryCountPlural": "Historique des révisions ({count} sessions)",
   "card.deleteTitle": "Supprimer la carte",
