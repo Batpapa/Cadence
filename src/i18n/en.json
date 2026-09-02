@@ -175,6 +175,8 @@
   "card.section.tags": "Tags",
   "card.section.notes": "Notes",
   "card.section.reviewHistory": "Review history",
+  "card.section.backlinks": "Referenced by",
+  "card.backlinks.open": "Open this card",
   "card.section.reviewHistoryCount": "Review history ({count} session)",
   "card.section.reviewHistoryCountPlural": "Review history ({count} sessions)",
   "card.deleteTitle": "Delete card",
