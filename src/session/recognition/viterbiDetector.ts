@@ -32,24 +32,24 @@ export interface DetectedTuneSegment {
   settingId: string;
   dance: string;
   meter: string;
-  /** The time range COVERED BY THE OBSERVATION WINDOWS that produced this
-   *  segment — i.e. `windows[firstWindowIndex].tWindowStart` through
-   *  `windows[lastWindowIndex].tWindowEnd` (see windowRangeToTime's doc for
-   *  the full rationale). This is NOT a claim that the tune actually started
-   *  or stopped playing at exactly `startTime`/`endTime` — the detector has
-   *  no way to know the real musical boundary any more precisely than "some
-   *  time within the window(s) that changed the decision." Because analysis
-   *  windows overlap each other by (windowSeconds − stepSeconds), two
-   *  adjacent segments (e.g. a tune ending, then the next one starting)
-   *  routinely OVERLAP by up to that same amount — this is expected and must
-   *  be preserved, not trimmed into a disjoint partition. */
+  /** Best ESTIMATE of when the tune started and stopped, each boundary placed
+   *  midway between the centres of the two windows that straddle it — see
+   *  windowRangeToTime for why that is the right point and what it measured.
+   *  Accurate to roughly half a hop either way (median 1.0s, 22 of 24 within
+   *  +/-5s on the session timed tune by tune), which is as fine as the hop
+   *  allows: the scores saturate, so nothing in them locates a boundary INSIDE
+   *  a hop (measured — see the same doc's history).
+   *
+   *  Adjacent segments abut; they no longer overlap. Anything that needs slack
+   *  around a segment (extracting a clip, say) must add its own margin. */
   startTime: number;
   endTime: number;
   /** Index into TemporalTimeline.windows of this segment's first window —
    *  the exact, unambiguous way to map back to per-window data (e.g.
-   *  TemporalTimeline.ranks) for this segment's range, rather than
-   *  re-deriving membership from a time-range comparison against
-   *  startTime/endTime (fragile now that those can overlap — see above). */
+   *  TemporalTimeline.ranks) for this segment's range. ALWAYS use this rather
+   *  than re-deriving membership by comparing window timestamps against
+   *  startTime/endTime: those are now estimated boundaries that sit INSIDE the
+   *  first and last windows, so a time comparison silently drops them. */
   firstWindowIndex: number;
   /** V1: identical to averageProbability — kept as its own field because the
    *  two are expected to diverge later (e.g. once segment length or Viterbi
@@ -97,32 +97,46 @@ function observationScore(p: number, cfg: DetectionTemporalConfig): number {
 
 /** Window index range -> a [start, end) time range.
  *
- *  IMPORTANT (2026-08-15, corrects an earlier "fix" from the same day that
- *  went the wrong way): this is the raw span of the OBSERVATION WINDOWS that
- *  produced this state run — `windows[firstIdx].tWindowStart` to
- *  `windows[lastIdx].tWindowEnd` — NOT a disjoint partition of the timeline.
- *  Analysis windows are `windowSeconds` (15s) wide, taken every `stepSeconds`
- *  (5s), so consecutive windows overlap by 10s; a state change between window
- *  i and window i+1 therefore produces two segments that legitimately overlap
- *  by up to that same 10s (e.g. tune A ending at window i's tWindowEnd while
- *  tune B's segment already starts at window i+1's tWindowStart, ~10s
- *  earlier). That overlap is NOT a bug and must not be trimmed away: it's an
- *  honest representation of "the observations backing this detection cover
- *  this time range" — not a claim that the tune actually started/ended at
- *  that exact instant, which the detector has no way to know with a
- *  resolution finer than one window. See DetectedTuneSegment's doc for the
- *  full semantics, and viterbiDetector.test.ts's "overlap is preserved..."
- *  suite for the regression test guarding this. Do not reintroduce a
- *  "next window's start" or "index × stepSeconds" formula here — both were
- *  tried and reverted specifically because they force segments apart. */
+ *  A window is matched against whichever tune occupies MOST of it, so when the
+ *  decode flips between window k and window k+1, the real musical boundary lies
+ *  between those two windows' CENTRES — and the midpoint of the two centres is
+ *  the minimum-error estimate of it. An exterior edge (the first or last window
+ *  of the recording) is not a transition at all: it is where the recording
+ *  itself begins or ends, and stays there.
+ *
+ *  Reads the neighbours' real centres rather than assuming a fixed hop, so a
+ *  timeline whose windows are unevenly spaced (a catch-up window, a final
+ *  partial-hop window at stop) is handled correctly with no special case.
+ *
+ *  2026-09-01, REPLACES the raw window span (`windows[firstIdx].tWindowStart`
+ *  to `windows[lastIdx].tWindowEnd`) that shipped from 2026-08-15. That version
+ *  was chosen on semantic grounds — "the observations backing this detection
+ *  cover this range" — and had never been measured against ground truth. It is
+ *  early by exactly (windowSeconds - stepSeconds) / 2 : the model predicts
+ *  -5.0s at hop 5 and 0.0s at hop 15 (where the two formulas coincide), and
+ *  across the 196 detections of six annotated sessions the measured offsets are
+ *  -5.0s and +0.0s. On the one session timed tune by tune, the median start
+ *  error goes 5.0s -> 1.0s and the count within +/-5s goes 16/24 -> 22/24.
+ *
+ *  Consequence to know: adjacent segments now ABUT instead of overlapping by
+ *  (windowSeconds - stepSeconds). 65 of 143 neighbouring result pairs used to
+ *  overlap; none do now. Displayed durations shrink accordingly (median 105s ->
+ *  95s), which is the honest number, not a regression — and anything that wants
+ *  slack around a segment (clip extraction) adds its own margin rather than
+ *  relying on this being wide. Segment membership is NEVER re-derived from
+ *  these times: use `firstWindowIndex`/`windowCount`, which say exactly which
+ *  windows a segment owns. */
 function windowRangeToTime(
   firstIdx: number,
   lastIdx: number,
   timeline: TemporalTimeline,
 ): { start: number; end: number } {
-  const start = timeline.windows[firstIdx]!.tWindowStart;
-  const end = timeline.windows[lastIdx]!.tWindowEnd;
-  return { start, end };
+  const w = timeline.windows;
+  const centre = (i: number) => (w[i]!.tWindowStart + w[i]!.tWindowEnd) / 2;
+  return {
+    start: firstIdx === 0 ? w[0]!.tWindowStart : (centre(firstIdx - 1) + centre(firstIdx)) / 2,
+    end: lastIdx === w.length - 1 ? w[lastIdx]!.tWindowEnd : (centre(lastIdx) + centre(lastIdx + 1)) / 2,
+  };
 }
 
 function extractSegments(

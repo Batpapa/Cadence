@@ -188,12 +188,26 @@ async function decodeRangeViaFullDecode(
   return mono;
 }
 
+/** Seconds of slack added on each side of an annotation before cutting.
+ *
+ *  An annotation's bounds used to be the raw span of the observation windows,
+ *  which happened to run about 5s wide on each side and gave every clip a
+ *  comfortable lead-in for free. Since 2026-09-01 they are the ESTIMATED
+ *  musical boundaries (median error ~1s), which is what the timeline and the
+ *  detection want but leaves a clip starting exactly on the first note — and
+ *  the estimate is unbiased, so it is late as often as early. This restores
+ *  deliberately what the old imprecision gave by accident. Clamped to the
+ *  recording by the range checks below, so the edges of a session are safe. */
+const CLIP_PAD_S = 3;
+
 export async function extractClipMp3(
   sessionAudio: Blob,
   start: number,
   end: number,
   onProgress?: (ratio: number) => void,
 ): Promise<Blob> {
+  start = Math.max(0, start - CLIP_PAD_S);
+  end = end + CLIP_PAD_S;
   const file = new File([sessionAudio], 'session-audio', { type: sessionAudio.type });
   const streamed = await tryDecodeRangeViaWebCodecs(
     file, start, end,

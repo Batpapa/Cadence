@@ -344,8 +344,27 @@ function handleWorkletPcm(buffer: ArrayBuffer): void {
 }
 
 function handleStop(): void {
+  // The trailing partial hop, which nothing else ever analyses (2026-09-01):
+  // maybeAnalyzeLive only fires on whole hops, so the last few seconds of every
+  // recording used to reach no window at all — measured at 0.0 / 2.3 / 2.9 /
+  // 4.1s across the four annotated sessions, and always shorter than one hop.
+  // One extra window over the final ANALYSIS_WINDOW_S closes it for live and
+  // import alike. It legitimately overlaps its predecessor by more than the
+  // usual hop; windowRangeToTime reads real window centres, so an uneven last
+  // step needs no special handling there.
+  let tailEvents: AnnotationEvent[] = [];
+  if (totalSamples >= ANALYSIS_WINDOW_S * sampleRate && totalSamples > lastAnalysisAt) {
+    const windowSamples = ANALYSIS_WINDOW_S * sampleRate;
+    const tEnd = totalSamples / sampleRate;
+    const { result, abc } = analyzeSignal(tailOfRing(windowSamples), tEnd - ANALYSIS_WINDOW_S, tEnd);
+    post({ type: 'window', result, abc });
+    // Kept and prepended, not dropped: step() may OPEN an annotation that
+    // finalize() then only closes, and an orchestrator receiving a `close` for
+    // an id it never saw opened would have nothing to close.
+    tailEvents = segmenter.step(result);
+  }
   const tFinal = totalSamples / sampleRate;
-  const events = segmenter.finalize();
+  const events = [...tailEvents, ...segmenter.finalize()];
   post({ type: 'stopped', events, tFinal });
   // Reset live state for a potential next run (index + WASM stay loaded).
   ringWrite = 0;

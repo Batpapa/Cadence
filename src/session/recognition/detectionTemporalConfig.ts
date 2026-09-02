@@ -173,7 +173,7 @@ export interface DetectionTemporalConfig {
 
 export const DETECTION_TEMPORAL_CONFIG: DetectionTemporalConfig = {
   stepSeconds: 5,
-  windowSeconds: 15,
+  windowSeconds: 10,
 
   minCandidateProbability: 0.20,
   epsilon: 0.000001,

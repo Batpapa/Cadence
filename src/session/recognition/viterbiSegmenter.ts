@@ -80,8 +80,8 @@ interface Tracked {
 function computeAlternates(
   windows: WindowResult[],
   tuneId: string,
-  start: number,
-  end: number,
+  firstWindowIndex: number,
+  windowCount: number,
   cfg: DetectionTemporalConfig,
 ): AnnotationAlternate[] {
   // meanScore must be DENSE — averaged over every window in [start, end),
@@ -95,10 +95,20 @@ function computeAlternates(
   // strong ~47% match) divided by how many windows the tune actually
   // appeared in instead — a SPARSE average that ignores every window it was
   // absent from, letting a couple of high-scoring flukes dominate.
+  //
+  // Membership is taken from the segment's WINDOW INDICES, never from a time
+  // comparison (2026-09-01): a segment's startTime/endTime are now estimated
+  // boundaries that fall INSIDE its first and last windows, so `tWindowStart >=
+  // start` would silently drop the first window of every segment. The indices
+  // say exactly which windows the decode assigned, which is what this average
+  // is supposed to be over. `windows` here is the segmenter's own unfiltered
+  // array, index-aligned with the timeline (both pre-Viterbi filters map
+  // one-to-one and preserve order).
   let totalWindows = 0;
   const stats = new Map<string, { settingId: string; displayName: string; dance: string; meter: string; sum: number }>();
-  for (const w of windows) {
-    if (w.tWindowStart < start || w.tWindowStart >= end) continue;
+  for (let i = firstWindowIndex; i < firstWindowIndex + windowCount; i++) {
+    const w = windows[i];
+    if (!w) continue;
     totalWindows++;
     for (const c of w.candidates) {
       if (c.tuneId === tuneId) continue;
@@ -176,10 +186,15 @@ export class IncrementalViterbiSegmenter {
   }
 
   private toAnnotation(id: string, seg: DetectedTuneSegment, openEnded: boolean, finalized: boolean): SessionAnnotation {
-    const alternates = computeAlternates(this.windows, seg.tuneId, seg.startTime, seg.endTime, this.cfg);
+    const alternates = computeAlternates(this.windows, seg.tuneId, seg.firstWindowIndex, seg.windowCount, this.cfg);
+    // By index, not by time — same reason as computeAlternates above: a
+    // segment's boundaries now sit inside its own first and last windows, so a
+    // timestamp comparison would drop the very evidence the annotation is made
+    // of (2026-09-01).
     const evidence: AnnotationEvidence[] = [];
-    for (const w of this.windows) {
-      if (w.tWindowStart < seg.startTime || w.tWindowStart >= seg.endTime) continue;
+    for (let i = seg.firstWindowIndex; i < seg.firstWindowIndex + seg.windowCount; i++) {
+      const w = this.windows[i];
+      if (!w) continue;
       const c = w.candidates.find(cand => cand.tuneId === seg.tuneId);
       evidence.push({ t: w.tWindowStart, tEnd: w.tWindowStart + this.hopS, score: c?.score ?? 0, margin: 0 });
     }
