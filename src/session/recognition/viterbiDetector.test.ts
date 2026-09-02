@@ -76,7 +76,7 @@ describe('runViterbiDetection', () => {
     expect(r.segments[0]!.endTime).toBe(35);  // window 4's own tWindowEnd (4*HOP + windowSeconds)
   });
 
-  it('case 2 — clear change produces exactly one transition A -> B, with the segments overlapping by design', () => {
+  it('case 2 — clear change produces exactly one transition A -> B, the two segments abutting at the estimated boundary', () => {
     const r = detect({
       A: [0.9, 0.9, 0.9, 0.05, 0.05, 0.05],
       B: [0.05, 0.05, 0.05, 0.9, 0.9, 0.9],
@@ -84,15 +84,15 @@ describe('runViterbiDetection', () => {
     expect(r.segments.map(s => s.tuneId)).toEqual(['A', 'B']);
     expect(r.segments[0]!.windowCount).toBe(3);
     expect(r.segments[1]!.windowCount).toBe(3);
-    // A covers windows 0-2: [0, 25). B covers windows 3-5: [15, 40). Analysis
-    // windows overlap each other by (windowSeconds - stepSeconds) = 10s, so
-    // two segments meeting at a clean transition overlap by that same 10s —
-    // this is intentional (see DetectedTuneSegment's doc), not a bug to trim.
+    // A covers windows 0-2, B covers windows 3-5. windows[k] spans [5k, 5k+15],
+    // so centre(k) = 5k + 7.5 and the flip between windows 2 and 3 is estimated
+    // at (17.5 + 22.5) / 2 = 20. The outer edges are the recording's own, not
+    // transitions. See windowRangeToTime.
     expect(r.segments[0]!.startTime).toBe(0);
-    expect(r.segments[0]!.endTime).toBe(25);
-    expect(r.segments[1]!.startTime).toBe(15);
+    expect(r.segments[0]!.endTime).toBe(20);
+    expect(r.segments[1]!.startTime).toBe(20);
     expect(r.segments[1]!.endTime).toBe(40);
-    expect(r.segments[1]!.startTime).toBeLessThan(r.segments[0]!.endTime);
+    expect(r.segments[1]!.startTime).toBe(r.segments[0]!.endTime);
   });
 
   it('case 3 — isolated moderate false positive does not break continuity', () => {
@@ -156,36 +156,47 @@ describe('runViterbiDetection', () => {
   });
 });
 
-// ── Segment timestamps = raw observation-window span (overlap preserved) ───
-// Regression guard (2026-08-15). An EARLIER same-day change made segments
-// disjoint/contiguous (never overlapping) — that was WRONG and has been
-// reverted: analysis windows are windowSeconds (15s) wide, taken every
-// stepSeconds (5s), so they overlap their neighbours by 10s, and a segment's
-// startTime/endTime are meant to reflect exactly the observation window span
-// that produced it (windows[firstIdx].tWindowStart .. windows[lastIdx].tWindowEnd
-// — see windowRangeToTime's doc), NOT a claim about the tune's real start/end
-// down to the second. Two segments from a clean back-to-back transition
-// therefore legitimately overlap by up to that same 10s — this suite proves
-// that (a) segment boundaries are always exactly the underlying windows' own
-// raw timestamps (never adjusted/clamped/forced apart) and (b) a transition
-// like `A: 0->15, B: 10->45` must NOT be truncated into `A: 0->10, B: 10->45`
-// by any future change.
+// ── Segment timestamps = midpoint between the straddling window centres ────
+// Regression guard, rewritten 2026-09-01 (it previously asserted the opposite:
+// that a segment's bounds were the RAW span of its windows, so neighbours
+// overlapped by windowSeconds - stepSeconds).
+//
+// That earlier rule was chosen on semantic grounds and never measured. It is
+// early by exactly (windowSeconds - stepSeconds) / 2, which the majority-window
+// model predicts and six annotated sessions confirm to the decimal (-5.0s at
+// hop 5, +0.0s at hop 15 where the two formulas coincide, over 196 detections).
+// A window is matched against whichever tune fills most of it, so a flip
+// between window k and k+1 puts the real boundary between their CENTRES, and
+// the midpoint of the two is the minimum-error estimate. See
+// windowRangeToTime's doc for the full history and the numbers.
+//
+// What this suite now proves: (a) every interior boundary is that midpoint,
+// (b) the recording's own outer edges are NOT transitions and stay at the first
+// window's start and the last window's end, and (c) consecutive segments abut
+// exactly — no overlap, and equally no gap.
 
 /** Walks `segments` (assumed, like extractSegments produces, to cover
- *  consecutive runs of `windows` in order) and asserts every boundary is
- *  read verbatim from the underlying windows — start = the run's first
- *  window's own tWindowStart, end = the run's last window's own tWindowEnd.
- *  This is the CORRECT invariant now (replacing the old, wrong "must never
- *  overlap" one): it fails if a future change synthesizes/adjusts a boundary
- *  instead of using the raw window timestamp. */
-function expectRawSpans(segments: DetectedTuneSegment[], windows: WindowResult[]): void {
+ *  consecutive runs of `windows` in order) and asserts every boundary sits
+ *  where the estimator says it should. Reads real window centres rather than
+ *  assuming a fixed hop, so it holds on a jittered grid too. */
+function expectMidpointSpans(segments: DetectedTuneSegment[], windows: WindowResult[]): void {
+  const centre = (i: number) => (windows[i]!.tWindowStart + windows[i]!.tWindowEnd) / 2;
   let offset = 0;
   for (const s of segments) {
-    expect(s.startTime).toBe(windows[offset]!.tWindowStart);
-    expect(s.endTime).toBe(windows[offset + s.windowCount - 1]!.tWindowEnd);
+    const last = offset + s.windowCount - 1;
+    expect(s.startTime).toBe(offset === 0
+      ? windows[0]!.tWindowStart
+      : (centre(offset - 1) + centre(offset)) / 2);
+    expect(s.endTime).toBe(last === windows.length - 1
+      ? windows[last]!.tWindowEnd
+      : (centre(last) + centre(last + 1)) / 2);
     offset += s.windowCount;
   }
   expect(offset).toBe(windows.length);
+  // Abutting, in both directions: no overlap and no hole.
+  for (let i = 1; i < segments.length; i++) {
+    expect(segments[i]!.startTime).toBe(segments[i - 1]!.endTime);
+  }
 }
 
 function mulberry32(seed: number): () => number {
@@ -231,7 +242,7 @@ function jitteredWindows(rng: () => number, T: number, candidatesAt: (i: number)
 }
 
 describe('segment timestamps reflect raw observation-window spans (overlap is expected and preserved)', () => {
-  it('every hand-built case above produces segments whose bounds are exactly the raw window timestamps', () => {
+  it('every hand-built case above places each boundary midway between the two window centres that straddle it', () => {
     const cases: Record<string, number[]>[] = [
       { A: [0.9, 0.9, 0.9, 0.9, 0.9] },
       { A: [0.9, 0.9, 0.9, 0.05, 0.05, 0.05], B: [0.05, 0.05, 0.05, 0.9, 0.9, 0.9] },
@@ -245,14 +256,16 @@ describe('segment timestamps reflect raw observation-window spans (overlap is ex
     for (const series of cases) {
       const windows = fromSeries(series);
       const timeline = buildTemporalTimeline(windows, TEST_CFG);
-      expectRawSpans(runViterbiDetection(timeline, TEST_CFG).segments, windows);
+      expectMidpointSpans(runViterbiDetection(timeline, TEST_CFG).segments, windows);
     }
   });
 
-  it('a clean back-to-back transition (windows[3] is the first to flip) overlaps by exactly windowSeconds - stepSeconds, and must never be truncated to disjoint', () => {
-    // Mirrors the exact shape flagged as a false "bug" (2026-08-15): tune A
-    // confidently covers windows 0-3, tune B confidently covers windows 4-7,
-    // with no UNKNOWN gap between them — a real back-to-back set change.
+  it('a clean back-to-back transition (windows[3] is the first to flip) puts the boundary midway between windows 3 and 4, and the two segments abut exactly', () => {
+    // Tune A confidently covers windows 0-3, tune B covers windows 4-7, with no
+    // UNKNOWN gap between them — a real back-to-back set change. Until
+    // 2026-09-01 this asserted the two segments OVERLAPPED by 10s; they now
+    // meet at one instant, which is 5s later than the old A-end and 5s later
+    // than the old B-start (see windowRangeToTime).
     const windows = fromSeries({
       A: [0.9, 0.92, 0.91, 0.93, 0.05, 0.05, 0.05, 0.05],
       B: [0.05, 0.05, 0.05, 0.05, 0.9, 0.92, 0.91, 0.93],
@@ -260,18 +273,18 @@ describe('segment timestamps reflect raw observation-window spans (overlap is ex
     const timeline = buildTemporalTimeline(windows, TEST_CFG);
     const r = runViterbiDetection(timeline, TEST_CFG);
     expect(r.segments.map(s => s.tuneId)).toEqual(['A', 'B']);
-    expectRawSpans(r.segments, windows);
+    expectMidpointSpans(r.segments, windows);
 
     const [a, b] = r.segments as [DetectedTuneSegment, DetectedTuneSegment];
-    expect(a.startTime).toBe(0);
-    expect(a.endTime).toBe(30);  // windows[3].tWindowEnd = 3*5 + 15
-    expect(b.startTime).toBe(20); // windows[4].tWindowStart = 4*5
-    expect(b.endTime).toBe(50);  // windows[7].tWindowEnd = 7*5 + 15
-    // The overlap is real and must be preserved, never trimmed: if a future
-    // change forces these apart (e.g. clamps a.endTime down to b.startTime,
-    // or vice versa), this is exactly what must fail.
-    expect(b.startTime).toBeLessThan(a.endTime);
-    expect(a.endTime - b.startTime).toBe(10); // windowSeconds(15) - stepSeconds(5)
+    // windows[k] spans [5k, 5k+15], so centre(k) = 5k + 7.5.
+    expect(a.startTime).toBe(0);   // recording edge, not a transition
+    expect(a.endTime).toBe(25);    // (centre(3) + centre(4)) / 2 = (22.5 + 27.5) / 2
+    expect(b.startTime).toBe(25);  // the same instant — they abut
+    expect(b.endTime).toBe(50);    // recording edge = windows[7].tWindowEnd
+    // No overlap and no gap. A future change that reintroduces either — by
+    // reverting to raw window spans, or by clamping one side away from the
+    // other — fails right here.
+    expect(b.startTime).toBe(a.endTime);
   });
 
   it('holds across randomized fuzzing (uniform grid, many tunes, frequent UNKNOWN interleaving)', () => {
@@ -283,7 +296,7 @@ describe('segment timestamps reflect raw observation-window spans (overlap is ex
       const windows = randomWindowsFor(rng, T, tuneIds);
       const timeline = buildTemporalTimeline(windows, TEST_CFG);
       const r = runViterbiDetection(timeline, TEST_CFG);
-      expectRawSpans(r.segments, windows);
+      expectMidpointSpans(r.segments, windows);
     }
   });
 
@@ -295,7 +308,7 @@ describe('segment timestamps reflect raw observation-window spans (overlap is ex
     });
     const timeline = buildTemporalTimeline(windows, TEST_CFG);
     const r = runViterbiDetection(timeline, TEST_CFG);
-    expectRawSpans(r.segments, windows);
+    expectMidpointSpans(r.segments, windows);
     expect(r.segments.map(s => s.tuneId)).toEqual(['A', 'B']);
     // The A -> B boundary must land exactly on the real (jittered, non-round)
     // window timestamps involved — never a synthetic `index * stepSeconds` grid.
@@ -318,7 +331,7 @@ describe('segment timestamps reflect raw observation-window spans (overlap is ex
       const windows = JSON.parse(fs.readFileSync(p, 'utf-8')) as WindowResult[];
       const timeline = buildTemporalTimeline(windows, TEST_CFG);
       const r = runViterbiDetection(timeline, TEST_CFG);
-      expectRawSpans(r.segments, windows);
+      expectMidpointSpans(r.segments, windows);
     }
   }, 30000); // 4 real fixtures' full decode ~3s combined — comfortably under this, but tight against vitest's 5s default under any system load.
 });

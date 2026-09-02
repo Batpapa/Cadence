@@ -175,7 +175,7 @@ describe('IncrementalViterbiSegmenter', () => {
 
     expect(finalizedAt).toEqual([false, false, false, false, true]);
     const ann = [...store.values()].find(a => a.tuneId === 'A')!;
-    expect(ann.end).toBe(30);
+    expect(ann.end).toBe(25); // midway between centre(3)=22.5 and centre(4)=27.5
   });
 
   it('finalization also waits out sameTuneMergeGapWindows past the segment — a same-tune neighbour could still merge in from later, even once the raw Viterbi path itself has converged', () => {
@@ -223,7 +223,7 @@ describe('IncrementalViterbiSegmenter', () => {
     // The moment window 4 (first silent one) supersedes it, end must become
     // real RIGHT THEN — not stay null for steps 4-6 while only `finalized`
     // eventually flips at step 7 (already covered by the sibling test).
-    expect(endAt.slice(4)).toEqual([30, 30, 30, 30]); // windows[3].tWindowEnd
+    expect(endAt.slice(4)).toEqual([25, 25, 25, 25]); // midway between centres of windows 3 and 4
   });
 
   it('produces the same net segments as a one-shot batch runViterbiDetection() call once fully finalized', () => {
@@ -287,15 +287,15 @@ describe('IncrementalViterbiSegmenter', () => {
     expect(events).toHaveLength(0);
   });
 
-  it('a clean back-to-back transition produces two annotations that OVERLAP by windowSeconds - stepSeconds — this must be preserved, never truncated to disjoint', () => {
-    // 2026-08-15: a segment's start/end are the raw span of the observation
-    // windows that produced it (15s wide, taken every 5s), not a claim about
-    // exactly when the tune started/stopped — so a clean back-to-back
-    // transition (no silent gap) legitimately produces two OVERLAPPING
-    // annotations. An earlier same-day change wrongly forced these apart;
-    // this guards against that regression at the annotation level (the
-    // object the UI actually renders), not just at the raw segment level
-    // (already covered in viterbiDetector.test.ts).
+  it('a clean back-to-back transition produces two annotations that ABUT exactly — no overlap, no gap', () => {
+    // 2026-09-01: an annotation's start/end are the ESTIMATED boundaries, each
+    // placed midway between the centres of the two windows straddling it — so a
+    // clean back-to-back transition (no silent gap) produces two annotations
+    // that meet at one instant. Until this date they overlapped by
+    // windowSeconds - stepSeconds, which measured 5s early against ground
+    // truth; see windowRangeToTime. Guarded here at the ANNOTATION level (the
+    // object the UI renders), not just at the raw segment level (already
+    // covered in viterbiDetector.test.ts).
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
     const store = new Map<string, SessionAnnotation>();
     const windows = sequence([
@@ -308,12 +308,12 @@ describe('IncrementalViterbiSegmenter', () => {
     const anns = [...store.values()].sort((a, b) => a.start - b.start);
     expect(anns.map(a => a.tuneId)).toEqual(['A', 'B']);
     const [a, b] = anns as [SessionAnnotation, SessionAnnotation];
-    expect(a.start).toBe(0);
-    expect(a.end).toBe(30);  // windows[3].tWindowEnd
-    expect(b.start).toBe(20); // windows[4].tWindowStart
-    expect(b.end).toBe(50);  // windows[7].tWindowEnd
-    expect(b.start).toBeLessThan(a.end!);
-    expect(a.end! - b.start).toBe(10); // windowSeconds(15) - stepSeconds(5)
+    // windows[k] spans [5k, 5k+15], so centre(k) = 5k + 7.5.
+    expect(a.start).toBe(0);   // recording edge
+    expect(a.end).toBe(25);    // (centre(3) + centre(4)) / 2 = (22.5 + 27.5) / 2
+    expect(b.start).toBe(25);  // the same instant
+    expect(b.end).toBe(50);    // recording edge = windows[7].tWindowEnd
+    expect(b.start).toBe(a.end!);
   });
 
   it('minSegmentWindows: a short segment IS shown while it is the live tail, but is RETRACTED (removed entirely) once superseded without ever reaching the threshold', () => {

@@ -2,12 +2,12 @@
 // Regenerates test-fixtures/sessions/<name>-windows.json with debug
 // instrumentation (note/tempo/quant/rhythm features, full candidate list,
 // contour) — replicates ffWorker.ts's analyzeSignal()/maybeAnalyzeLive()
-// windowing exactly (15s window, 5s hop, 48kHz), offline, via a
+// windowing exactly (window and hop read from sessionConfig.ts, 48kHz), offline, via a
 // `--target nodejs` build of the (locally patched) FolkFriend WASM. See
 // experiments/noise-study/README.md.
 //
 // Usage: node experiments/noise-study/regenerate-fixtures.js [name...]
-//   (no args = all 5 fixtures)
+//   (no args = all 6 fixtures that still have their audio; 13th_Moon never did)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -15,8 +15,19 @@ const { decodeToFloat32Mono48k, SAMPLE_RATE } = require('./lib/decodeAudio');
 const { loadTuneIndex } = require('./lib/tuneIndex');
 const { WasmClient } = require('./lib/wasmClient');
 
-const ANALYSIS_WINDOW_S = 15;
-const ANALYSIS_HOP_S = 5;
+// Read straight out of the app's own config rather than duplicated here: on
+// 2026-09-02 the window went 15s -> 10s and the fixtures would otherwise have
+// silently kept the old geometry, which is exactly the kind of drift that makes
+// a backtest measure the wrong thing. A plain regex because this is CommonJS
+// and the config is TypeScript.
+function constFromConfig(name) {
+  const src = fs.readFileSync(path.resolve(__dirname, '../../src/session/sessionConfig.ts'), 'utf8');
+  const m = new RegExp(`export const ${name}\\s*=\\s*([0-9.]+)`).exec(src);
+  if (!m) throw new Error(`${name} not found in sessionConfig.ts`);
+  return Number(m[1]);
+}
+const ANALYSIS_WINDOW_S = constFromConfig('ANALYSIS_WINDOW_S');
+const ANALYSIS_HOP_S = constFromConfig('ANALYSIS_HOP_S');
 
 const AUDIO_DIR = path.resolve(__dirname, '../../test-fixtures/audio');
 const OUT_DIR = path.resolve(__dirname, '../../test-fixtures/sessions');
