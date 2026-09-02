@@ -387,7 +387,7 @@
   "settings.sync.conflict.stats": "Cards: {cards} · Reviews: {reviews}",
   "settings.sync.conflict.lastModified": "Last modified: {date}",
   "settings.sync.conflict.lastModifiedUnknown": "Last modified: unknown",
-  "settings.sync.conflict.snapshotNote": "Whichever you choose, the other version is kept as a snapshot, downloadable from Settings → Backup.",
+  "settings.sync.conflict.snapshotNote": "Whichever you choose, the other version is kept as a snapshot, downloadable from Settings → User → Snapshots.",
   "settings.sync.conflict.identicalNote": "Both copies hold exactly the same data: whichever you choose, nothing is lost.",
   "settings.sync.diff.verdictIdentical": "The two copies are strictly identical. Only the sync bookkeeping diverged, not your data — the signature of an upload Drive did record, but whose confirmation never came back.",
   "settings.sync.conflict.deviceSame": "Written by this device",
