@@ -200,6 +200,7 @@ export function DeckView({ deckId }: { deckId: string }) {
               class={noCards
                 ? 'btn px-3 bg-elevated text-dim cursor-default text-sm font-medium'
                 : 'btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium'}
+              title={t('deck.studyTitle')}
               onClick={!noCards ? () => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId }) : undefined}
             >
               {t('deck.study')}
