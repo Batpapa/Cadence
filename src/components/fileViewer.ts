@@ -207,7 +207,11 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
   // modal actually closes for any reason (✕, outside click, Escape).
   let stopAudio: () => void = () => {};
   let closed = false;
-  const onDismiss = () => { closed = true; stopAudio(); };
+  // Set by the ABC branch, which is the only one with a keyboard shortcut to
+  // take down. A document-level listener outliving its modal would keep
+  // swallowing the space bar for the rest of the session.
+  let releaseKeys: () => void = () => {};
+  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); };
 
   const body = document.createElement('div');
   body.className = 'w-full flex items-center justify-center';
@@ -664,11 +668,35 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
             if (openingTempoPercent !== DEFAULT_TEMPO_PERCENT) {
               try { synthControl.setWarp(openingTempoPercent); } catch { /* ignore */ }
             }
+            // Looping on by default — a score is opened to be practised
+            // against, and reaching for the button on every pass is friction.
+            // `setTune` resets isLooping to false, so this belongs here, after
+            // every re-prime, and the check keeps it idempotent.
+            if (!synthControl.isLooping) {
+              try { synthControl.toggleLoop(); } catch { /* ignore */ }
+            }
           }).catch(() => {});
         }
       };
 
       doRenderTune = renderTune;
+
+      // Space toggles playback, the way it does in every player.
+      //
+      // Ignored while a field or a button has focus: a button already answers
+      // the space bar by activating itself — including the play button, which
+      // gives the same result by its own route — and swallowing the key inside
+      // the ABC text editor would make it impossible to type.
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey) return;
+        const active = document.activeElement as HTMLElement | null;
+        const tag = active?.tagName.toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || active?.isContentEditable) return;
+        e.preventDefault(); // or the page scrolls under the modal
+        void synthControl?.play();
+      };
+      document.addEventListener('keydown', onKeyDown);
+      releaseKeys = () => document.removeEventListener('keydown', onKeyDown);
 
       // Changing instrument without losing your place. The audio cannot simply
       // be re-voiced: abcjs pre-renders the whole performance into one buffer
