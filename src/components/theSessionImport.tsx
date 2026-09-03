@@ -9,7 +9,8 @@ import { downloadShare } from '../services/shareService';
 import { mutate, appState } from '../store';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers, fetchTunesByIds,
-  tuneResultToCard, findByExternalId,
+  tuneResultToCard, findByExternalId, fetchMemberSets, buildSetCards, setExternalId, MemberUnavailableError,
+  fetchMemberBookmarks, buildTuneCardWithSetting,
   type MemberSearchResult, type TuneSetting,
 } from '../services/theSessionService';
 import { describeTune, tuneFetchStatus, TuneUnavailableError, withTuneIdentity, type SkippedTune } from '../services/tuneFetchError';
@@ -113,6 +114,15 @@ async function importCardPackage(cards: Card[], deckIds: Iterable<string>): Prom
   let summary = t('theSession.status.batchDone', { count: imported });
   if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';
   return summary;
+}
+
+/** A failed member lookup, told apart: removed, never existed, or the network.
+ *  Collapsing the three would send the user looking for the wrong problem. */
+function memberErrorStatus(e: unknown): string {
+  if (e instanceof MemberUnavailableError) {
+    return t(e.reason === 'gone' ? 'theSession.member.gone' : 'theSession.member.notFound');
+  }
+  return t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
 }
 
 /** "✓ 3 imported, 2 already in library skipped, 1 removed from TheSession: …"
@@ -265,7 +275,7 @@ export interface TheSessionBodyProps {
 }
 
 export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDeckChoice = onReady => onReady() }: TheSessionBodyProps) {
-  const [tab, setTab] = useState<'tune' | 'member'>('tune');
+  const [tab, setTab] = useState<'tune' | 'member' | 'bookmarks' | 'sets'>('tune');
   const [status, setStatus] = useState<ComponentChild>('');
 
   const setImportedStatus = (cardId: string, cardName: string) => {
@@ -349,13 +359,22 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
       <div class="flex gap-1 p-1 bg-bg rounded-lg">
         <Tab label={t('theSession.tabTune')} active={tab === 'tune'} onClick={() => setTab('tune')} />
         <Tab label={t('theSession.tabMember')} active={tab === 'member'} onClick={() => setTab('member')} />
+        <Tab label={t('theSession.tabBookmarks')} active={tab === 'bookmarks'} onClick={() => setTab('bookmarks')} />
+        <Tab label={t('theSession.tabSets')} active={tab === 'sets'} onClick={() => setTab('sets')} />
       </div>
 
       <div class="space-y-3">
-        {tab === 'tune' ? (
+        {tab === 'tune' && (
           <TuneTab withDeckChoice={withDeckChoice} setStatus={setStatus} importTune={importTune} importIds={importIds} />
-        ) : (
+        )}
+        {tab === 'member' && (
           <MemberTab getTargetDeckIds={getTargetDeckIds} withDeckChoice={withDeckChoice} setStatus={setStatus} />
+        )}
+        {tab === 'bookmarks' && (
+          <BookmarksTab getTargetDeckIds={getTargetDeckIds} withDeckChoice={withDeckChoice} setStatus={setStatus} />
+        )}
+        {tab === 'sets' && (
+          <SetsTab getTargetDeckIds={getTargetDeckIds} withDeckChoice={withDeckChoice} setStatus={setStatus} />
         )}
       </div>
 
@@ -573,11 +592,19 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     try {
       const info = await fetchMemberInfo(memberId);
       const isIdSearch = /^\d+$/.test(value.trim());
-      setInfo(isIdSearch ? `${info.name} · ${info.total} tunes` : `${info.total} tunes`);
+      const size = t('theSession.member.tuneCount', { n: info.tunebook });
+      setInfo(isIdSearch ? `${info.name} · ${size}` : size);
+      // An empty tunebook is a perfectly ordinary account, not an error —
+      // say so, and leave nothing to press.
+      if (info.tunebook === 0) {
+        setStatus(t('theSession.member.emptyTunebook'));
+        selectedMemberIdRef.current = null; bump(x => x + 1);
+        return;
+      }
       selectedMemberIdRef.current = memberId; bump(x => x + 1);
       setStatus('');
-    } catch {
-      setStatus(t('theSession.member.notFound'));
+    } catch (e) {
+      setStatus(memberErrorStatus(e));
       selectedMemberIdRef.current = null; bump(x => x + 1);
     }
   };
@@ -683,6 +710,357 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         items={suggestions}
         open={dropdownOpen}
         onPick={pick}
+        renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
+      />
+    </>
+  );
+}
+
+// ── Tab: Bookmarks (the settings a member has starred) ────────────────────────
+// Same shape as the tunebook tab, with two differences forced by the endpoint.
+// Its payload is an activity stream carrying neither `pages` nor `total`, so
+// paging stops on the first empty page; and the member page has no bookmark
+// counter either (its `settings` field counts settings the member SUBMITTED),
+// so unlike the tunebook and the sets there is no size to preview — the count
+// only exists once everything has been read.
+//
+// What makes bookmarks worth their own tab: a bookmark names a SETTING, so each
+// tune created here opens on the very version the member starred.
+
+function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
+  getTargetDeckIds?: () => Set<string> | undefined;
+  withDeckChoice: (onReady: () => void) => void;
+  setStatus: (c: ComponentChild) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState('');
+  const [info, setInfo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [suggestions, setSuggestions] = useState<MemberSearchResult[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const selectedMemberIdRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [, bump] = useState(0);
+
+  useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
+
+  const showMemberPreview = async (memberId: number) => {
+    selectedMemberIdRef.current = null; bump(x => x + 1);
+    setInfo('');
+    setStatus(t('theSession.status.fetching'));
+    try {
+      const found = await fetchMemberInfo(memberId);
+      // Only the name: nothing in the member payload counts bookmarks.
+      setInfo(found.name);
+      selectedMemberIdRef.current = memberId; bump(x => x + 1);
+      setStatus('');
+    } catch (e) {
+      setStatus(memberErrorStatus(e));
+      selectedMemberIdRef.current = null; bump(x => x + 1);
+    }
+  };
+
+  const doImportAll = async () => {
+    if (selectedMemberIdRef.current === null) return;
+    const memberId = selectedMemberIdRef.current;
+    setBusy(true); setProgress(0);
+    try {
+      // Phase one: read the whole stream. With no total to page towards, the
+      // bar cannot be a percentage — the count is the progress.
+      const bookmarks = await fetchMemberBookmarks(memberId, (loaded) => {
+        setStatus(t('theSession.bookmarks.collecting', { n: loaded }));
+      });
+      if (bookmarks.length === 0) {
+        setStatus(t('theSession.bookmarks.none'));
+        setProgress(null);
+        return;
+      }
+
+      // Phase two: create what is missing. An already-owned tune is skipped
+      // whole, exactly as in every other import path — its starred setting is
+      // the user's own choice and no import gets to overwrite it.
+      const existingByTuneId = buildExistingByTuneId();
+      const todo = bookmarks.filter(b => !existingByTuneId.has(b.tuneId));
+      const skipped = bookmarks.length - todo.length;
+      const newCards: Card[] = [];
+      const blocked: SkippedTune[] = [];
+      for (let i = 0; i < todo.length; i++) {
+        const bookmark = todo[i]!;
+        setStatus(t('theSession.status.fetchingTunes', { loaded: i + 1, total: todo.length }));
+        setProgress(Math.round(((i + 1) / todo.length) * 100));
+        try {
+          newCards.push(await buildTuneCardWithSetting(bookmark));
+        } catch (e) {
+          if (!(e instanceof TuneUnavailableError)) throw e;
+          blocked.push({ id: bookmark.tuneId, name: bookmark.name || undefined });
+        }
+      }
+
+      await mutate(s => {
+        for (const card of newCards) s.cards[card.id] = card;
+        // Bookmarks ARE tunes, so the deck choice applies to them directly —
+        // unlike a set import, where the deck belongs to the set card and the
+        // tunes it pulls in land unfiled.
+        const linkIds = [
+          ...newCards.map(c => c.id),
+          ...bookmarks.map(b => existingByTuneId.get(b.tuneId)).filter((id): id is string => !!id),
+        ];
+        for (const deckId of (getTargetDeckIds?.() ?? [])) {
+          const deck = s.decks[deckId]; if (!deck) continue;
+          for (const cardId of linkIds) {
+            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+          }
+        }
+      });
+      setProgress(100);
+      setStatus(batchSummary(newCards.length, skipped, blocked));
+    } catch (e) {
+      setStatus(e instanceof MemberUnavailableError ? memberErrorStatus(e) : tuneFetchStatus(e, 'theSession.error'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onInputChange = (val: string) => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setValue(val);
+    setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
+    setSuggestions([]); setDropdownOpen(false); setStatus('');
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    if (/^\d+$/.test(trimmed)) {
+      void showMemberPreview(parseInt(trimmed));
+    } else if (trimmed.length >= 2) {
+      timerRef.current = setTimeout(async () => {
+        timerRef.current = null; setStatus(t('theSession.status.searching'));
+        try {
+          const members = await searchMembers(trimmed);
+          const sorted = sortByRelevance(members, trimmed);
+          setSuggestions(sorted);
+          setDropdownOpen(sorted.length > 0);
+          setStatus(sorted.length ? '' : t('theSession.noResults'));
+        } catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+      }, 300);
+    }
+  };
+
+  return (
+    <>
+      <div class="flex gap-2">
+        <InputRow
+          inputRef={inputRef}
+          placeholder={t('theSession.member.placeholder')}
+          value={value}
+          info={info}
+          disabled={busy}
+          onInput={onInputChange}
+          onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
+          onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setDropdownOpen(false);
+            if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
+          }}
+        />
+        <button
+          class="btn-primary text-xs shrink-0"
+          disabled={busy || selectedMemberIdRef.current === null}
+          onClick={() => withDeckChoice(() => { void doImportAll(); })}
+        >
+          {t('theSession.member.importAll')}
+        </button>
+      </div>
+
+      {progress !== null && (
+        <div class="space-y-1">
+          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
+        </div>
+      )}
+
+      <SuggestDropdown
+        anchorRef={inputRef}
+        items={suggestions}
+        open={dropdownOpen}
+        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id); setStatus(''); }}
+        renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
+      />
+    </>
+  );
+}
+
+// ── Tab: Sets (a member's published sets) ─────────────────────────────────────
+// Sets are only ever reachable through their member: TheSession has no set
+// search, and /sets/{id} is a 404 — the member is part of a set's very address.
+// So this shares the tunebook tab's member lookup and differs after it: instead
+// of importing everything, it lists what the member has and lets you pick.
+
+function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
+  getTargetDeckIds?: () => Set<string> | undefined;
+  withDeckChoice: (onReady: () => void) => void;
+  setStatus: (c: ComponentChild) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState('');
+  const [info, setInfo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [suggestions, setSuggestions] = useState<MemberSearchResult[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const selectedMemberIdRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [, bump] = useState(0);
+
+  useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
+
+  /** One cheap request that answers "does this member exist, and is there
+   *  anything to page through" before any paging begins. */
+  const showMemberPreview = async (memberId: number) => {
+    selectedMemberIdRef.current = null; bump(x => x + 1);
+    setInfo('');
+    setStatus(t('theSession.status.fetching'));
+    try {
+      const found = await fetchMemberInfo(memberId);
+      const isIdSearch = /^\d+$/.test(value.trim());
+      const size = t('theSession.sets.count', { n: found.sets });
+      setInfo(isIdSearch ? `${found.name} · ${size}` : size);
+      // A member with no sets is an ordinary account, not an error — say so and
+      // leave nothing to press.
+      if (found.sets === 0) { setStatus(t('theSession.sets.none')); return; }
+      selectedMemberIdRef.current = memberId; bump(x => x + 1);
+      setStatus('');
+    } catch (e) {
+      setStatus(memberErrorStatus(e));
+      selectedMemberIdRef.current = null; bump(x => x + 1);
+    }
+  };
+
+  const doImportAll = async () => {
+    if (selectedMemberIdRef.current === null) return;
+    const memberId = selectedMemberIdRef.current;
+    setBusy(true); setProgress(0);
+    let created = 0, imported = 0, skipped = 0;
+    try {
+      // Phase one: the listing, which for a prolific member runs to dozens of
+      // pages (539 sets over 54 requests for member 1) — hence a progress bar
+      // rather than a silent wait.
+      const sets = await fetchMemberSets(memberId, (loaded, total) => {
+        setProgress(Math.round((loaded / total) * 50));
+        setStatus(t('theSession.sets.loading', { loaded, total }));
+      });
+
+      // Phase two: one set at a time.
+      for (let i = 0; i < sets.length; i++) {
+        const set = sets[i]!;
+        setProgress(50 + Math.round((i / sets.length) * 50));
+
+        // A set already in the library is SKIPPED, exactly as an already-owned
+        // tune is: an import never rewrites an existing card, it only files it
+        // into the chosen decks. Bringing a set back in line with TheSession is
+        // a separate, deliberate act — "Refresh tunes" on its source pin. The
+        // check comes before any fetch, so a skipped set costs no network.
+        const already = findByExternalId(setExternalId(set.memberId, set.id), appState.value.cards);
+        if (already) {
+          skipped++;
+          await mutate(s => {
+            for (const deckId of (getTargetDeckIds?.() ?? [])) {
+              const deck = s.decks[deckId]; if (!deck) continue;
+              if (!deck.entries.some(e => e.cardId === already.id)) deck.entries.push({ cardId: already.id });
+            }
+          });
+          continue;
+        }
+
+        setStatus(t('theSession.sets.importing', { name: set.name, n: i + 1, total: sets.length }));
+        // The live cards map is re-read each time so a tune created for an
+        // earlier set in this same batch is reused, not fetched twice.
+        const { setCard, newTunes } = await buildSetCards(set, appState.value.cards);
+        created += newTunes.length;
+        imported++;
+        await mutate(s => {
+          for (const tune of newTunes) s.cards[tune.id] = tune;
+          s.cards[setCard.id] = setCard;
+          // The deck choice applies to the SET — that is what was imported.
+          // Tunes created along the way land in the library with no deck; they
+          // are reachable from the set, and each shows it under "played in
+          // these sets". Filing them is the user's call, later or never.
+          for (const deckId of (getTargetDeckIds?.() ?? [])) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            if (!deck.entries.some(e => e.cardId === setCard.id)) deck.entries.push({ cardId: setCard.id });
+          }
+        });
+      }
+      setProgress(100);
+      setStatus(
+        t('theSession.sets.done', { sets: imported, tunes: created })
+        + (skipped > 0 ? t('theSession.sets.doneSkipped', { count: skipped }) : ''),
+      );
+    } catch (e) {
+      setStatus(tuneFetchStatus(e, 'theSession.error'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onInputChange = (val: string) => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setValue(val);
+    setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
+    setSuggestions([]); setDropdownOpen(false); setStatus('');
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    if (/^\d+$/.test(trimmed)) {
+      void showMemberPreview(parseInt(trimmed));
+    } else if (trimmed.length >= 2) {
+      timerRef.current = setTimeout(async () => {
+        timerRef.current = null; setStatus(t('theSession.status.searching'));
+        try {
+          const members = await searchMembers(trimmed);
+          const sorted = sortByRelevance(members, trimmed);
+          setSuggestions(sorted);
+          setDropdownOpen(sorted.length > 0);
+          setStatus(sorted.length ? '' : t('theSession.noResults'));
+        } catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+      }, 300);
+    }
+  };
+
+  return (
+    <>
+      <div class="flex gap-2">
+        <InputRow
+          inputRef={inputRef}
+          placeholder={t('theSession.member.placeholder')}
+          value={value}
+          info={info}
+          disabled={busy}
+          onInput={onInputChange}
+          onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
+          onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setDropdownOpen(false);
+            if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
+          }}
+        />
+        <button
+          class="btn-primary text-xs shrink-0"
+          disabled={busy || selectedMemberIdRef.current === null}
+          onClick={() => withDeckChoice(() => { void doImportAll(); })}
+        >
+          {t('theSession.sets.importAll')}
+        </button>
+      </div>
+
+      {progress !== null && (
+        <div class="space-y-1">
+          <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${progress}%` }} /></div>
+        </div>
+      )}
+
+      <SuggestDropdown
+        anchorRef={inputRef}
+        items={suggestions}
+        open={dropdownOpen}
+        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id); setStatus(''); }}
         renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
       />
     </>

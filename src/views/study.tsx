@@ -4,7 +4,9 @@ import { pickRandom, pickOptimal, pickStochastic, pickSequential, decksContainin
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
-import { AttachmentList } from '../components/attachmentList';
+import { AttachmentList, CardRefList } from '../components/attachmentList';
+import { isTuneset } from '../services/cardTypeService';
+import { TuneIcon } from '../components/icons';
 import { STRATEGY_ICONS } from '../components/studyModal';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
 
@@ -254,6 +256,16 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               );
             })()}
           </div>
+
+          {/* A set's tunes, before the rating buttons: they are what you have
+              to play, so you need them to judge yourself. Read-only — the type
+              selector stays out of study, but the definition belongs here. */}
+          {isTuneset(card) && (card.tunes ?? []).length > 0 && (
+            <div class="space-y-2">
+              <span class="section-title">{t('card.section.tunes')}</span>
+              <CardRefList refs={card.tunes ?? []} editable={false} onRemove={() => {}} onReorder={() => {}} glyph={<TuneIcon size={11} />} />
+            </div>
+          )}
 
           <div class="space-y-2">
             <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>

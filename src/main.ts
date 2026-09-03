@@ -2,7 +2,7 @@ import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
 import { emptyState } from './utils';
-import { appState, routeSignal, goBack, goForward, loadSavedRoute, initRoutePersistence } from './store';
+import { appState, commitState, routeSignal, goBack, goForward, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
@@ -39,11 +39,11 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   ensureCurrentUser(user);
   ensureCurrentProfile(user);
   initDriveForUser(user.id);
+  commitState(user);
   await saveUser(user);
   setLastUserId(user.id);
   touchUserOrder(user.id);
   setLanguage(user.language);
-  appState.value = user;
   // Must run after appState.value is set — its migration path (a brand-new
   // user never has legacy data, but the check itself still needs the right
   // user in scope) reads/writes AppState via store.ts's mutate().
@@ -74,10 +74,10 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
   ensureCurrentUser(saved);
   ensureCurrentProfile(saved);
   setLanguage(saved.language);
+  commitState(saved);
   await saveUser(saved);
   setLastUserId(id);
   touchUserOrder(id);
-  appState.value = saved;
   // See createAndOpenUser's identical comment — must run after appState.value.
   await initSessionDbForUser(id);
   const savedRoute = loadSavedRoute(saved);
@@ -109,11 +109,11 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
       const user = migrateLegacyToUser(legacy);
       ensureCurrentUser(user);
       ensureCurrentProfile(user);
+      commitState(user);
       await saveUser(user);
       await deleteLegacyState();
       setLastUserId(user.id);
       setLanguage(user.language);
-      appState.value = user;
       // See createAndOpenUser's identical comment — must run after appState.value.
       await initSessionDbForUser(user.id);
       initRoutePersistence(user.id);

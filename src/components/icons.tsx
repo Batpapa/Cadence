@@ -479,3 +479,63 @@ export function SequentialIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+/** A single quaver: filled head, stem, flag. Marks a card typed as one tune.
+ *  The head is filled rather than outlined because at 11–14px a hollow circle
+ *  at this stroke width fills in anyway, and a hollow head would read as a
+ *  half note to anyone who does see it. */
+export function TuneIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="7.5" cy="17.5" r="3.2" fill="currentColor" stroke="none"/>
+      <path d="M10.7 17.5V4.6l6.2 2.3v3.3"/>
+    </svg>
+  );
+}
+
+/** Three quavers under one beam: a set. Deliberately the same note head and
+ *  stroke weight as TuneIcon, so the two read as one shape repeated rather
+ *  than two unrelated glyphs — "several of those" is exactly what a set is. */
+export function TuneSetIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="4.4" cy="17.6" r="2.3" fill="currentColor" stroke="none"/>
+      <circle cx="11.2" cy="17.6" r="2.3" fill="currentColor" stroke="none"/>
+      <circle cx="18" cy="17.6" r="2.3" fill="currentColor" stroke="none"/>
+      <path d="M6.5 17.6V6.4M13.3 17.6V6.4M20.1 17.6V6.4"/>
+      <path d="M6.5 6.4h13.6"/>
+    </svg>
+  );
+}
+
+/** Pencil — "edit this". Paired with EyeIcon on the notes toggle. */
+export function PencilIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20h9"/>
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+    </svg>
+  );
+}
+
+/** Eye — "show me the rendered result". The other half of the notes toggle. */
+export function EyeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+/** Gear, filled or hollow — "this is handled automatically" vs "this is yours
+ *  to set". The body and the centre hole are ONE path with `fill-rule:
+ *  evenodd`, which is what keeps the hole open when the shape is filled; two
+ *  separate elements would fill the hole in along with everything else. */
+export function GearIcon({ size = 13, filled = false }: { size?: number; filled?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill-rule="evenodd">
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1zM15 12a3 3 0 1 0-6 0 3 3 0 1 0 6 0z"/>
+    </svg>
+  );
+}

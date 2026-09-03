@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { ComponentChild } from 'preact';
 import { createPortal } from 'preact/compat';
 import { getZoom } from '../services/zoomService';
 import { useLongPress } from './longPress';
@@ -20,6 +21,9 @@ export interface ContextMenuItem {
   label: string;
   onClick: () => void;
   danger?: boolean;
+  /** Optional leading glyph. The row is already a flex line with a gap, so a
+   *  menu where only some entries carry one still keeps its labels aligned. */
+  icon?: ComponentChild;
 }
 
 /** A labelled divider grouping the items that follow it. Used where a menu
@@ -121,6 +125,7 @@ export function useContextMenu(items: ContextMenuEntry[]) {
           }`}
           onClick={() => { close(); item.onClick(); }}
         >
+          {item.icon && <span class="shrink-0 flex items-center">{item.icon}</span>}
           {item.label}
         </button>
       ))}

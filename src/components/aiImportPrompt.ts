@@ -10,6 +10,7 @@ Output ONLY a single JSON object with this exact shape, inside one fenced code b
       "name": "string, required — the title of the item",
       "tags": ["optional", "short", "tags"],
       "defaultImportance": 1,
+      "type": "optional — omit it unless the card is a tune or a set of tunes (see below)",
       "content": {
         "notes": "optional markdown notes",
         "attachments": []
@@ -46,6 +47,17 @@ Linking to TheSession.org / IrishTuneInfo.info — IMPORTANT, read carefully:
   {"id": -1, "externalId": "thesession:<numeric id>", "preferredSetting": {"settingId": <numeric setting id>}}
   A plain number is a 1-based position ("2" = the 2nd setting listed on the tune's page — only use this if I told you a position, e.g. "the second one"). If neither form applies, leave "preferredSetting" out entirely — never guess a position or a settingId.
 - Everything else — anything you're inferring, summarizing, or recognizing by name alone — must be a normal card (the "name"/"tags"/"content" shape from the top of this prompt) with no "externalId" field anywhere.
+
+Card types — "type" is a TOP-LEVEL field, a sibling of "name". Leave it out entirely unless one of these two applies:
+- "type": "tune" — one piece of music (an Irish tune, but also any single melody). Give this to every card that is a tune, whether or not it also has an "externalId".
+- "type": "tuneset" — a SET: several tunes played back to back as one unit, e.g. "Cooley's / The Wise Maid". The set is its own card, with its own name, and it lists its tunes in a TOP-LEVEL "tunes" array:
+  {"name": "Cooley's / The Wise Maid", "type": "tuneset", "tunes": [{"id": -1, "title": "Cooley's"}, {"id": -2, "title": "The Wise Maid"}]}
+- Rules for "tunes", all mandatory:
+  - Order matters — list them in playing order.
+  - Every card listed in "tunes" MUST also be output as its own card in the same batch, and MUST carry "type": "tune". A set whose tunes are missing is useless.
+  - Reference them exactly like a "card" attachment: give each tune card a negative "id" (-1, -2…) and reuse that number in the "tunes" entry, plus a "title" for display.
+  - "tunes" is the set's DEFINITION and takes tune cards only — never a set inside a set. Anything else the set merely relates to (a recording, a related set) goes in "content.attachments" as a "card" reference instead, NOT in "tunes".
+- Do not invent sets. Only produce a "tuneset" card when I actually describe tunes played together as a set.
 
 Attachments (optional, inside "content.attachments" — leave it as [] unless one of these three clearly applies):
 1. A link (video, webpage, recording…): {"type": "embed", "url": "https://..."}

@@ -19,9 +19,21 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string)
   });
 }
 
-const EXTERNAL_SOURCES: Record<string, { label: string; url: (id: string) => string }> = {
+const EXTERNAL_SOURCES: Record<string, { label: string; url: (id: string) => string; display?: (id: string) => string }> = {
   thesession: { label: 'TheSession', url: id => `https://thesession.org/tunes/${id}` },
   irishtuneinfo: { label: 'IrishTuneInfo', url: id => `https://www.irishtune.info/tune/${id}/` },
+  // A set's id alone cannot rebuild its URL — thesession.org/sets/{id} is a 404,
+  // only /members/{memberId}/sets/{id} resolves — so the id carries both, as
+  // "{member}-{set}". `display` then shows just the set number on the pin: the
+  // member is plumbing, not something the user asked to look at.
+  'thesession-set': {
+    label: 'TheSession',
+    url: id => {
+      const [member, set] = id.split('-');
+      return `https://thesession.org/members/${member}/sets/${set}`;
+    },
+    display: id => id.split('-')[1] ?? id,
+  },
 };
 
 /** "thesession:52302" → { source: "thesession", id: "52302", label: "TheSession:52302",
@@ -37,7 +49,9 @@ export function externalSourceLink(externalId: string | undefined): { source: st
   const source = externalId.slice(0, sep);
   const id = externalId.slice(sep + 1);
   const def = EXTERNAL_SOURCES[source];
-  return def ? { source, id, label: `${def.label}:${id}`, url: def.url(id) } : null;
+  if (!def) return null;
+  const shown = def.display ? def.display(id) : id;
+  return { source, id: shown, label: `${def.label}:${shown}`, url: def.url(id) };
 }
 
 export function isMobileDevice(): boolean {

@@ -2,6 +2,7 @@ import type { Attachment, Card, FileEntry } from '../types';
 import { arrayBufferToBase64, generateId } from '../utils';
 import { withTuneIdentity } from './tuneFetchError';
 import { SCRAPER_BASE as BASE, markScraperServerWarm } from './scraperServerStatus';
+import { CARD_TYPE_TUNE } from './cardTypeService';
 export { isScraperServerWarm as isServerWarm } from './scraperServerStatus';
 
 // ── API shapes (normalized to `name`, matching theSessionService's convention) ──
@@ -190,6 +191,9 @@ export function tuneToCard(tune: TuneDetail, audioFile?: FileEntry | null): Card
     name: tune.name,
     defaultImportance: 1,
     tags,
+    // Same rule as tuneResultToCard's: a card fetched from a tune database is
+    // a tune, decided here rather than at each call site.
+    type: CARD_TYPE_TUNE,
     externalId: `irishtuneinfo:${tune.id}`,
     content: {
       // No source link here: the card page shows a clickable pin from `externalId` (see utils.ts externalSourceLink).
