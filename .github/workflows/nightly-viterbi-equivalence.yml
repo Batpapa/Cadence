@@ -22,5 +22,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
       - run: npm ci
+      # ffmpeg-static ships a postinstall that downloads an ~80 MB binary from
+      # GitHub releases. Unauthenticated release traffic from a shared runner IP
+      # gets rate-limited, and the script retries on a 30s timeout — which is the
+      # step that never finishes. Pointing FFMPEG_BIN at the runner's own ffmpeg
+      # makes its install script exit early ("installed already") without
+      # downloading anything. It is an optionalDependency used ONLY by
+      # experiments/noise-study, never by the build or the tests.
+      #
+      # Deliberately NOT --omit=optional: rollup and esbuild ship their
+      # platform binaries as optional deps, and omitting those breaks the build.
+      env:
+        FFMPEG_BIN: /usr/bin/ffmpeg
       - run: npm run test:nightly
