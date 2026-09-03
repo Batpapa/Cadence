@@ -1,12 +1,15 @@
-import { useEffect, useRef } from 'preact/hooks';
-import type { RefObject } from 'preact';
-import type { Attachment, FileEntry, EmbedEntry, CardReferenceAttachment } from '../types';
+import { useEffect, useRef, useMemo } from 'preact/hooks';
+import type { RefObject, ComponentChild } from 'preact';
+import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
 import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance } from '../utils';
-import { TrashIcon } from './icons';
+import { TrashIcon, PlusIcon, GearIcon } from './icons';
+import { useContextMenu } from './contextMenu';
 import { showPreviewModal } from './fileViewer';
 import { showEmbedModal } from './embedViewer';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
 import { resolveCardRef } from '../services/cardRefService';
+import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, TUNESET_ABC_NAME } from '../services/abcService';
+import { isTuneset } from '../services/cardTypeService';
 import { appState, navigate } from '../store';
 import { showModal, closeModal } from './modal';
 import { t } from '../services/i18nService';
@@ -116,17 +119,24 @@ function AttachmentRow({ index, editable, onReorder, scratch, children }: {
 
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex }: {
+function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex, glyph, downloadName }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
   onSave?: (data: string) => void;
   onSetPreferredIndex?: (index: number) => void;
+  /** What the download is called, when that must differ from what is shown —
+   *  a set name contains slashes, which no filesystem accepts, but the row is
+   *  just a label and should read as the set is really called. */
+  downloadName?: string;
+  /** Replaces the MIME glyph. Used to mark a file the app generates, which is
+   *  not the same kind of thing as one the user attached. */
+  glyph?: ComponentChild;
 }) {
   const previewable = isPreviewable(entry);
   return (
     <>
-      <span class="text-[11px] text-dim shrink-0 w-4 text-center font-mono">{mimeIcon(entry)}</span>
+      <span class="text-[11px] text-dim shrink-0 w-4 flex items-center justify-center font-mono">{glyph ?? mimeIcon(entry)}</span>
       <span
         class={`text-xs font-mono truncate flex-1 ${previewable ? 'text-muted hover:text-primary cursor-pointer transition-colors' : 'text-dim'}`}
         // Favoriting a version isn't "editing" the card — available regardless of `editable`.
@@ -135,7 +145,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex
         {entry.name}
       </span>
       <a
-        href={entryToObjectUrl(entry)} download={entry.name}
+        href={entryToObjectUrl(entry)} download={downloadName ?? entry.name}
         class="text-xs text-dim hover:text-accent transition-colors shrink-0 opacity-0 group-hover:opacity-100"
         title={t('fileViewer.download')}
       >↓</a>
@@ -184,11 +194,15 @@ function EmbedRowContent({ entry, onRemove, editable }: { entry: EmbedEntry; onR
   );
 }
 
-function CardRefRowContent({ entry, onRemove, editable }: { entry: CardReferenceAttachment; onRemove: () => void; editable: boolean }) {
+function CardRefRowContent({ entry, onRemove, editable, glyph = '↗' }: { entry: CardRef; onRemove: () => void; editable: boolean; glyph?: ComponentChild }) {
   const resolved = resolveCardRef(entry, appState.value.cards);
   return (
     <>
-      <span class="text-[11px] text-dim shrink-0 w-4 text-center font-mono">↗</span>
+      {/* flex, not the inline span the other row types use: `w-4`/`text-center`
+          are both no-ops on a non-replaced inline element, which went unnoticed
+          while the glyph was a single character and stopped being true the
+          moment it became an SVG. */}
+      <span class="text-[11px] text-dim shrink-0 w-4 flex items-center justify-center font-mono">{glyph}</span>
       {resolved ? (
         <span
           class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
@@ -213,7 +227,15 @@ function CardRefRowContent({ entry, onRemove, editable }: { entry: CardReference
 
 // ── Add-card picker (its own small modal — vanilla body, same as before) ───────
 
-function showCardRefPicker(onAdd: (a: Attachment) => void): void {
+/** Search-and-pick one card from the library.
+ *
+ *  `eligible` narrows the candidates (a tuneset offers only what may be one of
+ *  its tunes); `titleKey` names the modal, since "add a reference" and "add a
+ *  tune" are not the same act even though they pick the same way. */
+export function showCardPicker(
+  onPick: (card: Card) => void,
+  opts: { titleKey?: string; eligible?: (card: Card) => boolean; emptyKey?: string } = {},
+): void {
   const body = document.createElement('div');
   body.className = 'space-y-2';
 
@@ -228,7 +250,7 @@ function showCardRefPicker(onAdd: (a: Attachment) => void): void {
   const renderList = (query: string) => {
     listEl.innerHTML = '';
     const q = query.trim().toLowerCase();
-    const cards = Object.values(appState.value.cards);
+    const cards = Object.values(appState.value.cards).filter(opts.eligible ?? (() => true));
     const filtered = q ? cards.filter(c => c.name.toLowerCase().includes(q)) : cards;
     const sorted = q
       ? sortByRelevance(filtered, q)
@@ -238,10 +260,19 @@ function showCardRefPicker(onAdd: (a: Attachment) => void): void {
       item.className = 'w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent/10 transition-colors cursor-pointer';
       item.textContent = card.name;
       item.onclick = () => {
-        onAdd({ type: 'card', id: card.id, guid: card.guid, externalId: card.externalId, title: card.name });
+        onPick(card);
         closeModal();
       };
       listEl.appendChild(item);
+    }
+    // An eligibility filter can empty the list for a reason the user cannot
+    // see — "only tunes appear here" is invisible when every candidate was
+    // filtered out. Say it rather than showing a blank box.
+    if (sorted.length === 0 && opts.emptyKey) {
+      const note = document.createElement('p');
+      note.className = 'text-xs text-dim px-2 py-1.5';
+      note.textContent = t(opts.emptyKey);
+      listEl.appendChild(note);
     }
   };
 
@@ -249,8 +280,58 @@ function showCardRefPicker(onAdd: (a: Attachment) => void): void {
   inp.addEventListener('input', () => renderList(inp.value));
   body.append(inp, listEl);
 
-  showModal(t('fileViewer.cardRef.title'), body, []);
+  showModal(t(opts.titleKey ?? 'fileViewer.cardRef.title'), body, []);
   focusIfDesktop(inp);
+}
+
+/** The reference payload of a card — what both roles store about a target. */
+export function cardToRef(card: Card): CardRef {
+  return { id: card.id, guid: card.guid, externalId: card.externalId, title: card.name };
+}
+
+function showCardRefPicker(onAdd: (a: Attachment) => void): void {
+  showCardPicker(card => onAdd({ type: 'card', ...cardToRef(card) }));
+}
+
+/** An ordered, reorderable list of card references, rendered as rows like the
+ *  attachment list's own — same drag machinery, same resolution, same
+ *  unresolved state. Used for a tuneset's tunes.
+ *
+ *  Rows are deliberately NOT numbered: the order is already the order they are
+ *  drawn in, so an ordinal would only restate the row's own position. `glyph`
+ *  says what kind of thing each row is instead. */
+export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetRepeat }: {
+  refs: CardRef[];
+  editable: boolean;
+  onRemove: (i: number) => void;
+  onReorder: (from: number, insertBefore: number) => void;
+  glyph?: ComponentChild;
+  /** Shows a repeat counter on each row when given. Click cycles it: a set
+   *  repeats two or three times in practice, so a stepper would be more
+   *  machinery than the choice deserves. */
+  onSetRepeat?: (i: number, repeat: number) => void;
+}) {
+  const scratch = useRef<DragScratch>({ draggedIdx: null, indicatorEl: null }).current;
+  if (refs.length === 0) return null;
+  return (
+    <div class="space-y-1">
+      {refs.map((ref, i) => (
+        <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch}>
+          <CardRefRowContent entry={ref} editable={editable} onRemove={() => onRemove(i)} glyph={glyph} />
+          {onSetRepeat && (
+            <button
+              type="button"
+              class={`shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                clampRepeat(ref.repeat) > 1 ? 'text-accent bg-accent/10' : 'text-dim hover:text-muted'
+              }`}
+              title={t('card.tunes.repeatTitle')}
+              onClick={() => onSetRepeat(i, clampRepeat(ref.repeat) % MAX_REPEAT + 1)}
+            >×{clampRepeat(ref.repeat)}</button>
+          )}
+        </AttachmentRow>
+      ))}
+    </div>
+  );
 }
 
 function addLink(onAdd: (a: Attachment) => void): void {
@@ -308,6 +389,10 @@ export interface AttachmentListOptions {
    *  even where `editable` is false (study), since it's a viewing preference,
    *  not a content edit. */
   onSetPreferredIndex?: (i: number, index: number) => void;
+  /** The card these attachments belong to. Only needed to resolve a set's
+   *  generated score, whose stored `data` is empty by design — everything else
+   *  here works from the attachments alone. */
+  card?: Card;
 }
 
 export function AttachmentList({ options }: { options: AttachmentListOptions }) {
@@ -317,19 +402,66 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
   const onReorder = options.onReorder ?? (() => {});
   const onUpdateFile = options.onUpdateFile;
   const onSetPreferredIndex = options.onSetPreferredIndex;
+  const card = options.card;
 
   const scratch = useRef<DragScratch>({ draggedIdx: null, indicatorEl: null }).current;
+
+  // A set's score is REBUILT here rather than read from the attachment: what is
+  // stored is only the intent to show one. Recomputed whenever the library
+  // changes, so it cannot lag behind a tune being renamed, restarred, added or
+  // removed — and it costs nothing in the synced blob.
+  const generatedAbc = useMemo(
+    () => (card && isTuneset(card) ? tunesetAbcEntry(card, appState.value.cards) : null),
+    [card, appState.value.cards],
+  );
+  const hasTunesetAbc = attachments.some(a => a.type === 'file' && a.generatedBy === 'tuneset');
+
+  /** The stored entry carries no content and a placeholder name; this is what
+   *  is shown, previewed and downloaded. The NAME is derived too, so it follows
+   *  the set being renamed — including automatically, which happens whenever a
+   *  tune is added or renamed. */
+  const resolve = (att: Attachment): Attachment => (
+    att.type === 'file' && att.generatedBy === 'tuneset' && generatedAbc && card
+      ? { ...att, data: generatedAbc.data, mimeType: generatedAbc.mimeType, name: card.name + '.abc' }
+      : att
+  );
+
+  // One "+" raising the same overflow menu the library's ⋯ uses, rather than
+  // three permanent buttons: the choice is made once per addition and does
+  // not deserve standing header real estate. Each entry closes the menu
+  // before it runs, so an entry may safely open a modal of its own.
+  const addMenu = useContextMenu([
+    { label: t('fileViewer.addFile'), onClick: () => addFiles(onAdd) },
+    { label: t('fileViewer.addLink'), onClick: () => addLink(onAdd) },
+    { label: t('fileViewer.addCard'), onClick: () => showCardRefPicker(onAdd) },
+    // Sets only, and once only — the entry disappears rather than being offered
+    // and refused, like every other impossible action in this app.
+    ...(card && isTuneset(card) && !hasTunesetAbc
+      ? [{
+          label: t('fileViewer.addTunesetAbc'),
+          onClick: () => onAdd({
+            type: 'file' as const, name: TUNESET_ABC_NAME, mimeType: 'text/vnd.abc',
+            data: '', generatedBy: 'tuneset' as const,
+          }),
+        }]
+      : []),
+  ]);
 
   return (
     <div class="space-y-2">
       <div class="flex items-center justify-between">
         <span class="section-title">{t('fileViewer.attachments')}</span>
         {editable && (
-          <div class="flex gap-2">
-            <button class="btn-ghost text-xs" onClick={() => addFiles(onAdd)}>{t('fileViewer.addFile')}</button>
-            <button class="btn-ghost text-xs" onClick={() => addLink(onAdd)}>{t('fileViewer.addLink')}</button>
-            <button class="btn-ghost text-xs" onClick={() => showCardRefPicker(onAdd)}>{t('fileViewer.addCard')}</button>
-          </div>
+          <>
+            <button
+              class="btn-ghost px-2"
+              title={t('fileViewer.addAttachment')}
+              onClick={(e) => addMenu.open(e.clientX, e.clientY)}
+            >
+              <PlusIcon size={13} />
+            </button>
+            {addMenu.menu}
+          </>
         )}
       </div>
 
@@ -339,9 +471,17 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
             <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch}>
               {att.type === 'file' ? (
                 <FileRowContent
-                  entry={att} onRemove={() => onRemove(i)} editable={editable}
-                  onSave={onUpdateFile ? (data) => onUpdateFile(i, data) : undefined}
-                  onSetPreferredIndex={onSetPreferredIndex ? (index) => onSetPreferredIndex(i, index) : undefined}
+                  entry={resolve(att) as FileEntry & { preferredIndex?: number }}
+                  onRemove={() => onRemove(i)} editable={editable}
+                  // A gear rather than the clef: this file is produced by the
+                  // app, not attached by the user, and that is worth seeing.
+                  glyph={att.generatedBy === 'tuneset' ? <GearIcon size={12} filled /> : undefined}
+                  downloadName={att.generatedBy === 'tuneset' && card ? tunesetAbcFileName(card.name) : undefined}
+                  // A derived score has nowhere to save an edit back to, and a
+                  // fused set is a single page — so neither editing its text
+                  // nor starring a version applies to it.
+                  onSave={onUpdateFile && att.generatedBy !== 'tuneset' ? (data) => onUpdateFile(i, data) : undefined}
+                  onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
                 />
               ) : att.type === 'card' ? (
                 <CardRefRowContent entry={att} onRemove={() => onRemove(i)} editable={editable} />

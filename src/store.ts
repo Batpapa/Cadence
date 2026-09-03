@@ -3,6 +3,7 @@ import type { AppState, AppContext, Route } from './types';
 import { emptyState } from './utils';
 import { saveUser } from './db';
 import { syncToCloud } from './services/driveService';
+import { normaliseState } from './services/stateNormalise';
 
 export const appState    = signal<AppState>(emptyState());
 export const routeSignal = signal<Route>({ view: 'folder', folderId: null });
@@ -86,10 +87,25 @@ export function goForward(): void {
   canGoForward.value = _future.length > 0;
 }
 
+/** The single place a new state becomes the current one.
+ *
+ *  Derived fields are brought back in line here rather than at each site that
+ *  could invalidate them: every state change in the app passes through this
+ *  function or one of main.ts's boot paths, so recomputing unconditionally at
+ *  the choke point cannot miss a writer — whereas enumerating writers can, and
+ *  silently. Call it BEFORE persisting, so what is saved is what is shown.
+ *
+ *  Idempotent (see normaliseState), so a state that is already in order costs
+ *  a pass and changes nothing. */
+export function commitState(next: AppState): void {
+  normaliseState(next);
+  appState.value = next;
+}
+
 export async function mutate(fn: (user: AppState) => void): Promise<void> {
   const next = structuredClone(appState.value);
   fn(next);
-  appState.value = next;
+  commitState(next);
   await saveUser(next);
   syncToCloud(next);
 }
@@ -98,7 +114,7 @@ export async function mutate(fn: (user: AppState) => void): Promise<void> {
 export async function applyFromDrive(fn: (user: AppState) => void): Promise<void> {
   const next = structuredClone(appState.value);
   fn(next);
-  appState.value = next;
+  commitState(next);
   // The world changed under the user's feet: remount the current view so its
   // mount-time drafts re-derive from the applied state. If what it showed no
   // longer exists (a card deleted on another device), the view's own

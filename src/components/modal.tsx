@@ -36,6 +36,15 @@ export interface ModalAction {
   onClick: () => void | Promise<void>;
 }
 
+/** A control in the modal header, beside the close button. For what belongs
+ *  to the whole modal rather than to its content — settings for what is being
+ *  shown, say — which a footer button would misrepresent as an outcome. */
+export interface ModalHeaderAction {
+  icon: Element;
+  title: string;
+  onClick: () => void;
+}
+
 interface ModalEntry {
   id: number;
   title: string;
@@ -44,6 +53,7 @@ interface ModalEntry {
   dismissable: boolean;
   maxWidth: string;
   onDismiss?: () => void;
+  headerAction?: ModalHeaderAction;
 }
 
 let nextId = 0;
@@ -55,9 +65,9 @@ export function closeModal(): void {
 
 export function showModal(
   title: string, body: HTMLElement, actions: ModalAction[], dismissable = true, maxWidth = '28rem',
-  onDismiss?: () => void,
+  onDismiss?: () => void, headerAction?: ModalHeaderAction,
 ): void {
-  modalStack.value = [...modalStack.value, { id: nextId++, title, body, actions, dismissable, maxWidth, onDismiss }];
+  modalStack.value = [...modalStack.value, { id: nextId++, title, body, actions, dismissable, maxWidth, onDismiss, headerAction }];
 }
 
 export function promptModal(title: string, label: string, defaultValue: string, onConfirm: (value: string) => void): void {
@@ -184,10 +194,21 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
         style={{ maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85) }}
       >
         <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 class="text-xs font-semibold text-muted uppercase tracking-widest">{entry.title}</h2>
-          {entry.dismissable && (
-            <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={dismiss}>✕</button>
-          )}
+          <h2 class="text-xs font-semibold text-muted uppercase tracking-widest truncate">{entry.title}</h2>
+          <div class="flex items-center gap-3 shrink-0">
+            {entry.headerAction && (
+              <button
+                class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
+                title={entry.headerAction.title}
+                onClick={entry.headerAction.onClick}
+              >
+                <IconMount el={entry.headerAction.icon} />
+              </button>
+            )}
+            {entry.dismissable && (
+              <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={dismiss}>✕</button>
+            )}
+          </div>
         </div>
 
         <BodyMount el={entry.body} />

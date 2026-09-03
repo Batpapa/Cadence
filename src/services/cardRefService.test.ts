@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveCardRef, findBacklinks } from './cardRefService';
+import { resolveCardRef, findBacklinks, findSetsContaining } from './cardRefService';
 import type { Card, CardReferenceAttachment } from '../types';
 
 function card(id: string, over: Partial<Card> = {}): Card {
@@ -99,5 +99,68 @@ describe('findBacklinks', () => {
 
   it('returns nothing for a card nobody references', () => {
     expect(findBacklinks('t', lib(card('t'), card('a')))).toEqual([]);
+  });
+});
+
+describe('findSetsContaining', () => {
+  const tuneset = (id: string, refs: CardReferenceAttachment[], over: Partial<Card> = {}) =>
+    card(id, { ...over, type: 'tuneset', tunes: refs });
+
+  it('finds the sets whose tune list resolves here', () => {
+    const cards = lib(card('t'), tuneset('s', [ref({ id: 't', guid: 'guid-t' })]), card('b'));
+    expect(findSetsContaining('t', cards).map(c => c.id)).toEqual(['s']);
+  });
+
+  it('IGNORES a tunes list on a card that is not typed as a set', () => {
+    // `type` decides, not the presence of the list — otherwise a card demoted
+    // back to an ordinary one would keep claiming membership.
+    const cards = lib(card('t'), card('s', { tunes: [ref({ id: 't', guid: 'guid-t' })] }));
+    expect(findSetsContaining('t', cards)).toEqual([]);
+  });
+
+  it('is DISJOINT from findBacklinks — the two sections never show the same card', () => {
+    const r = ref({ id: 't', guid: 'guid-t' });
+    const cards = lib(
+      card('t'),
+      tuneset('s', [r]),                       // plays it
+      withRefs('m', [r]),                      // merely mentions it
+    );
+    expect(findSetsContaining('t', cards).map(c => c.id)).toEqual(['s']);
+    expect(findBacklinks('t', cards).map(c => c.id)).toEqual(['m']);
+  });
+
+  it('does not count a set that only MENTIONS the tune in its attachments', () => {
+    const cards = lib(
+      card('t'),
+      card('s', { type: 'tuneset', tunes: [], content: { notes: '', attachments: [ref({ id: 't', guid: 'guid-t' })] } }),
+    );
+    expect(findSetsContaining('t', cards)).toEqual([]);
+    expect(findBacklinks('t', cards).map(c => c.id)).toEqual(['s']);
+  });
+
+  it('follows the same resolution order as a reference click', () => {
+    const cards = lib(
+      card('a'), card('b'),
+      tuneset('s', [ref({ id: 'a', guid: 'guid-b' })]),
+    );
+    expect(findSetsContaining('a', cards).map(c => c.id)).toEqual(['s']);
+    expect(findSetsContaining('b', cards)).toEqual([]);
+  });
+
+  it('lists a set once even when it plays the tune twice', () => {
+    const r = ref({ id: 't', guid: 'guid-t' });
+    const cards = lib(card('t'), tuneset('s', [r, r]));
+    expect(findSetsContaining('t', cards).map(c => c.id)).toEqual(['s']);
+  });
+
+  it('sorts by name, and survives a set with no tunes', () => {
+    const r = ref({ id: 't', guid: 'guid-t' });
+    const cards = lib(
+      card('t'),
+      tuneset('s1', [r], { name: 'Zulu' }),
+      tuneset('s2', [r], { name: 'Alpha' }),
+      card('s3', { type: 'tuneset' }),
+    );
+    expect(findSetsContaining('t', cards).map(c => c.name)).toEqual(['Alpha', 'Zulu']);
   });
 });

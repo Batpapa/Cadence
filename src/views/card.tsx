@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { pct, focusIfDesktop, externalSourceLink } from '../utils';
-import { TrashIcon, ExternalLinkIcon, iconElement } from '../components/icons';
+import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
-import { AttachmentList } from '../components/attachmentList';
+import { AttachmentList, CardRefList, showCardPicker, cardToRef } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
-import { findBacklinks } from '../services/cardRefService';
+import { findBacklinks, findSetsContaining } from '../services/cardRefService';
+import { CARD_TYPES, CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
+import { tunesetAutoName } from '../services/stateNormalise';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
-import { fetchTuneById, tuneResultToCard, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, type TuneResult } from '../services/theSessionService';
+import { fetchTuneById, tuneResultToCard, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, fetchSet, buildSetCards, parseSetExternalId, type TuneResult } from '../services/theSessionService';
 import { lookupItiMapping } from '../services/itiMappingService';
 import type { ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu, type ContextMenuItem } from '../components/contextMenu';
@@ -138,6 +140,81 @@ function showContextMenuError(message: string): void {
   showModal(t('card.contextMenu.errorTitle'), p, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
 }
 
+/** Sets or clears a card's type. Leaving 'tuneset' DISCARDS the tune list —
+ *  see applyCardType, which owns that rule. */
+function setCardType(cardId: string, type: string): void {
+  void mutate(s => {
+    const c = s.cards[cardId];
+    if (c) applyCardType(c, type);
+  });
+}
+
+/** The glyph for a card type — kept here rather than in cardTypeService so
+ *  that service stays free of any dependency on components. Unknown and
+ *  absent types get nothing, matching their shared "no type" label. */
+function cardTypeIcon(type: string | undefined, size = 12) {
+  if (type === CARD_TYPE_TUNE)    return <TuneIcon size={size} />;
+  if (type === CARD_TYPE_TUNESET) return <TuneSetIcon size={size} />;
+  return null;
+}
+
+/** Re-reads a set from TheSession and applies its tune list back onto the
+ *  card: tunes added upstream appear, tunes dropped upstream go, and the
+ *  order follows. Any tune not yet in the library is created with the very
+ *  setting the set plays already starred — buildSetCards owns that rule, and
+ *  it is the same routine the import screen runs, so the two cannot drift.
+ *
+ *  The card's own notes, attachments, decks, review history and id survive:
+ *  only the tune list is TheSession's to dictate. */
+async function refreshSetTunes(cardId: string, externalId: string | undefined): Promise<void> {
+  const parsed = parseSetExternalId(externalId);
+  if (!parsed) return;
+  try {
+    const set = await fetchSet(parsed.memberId, parsed.setId);
+    const { setCard, newTunes } = await buildSetCards(set, appState.value.cards);
+    await mutate(s => {
+      for (const tune of newTunes) s.cards[tune.id] = tune;
+      const existing = s.cards[cardId];
+      if (!existing) return;
+      existing.tunes = setCard.tunes;
+    });
+  } catch (e) {
+    showContextMenuError(t('card.contextMenu.refreshSetError', { message: e instanceof Error ? e.message : String(e) }));
+  }
+}
+
+/** Why the type selector is locked, told only to whoever actually clicks it.
+ *
+ *  Names the sets rather than just counting them, and makes each one a way out:
+ *  changing this card's type means removing it from those sets first, so the
+ *  modal takes you straight to the one you need to edit. */
+function showTypeLockedModal(sets: Card[]): void {
+  const body = document.createElement('div');
+  body.className = 'space-y-3';
+
+  const p = document.createElement('p');
+  p.className = 'text-sm text-muted leading-relaxed';
+  p.textContent = t(sets.length === 1 ? 'card.type.locked' : 'card.type.lockedPlural', { n: sets.length });
+  body.appendChild(p);
+
+  const list = document.createElement('div');
+  list.className = 'space-y-1';
+  for (const set of sets) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'w-full text-left text-xs font-mono truncate px-2 py-1.5 rounded text-muted hover:text-primary hover:bg-accent/10 transition-colors cursor-pointer';
+    row.className += ' flex items-center gap-2';
+    row.append(iconElement(TuneSetIcon, 12), document.createTextNode(set.name));
+    row.onclick = () => { closeModal(); navigate({ view: 'card', cardId: set.id }); };
+    list.appendChild(row);
+  }
+  body.appendChild(list);
+
+  // No footer action: the ✕, a click outside and Escape all close it already,
+  // and there is nothing here to confirm. Same shape as the card-ref picker.
+  showModal(t('card.type.lockedTitle'), body, []);
+}
+
 /** Re-fetches the tune and applies one field back onto the card. The field
  *  itself is decided by `apply` (see theSessionService), so the card page and
  *  the library's bulk refresh share the same rules. */
@@ -224,7 +301,11 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card?.externalId, source?.source]);
 
-  const menuItems: ContextMenuItem[] = !source ? [] : source.source === 'thesession'
+  const menuItems: ContextMenuItem[] = !source ? [] : source.source === 'thesession-set'
+    // A set has exactly one thing to refresh, and browsing is already what
+    // left-clicking the pin does — so the menu carries that one action alone.
+    ? [{ label: t('card.contextMenu.refreshSetTunes'), onClick: () => void refreshSetTunes(cardId, card?.externalId) }]
+    : source.source === 'thesession'
     ? [
         { label: t('card.contextMenu.browse'), onClick: () => window.open(source.url, '_blank', 'noopener') },
         { label: t('card.contextMenu.refreshAbc'), onClick: () => {
@@ -254,6 +335,37 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       ];
   const { menu: pinContextMenu, triggerProps: pinTriggerProps } = useContextMenu(menuItems);
 
+  // These three sit above the `if (!card) return` for the same reason `source`
+  // does: they are hooks, and a hook that only runs on some renders desyncs
+  // Preact's hook list. None of them needs `card` — they key off cardId and
+  // the cards map.
+  //
+  // One pass over the library's attachments, memoised on the cards object,
+  // which store.ts replaces wholesale on every mutate — so this recomputes
+  // whenever anything changes (including another card gaining a reference to
+  // this one, which is exactly what should refresh the list) and not on
+  // renders that change nothing else.
+  const backlinks  = useMemo(() => findBacklinks(cardId, user.cards), [user.cards, cardId]);
+  // Same derivation, the other list: which SETS play this tune. Disjoint from
+  // `backlinks` by construction — a set's tunes and a card's mentions are two
+  // different fields — so the two sections can never show the same card twice.
+  const inSets     = useMemo(() => findSetsContaining(cardId, user.cards), [user.cards, cardId]);
+  const typeLocked = isTypeLocked(inSets.length);
+  // What the set would be called automatically, whether or not it currently
+  // is — the toggle shows it as a preview when the flag is off.
+  const autoName = useMemo(
+    () => (card ? tunesetAutoName(card, user.cards) : null),
+    [user.cards, card],
+  );
+  const typeMenu = useContextMenu([
+    { label: t('card.type.none'), onClick: () => setCardType(cardId, '') },
+    ...CARD_TYPES.map(ct => ({
+      label: t(cardTypeLabelKey(ct)),
+      icon: cardTypeIcon(ct),
+      onClick: () => setCardType(cardId, ct),
+    })),
+  ]);
+
   if (!card) return <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">{t('card.notFound')}</div>;
 
   // ── Derived values ────────────────────────────────────────────────────────────
@@ -263,12 +375,6 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const ease       = fsrsState?.difficulty !== undefined ? (10 - fsrsState.difficulty) / 9 : undefined;
   const deckIds    = decksContainingCard(cardId, user);
   const sorted     = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
-  // One pass over the library's attachments. Memoised on the cards object,
-  // which store.ts replaces wholesale on every mutate — so this recomputes
-  // whenever anything changes (including another card gaining a reference to
-  // this one, which is exactly what should refresh the list) and not on
-  // renders that change nothing else.
-  const backlinks  = useMemo(() => findBacklinks(cardId, user.cards), [user.cards, cardId]);
 
   const rColor    = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
   const easeColor = ease === undefined ? 'text-dim' : ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : 'text-danger';
@@ -292,7 +398,14 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               onInput={(e) => setEditName((e.target as HTMLInputElement).value)}
               onBlur={() => {
                 const val = editName.trim();
-                if (val && val !== card.name) mutate(s => { s.cards[cardId]!.name = val; });
+                if (val && val !== card.name) mutate(s => {
+                  const c = s.cards[cardId];
+                  if (!c) return;
+                  c.name = val;
+                  // Typing a name is taking it back. Without this the next
+                  // normalisation would silently undo what was just typed.
+                  delete c.computedName;
+                });
                 setIsEditingName(false);
               }}
               onKeyDown={(e) => {
@@ -478,6 +591,99 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       </div>
       </div>
 
+      {/* ── Type ── */}
+      {/* Inline label/value, like the metrics above: a card's type is one short
+          word, not a form field. The value is the control — clicking it raises
+          the same overflow menu the attachments "+" uses, or, when the card is
+          already playing in a set, the modal explaining why it cannot move. */}
+      <div class="flex items-center gap-2">
+        <span class="section-title shrink-0">{t('card.section.type')}</span>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 text-sm text-primary hover:text-accent transition-colors cursor-pointer"
+          title={typeLocked ? t('card.type.lockedTitle') : t('card.type.change')}
+          onClick={(e) => typeLocked
+            ? showTypeLockedModal(inSets)
+            : typeMenu.open(e.clientX, e.clientY)}
+        >
+          {cardTypeIcon(card.type)}
+          <span>{t(cardTypeLabelKey(card.type))}</span>
+        </button>
+        {typeMenu.menu}
+      </div>
+
+      {/* ── Tunes (tunesets only) ── */}
+      {/* The set's DEFINITION, deliberately not an attachment: a set can
+          reference a card (a recording, a neighbouring set) without that card
+          becoming one of its tunes. Order is the content, so rows are numbered
+          and drag-reorderable. */}
+      {isTuneset(card) && (
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="section-title shrink-0">{t('card.section.tunes')}</span>
+              {/* A filled gear means the name looks after itself; a hollow one
+                  means it is yours, and its label is then a LIVE PREVIEW of what
+                  switching would produce — so the toggle never replaces a name
+                  without having shown what replaces it. Beside the tunes rather
+                  than beside the title: this is a property OF the list. */}
+              {(autoName || card.computedName) && (
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 text-xs text-dim hover:text-accent transition-colors cursor-pointer min-w-0"
+                  title={t(card.computedName ? 'card.autoName.disable' : 'card.autoName.enable')}
+                  onClick={() => mutate(s => {
+                    const c = s.cards[cardId];
+                    if (!c) return;
+                    if (c.computedName) delete c.computedName; else c.computedName = true;
+                  })}
+                >
+                  <span class="shrink-0 flex items-center"><GearIcon size={12} filled={!!card.computedName} /></span>
+                  <span class="truncate">
+                    {card.computedName ? t('card.autoName.on') : t('card.autoName.preview', { name: autoName ?? '' })}
+                  </span>
+                </button>
+              )}
+            </div>
+            <button
+              class="btn-ghost px-2 shrink-0"
+              title={t('card.tunes.add')}
+              onClick={() => showCardPicker(
+                picked => mutate(s => {
+                  const c = s.cards[cardId];
+                  if (!c) return;
+                  if (!c.tunes) c.tunes = [];
+                  c.tunes.push(cardToRef(picked));
+                }),
+                { titleKey: 'card.tunes.add', eligible: (c) => canBeTuneOf(c, card), emptyKey: 'card.tunes.onlyTunes' },
+              )}
+            ><PlusIcon size={13} /></button>
+          </div>
+          {(card.tunes ?? []).length === 0 ? (
+            <p class="text-xs text-dim">{t('card.tunes.empty')}</p>
+          ) : (
+            <CardRefList
+              refs={card.tunes ?? []}
+              editable={true}
+              glyph={<TuneIcon size={11} />}
+              onSetRepeat={(i, repeat) => mutate(s => {
+                const entry = s.cards[cardId]?.tunes?.[i];
+                if (!entry) return;
+                // Once is the default; storing it would be noise in every export.
+                if (repeat > 1) entry.repeat = repeat; else delete entry.repeat;
+              })}
+              onRemove={(i) => mutate(s => { s.cards[cardId]?.tunes?.splice(i, 1); })}
+              onReorder={(from, insertBefore) => mutate(s => {
+                const list = s.cards[cardId]?.tunes;
+                if (!list) return;
+                const [moved] = list.splice(from, 1);
+                list.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
+              })}
+            />
+          )}
+        </div>
+      )}
+
       {/* ── Tags ── */}
       <div class="space-y-2">
         <span class="section-title">{t('card.section.tags')}</span>
@@ -543,11 +749,15 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.notes')}</span>
-          <button class="btn-ghost text-xs" onClick={() => {
-            if (isEditingNotes) void mutate(s => { s.cards[cardId]!.content.notes = notesDraft; });
-            setIsEditingNotes(v => !v);
-          }}>
-            {isEditingNotes ? t('card.preview') : t('card.edit')}
+          <button
+            class="btn-ghost px-2"
+            title={isEditingNotes ? t('card.previewNotes') : t('card.editNotes')}
+            onClick={() => {
+              if (isEditingNotes) void mutate(s => { s.cards[cardId]!.content.notes = notesDraft; });
+              setIsEditingNotes(v => !v);
+            }}
+          >
+            {isEditingNotes ? <EyeIcon size={13} /> : <PencilIcon size={13} />}
           </button>
         </div>
         {isEditingNotes ? (
@@ -563,14 +773,15 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               void mutate(s => { s.cards[cardId]!.content.notes = val; });
             }}
           />
-        ) : (
+        ) : notesDraft.trim() ? (
           <VanillaEl el={renderNotes(notesDraft)} />
-        )}
+        ) : null}
       </div>
 
       {/* ── Attachments ── */}
       <AttachmentList options={{
         attachments: card.content.attachments,
+        card,
         editable: true,
         onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); }),
         onRemove:  (i) => mutate(s => { s.cards[cardId]!.content.attachments.splice(i, 1); }),
@@ -588,6 +799,28 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           atts.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
         }),
       }} />
+
+      {/* ── Played in these sets (read-only) ── */}
+      {/* Above "referenced by" because membership is stronger information than
+          mention: this card is part of those sets, the others merely point at
+          it. Same derivation, same hidden-when-empty rule. */}
+      {inSets.length > 0 && (
+        <div class="space-y-2">
+          <span class="section-title">{t('card.section.inSets')}</span>
+          <div class="space-y-1">
+            {inSets.map(set => (
+              <div key={set.id} class="flex items-center gap-2">
+                <span class="text-dim shrink-0 w-4 flex items-center justify-center"><TuneSetIcon size={12} /></span>
+                <span
+                  class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
+                  title={t('card.backlinks.open')}
+                  onClick={() => navigate({ view: 'card', cardId: set.id })}
+                >{set.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Referenced by (read-only) ── */}
       {/* Sits right after the attachments so outgoing and incoming references
@@ -616,15 +849,15 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.reviewHistory')}</span>
-          <button class="btn-ghost text-xs" onClick={() =>
+          <button onClick={() =>
             openSessionModal(Date.now(), 'good', (ts, rating) => mutate(s => {
               const key = `${s.currentProfileId}:${cardId}`;
               if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
               s.cardWorks[key]!.history.push({ ts, rating });
               s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
             }))
-          }>
-            {t('card.logSession.chip')}
+          } class="btn-ghost px-2" title={t('card.logSession.add')}>
+            <PlusIcon size={13} />
           </button>
         </div>
         {sorted.length > 0 && (

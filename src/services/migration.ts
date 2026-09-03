@@ -2,7 +2,25 @@ import type { AppState, User } from '../types';
 import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
+
+/** V6 → V7's rule, shared with importExport.ts's `migrateRawCards` so a card
+ *  arriving through a .cdc package is stamped exactly like one already in the
+ *  library. Two migration paths exist (whole state vs. bare cards) and this is
+ *  the only thing keeping them from drifting.
+ *
+ *  Deliberately conservative: an external id from a tune source is proof, so
+ *  it stamps. A hand-made tune card has no such proof and stays untyped — the
+ *  user types it from the card page, or in bulk from the library's ⋯ menu.
+ *  Never overwrites an existing type. */
+export function stampTuneType(card: Record<string, unknown>): void {
+  if (typeof card['type'] === 'string' && card['type']) return;
+  const externalId = card['externalId'];
+  if (typeof externalId !== 'string') return;
+  if (externalId.startsWith('thesession:') || externalId.startsWith('irishtuneinfo:')) {
+    card['type'] = 'tune';
+  }
+}
 
 // Each entry migrates from version N to N+1.
 // Use `Record<string, unknown>` to handle partially-typed legacy shapes.
@@ -104,6 +122,13 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
         }
       }
     }
+  },
+  // V6 → V7: stamp `type: 'tune'` on cards imported from a tune source, so a
+  //          library built before card types existed can populate a tuneset.
+  //          Writes one optional field; moves and deletes nothing.
+  (s) => {
+    const cards = s['cards'] as Record<string, Record<string, unknown>>;
+    for (const card of Object.values(cards ?? {})) stampTuneType(card);
   },
 ];
 

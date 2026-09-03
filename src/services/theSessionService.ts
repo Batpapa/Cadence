@@ -1,6 +1,8 @@
 import type { Card, FileEntry, Attachment } from '../types';
 import { generateId } from '../utils';
 import { TuneUnavailableError, withTuneIdentity, type SkippedTune } from './tuneFetchError';
+import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET } from './cardTypeService';
+import { SET_TUNE_REPEAT, TUNESET_ABC_NAME } from './abcService';
 
 const BASE = 'https://thesession.org';
 
@@ -93,11 +95,33 @@ function fetchTuneForBatch(id: number, name?: string): Promise<TuneResult> {
   return withTuneIdentity(`thesession:${id}`, name, () => fetchTuneById(id));
 }
 
-export async function fetchMemberInfo(memberId: number): Promise<{ name: string; total: number }> {
-  const res = await fetch(`${BASE}/members/${memberId}/tunebook?format=json`);
-  if (!res.ok) throw new Error(`Member not found`);
-  const data = (await res.json()) as { total: number; member: { name: string } };
-  return { name: data.member?.name ?? `Member ${memberId}`, total: data.total ?? 0 };
+/** A member lookup that failed for a reason worth telling apart: TheSession
+ *  answers 410 for an account that existed and was removed, and 404 for one
+ *  that never did. "This member is gone" and "no such member" send the user to
+ *  different next steps, so they must not collapse into one message. */
+export class MemberUnavailableError extends Error {
+  constructor(public readonly reason: 'gone' | 'notFound') {
+    super(reason);
+    this.name = 'MemberUnavailableError';
+  }
+}
+
+/** The member's own page, which is the cheapest possible first request: it
+ *  carries the name AND the size of both collections, so a caller knows before
+ *  fetching anything whether there is a tunebook or a set list to page through
+ *  at all — member 1 has 539 sets across 54 pages, and 54 requests fired on a
+ *  mere selection would be indefensible. */
+export async function fetchMemberInfo(memberId: number): Promise<{ name: string; tunebook: number; sets: number }> {
+  const res = await fetch(`${BASE}/members/${memberId}?format=json`);
+  if (res.status === 410) throw new MemberUnavailableError('gone');
+  if (res.status === 404) throw new MemberUnavailableError('notFound');
+  if (!res.ok) throw new Error(`TheSession member fetch failed: ${res.status}`);
+  const data = (await res.json()) as { name?: string; tunebook?: number; sets?: number };
+  return {
+    name: data.name ?? `Member ${memberId}`,
+    tunebook: data.tunebook ?? 0,
+    sets: data.sets ?? 0,
+  };
 }
 
 export async function fetchMemberTunes(
@@ -267,6 +291,11 @@ export function tuneResultToCard(tune: TuneResult): Card {
     name: tune.name,
     defaultImportance: theSessionImportance(tune),
     tags,
+    // Anything fetched from a tune database is a tune, by construction. Set at
+    // the source so every path that creates one — the import screens, the
+    // trending module, the session analyser's "add to library", the card
+    // page's migrate action — agrees without each having to remember.
+    type: CARD_TYPE_TUNE,
     externalId: `thesession:${tune.id}`,
     content: {
       // No source link here: the card page shows a clickable pin from `externalId` (see utils.ts externalSourceLink).
@@ -335,4 +364,308 @@ export async function searchMembers(query: string): Promise<MemberSearchResult[]
 /** Returns the existing card with this externalId, or undefined. */
 export function findByExternalId(externalId: string, cards: Record<string, import('../types').Card>): import('../types').Card | undefined {
   return Object.values(cards).find(c => c.externalId === externalId);
+}
+
+// ── Sets ──────────────────────────────────────────────────────────────────────
+// A TheSession "set" is a member's ordered list of SETTINGS — specific versions
+// of tunes, not tunes — and it is not addressable on its own: /sets/{id} is a
+// 404, only /members/{memberId}/sets/{id} resolves. There is no global search
+// either, so sets are always discovered through the member who wrote them,
+// exactly like a tunebook.
+
+export interface SetSetting {
+  /** TheSession setting id — which VERSION of the tune this set plays. */
+  id: number;
+  /** The tune's id. Carried nowhere but inside `url`, hence the parse. */
+  tuneId: number;
+  name: string;
+  type: string;
+  key: string;
+}
+
+export interface SetResult {
+  id: number;
+  memberId: number;
+  name: string;
+  tags: string[];
+  settings: SetSetting[];
+}
+
+interface RawSetSetting { id: number; name: string; url: string; type?: string; key?: string }
+interface RawSet { id: number; name: string; tags?: string[]; member?: { id: number }; settings?: RawSetSetting[] }
+interface RawMemberSetsResponse { pages?: number; total?: number; sets?: RawSet[] }
+
+/** "https://thesession.org/tunes/1633#setting46304" → 1633. The tune id appears
+ *  in no field of its own, so a set is unusable without this. */
+function tuneIdFromSettingUrl(url: string): number | null {
+  const m = /\/tunes\/(\d+)/.exec(url ?? '');
+  return m ? parseInt(m[1]!, 10) : null;
+}
+
+function toSetResult(raw: RawSet, memberId: number): SetResult {
+  const settings: SetSetting[] = [];
+  for (const s of raw.settings ?? []) {
+    const tuneId = tuneIdFromSettingUrl(s.url);
+    // A setting we cannot trace back to a tune is dropped rather than faked:
+    // the set is still usable, just shorter, and nothing points at a wrong tune.
+    if (tuneId === null) continue;
+    settings.push({ id: s.id, tuneId, name: s.name, type: s.type ?? '', key: s.key ?? '' });
+  }
+  return {
+    id: raw.id,
+    memberId: raw.member?.id ?? memberId,
+    name: raw.name,
+    tags: raw.tags ?? [],
+    settings,
+  };
+}
+
+/** Every set a member has published, paginated the same way their tunebook is. */
+export async function fetchMemberSets(
+  memberId: number,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<SetResult[]> {
+  const first = await fetch(`${BASE}/members/${memberId}/sets?format=json`);
+  if (!first.ok) throw new Error(`TheSession sets fetch failed: ${first.status}`);
+  const firstData = (await first.json()) as RawMemberSetsResponse;
+  const pages = firstData.pages ?? 1;
+  const out = (firstData.sets ?? []).map(s => toSetResult(s, memberId));
+  onProgress?.(1, pages);
+
+  for (let page = 2; page <= pages; page++) {
+    const res = await fetch(`${BASE}/members/${memberId}/sets?format=json&page=${page}`);
+    if (!res.ok) throw new Error(`TheSession sets page ${page} failed: ${res.status}`);
+    const data = (await res.json()) as RawMemberSetsResponse;
+    out.push(...(data.sets ?? []).map(s => toSetResult(s, memberId)));
+    onProgress?.(page, pages);
+  }
+  return out;
+}
+
+/** The identity of a set, and the only externalId shape sets ever take.
+ *
+ *  The member is part of it because the set id alone cannot rebuild the URL —
+ *  /sets/{id} is a 404. A dash, not a second colon: `externalSourceLink` splits
+ *  on the FIRST colon, and several places test `startsWith('thesession:')` and
+ *  then parseInt the rest, which `thesession:set:…` would pass and then fail on.
+ *  The dash form is correctly excluded from those tune-only paths. */
+export function setExternalId(memberId: number, setId: number): string {
+  return `thesession-set:${memberId}-${setId}`;
+}
+
+/** Records which setting of a tune this card should open on, by TheSession
+ *  setting id rather than by position.
+ *
+ *  `preferredIndex` is a position in the merged ABC file, whose blocks follow
+ *  `tune.settings` — an order TheSession can change under us — so the id has to
+ *  be resolved against the settings we just fetched, never assumed. A single
+ *  setting produces one un-merged attachment per setting, where the notion of
+ *  a preferred index has nothing to choose between. */
+function applyPreferredSetting(card: Card, tune: TuneResult, settingId: number): void {
+  if (tune.settings.length < 2) return;
+  const index = tune.settings.findIndex(s => s.id === settingId);
+  if (index === -1) return;
+  const abc = card.content.attachments.find(a => a.type === 'file');
+  if (abc && abc.type === 'file') abc.preferredIndex = index;
+}
+
+/** Turns one TheSession set into the cards Cadence needs for it, WITHOUT
+ *  touching app state — the caller decides how to apply the result, which is
+ *  what lets the import screen and the card page's "refresh" action share this.
+ *
+ *  Missing tunes are fetched and created with the set's own setting starred:
+ *  the set names a specific version, and dropping that would show the reader
+ *  the most popular setting instead of the one this set actually plays. A tune
+ *  already in the library is reused untouched — its starred setting is the
+ *  user's own choice and no import gets to overwrite it.
+ *
+ *  `existing` should be the live cards map; when it already holds this set, its
+ *  id and guid are kept so decks, review history and references stay attached. */
+export async function buildSetCards(
+  set: SetResult,
+  existing: Record<string, Card>,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<{ setCard: Card; newTunes: Card[] }> {
+  const newTunes: Card[] = [];
+  const byTuneId = new Map<number, Card>();
+
+  for (let i = 0; i < set.settings.length; i++) {
+    const setting = set.settings[i]!;
+    onProgress?.(i, set.settings.length);
+    // A tune listed twice in one set is fetched once.
+    if (byTuneId.has(setting.tuneId)) continue;
+    const already = findByExternalId(`thesession:${setting.tuneId}`, existing);
+    if (already) { byTuneId.set(setting.tuneId, already); continue; }
+    const tune = await fetchTuneForBatch(setting.tuneId, setting.name);
+    const card = tuneResultToCard(tune);
+    applyPreferredSetting(card, tune, setting.id);
+    newTunes.push(card);
+    byTuneId.set(setting.tuneId, card);
+  }
+  onProgress?.(set.settings.length, set.settings.length);
+
+  const externalId = setExternalId(set.memberId, set.id);
+  const previous = findByExternalId(externalId, existing);
+
+  // What a refresh must NOT trample: how many times the user decided each tune
+  // goes round. TheSession says which tunes are in the set; how they are played
+  // is the user's own reading of it.
+  const keptRepeats = new Map((previous?.tunes ?? []).map(ref => [ref.id, ref.repeat]));
+
+  const tunes = set.settings
+    .map(s => byTuneId.get(s.tuneId))
+    .filter((c): c is Card => !!c)
+    .map(c => ({
+      id: c.id, guid: c.guid, externalId: c.externalId, title: c.name,
+      repeat: keptRepeats.get(c.id) ?? SET_TUNE_REPEAT,
+    }));
+
+  const setCard: Card = {
+    id: previous?.id ?? generateId(),
+    guid: previous?.guid ?? generateId(),
+    // Replaced on the first normalisation by the tunes joined with " / " —
+    // computedName is on, so this is only what it is called until then.
+    name: set.name,
+    defaultImportance: previous?.defaultImportance ?? 1,
+    tags: [...new Set(['TheSession', ...set.tags, ...(previous?.tags ?? [])])],
+    type: CARD_TYPE_TUNESET,
+    computedName: previous ? previous.computedName : true,
+    tunes,
+    externalId,
+    // A refresh keeps whatever the user has attached or written; only the tune
+    // list is TheSession's to dictate. A NEW set comes with its fused score
+    // already attached — it is the point of importing a set, and nobody should
+    // have to go and ask for it. Deliberately not re-added on a refresh:
+    // removing it is a choice, and a refresh has no business undoing it.
+    content: previous?.content ?? {
+      notes: '',
+      attachments: [{
+        type: 'file', name: TUNESET_ABC_NAME, mimeType: 'text/vnd.abc',
+        data: '', generatedBy: 'tuneset',
+      }],
+    },
+  };
+  return { setCard, newTunes };
+}
+
+/** One set, by the pair that addresses it. Same payload as a listing entry,
+ *  plus each setting's ABC — which Cadence does not use, taking each tune's own
+ *  card as the source of notation instead. */
+export async function fetchSet(memberId: number, setId: number): Promise<SetResult> {
+  const res = await fetch(`${BASE}/members/${memberId}/sets/${setId}?format=json`);
+  if (!res.ok) throw new Error(`TheSession set fetch failed: ${res.status}`);
+  return toSetResult((await res.json()) as RawSet, memberId);
+}
+
+/** "thesession-set:1-147730" → { memberId: 1, setId: 147730 }, or null. */
+export function parseSetExternalId(externalId: string | undefined): { memberId: number; setId: number } | null {
+  const prefix = 'thesession-set:';
+  if (!externalId?.startsWith(prefix)) return null;
+  const [member, set] = externalId.slice(prefix.length).split('-');
+  const memberId = parseInt(member ?? '', 10);
+  const setId = parseInt(set ?? '', 10);
+  return isNaN(memberId) || isNaN(setId) ? null : { memberId, setId };
+}
+
+// ── Bookmarks ─────────────────────────────────────────────────────────────────
+// A member's bookmarks come back as an activity stream — a different shape from
+// the tunebook and the set list — and a bookmark can point at several kinds of
+// thing. Only "setting" concerns us: it names a specific version of a tune,
+// which is exactly what a tune card can star.
+//
+// Two limits of this endpoint shape the code below. It carries NO `pages` or
+// `total`, so paging stops on the first empty page rather than at a known
+// count; and the member page has no bookmark counter either (its `settings`
+// field counts settings the member SUBMITTED), so the size is only known once
+// the whole thing has been read.
+
+export interface BookmarkedSetting {
+  tuneId: number;
+  settingId: number;
+  name: string;
+}
+
+interface RawActivityObject { url?: string; objectType?: string; id?: string; displayName?: string }
+interface RawBookmarkItem { object?: RawActivityObject; target?: RawActivityObject }
+interface RawBookmarksResponse { items?: RawBookmarkItem[] }
+
+/** "settings:thesession:41297" → 41297, with the URL fragment as a fallback. */
+function settingIdFromBookmark(object: RawActivityObject): number | null {
+  const fromId = /(?:^|:)(\d+)$/.exec(object.id ?? '');
+  if (fromId) return parseInt(fromId[1]!, 10);
+  const fromUrl = /#setting(\d+)/.exec(object.url ?? '');
+  return fromUrl ? parseInt(fromUrl[1]!, 10) : null;
+}
+
+function toBookmarkedSetting(item: RawBookmarkItem): BookmarkedSetting | null {
+  if (item.object?.objectType !== 'setting') return null;
+  // The tune is named twice — as the bookmark's `target`, and inside the
+  // setting's own URL. Prefer the target, fall back to the URL.
+  const tuneId = tuneIdFromSettingUrl(item.target?.url ?? '') ?? tuneIdFromSettingUrl(item.object.url ?? '');
+  const settingId = settingIdFromBookmark(item.object);
+  if (tuneId === null || settingId === null) return null;
+  return { tuneId, settingId, name: item.object.displayName ?? item.target?.displayName ?? '' };
+}
+
+/** How many bookmarks to ask for per request. The endpoint honours `perpage`,
+ *  which turns member 1's 362 bookmarks from 37 requests into 8. */
+const BOOKMARKS_PER_PAGE = 50;
+
+/** Every setting a member has bookmarked, oldest page last.
+ *
+ *  Paging stops on the first SHORT page — a page returning fewer than it was
+ *  asked for is the last one — so a complete read costs no extra empty
+ *  request. This is the only termination available: the endpoint reports
+ *  neither `pages` nor `total`, and the member page has no bookmark counter to
+ *  divide either (verified against member 1, whose 362 bookmarks match none of
+ *  its figures; `settings` counts settings SUBMITTED, not bookmarked).
+ *
+ *  A `bookmarks` field HAS been requested from TheSession's admin (2026-09-03).
+ *  If it appears, read it in fetchMemberInfo and this becomes a known number of
+ *  pages — ceil(n / BOOKMARKS_PER_PAGE) — which buys the preview line the other
+ *  two tabs have and turns the progress count into a real percentage. The short
+ *  page stop below stays correct either way, so nothing here has to be undone.
+ *
+ *  `maxPages` is a guard, not a limit anyone should hit: without a total to
+ *  page towards, a malformed response that never runs short would otherwise
+ *  loop for ever. */
+export async function fetchMemberBookmarks(
+  memberId: number,
+  onProgress?: (loaded: number, page: number) => void,
+  maxPages = 200,
+): Promise<BookmarkedSetting[]> {
+  const out: BookmarkedSetting[] = [];
+  const seen = new Set<number>();
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await fetch(`${BASE}/members/${memberId}/bookmarks?format=json&perpage=${BOOKMARKS_PER_PAGE}&page=${page}`);
+    if (res.status === 410) throw new MemberUnavailableError('gone');
+    if (res.status === 404) throw new MemberUnavailableError('notFound');
+    if (!res.ok) throw new Error(`TheSession bookmarks fetch failed: ${res.status}`);
+    const items = ((await res.json()) as RawBookmarksResponse).items ?? [];
+    if (items.length === 0) break;
+    for (const item of items) {
+      const bookmark = toBookmarkedSetting(item);
+      // Anything that is not a bookmarked setting — a bookmarked recording,
+      // event, discussion — is simply not ours to import.
+      if (!bookmark) continue;
+      // One card per tune: a member who bookmarked two settings of the same
+      // tune gets the first, the card having only one starred version.
+      if (seen.has(bookmark.tuneId)) continue;
+      seen.add(bookmark.tuneId);
+      out.push(bookmark);
+    }
+    onProgress?.(out.length, page);
+    // Short page = last page. Saves the extra request an empty-page stop needs.
+    if (items.length < BOOKMARKS_PER_PAGE) break;
+  }
+  return out;
+}
+
+/** Fetches a tune and builds its card with one specific setting starred —
+ *  the rule shared by set import, set refresh and bookmark import. */
+export async function buildTuneCardWithSetting(bookmark: BookmarkedSetting): Promise<Card> {
+  const tune = await fetchTuneForBatch(bookmark.tuneId, bookmark.name || undefined);
+  const card = tuneResultToCard(tune);
+  applyPreferredSetting(card, tune, bookmark.settingId);
+  return card;
 }

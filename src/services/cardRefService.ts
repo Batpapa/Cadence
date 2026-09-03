@@ -1,10 +1,14 @@
-import type { Card, CardReferenceAttachment } from '../types';
+import type { Card, CardRef } from '../types';
+import { isTuneset } from './cardTypeService';
 
 /** Resolution order matters, and `findBacklinks` below depends on it: a
  *  reference whose `id` lands on one card while its `guid` matches another
  *  belongs to the FIRST — anything else would make the backlink list disagree
- *  with where clicking the reference actually goes. */
-export function resolveCardRef(ref: CardReferenceAttachment, cards: Record<string, Card>): Card | null {
+ *  with where clicking the reference actually goes.
+ *
+ *  Takes a bare `CardRef`, so it serves both roles a reference plays: an
+ *  attachment and a tuneset's tune list. */
+export function resolveCardRef(ref: CardRef, cards: Record<string, Card>): Card | null {
   const byId = cards[ref.id];
   if (byId) return byId;
 
@@ -40,13 +44,37 @@ export function resolveCardRef(ref: CardReferenceAttachment, cards: Record<strin
  *  A card referencing itself is left out (noise, and it is already right
  *  there), and a card referencing the target several times appears once. */
 export function findBacklinks(cardId: string, cards: Record<string, Card>): Card[] {
+  return collect(cards, cardId, source =>
+    (source.content?.attachments ?? []).filter(a => a.type === 'card'));
+}
+
+/** Every tuneset whose tune list resolves to `cardId` — the set membership of
+ *  a tune, derived exactly like `findBacklinks` and for the same reasons.
+ *
+ *  A deliberate twin rather than a parameter on findBacklinks: the two lists
+ *  are disjoint by construction (a set's tunes live in `card.tunes`, mentions
+ *  live in `content.attachments`), the card view shows them as two separate
+ *  sections, and keeping them apart leaves findBacklinks' own contract — and
+ *  its tests — untouched.
+ *
+ *  Only cards actually typed as a set are considered: `type` decides, a
+ *  leftover `tunes` list on a card of another type is ignored (see the field's
+ *  doc in types.ts). */
+export function findSetsContaining(cardId: string, cards: Record<string, Card>): Card[] {
+  return collect(cards, cardId, source => (isTuneset(source) ? source.tunes ?? [] : []));
+}
+
+/** Shared body of the two lookups above: every card, other than the target,
+ *  from which `refsOf` yields a reference resolving to the target. Sorted by
+ *  name so the list is stable, and each card appears once however many of its
+ *  references point here. */
+function collect(
+  cards: Record<string, Card>, cardId: string, refsOf: (source: Card) => CardRef[],
+): Card[] {
   const out: Card[] = [];
   for (const source of Object.values(cards)) {
     if (source.id === cardId) continue;
-    const links = (source.content?.attachments ?? []).some(
-      a => a.type === 'card' && resolveCardRef(a, cards)?.id === cardId,
-    );
-    if (links) out.push(source);
+    if (refsOf(source).some(ref => resolveCardRef(ref, cards)?.id === cardId)) out.push(source);
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
