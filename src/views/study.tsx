@@ -257,16 +257,6 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
             })()}
           </div>
 
-          {/* A set's tunes, before the rating buttons: they are what you have
-              to play, so you need them to judge yourself. Read-only — the type
-              selector stays out of study, but the definition belongs here. */}
-          {isTuneset(card) && (card.tunes ?? []).length > 0 && (
-            <div class="space-y-2">
-              <span class="section-title">{t('card.section.tunes')}</span>
-              <CardRefList refs={card.tunes ?? []} editable={false} onRemove={() => {}} onReorder={() => {}} glyph={<TuneIcon size={11} />} />
-            </div>
-          )}
-
           <div class="space-y-2">
             <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>
             <div class="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-2">
@@ -306,9 +296,28 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
             </div>
           )}
 
+          {/* A set's tunes, between the notes and the attachments — the same
+              slot the card page gives them, so the two screens read alike.
+              The list sits right above the score it explains: the fused ABC
+              is an attachment, and knowing which tunes it strings together
+              is what makes it readable. Read-only here: the type selector
+              stays out of study, but the definition belongs. */}
+          {isTuneset(card) && (card.tunes ?? []).length > 0 && (
+            <div class="space-y-2">
+              <span class="section-title">{t('card.section.tunes')}</span>
+              <CardRefList refs={card.tunes ?? []} editable={false} onRemove={() => {}} onReorder={() => {}} glyph={<TuneIcon size={11} />} />
+            </div>
+          )}
+
           {card.content.attachments.length > 0 && (
             <AttachmentList options={{
               attachments: card.content.attachments,
+              // The set's own card, without which a generated score cannot be
+              // built: it stores only the intent, so an AttachmentList that
+              // does not get the card shows the placeholder entry as-is —
+              // named "ABC", and empty. `editable: false` still keeps the
+              // "add a generated score" action out of study.
+              card,
               editable: false,
               // Picking a favorite ABC version is a viewing preference, not a
               // content edit — allowed here even though the rest is read-only.

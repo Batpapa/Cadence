@@ -160,19 +160,22 @@ describe('applyCardType', () => {
 });
 
 describe('applyCardType — the automatic name flag', () => {
-  it('a card BECOMING a set names itself automatically by default', () => {
-    const c = card('a');
-    applyCardType(c, CARD_TYPE_TUNESET);
-    expect(c.computedName).toBe(true);
-  });
-
-  it('does NOT re-arm it when the card was already a set', () => {
-    // Re-picking the type a card already has must not silently undo a user
-    // who deliberately took the name back.
-    const c = card('s', { type: CARD_TYPE_TUNESET });
-    delete c.computedName;
+  it('leaves a card BECOMING a set with the name it already had', () => {
+    // The name on a hand-made card is the one thing its author typed. Arming
+    // automatic naming here would overwrite it the moment the set gained its
+    // first tune — reported by a user, 2026-09-04.
+    const c = card('a', { name: 'My Monday set' });
     applyCardType(c, CARD_TYPE_TUNESET);
     expect(c.computedName).toBeUndefined();
+    expect(c.name).toBe('My Monday set');
+  });
+
+  it('does not touch the flag when the card was already a set', () => {
+    // Re-picking the type a card already has must not silently undo a user
+    // who deliberately turned automatic naming on — or off.
+    const c = card('s', { type: CARD_TYPE_TUNESET, computedName: true });
+    applyCardType(c, CARD_TYPE_TUNESET);
+    expect(c.computedName).toBe(true);
   });
 
   it('drops the flag when the card stops being a set', () => {
