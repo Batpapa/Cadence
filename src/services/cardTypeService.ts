@@ -73,18 +73,18 @@ export function canBeTuneOf(candidate: Card, set: Card): boolean {
  *  This DISCARDS the set's contents, and the app has no undo: the caller is
  *  responsible for whatever confirmation the gesture deserves. */
 export function applyCardType(card: Card, type: string): void {
-  const wasSet = isTuneset(card);
   if (type) card.type = type; else delete card.type;
   if (!isTuneset(card)) {
     delete card.tunes;
     delete card.computedName;
-    return;
   }
-  // A set names itself by default. Only on the way IN, so re-picking the type
-  // a card already has cannot silently undo a user who turned it off. Safe
-  // here because the automatic name never overwrites with an empty string —
-  // a set with no tunes yet keeps whatever it was called.
-  if (!wasSet) card.computedName = true;
+  // Becoming a set leaves automatic naming OFF — `computedName` absent, which
+  // is how "off" is written everywhere else (the toggle deletes the field
+  // rather than storing false, and the import sanitiser strips a stored
+  // false). Turning it on here would rename the card out from under the user
+  // the moment it gained its first tune, and the name it already carries is
+  // the one thing they typed themselves. A set imported from TheSession still
+  // arrives auto-named: there the generated name is all there ever was.
 }
 
 /** Whether this card's type may still be changed.

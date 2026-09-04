@@ -631,78 +631,6 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         {typeMenu.menu}
       </div>
 
-      {/* ── Tunes (tunesets only) ── */}
-      {/* The set's DEFINITION, deliberately not an attachment: a set can
-          reference a card (a recording, a neighbouring set) without that card
-          becoming one of its tunes. Order is the content, so rows are numbered
-          and drag-reorderable. */}
-      {isTuneset(card) && (
-        <div class="space-y-2">
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="section-title shrink-0">{t('card.section.tunes')}</span>
-              {/* A filled gear means the name looks after itself; a hollow one
-                  means it is yours, and its label is then a LIVE PREVIEW of what
-                  switching would produce — so the toggle never replaces a name
-                  without having shown what replaces it. Beside the tunes rather
-                  than beside the title: this is a property OF the list. */}
-              {(autoName || card.computedName) && (
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 text-xs text-dim hover:text-accent transition-colors cursor-pointer min-w-0"
-                  title={t(card.computedName ? 'card.autoName.disable' : 'card.autoName.enable')}
-                  onClick={() => mutate(s => {
-                    const c = s.cards[cardId];
-                    if (!c) return;
-                    if (c.computedName) delete c.computedName; else c.computedName = true;
-                  })}
-                >
-                  <span class="shrink-0 flex items-center"><GearIcon size={12} filled={!!card.computedName} /></span>
-                  <span class="truncate">
-                    {card.computedName ? t('card.autoName.on') : t('card.autoName.preview', { name: autoName ?? '' })}
-                  </span>
-                </button>
-              )}
-            </div>
-            <button
-              class="btn-ghost px-2 shrink-0"
-              title={t('card.tunes.add')}
-              onClick={() => showCardPicker(
-                picked => mutate(s => {
-                  const c = s.cards[cardId];
-                  if (!c) return;
-                  if (!c.tunes) c.tunes = [];
-                  c.tunes.push(cardToRef(picked));
-                }),
-                { titleKey: 'card.tunes.add', eligible: (c) => canBeTuneOf(c, card), emptyKey: 'card.tunes.onlyTunes' },
-              )}
-            ><PlusIcon size={13} /></button>
-          </div>
-          {(card.tunes ?? []).length === 0 ? (
-            <p class="text-xs text-dim">{t('card.tunes.empty')}</p>
-          ) : (
-            <CardRefList
-              refs={card.tunes ?? []}
-              editable={true}
-              glyph={<TuneIcon size={11} />}
-              onSetRepeat={(i, repeat) => mutate(s => {
-                const entry = s.cards[cardId]?.tunes?.[i];
-                if (!entry) return;
-                // Once is the default; storing it would be noise in every export.
-                if (repeat > 1) entry.repeat = repeat; else delete entry.repeat;
-              })}
-              onRemove={(i) => mutate(s => { s.cards[cardId]?.tunes?.splice(i, 1); })}
-              onReorder={(from, insertBefore) => mutate(s => {
-                const list = s.cards[cardId]?.tunes;
-                if (!list) return;
-                const [moved] = list.splice(from, 1);
-                list.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
-              })}
-            />
-          )}
-        </div>
-      )}
-
       {/* ── Tags ── */}
       <div class="space-y-2">
         <span class="section-title">{t('card.section.tags')}</span>
@@ -796,6 +724,82 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           <VanillaEl el={renderNotes(notesDraft)} />
         ) : null}
       </div>
+
+      {/* ── Tunes (tunesets only) ── */}
+      {/* The set's DEFINITION, deliberately not an attachment: a set can
+          reference a card (a recording, a neighbouring set) without that card
+          becoming one of its tunes. Order is the content, so rows are numbered
+          and drag-reorderable.
+
+          Sits just above the attachments, not up with the type: the generated
+          score IS an attachment, and this list is what it is made of — reading
+          the two apart made neither say much. */}
+      {isTuneset(card) && (
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="section-title shrink-0">{t('card.section.tunes')}</span>
+              {/* A filled gear means the name looks after itself; a hollow one
+                  means it is yours, and its label is then a LIVE PREVIEW of what
+                  switching would produce — so the toggle never replaces a name
+                  without having shown what replaces it. Beside the tunes rather
+                  than beside the title: this is a property OF the list. */}
+              {(autoName || card.computedName) && (
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 text-xs text-dim hover:text-accent transition-colors cursor-pointer min-w-0"
+                  title={t(card.computedName ? 'card.autoName.disable' : 'card.autoName.enable')}
+                  onClick={() => mutate(s => {
+                    const c = s.cards[cardId];
+                    if (!c) return;
+                    if (c.computedName) delete c.computedName; else c.computedName = true;
+                  })}
+                >
+                  <span class="shrink-0 flex items-center"><GearIcon size={12} filled={!!card.computedName} /></span>
+                  <span class="truncate">
+                    {card.computedName ? t('card.autoName.on') : t('card.autoName.preview', { name: autoName ?? '' })}
+                  </span>
+                </button>
+              )}
+            </div>
+            <button
+              class="btn-ghost px-2 shrink-0"
+              title={t('card.tunes.add')}
+              onClick={() => showCardPicker(
+                picked => mutate(s => {
+                  const c = s.cards[cardId];
+                  if (!c) return;
+                  if (!c.tunes) c.tunes = [];
+                  c.tunes.push(cardToRef(picked));
+                }),
+                { titleKey: 'card.tunes.add', eligible: (c) => canBeTuneOf(c, card), emptyKey: 'card.tunes.onlyTunes' },
+              )}
+            ><PlusIcon size={13} /></button>
+          </div>
+          {(card.tunes ?? []).length === 0 ? (
+            <p class="text-xs text-dim">{t('card.tunes.empty')}</p>
+          ) : (
+            <CardRefList
+              refs={card.tunes ?? []}
+              editable={true}
+              glyph={<TuneIcon size={11} />}
+              onSetRepeat={(i, repeat) => mutate(s => {
+                const entry = s.cards[cardId]?.tunes?.[i];
+                if (!entry) return;
+                // Once is the default; storing it would be noise in every export.
+                if (repeat > 1) entry.repeat = repeat; else delete entry.repeat;
+              })}
+              onRemove={(i) => mutate(s => { s.cards[cardId]?.tunes?.splice(i, 1); })}
+              onReorder={(from, insertBefore) => mutate(s => {
+                const list = s.cards[cardId]?.tunes;
+                if (!list) return;
+                const [moved] = list.splice(from, 1);
+                list.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
+              })}
+            />
+          )}
+        </div>
+      )}
 
       {/* ── Attachments ── */}
       <AttachmentList options={{
