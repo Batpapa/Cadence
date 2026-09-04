@@ -925,6 +925,7 @@
   "sessions.pendingConfirmation": "awaiting confirmation",
   "sessions.alternates.title": "Explore alternatives",
   "sessions.alternates.trigger": "Explore alternative matches",
+  "sessions.alternates.confirmed": "Confirmed — click to undo, or to pick a different tune",
   "sessions.alternates.viterbiBadge": "Recommended",
   "sessions.alternates.viterbiHint": "Chosen by the recognizer, which also weighs timing/continuity — not just this tune's own mean score",
   "sessions.alternates.notFinalizedYet": "Still analyzing — you can browse and listen, but you'll be able to pick an alternative once this result is confirmed",

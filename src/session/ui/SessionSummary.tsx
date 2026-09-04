@@ -6,11 +6,12 @@ import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/pl
 import { confirmModal } from '../../components/modal';
 import { deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
 import type { RecordedSession, SessionAnnotation } from '../model';
+import { alternatePickFields } from '../model';
 import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { showShareSessionModal } from './ShareSessionModal';
 import {
   fmtLongTime, defaultSessionName, TitleRow, DateRow,
-  BoundControls, ClipControls, viterbiPickOf,
+  BoundControls, ClipControls,
 } from './sessionUiShared';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 
@@ -163,19 +164,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
       bump();
     },
     // No engine to delegate to for a finished session — same mutate-in-place
-    // + persist() pattern as onToggleLike above, direct application of
-    // LiveSession.selectAlternate()'s own doc (never applicable here since
-    // nothing will ever re-run the segmenter on this annotation again, but
-    // the userConfirmed/identity fields stay consistent with a live session's).
+    // + persist() pattern as onToggleLike above, through the same
+    // alternatePickFields both engines use, so a confirmation means exactly
+    // the same thing here as it does on a live one.
     onSelectAlternate: (id, pick) => {
       const target = session.annotations.find(a => a.id === id);
       if (!target) return;
-      target.tuneId = pick.tuneId;
-      target.settingId = pick.settingId;
-      target.displayName = pick.displayName;
-      target.dance = pick.dance;
-      target.meter = pick.meter;
-      target.userConfirmed = pick.tuneId !== viterbiPickOf(target).tuneId;
+      Object.assign(target, alternatePickFields(target, pick));
       persist();
       bump();
     },

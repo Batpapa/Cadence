@@ -59,15 +59,18 @@ export interface SessionAnnotation {
    *  been overridden — "Viterbi decides" takes transition costs/hysteresis
    *  into account, not just this one span's raw mean score. */
   viterbiPick: AnnotationAlternate;
-  /** True once the user has explicitly picked a specific tune identity for
-   *  this annotation via selectAlternate() (or, from before this feature,
-   *  hand-relabeled it some other way) — freezes tuneId/settingId/
-   *  displayName/dance/meter across future segmenter updates and protects
-   *  the annotation from ever being retracted (see viterbiSegmenter.ts's
-   *  vanish-cleanup and AnnotationEvent's 'retract' doc). Picking
-   *  viterbiPick itself (rather than one of `alternates`) clears this back
-   *  to false — "let the algorithm keep deciding" — since viterbiPick tracks
-   *  the live answer regardless of userConfirmed, there's nothing to freeze. */
+  /** True once the user has explicitly vouched for this annotation's identity
+   *  via selectAlternate() — freezes tuneId/settingId/displayName/dance/meter
+   *  across future segmenter updates and protects the annotation from ever
+   *  being retracted (see viterbiSegmenter.ts's vanish-cleanup and
+   *  AnnotationEvent's 'retract' doc).
+   *
+   *  Confirming the algorithm's OWN pick counts (2026-09-04): "this detection
+   *  is right" is a statement about the result, not about disagreeing with it,
+   *  and it earns the same freeze — the whole point is that the decoder stops
+   *  moving it. Until then the card shows the confidence badge; once set, a
+   *  green check. Un-confirming (picking the selected tune again) is what
+   *  hands it back to the algorithm. */
   userConfirmed: boolean;
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */
@@ -200,4 +203,49 @@ export interface WindowDebugFeatures {
    *  (margin, candidatesAboveX, sum-of-top-N) only ever looks at the top 10,
    *  i.e. exactly `WindowResult.candidates` already. Read that instead. */
   features: NoteAndTempoFeatures | null;
+}
+
+// ── Choosing an identity for an annotation ───────────────────────────────────
+// Both engines and the finished-session summary write the user's choice, and
+// all three wrote the same five assignments by hand before this — which is how
+// one of them ends up disagreeing with the others about what confirming means.
+
+/** `viterbiPick` (2026-08-25) is absent on every session recorded before this
+ *  feature shipped — no migration, same "no UI path/no migration" convention
+ *  already established for `finalized`. A live/import annotation is always
+ *  freshly built by the segmenter, which has populated this field from day one
+ *  of its own existence, so this fallback only ever matters for a
+ *  RecordedSession loaded from IndexedDB (SessionSummary.tsx) — for that case,
+ *  the current identity IS effectively what the algorithm originally picked
+ *  (there was no override mechanism yet when it was recorded). */
+export function viterbiPickOf(ann: SessionAnnotation): AnnotationAlternate {
+  return ann.viterbiPick ?? {
+    tuneId: ann.tuneId, settingId: ann.settingId, displayName: ann.displayName,
+    dance: ann.dance, meter: ann.meter, meanScore: ann.meanScore,
+  };
+}
+
+/** What choosing an identity writes onto an annotation.
+ *
+ *  A tune — ANY of them, the algorithm's own current pick included — means the
+ *  user has looked at this detection and vouched for it: the identity freezes
+ *  and the annotation can no longer be retracted. Confirming what the
+ *  algorithm already said is the common case, not a no-op: it is the whole
+ *  point of being able to confirm a result.
+ *
+ *  `null` is the way back: the annotation returns to displaying whatever the
+ *  decoder currently picks, and to being the decoder's to revise. */
+export function alternatePickFields(
+  ann: SessionAnnotation,
+  pick: AnnotationAlternate | null,
+): Pick<SessionAnnotation, 'tuneId' | 'settingId' | 'displayName' | 'dance' | 'meter' | 'userConfirmed'> {
+  const chosen = pick ?? viterbiPickOf(ann);
+  return {
+    tuneId: chosen.tuneId,
+    settingId: chosen.settingId,
+    displayName: chosen.displayName,
+    dance: chosen.dance,
+    meter: chosen.meter,
+    userConfirmed: pick !== null,
+  };
 }
