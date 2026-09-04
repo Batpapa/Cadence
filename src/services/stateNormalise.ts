@@ -87,6 +87,15 @@ export function normaliseState(state: AppState): void {
       // resolver consults first and it is this same card's.
       if (ref.id !== target.id) ref.id = target.id;
       if (ref.guid !== target.guid) ref.guid = target.guid;
+      // Same reasoning for the third lookup key, which is the one that can
+      // change under a reference that still resolves: migrating a card from
+      // IrishTuneInfo to TheSession keeps its id and guid but replaces its
+      // externalId, leaving every set that plays it pointing at a source the
+      // card no longer has.
+      if (ref.externalId !== target.externalId) {
+        if (target.externalId) ref.externalId = target.externalId;
+        else delete ref.externalId;
+      }
     }
   }
 }

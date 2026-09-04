@@ -347,6 +347,23 @@ export function applyTheSessionAbc(card: Card, tune: TuneResult): void {
   card.content.attachments = kept;
 }
 
+/** Turns an already-imported card into the TheSession version of the same
+ *  tune, in place: everything the source owns — name, tags, notes, score,
+ *  importance, type and `externalId` — comes from `tune`, while `id` and
+ *  `guid` stay, so decks, review history and every reference to this card
+ *  survive the change of source.
+ *
+ *  In place rather than by replacement (`s.cards[id] = …`) because the bulk
+ *  runner hands fields a card, not the map it lives in; the wipe-then-assign
+ *  is what makes it equivalent — an IrishTuneInfo-only field left behind would
+ *  be a leftover of a source this card no longer has. */
+export function applyTheSessionMigration(card: Card, tune: TuneResult): void {
+  const fetched = tuneResultToCard(tune);
+  const { id, guid } = card;
+  for (const key of Object.keys(card)) delete (card as unknown as Record<string, unknown>)[key];
+  Object.assign(card, fetched, { id, guid });
+}
+
 export interface MemberSearchResult {
   id: number;
   name: string;

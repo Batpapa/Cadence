@@ -6,7 +6,7 @@ import { showModal, closeModal, renderModalBody } from './modal';
 import { CustomSelect } from './customSelect';
 import { focusIfDesktop } from '../utils';
 import { t } from '../services/i18nService';
-import type { Card } from '../types';
+import type { AppState, Card } from '../types';
 
 // ── Bulk edits on a library selection ────────────────────────────────────────
 // The modal shell takes an HTMLElement and renders its footer buttons outside
@@ -308,27 +308,76 @@ interface RefreshField<T> {
   key: string;
   /** i18n key for the checkbox label. */
   labelKey: string;
-  /** Writes this one field back onto the card. */
-  apply: (card: Card, fetched: T) => void;
+  /** Writes this one field back onto the card. `state` is the same draft the
+   *  card was read from, for the rare field that has to touch more than its
+   *  own card — refreshing a set may bring in tunes the library lacks. */
+  apply: (card: Card, fetched: T, state: AppState) => void;
+  /** How many of the run's cards this field can do anything with, when that is
+   *  worth knowing before committing to it — migrating only works on tunes the
+   *  source knows an equivalent for, and that answer costs a lookup.
+   *
+   *  Resolved once when the picker opens. The box cannot be ticked until it
+   *  comes back, nor at all if it comes back zero: an action that would touch
+   *  nothing should not be offerable. */
+  eligible?: (cardIds: string[]) => Promise<number>;
 }
 
 interface RefreshSpec<T> {
   /** Cards to refresh, already filtered to the right source. */
   cardIds: string[];
-  /** i18n key for the dialog title. */
-  titleKey: string;
-  /** `externalId` prefix the numeric source id follows, e.g. "thesession:". */
-  prefix: string;
-  /** One network round trip for one card. */
-  fetch: (sourceId: number) => Promise<T>;
+  /** Dialog title, already translated — it names the family being acted on,
+   *  count included, which is a parameterised string rather than a bare key. */
+  title: string;
+  /** One network round trip for one card. Parsing the card's `externalId` is
+   *  the fetcher's business: an id it cannot read is a throw like any other
+   *  failure, and lands the card in the skipped list by name. */
+  fetch: (card: Card) => Promise<T>;
   /** What can be refreshed. Kept separate from `fetch` so the source stays the
    *  caller's business and this runner works for any of them. */
   fields: RefreshField<T>[];
+  /** Recognised BEFORE the card is fetched: a card this run must not touch.
+   *  Distinct from a failure in both senses — nothing went wrong, and nothing
+   *  was written — and distinct from a card that simply has nothing to update:
+   *  something about it needs deciding, which is what `onSetAside` is for. */
+  setAside?: (card: Card) => Promise<boolean>;
+  /** Handed every card `setAside` held back, once, when the run ends. Runs on
+   *  top of the still-open report, so closing whatever it opens comes back to
+   *  the tally rather than to nothing. The report itself stays silent about
+   *  them: whatever this opens names them, and saying it twice in two stacked
+   *  dialogs reads as two different problems. */
+  onSetAside?: (cards: Card[]) => void;
+  /** The line under the tickboxes spelling out what confirming does. Omitted
+   *  where the ticked line already says it — an action named the same way as
+   *  on the card page does not need a paragraph repeating it. Its plural is
+   *  this key plus "Plural", the convention used throughout the i18n files. */
+  confirmKey?: string;
+  /** How the report names the cards it could not fetch. Defaults to the
+   *  TheSession wording (removed upstream); same plural convention. */
+  skippedKey?: string;
 }
+
+const skippedKey = <T,>(spec: RefreshSpec<T>) => spec.skippedKey ?? 'library.batch.refresh.skipped';
 
 function RefreshPicker<T>({ spec, draft }: { spec: RefreshSpec<T>; draft: Draft & { keys: string[] } }) {
   const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const n = spec.cardIds.length;
+  // Per-field, and only for fields that declare an `eligible` count: undefined
+  // means "not answered yet", which is as good a reason not to tick the box as
+  // a zero is.
+  const [counts, setCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let live = true;
+    for (const f of spec.fields) {
+      if (!f.eligible) continue;
+      // A lookup that fails leaves the count unknown, and the box stays
+      // untickable — better than claiming a number nothing verified.
+      void f.eligible(spec.cardIds).then(n => { if (live) setCounts(c => ({ ...c, [f.key]: n })); }).catch(() => {});
+    }
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const countOf = (f: RefreshField<T>) => f.eligible ? counts[f.key] : spec.cardIds.length;
   const toggle = (key: string) => {
     const next = new Set(chosen);
     next.has(key) ? next.delete(key) : next.add(key);
@@ -336,20 +385,42 @@ function RefreshPicker<T>({ spec, draft }: { spec: RefreshSpec<T>; draft: Draft 
     draft.keys = [...next];
     draft.noop.value = next.size === 0;
   };
+
+  // What the confirm line promises: the smallest of what the ticked actions
+  // can actually reach, never the size of the selection when an action is
+  // known to concern fewer cards than that.
+  const n = spec.fields
+    .filter(f => chosen.has(f.key))
+    .reduce((min, f) => Math.min(min, countOf(f) ?? 0), spec.cardIds.length);
+
   return (
     <div class="space-y-3">
       <div class="space-y-1">
-        {spec.fields.map(f => (
-          <label key={f.key} class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-elevated cursor-pointer">
-            <input type="checkbox" class="card-checkbox" checked={chosen.has(f.key)} onChange={() => toggle(f.key)} />
-            <span class="text-sm text-primary flex-1">{t(f.labelKey)}</span>
-          </label>
-        ))}
+        {spec.fields.map(f => {
+          const count = countOf(f);
+          // An action that can reach nothing is shown, greyed: hiding it would
+          // just raise the question of where it went.
+          const off = f.eligible !== undefined && !count;
+          return (
+            <label
+              key={f.key}
+              class={`flex items-center gap-2 px-2 py-1.5 rounded ${off ? 'opacity-50 cursor-not-allowed' : 'hover:bg-elevated cursor-pointer'}`}
+            >
+              <input type="checkbox" class="card-checkbox" disabled={off} checked={chosen.has(f.key)} onChange={() => toggle(f.key)} />
+              <span class="text-sm text-primary flex-1">{t(f.labelKey)}</span>
+              {f.eligible !== undefined && (
+                <span class="text-xs text-dim shrink-0">
+                  {count === undefined ? '…' : t('library.batch.eligible', { n: count })}
+                </span>
+              )}
+            </label>
+          );
+        })}
       </div>
       {/* No "tick at least one" line: the greyed-out confirm says it already. */}
-      {chosen.size > 0 && (
+      {chosen.size > 0 && spec.confirmKey && (
         <p class="text-xs text-dim">
-          {t(n === 1 ? 'library.batch.refresh.confirm' : 'library.batch.refresh.confirmPlural', { count: n })}
+          {t(n === 1 ? spec.confirmKey : `${spec.confirmKey}Plural`, { count: n })}
         </p>
       )}
     </div>
@@ -365,6 +436,9 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
   // Names, not just a count: a card that fails on its own has almost always
   // been deleted upstream, and knowing which one lets you go fix it.
   const [skipped, setSkipped] = useState<string[]>([]);
+  // Held back rather than failed. Counted, so the tally of updated cards stays
+  // honest, but not listed: `onSetAside` opens on top of this and names them.
+  const [asideCount, setAsideCount] = useState(0);
   const [finished, setFinished] = useState(false);
   const total = spec.cardIds.length;
 
@@ -372,37 +446,49 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
     void (async () => {
       let ok = 0;
       const ko: string[] = [];
+      const held: Card[] = [];
       for (const cardId of spec.cardIds) {
         // Closing the modal unmounts this and flips the flag: stop hammering a
         // public API for a result nobody is waiting for any more.
         if (cancelled.now) return;
         const card = appState.value.cards[cardId];
-        const sourceId = parseInt((card?.externalId ?? '').slice(spec.prefix.length), 10);
         const fail = () => { ko.push(card?.name ?? cardId); setSkipped([...ko]); };
-        if (isNaN(sourceId)) { fail(); setDone(ok + ko.length); continue; }
+        const tally = () => setDone(ok + ko.length + held.length);
+        if (!card) { fail(); tally(); continue; }
         try {
-          // One fetch, every ticked field written from it.
-          const fetched = await spec.fetch(sourceId);
+          // Asked before the fetch, so a card that must not be touched costs no
+          // round trip either.
+          if (await spec.setAside?.(card)) { held.push(card); setAsideCount(held.length); tally(); continue; }
+          // One fetch, every ticked field written from it. Read from live state
+          // each round rather than from a snapshot: a set that pulls in a
+          // missing tune must be visible to the next set that also plays it.
+          const fetched = await spec.fetch(card);
           await mutate(s => {
             const c = s.cards[cardId];
-            if (c) for (const f of fields) f.apply(c, fetched);
+            if (c) for (const f of fields) f.apply(c, fetched, s);
           });
           ok++;
         } catch { fail(); }
-        setDone(ok + ko.length);
+        tally();
       }
       setFinished(true);
+      // After the tally is on screen, and only if the reader is still there to
+      // answer: whatever this opens sits on top of a report that already says
+      // which cards it is about.
+      if (held.length > 0 && !cancelled.now) spec.onSetAside?.(held);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pct = total > 0 ? Math.round((done / total) * 100) : 100;
-  const ok = done - skipped.length;
+  const ok = done - skipped.length - asideCount;
   // Every single one failing is a different story from a few failing: one tune
   // 404s because it was removed upstream, all of them 404 because the network
   // is down. Naming cards in that case would blame them for something that
-  // isn't about them, so only the partial case lists them.
-  const allFailed = finished && total > 0 && ok === 0;
+  // isn't about them, so only the partial case lists them. A run that updated
+  // nothing because everything was deliberately held back is not that story:
+  // it needs at least one real failure to be one.
+  const allFailed = finished && ok === 0 && skipped.length > 0 && asideCount === 0;
 
   return (
     <div class="space-y-3">
@@ -416,7 +502,7 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
       {finished && !allFailed && skipped.length > 0 && (
         <div class="space-y-1">
           <p class="text-xs text-warn">
-            {t(skipped.length === 1 ? 'library.batch.refresh.skipped' : 'library.batch.refresh.skippedPlural', { n: skipped.length })}
+            {t(skipped.length === 1 ? skippedKey(spec) : `${skippedKey(spec)}Plural`, { n: skipped.length })}
           </p>
           <ul class="text-xs text-muted list-disc pl-4 max-h-32 overflow-y-auto">
             {skipped.map(name => <li key={name}>{name}</li>)}
@@ -434,17 +520,23 @@ export function showRefreshModal<T>(spec: RefreshSpec<T>): void {
   // Deliberately not the `open()` helper above: it closes the modal *after*
   // running onConfirm, which would pop the progress modal this pushes instead
   // of the picker. Closing first keeps the stack in the right order.
-  showModal(t(spec.titleKey), picker.el, [
-    { label: t('common.cancel'), onClick: closeModal },
-    { label: t('library.batch.refresh.action'), primary: true, disabled: draft.noop, onClick: () => {
+  // No Cancel: the ✕, Escape and a click outside all back out already, and a
+  // dialog whose confirm greys itself out until something is ticked is not one
+  // you can leave in a half-done state. The confirm stays generic — what will
+  // happen is what the ticked lines say, not what one button can name.
+  showModal(spec.title, picker.el, [
+    { label: t('common.confirm'), primary: true, disabled: draft.noop, onClick: () => {
       const fields = spec.fields.filter(f => draft.keys.includes(f.key));
       if (fields.length === 0) return;
       closeModal();
       const cancelled = { now: false };
       const { el, cleanup } = renderModalBody(<RefreshProgress spec={spec} fields={fields} cancelled={cancelled} />);
-      showModal(t(spec.titleKey), el, [
-        { label: t('common.close'), primary: true, onClick: closeModal },
-      ], true, '28rem', () => { cancelled.now = true; cleanup(); });
+      // No footer at all: a progress bar that reaches the end and a tally
+      // underneath need no button to agree with, and the ✕, Escape and the
+      // backdrop already close it. Which is also the safe half of the shell —
+      // those three run onDismiss, and a footer button would not, leaving the
+      // loop fetching for a torn-down dialog.
+      showModal(spec.title, el, [], true, '28rem', () => { cancelled.now = true; cleanup(); });
     } },
   ], true, '28rem', picker.cleanup);
 }

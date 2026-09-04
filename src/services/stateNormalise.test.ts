@@ -116,6 +116,27 @@ describe('normaliseState — healing the lookup', () => {
     expect((s.cards['a']!.content.attachments[0] as CardReferenceAttachment).guid).toBe('real-guid');
   });
 
+  it('heals an external id a migration changed under a still-resolving ref', () => {
+    // What the library's "migrate to TheSession" does to an IrishTuneInfo
+    // tune: same card, same id and guid, a different source. Every set that
+    // plays it would otherwise keep naming a source the card no longer has.
+    const s = state(
+      card('t', { name: 'Cooley\'s', externalId: 'thesession:1' }),
+      card('s', { type: 'tuneset', tunes: [bare({ id: 't', guid: 'guid-t', externalId: 'irishtuneinfo:42', title: 'Cooley\'s' })] }),
+    );
+    normaliseState(s);
+    expect(s.cards['s']!.tunes![0]!.externalId).toBe('thesession:1');
+  });
+
+  it('drops a stale external id when the target has none at all', () => {
+    const s = state(
+      card('t', { name: 'Cooley\'s' }),
+      card('s', { type: 'tuneset', tunes: [bare({ id: 't', guid: 'guid-t', externalId: 'irishtuneinfo:42', title: 'Cooley\'s' })] }),
+    );
+    normaliseState(s);
+    expect(s.cards['s']!.tunes![0]!.externalId).toBeUndefined();
+  });
+
   it('heals a reference that only resolved through its external id', () => {
     const s = state(
       card('t', { name: 'Cooley\'s', externalId: 'thesession:1' }),

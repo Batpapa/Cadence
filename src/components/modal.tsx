@@ -63,6 +63,15 @@ export function closeModal(): void {
   modalStack.value = modalStack.value.slice(0, -1);
 }
 
+/** Pops the whole stack, running every entry's `onDismiss`. For the rare
+ *  action inside a modal that navigates elsewhere: popping one would leave the
+ *  dialogs below it hanging over a view they have nothing to do with. */
+export function closeAllModals(): void {
+  const open = modalStack.value;
+  modalStack.value = [];
+  for (const entry of open) entry.onDismiss?.();
+}
+
 export function showModal(
   title: string, body: HTMLElement, actions: ModalAction[], dismissable = true, maxWidth = '28rem',
   onDismiss?: () => void, headerAction?: ModalHeaderAction,

@@ -19,27 +19,28 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string)
   });
 }
 
-const EXTERNAL_SOURCES: Record<string, { label: string; url: (id: string) => string; display?: (id: string) => string }> = {
-  thesession: { label: 'TheSession', url: id => `https://thesession.org/tunes/${id}` },
-  irishtuneinfo: { label: 'IrishTuneInfo', url: id => `https://www.irishtune.info/tune/${id}/` },
+// Only the URL: the pin's colour names the site, and the tooltip now shows the
+// stored `externalId` itself, so no source ever needs a display name here.
+const EXTERNAL_SOURCES: Record<string, { url: (id: string) => string }> = {
+  thesession: { url: id => `https://thesession.org/tunes/${id}` },
+  irishtuneinfo: { url: id => `https://www.irishtune.info/tune/${id}/` },
   // A set's id alone cannot rebuild its URL — thesession.org/sets/{id} is a 404,
   // only /members/{memberId}/sets/{id} resolves — so the id carries both, as
-  // "{member}-{set}". `display` then shows just the set number on the pin: the
-  // member is plumbing, not something the user asked to look at.
+  // "{member}-{set}", and the pin shows that pair whole: it IS the set's
+  // address here, and hiding half of it made the pin unquotable.
   'thesession-set': {
-    label: 'TheSession',
     url: id => {
       const [member, set] = id.split('-');
       return `https://thesession.org/members/${member}/sets/${set}`;
     },
-    display: id => id.split('-')[1] ?? id,
   },
 };
 
-/** "thesession:52302" → { source: "thesession", id: "52302", label: "TheSession:52302",
+/** "thesession:52302" → { source: "thesession", id: "52302", label: "thesession:52302",
  *  url: "https://thesession.org/tunes/52302" }. `id` alone is what the card page's pin
- *  shows (the source is already carried by the pin's colour); `label` is the spelled-out
- *  form for tooltips and denser listings.
+ *  shows (the source is already carried by the pin's colour); `label` is the `externalId`
+ *  verbatim, which is what the tooltip spells out — the stored value, quotable as-is into
+ *  a bug report or a search, rather than a prettied-up rendering of it.
  *  Reconstructed from the id alone (no slug needed by either source) — independent of
  *  `content.notes`, which the user can freely edit away. */
 export function externalSourceLink(externalId: string | undefined): { source: string; id: string; label: string; url: string } | null {
@@ -50,8 +51,7 @@ export function externalSourceLink(externalId: string | undefined): { source: st
   const id = externalId.slice(sep + 1);
   const def = EXTERNAL_SOURCES[source];
   if (!def) return null;
-  const shown = def.display ? def.display(id) : id;
-  return { source, id: shown, label: `${def.label}:${shown}`, url: def.url(id) };
+  return { source, id, label: externalId, url: def.url(id) };
 }
 
 export function isMobileDevice(): boolean {
