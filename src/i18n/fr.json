@@ -925,6 +925,7 @@
   "sessions.pendingConfirmation": "en attente de confirmation",
   "sessions.alternates.title": "Explorer les alternatives",
   "sessions.alternates.trigger": "Explorer les résultats alternatifs",
+  "sessions.alternates.confirmed": "Résultat confirmé — cliquez pour revenir en arrière ou choisir un autre morceau",
   "sessions.alternates.viterbiBadge": "Recommandé",
   "sessions.alternates.viterbiHint": "Choisi par le moteur de reconnaissance, qui prend aussi en compte la continuité temporelle — pas seulement le score moyen de ce morceau",
   "sessions.alternates.notFinalizedYet": "Analyse en cours — vous pouvez consulter et écouter, mais vous pourrez choisir une alternative une fois ce résultat confirmé",

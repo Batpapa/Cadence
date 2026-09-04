@@ -3,9 +3,10 @@ import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
 import { AbcPreview } from './abcPreview';
-import { viterbiPickOf, BUCKET_TEXT } from './sessionUiShared';
+import { BUCKET_TEXT } from './sessionUiShared';
 import { bucketOf } from '../recognition/viterbiSegmenter';
 import { DETECTION_TEMPORAL_CONFIG } from '../recognition/detectionTemporalConfig';
+import { viterbiPickOf } from '../model';
 import type { AnnotationAlternate, SessionAnnotation } from '../model';
 
 // ── "Explore alternatives" picker ─────────────────────────────────────────────
@@ -15,6 +16,12 @@ import type { AnnotationAlternate, SessionAnnotation } from '../model';
 // Viterbi also weighs transition costs/hysteresis the mean score alone
 // doesn't see) plus up to 4 alternates ranked by mean score
 // (SessionAnnotation.alternates, already sorted).
+//
+// It opens with NOTHING ticked on an unconfirmed detection (2026-09-04, user
+// request), and the selection toggles: clicking what is already ticked hands
+// the annotation back to the decoder. So the three states the card shows —
+// proposal, confirmed-as-proposed, confirmed-as-something-else — are all
+// reachable and all reversible from this one list, with no separate control.
 //
 // Each option carries its own <AbcPreview> (2026-08-25, user request): the
 // most reliable way to tell whether an alternative is actually right is to
@@ -57,7 +64,7 @@ function optionsFor(ann: SessionAnnotation, viterbiPick: AnnotationAlternate): A
 function AlternatesPopover({ initial, getLatest, onSelect }: {
   initial: SessionAnnotation;
   getLatest?: () => SessionAnnotation | undefined;
-  onSelect: (pick: AnnotationAlternate) => void;
+  onSelect: (pick: AnnotationAlternate | null) => void;
 }) {
   // undefined = retracted (only reachable once getLatest is polled and comes
   // back empty — `initial` is always a real annotation the card just showed).
@@ -85,7 +92,11 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
       <div class="divide-y divide-border/50">
         {optionsFor(ann, viterbiPick).map(opt => {
           const isViterbi = opt.tuneId === viterbiPick.tuneId;
-          const isSelected = opt.tuneId === ann.tuneId;
+          // Selection is the user's verdict, not the algorithm's: until they
+          // have confirmed something, NOTHING is ticked here — the card is
+          // showing a proposal, and a tick beside it would read as an answer
+          // already given.
+          const isSelected = ann.userConfirmed && opt.tuneId === ann.tuneId;
 
           // A plain div, not a <button> — AbcPreview below is its own real
           // button, and nesting <button> inside <button> is invalid HTML
@@ -99,8 +110,8 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
               tabIndex={canChoose ? 0 : undefined}
               class={`w-full flex items-center gap-3 px-5 py-2.5 transition-colors ${
                 isSelected ? 'bg-accent/10' : canChoose ? 'hover:bg-bg cursor-pointer' : ''} ${!canChoose ? 'opacity-70' : ''}`}
-              onClick={canChoose ? () => onSelect(opt) : undefined}
-              onKeyDown={canChoose ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(opt); } } : undefined}
+              onClick={canChoose ? () => onSelect(isSelected ? null : opt) : undefined}
+              onKeyDown={canChoose ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(isSelected ? null : opt); } } : undefined}
             >
               <span class="w-4 shrink-0 text-accent text-sm leading-none">{isSelected ? '✓' : ''}</span>
               <AbcPreview settingId={opt.settingId} displayName={opt.displayName} size={11} />
@@ -140,7 +151,7 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
 export function showAlternatesPopover(
   ann: SessionAnnotation,
   getLatest: (() => SessionAnnotation | undefined) | undefined,
-  onSelect: (pick: AnnotationAlternate) => void,
+  onSelect: (pick: AnnotationAlternate | null) => void,
 ): void {
   const body = document.createElement('div');
   // showModal's closeModal() only removes the overlay from the DOM — it has
@@ -155,7 +166,7 @@ export function showAlternatesPopover(
   // button" pattern showModal's own doc describes, deliberately bypassing
   // onDismiss for that path).
   const cleanup = () => render(null, body);
-  const handleSelect = (pick: AnnotationAlternate) => {
+  const handleSelect = (pick: AnnotationAlternate | null) => {
     onSelect(pick);
     closeModal();
     cleanup();

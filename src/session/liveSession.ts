@@ -4,6 +4,7 @@ import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
 import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent, AnnotationAlternate } from './model';
+import { alternatePickFields } from './model';
 import type { IndexProgress } from './recognition/indexStore';
 
 // ── Live session orchestrator ─────────────────────────────────────────────────
@@ -216,20 +217,15 @@ export class LiveSession {
     this.persistDraft();
   }
 
-  /** Overrides which tune this annotation displays as — `pick` is either
-   *  `ann.viterbiPick` itself (picking the algorithm's own current answer —
-   *  clears the override, since viterbiPick tracks it live regardless) or
-   *  one of `ann.alternates` (freezes the identity going forward and
-   *  protects it from retraction — see model.ts's userConfirmed doc). */
-  selectAlternate(annotationId: string, pick: AnnotationAlternate): void {
+  /** Records the user's verdict on this annotation's identity: any tune —
+   *  including the decoder's own current pick — freezes it and protects it
+   *  from retraction, `null` hands it back to the decoder. See
+   *  model.ts's alternatePickFields, which owns that rule for all three
+   *  writers (both engines and the finished-session summary). */
+  selectAlternate(annotationId: string, pick: AnnotationAlternate | null): void {
     const ann = this.annotations.get(annotationId);
     if (!ann) return;
-    this.annotations.set(annotationId, {
-      ...ann,
-      tuneId: pick.tuneId, settingId: pick.settingId, displayName: pick.displayName,
-      dance: pick.dance, meter: pick.meter,
-      userConfirmed: pick.tuneId !== ann.viterbiPick.tuneId,
-    });
+    this.annotations.set(annotationId, { ...ann, ...alternatePickFields(ann, pick) });
     this.persistDraft();
   }
 

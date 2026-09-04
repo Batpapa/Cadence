@@ -46,11 +46,12 @@ export interface AnnotationCardOptions {
   onTargetDeckIdsChanged?: () => void;
   /** "I liked this tune" marker — purely personal, unrelated to any card. */
   onToggleLike?: (annotationId: string) => void;
-  /** Overrides which tune this annotation displays as — shows the confidence
-   *  badge as clickable (opens the "explore alternatives" picker) when set.
-   *  Choosing an option is only allowed once the annotation is finalized
+  /** Records the user's verdict on this annotation's identity — makes the
+   *  confidence badge clickable (it opens the "explore alternatives" picker).
+   *  A tune confirms it, `null` un-confirms and hands it back to the decoder.
+   *  Choosing anything is only allowed once the annotation is finalized
    *  (see the picker's own doc) — requires `getLatestAnnotation` too. */
-  onSelectAlternate?: (annotationId: string, pick: AnnotationAlternate) => void;
+  onSelectAlternate?: (annotationId: string, pick: AnnotationAlternate | null) => void;
   /** Freshest copy of a still-live annotation, read on an interval while the
    *  picker is open — a live/import annotation can still be revised (new
    *  alternates/scores) or retracted entirely while the user is browsing it.
@@ -273,9 +274,19 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
 
         <NavigableName label={ann.displayName} tuneId={ann.tuneId} settingId={ann.settingId} knownCardId={known?.id} onOpenCard={opts.onOpenCard} />
 
+        {/* Two states in one control. Unconfirmed, it is the confidence badge:
+            a number the algorithm is offering. Confirmed, it collapses to a
+            green check — the score stops mattering once a human has vouched
+            for the identity, and keeping it would invite re-reading a verdict
+            that has already been given. Clicking it reopens the picker either
+            way, which is also the only way back. */}
         <button
-          class={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${BUCKET_BADGE[ann.bucket]} ${opts.onSelectAlternate ? 'cursor-pointer hover:brightness-110 transition-[filter]' : 'cursor-default'}`}
-          title={opts.onSelectAlternate ? t('sessions.alternates.trigger') : undefined}
+          class={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
+            ann.userConfirmed ? 'bg-success/15 text-success' : BUCKET_BADGE[ann.bucket]
+          } ${opts.onSelectAlternate ? 'cursor-pointer hover:brightness-110 transition-[filter]' : 'cursor-default'}`}
+          title={opts.onSelectAlternate
+            ? t(ann.userConfirmed ? 'sessions.alternates.confirmed' : 'sessions.alternates.trigger')
+            : undefined}
           onClick={opts.onSelectAlternate ? (e) => {
             e.stopPropagation();
             showAlternatesPopover(
