@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTunesetAbc, splitAbcTunes, parseAbcBlock, encodeAbc, MAX_REPEAT } from './abcService';
+import { buildTunesetAbc, splitAbcTunes, parseAbcBlock, encodeAbc, MAX_REPEAT, DEFAULT_TUNE_REPEAT, defaultTuneRepeat } from './abcService';
 import type { Card, CardRef } from '../types';
 
 function abcBlock(x: number, title: string, rhythm: string, meter: string, key: string, music: string): string {
@@ -223,5 +223,25 @@ describe('buildTunesetAbc — repeats', () => {
       lib(cooleys, scoreless),
     )!;
     expect(abc.split('"^no score"').length - 1).toBe(1);
+  });
+});
+
+describe('the default number of repeats', () => {
+  it('is three — the Irish convention — when the user has not said otherwise', () => {
+    expect(defaultTuneRepeat({})).toBe(DEFAULT_TUNE_REPEAT);
+    expect(DEFAULT_TUNE_REPEAT).toBe(3);
+  });
+
+  it('is whatever number the user has set instead', () => {
+    expect(defaultTuneRepeat({ defaultTuneRepeat: 2 })).toBe(2);
+    expect(defaultTuneRepeat({ defaultTuneRepeat: 1 })).toBe(1);
+  });
+
+  it('never yields a count the score builder would refuse', () => {
+    // The setting and the per-tune field share one ceiling; a stored value
+    // from a build with a different one must not slip past it.
+    expect(defaultTuneRepeat({ defaultTuneRepeat: 999 })).toBe(MAX_REPEAT);
+    expect(defaultTuneRepeat({ defaultTuneRepeat: 0 })).toBe(1);
+    expect(defaultTuneRepeat({ defaultTuneRepeat: NaN })).toBe(1);
   });
 });

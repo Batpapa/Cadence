@@ -12,6 +12,7 @@ import { removeCards } from '../services/cardService';
 import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showRefreshModal } from '../components/batchEdit';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId } from '../services/theSessionService';
 import { ensureItiMapping } from '../services/itiMappingService';
+import { defaultTuneRepeat } from '../services/abcService';
 import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
@@ -465,7 +466,7 @@ export function LibraryView() {
           const set = await fetchSet(parsed.memberId, parsed.setId);
           // Resolved against live state, so a tune pulled in for an earlier set
           // in the same run is reused rather than created a second time.
-          return buildSetCards(set, appState.value.cards);
+          return buildSetCards(set, appState.value.cards, defaultTuneRepeat(appState.value));
         },
         fields: [
           { key: 'tunes', labelKey: 'card.contextMenu.refreshSetTunes', apply: (card, { setCard, newTunes }, s) => {

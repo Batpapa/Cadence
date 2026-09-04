@@ -13,6 +13,7 @@ import {
   fetchMemberBookmarks, buildTuneCardWithSetting,
   type MemberSearchResult, type TuneSetting,
 } from '../services/theSessionService';
+import { defaultTuneRepeat } from '../services/abcService';
 import { describeTune, tuneFetchStatus, TuneUnavailableError, withTuneIdentity, type SkippedTune } from '../services/tuneFetchError';
 import { ensureTuneNameIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
 import { t } from '../services/i18nService';
@@ -973,7 +974,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         setStatus(t('theSession.sets.importing', { name: set.name, n: i + 1, total: sets.length }));
         // The live cards map is re-read each time so a tune created for an
         // earlier set in this same batch is reused, not fetched twice.
-        const { setCard, newTunes } = await buildSetCards(set, appState.value.cards);
+        const { setCard, newTunes } = await buildSetCards(set, appState.value.cards, defaultTuneRepeat(appState.value));
         created += newTunes.length;
         imported++;
         await mutate(s => {

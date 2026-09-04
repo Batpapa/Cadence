@@ -11,7 +11,7 @@ import { resolveCardRef } from '../services/cardRefService';
 import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, TUNESET_ABC_NAME } from '../services/abcService';
 import { isTuneset } from '../services/cardTypeService';
 import { appState, navigate } from '../store';
-import { showModal, closeModal } from './modal';
+import { showModal, closeModal, confirmModal } from './modal';
 import { t } from '../services/i18nService';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
@@ -110,10 +110,28 @@ function AttachmentRow({ index, editable, onReorder, scratch, children }: {
   return (
     <div ref={ref} class="flex items-center gap-2 px-3 py-1.5 rounded border border-border group">
       {editable && (
-        <span class="text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
+        <span class="text-dim cursor-grab active:cursor-grabbing shrink-0 text-xs select-none">⠿</span>
       )}
       {children}
     </div>
+  );
+}
+
+/** Removing is instant and cannot be undone, and the trash icon now sits
+ *  permanently beside every row instead of appearing on hover — which makes a
+ *  misclick both easier to make and likelier. So it asks first, naming what it
+ *  is about to remove.
+ *
+ *  `isRef` picks the wording for a row that points AT a card (a reference, or a
+ *  tune in a set): there the trash icon sits next to a card's name, which is
+ *  exactly what it does not delete — worth saying rather than leaving to be
+ *  discovered. */
+function confirmRemove(name: string, isRef: boolean, remove: () => void): void {
+  confirmModal(
+    t('fileViewer.remove.title'),
+    t(isRef ? 'fileViewer.remove.messageRef' : 'fileViewer.remove.message', { name }),
+    t('fileViewer.remove.title'),
+    remove,
   );
 }
 
@@ -146,13 +164,13 @@ function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex
       </span>
       <a
         href={entryToObjectUrl(entry)} download={downloadName ?? entry.name}
-        class="text-xs text-dim hover:text-accent transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+        class="text-xs text-dim hover:text-accent transition-colors shrink-0"
         title={t('fileViewer.download')}
       >↓</a>
       {editable && (
         <button
-          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100"
-          title={t('fileViewer.remove')} onClick={onRemove}
+          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
+          title={t('fileViewer.remove')} onClick={() => confirmRemove(entry.name, false, onRemove)}
         >
           <TrashIcon size={11} />
         </button>
@@ -179,13 +197,13 @@ function EmbedRowContent({ entry, onRemove, editable }: { entry: EmbedEntry; onR
         title={entry.url} onClick={() => showEmbedModal(entry)}
       >{label}</span>
       <button
-        class="text-xs text-dim hover:text-accent transition-colors shrink-0 opacity-0 group-hover:opacity-100 cursor-pointer"
+        class="text-xs text-dim hover:text-accent transition-colors shrink-0 cursor-pointer"
         title={t('embed.play')} onClick={() => showEmbedModal(entry)}
       >▶</button>
       {editable && (
         <button
-          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100"
-          title={t('embed.remove')} onClick={onRemove}
+          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
+          title={t('embed.remove')} onClick={() => confirmRemove(label, false, onRemove)}
         >
           <TrashIcon size={11} />
         </button>
@@ -194,7 +212,16 @@ function EmbedRowContent({ entry, onRemove, editable }: { entry: EmbedEntry; onR
   );
 }
 
-function CardRefRowContent({ entry, onRemove, editable, glyph = '↗' }: { entry: CardRef; onRemove: () => void; editable: boolean; glyph?: ComponentChild }) {
+function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action }: {
+  entry: CardRef;
+  onRemove: () => void;
+  editable: boolean;
+  glyph?: ComponentChild;
+  /** A control of this row's own, placed with the others and AHEAD of the
+   *  trash — so remove stays last on every row, where the eye expects it,
+   *  rather than having something appear beyond it on some rows only. */
+  action?: ComponentChild;
+}) {
   const resolved = resolveCardRef(entry, appState.value.cards);
   return (
     <>
@@ -213,10 +240,11 @@ function CardRefRowContent({ entry, onRemove, editable, glyph = '↗' }: { entry
           {entry.title}<span class="ml-1 text-danger text-[10px]">{t('fileViewer.cardRef.unresolved')}</span>
         </span>
       )}
+      {action}
       {editable && (
         <button
-          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100"
-          title={t('fileViewer.remove')} onClick={onRemove}
+          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
+          title={t('fileViewer.remove')} onClick={() => confirmRemove(resolved?.name ?? entry.title, true, onRemove)}
         >
           <TrashIcon size={11} />
         </button>
@@ -306,9 +334,12 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
   onRemove: (i: number) => void;
   onReorder: (from: number, insertBefore: number) => void;
   glyph?: ComponentChild;
-  /** Shows a repeat counter on each row when given. Click cycles it: a set
-   *  repeats two or three times in practice, so a stepper would be more
-   *  machinery than the choice deserves. */
+  /** Makes the repeat counter changeable. Click cycles it: a set repeats two
+   *  or three times in practice, so a stepper would be more machinery than
+   *  the choice deserves.
+   *
+   *  Without it the counter is still SHOWN, but only where it says something
+   *  — see the row below. */
   onSetRepeat?: (i: number, repeat: number) => void;
 }) {
   const scratch = useRef<DragScratch>({ draggedIdx: null, indicatorEl: null }).current;
@@ -317,17 +348,37 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
     <div class="space-y-1">
       {refs.map((ref, i) => (
         <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch}>
-          <CardRefRowContent entry={ref} editable={editable} onRemove={() => onRemove(i)} glyph={glyph} />
-          {onSetRepeat && (
-            <button
-              type="button"
-              class={`shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                clampRepeat(ref.repeat) > 1 ? 'text-accent bg-accent/10' : 'text-dim hover:text-muted'
-              }`}
-              title={t('card.tunes.repeatTitle')}
-              onClick={() => onSetRepeat(i, clampRepeat(ref.repeat) % MAX_REPEAT + 1)}
-            >×{clampRepeat(ref.repeat)}</button>
-          )}
+          <CardRefRowContent
+            entry={ref} editable={editable} onRemove={() => onRemove(i)} glyph={glyph}
+            // A control when it can be changed, a readout when it cannot —
+            // which is why one shows at ×1 and the other does not. A control
+            // has to be findable before you know you want it, so it is always
+            // there; a readout that says "once" tells a reader nothing they
+            // were not already assuming, and every row would carry one.
+            action={onSetRepeat ? (
+              <button
+                type="button"
+                class={`shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                  clampRepeat(ref.repeat) > 1 ? 'text-accent bg-accent/10' : 'text-dim hover:text-muted'
+                }`}
+                title={t('card.tunes.repeatTitle')}
+                // Left click counts up, right click counts down, both wrapping
+                // at the ends — so 3 → 2 is one gesture instead of a lap round
+                // the whole range. Right click on a control the browser has no
+                // menu worth showing for, hence preventDefault.
+                onClick={() => onSetRepeat(i, clampRepeat(ref.repeat) % MAX_REPEAT + 1)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onSetRepeat(i, (clampRepeat(ref.repeat) + MAX_REPEAT - 2) % MAX_REPEAT + 1);
+                }}
+              >×{clampRepeat(ref.repeat)}</button>
+            ) : clampRepeat(ref.repeat) > 1 ? (
+              <span
+                class="shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded text-accent bg-accent/10"
+                title={t('card.tunes.repeatReadOnly', { n: clampRepeat(ref.repeat) })}
+              >×{clampRepeat(ref.repeat)}</span>
+            ) : null}
+          />
         </AttachmentRow>
       ))}
     </div>

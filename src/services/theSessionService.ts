@@ -2,7 +2,7 @@ import type { Card, FileEntry, Attachment } from '../types';
 import { generateId } from '../utils';
 import { TuneUnavailableError, withTuneIdentity, type SkippedTune } from './tuneFetchError';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET } from './cardTypeService';
-import { SET_TUNE_REPEAT, TUNESET_ABC_NAME } from './abcService';
+import { TUNESET_ABC_NAME } from './abcService';
 
 const BASE = 'https://thesession.org';
 
@@ -497,10 +497,17 @@ function applyPreferredSetting(card: Card, tune: TuneResult, settingId: number):
  *  user's own choice and no import gets to overwrite it.
  *
  *  `existing` should be the live cards map; when it already holds this set, its
- *  id and guid are kept so decks, review history and references stay attached. */
+ *  id and guid are kept so decks, review history and references stay attached.
+ *
+ *  `defaultRepeat` is required rather than defaulted here: TheSession records
+ *  no repeats at all, so the number is entirely the reader's convention, and a
+ *  silent fallback in this file is exactly how one import path would end up
+ *  disagreeing with the others. Callers read it from the user
+ *  (abcService's defaultTuneRepeat). */
 export async function buildSetCards(
   set: SetResult,
   existing: Record<string, Card>,
+  defaultRepeat: number,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<{ setCard: Card; newTunes: Card[] }> {
   const newTunes: Card[] = [];
@@ -534,7 +541,7 @@ export async function buildSetCards(
     .filter((c): c is Card => !!c)
     .map(c => ({
       id: c.id, guid: c.guid, externalId: c.externalId, title: c.name,
-      repeat: keptRepeats.get(c.id) ?? SET_TUNE_REPEAT,
+      repeat: keptRepeats.get(c.id) ?? defaultRepeat,
     }));
 
   const setCard: Card = {
