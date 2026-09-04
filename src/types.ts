@@ -161,6 +161,15 @@ export interface User {
   /** General MIDI program. Absent = whatever the ABC itself asks for. */
   abcInstrument?: number;
 
+  // Misc.
+  /** How many times a tune is played through when it JOINS a set — three is
+   *  the Irish convention, and the number is the tradition's, not the tune's.
+   *  Absent = DEFAULT_TUNE_REPEAT. Stamped onto the reference at insertion,
+   *  never read back as a fallback: changing this must not silently re-voice
+   *  every set already built, nor make an exported set mean something else on
+   *  the machine that opens it. */
+  defaultTuneRepeat?: number;
+
   // Profiles
   profileIds: string[];
   currentProfileId: string;

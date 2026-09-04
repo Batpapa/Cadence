@@ -18,6 +18,7 @@ import type { Lang } from '../services/i18nService';
 import { appState, getContext } from '../store';
 import { CustomSelect } from './customSelect';
 import { clearLastUserId } from '../db';
+import { defaultTuneRepeat, MAX_REPEAT } from '../services/abcService';
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
@@ -160,12 +161,13 @@ export function showProfileModal(ctx: AppContext): void {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-type SectionId = 'study' | 'user' | 'display' | 'about';
+type SectionId = 'study' | 'user' | 'display' | 'misc' | 'about';
 
 const SECTION_ICONS: Record<SectionId, string> = {
   study: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
   user: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   display: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
+  misc: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
   about: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
 };
 
@@ -592,6 +594,43 @@ function DisplaySection({ ctx, onZoomChange }: { ctx: AppContext; onZoomChange: 
   );
 }
 
+// ── Misc. section ─────────────────────────────────────────────────────────────
+// Where a setting goes that belongs to no other heading. Deliberately not a
+// "Music" or "Irish" tab: Cadence is generalist first, and one number does not
+// justify a section named after a repertoire — the label says what it is,
+// which is the odds and ends.
+
+function MiscSection({ ctx }: { ctx: AppContext }) {
+  const user = appState.value;
+  const current = defaultTuneRepeat(user);
+  const [draft, setDraft] = useState(String(current));
+  useEffect(() => { setDraft(String(current)); }, [current]);
+
+  // Committed on blur, and a value outside the range snaps back to what is
+  // stored rather than being silently clamped — clamping would accept a typo
+  // and quietly mean something else.
+  const commit = () => {
+    const n = parseInt(draft, 10);
+    if (!isNaN(n) && n >= 1 && n <= MAX_REPEAT) void ctx.mutate(s => updateUser(s, { defaultTuneRepeat: n }));
+    else setDraft(String(current));
+  };
+
+  return (
+    <>
+      <Row label={t('settings.defaultTuneRepeat')} hint={t('settings.defaultTuneRepeatHint')}>
+        <input
+          type="number" min="1" max={MAX_REPEAT} step="1"
+          class="input w-12 px-2 py-1 text-right font-mono text-sm"
+          value={draft}
+          onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        />
+      </Row>
+      <Sep />
+    </>
+  );
+}
 // ── About section ─────────────────────────────────────────────────────────────
 
 function AboutLine({ textKey, href }: { textKey: string; href?: string }) {
@@ -663,6 +702,7 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
     { id: 'study', labelKey: 'settings.study' },
     { id: 'user', labelKey: 'settings.user' },
     { id: 'display', labelKey: 'settings.display' },
+    { id: 'misc', labelKey: 'settings.misc' },
     { id: 'about', labelKey: 'settings.about' },
   ];
 
@@ -726,6 +766,7 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
             {section === 'study' && <StudySection ctx={ctx} />}
             {section === 'user' && <UserSection ctx={ctx} closeSettings={onClose} />}
             {section === 'display' && <DisplaySection ctx={ctx} onZoomChange={() => bumpDialog(x => x + 1)} />}
+            {section === 'misc' && <MiscSection ctx={ctx} />}
             {section === 'about' && <AboutSection />}
           </div>
         </div>

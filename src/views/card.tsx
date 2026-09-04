@@ -9,6 +9,7 @@ import { decksContainingCard, deckPath } from '../services/deckService';
 import { findBacklinks, findSetsContaining } from '../services/cardRefService';
 import { CARD_TYPES, CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
 import { tunesetAutoName } from '../services/stateNormalise';
+import { defaultTuneRepeat } from '../services/abcService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
@@ -177,7 +178,7 @@ async function refreshSetTunes(cardId: string, externalId: string | undefined): 
   if (!parsed) return;
   try {
     const set = await fetchSet(parsed.memberId, parsed.setId);
-    const { setCard, newTunes } = await buildSetCards(set, appState.value.cards);
+    const { setCard, newTunes } = await buildSetCards(set, appState.value.cards, defaultTuneRepeat(appState.value));
     await mutate(s => {
       for (const tune of newTunes) s.cards[tune.id] = tune;
       const existing = s.cards[cardId];
@@ -770,7 +771,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                   const c = s.cards[cardId];
                   if (!c) return;
                   if (!c.tunes) c.tunes = [];
-                  c.tunes.push(cardToRef(picked));
+                  // Stamped now, from the user's own convention — the same
+                  // number a TheSession import would give it. Never left to a
+                  // read-time fallback: this entry keeps what it was given
+                  // even if the setting moves later.
+                  const repeat = defaultTuneRepeat(s);
+                  c.tunes.push({ ...cardToRef(picked), ...(repeat > 1 ? { repeat } : {}) });
                 }),
                 { titleKey: 'card.tunes.add', eligible: (c) => canBeTuneOf(c, card), emptyKey: 'card.tunes.onlyTunes' },
               )}

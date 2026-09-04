@@ -110,11 +110,6 @@ function blockForTune(tune: Card): AbcBlock | null {
   return parseAbcBlock(blocks[index]!);
 }
 
-/** How many times a tune goes round in a set, by convention in Irish music.
- *  Sits here beside TUNE_TEMPOS rather than in the TheSession importer: it is
- *  how the music is played, not something that source says. */
-export const SET_TUNE_REPEAT = 3;
-
 /** How many passes a set plays a tune. Absent means once; the ceiling is there
  *  because the notation is written out in full for each pass, so an absurd
  *  number would produce an unusable score rather than an error. */
@@ -123,6 +118,23 @@ export const MAX_REPEAT = 8;
 export function clampRepeat(repeat: number | undefined): number {
   if (typeof repeat !== 'number' || !Number.isFinite(repeat)) return 1;
   return Math.max(1, Math.min(MAX_REPEAT, Math.trunc(repeat)));
+}
+
+/** How many times a tune goes round in a set when the user has said nothing —
+ *  three, by convention in Irish music. Sits here beside TUNE_TEMPOS rather
+ *  than in the TheSession importer: it is how the music is played, not
+ *  something that source says (TheSession records no repeats at all). */
+export const DEFAULT_TUNE_REPEAT = 3;
+
+/** The repeat count to stamp on a tune JOINING a set, for this user.
+ *
+ *  Every insertion path goes through this — adding a tune by hand, importing a
+ *  set, and a refresh picking up a tune the set has gained — so the three
+ *  cannot drift apart. It is a stamping value, never a display fallback: an
+ *  entry already in a set keeps the number it was given, whatever this becomes
+ *  later. */
+export function defaultTuneRepeat(user: { defaultTuneRepeat?: number }): number {
+  return clampRepeat(user.defaultTuneRepeat ?? DEFAULT_TUNE_REPEAT);
 }
 
 /** Escapes the two characters that would end an inline field or an annotation
