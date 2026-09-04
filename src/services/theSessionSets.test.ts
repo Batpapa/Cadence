@@ -32,10 +32,17 @@ describe('the set pin', () => {
     expect(link?.url).toBe('https://thesession.org/members/1/sets/147730');
   });
 
-  it('shows the set number alone, the member being plumbing', () => {
+  it('shows the member-set pair whole — it IS the set address', () => {
     const link = externalSourceLink(setExternalId(1, 147730));
-    expect(link?.id).toBe('147730');
-    expect(link?.label).toBe('TheSession:147730');
+    expect(link?.id).toBe('1-147730');
+  });
+
+  it('spells the stored externalId out, verbatim, for the tooltip', () => {
+    // Quotable as-is into a search or a bug report, which a prettied-up
+    // "TheSession:147730" was not.
+    expect(externalSourceLink(setExternalId(1, 147730))?.label).toBe('thesession-set:1-147730');
+    expect(externalSourceLink('thesession:1197')?.label).toBe('thesession:1197');
+    expect(externalSourceLink('irishtuneinfo:42')?.label).toBe('irishtuneinfo:42');
   });
 
   it('leaves a tune link exactly as it was', () => {

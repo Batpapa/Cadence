@@ -10,7 +10,9 @@ import { findBacklinks, findSetsContaining } from '../services/cardRefService';
 import { CARD_TYPES, CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
 import { tunesetAutoName } from '../services/stateNormalise';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
-import { fetchTuneById, tuneResultToCard, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, fetchSet, buildSetCards, parseSetExternalId, type TuneResult } from '../services/theSessionService';
+import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
+import { showDuplicateCardsModal } from '../components/duplicateCardModal';
+import { removeCards } from '../services/cardService';
 import { lookupItiMapping } from '../services/itiMappingService';
 import type { ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu, type ContextMenuItem } from '../components/contextMenu';
@@ -63,6 +65,10 @@ const IDLE_BTN = 'btn border border-border text-muted hover:text-primary hover:b
 // dark/green/light themes swap via [data-theme], not Tailwind's `dark:` variant).
 const SOURCE_PIN_COLORS: Record<string, string> = {
   thesession: 'text-green-500 border-green-500/30 hover:border-green-500/60',
+  // A set comes from the same site as a tune, so it wears the same colour —
+  // the pin names the source, and what kind of card this is is already said
+  // by the type row and its icon.
+  'thesession-set': 'text-green-500 border-green-500/30 hover:border-green-500/60',
   irishtuneinfo: 'text-blue-500 border-blue-500/30 hover:border-blue-500/60',
 };
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -241,10 +247,9 @@ async function refreshFromTheSession(
 async function migrateCardToTheSession(cardId: string, sessionId: number): Promise<void> {
   try {
     const tune = await fetchTuneById(sessionId);
-    const fetched = tuneResultToCard(tune);
     await mutate(s => {
       const existing = s.cards[cardId]; if (!existing) return;
-      s.cards[cardId] = { ...fetched, id: existing.id, guid: existing.guid };
+      applyTheSessionMigration(existing, tune);
     });
   } catch (e) {
     showContextMenuError(t('card.contextMenu.migrateError', { message: e instanceof Error ? e.message : String(e) }));
@@ -325,12 +330,29 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         { label: t('card.contextMenu.browse'), onClick: () => window.open(source.url, '_blank', 'noopener') },
         ...(itiMapping ? [{
           label: t('card.contextMenu.migrate'),
-          onClick: () => confirmModal(
-            t('card.contextMenu.migrateConfirmTitle'),
-            t('card.contextMenu.migrateConfirmMessage'),
-            t('card.contextMenu.migrate'),
-            () => { void migrateCardToTheSession(cardId, itiMapping.sessionId); },
-          ),
+          onClick: () => {
+            // The TheSession version of this tune is already a card here.
+            // Migrating would leave two cards claiming the same externalId, so
+            // it does not happen — and the same dialog the library's bulk
+            // migration ends on says why, and offers the same way out.
+            const twin = findByExternalId(`thesession:${itiMapping.sessionId}`, user.cards);
+            if (card && twin && twin.id !== cardId) {
+              showDuplicateCardsModal([card], {
+                // No `onPick`, so nothing is listed: the only card concerned is
+                // the one already on screen. Deleting it would leave this page
+                // showing nothing, so it hands over to the twin — the version
+                // being kept, and the same tune the reader came here for.
+                onDeleted: () => navigate({ view: 'card', cardId: twin.id }),
+              });
+              return;
+            }
+            confirmModal(
+              t('card.contextMenu.migrateConfirmTitle'),
+              t('card.contextMenu.migrateConfirmMessage'),
+              t('card.contextMenu.migrate'),
+              () => { void migrateCardToTheSession(cardId, itiMapping.sessionId); },
+            );
+          },
         }] : []),
       ];
   const { menu: pinContextMenu, triggerProps: pinTriggerProps } = useContextMenu(menuItems);
@@ -426,7 +448,8 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
 
         <div class="flex items-center gap-2 shrink-0">
           {/* Just the id, not the spelled-out source: the pin's colour already
-              says which site, and `title` spells it out on hover. */}
+              says which site, and `title` carries the stored externalId
+              verbatim on hover. */}
           {source && (
             <a
               href={source.url}
@@ -449,11 +472,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               t('card.delete.message', { name: card.name }),
               t('common.delete'),
               () => {
-                void mutate(s => {
-                  delete s.cards[cardId];
-                  for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
-                  delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
-                });
+                void mutate(s => removeCards(s, [cardId]));
                 navigate({ view: 'folder', folderId: null });
               },
             )}

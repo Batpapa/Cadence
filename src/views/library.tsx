@@ -6,9 +6,13 @@ import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckI
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
-import { confirmModal } from '../components/modal';
+import { confirmModal, closeAllModals } from '../components/modal';
+import { showDuplicateCardsModal } from '../components/duplicateCardModal';
+import { removeCards } from '../services/cardService';
 import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showRefreshModal } from '../components/batchEdit';
-import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance } from '../services/theSessionService';
+import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId } from '../services/theSessionService';
+import { ensureItiMapping } from '../services/itiMappingService';
+import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
@@ -18,6 +22,16 @@ import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
 import { FilterSection, cycleFilter, type FilterMap } from '../components/filterSection';
 import { createLongPressHandlers } from '../components/longPress';
+
+/** The numeric source id inside an `externalId`. Throws rather than returning
+ *  NaN: the bulk runner turns a throw into "this card was skipped", named in
+ *  the report — which is exactly what an unreadable id deserves. */
+function sourceIdOf(card: Card, prefix: string): number {
+  const id = parseInt((card.externalId ?? '').slice(prefix.length), 10);
+  if (isNaN(id)) throw new Error(`unreadable ${prefix} id: ${card.externalId ?? ''}`);
+  return id;
+}
+
 
 // ── Export modal ──────────────────────────────────────────────────────────────
 
@@ -329,6 +343,19 @@ export function LibraryView() {
     if (next.size !== selected.size) setSelected(next);
   }, [q, activeTags, activeDecks]);
 
+  // A selected card can vanish without the selection being told: the toolbar's
+  // delete clears it by hand, but the duplicate cleanup at the end of a
+  // migration deletes cards from inside a modal, and so could anything else.
+  // A selection holding ghosts counts them in the toolbar and hands dead ids
+  // to every bulk action, so it is pruned wherever the deletion came from.
+  // Deliberately narrower than the filter pass above — only cards that no
+  // longer EXIST are dropped, never ones a rename has merely hidden.
+  useEffect(() => {
+    if (selected.size === 0) return;
+    const next = new Set([...selected].filter(id => user.cards[id]));
+    if (next.size !== selected.size) setSelected(next);
+  }, [user.cards]);
+
   const addEligible = Object.values(user.decks)
     .filter(d => selectedArr.some(cId => !d.entries.some(e => e.cardId === cId)))
     .map(d => ({
@@ -355,7 +382,12 @@ export function LibraryView() {
   // entries can be dropped when no selected card can join or leave a deck —
   // same condition that used to hide their toolbar buttons. Reuses the
   // right-click menu's hook (anchoring, dismissal, zoom) on a left click.
+  // Three disjoint families, each with its own upstream and its own verb.
+  // `thesession:` and `thesession-set:` never overlap — the dash form is
+  // deliberately not a prefix of the colon form (see setExternalId).
   const theSessionIds = selectedArr.filter(id => user.cards[id]?.externalId?.startsWith('thesession:'));
+  const setIds        = selectedArr.filter(id => user.cards[id]?.externalId?.startsWith('thesession-set:'));
+  const itiIds        = selectedArr.filter(id => user.cards[id]?.externalId?.startsWith('irishtuneinfo:'));
 
   const bulkMenu = useContextMenu([
     ...(addEligible.length > 0 ? [{
@@ -390,26 +422,125 @@ export function LibraryView() {
       label: t('library.batch.removeTag'), onClick: () => showRemoveTagModal(selectedArr),
     }] : []),
     { label: t('library.batch.importance'), onClick: () => showImportanceModal(selectedArr) },
-    // Source-specific block, only when the selection actually contains cards
-    // from that site. The heading carries the count because a mixed selection
-    // is the normal case — "TheSession · 4" says up front that the other 8
-    // cards will be left alone. IrishTuneInfo has no refreshable field yet
-    // (its import sets no data that drifts upstream), hence no section.
+    // One block per SOURCE, listing the families of card that source can act
+    // on — the menu says where the cards come from and what kind they are, the
+    // dialog says what will be done to them. Each dialog then words its
+    // actions exactly as that card's own pin menu words them: one act, one
+    // name, whether you reach it from a single card or from forty.
+    //
+    // A block appears only when the selection actually holds such cards, and
+    // the count moves to the dialog title, since one source now covers two
+    // families with counts of their own.
+    ...(theSessionIds.length > 0 || setIds.length > 0 ? [
+      { heading: t('library.batch.source.thesession') },
+    ] : []),
     ...(theSessionIds.length > 0 ? [
-      { heading: t('library.batch.source.thesession', { n: theSessionIds.length }) },
-      { label: t('library.batch.refresh.entry'), onClick: () => showRefreshModal({
+      { label: t('library.batch.family.tunes'), onClick: () => showRefreshModal({
         cardIds: theSessionIds,
-        titleKey: 'library.batch.refresh.title',
-        prefix: 'thesession:',
-        fetch: fetchTuneById,
+        title: t('library.batch.refresh.title', { n: theSessionIds.length }),
+        confirmKey: 'library.batch.refresh.confirm',
+        fetch: (card) => fetchTuneById(sourceIdOf(card, 'thesession:')),
         // Ticked together, written from a single fetch per card — the whole
         // reason this is one entry rather than three.
         fields: [
-          { key: 'name',       labelKey: 'library.batch.refresh.fieldName',       apply: applyTheSessionName },
-          { key: 'abc',        labelKey: 'library.batch.refresh.fieldAbc',        apply: applyTheSessionAbc },
-          { key: 'importance', labelKey: 'library.batch.refresh.fieldImportance', apply: applyTheSessionImportance },
+          { key: 'name',       labelKey: 'card.contextMenu.refreshName',       apply: applyTheSessionName },
+          { key: 'abc',        labelKey: 'card.contextMenu.refreshAbc',        apply: applyTheSessionAbc },
+          { key: 'importance', labelKey: 'card.contextMenu.refreshImportance', apply: applyTheSessionImportance },
         ],
       }) },
+    ] : []),
+    // A set has exactly one refreshable thing, and IrishTuneInfo exactly one
+    // action — but both still go through the same picker as the tunes above.
+    // A single tickbox reads as an odd list of one; it is worth it for what it
+    // brings with it: the same count line, the same overwrite warning, the same
+    // progress bar and the same named list of what got skipped.
+    ...(setIds.length > 0 ? [
+      { label: t('library.batch.family.sets'), onClick: () => showRefreshModal({
+        cardIds: setIds,
+        title: t('library.batch.refreshSet.title', { n: setIds.length }),
+        confirmKey: 'library.batch.refreshSet.confirm',
+        fetch: async (card) => {
+          const parsed = parseSetExternalId(card.externalId);
+          if (!parsed) throw new Error(`not a set id: ${card.externalId ?? ''}`);
+          const set = await fetchSet(parsed.memberId, parsed.setId);
+          // Resolved against live state, so a tune pulled in for an earlier set
+          // in the same run is reused rather than created a second time.
+          return buildSetCards(set, appState.value.cards);
+        },
+        fields: [
+          { key: 'tunes', labelKey: 'card.contextMenu.refreshSetTunes', apply: (card, { setCard, newTunes }, s) => {
+            for (const tune of newTunes) s.cards[tune.id] = tune;
+            card.tunes = setCard.tunes;
+          } },
+        ],
+      }) },
+    ] : []),
+    ...(itiIds.length > 0 ? [
+      { heading: t('library.batch.source.irishtuneinfo') },
+      { label: t('library.batch.family.tunes'), onClick: () => {
+        // One mapping sync for the whole run: ensureItiMapping re-checks the
+        // collection's `total` on every call, so asking per card would add as
+        // many round trips as there are cards. Started on the first lookup
+        // rather than here, so merely opening the dialog costs nothing.
+        let mapping: Promise<ItiMappingDb> | null = null;
+        const equivalentOf = async (card: Card): Promise<ItiMappingEntry | undefined> => {
+          mapping ??= ensureItiMapping();
+          return (await mapping).byItiId[sourceIdOf(card, 'irishtuneinfo:')];
+        };
+        showRefreshModal({
+          cardIds: itiIds,
+          title: t('library.batch.migrate.title', { n: itiIds.length }),
+          // No confirm line: "Migrer vers TheSession" with a count beside it
+          // says the whole thing on its own.
+          // Not "removed upstream" here: a card lands in this list because
+          // TheSession's IrishTuneInfo collection knows no equivalent for it.
+          skippedKey: 'library.batch.migrate.skipped',
+          // The library ALREADY holds the TheSession version of this tune, as
+          // a card of its own. Migrating would leave two cards claiming the
+          // same externalId — a state nothing else in the app expects, and one
+          // no undo would untangle. So it is not migrated, and what becomes of
+          // it is the user's call, asked once at the end for all of them.
+          setAside: async (card) => {
+            const entry = await equivalentOf(card);
+            // No mapping at all is a plain skip, and `fetch` says so below —
+            // holding it back here would file it under the wrong heading.
+            if (!entry) return false;
+            const twin = findByExternalId(`thesession:${entry.sessionId}`, appState.value.cards);
+            return !!twin && twin.id !== card.id;
+          },
+          onSetAside: (cards) => showDuplicateCardsModal(cards, {
+            // Reached from the library, so going to look at one is a real way
+            // out — and it means leaving both this dialog and the report
+            // behind rather than stranding them over the card page.
+            onPick: (card) => { closeAllModals(); navigate({ view: 'card', cardId: card.id }); },
+          }),
+          fetch: async (card) => {
+            const entry = await equivalentOf(card);
+            if (!entry) throw new Error(`no TheSession equivalent for ${card.externalId ?? ''}`);
+            return fetchTuneById(entry.sessionId);
+          },
+          fields: [
+            { key: 'migrate', labelKey: 'card.contextMenu.migrate', apply: applyTheSessionMigration,
+              // How many of them TheSession knows an equivalent for — the
+              // others cannot be migrated at all. Cards whose equivalent is
+              // ALREADY a card here still count: they are exactly what the
+              // duplicate dialog at the end is for, and excluding them would
+              // grey the action out and take that dialog away with it.
+              eligible: async (ids) => {
+                const db = await ensureItiMapping();
+                let n = 0;
+                for (const id of ids) {
+                  // Parsed leniently, unlike sourceIdOf: an id this cannot
+                  // read is one card that will not migrate, not a reason to
+                  // give up on counting the rest.
+                  const itiId = parseInt((appState.value.cards[id]?.externalId ?? '').slice('irishtuneinfo:'.length), 10);
+                  if (!isNaN(itiId) && db.byItiId[itiId]) n++;
+                }
+                return n;
+              } },
+          ],
+        });
+      } },
     ] : []),
   ]);
 
@@ -580,13 +711,7 @@ export function LibraryView() {
                 t('common.delete'),
                 () => {
                   setSelected(new Set());
-                  mutate(s => {
-                    for (const cardId of selectedArr) {
-                      delete s.cards[cardId];
-                      for (const deck of Object.values(s.decks)) deck.entries = deck.entries.filter(e => e.cardId !== cardId);
-                      delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
-                    }
-                  });
+                  mutate(s => removeCards(s, selectedArr));
                 },
               )}
             >
