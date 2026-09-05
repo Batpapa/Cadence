@@ -21,7 +21,7 @@ import { decksContainingCard, deckPath } from '../services/deckService';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
-import { FilterSection, cycleFilter, type FilterMap } from '../components/filterSection';
+import { FilterSection, ReviewedRangeSection, cycleFilter, type FilterMap } from '../components/filterSection';
 import { createLongPressHandlers } from '../components/longPress';
 
 /** The numeric source id inside an `externalId`. Throws rather than returning
@@ -216,6 +216,8 @@ export function LibraryView() {
   const [sortOpen,    setSortOpen]    = useState(false);
   const [tagFilterOr, setTagFilterOr] = useState(savedRoute?.tagOr ?? false);
   const [deckFilterOr, setDeckFilterOr] = useState(savedRoute?.deckOr ?? false);
+  const [revFrom,     setRevFrom]     = useState(savedRoute?.reviewedFrom ?? '');
+  const [revTo,       setRevTo]       = useState(savedRoute?.reviewedTo ?? '');
   const [mapOpen,     setMapOpen]     = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -231,8 +233,8 @@ export function LibraryView() {
   }, [sortOpen]);
 
   useEffect(() => {
-    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr });
-  }, [searchQuery, activeTags, activeDecks, sortMode, sortAsc, tagFilterOr, deckFilterOr]);
+    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo });
+  }, [searchQuery, activeTags, activeDecks, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo]);
 
   useEffect(() => { if (searchRef.current) focusIfDesktop(searchRef.current); }, []);
 
@@ -249,6 +251,12 @@ export function LibraryView() {
 
   // ── Filtered list (recomputed every render) ───────────────────────────────────
   const q = searchQuery.toLowerCase();
+  // A day in the route is a LOCAL day. The explicit time is what makes it one:
+  // `new Date('2026-09-03')` is parsed as UTC and lands on the 2nd for anyone
+  // west of Greenwich, which is exactly the kind of off-by-one nobody notices
+  // until a review sits on the wrong side of a boundary.
+  const revFromTs = revFrom ? new Date(`${revFrom}T00:00:00`).getTime() : null;
+  const revToTs   = revTo   ? new Date(`${revTo}T23:59:59.999`).getTime() : null;
   const filteredUnsorted = allCards.filter(c => {
     const tags       = c.tags ?? [];
     // externalId match is EXACT (whole "source:id", or just the id part),
@@ -275,7 +283,16 @@ export function LibraryView() {
       (inclDecks.length === 0 || (deckFilterOr ? inclDecks.some(hasDeck) : inclDecks.every(hasDeck))) &&
       exclDecks.every(id => !hasDeck(id))
     );
-    return matchText && matchTags && matchDecks;
+    // ANY review inside the range, not the LAST one: the question this answers
+    // is "what did I work on that week", and a card revisited since has not
+    // stopped being part of that week's work.
+    const matchReviewed = (revFromTs === null && revToTs === null) || (
+      user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history.some(e =>
+        (revFromTs === null || e.ts >= revFromTs) && (revToTs === null || e.ts <= revToTs)
+      ) ?? false
+    );
+
+    return matchText && matchTags && matchDecks && matchReviewed;
   });
   let filtered: Card[];
   // Ties resolve alphabetically. The tie-break lives inside the comparator, so
@@ -619,6 +636,11 @@ export function LibraryView() {
             onToggleOr={() => setTagFilterOr(o => !o)}
           />
         )}
+        <ReviewedRangeSection
+          from={revFrom}
+          to={revTo}
+          onChange={(f, to) => { setRevFrom(f); setRevTo(to); }}
+        />
       </div>
 
       {/* ── Selection toolbar ── */}

@@ -82,3 +82,65 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
     </div>
   );
 }
+
+/** The library's "reviewed between" filter — a deliberate twin of the section
+ *  above rather than a variant of it: the two share a visual grammar (chevron,
+ *  label, opened when it carries something) and nothing else. Chips answer "is
+ *  this tag on the card"; these two dates answer a question about the card's
+ *  history, which has no chip to click and no availability to grey out.
+ *
+ *  Empty ends are open ends, so "everything since 1 September" needs one date,
+ *  not a made-up upper bound. Both empty = no filter at all, which is why the
+ *  caller can leave the whole thing collapsed and lose nothing. */
+export function ReviewedRangeSection({ from, to, onChange }: {
+  from: string;
+  to: string;
+  onChange: (from: string, to: string) => void;
+}) {
+  const [open, setOpen] = useState(() => from !== '' || to !== '');
+  const active = from !== '' || to !== '';
+  return (
+    <div>
+      <div class="flex items-center">
+        <button
+          class="flex items-center gap-1.5 text-xs text-dim hover:text-primary transition-colors py-0.5"
+          onClick={() => setOpen(o => !o)}
+        >
+          <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
+            <ChevronDownIcon size={10} />
+          </span>
+          <span class={active ? 'text-accent' : ''}>{t('library.filterReviewed')}</span>
+        </button>
+      </div>
+      {open && (
+        <div class="flex flex-wrap items-center gap-1.5 pt-1">
+          <input
+            type="date"
+            class="input py-0.5 px-2 text-xs w-auto"
+            value={from}
+            max={to || undefined}
+            title={t('library.filterReviewed.from')}
+            onInput={(e) => onChange((e.target as HTMLInputElement).value, to)}
+          />
+          <span class="text-xs text-dim">–</span>
+          <input
+            type="date"
+            class="input py-0.5 px-2 text-xs w-auto"
+            value={to}
+            min={from || undefined}
+            title={t('library.filterReviewed.to')}
+            onInput={(e) => onChange(from, (e.target as HTMLInputElement).value)}
+          />
+          {active && (
+            <button
+              class="text-xs text-muted hover:text-danger transition-colors cursor-pointer px-1"
+              onClick={() => onChange('', '')}
+            >
+              {t('library.filterReviewed.clear')}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
