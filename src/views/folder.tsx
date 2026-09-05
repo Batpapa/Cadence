@@ -7,17 +7,46 @@ import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
 import { CustomSelect } from '../components/customSelect';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, isFolderDescendant, moveFolderToParent } from '../services/deckService';
+import { removeCards } from '../services/cardService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork, DeckEntry } from '../types';
 
 
-// ── Pure helpers (unchanged from vanilla) ─────────────────────────────────────
+// ── Pure helpers ──────────────────────────────────────────────────────────────
 
-function studyStreak(works: Record<string, CardWork>): number {
+/** Every review the CURRENT profile has recorded ON A CARD THAT STILL EXISTS,
+ *  as bare timestamps.
+ *
+ *  One reading of "whose reviews count", because there used to be four and they
+ *  disagreed: the dashboard's total, week, streak and bars each walked
+ *  `Object.values(cardWorks)` whole, while the library reads
+ *  `${currentProfileId}:${cardId}`. On a shared device — the very reason
+ *  profiles exist — every dashboard figure counted everyone's work. Filtering
+ *  in one place is what stops that coming back one reader at a time.
+ *
+ *  The card check is the second half of the same idea. `removeCards` used to
+ *  clear only the deleting profile's row, so another profile's work on a
+ *  deleted card stayed behind, reachable from nowhere: one real library showed
+ *  a profile with 52 reviews on this dashboard and no reviewed card anywhere
+ *  else. That leak is fixed at the source, but the rows it already wrote live
+ *  on in people's data, and counting them would have this screen claim work
+ *  that no other screen can show. Cheap, too — a lookup per row.
+ *
+ *  Timestamps rather than entries: nothing on this screen looks at a rating,
+ *  and a flat array is what the three readers below actually want. */
+function profileReviewTimes(works: Record<string, CardWork>, profileId: string, cards: AppState['cards']): number[] {
+  const out: number[] = [];
+  for (const w of Object.values(works)) {
+    if (w.profileId !== profileId || !cards[w.cardId]) continue;
+    for (const e of w.history) out.push(e.ts);
+  }
+  return out;
+}
+
+function studyStreak(times: number[]): number {
   const days = new Set<string>();
-  for (const w of Object.values(works))
-    for (const e of w.history) days.add(new Date(e.ts).toDateString());
+  for (const ts of times) days.add(new Date(ts).toDateString());
   let streak = 0;
   const d = new Date();
   if (!days.has(d.toDateString())) d.setDate(d.getDate() - 1);
@@ -25,25 +54,23 @@ function studyStreak(works: Record<string, CardWork>): number {
   return streak;
 }
 
-function sessionsLastNDays(works: Record<string, CardWork>, n: number): number[] {
+function reviewsLastNDays(times: number[], n: number): number[] {
   const counts = Array<number>(n).fill(0);
   const now = Date.now();
-  for (const w of Object.values(works))
-    for (const e of w.history) {
-      const i = n - 1 - Math.floor((now - e.ts) / 86400000);
-      if (i >= 0 && i < n) counts[i]++;
-    }
+  for (const ts of times) {
+    const i = n - 1 - Math.floor((now - ts) / 86400000);
+    if (i >= 0 && i < n) counts[i]++;
+  }
   return counts;
 }
 
-function sessionsLastNWeeks(works: Record<string, CardWork>, n: number): number[] {
+function reviewsLastNWeeks(times: number[], n: number): number[] {
   const counts = Array<number>(n).fill(0);
   const now = Date.now();
-  for (const w of Object.values(works))
-    for (const e of w.history) {
-      const i = n - 1 - Math.floor((now - e.ts) / (7 * 86400000));
-      if (i >= 0 && i < n) counts[i]++;
-    }
+  for (const ts of times) {
+    const i = n - 1 - Math.floor((now - ts) / (7 * 86400000));
+    if (i >= 0 && i < n) counts[i]++;
+  }
   return counts;
 }
 
@@ -64,9 +91,9 @@ function barDateRange(period: ActivityPeriod, i: number, total: number): { start
   return { start: day, end: day };
 }
 
-function ActivityBars({ works, period }: { works: Record<string, CardWork>; period: ActivityPeriod }) {
+function ActivityBars({ times, period }: { times: number[]; period: ActivityPeriod }) {
   const [range, setRange] = useState<{ anchor: number; end: number } | null>(null);
-  const data  = period === '1y' ? sessionsLastNWeeks(works, 52) : sessionsLastNDays(works, period === '30d' ? 30 : 7);
+  const data  = period === '1y' ? reviewsLastNWeeks(times, 52) : reviewsLastNDays(times, period === '30d' ? 30 : 7);
   const max   = Math.max(...data, 1);
   const minH  = period === '1y' ? 2 : 4;
   const total = data.length;
@@ -93,8 +120,8 @@ function ActivityBars({ works, period }: { works: Record<string, CardWork>; peri
     const { end }   = barDateRange(period, hi, total);
     const isSingleDay = period !== '1y' && lo === hi;
     const dateStr = isSingleDay ? fmtDate(start) : `${fmtDate(start)} – ${fmtDate(end)}`;
-    const sessStr = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
-    return `${dateStr} · ${sessStr}`;
+    const revStr = t(count !== 1 ? 'dashboard.reviews' : 'dashboard.review', { count });
+    return `${dateStr} · ${revStr}`;
   })();
 
   return (
@@ -104,7 +131,7 @@ function ActivityBars({ works, period }: { works: Record<string, CardWork>; peri
           const h          = Math.max(minH, Math.round((count / max) * 40));
           const isSelected = range !== null && i >= lo && i <= hi;
           const barColor   = isSelected ? 'bg-success' : count === 0 ? 'bg-border' : 'bg-accent';
-          const title      = t(count !== 1 ? 'dashboard.sessions' : 'dashboard.session', { count });
+          const title      = t(count !== 1 ? 'dashboard.reviews' : 'dashboard.review', { count });
           if (period === '7d') {
             const d = new Date(); d.setDate(d.getDate() - (6 - i));
             return (
@@ -134,9 +161,12 @@ function Dashboard({ user }: { user: AppState }) {
   const [actPeriod, setActPeriod] = useState<ActivityPeriod>('1y');
 
   const allCards       = Object.values(user.cards);
-  const totalSessions  = Object.values(user.cardWorks).reduce((s, w) => s + w.history.length, 0);
-  const weekSessions   = sessionsLastNDays(user.cardWorks, 7).reduce((a, b) => a + b, 0);
-  const streak         = studyStreak(user.cardWorks);
+  // Read once, for the four figures below and the bars: they are four views of
+  // one set of reviews and must never be able to disagree about which set.
+  const reviewTimes    = profileReviewTimes(user.cardWorks, user.currentProfileId, user.cards);
+  const totalReviews   = reviewTimes.length;
+  const weekReviews    = reviewsLastNDays(reviewTimes, 7).reduce((a, b) => a + b, 0);
+  const streak         = studyStreak(reviewTimes);
   const deckCount      = Object.keys(user.decks).length;
 
   const PERIOD_LABELS: Record<ActivityPeriod, string> = {
@@ -149,7 +179,7 @@ function Dashboard({ user }: { user: AppState }) {
       <div class="grid grid-cols-3 gap-3">
         {[
           { label: t('dashboard.cards'),    value: String(allCards.length),  sub: t(deckCount !== 1 ? 'dashboard.decks' : 'dashboard.deck', { count: deckCount }) },
-          { label: t('dashboard.thisWeek'), value: String(weekSessions),     sub: t('dashboard.totalSessions', { count: totalSessions }) },
+          { label: t('dashboard.thisWeek'), value: String(weekReviews),      sub: t('dashboard.totalReviews', { count: totalReviews }) },
           { label: t('dashboard.streak'),   value: t('common.durationDays', { n: streak }), sub: streak > 0 ? t('dashboard.streakKeep') : t('dashboard.streakStart') },
         ].map(({ label, value, sub }) => (
           <div key={label} class="card-block space-y-0.5">
@@ -178,7 +208,7 @@ function Dashboard({ user }: { user: AppState }) {
             ))}
           </div>
         </div>
-        <ActivityBars key={actPeriod} works={user.cardWorks} period={actPeriod} />
+        <ActivityBars key={actPeriod} times={reviewTimes} period={actPeriod} />
       </div>
     </div>
   );
@@ -410,12 +440,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                 const doDelete = (deleteOrphans: boolean) => {
                   const parent = findParentFolder(folderId!, 'folder', user);
                   void mutate(u => {
-                    if (deleteOrphans) {
-                      for (const cardId of orphanedCardsAfterDeckRemoval(collectFolderDeckIds(u, folderId!), u)) {
-                        delete u.cards[cardId];
-                        delete u.cardWorks[`${u.currentProfileId}:${cardId}`];
-                      }
-                    }
+                    if (deleteOrphans) removeCards(u, orphanedCardsAfterDeckRemoval(collectFolderDeckIds(u, folderId!), u));
                     deleteFolderRecursive(u, folderId!);
                   });
                   navigate({ view: 'folder', folderId: parent });
