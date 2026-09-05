@@ -1,7 +1,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon, StarIcon } from '../components/icons';
+import { TrashIcon, StarIcon, LibraryIcon } from '../components/icons';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
@@ -78,6 +78,13 @@ type ActivityPeriod = '7d' | '30d' | '1y';
 
 // ── Activity bars (JSX) ───────────────────────────────────────────────────────
 
+/** A Date → the YYYY-MM-DD of the day it falls on WHERE THE USER IS.
+ *  `toISOString()` would answer in UTC and hand back the day before for
+ *  anyone west of Greenwich — a bar labelled "3 sept" filtering on the 2nd. */
+function localDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function barDateRange(period: ActivityPeriod, i: number, total: number): { start: Date; end: Date } {
   const now = new Date();
   if (period === '1y') {
@@ -113,7 +120,7 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
     }
   };
 
-  const infoLine = (() => {
+  const selection = (() => {
     if (range === null) return null;
     const count = data.slice(lo, hi + 1).reduce((a, b) => a + b, 0);
     const { start } = barDateRange(period, lo, total);
@@ -121,7 +128,7 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
     const isSingleDay = period !== '1y' && lo === hi;
     const dateStr = isSingleDay ? fmtDate(start) : `${fmtDate(start)} – ${fmtDate(end)}`;
     const revStr = t(count !== 1 ? 'dashboard.reviews' : 'dashboard.review', { count });
-    return `${dateStr} · ${revStr}`;
+    return { label: `${dateStr} · ${revStr}`, start, end };
   })();
 
   return (
@@ -148,8 +155,18 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
           );
         })}
       </div>
-      {infoLine !== null && (
-        <div class="text-xs text-success text-center">{infoLine}</div>
+      {selection !== null && (
+        <div class="flex items-center justify-center gap-2">
+          <span class="text-xs text-success">{selection.label}</span>
+          <button
+            type="button"
+            class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+            title={t('deck.viewInLibrary')}
+            onClick={() => navigate({ view: 'library', reviewedFrom: localDay(selection.start), reviewedTo: localDay(selection.end) })}
+          >
+            <LibraryIcon size={12} />
+          </button>
+        </div>
       )}
     </div>
   );
