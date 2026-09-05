@@ -614,7 +614,11 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
-  const showMemberPreview = async (memberId: number) => {
+  // `byId` is passed, never re-derived from `value`: this runs after a debounce
+  // and after a state update, so the `value` it closes over is the one from the
+  // render that scheduled it — the text BEFORE the keystroke that asked for
+  // this preview. The caller is the only one who knows without guessing.
+  const showMemberPreview = async (memberId: number, byId: boolean) => {
     const fresh = latest.begin();
     selectedMemberIdRef.current = null; bump(x => x + 1);
     setInfo('');
@@ -622,9 +626,8 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     try {
       const info = await fetchMemberInfo(memberId);
       if (!fresh()) return;
-      const isIdSearch = /^\d+$/.test(value.trim());
       const size = t('theSession.member.tuneCount', { n: info.tunebook });
-      setInfo(isIdSearch ? `${info.name} · ${size}` : size);
+      setInfo(byId ? `${info.name} · ${size}` : size);
       // An empty tunebook is a perfectly ordinary account, not an error —
       // say so, and leave nothing to press.
       if (info.tunebook === 0) {
@@ -690,7 +693,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       // answered last.
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        void showMemberPreview(parseInt(trimmed));
+        void showMemberPreview(parseInt(trimmed), true);
       }, 300);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
@@ -709,7 +712,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   const pick = (m: MemberSearchResult) => {
     setValue(m.name);
     setDropdownOpen(false);
-    void showMemberPreview(m.id);
+    void showMemberPreview(m.id, false);
     setStatus('');
   };
 
@@ -787,7 +790,11 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
-  const showMemberPreview = async (memberId: number) => {
+  // `byId` is passed, never re-derived from `value`: this runs after a debounce
+  // and after a state update, so the `value` it closes over is the one from the
+  // render that scheduled it — the text BEFORE the keystroke that asked for
+  // this preview. The caller is the only one who knows without guessing.
+  const showMemberPreview = async (memberId: number, byId: boolean) => {
     const fresh = latest.begin();
     selectedMemberIdRef.current = null; bump(x => x + 1);
     setInfo('');
@@ -798,9 +805,8 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       // slowest of the four for no reason.
       const [found, n] = await Promise.all([fetchMemberInfo(memberId), fetchMemberBookmarkCount(memberId)]);
       if (!fresh()) return;
-      const isIdSearch = /^\d+$/.test(value.trim());
       const size = t('theSession.bookmarks.count', { n });
-      setInfo(isIdSearch ? `${found.name} · ${size}` : size);
+      setInfo(byId ? `${found.name} · ${size}` : size);
       // A member who has bookmarked nothing is an ordinary account, not an
       // error — say so, and leave nothing to press.
       if (n === 0) { setStatus(t('theSession.bookmarks.none')); return; }
@@ -889,7 +895,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       // answered last.
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        void showMemberPreview(parseInt(trimmed));
+        void showMemberPreview(parseInt(trimmed), true);
       }, 300);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
@@ -941,7 +947,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         anchorRef={inputRef}
         items={suggestions}
         open={dropdownOpen}
-        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id); setStatus(''); }}
+        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id, false); setStatus(''); }}
         renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
       />
     </>
@@ -975,7 +981,11 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
   /** One cheap request that answers "does this member exist, and is there
    *  anything to page through" before any paging begins. */
-  const showMemberPreview = async (memberId: number) => {
+  // `byId` is passed, never re-derived from `value`: this runs after a debounce
+  // and after a state update, so the `value` it closes over is the one from the
+  // render that scheduled it — the text BEFORE the keystroke that asked for
+  // this preview. The caller is the only one who knows without guessing.
+  const showMemberPreview = async (memberId: number, byId: boolean) => {
     const fresh = latest.begin();
     selectedMemberIdRef.current = null; bump(x => x + 1);
     setInfo('');
@@ -983,9 +993,8 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     try {
       const found = await fetchMemberInfo(memberId);
       if (!fresh()) return;
-      const isIdSearch = /^\d+$/.test(value.trim());
       const size = t('theSession.sets.count', { n: found.sets });
-      setInfo(isIdSearch ? `${found.name} · ${size}` : size);
+      setInfo(byId ? `${found.name} · ${size}` : size);
       // A member with no sets is an ordinary account, not an error — say so and
       // leave nothing to press.
       if (found.sets === 0) { setStatus(t('theSession.sets.none')); return; }
@@ -1080,7 +1089,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       // answered last.
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        void showMemberPreview(parseInt(trimmed));
+        void showMemberPreview(parseInt(trimmed), true);
       }, 300);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
@@ -1132,7 +1141,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         anchorRef={inputRef}
         items={suggestions}
         open={dropdownOpen}
-        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id); setStatus(''); }}
+        onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id, false); setStatus(''); }}
         renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
       />
     </>
