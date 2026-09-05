@@ -5,6 +5,7 @@ import { TrashIcon, StarIcon, PlusIcon, LibraryIcon } from '../components/icons'
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckToParent } from '../services/deckService';
+import { removeCards } from '../services/cardService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { showStudyModal } from '../components/studyModal';
@@ -212,12 +213,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                 const doDelete = (deleteOrphans: boolean) => {
                   const parent = findParentFolder(deckId, 'deck', user);
                   mutate(s => {
-                    if (deleteOrphans) {
-                      for (const cardId of orphanedCardsAfterDeckRemoval([deckId], s)) {
-                        delete s.cards[cardId];
-                        delete s.cardWorks[`${s.currentProfileId}:${cardId}`];
-                      }
-                    }
+                    if (deleteOrphans) removeCards(s, orphanedCardsAfterDeckRemoval([deckId], s));
                     delete s.decks[deckId];
                     if (parent) s.folders[parent]!.deckIds = s.folders[parent]!.deckIds.filter(id => id !== deckId);
                     else s.rootDeckIds = s.rootDeckIds.filter(id => id !== deckId);
