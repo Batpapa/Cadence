@@ -592,16 +592,30 @@ export function parseSetExternalId(externalId: string | undefined): { memberId: 
 }
 
 // ── Bookmarks ─────────────────────────────────────────────────────────────────
-// A member's bookmarks come back as an activity stream — a different shape from
-// the tunebook and the set list — and a bookmark can point at several kinds of
-// thing. Only "setting" concerns us: it names a specific version of a tune,
-// which is exactly what a tune card can star.
+// A bookmark can point at several kinds of thing — a setting, a recording, a
+// discussion, a comment. Only "setting" concerns us: it names a specific
+// version of a tune, which is exactly what a tune card can star.
 //
-// Two limits of this endpoint shape the code below. It carries NO `pages` or
-// `total`, so paging stops on the first empty page rather than at a known
-// count; and the member page has no bookmark counter either (its `settings`
-// field counts settings the member SUBMITTED), so the size is only known once
-// the whole thing has been read.
+// TheSession has an undocumented endpoint that does that filtering server-side:
+//
+//     /members/{id}/bookmarks/settings?format=json&perpage=50&page=N
+//
+// It replaces the activity stream this code used to read, and answers three
+// things the stream could not — all re-measured against member 1 on 2026-09-05:
+//
+//   • `total` and `pages`. The stream carried neither, so paging could only
+//     stop on a short page and the size existed only once everything was read.
+//   • settings ONLY, already counted as such. The member payload now carries a
+//     `bookmarks` field (added by TheSession's admin at our request), but it
+//     counts every kind: member 1 reads 362 = 358 settings + 2 recordings + 1
+//     discussion + 1 comment. It is therefore NOT the figure to preview — this
+//     endpoint's `total` is, and it is the only one that matches what an import
+//     will actually go and fetch.
+//   • the tune and the setting as plain fields, instead of an activity item to
+//     be taken apart by `objectType` and URL fragment.
+//
+// Same order as the stream (newest bookmark first), same 404 and 410 for a
+// member that never existed or is gone.
 
 export interface BookmarkedSetting {
   tuneId: number;
@@ -609,68 +623,67 @@ export interface BookmarkedSetting {
   name: string;
 }
 
-interface RawActivityObject { url?: string; objectType?: string; id?: string; displayName?: string }
-interface RawBookmarkItem { object?: RawActivityObject; target?: RawActivityObject }
-interface RawBookmarksResponse { items?: RawBookmarkItem[] }
+interface RawBookmarkedSetting { id?: number; tune?: { id?: number; name?: string } }
+interface RawBookmarksResponse { pages?: number; total?: number; settings?: RawBookmarkedSetting[] }
 
-/** "settings:thesession:41297" → 41297, with the URL fragment as a fallback. */
-function settingIdFromBookmark(object: RawActivityObject): number | null {
-  const fromId = /(?:^|:)(\d+)$/.exec(object.id ?? '');
-  if (fromId) return parseInt(fromId[1]!, 10);
-  const fromUrl = /#setting(\d+)/.exec(object.url ?? '');
-  return fromUrl ? parseInt(fromUrl[1]!, 10) : null;
+function toBookmarkedSetting(raw: RawBookmarkedSetting): BookmarkedSetting | null {
+  if (typeof raw.id !== 'number' || typeof raw.tune?.id !== 'number') return null;
+  return { tuneId: raw.tune.id, settingId: raw.id, name: raw.tune.name ?? '' };
 }
 
-function toBookmarkedSetting(item: RawBookmarkItem): BookmarkedSetting | null {
-  if (item.object?.objectType !== 'setting') return null;
-  // The tune is named twice — as the bookmark's `target`, and inside the
-  // setting's own URL. Prefer the target, fall back to the URL.
-  const tuneId = tuneIdFromSettingUrl(item.target?.url ?? '') ?? tuneIdFromSettingUrl(item.object.url ?? '');
-  const settingId = settingIdFromBookmark(item.object);
-  if (tuneId === null || settingId === null) return null;
-  return { tuneId, settingId, name: item.object.displayName ?? item.target?.displayName ?? '' };
-}
-
-/** How many bookmarks to ask for per request. The endpoint honours `perpage`,
- *  which turns member 1's 362 bookmarks from 37 requests into 8. */
+/** How many bookmarks to ask for per request.
+ *
+ *  50 is the endpoint's ceiling, and it is a CLIFF rather than a clamp: 51 and
+ *  above are not reduced to 50, they fall back to the default of 10 — five
+ *  times the requests, for asking for more. Swept over 1, 5, 25, 50, 51, 60,
+ *  75, 100 and 200 (2026-09-05). Do not raise this. */
 const BOOKMARKS_PER_PAGE = 50;
 
-/** Every setting a member has bookmarked, oldest page last.
+async function fetchBookmarksPage(memberId: number, perPage: number, page: number): Promise<RawBookmarksResponse> {
+  const res = await fetch(`${BASE}/members/${memberId}/bookmarks/settings?format=json&perpage=${perPage}&page=${page}`);
+  if (res.status === 410) throw new MemberUnavailableError('gone');
+  if (res.status === 404) throw new MemberUnavailableError('notFound');
+  if (!res.ok) throw new Error(`TheSession bookmarks fetch failed: ${res.status}`);
+  return (await res.json()) as RawBookmarksResponse;
+}
+
+/** How many settings this member has bookmarked — one request cheap enough to
+ *  spend on a preview, `perpage=1` bringing back a single row for the sake of
+ *  the count that travels with it.
  *
- *  Paging stops on the first SHORT page — a page returning fewer than it was
- *  asked for is the last one — so a complete read costs no extra empty
- *  request. This is the only termination available: the endpoint reports
- *  neither `pages` nor `total`, and the member page has no bookmark counter to
- *  divide either (verified against member 1, whose 362 bookmarks match none of
- *  its figures; `settings` counts settings SUBMITTED, not bookmarked).
+ *  This counts BOOKMARKS, and an import creates one card per TUNE: a member who
+ *  starred two settings of one tune counts twice here and imports once (member
+ *  1: 358 bookmarks, 351 tunes). The preview line therefore says "bookmarks",
+ *  and the summary at the end — which counts cards — stays the honest total. */
+export async function fetchMemberBookmarkCount(memberId: number): Promise<number> {
+  return (await fetchBookmarksPage(memberId, 1, 1)).total ?? 0;
+}
+
+/** Every setting a member has bookmarked, newest first.
  *
- *  A `bookmarks` field HAS been requested from TheSession's admin (2026-09-03).
- *  If it appears, read it in fetchMemberInfo and this becomes a known number of
- *  pages — ceil(n / BOOKMARKS_PER_PAGE) — which buys the preview line the other
- *  two tabs have and turns the progress count into a real percentage. The short
- *  page stop below stays correct either way, so nothing here has to be undone.
+ *  `total` from the first response is what `onProgress` reports against, so the
+ *  wait is a fraction rather than a number climbing towards nothing in
+ *  particular. It counts bookmarks READ, not cards kept, so it can actually
+ *  reach its total — the de-duplication below is not progress lost.
  *
- *  `maxPages` is a guard, not a limit anyone should hit: without a total to
- *  page towards, a malformed response that never runs short would otherwise
- *  loop for ever. */
+ *  A short page still ends the loop. `pages` and "the server ran out of rows"
+ *  can only disagree if something upstream changed mid-read, and the page in
+ *  hand is the more recent of the two answers. */
 export async function fetchMemberBookmarks(
   memberId: number,
-  onProgress?: (loaded: number, page: number) => void,
-  maxPages = 200,
+  onProgress?: (loaded: number, total: number) => void,
 ): Promise<BookmarkedSetting[]> {
   const out: BookmarkedSetting[] = [];
   const seen = new Set<number>();
-  for (let page = 1; page <= maxPages; page++) {
-    const res = await fetch(`${BASE}/members/${memberId}/bookmarks?format=json&perpage=${BOOKMARKS_PER_PAGE}&page=${page}`);
-    if (res.status === 410) throw new MemberUnavailableError('gone');
-    if (res.status === 404) throw new MemberUnavailableError('notFound');
-    if (!res.ok) throw new Error(`TheSession bookmarks fetch failed: ${res.status}`);
-    const items = ((await res.json()) as RawBookmarksResponse).items ?? [];
-    if (items.length === 0) break;
+  let read = 0;
+  let pages = 1;
+  for (let page = 1; page <= pages; page++) {
+    const data = await fetchBookmarksPage(memberId, BOOKMARKS_PER_PAGE, page);
+    if (page === 1) pages = Math.max(1, data.pages ?? 1);
+    const items = data.settings ?? [];
     for (const item of items) {
+      read++;
       const bookmark = toBookmarkedSetting(item);
-      // Anything that is not a bookmarked setting — a bookmarked recording,
-      // event, discussion — is simply not ours to import.
       if (!bookmark) continue;
       // One card per tune: a member who bookmarked two settings of the same
       // tune gets the first, the card having only one starred version.
@@ -678,8 +691,7 @@ export async function fetchMemberBookmarks(
       seen.add(bookmark.tuneId);
       out.push(bookmark);
     }
-    onProgress?.(out.length, page);
-    // Short page = last page. Saves the extra request an empty-page stop needs.
+    onProgress?.(read, Math.max(read, data.total ?? read));
     if (items.length < BOOKMARKS_PER_PAGE) break;
   }
   return out;
