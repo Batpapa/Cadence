@@ -10,7 +10,7 @@ import { mutate, appState } from '../store';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers, fetchTunesByIds,
   tuneResultToCard, findByExternalId, fetchMemberSets, buildSetCards, setExternalId, MemberUnavailableError,
-  fetchMemberBookmarks, buildTuneCardWithSetting,
+  fetchMemberBookmarks, fetchMemberBookmarkCount, buildTuneCardWithSetting,
   type MemberSearchResult, type TuneSetting,
 } from '../services/theSessionService';
 import { defaultTuneRepeat } from '../services/abcService';
@@ -718,12 +718,13 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 }
 
 // ── Tab: Bookmarks (the settings a member has starred) ────────────────────────
-// Same shape as the tunebook tab, with two differences forced by the endpoint.
-// Its payload is an activity stream carrying neither `pages` nor `total`, so
-// paging stops on the first empty page; and the member page has no bookmark
-// counter either (its `settings` field counts settings the member SUBMITTED),
-// so unlike the tunebook and the sets there is no size to preview — the count
-// only exists once everything has been read.
+// The same shape as the tunebook and sets tabs, down to the two-phase bar: the
+// bookmarks endpoint reports `total` and `pages`, so the listing is a fraction
+// and the size can be previewed before anything is imported.
+//
+// The preview costs its own request rather than reading the member payload's
+// `bookmarks` field, which counts recordings and discussions too — see the
+// Bookmarks section of theSessionService for the arithmetic.
 //
 // What makes bookmarks worth their own tab: a bookmark names a SETTING, so each
 // tune created here opens on the very version the member starred.
@@ -752,8 +753,13 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     setStatus(t('theSession.status.fetching'));
     try {
       const found = await fetchMemberInfo(memberId);
-      // Only the name: nothing in the member payload counts bookmarks.
-      setInfo(found.name);
+      const n = await fetchMemberBookmarkCount(memberId);
+      const isIdSearch = /^\d+$/.test(value.trim());
+      const size = t('theSession.bookmarks.count', { n });
+      setInfo(isIdSearch ? `${found.name} · ${size}` : size);
+      // A member who has bookmarked nothing is an ordinary account, not an
+      // error — say so, and leave nothing to press.
+      if (n === 0) { setStatus(t('theSession.bookmarks.none')); return; }
       selectedMemberIdRef.current = memberId; bump(x => x + 1);
       setStatus('');
     } catch (e) {
@@ -767,10 +773,10 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     const memberId = selectedMemberIdRef.current;
     setBusy(true); setProgress(0);
     try {
-      // Phase one: read the whole stream. With no total to page towards, the
-      // bar cannot be a percentage — the count is the progress.
-      const bookmarks = await fetchMemberBookmarks(memberId, (loaded) => {
-        setStatus(t('theSession.bookmarks.collecting', { n: loaded }));
+      // Phase one: the listing, paged towards the total the endpoint reports.
+      const bookmarks = await fetchMemberBookmarks(memberId, (loaded, total) => {
+        setProgress(Math.round((loaded / total) * 50));
+        setStatus(t('theSession.bookmarks.collecting', { loaded, total }));
       });
       if (bookmarks.length === 0) {
         setStatus(t('theSession.bookmarks.none'));
@@ -789,7 +795,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       for (let i = 0; i < todo.length; i++) {
         const bookmark = todo[i]!;
         setStatus(t('theSession.status.fetchingTunes', { loaded: i + 1, total: todo.length }));
-        setProgress(Math.round(((i + 1) / todo.length) * 100));
+        setProgress(50 + Math.round(((i + 1) / todo.length) * 50));
         try {
           newCards.push(await buildTuneCardWithSetting(bookmark));
         } catch (e) {
