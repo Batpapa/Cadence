@@ -151,12 +151,41 @@ export function showImportSessionModal(ctx: AppContext): void {
   showModal(t('sessions.share.importTitle'), el, [], true, '28rem', cleanup);
 }
 
+/** The import phases that have a screen of their own. Exported so the view
+ *  and the "one job at a time" guard below cannot drift apart. */
+export const IMPORT_RUNNING_PHASES = ['initializing', 'decoding', 'analyzing', 'saving'];
+
+/** Whether a recognition job is on screen right now — the SAME question the
+ *  sessions view asks to decide what to render.
+ *
+ *  It used to be asked twice, differently: the view looked at the job's
+ *  PHASE, the guard merely at the object's existence. Any session left
+ *  behind in a phase the view does not show — idle, done, error, cancelled —
+ *  therefore put the library on screen (nothing appears to be running) while
+ *  silently refusing every import. Picking a file did nothing at all, with
+ *  no way to tell that from a broken app. One definition, two readers. */
+export function liveScreenActive(): boolean {
+  const phase = activeLive.value?.getPhase();
+  return !!phase && phase !== 'idle' && phase !== 'done';
+}
+export function importScreenActive(): boolean {
+  const phase = activeImport.value?.getPhase();
+  return !!phase && IMPORT_RUNNING_PHASES.includes(phase);
+}
+const recognitionBusy = () => liveScreenActive() || importScreenActive() || importStarting.value;
+
 export async function startImport(ctx: AppContext, file: File): Promise<void> {
-  if (activeImport.value || activeLive.value || importStarting.value) return; // one recognition job at a time
+  // Never silently: a file the user picked that produces nothing and says
+  // nothing is indistinguishable from an app that has stopped working.
+  if (recognitionBusy()) { alertModal(t('sessions.import'), t('sessions.alreadyRunning')); return; }
   importStarting.value = true;
 
   try {
     await preflightImport(ctx, file);
+  } catch (err) {
+    // preflight probes the file and loads the streaming decoder; anything it
+    // throws used to escape into a floating rejection nobody ever saw.
+    alertModal(t('sessions.import'), String(err));
   } finally {
     importStarting.value = false;
   }
@@ -278,7 +307,7 @@ async function finishImportRun(
  *  extracted files, are unaffected). Never available without stored audio
  *  (caller gates the triggering button on that; this is just a safety net). */
 export async function startReanalyze(ctx: AppContext, session: RecordedSession): Promise<void> {
-  if (activeImport.value || activeLive.value || importStarting.value) return; // one recognition job at a time
+  if (recognitionBusy()) { alertModal(t('sessions.import'), t('sessions.alreadyRunning')); return; }
   importStarting.value = true;
   try {
     const blob = await loadSessionAudio(session.id);
