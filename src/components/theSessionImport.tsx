@@ -163,6 +163,28 @@ function parseIdList(text: string): number[] {
   return [...new Set(text.split(/[;,\s]+/).filter(Boolean).map(Number).filter(n => Number.isFinite(n) && n > 0))];
 }
 
+/** Only the newest lookup gets to write. Every tab here previews what the user
+ *  is typing, and typing an ID means several previews are in flight at once —
+ *  each keystroke of "12" starts one. Without this, the LAST ANSWER TO ARRIVE
+ *  wins rather than the last one asked for, and the two are not the same order:
+ *  member 1 (the site's founder, eleven aggregate counts) answers in ~310 ms
+ *  where an ordinary member or a 410 answers in ~130 ms. So "12" showed member
+ *  1 — and, far worse than a wrong caption, ARMED THE IMPORT on him: the field
+ *  read 12, the button would have fetched Jeremy's 526 tunes.
+ *
+ *  `cancel()` on every edit is half the point: it also stops an answer landing
+ *  on a field the user has since cleared or changed. Debouncing merely reduces
+ *  the number of racers; only this decides which one counts. */
+function useLatestOnly() {
+  const seq = useRef(0);
+  return {
+    /** Claims the slot; the returned test says whether it is still ours. */
+    begin: () => { const mine = ++seq.current; return () => mine === seq.current; },
+    /** Abandons whatever is in flight — its answer will not be written. */
+    cancel: () => { seq.current++; },
+  };
+}
+
 // ── Small shared UI atoms (local to this file — see the top-of-file doc on
 // why theSessionImport.tsx and irishTuneInfoImport.tsx each keep their own
 // copies rather than sharing one). ────────────────────────────────────────
@@ -410,6 +432,7 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
   const [progress, setProgress] = useState<number | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useLatestOnly();
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
@@ -446,6 +469,7 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
 
   const onInputChange = (val: string) => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    latest.cancel();
     setValue(val);
     clearResult(); setStatus(''); setSuggestions([]); setDropdownOpen(false);
     const trimmed = val.trim();
@@ -459,12 +483,15 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
     if (/^\d+$/.test(trimmed)) {
       timerRef.current = setTimeout(async () => {
         timerRef.current = null; setStatus(t('theSession.status.fetching'));
+        const fresh = latest.begin();
         try {
           const tune = await fetchTuneById(parseInt(trimmed));
+          if (!fresh()) return;
           setPendingId(tune.id); setPendingIds(null);
           setInfo(`${tune.name} · ${tune.type}`);
           setStatus('');
         } catch (e) {
+          if (!fresh()) return;
           // 451 is not "no such tune": it exists and was taken down. Calling
           // that "not found" sends the user hunting for a typo they didn't make.
           setStatus(e instanceof TuneUnavailableError ? t('theSession.id.unavailable') : t('theSession.id.notFound'));
@@ -582,16 +609,19 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const selectedMemberIdRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useLatestOnly();
   const [, bump] = useState(0);
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
   const showMemberPreview = async (memberId: number) => {
+    const fresh = latest.begin();
     selectedMemberIdRef.current = null; bump(x => x + 1);
     setInfo('');
     setStatus(t('theSession.status.fetching'));
     try {
       const info = await fetchMemberInfo(memberId);
+      if (!fresh()) return;
       const isIdSearch = /^\d+$/.test(value.trim());
       const size = t('theSession.member.tuneCount', { n: info.tunebook });
       setInfo(isIdSearch ? `${info.name} · ${size}` : size);
@@ -605,6 +635,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       selectedMemberIdRef.current = memberId; bump(x => x + 1);
       setStatus('');
     } catch (e) {
+      if (!fresh()) return;
       setStatus(memberErrorStatus(e));
       selectedMemberIdRef.current = null; bump(x => x + 1);
     }
@@ -646,13 +677,21 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
   const onInputChange = (val: string) => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    latest.cancel();
     setValue(val);
     setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
     setSuggestions([]); setDropdownOpen(false); setStatus('');
     const trimmed = val.trim();
     if (!trimmed) return;
     if (/^\d+$/.test(trimmed)) {
-      void showMemberPreview(parseInt(trimmed));
+      // Debounced like the name search beside it, which always was. An ID is
+      // typed digit by digit and every prefix is a valid member, so "12345"
+      // used to ask TheSession about five different people — and show whichever
+      // answered last.
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        void showMemberPreview(parseInt(trimmed));
+      }, 300);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
         timerRef.current = null; setStatus(t('theSession.status.searching'));
@@ -743,17 +782,22 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const selectedMemberIdRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useLatestOnly();
   const [, bump] = useState(0);
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
   const showMemberPreview = async (memberId: number) => {
+    const fresh = latest.begin();
     selectedMemberIdRef.current = null; bump(x => x + 1);
     setInfo('');
     setStatus(t('theSession.status.fetching'));
     try {
-      const found = await fetchMemberInfo(memberId);
-      const n = await fetchMemberBookmarkCount(memberId);
+      // Together, not one then the other: this tab is the only one whose
+      // preview needs two requests, and chaining them would make it the
+      // slowest of the four for no reason.
+      const [found, n] = await Promise.all([fetchMemberInfo(memberId), fetchMemberBookmarkCount(memberId)]);
+      if (!fresh()) return;
       const isIdSearch = /^\d+$/.test(value.trim());
       const size = t('theSession.bookmarks.count', { n });
       setInfo(isIdSearch ? `${found.name} · ${size}` : size);
@@ -763,6 +807,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       selectedMemberIdRef.current = memberId; bump(x => x + 1);
       setStatus('');
     } catch (e) {
+      if (!fresh()) return;
       setStatus(memberErrorStatus(e));
       selectedMemberIdRef.current = null; bump(x => x + 1);
     }
@@ -831,13 +876,21 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
   const onInputChange = (val: string) => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    latest.cancel();
     setValue(val);
     setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
     setSuggestions([]); setDropdownOpen(false); setStatus('');
     const trimmed = val.trim();
     if (!trimmed) return;
     if (/^\d+$/.test(trimmed)) {
-      void showMemberPreview(parseInt(trimmed));
+      // Debounced like the name search beside it, which always was. An ID is
+      // typed digit by digit and every prefix is a valid member, so "12345"
+      // used to ask TheSession about five different people — and show whichever
+      // answered last.
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        void showMemberPreview(parseInt(trimmed));
+      }, 300);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
         timerRef.current = null; setStatus(t('theSession.status.searching'));
@@ -915,6 +968,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const selectedMemberIdRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useLatestOnly();
   const [, bump] = useState(0);
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
@@ -922,11 +976,13 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   /** One cheap request that answers "does this member exist, and is there
    *  anything to page through" before any paging begins. */
   const showMemberPreview = async (memberId: number) => {
+    const fresh = latest.begin();
     selectedMemberIdRef.current = null; bump(x => x + 1);
     setInfo('');
     setStatus(t('theSession.status.fetching'));
     try {
       const found = await fetchMemberInfo(memberId);
+      if (!fresh()) return;
       const isIdSearch = /^\d+$/.test(value.trim());
       const size = t('theSession.sets.count', { n: found.sets });
       setInfo(isIdSearch ? `${found.name} · ${size}` : size);
@@ -936,6 +992,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       selectedMemberIdRef.current = memberId; bump(x => x + 1);
       setStatus('');
     } catch (e) {
+      if (!fresh()) return;
       setStatus(memberErrorStatus(e));
       selectedMemberIdRef.current = null; bump(x => x + 1);
     }
@@ -1010,13 +1067,21 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
   const onInputChange = (val: string) => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    latest.cancel();
     setValue(val);
     setInfo(''); selectedMemberIdRef.current = null; bump(x => x + 1);
     setSuggestions([]); setDropdownOpen(false); setStatus('');
     const trimmed = val.trim();
     if (!trimmed) return;
     if (/^\d+$/.test(trimmed)) {
-      void showMemberPreview(parseInt(trimmed));
+      // Debounced like the name search beside it, which always was. An ID is
+      // typed digit by digit and every prefix is a valid member, so "12345"
+      // used to ask TheSession about five different people — and show whichever
+      // answered last.
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        void showMemberPreview(parseInt(trimmed));
+      }, 300);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
         timerRef.current = null; setStatus(t('theSession.status.searching'));

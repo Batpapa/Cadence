@@ -17,6 +17,23 @@ import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
 import { CheckIcon } from './icons';
 
+/** Only the newest lookup gets to write — a local copy of theSessionImport's,
+ *  by the same convention as the atoms below.
+ *
+ *  The previews here are debounced, which keeps the racers down to one in
+ *  ordinary typing, but a debounce cannot cancel a request already sent: clear
+ *  the field while one is in flight and its answer still lands, arming the
+ *  import on a tune or a playlist the field no longer names. Doubly worth
+ *  having on this side — these calls go through the scraper, which is slower
+ *  and rate-limited, so answers arrive further out of order than TheSession's. */
+function useLatestOnly() {
+  const seq = useRef(0);
+  return {
+    begin: () => { const mine = ++seq.current; return () => mine === seq.current; },
+    cancel: () => { seq.current++; },
+  };
+}
+
 // ── Tab helpers (same look as theSessionImport's — kept as a local copy
 // rather than shared, matching how these two files already don't share code
 // with each other). ───────────────────────────────────────────────────────
@@ -500,6 +517,7 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
   const [progress, setProgress] = useState<number | null>(null); // null = hidden
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useLatestOnly();
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
@@ -529,6 +547,7 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
 
   const onInputChange = (val: string) => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    latest.cancel();
     setValue(val);
     clearResult(); setStatus(''); setSuggestions([]); setDropdownOpen(false);
     const trimmed = val.trim();
@@ -542,12 +561,14 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
     if (/^\d+$/.test(trimmed)) {
       timerRef.current = setTimeout(async () => {
         timerRef.current = null; setStatus(fetchingMsg());
+        const fresh = latest.begin();
         try {
           const tune = await fetchTuneById(parseInt(trimmed));
+          if (!fresh()) return;
           setPendingId(tune.id); setPendingIds(null);
           setInfo(`${tune.name} · ${tune.rhythm}`);
           setStatus('');
-        } catch { setStatus(t('irishTuneInfo.id.notFound')); }
+        } catch { if (fresh()) setStatus(t('irishTuneInfo.id.notFound')); }
       }, 150);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
@@ -656,9 +677,11 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
   const pendingNamesRef = useRef<Map<number, string>>(new Map());
   const pendingCountRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useLatestOnly();
   const [, bump] = useState(0);
 
   const showPreview = async (username: string) => {
+    const fresh = latest.begin();
     pendingUsernameRef.current = null; pendingMappedRef.current = []; pendingUnmappedIdsRef.current = []; pendingCountRef.current = 0;
     pendingNamesRef.current = new Map();
     bump(x => x + 1);
@@ -666,6 +689,7 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
     setStatus(fetchingMsg());
     try {
       const playlist = await fetchPlaylist(username);
+      if (!fresh()) return;
       pendingNamesRef.current = new Map(playlist.tunes.map(pt => [pt.id, pt.name]));
       const n = playlist.tunes.length;
       setInfo(n === 1 ? t('irishTuneInfo.playlist.preview', { count: n }) : t('irishTuneInfo.playlist.previewPlural', { count: n }));
@@ -673,12 +697,14 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
       // username→ids round trip — the TheSession-redirect prompt itself
       // only appears once the user actually clicks Import, not here.
       const { mapped, unmapped } = await checkMapping(playlist.tunes.map(pt => pt.id), setStatus);
+      if (!fresh()) return;
       pendingMappedRef.current = mapped; pendingUnmappedIdsRef.current = unmapped;
       pendingCountRef.current = n;
       pendingUsernameRef.current = username; // gates only "found the user" — the button itself also checks pendingCountRef (empty playlist stays disabled)
       bump(x => x + 1);
       setStatus('');
     } catch {
+      if (!fresh()) return;
       setStatus(<>{t('irishTuneInfo.playlist.notFound')}<br /><span class="text-warn">{t('irishTuneInfo.playlist.makePublicHint')}</span></>);
     }
   };
@@ -757,6 +783,7 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
 
   const onInputChange = (val: string) => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    latest.cancel();
     setValue(val);
     setInfo(''); pendingUsernameRef.current = null; bump(x => x + 1); setStatus('');
     const trimmed = val.trim();
