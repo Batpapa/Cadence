@@ -167,8 +167,7 @@ function showDiffModal(diff: StateDiff, driveDeviceId: string | null, identical:
   showModal(
     t('settings.sync.diff.title'), el,
     [{ label: t('common.close'), onClick: () => { closeModal(); cleanup(); } }],
-    true, '30rem',
-    cleanup,   // also torn down if dismissed by Escape / click-outside / ✕
+    { maxWidth: '30rem', onDismiss: cleanup },   // cleanup also runs on Escape / click-outside / ✕
   );
 }
 
@@ -347,5 +346,5 @@ export function showDriveConflictModal(
       disabled: computed(() => choice.value === null),
       onClick: resolve,
     },
-  ], false);
+  ], { dismissable: false });
 }

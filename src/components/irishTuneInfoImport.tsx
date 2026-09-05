@@ -213,7 +213,7 @@ function promptUseTheSession(mapped: { name: string }[], totalRequested: number)
     showModal(t('irishTuneInfo.mapping.title'), p, [
       { label: t('irishTuneInfo.mapping.keepIti'), onClick: () => { closeModal(); resolve('iti'); } },
       { label: t('irishTuneInfo.mapping.useTheSession'), primary: true, onClick: () => { closeModal(); resolve('thesession'); } },
-    ], true, '28rem', () => resolve('cancel'));
+    ], { maxWidth: '28rem', onDismiss: () => resolve('cancel') });
   });
 }
 

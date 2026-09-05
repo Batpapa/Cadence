@@ -148,7 +148,7 @@ function ImportSessionBody({ ctx }: { ctx: AppContext }) {
 
 export function showImportSessionModal(ctx: AppContext): void {
   const { el, cleanup } = renderModalBody(<ImportSessionBody ctx={ctx} />);
-  showModal(t('sessions.share.importTitle'), el, [], true, '28rem', cleanup);
+  showModal(t('sessions.share.importTitle'), el, [], { maxWidth: '28rem', onDismiss: cleanup });
 }
 
 /** The import phases that have a screen of their own. Exported so the view
@@ -216,7 +216,7 @@ async function preflightImport(ctx: AppContext, file: File): Promise<void> {
       showModal(t('sessions.longFile.title'), p, [
         { label: t('common.cancel'), onClick: () => { closeModal(); resolve(false); } },
         { label: t('common.confirm'), primary: true, onClick: () => { closeModal(); resolve(true); } },
-      ], false);
+      ], { dismissable: false });
     });
     if (!proceed) return;
   }
@@ -281,7 +281,7 @@ async function finishImportRun(
             });
           },
         },
-      ], true, '28rem', dismiss); // onDismiss covers the X button / outside click too
+      ], { maxWidth: '28rem', onDismiss: dismiss }); // onDismiss covers the X button / outside click too
       return;
     }
     setActiveImport(null);

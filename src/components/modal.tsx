@@ -1,11 +1,12 @@
 import { signal, type Signal } from '@preact/signals';
-import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { render } from 'preact';
 import type { ComponentChild } from 'preact';
 import { t } from '../services/i18nService';
 import { focusIfDesktop } from '../utils';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
+import { ExpandIcon, CollapseIcon } from './icons';
 
 // ── Modal infrastructure (Preact — 2026-08-26) ──────────────────────────────────
 // The shell (overlay, dialog frame, header, footer, stacking, outside-click
@@ -45,6 +46,28 @@ export interface ModalHeaderAction {
   onClick: () => void;
 }
 
+/** Everything about a modal beyond its title, body and footer buttons.
+ *
+ *  An object rather than the tail of a positional list, which is what this was
+ *  until 2026-09-05: the seventh parameter had reached the point where a
+ *  caller's `showModal(a, b, [], true, w, onDismiss, {…})` said nothing about
+ *  what those arguments were, and a grep for `headerAction` genuinely missed
+ *  the one call site using it. */
+export interface ModalOptions {
+  /** Default true. False removes the ✕, Escape and the click-outside at once. */
+  dismissable?: boolean;
+  /** Default '28rem'. Capped by the viewport, and ignored while expanded. */
+  maxWidth?: string;
+  onDismiss?: () => void;
+  /** Header controls, left to right, before the expand toggle and the ✕. */
+  headerActions?: ModalHeaderAction[];
+  /** Offers a toggle that gives the dialog the whole page. Opt-in, because
+   *  most modals hold a form that gains nothing from the room and would only
+   *  look lost in it. Deliberately NOT remembered between openings: it is a
+   *  way to look closer at what is on screen now, not a preference. */
+  expandable?: boolean;
+}
+
 interface ModalEntry {
   id: number;
   title: string;
@@ -53,7 +76,8 @@ interface ModalEntry {
   dismissable: boolean;
   maxWidth: string;
   onDismiss?: () => void;
-  headerAction?: ModalHeaderAction;
+  headerActions: ModalHeaderAction[];
+  expandable: boolean;
 }
 
 let nextId = 0;
@@ -72,11 +96,18 @@ export function closeAllModals(): void {
   for (const entry of open) entry.onDismiss?.();
 }
 
-export function showModal(
-  title: string, body: HTMLElement, actions: ModalAction[], dismissable = true, maxWidth = '28rem',
-  onDismiss?: () => void, headerAction?: ModalHeaderAction,
-): void {
-  modalStack.value = [...modalStack.value, { id: nextId++, title, body, actions, dismissable, maxWidth, onDismiss, headerAction }];
+export function showModal(title: string, body: HTMLElement, actions: ModalAction[], opts: ModalOptions = {}): void {
+  modalStack.value = [...modalStack.value, {
+    id: nextId++,
+    title,
+    body,
+    actions,
+    dismissable: opts.dismissable ?? true,
+    maxWidth: opts.maxWidth ?? '28rem',
+    onDismiss: opts.onDismiss,
+    headerActions: opts.headerActions ?? [],
+    expandable: opts.expandable ?? false,
+  }];
 }
 
 export function promptModal(title: string, label: string, defaultValue: string, onConfirm: (value: string) => void): void {
@@ -175,6 +206,10 @@ function IconMount({ el }: { el: Element }) {
 
 function ModalDialog({ entry }: { entry: ModalEntry }) {
   const mouseDownOnOverlay = useRef(false);
+  // Local, so it dies with the dialog — see ModalOptions.expandable on why
+  // this is not remembered. ModalHost keys on entry.id, so the state survives
+  // every re-render of the stack and only that.
+  const [expanded, setExpanded] = useState(false);
   const dismiss = () => { closeModal(); entry.onDismiss?.(); };
 
   // Escape closes only the TOPMOST modal — checked fresh on every keydown
@@ -199,19 +234,33 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
       onClick={(e) => { if (entry.dismissable && e.target === e.currentTarget && mouseDownOnOverlay.current) dismiss(); }}
     >
       <div
-        class="bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col"
-        style={{ maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85) }}
+        class={`bg-elevated shadow-2xl overflow-hidden flex flex-col ${
+          expanded ? 'w-full h-full' : 'border border-border rounded-xl w-full mx-4'
+        }`}
+        style={expanded ? undefined : { maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85) }}
       >
         <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <h2 class="text-xs font-semibold text-muted uppercase tracking-widest truncate">{entry.title}</h2>
           <div class="flex items-center gap-3 shrink-0">
-            {entry.headerAction && (
+            {entry.headerActions.map((action, i) => (
+              <button
+                key={i}
+                class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
+                title={action.title}
+                onClick={action.onClick}
+              >
+                <IconMount el={action.icon} />
+              </button>
+            ))}
+            {/* After the caller's own controls and before the ✕: those act on
+                what is shown, these two act on the window itself. */}
+            {entry.expandable && (
               <button
                 class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
-                title={entry.headerAction.title}
-                onClick={entry.headerAction.onClick}
+                title={t(expanded ? 'modal.collapse' : 'modal.expand')}
+                onClick={() => setExpanded(e => !e)}
               >
-                <IconMount el={entry.headerAction.icon} />
+                {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
               </button>
             )}
             {entry.dismissable && (

@@ -29,5 +29,5 @@ export function showEmbedModal(entry: EmbedEntry): void {
     body.appendChild(msg);
   }
 
-  showModal(entry.title ?? entry.url, body, [], true, dims.width);
+  showModal(entry.title ?? entry.url, body, [], { maxWidth: dims.width });
 }

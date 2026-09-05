@@ -221,5 +221,5 @@ function HelpModalContent({ sections }: { sections: HelpSection[] }) {
 export function showHelpModal(ctx: AppContext): void {
   const { title, sections } = getInfoContent(ctx.route);
   const { el, cleanup } = renderModalBody(<HelpModalContent sections={sections} />);
-  showModal(t('help.title', { context: title }), el, [], true, '36rem', cleanup);
+  showModal(t('help.title', { context: title }), el, [], { maxWidth: '36rem', onDismiss: cleanup });
 }
