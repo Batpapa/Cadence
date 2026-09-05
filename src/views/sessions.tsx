@@ -9,7 +9,7 @@ import { SessionLibrary } from '../session/ui/SessionLibrary';
 import { LiveSessionScreen } from '../session/ui/LiveSession';
 import { ImportAnalysis } from '../session/ui/ImportAnalysis';
 import { SessionSummary } from '../session/ui/SessionSummary';
-import { startLiveSession, startImport, showImportSessionModal, startReanalyze } from '../session/ui/sessionModule';
+import { startLiveSession, startImport, showImportSessionModal, startReanalyze, liveScreenActive, importScreenActive } from '../session/ui/sessionModule';
 
 // ── Sessions page (the tune analyzer) ───────────────────────────────────────────
 // Route `{ view: 'sessions' }` = past-sessions library, or whichever local
@@ -22,7 +22,6 @@ import { startLiveSession, startImport, showImportSessionModal, startReanalyze }
 // auto-redirect above so viewing session history doesn't get hijacked by an
 // unrelated recording running in the background.
 
-const IMPORT_RUNNING_PHASES = ['initializing', 'decoding', 'analyzing', 'saving'];
 
 function SessionByIdScreen({ ctx, sessionId }: { ctx: AppContext; sessionId: string }) {
   const [session, setSession] = useState<RecordedSession | null>(null);
@@ -60,13 +59,18 @@ export function SessionsView({ sessionId }: { sessionId?: string }) {
   const ctx = getContext();
   const onOpenCard = (cardId: string) => ctx.navigate({ view: 'card', cardId });
 
+  // Read once, so the null check that narrows the type and the predicate that
+  // decides the screen look at the very same object.
+  const live = activeLive.value;
+  const imp = activeImport.value;
+
   let content;
   if (sessionId) {
     content = <SessionByIdScreen ctx={ctx} sessionId={sessionId} />;
-  } else if (activeLive.value && activeLive.value.getPhase() !== 'idle' && activeLive.value.getPhase() !== 'done') {
-    content = <LiveSessionScreen live={activeLive.value} ctx={ctx} onOpenCard={onOpenCard} />;
-  } else if (activeImport.value && IMPORT_RUNNING_PHASES.includes(activeImport.value.getPhase())) {
-    content = <ImportAnalysis imp={activeImport.value} ctx={ctx} onOpenCard={onOpenCard} />;
+  } else if (live && liveScreenActive()) {
+    content = <LiveSessionScreen live={live} ctx={ctx} onOpenCard={onOpenCard} />;
+  } else if (imp && importScreenActive()) {
+    content = <ImportAnalysis imp={imp} ctx={ctx} onOpenCard={onOpenCard} />;
   } else {
     content = (
       <>

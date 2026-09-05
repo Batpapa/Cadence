@@ -77,7 +77,13 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
         type="file"
         class="hidden"
         onChange={() => {
-          const file = fileInputRef.current?.files?.[0];
+          const input = fileInputRef.current;
+          const file = input?.files?.[0];
+          // Cleared straight away, or picking the SAME file again fires no
+          // change event at all — the value has not changed — and the second
+          // attempt does nothing, with nothing to say why. Which is exactly
+          // what a user does after a first import that did not go their way.
+          if (input) input.value = '';
           if (file) onImportFile(file);
         }}
       />
