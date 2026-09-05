@@ -747,17 +747,23 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     }
   }
 
-  showModal(
-    entry.name, body, [], true, modalWidth(entry), onDismiss,
-    // Scores only: none of this applies to an image, a PDF or a recording.
-    isAbcFile(entry)
-      ? {
+  // Scores only: neither the preferences nor the room to spread out applies to
+  // an image, a PDF or a recording. A score is the one thing here that a wider
+  // frame genuinely re-renders — abcjs lays out to the container, so the extra
+  // width buys fewer line breaks rather than a bigger picture.
+  const isScore = isAbcFile(entry);
+  showModal(entry.name, body, [], {
+    maxWidth: modalWidth(entry),
+    onDismiss,
+    expandable: isScore,
+    headerActions: isScore
+      ? [{
           icon: iconElement(GearIcon, 15),
           title: t('fileViewer.abc.prefs.title'),
           onClick: () => showAbcPrefsModal(() => reapplyAbcPrefs?.()),
-        }
-      : undefined,
-  );
+        }]
+      : [],
+  });
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

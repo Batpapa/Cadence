@@ -171,5 +171,5 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
 
 export function showStudyModal(opts: StudyModalOpts): void {
   const { el, cleanup } = renderModalBody(<StudyModalBody {...opts} />);
-  showModal(opts.title, el, [], true, '28rem', cleanup);
+  showModal(opts.title, el, [], { maxWidth: '28rem', onDismiss: cleanup });
 }

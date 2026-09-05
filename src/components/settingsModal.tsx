@@ -156,7 +156,7 @@ function ProfileModalBody({ ctx }: { ctx: AppContext }) {
 
 export function showProfileModal(ctx: AppContext): void {
   const { el, cleanup } = renderModalBody(<ProfileModalBody ctx={ctx} />);
-  showModal(t('settings.profiles.modalTitle'), el, [], true, '28rem', cleanup);
+  showModal(t('settings.profiles.modalTitle'), el, [], { maxWidth: '28rem', onDismiss: cleanup });
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -331,7 +331,7 @@ function DriveRow() {
               await handleConnect(true);
             },
           },
-        ], false);
+        ], { dismissable: false });
       } else if (result.action === 'wrong_account') {
         const body = document.createElement('p');
         body.className = 'text-sm text-muted leading-relaxed';
@@ -345,7 +345,7 @@ function DriveRow() {
               await handleConnect();
             },
           },
-        ], false);
+        ], { dismissable: false });
       }
     } catch {
       // Known cause: the OAuth consent screen renders blank inside chat

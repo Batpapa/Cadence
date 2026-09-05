@@ -172,5 +172,5 @@ export function showAlternatesPopover(
     cleanup();
   };
   render(<AlternatesPopover initial={ann} getLatest={getLatest} onSelect={handleSelect} />, body);
-  showModal(t('sessions.alternates.title'), body, [], true, '420px', cleanup);
+  showModal(t('sessions.alternates.title'), body, [], { maxWidth: '420px', onDismiss: cleanup });
 }

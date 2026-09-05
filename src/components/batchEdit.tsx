@@ -25,7 +25,7 @@ function open(title: string, node: ComponentChild, confirmLabel: string, draft: 
   showModal(title, el, [
     { label: t('common.cancel'), onClick: closeModal },
     { label: confirmLabel, primary: true, disabled: draft.noop, onClick: () => { onConfirm(); closeModal(); } },
-  ], true, '28rem', cleanup);
+  ], { maxWidth: '28rem', onDismiss: cleanup });
 }
 
 // ── Shared multi-pick list ───────────────────────────────────────────────────
@@ -536,7 +536,7 @@ export function showRefreshModal<T>(spec: RefreshSpec<T>): void {
       // backdrop already close it. Which is also the safe half of the shell —
       // those three run onDismiss, and a footer button would not, leaving the
       // loop fetching for a torn-down dialog.
-      showModal(spec.title, el, [], true, '28rem', () => { cancelled.now = true; cleanup(); });
+      showModal(spec.title, el, [], { maxWidth: '28rem', onDismiss: () => { cancelled.now = true; cleanup(); } });
     } },
-  ], true, '28rem', picker.cleanup);
+  ], { maxWidth: '28rem', onDismiss: picker.cleanup });
 }
