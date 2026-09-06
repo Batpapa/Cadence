@@ -294,7 +294,7 @@ export interface IrishTuneInfoBodyProps {
   ctx: AppContext;
   getTargetDeckIds?: () => Set<string> | undefined;
   onNavigateToCard?: () => void;
-  withDeckChoice?: (onReady: () => void) => void;
+  withDeckChoice?: (onReady: () => void, onCancel?: () => void) => void;
   /** Opens the tune tab with this already in its lookup field — see the twin
    *  prop on TheSessionBody. */
   initialQuery?: string;
@@ -341,13 +341,17 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
             setBusy(false);
             return;
           }
-          await commitCards(newCards, linkIds, getTargetDeckIds);
-          const card = displayCards[0]!;
-          setImportedStatus(card.id, card.name);
-          onSuccess();
+          // Everything is fetched by this point, so the deck question comes
+          // last and a dismissal writes nothing.
+          withDeckChoice(() => { void (async () => {
+            await commitCards(newCards, linkIds, getTargetDeckIds);
+            const card = displayCards[0]!;
+            setImportedStatus(card.id, card.name);
+            onSuccess();
+            setBusy(false);
+          })(); }, () => { setStatus(''); setBusy(false); });
         } catch (e) {
           setStatus(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) }));
-        } finally {
           setBusy(false);
         }
         return;
@@ -443,13 +447,19 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
         ...itiNewCards.map(c => c.id),
         ...itiSkippedIds.map(id => existingCardIdByTuneId!.get(id)!),
       ];
-      await commitCards(allNewCards, linkIds, getTargetDeckIds);
-
-      const redirectedCount = sessionFetch?.displayCards.length ?? 0;
-      setStatus(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked));
+      if (allNewCards.length === 0 && linkIds.length === 0) {
+        setStatus(buildBatchSummary(0, 0, sessionFetch?.displayCards.length ?? 0, sessionFetch?.blocked));
+        onDone();
+        return;
+      }
+      withDeckChoice(() => { void (async () => {
+        await commitCards(allNewCards, linkIds, getTargetDeckIds);
+        const redirectedCount = sessionFetch?.displayCards.length ?? 0;
+        setStatus(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked));
+        onDone();
+      })(); }, () => { setStatus(''); onDone(); });
     } catch (e) {
       setStatus(tuneFetchStatus(e, 'irishTuneInfo.error'));
-    } finally {
       onDone();
     }
   };
@@ -474,7 +484,6 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
       <div class="space-y-3">
         {tab === 'tune' ? (
           <TuneTab
-            withDeckChoice={withDeckChoice}
             setStatus={setStatus}
             importTune={importTune}
             importIds={importIds}
@@ -497,8 +506,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
 
 // ── Tab: Tune (ID, name search, or a pasted "1;5;97" ID list) ─────────────────
 
-function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuery }: {
-  withDeckChoice: (onReady: () => void) => void;
+function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   setStatus: (c: ComponentChild) => void;
   importTune: (tuneId: number, onSuccess: () => void, setBusy: (b: boolean) => void) => Promise<void>;
   importIds: (ids: number[], onProgress: (loaded: number, total: number) => void, onDone: () => void) => Promise<void>;
@@ -536,18 +544,16 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuer
   const doImport = () => {
     if (pendingIds) {
       const ids = pendingIds;
-      withDeckChoice(() => {
-        setBusy(true);
-        setBatchBusy(true);
-        setProgress(0);
-        void importIds(ids, (loaded, total) => { setProgress(Math.round((loaded / total) * 100)); setStatus(t('irishTuneInfo.status.fetchingTunes', { loaded, total })); }, () => {
-          setBusy(false); setBatchBusy(false); setProgress(null); setValue(''); clearResult();
-        });
+      setBusy(true);
+      setBatchBusy(true);
+      setProgress(0);
+      void importIds(ids, (loaded, total) => { setProgress(Math.round((loaded / total) * 100)); setStatus(t('irishTuneInfo.status.fetchingTunes', { loaded, total })); }, () => {
+        setBusy(false); setBatchBusy(false); setProgress(null); setValue(''); clearResult();
       });
       return;
     }
     if (pendingId === null) return;
-    withDeckChoice(() => { void importTune(pendingId, () => { setValue(''); clearResult(); }, setBusy); });
+    void importTune(pendingId, () => { setValue(''); clearResult(); }, setBusy);
   };
 
   const onInputChange = (val: string) => {
@@ -664,7 +670,7 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuer
 function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus }: {
   includeAudio: boolean;
   getTargetDeckIds?: () => Set<string> | undefined;
-  withDeckChoice: (onReady: () => void) => void;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
   setStatus: (c: ComponentChild) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -779,14 +785,21 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
         ...itiNewCards.map(c => c.id),
         ...itiSkippedIds.map(id => existingCardIdByTuneId!.get(id)!),
       ];
-      await commitCards(allNewCards, linkIds, getTargetDeckIds);
-
-      setProgress(100);
-      const redirectedCount = sessionFetch?.displayCards.length ?? 0;
-      setStatus(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked));
+      if (allNewCards.length === 0 && linkIds.length === 0) {
+        setProgress(100);
+        setStatus(buildBatchSummary(0, 0, sessionFetch?.displayCards.length ?? 0, sessionFetch?.blocked));
+        setBusy(false);
+        return;
+      }
+      withDeckChoice(() => { void (async () => {
+        await commitCards(allNewCards, linkIds, getTargetDeckIds);
+        setProgress(100);
+        const redirectedCount = sessionFetch?.displayCards.length ?? 0;
+        setStatus(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked));
+        setBusy(false);
+      })(); }, () => { setStatus(''); setProgress(null); setBusy(false); });
     } catch (e) {
       setStatus(tuneFetchStatus(e, 'irishTuneInfo.error'));
-    } finally {
       setBusy(false);
     }
   };
@@ -816,7 +829,7 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
         <button
           class="btn-primary text-xs shrink-0"
           disabled={busy || pendingUsernameRef.current === null || pendingCountRef.current === 0}
-          onClick={() => withDeckChoice(() => { void doImportAll(); })}
+          onClick={() => void doImportAll()}
         >
           {t('irishTuneInfo.playlist.importAll')}
         </button>

@@ -51,10 +51,8 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   const [stateZoneText, setStateZoneText] = useState('');
   const [abcTickerText, setAbcTickerText] = useState('');
   const [bgWarningText, setBgWarningText] = useState<string | null>(null);
-  const [deckIdsTick, setDeckIdsTick] = useState(0);
   const [stopping, setStopping] = useState(false);
 
-  const ensureLiveTargetDeckIds = () => { if (!live.targetDeckIds) live.targetDeckIds = new Set(); return live.targetDeckIds; };
 
   useEffect(() => {
     live.setCallbacks({
@@ -153,9 +151,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     onOpenCard,
     onCardAdded: () => setAnnotations(live.getAnnotations()),
     sessionStartMs: live.startedAt || undefined,
-    getTargetDeckIds: () => live.targetDeckIds,
-    ensureTargetDeckIds: ensureLiveTargetDeckIds,
-    onTargetDeckIdsChanged: () => setDeckIdsTick(x => x + 1),
+    getPinnedDeckIds: () => live.pinnedDeckIds,
     onToggleLike: (id) => { live.toggleLike(id); setAnnotations(live.getAnnotations()); },
     onSelectAlternate: (id, pick) => { live.selectAlternate(id, pick); setAnnotations(live.getAnnotations()); },
     getLatestAnnotation: (id) => live.getAnnotations().find(a => a.id === id),
@@ -171,7 +167,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     ) : undefined,
   });
 
-  useAutoFollowScroll(feedAnchorRef, [annotations, deckIdsTick]);
+  useAutoFollowScroll(feedAnchorRef, [annotations]);
 
   const paused = phase === 'paused';
 
@@ -203,8 +199,6 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         // reads activeLive reactively, so clearing it alone switches the
         // screen on its own.
         onDelete={() => { void live.cancel().then(() => setActiveLive(null)); }}
-        getTargetDeckIds={() => live.targetDeckIds}
-        ensureTargetDeckIds={ensureLiveTargetDeckIds}
       />
       <p class="text-sm text-primary mt-2 mb-3">{dateText}</p>
 

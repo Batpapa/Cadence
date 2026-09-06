@@ -1,11 +1,11 @@
 import { useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
-import type { AppContext, SessionRating } from '../../types';
+import type { AppContext, Card, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { PlusIcon, HeartIcon, HourglassIcon } from '../../components/icons';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
-import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { AbcPreview } from './abcPreview';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE } from './sessionUiShared';
@@ -37,13 +37,11 @@ export interface AnnotationCardOptions {
    *  get the "log this as a review" control (summary + live feed; the import
    *  feed has no date until the user sets one in the summary). */
   sessionStartMs?: number;
-  /** Deck(s) a card created from this annotation via "Add card" should link into.
-   *  `undefined` = never touched — "Add card" forces the picker open first (auto-
-   *  creating once it closes) instead of creating immediately, same rule as the
-   *  title row's deck icon these three share the underlying Set with. */
-  getTargetDeckIds?: () => Set<string> | undefined;
-  ensureTargetDeckIds?: () => Set<string>;
-  onTargetDeckIdsChanged?: () => void;
+  /** Decks pinned on the page this feed belongs to — they come back ticked in
+   *  the deck choice modal, which now opens on EVERY add or link rather than
+   *  once per page (see deckSelector.tsx for why). The Set is owned and mutated
+   *  by the page, so a pin lasts exactly as long as the page does. */
+  getPinnedDeckIds?: () => Set<string>;
   /** "I liked this tune" marker — purely personal, unrelated to any card. */
   onToggleLike?: (annotationId: string) => void;
   /** Records the user's verdict on this annotation's identity — makes the
@@ -179,30 +177,41 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
 
   const [busy, setBusy] = useState(false);
 
-  const doAdd = async () => {
+  /** Writes the already-fetched card. Split from the fetch on purpose: the tune
+   *  is downloaded BEFORE the deck question is asked, so a failed lookup never
+   *  wastes the user's answer, and dismissing the modal imports nothing at all.
+   *
+   *  The gap between fetch and commit is wide enough for the same tune to have
+   *  arrived by another route in the meantime, so the externalId is re-checked
+   *  inside the transaction rather than trusted from before it. */
+  const commitAdd = async (card: Card, deckIds: string[]) => {
     setBusy(true);
     try {
-      const tune = await fetchTuneById(Number(ann.tuneId));
-      const card = tuneResultToCard(tune);
       await opts.ctx.mutate(s => {
-        s.cards[card.id] = card;
-        for (const deckId of opts.getTargetDeckIds?.() ?? []) {
+        const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : undefined;
+        const id = existing?.id ?? card.id;
+        if (!existing) s.cards[id] = card;
+        for (const deckId of deckIds) {
           const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
+          if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
         }
       });
       opts.onCardAdded?.();
-    } catch {
+    } finally {
+      // Was `catch` only: on success `busy` stayed true for good. It went
+      // unnoticed while the row's two buttons were separate concerns, but the
+      // add turns this very row into the "add to decks" button — which shares
+      // this flag and was therefore dead from the moment the card existed.
       setBusy(false);
     }
   };
 
-  const doLink = async () => {
+  const doLink = async (deckIds: string[]) => {
     if (!known) return;
     setBusy(true);
     try {
       await opts.ctx.mutate(s => {
-        for (const deckId of opts.getTargetDeckIds?.() ?? []) {
+        for (const deckId of deckIds) {
           const deck = s.decks[deckId];
           if (deck && !deck.entries.some(e => e.cardId === known.id)) deck.entries.push({ cardId: known.id });
         }
@@ -212,19 +221,38 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
     }
   };
 
-  const onAddOrLinkClick = (e: MouseEvent, action: () => void) => {
+  // Every add and every link asks where the card goes. With no deck at all
+  // there is nothing to ask, so creating goes straight through — and the link
+  // button is not rendered in the first place, since linking to nothing is not
+  // an action.
+  const onAddClick = (e: MouseEvent) => {
     e.stopPropagation();
-    // First "Add card"/link ever for this session: force a deliberate deck
-    // choice (or explicit "none") before creating/linking anything — same
-    // rule as the title row's deck icon, sharing its underlying Set. Runs
-    // automatically once the forced picker closes, no second click needed.
-    if (opts.getTargetDeckIds?.() === undefined && opts.ensureTargetDeckIds) {
-      const ids = opts.ensureTargetDeckIds();
-      opts.onTargetDeckIdsChanged?.();
-      showDeckPickerPopover(ids, () => opts.onTargetDeckIdsChanged?.(), () => { void action(); });
-    } else {
-      void action();
-    }
+    void (async () => {
+      setBusy(true);
+      let card: Card;
+      try {
+        card = tuneResultToCard(await fetchTuneById(Number(ann.tuneId)));
+      } catch {
+        setBusy(false);   // nothing was fetched, so nothing is asked and nothing is written
+        return;
+      }
+      setBusy(false);
+      if (!hasAnyDeck()) { void commitAdd(card, []); return; }
+      showDeckChoiceModal({
+        pinned: opts.getPinnedDeckIds?.() ?? new Set(),
+        onConfirm: (deckIds) => { void commitAdd(card, deckIds); },
+      });
+    })();
+  };
+
+  const onLinkClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!known) return;
+    showDeckChoiceModal({
+      pinned: opts.getPinnedDeckIds?.() ?? new Set(),
+      alreadyIn: decksContainingCard(known.id),
+      onConfirm: (deckIds) => { void doLink(deckIds); },
+    });
   };
 
   const range = ann.end === null
@@ -258,17 +286,20 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
             class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
             title={t('sessions.addCard')}
             disabled={busy}
-            onClick={(e) => onAddOrLinkClick(e, doAdd)}
+            onClick={onAddClick}
           >
             <PlusIcon size={12} />
           </button>
-        ) : (
+        ) : hasAnyDeck() && (
+          // Dimmed, not disabled, once the card is in every deck: there is
+          // nothing left to add, but this is also the only place that shows
+          // WHERE it already sits, so it stays open for a look.
           <button
-            class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
-            title={t('sessions.linkToDeck')}
+            class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
+            title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
             disabled={busy}
             dangerouslySetInnerHTML={{ __html: deckLinkIcon }}
-            onClick={(e) => onAddOrLinkClick(e, doLink)}
+            onClick={onLinkClick}
           />
         )}
 

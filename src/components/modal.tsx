@@ -83,6 +83,14 @@ interface ModalEntry {
 let nextId = 0;
 const modalStack = signal<ModalEntry[]>([]);
 
+/** True while any modal from this stack is on screen. For the few overlays
+ *  that are NOT part of the stack (the new-card modal) and run their own
+ *  Escape handler: without this, one Escape would close both the dialog on
+ *  top and the overlay underneath it. */
+export function anyModalOpen(): boolean {
+  return modalStack.value.length > 0;
+}
+
 export function closeModal(): void {
   modalStack.value = modalStack.value.slice(0, -1);
 }

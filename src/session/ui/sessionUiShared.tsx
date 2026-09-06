@@ -7,7 +7,6 @@ import { confirmModal } from '../../components/modal';
 import { findByExternalId } from '../../services/theSessionService';
 import { fileToEntry } from '../../utils';
 import { extractClipMp3 } from '../audio/clipExtract';
-import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
 import { getContext } from '../../store';
 import type { IndexProgress } from '../recognition/indexStore';
 import type { SessionAnnotation } from '../model';
@@ -97,7 +96,7 @@ const SHARE_ICON_TRIGGER = '<svg width="13" height="13" viewBox="0 0 24 24" fill
  *  heading that turns into an input on click, plus a delete button — no back
  *  arrow. `getName`/`getDefaultName` abstract over RecordedSession/LiveSession/
  *  ImportSession, which don't share a base type. */
-export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare, getTargetDeckIds, ensureTargetDeckIds }: {
+export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare }: {
   getName: () => string;
   getDefaultName: () => string;
   onRename: (name: string) => void;
@@ -105,15 +104,13 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare,
   /** Only the finished-session summary offers sharing — shows a button left
    *  of delete when set. */
   onShare?: () => void;
-  /** Target deck(s) new cards from this session's recognised tunes get linked
-   *  to. `undefined` = never touched — the icon shows a "(?)" warning until
-   *  the picker's been opened at least once (even choosing zero decks counts). */
-  getTargetDeckIds: () => Set<string> | undefined;
-  ensureTargetDeckIds: () => Set<string>;
 }) {
+  // The deck-target button that used to sit here is gone (2026-09-06). It set a
+  // destination once for the whole page, which every later add then applied in
+  // silence; the deck choice now happens at each add, in its own modal, where
+  // the user is actually looking. See components/deckSelector.tsx.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const [, bump] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
@@ -124,9 +121,6 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare,
     if (val) onRename(val);
     setEditing(false);
   };
-
-  const ids = getTargetDeckIds();
-  const deckSuffix = ids === undefined ? ' (?)' : ids.size > 0 ? ` (${ids.size})` : '';
 
   return (
     <div class="flex items-center gap-2">
@@ -149,19 +143,6 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare,
           {getName() || getDefaultName()}
         </h1>
       )}
-
-      <button
-        class={`inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${
-          ids === undefined ? 'text-warn hover:text-primary' : ids.size > 0 ? 'text-accent' : 'text-dim hover:text-primary'
-        }`}
-        title={t('newCard.selectDecks')}
-        dangerouslySetInnerHTML={{ __html: `${deckLinkIcon}${deckSuffix}` }}
-        onClick={() => {
-          const liveIds = ensureTargetDeckIds();
-          bump(x => x + 1); // reflect the undefined→Set transition even before any checkbox is touched
-          showDeckPickerPopover(liveIds, () => bump(x => x + 1));
-        }}
-      />
 
       {onShare && (
         <button

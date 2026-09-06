@@ -39,7 +39,6 @@ interface ImportAnalysisProps {
 export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   const feedAnchorRef = useRef<HTMLDivElement>(null);
 
-  const [deckIdsTick, setDeckIdsTick] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const [statusText, setStatusText] = useState(() => {
     const phase = imp.getPhase();
@@ -51,7 +50,6 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   const [annotations, setAnnotations] = useState<SessionAnnotation[]>(() => (imp.getPhase() === 'analyzing' ? imp.getAnnotations() : []));
   const [playingId, setPlayingId] = useState<string | null>(null);
 
-  const ensureImpTargetDeckIds = () => { if (!imp.targetDeckIds) imp.targetDeckIds = new Set(); return imp.targetDeckIds; };
 
   // ── Slice playback straight from the original file, while analysis runs.
   const [audio] = useState(() => new Audio(URL.createObjectURL(imp.file)));
@@ -126,9 +124,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     playingId,
     onOpenCard,
     onCardAdded: () => setAnnotations(imp.getAnnotations()),
-    getTargetDeckIds: () => imp.targetDeckIds,
-    ensureTargetDeckIds: ensureImpTargetDeckIds,
-    onTargetDeckIdsChanged: () => setDeckIdsTick(x => x + 1),
+    getPinnedDeckIds: () => imp.pinnedDeckIds,
     onToggleLike: (id) => { imp.toggleLike(id); setAnnotations(imp.getAnnotations()); },
     onSelectAlternate: (id, pick) => { imp.selectAlternate(id, pick); setAnnotations(imp.getAnnotations()); },
     getLatestAnnotation: (id) => imp.getAnnotations().find(a => a.id === id),
@@ -151,7 +147,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     ) : undefined,
   });
 
-  useAutoFollowScroll(feedAnchorRef, [annotations, playingId, deckIdsTick]);
+  useAutoFollowScroll(feedAnchorRef, [annotations, playingId]);
 
   const pct = progress.totalS > 0 ? Math.min(100, (progress.analyzedS / progress.totalS) * 100) : 0;
 
@@ -162,8 +158,6 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         getDefaultName={() => imp.defaultName()}
         onRename={(val) => { imp.name = val; }}
         onDelete={() => imp.cancel()}
-        getTargetDeckIds={() => imp.targetDeckIds}
-        ensureTargetDeckIds={ensureImpTargetDeckIds}
       />
       <DateRow
         getDate={() => imp.dateOverride}

@@ -102,10 +102,11 @@ export class ImportSession {
    *  a live recording re-processed this way still shows as "live" in the
    *  library, not "import". null = the normal fresh-import behavior. */
   sourceOverride: 'live' | 'import' | null = null;
-  /** Target deck(s) for cards created from this import's recognised tunes —
-   *  in-memory only, not persisted with the session (resets next time).
-   *  `undefined` = never touched the picker yet (forces it open on first "Add card"). */
-  targetDeckIds: Set<string> | undefined = undefined;
+  /** Decks PINNED in the deck choice modal while this import is open — they
+   *  come back ticked on the next add or link, and that is all they do. Purely
+   *  in-memory and never persisted: picking a destination is a decision about
+   *  right now, not a preference (see components/deckSelector.tsx). */
+  pinnedDeckIds: Set<string> = new Set();
   /** Manual transposition (semitones, -12..12) applied to the ongoing
    *  analysis — e.g. a file recorded in Bb. In-memory only. */
   pitchShift = 0;
