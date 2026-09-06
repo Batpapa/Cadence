@@ -201,7 +201,8 @@ export function initDriveForUser(userId: string): void {
   // ever pushed. Reconstruct the real state from the durable bookkeeping —
   // unsynced edits are 'pending', and 'error' if the last attempt also failed,
   // so a sync that died offline still looks wrong after a restart.
-  autoPromptFailed = false; // a fresh boot may prompt again
+  autoPromptFailed = false;       // a fresh boot may prompt again
+  gestureRenewalRefused = false;  // …and may offer the quiet renewal again too
   const connected = localStorage.getItem(lsConnected(userId)) === '1';
   const unsynced  = connected && hasUnsyncedChanges(userId);
   _state = {
@@ -420,6 +421,24 @@ function requestToken(prompt = ''): Promise<string> {
   });
 }
 
+/** The token request currently in flight, shared by every caller.
+ *
+ *  Two reasons, not one. The obvious: a boot read and a post-edit flush that
+ *  both find the token expired used to call `requestAccessToken` twice, and the
+ *  second window was usually the one the browser blocked. The subtle one:
+ *  `requestToken` installs `tokenClient.callback`, so a second call overwrites
+ *  the first's callback and the first caller's promise never settles. */
+let tokenRequest: Promise<string> | null = null;
+
+function requestTokenOnce(): Promise<string> {
+  if (!tokenRequest) {
+    tokenRequest = requestToken('');
+    // Cleared on both paths, so a failure never wedges every later request.
+    void tokenRequest.catch(() => {}).finally(() => { tokenRequest = null; });
+  }
+  return tokenRequest;
+}
+
 /**
  * Google's token model has no silent renewal: obtaining a token opens a window.
  * Syncing must still be something users get for free rather than something they
@@ -437,7 +456,7 @@ async function getToken(interactive: boolean): Promise<string> {
   clearStoredToken();
   await initDriveClient();
   try {
-    const tok = await requestToken('');
+    const tok = await requestTokenOnce();
     autoPromptFailed = false;     // it worked — automatic paths may ask again
     return tok;
   } catch (e) {
@@ -457,7 +476,7 @@ async function driveRequest(url: string, options: RequestInit = {}, interactive 
     clearStoredToken();
     // A token rejected mid-flight needs a fresh one, which needs a gesture.
     if (!interactive) throw new Error(NEEDS_AUTH);
-    return doFetch(await requestToken(''));
+    return doFetch(await requestTokenOnce());
   }
   return resp;
 }
@@ -714,6 +733,57 @@ export async function manualSync(): Promise<void> {
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
   autoPromptFailed = false;
   await flushSync(true);
+}
+
+/** How early to renew. Long enough that an ordinary click almost certainly
+ *  lands inside the window during normal use, short enough not to throw away
+ *  most of a fresh token's hour. */
+const RENEW_AHEAD_MS = 10 * 60_000;
+
+/** A renewal offered from a real click was REFUSED (window closed, consent
+ *  denied). Distinct from `autoPromptFailed`, which mostly records a window the
+ *  browser BLOCKED for want of a gesture — that is not the user saying no, and
+ *  it must not disable the one path that has a gesture to offer. */
+let gestureRenewalRefused = false;
+
+/**
+ * Renews the access token from a click the user was making anyway.
+ *
+ * This is the whole answer to "why does it ask me to reconnect every hour?".
+ * A token lasts about an hour, and Google's token model can only mint a new one
+ * from a user activation — so the background paths (boot, the post-edit flush
+ * timer) ask at precisely the moment no gesture exists, the browser blocks the
+ * window, and the cloud goes yellow until someone clicks it. Nothing failed:
+ * the request was made at the wrong instant.
+ *
+ * Asking EARLY, during a pointerdown the user made for their own reasons, puts
+ * the request inside a genuine activation. With consent already granted and a
+ * live Google session, GIS closes its own window.
+ *
+ * Deliberately pointerdown only, not keydown: typing is not a decision, and a
+ * window opening mid-sentence would be worse than the problem it fixes.
+ */
+export function initDriveTokenRenewal(): void {
+  document.addEventListener('pointerdown', () => {
+    if (gestureRenewalRefused || tokenRequest) return;
+    if (!isDriveConnected() || conflictPending) return;
+    if (document.visibilityState !== 'visible') return;
+    // GIS not up yet (earliest boot): skip rather than await it. The wait could
+    // easily outlive the activation this whole mechanism depends on.
+    if (!tokenClient) return;
+    if (accessToken && Date.now() < tokenExpiresAt - RENEW_AHEAD_MS) return;
+
+    void requestTokenOnce().then(
+      () => {
+        gestureRenewalRefused = false;
+        autoPromptFailed = false;   // there is a token again; the timers may ask
+        // A flush that gave up for want of a token parked its state and left no
+        // timer behind it, so nothing would push until the next edit. Send it.
+        if (_state.pendingState && !_state.flushInProgress) void flushSync(true);
+      },
+      () => { gestureRenewalRefused = true; },
+    );
+  }, true);
 }
 
 export function initDriveVisibilitySync(): void {

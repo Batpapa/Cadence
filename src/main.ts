@@ -7,7 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
-import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
+import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
 import { clearSnapshotsForUser } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName } from './session/db';
 import { buildZip, audioExtension } from './services/zip';
@@ -367,6 +367,7 @@ function finishBoot(root: HTMLElement): void {
   applyTheme();
   applyZoom();
   initDriveVisibilitySync();
+  initDriveTokenRenewal();
 
   // isDriveConnected() is a plain localStorage read — checking it first avoids
   // ever loading the Google Identity script (and its request to Google) for the
