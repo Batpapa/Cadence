@@ -8,7 +8,7 @@ import { renderNotes } from '../components/fileViewer';
 import { AttachmentList, CardRefList, showCardPicker, cardToRef } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { findBacklinks, findSetsContaining } from '../services/cardRefService';
-import { CARD_TYPES, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
+import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
 import { cardTypeIcon } from '../components/cardTypeIcon';
 import { tunesetAutoName } from '../services/stateNormalise';
 import { defaultTuneRepeat } from '../services/abcService';
@@ -150,13 +150,32 @@ function showContextMenuError(message: string): void {
   showModal(t('card.contextMenu.errorTitle'), p, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
 }
 
-/** Sets or clears a card's type. Leaving 'tuneset' DISCARDS the tune list —
- *  see applyCardType, which owns that rule. */
+/** Sets or clears a card's type.
+ *
+ *  Leaving 'tuneset' DISCARDS the tune list (applyCardType owns that rule) and
+ *  the app has no undo, so the loss is NAMED before it happens — the same
+ *  promise the library's bulk version makes for every set it would empty. One
+ *  card or forty, retyping never costs a list without saying so first.
+ *
+ *  Asked only when something would really go: a set with no tunes yet, or a
+ *  type that does not move, has nothing to confirm, and a dialog over nothing
+ *  is how people learn to click through dialogs. */
 function setCardType(cardId: string, type: string): void {
-  void mutate(s => {
-    const c = s.cards[cardId];
-    if (c) applyCardType(c, type);
-  });
+  const apply = () => {
+    void mutate(s => {
+      const c = s.cards[cardId];
+      if (c) applyCardType(c, type);
+    });
+  };
+  const card  = appState.value.cards[cardId];
+  const tunes = card && isTuneset(card) && type !== CARD_TYPE_TUNESET ? card.tunes?.length ?? 0 : 0;
+  if (tunes === 0 || !card) { apply(); return; }
+  confirmModal(
+    t('card.type.confirmLoss.title'),
+    t(tunes === 1 ? 'card.type.confirmLoss.message' : 'card.type.confirmLoss.messagePlural', { name: card.name, count: tunes }),
+    t('card.type.confirmLoss.confirm'),
+    apply,
+  );
 }
 
 /** Re-reads a set from TheSession and applies its tune list back onto the
