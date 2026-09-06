@@ -8,7 +8,8 @@ import { renderNotes } from '../components/fileViewer';
 import { AttachmentList, CardRefList, showCardPicker, cardToRef } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { findBacklinks, findSetsContaining } from '../services/cardRefService';
-import { CARD_TYPES, CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
+import { CARD_TYPES, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
+import { cardTypeIcon } from '../components/cardTypeIcon';
 import { tunesetAutoName } from '../services/stateNormalise';
 import { defaultTuneRepeat } from '../services/abcService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
@@ -156,15 +157,6 @@ function setCardType(cardId: string, type: string): void {
     const c = s.cards[cardId];
     if (c) applyCardType(c, type);
   });
-}
-
-/** The glyph for a card type — kept here rather than in cardTypeService so
- *  that service stays free of any dependency on components. Unknown and
- *  absent types get nothing, matching their shared "no type" label. */
-function cardTypeIcon(type: string | undefined, size = 12) {
-  if (type === CARD_TYPE_TUNE)    return <TuneIcon size={size} />;
-  if (type === CARD_TYPE_TUNESET) return <TuneSetIcon size={size} />;
-  return null;
 }
 
 /** Re-reads a set from TheSession and applies its tune list back onto the

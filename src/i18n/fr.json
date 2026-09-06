@@ -272,6 +272,7 @@
   "library.sort.ascending": "Croissant",
   "library.sort.descending": "Décroissant",
   "library.filterDecks": "Paquets",
+  "library.filterTypes": "Types",
   "library.filterNoDecks": "Sans paquet",
   "library.search": "Rechercher des cartes…",
   "library.selected": "{count} sélectionné(s)",
