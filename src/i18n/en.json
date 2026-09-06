@@ -655,6 +655,7 @@
   "fileViewer.abc.instrument": "Instrument",
   "fileViewer.abc.prefs.title": "Playback preferences",
   "fileViewer.abc.prefs.speed": "Default speed",
+  "fileViewer.abc.prefs.includeRepeats": "Write out repeats in sets",
   "fileViewer.abc.instrument.default": "Default",
   "fileViewer.abc.instrument.fiddle": "Fiddle",
   "fileViewer.abc.instrument.whistle": "Tin whistle",

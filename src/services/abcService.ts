@@ -158,7 +158,18 @@ function safeLabel(text: string): string {
  *  standard way to name a section and is what makes the result readable.
  *
  *  Returns null when the set has nothing at all to show. */
-export function buildTunesetAbc(set: Card, cards: Record<string, Card>): string | null {
+/** How a set's fused score is written out, beyond the set itself.
+ *
+ *  `includeRepeats` defaults to FALSE, which is not the same as saying the
+ *  repeats do not exist: they stay on each tune, they still show as ×N in the
+ *  card view, they are simply not spelled out in the notation. A set of three
+ *  tunes played three times each is nine written-out tunes to read through,
+ *  and most people want the shape of the set, not the performance of it. */
+export interface TunesetAbcOptions {
+  includeRepeats?: boolean;
+}
+
+export function buildTunesetAbc(set: Card, cards: Record<string, Card>, opts?: TunesetAbcOptions): string | null {
   const refs: CardRef[] = set.tunes ?? [];
   if (refs.length === 0) return null;
 
@@ -184,7 +195,10 @@ export function buildTunesetAbc(set: Card, cards: Record<string, Card>): string 
   let curMeter = first.meter, curKey = first.key, curTempo = tempoOf(first);
 
   const parts: string[] = [];
-  for (const { label, block, repeat } of members) {
+  for (const { label, block, repeat: stored } of members) {
+    // One pass unless asked otherwise. Everything below reads `repeat`, so the
+    // choice is made once here rather than at each of its three uses.
+    const repeat = opts?.includeRepeats ? stored : 1;
     if (!block) {
       // A tune with no score keeps its PLACE: a labelled bar of silence, said
       // in words above the staff. Dropping it would silently shorten the set,
@@ -241,8 +255,8 @@ export function tunesetAbcFileName(setName: string): string {
   return `${safe || 'set'}.abc`;
 }
 
-export function tunesetAbcEntry(set: Card, cards: Record<string, Card>): FileEntry | null {
-  const abc = buildTunesetAbc(set, cards);
+export function tunesetAbcEntry(set: Card, cards: Record<string, Card>, opts?: TunesetAbcOptions): FileEntry | null {
+  const abc = buildTunesetAbc(set, cards, opts);
   return abc === null ? null : {
     name: TUNESET_ABC_NAME,
     mimeType: 'text/vnd.abc',

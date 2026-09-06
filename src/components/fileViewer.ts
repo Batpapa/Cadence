@@ -170,9 +170,31 @@ export function showAbcPrefsModal(onApply: () => void): void {
   // The select's own wrapper is `flex:1`, so it takes what the label leaves.
   instrSelect.style.maxWidth = '14rem';
 
+  // ── Write a set's repeats out ──
+  // The odd one out here: speed and instrument describe how a score SOUNDS,
+  // this one changes what a set's fused score CONTAINS. It sits here anyway
+  // because this is where a reader of that score is when the question occurs
+  // to them — and because a fused score is rebuilt on every read, so the
+  // change is visible the next time one is opened, with nothing stored to
+  // migrate.
+  const repeatsBox = document.createElement('input');
+  repeatsBox.type = 'checkbox';
+  repeatsBox.className = 'card-checkbox';
+  repeatsBox.checked = appState.value.abcIncludeRepeats === true;
+  // Re-primes like the instrument, and for a stronger reason: this one changes
+  // the NOTATION, so the score on screen would otherwise keep showing how it
+  // was built a moment ago. The viewer re-reads its source on apply — see
+  // PreviewModalOpts.reloadEntry.
+  repeatsBox.addEventListener('change', () => {
+    const on = repeatsBox.checked;
+    void mutate(st => { if (on) st.abcIncludeRepeats = true; else delete st.abcIncludeRepeats; })
+      .then(() => onApply());
+  });
+
   body.append(
     row('fileViewer.abc.prefs.speed', speedControl),
     row('fileViewer.abc.instrument', instrSelect),
+    row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
   );
 
   // No footer: nothing to confirm, so nothing to press. The ✕ is the only way
@@ -211,6 +233,14 @@ export interface PreviewModalOpts {
    *  preview showed on 2026-09-06. Every caller offering `onSetPreferredIndex`
    *  states it. */
   favoriteIndex?: number;
+  /** Re-reads the file, for an entry whose content is DERIVED and can change
+   *  while it is open. A set's fused score is rebuilt from its member tunes on
+   *  every read, so a preference that changes how it is built — writing the
+   *  repeats out, say — has to reach the score already on screen; the viewer
+   *  otherwise redraws the text it decoded when it opened.
+   *
+   *  Called on every preference re-apply. Return null to keep what is shown. */
+  reloadEntry?: () => FileEntry | null;
 }
 
 export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => void, opts?: PreviewModalOpts): void {
@@ -288,8 +318,10 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     body.classList.replace('items-center', 'items-start');
     let abcText = decodeAbc(entry);
 
-    const tunes = splitAbcTunes(abcText);
-    const versionCount = tunes.length;
+    // Reassignable, because a derived score can be rebuilt under the open
+    // viewer — see PreviewModalOpts.reloadEntry.
+    let tunes = splitAbcTunes(abcText);
+    let versionCount = tunes.length;
     let currentIndex = Math.max(0, Math.min(versionCount - 1, opts?.initialIndex ?? 0));
     let favoriteIndex = opts?.favoriteIndex;
     let currentMode: 'sheet' | 'text' = 'sheet';
@@ -734,7 +766,19 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
         const wasPlaying = !!synthControl?.isStarted;
         const at = synthControl?.percent ?? 0;
         selectedProgram = appState.value.abcInstrument;
-        renderTune(currentIndex);
+        // A derived score may have just been rebuilt differently under us.
+        const fresh = opts?.reloadEntry?.();
+        const freshText = fresh ? decodeAbc(fresh) : null;
+        if (freshText !== null && freshText !== abcText) {
+          abcText = freshText;
+          tunes = splitAbcTunes(abcText);
+          versionCount = tunes.length;
+          // goToVersion clamps the index, refreshes the nav label and the share
+          // link, and re-renders — everything that has to follow a rebuild.
+          goToVersion(currentIndex);
+        } else {
+          renderTune(currentIndex);
+        }
         void primed.then(() => {
           if (!synthControl) return;
           try {

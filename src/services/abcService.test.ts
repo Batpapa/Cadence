@@ -176,28 +176,51 @@ describe('parseAbcBlock', () => {
   });
 });
 
-describe('buildTunesetAbc — repeats', () => {
+// Repeats are OFF unless asked for. The counts still live on each tune — the
+// card view still shows ×N — they are simply not spelled out in the notation,
+// because a set of three tunes played three times each is nine written-out
+// tunes to read through.
+describe('buildTunesetAbc — repeats, off by default', () => {
+  it('writes each tune once however many passes it carries', () => {
+    const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat: 3 }]), lib(cooleys))!;
+    expect(abc.split('EBBA B2 EB|').length - 1).toBe(1);
+  });
+
+  it('leaves the label unnumbered, since there is one pass to number', () => {
+    const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat: 3 }]), lib(cooleys))!;
+    expect(abc).toContain("[P:Cooley's]");
+    expect(abc).not.toContain('1/3');
+  });
+
+  it('leaves the stored count alone — this is a rendering choice, not an edit', () => {
+    const s = set('Set', [{ ...ref(cooleys), repeat: 3 }]);
+    buildTunesetAbc(s, lib(cooleys));
+    expect(s.tunes![0]!.repeat).toBe(3);
+  });
+});
+
+describe('buildTunesetAbc — repeats, when asked for', () => {
   it('writes the music out once per pass, because nothing else is audible', () => {
     const s = set('Set', [{ ...ref(cooleys), repeat: 3 }]);
-    const abc = buildTunesetAbc(s, lib(cooleys))!;
+    const abc = buildTunesetAbc(s, lib(cooleys), { includeRepeats: true })!;
     expect(abc.split('EBBA B2 EB|').length - 1).toBe(3);
   });
 
   it('numbers the passes so a reader knows where they are', () => {
-    const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat: 3 }]), lib(cooleys))!;
+    const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat: 3 }]), lib(cooleys), { includeRepeats: true })!;
     expect(abc).toContain("[P:Cooley's 1/3]");
     expect(abc).toContain("[P:Cooley's 2/3]");
     expect(abc).toContain("[P:Cooley's 3/3]");
   });
 
   it('leaves a single pass unnumbered', () => {
-    const abc = buildTunesetAbc(set('Set', [ref(cooleys)]), lib(cooleys))!;
+    const abc = buildTunesetAbc(set('Set', [ref(cooleys)]), lib(cooleys), { includeRepeats: true })!;
     expect(abc).toContain("[P:Cooley's]");
     expect(abc).not.toContain('1/1');
   });
 
   it('restates a changed signature on the FIRST pass only', () => {
-    const abc = buildTunesetAbc(set('Set', [ref(cooleys), { ...ref(kesh), repeat: 2 }]), lib(cooleys, kesh))!;
+    const abc = buildTunesetAbc(set('Set', [ref(cooleys), { ...ref(kesh), repeat: 2 }]), lib(cooleys, kesh), { includeRepeats: true })!;
     expect(abc.split('[K:Gmaj]').length - 1).toBe(1);
     expect(abc.split('[M:6/8]').length - 1).toBe(1);
     expect(abc.split('[Q:3/8=120]').length - 1).toBe(1);
@@ -206,13 +229,13 @@ describe('buildTunesetAbc — repeats', () => {
 
   it('treats an absent, zero or negative count as one pass', () => {
     for (const repeat of [undefined, 0, -4]) {
-      const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat }]), lib(cooleys))!;
+      const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat }]), lib(cooleys), { includeRepeats: true })!;
       expect(abc.split('EBBA B2 EB|').length - 1).toBe(1);
     }
   });
 
   it('caps an absurd count rather than generating an unusable score', () => {
-    const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat: 999 }]), lib(cooleys))!;
+    const abc = buildTunesetAbc(set('Set', [{ ...ref(cooleys), repeat: 999 }]), lib(cooleys), { includeRepeats: true })!;
     expect(abc.split('EBBA B2 EB|').length - 1).toBe(MAX_REPEAT);
   });
 
@@ -221,6 +244,7 @@ describe('buildTunesetAbc — repeats', () => {
     const abc = buildTunesetAbc(
       set('Set', [ref(cooleys), { ...ref(scoreless), repeat: 4 }]),
       lib(cooleys, scoreless),
+      { includeRepeats: true },
     )!;
     expect(abc.split('"^no score"').length - 1).toBe(1);
   });
