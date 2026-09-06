@@ -1,8 +1,99 @@
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const CopyPlugin = require('copy-webpack-plugin');
+
+const TEMPLATE = './src/index.html';
+
+const CSP_PLACEHOLDER = '%CSP%';
+
+/**
+ * CSP hashes for every inline script in the FINAL html.
+ *
+ * The theme bootstrap has to run before the first paint (it paints the
+ * background so a light-theme user does not get a dark flash), so it cannot
+ * move into the bundle, and an inline script needs an explicit hash once
+ * 'unsafe-inline' is gone.
+ *
+ * Hashing the emitted markup rather than the template is not a detail: in
+ * production html-webpack-plugin minifies the document and strips the
+ * whitespace around inline script bodies, so a hash taken from src/index.html
+ * does not match what the browser ends up parsing — which would block the
+ * script and leave every user on an unstyled flash. Measured, not assumed.
+ *
+ * The HTML parser also normalises CRLF to LF before the script text reaches the
+ * DOM, so hash the LF form — otherwise this breaks on a Windows checkout only.
+ */
+function inlineScriptHashes(html) {
+  return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)]
+    .map(m => `'sha256-${crypto.createHash('sha256').update(m[1].replace(/\r\n/g, '\n'), 'utf8').digest('base64')}'`);
+}
+
+/**
+ * Deliberately narrow: no `default-src`, so connect/img/media/frame/font/style
+ * stay exactly as permissive as they are today. This is a second line of
+ * defence behind the sanitiser in markdown.ts, not a rewrite of the app's
+ * network policy — and a wrong `connect-src` would break Drive sync or the
+ * tune imports for real users, which is a far worse outcome than the narrower
+ * policy. The three directives here are the ones that actually blunt an
+ * injected payload:
+ *   - script-src without 'unsafe-inline' kills inline event handlers
+ *     (`<img src=x onerror=…>`, the realistic vector through imported notes);
+ *   - object-src 'none' kills <object>/<embed> payloads;
+ *   - base-uri 'self' stops an injected <base> from redirecting every
+ *     relative URL, including the bundle.
+ *
+ * `blob:` is required by the PCM AudioWorklet, which loads its processor from
+ * an object URL (session/audio/pcmWorklet.ts). It is a real limit on what this
+ * policy can promise — code that can already run could still execute a blob —
+ * so the sanitiser, not this, is what closes the hole.
+ *
+ * 'wasm-unsafe-eval' is required by the FolkFriend and web-demuxer WASM
+ * modules; without it the Sessions feature stops working entirely.
+ *
+ * Dev adds 'unsafe-eval' because devtool: 'eval-source-map' evaluates every
+ * module. The policy is otherwise identical in dev on purpose: a CSP that only
+ * exists in production would first be tested by users.
+ */
+function contentSecurityPolicy(html, isDev) {
+  const script = [
+    "'self'",
+    "'wasm-unsafe-eval'",
+    'blob:',
+    ...inlineScriptHashes(html),
+    // Google Identity Services: the gsi/client script itself, plus the two
+    // Google CDNs it is documented to pull from. Generous on purpose — a
+    // blocked auth script means users silently lose Drive sync.
+    'https://accounts.google.com',
+    'https://apis.google.com',
+    'https://www.gstatic.com',
+    ...(isDev ? ["'unsafe-eval'"] : []),
+  ].join(' ');
+  return [`script-src ${script}`, "object-src 'none'", "base-uri 'self'"].join('; ');
+}
+
+/** Substitutes the real policy into index.html once the document is final —
+ *  after html-webpack-plugin has injected the bundle tags and minified, which
+ *  is the only point where the inline scripts can be hashed correctly. Throws
+ *  rather than shipping the placeholder: a page whose CSP never got filled in
+ *  is a page with no policy at all, and that should fail the build loudly. */
+class CspPlugin {
+  constructor(isDev) { this.isDev = isDev; }
+  apply(compiler) {
+    compiler.hooks.compilation.tap('CspPlugin', (compilation) => {
+      HtmlWebpackPlugin.getHooks(compilation).beforeEmit.tapAsync('CspPlugin', (data, cb) => {
+        if (!data.html.includes(CSP_PLACEHOLDER)) {
+          cb(new Error(`index.html: ${CSP_PLACEHOLDER} not found — the Content-Security-Policy meta would ship empty`));
+          return;
+        }
+        data.html = data.html.replace(CSP_PLACEHOLDER, contentSecurityPolicy(data.html, this.isDev));
+        cb(null, data);
+      });
+    });
+  }
+}
 
 // Runs ts-prune after compilation and injects unused-export lines as webpack errors.
 // Skipped in dev mode (too slow for watch). Lines marked "(used in module)" are filtered
@@ -60,7 +151,8 @@ module.exports = (env, argv) => {
       ],
     },
     plugins: [
-      new HtmlWebpackPlugin({ template: './src/index.html' }),
+      new HtmlWebpackPlugin({ template: TEMPLATE }),
+      new CspPlugin(isDev),
       ...(!isDev ? [new TsPrunePlugin()] : []),
       ...(!isDev ? [new MiniCssExtractPlugin({ filename: 'styles.[contenthash].css' })] : []),
       ...(!isDev ? [new CopyPlugin({

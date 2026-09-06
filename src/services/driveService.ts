@@ -686,11 +686,13 @@ async function flushSync(interactive = false): Promise<void> {
  *  every 30 seconds. */
 const autoMayPrompt = () => !autoPromptFailed;
 
-// TODO(2026-08-31): two tabs of the same browser still diverge silently until
-// one of them pushes — the divergence now SURFACES as a conflict instead of
-// being silently "resolved" by wall-clock order, but it still happens. A
+// KNOWN LIMITATION, not a plan (was a TODO until 2026-09-06): two tabs of the
+// same browser still diverge silently until one of them pushes. The divergence
+// SURFACES as a conflict rather than being "resolved" by wall-clock order, so
+// nothing is lost quietly — it is a question asked, not data dropped. A
 // BroadcastChannel "state changed — reload from IndexedDB" between tabs would
-// remove it at the source. Deliberately postponed.
+// remove it at the source; deliberately not built, and taken off the backlog
+// on 2026-09-06 (user's call) until someone actually reports it.
 export function syncToCloud(state: AppState): void {
   const now = Date.now();
   localStorage.setItem(lsLocalTs(), String(now));

@@ -2,6 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Filled in by CspPlugin in webpack.config.js, which hashes the theme
+         bootstrap below from the FINAL document (minification changes it). The
+         meta has to sit above that script: a meta CSP only governs what the
+         parser reaches after it. Editing the script needs no action here — the
+         hash is recomputed at every build, and a missing placeholder fails it. -->
+    <meta http-equiv="Content-Security-Policy" content="%CSP%" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
