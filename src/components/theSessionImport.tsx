@@ -19,7 +19,8 @@ import { ensureTuneNameIndex, searchLocalTuneIndex } from '../services/tuneNameI
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
-import { showDeckPickerPopover, deckLinkIcon } from './deckSelector';
+import { showDeckChoiceModal, hasAnyDeck } from './deckSelector';
+import { anyModalOpen } from './modal';
 import { AI_IMPORT_PROMPT } from './aiImportPrompt';
 import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '../services/irishTuneInfoService';
 import { CheckIcon } from './icons';
@@ -294,7 +295,7 @@ export interface TheSessionBodyProps {
   ctx: AppContext;
   getTargetDeckIds?: () => Set<string> | undefined;
   onNavigateToCard?: () => void;
-  withDeckChoice?: (onReady: () => void) => void;
+  withDeckChoice?: (onReady: () => void, onCancel?: () => void) => void;
   /** Opens the tune tab with this already in its lookup field, as if typed.
    *  One id previews that tune; several joined with ';' arm the batch — the
    *  field's own parser decides, so a caller never has to know which. */
@@ -318,12 +319,22 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
   };
 
   // ── Shared: import a single tune ──────────────────────────────────────────
+  // Fetch, THEN ask where it goes, THEN write. The order matters twice over: a
+  // lookup that fails or returns nothing never gets to ask a pointless
+  // question, and dismissing the deck modal imports nothing at all.
   const importTune = async (tuneId: number, onSuccess: () => void, setBusy: (b: boolean) => void) => {
     setBusy(true);
     setStatus(t('theSession.status.fetching'));
+    let tune;
     try {
-      const tune = await fetchTuneById(tuneId);
-      const existing = findByExternalId(`thesession:${tune.id}`, appState.value.cards);
+      tune = await fetchTuneById(tuneId);
+    } catch (e) {
+      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setBusy(false);
+      return;
+    }
+    const existing = findByExternalId(`thesession:${tune.id}`, appState.value.cards);
+    withDeckChoice(() => { void (async () => {
       if (existing) {
         await mutate(s => {
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
@@ -345,10 +356,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
         setImportedStatus(card.id, card.name);
         onSuccess();
       }
-    } catch (e) {
-      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
-      setBusy(false);
-    }
+    })(); }, () => { setStatus(''); setBusy(false); });
   };
 
   /** Shared: import a list of tune IDs (e.g. pasted "1;5;97"), same shape as
@@ -359,10 +367,25 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
     onDone: () => void,
   ): Promise<void> => {
     setStatus(t('theSession.status.fetching'));
+    let fetched;
     try {
       const existingCardIdByTuneId = buildExistingByTuneId();
       const { tunes, skippedIds, blocked } = await fetchTunesByIds(ids, onProgress, id => existingCardIdByTuneId.has(id));
-      const newCards = tunes.map(tune => tuneResultToCard(tune));
+      fetched = { newCards: tunes.map(tune => tuneResultToCard(tune)), skippedIds, blocked, existingCardIdByTuneId };
+    } catch (e) {
+      setStatus(tuneFetchStatus(e, 'theSession.error'));
+      onDone();
+      return;
+    }
+    const { newCards, skippedIds, blocked, existingCardIdByTuneId } = fetched;
+    // The whole batch came back empty (every id blocked or unknown): there is
+    // no card to place, so the deck question would have no subject.
+    if (newCards.length === 0 && skippedIds.length === 0) {
+      setStatus(batchSummary(0, 0, blocked));
+      onDone();
+      return;
+    }
+    withDeckChoice(() => { void (async () => {
       await mutate(s => {
         for (const card of newCards) { s.cards[card.id] = card; }
         const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
@@ -374,11 +397,8 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
         }
       });
       setStatus(batchSummary(newCards.length, skippedIds.length, blocked));
-    } catch (e) {
-      setStatus(tuneFetchStatus(e, 'theSession.error'));
-    } finally {
       onDone();
-    }
+    })(); }, () => { setStatus(''); onDone(); });
   };
 
   return (
@@ -392,7 +412,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
 
       <div class="space-y-3">
         {tab === 'tune' && (
-          <TuneTab withDeckChoice={withDeckChoice} setStatus={setStatus} importTune={importTune} importIds={importIds} initialQuery={initialQuery} />
+          <TuneTab setStatus={setStatus} importTune={importTune} importIds={importIds} initialQuery={initialQuery} />
         )}
         {tab === 'member' && (
           <MemberTab getTargetDeckIds={getTargetDeckIds} withDeckChoice={withDeckChoice} setStatus={setStatus} />
@@ -412,8 +432,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
 
 // ── Tab: Tune (ID, name search, or a pasted "1;5;97" ID list) ─────────────────
 
-function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuery }: {
-  withDeckChoice: (onReady: () => void) => void;
+function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   setStatus: (c: ComponentChild) => void;
   importTune: (tuneId: number, onSuccess: () => void, setBusy: (b: boolean) => void) => Promise<void>;
   importIds: (ids: number[], onProgress: (loaded: number, total: number) => void, onDone: () => void) => Promise<void>;
@@ -458,18 +477,16 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuer
   const doImport = () => {
     if (pendingIds) {
       const ids = pendingIds;
-      withDeckChoice(() => {
-        setBusy(true);
-        setBatchBusy(true);
-        setProgress(0);
-        void importIds(ids, (loaded, total) => { setProgress(Math.round((loaded / total) * 100)); setStatus(t('theSession.status.fetchingTunes', { loaded, total })); }, () => {
-          setBusy(false); setBatchBusy(false); setProgress(null); setValue(''); clearResult();
-        });
+      setBusy(true);
+      setBatchBusy(true);
+      setProgress(0);
+      void importIds(ids, (loaded, total) => { setProgress(Math.round((loaded / total) * 100)); setStatus(t('theSession.status.fetchingTunes', { loaded, total })); }, () => {
+        setBusy(false); setBatchBusy(false); setProgress(null); setValue(''); clearResult();
       });
       return;
     }
     if (pendingId === null) return;
-    withDeckChoice(() => { void importTune(pendingId, () => { setValue(''); clearResult(); }, setBusy); });
+    void importTune(pendingId, () => { setValue(''); clearResult(); }, setBusy);
   };
 
   const onInputChange = (val: string) => {
@@ -608,7 +625,7 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuer
 
 function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   getTargetDeckIds?: () => Set<string> | undefined;
-  withDeckChoice: (onReady: () => void) => void;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
   setStatus: (c: ComponentChild) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -668,23 +685,33 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         setStatus(phase === 'pages' ? t('theSession.status.collectingIds', { loaded, total }) : t('theSession.status.fetchingTunes', { loaded, total }));
       }, id => existingCardIdByTuneId.has(id));
       const newCards = tunes.map(tune => tuneResultToCard(tune));
-      await mutate(s => {
-        for (const card of newCards) { s.cards[card.id] = card; }
-        // Already-owned tunes were skipped above (no re-fetch), but they
-        // still belong in the target deck if they were missing there.
-        const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
-        for (const deckId of (getTargetDeckIds?.() ?? [])) {
-          const deck = s.decks[deckId]; if (!deck) continue;
-          for (const cardId of linkIds) {
-            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+      // The tunebook yielded nothing to file — asking for a destination would
+      // be a question about no cards at all.
+      if (newCards.length === 0 && skippedIds.length === 0) {
+        setProgress(100);
+        setStatus(batchSummary(0, 0, blocked));
+        setBusy(false);
+        return;
+      }
+      withDeckChoice(() => { void (async () => {
+        await mutate(s => {
+          for (const card of newCards) { s.cards[card.id] = card; }
+          // Already-owned tunes were skipped above (no re-fetch), but they
+          // still belong in the chosen decks if they were missing there.
+          const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
+          for (const deckId of (getTargetDeckIds?.() ?? [])) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            for (const cardId of linkIds) {
+              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+            }
           }
-        }
-      });
-      setProgress(100);
-      setStatus(batchSummary(newCards.length, skippedIds.length, blocked));
+        });
+        setProgress(100);
+        setStatus(batchSummary(newCards.length, skippedIds.length, blocked));
+        setBusy(false);
+      })(); }, () => { setStatus(''); setProgress(null); setBusy(false); });
     } catch (e) {
       setStatus(tuneFetchStatus(e, 'theSession.error'));
-    } finally {
       setBusy(false);
     }
   };
@@ -747,7 +774,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         <button
           class="btn-primary text-xs shrink-0"
           disabled={busy || selectedMemberIdRef.current === null}
-          onClick={() => withDeckChoice(() => { void doImportAll(); })}
+          onClick={() => void doImportAll()}
         >
           {t('theSession.member.importAll')}
         </button>
@@ -784,7 +811,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
 function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   getTargetDeckIds?: () => Set<string> | undefined;
-  withDeckChoice: (onReady: () => void) => void;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
   setStatus: (c: ComponentChild) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -866,27 +893,37 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         }
       }
 
-      await mutate(s => {
-        for (const card of newCards) s.cards[card.id] = card;
-        // Bookmarks ARE tunes, so the deck choice applies to them directly —
-        // unlike a set import, where the deck belongs to the set card and the
-        // tunes it pulls in land unfiled.
-        const linkIds = [
-          ...newCards.map(c => c.id),
-          ...bookmarks.map(b => existingByTuneId.get(b.tuneId)).filter((id): id is string => !!id),
-        ];
-        for (const deckId of (getTargetDeckIds?.() ?? [])) {
-          const deck = s.decks[deckId]; if (!deck) continue;
-          for (const cardId of linkIds) {
-            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+      // Everything is fetched by now, so the deck question is asked over a
+      // known set of cards — and skipped entirely when there is none.
+      if (newCards.length === 0 && skipped === 0) {
+        setProgress(100);
+        setStatus(batchSummary(0, 0, blocked));
+        setBusy(false);
+        return;
+      }
+      withDeckChoice(() => { void (async () => {
+        await mutate(s => {
+          for (const card of newCards) s.cards[card.id] = card;
+          // Bookmarks ARE tunes, so the deck choice applies to them directly —
+          // unlike a set import, where the deck belongs to the set card and the
+          // tunes it pulls in land unfiled.
+          const linkIds = [
+            ...newCards.map(c => c.id),
+            ...bookmarks.map(b => existingByTuneId.get(b.tuneId)).filter((id): id is string => !!id),
+          ];
+          for (const deckId of (getTargetDeckIds?.() ?? [])) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            for (const cardId of linkIds) {
+              if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+            }
           }
-        }
-      });
-      setProgress(100);
-      setStatus(batchSummary(newCards.length, skipped, blocked));
+        });
+        setProgress(100);
+        setStatus(batchSummary(newCards.length, skipped, blocked));
+        setBusy(false);
+      })(); }, () => { setStatus(''); setProgress(null); setBusy(false); });
     } catch (e) {
       setStatus(e instanceof MemberUnavailableError ? memberErrorStatus(e) : tuneFetchStatus(e, 'theSession.error'));
-    } finally {
       setBusy(false);
     }
   };
@@ -942,7 +979,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         <button
           class="btn-primary text-xs shrink-0"
           disabled={busy || selectedMemberIdRef.current === null}
-          onClick={() => withDeckChoice(() => { void doImportAll(); })}
+          onClick={() => void doImportAll()}
         >
           {t('theSession.member.importAll')}
         </button>
@@ -973,7 +1010,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
 function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   getTargetDeckIds?: () => Set<string> | undefined;
-  withDeckChoice: (onReady: () => void) => void;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
   setStatus: (c: ComponentChild) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1022,16 +1059,36 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     if (selectedMemberIdRef.current === null) return;
     const memberId = selectedMemberIdRef.current;
     setBusy(true); setProgress(0);
-    let created = 0, imported = 0, skipped = 0;
+    let sets;
     try {
       // Phase one: the listing, which for a prolific member runs to dozens of
       // pages (539 sets over 54 requests for member 1) — hence a progress bar
       // rather than a silent wait.
-      const sets = await fetchMemberSets(memberId, (loaded, total) => {
+      sets = await fetchMemberSets(memberId, (loaded, total) => {
         setProgress(Math.round((loaded / total) * 50));
         setStatus(t('theSession.sets.loading', { loaded, total }));
       });
+    } catch (e) {
+      setStatus(tuneFetchStatus(e, 'theSession.error'));
+      setBusy(false);
+      return;
+    }
+    if (sets.length === 0) {
+      setProgress(100);
+      setStatus(t('theSession.sets.done', { sets: 0, tunes: 0 }));
+      setBusy(false);
+      return;
+    }
+    // Unlike the other batches, the import below writes AS IT GOES — each set
+    // is committed before the next is fetched, deliberately, so a long import
+    // is never all-or-nothing. The deck answer is therefore taken here, once
+    // the listing has proved there is something to file.
+    withDeckChoice(() => { void importSets(sets!); }, () => { setStatus(''); setProgress(null); setBusy(false); });
+  };
 
+  const importSets = async (sets: Awaited<ReturnType<typeof fetchMemberSets>>) => {
+    let created = 0, imported = 0, skipped = 0;
+    try {
       // Phase two: one set at a time.
       for (let i = 0; i < sets.length; i++) {
         const set = sets[i]!;
@@ -1136,7 +1193,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         <button
           class="btn-primary text-xs shrink-0"
           disabled={busy || selectedMemberIdRef.current === null}
-          onClick={() => withDeckChoice(() => { void doImportAll(); })}
+          onClick={() => void doImportAll()}
         >
           {t('theSession.sets.importAll')}
         </button>
@@ -1206,9 +1263,9 @@ function RootStep({ navigate }: { navigate: (s: Step) => void }) {
   );
 }
 
-function CreateStep({ withDeckChoice, ensureSelectedDeckIds, onOpenCard }: {
-  withDeckChoice: (onReady: () => void) => void;
-  ensureSelectedDeckIds: () => Set<string>;
+function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
+  getChosenDeckIds: () => Set<string>;
   onOpenCard: (cardId: string) => void;
 }) {
   const [name, setName] = useState('');
@@ -1228,7 +1285,7 @@ function CreateStep({ withDeckChoice, ensureSelectedDeckIds, onOpenCard }: {
       const guid = generateId();
       createdId = id;
       s.cards[id] = { id, guid, name: trimmed, defaultImportance: 1, tags: [], content: { notes: '', attachments: [] } };
-      for (const deckId of ensureSelectedDeckIds()) { // doCreate only ever runs via withDeckChoice, which guarantees this
+      for (const deckId of getChosenDeckIds()) { // doCreate only ever runs via withDeckChoice, which guarantees this
         const deck = s.decks[deckId];
         if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
       }
@@ -1240,6 +1297,14 @@ function CreateStep({ withDeckChoice, ensureSelectedDeckIds, onOpenCard }: {
         {t('newCard.create.done', { name: '\x00' }).split('\x00')[1]}
       </>,
     );
+    // `busy` was set on the way in and never cleared, so the button stayed
+    // disabled for good and this step could only ever create ONE card per
+    // opening (bug found in a browser on 2026-09-06, older than the deck work).
+    // It matters more now: pinning a deck exists precisely so that the second,
+    // third and fourth card cost fewer clicks than the first.
+    setBusy(false);
+    setName('');
+    inputRef.current?.focus();
   };
 
   return (
@@ -1282,21 +1347,32 @@ function JsonStep({ navigate }: { navigate: (s: Step) => void }) {
   );
 }
 
-function JsonFileStep({ ensureSelectedDeckIds, withDeckChoice }: {
-  ensureSelectedDeckIds: () => Set<string>;
-  withDeckChoice: (onReady: () => void) => void;
+function JsonFileStep({ getChosenDeckIds, withDeckChoice }: {
+  getChosenDeckIds: () => Set<string>;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
 
   const doImportFile = async (file: File) => {
     setBusy(true); setStatus(t('newCard.import.importing'));
+    let cards;
     try {
-      const cards = await parseCardPackage(file);
-      setStatus(await importCardPackage(cards, ensureSelectedDeckIds()));
+      cards = await parseCardPackage(file);
     } catch (e) {
       setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
-    } finally { setBusy(false); }
+      setBusy(false);
+      return;
+    }
+    if (cards.length === 0) { setStatus(t('newCard.import.empty')); setBusy(false); return; }
+    withDeckChoice(
+      () => { void (async () => {
+        try { setStatus(await importCardPackage(cards, getChosenDeckIds())); }
+        catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        finally { setBusy(false); }
+      })(); },
+      () => { setStatus(''); setBusy(false); },
+    );
   };
 
   return (
@@ -1308,7 +1384,7 @@ function JsonFileStep({ ensureSelectedDeckIds, withDeckChoice }: {
           const fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.cdc';
           fileInp.onchange = () => {
             const file = fileInp.files?.[0]; if (!file) return;
-            withDeckChoice(() => { void doImportFile(file); });
+            void doImportFile(file);
           };
           fileInp.click();
         }}
@@ -1320,9 +1396,9 @@ function JsonFileStep({ ensureSelectedDeckIds, withDeckChoice }: {
   );
 }
 
-function ShareStep({ ensureSelectedDeckIds, withDeckChoice }: {
-  ensureSelectedDeckIds: () => Set<string>;
-  withDeckChoice: (onReady: () => void) => void;
+function ShareStep({ getChosenDeckIds, withDeckChoice }: {
+  getChosenDeckIds: () => Set<string>;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
 }) {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1335,14 +1411,25 @@ function ShareStep({ ensureSelectedDeckIds, withDeckChoice }: {
     const trimmed = key.trim();
     if (trimmed.length !== 6) return;
     setBusy(true); setStatus(t('newCard.import.importing'));
+    let cards;
     try {
       const text = await downloadShare(trimmed);
       const file = new File([text], `share-${trimmed}.cdc`, { type: 'application/octet-stream' });
-      const cards = await parseCardPackage(file);
-      setStatus(await importCardPackage(cards, ensureSelectedDeckIds()));
+      cards = await parseCardPackage(file);
     } catch (e) {
       setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
-    } finally { setBusy(false); }
+      setBusy(false);
+      return;
+    }
+    if (cards.length === 0) { setStatus(t('newCard.import.empty')); setBusy(false); return; }
+    withDeckChoice(
+      () => { void (async () => {
+        try { setStatus(await importCardPackage(cards, getChosenDeckIds())); }
+        catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        finally { setBusy(false); }
+      })(); },
+      () => { setStatus(''); setBusy(false); },
+    );
   };
 
   return (
@@ -1356,9 +1443,9 @@ function ShareStep({ ensureSelectedDeckIds, withDeckChoice }: {
           maxLength={6}
           disabled={busy}
           onInput={setKey}
-          onKeyDown={(e) => { if (e.key === 'Enter') withDeckChoice(() => { void doImport(); }); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') void doImport(); }}
         />
-        <button class="btn-primary text-xs shrink-0" disabled={busy || key.trim().length !== 6} onClick={() => withDeckChoice(() => { void doImport(); })}>
+        <button class="btn-primary text-xs shrink-0" disabled={busy || key.trim().length !== 6} onClick={() => void doImport()}>
           {t('newCard.share.importBtn')}
         </button>
       </div>
@@ -1367,9 +1454,9 @@ function ShareStep({ ensureSelectedDeckIds, withDeckChoice }: {
   );
 }
 
-function AiStep({ ensureSelectedDeckIds, withDeckChoice }: {
-  ensureSelectedDeckIds: () => Set<string>;
-  withDeckChoice: (onReady: () => void) => void;
+function AiStep({ getChosenDeckIds, withDeckChoice }: {
+  getChosenDeckIds: () => Set<string>;
+  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
 }) {
   const [pasted, setPasted] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1391,10 +1478,19 @@ function AiStep({ ensureSelectedDeckIds, withDeckChoice }: {
         if (toHydrate.length > 1) setStatus(t('theSession.status.fetchingTunes', { loaded: i, total: toHydrate.length }));
         hydrated.push(await hydrateExternalCard(toHydrate[i]!));
       }
-      setStatus(await importCardPackage(hydrated, ensureSelectedDeckIds()));
+      if (hydrated.length === 0) { setStatus(t('newCard.import.empty')); setBusy(false); return; }
+      withDeckChoice(
+        () => { void (async () => {
+          try { setStatus(await importCardPackage(hydrated, getChosenDeckIds())); }
+          catch (e) { setStatus(tuneFetchStatus(e, 'theSession.error')); }
+          finally { setBusy(false); }
+        })(); },
+        () => { setStatus(''); setBusy(false); },
+      );
     } catch (e) {
       setStatus(tuneFetchStatus(e, 'theSession.error'));
-    } finally { setBusy(false); }
+      setBusy(false);
+    }
   };
 
   return (
@@ -1418,7 +1514,7 @@ function AiStep({ ensureSelectedDeckIds, withDeckChoice }: {
         value={pasted}
         onInput={(e) => setPasted((e.target as HTMLTextAreaElement).value)}
       />
-      <button class="btn-primary w-full text-sm" disabled={busy || !pasted.trim()} onClick={() => withDeckChoice(() => { void doImportPasted(); })}>
+      <button class="btn-primary w-full text-sm" disabled={busy || !pasted.trim()} onClick={() => void doImportPasted()}>
         {t('newCard.ai.pasteBtn')}
       </button>
       <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
@@ -1443,36 +1539,36 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
   // A preset skips the menu entirely: the user did not come here to choose a
   // source, they came to repair one precise reference.
   const [step, setStep] = useState<Step>(preset?.source ?? 'root');
-  const selectedDeckIdsRef = useRef<Set<string> | undefined>(initialDeckIds ? new Set(initialDeckIds) : undefined);
-  const deckSelectorOpenRef = useRef(false);
-  const [, bump] = useState(0);
+  // Pins live in this modal and die with it, and the decks the last confirmed
+  // choice named are what the tabs below read. The header button that used to
+  // set a destination once for the whole modal is gone (2026-09-06): the
+  // question is now asked at each add, where the user is looking.
+  const pinnedDeckIdsRef = useRef<Set<string>>(new Set());
+  const chosenDeckIdsRef = useRef<Set<string>>(new Set(initialDeckIds ?? []));
 
-  const ensureSelectedDeckIds = (): Set<string> => {
-    if (!selectedDeckIdsRef.current) selectedDeckIdsRef.current = new Set();
-    return selectedDeckIdsRef.current;
-  };
-
-  const showDeckSelector = () => {
-    deckSelectorOpenRef.current = true;
-    const ids = ensureSelectedDeckIds();
-    bump(x => x + 1);
-    showDeckPickerPopover(ids, () => bump(x => x + 1), () => { deckSelectorOpenRef.current = false; });
-  };
-
-  /** Gate for every creation/import trigger: the first one ever clicked
-   *  forces a deliberate deck choice (or explicit "none") before anything is
-   *  created — `onReady` runs immediately if already chosen, else once the
-   *  forced picker closes (no second click needed). */
-  const withDeckChoice = (onReady: () => void): void => {
-    if (selectedDeckIdsRef.current !== undefined) { onReady(); return; }
-    deckSelectorOpenRef.current = true;
-    const ids = ensureSelectedDeckIds();
-    bump(x => x + 1);
-    showDeckPickerPopover(ids, () => bump(x => x + 1), () => { deckSelectorOpenRef.current = false; onReady(); });
+  /** Gate for every creation/import trigger — a single tune or a whole batch,
+   *  which is one "add" either way. `onReady` runs ONLY on confirm: dismissing
+   *  the modal cancels the import itself, not just the deck choice, and
+   *  `onCancel` is how the caller lets go of the work it already did. With no
+   *  deck in the library there is nothing to ask, so it runs straight through.
+   *
+   *  Callers fetch BEFORE calling this, and skip it entirely when the fetch came
+   *  back empty: choosing a destination for zero cards asks a question whose
+   *  answer cannot matter. */
+  const withDeckChoice = (onReady: () => void, onCancel?: () => void): void => {
+    if (!hasAnyDeck()) { chosenDeckIdsRef.current = new Set(); onReady(); return; }
+    showDeckChoiceModal({
+      pinned: pinnedDeckIdsRef.current,
+      // Opened from a deck view: that deck is the context, so it starts ticked
+      // every time — ticked, not pinned, and free to be unticked.
+      preTicked: initialDeckIds ?? [],
+      onConfirm: (deckIds) => { chosenDeckIdsRef.current = new Set(deckIds); onReady(); },
+      onDismiss: onCancel,
+    });
   };
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !deckSelectorOpenRef.current) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !anyModalOpen()) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
     // eslint-disable-next-line
@@ -1491,9 +1587,6 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
   };
 
   const onOpenCard = (cardId: string) => { ctx.navigate({ view: 'card', cardId }); onClose(); };
-
-  const ids = selectedDeckIdsRef.current;
-  const deckSuffix = ids === undefined ? ' (?)' : ids.size > 0 ? ` (${ids.size})` : '';
 
   const mouseDownOnOverlay = useRef(false);
 
@@ -1515,28 +1608,20 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
             <h2 class="text-sm font-semibold text-primary truncate">{TITLES[step]}</h2>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <button
-              class={`inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${
-                ids === undefined ? 'text-warn hover:text-primary' : ids.size > 0 ? 'text-accent' : 'text-dim hover:text-primary'
-              }`}
-              title={t('newCard.selectDecks')}
-              dangerouslySetInnerHTML={{ __html: `${deckLinkIcon}${deckSuffix}` }}
-              onClick={showDeckSelector}
-            />
             <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0" onClick={onClose}>✕</button>
           </div>
         </div>
 
         <div class="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
           {step === 'root' && <RootStep navigate={setStep} />}
-          {step === 'create' && <CreateStep withDeckChoice={withDeckChoice} ensureSelectedDeckIds={ensureSelectedDeckIds} onOpenCard={onOpenCard} />}
+          {step === 'create' && <CreateStep withDeckChoice={withDeckChoice} getChosenDeckIds={() => chosenDeckIdsRef.current} onOpenCard={onOpenCard} />}
           {step === 'import' && <ImportStep navigate={setStep} />}
-          {step === 'thesession' && <TheSessionBody ctx={ctx} getTargetDeckIds={() => selectedDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} initialQuery={preset?.source === 'thesession' ? preset.query : undefined} />}
-          {step === 'irishtuneinfo' && <IrishTuneInfoBody ctx={ctx} getTargetDeckIds={() => selectedDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} initialQuery={preset?.source === 'irishtuneinfo' ? preset.query : undefined} />}
+          {step === 'thesession' && <TheSessionBody ctx={ctx} getTargetDeckIds={() => chosenDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} initialQuery={preset?.source === 'thesession' ? preset.query : undefined} />}
+          {step === 'irishtuneinfo' && <IrishTuneInfoBody ctx={ctx} getTargetDeckIds={() => chosenDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} initialQuery={preset?.source === 'irishtuneinfo' ? preset.query : undefined} />}
           {step === 'json' && <JsonStep navigate={setStep} />}
-          {step === 'json-file' && <JsonFileStep ensureSelectedDeckIds={ensureSelectedDeckIds} withDeckChoice={withDeckChoice} />}
-          {step === 'share' && <ShareStep ensureSelectedDeckIds={ensureSelectedDeckIds} withDeckChoice={withDeckChoice} />}
-          {step === 'ai' && <AiStep ensureSelectedDeckIds={ensureSelectedDeckIds} withDeckChoice={withDeckChoice} />}
+          {step === 'json-file' && <JsonFileStep getChosenDeckIds={() => chosenDeckIdsRef.current} withDeckChoice={withDeckChoice} />}
+          {step === 'share' && <ShareStep getChosenDeckIds={() => chosenDeckIdsRef.current} withDeckChoice={withDeckChoice} />}
+          {step === 'ai' && <AiStep getChosenDeckIds={() => chosenDeckIdsRef.current} withDeckChoice={withDeckChoice} />}
         </div>
       </div>
     </div>

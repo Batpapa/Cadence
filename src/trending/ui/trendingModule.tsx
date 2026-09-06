@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { FlameIcon, ResetIcon, MusicNoteIcon, PlusIcon } from '../../components/icons';
-import { showDeckPickerPopover, deckLinkIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { showPreviewModal } from '../../components/fileViewer';
 import { computeRows, sortRows, formatGain, type TuneRow, type GainMode } from '../../services/trendingService';
 import { syncPopularityHistory, type SyncProgress } from '../../services/trendingSyncService';
@@ -9,6 +9,7 @@ import {
   fetchTuneById, tuneResultToCard, findByExternalId, settingsToMergedAbcFile, type TuneResult,
 } from '../../services/theSessionService';
 import type { PopularityDb } from '../db';
+import type { Card } from '../../types';
 import { appState, mutate, navigate, replaceRoute } from '../../store';
 import { timeAgo, externalSourceLink } from '../../utils';
 import { Sparkline } from './sparkline';
@@ -62,12 +63,12 @@ interface RowProps {
   rank: number;
   gainMode: GainMode;
   getTune: (id: number) => Promise<TuneResult>;
-  getTargetDeckIds: () => Set<string> | undefined;
-  ensureTargetDeckIds: () => Set<string>;
-  bumpDeckBtn: () => void;
+  /** Decks pinned on this page — ticked again in the deck choice modal, which
+   *  opens on every add and every link (see components/deckSelector.tsx). */
+  getPinnedDeckIds: () => Set<string>;
 }
 
-function TrendingRow({ row, rank, gainMode, getTune, getTargetDeckIds, ensureTargetDeckIds, bumpDeckBtn }: RowProps) {
+function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProps) {
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetError, setSheetError] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
@@ -89,21 +90,22 @@ function TrendingRow({ row, rank, gainMode, getTune, getTargetDeckIds, ensureTar
     }
   };
 
-  const doAdd = async () => {
+  /** Writes an already-fetched card — the tune is downloaded BEFORE the deck
+   *  question, so a failed lookup never wastes the answer and dismissing the
+   *  modal imports nothing. The externalId is re-checked inside the transaction
+   *  because that gap is wide enough for the tune to arrive by another route. */
+  const commitAdd = async (card: Card, deckIds: string[]) => {
     setActionBusy(true);
     try {
-      const existing = findByExternalId(externalId, appState.value.cards);
-      if (!existing) {
-        const tune = await getTune(row.id);
-        const card = tuneResultToCard(tune);
-        await mutate(s => {
-          s.cards[card.id] = card;
-          for (const deckId of getTargetDeckIds() ?? []) {
-            const deck = s.decks[deckId];
-            if (deck && !deck.entries.some(e => e.cardId === card.id)) deck.entries.push({ cardId: card.id });
-          }
-        });
-      }
+      await mutate(s => {
+        const existing = findByExternalId(externalId, s.cards);
+        const id = existing?.id ?? card.id;
+        if (!existing) s.cards[id] = card;
+        for (const deckId of deckIds) {
+          const deck = s.decks[deckId];
+          if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
+        }
+      });
       setActionError(false);
     } catch {
       setActionError(true);
@@ -112,12 +114,12 @@ function TrendingRow({ row, rank, gainMode, getTune, getTargetDeckIds, ensureTar
     }
   };
 
-  const doLink = async () => {
+  const doLink = async (deckIds: string[]) => {
     if (!known) return;
     setActionBusy(true);
     try {
       await mutate(s => {
-        for (const deckId of getTargetDeckIds() ?? []) {
+        for (const deckId of deckIds) {
           const deck = s.decks[deckId];
           if (deck && !deck.entries.some(e => e.cardId === known.id)) deck.entries.push({ cardId: known.id });
         }
@@ -127,14 +129,33 @@ function TrendingRow({ row, rank, gainMode, getTune, getTargetDeckIds, ensureTar
     }
   };
 
-  const onAddOrLinkClick = (action: () => void) => {
-    if (getTargetDeckIds() === undefined) {
-      const ids = ensureTargetDeckIds();
-      bumpDeckBtn();
-      showDeckPickerPopover(ids, bumpDeckBtn, () => { void action(); });
-    } else {
-      void action();
-    }
+  // Same rule as the session feed: ask every time, and skip the question only
+  // when there is no deck to ask about.
+  const onAddClick = () => {
+    void (async () => {
+      setActionBusy(true);
+      let card: Card;
+      try {
+        card = tuneResultToCard(await getTune(row.id));
+        setActionError(false);
+      } catch {
+        setActionError(true);
+        setActionBusy(false);
+        return;
+      }
+      setActionBusy(false);
+      if (!hasAnyDeck()) { void commitAdd(card, []); return; }
+      showDeckChoiceModal({ pinned: getPinnedDeckIds(), onConfirm: (ids) => { void commitAdd(card, ids); } });
+    })();
+  };
+
+  const onLinkClick = () => {
+    if (!known) return;
+    showDeckChoiceModal({
+      pinned: getPinnedDeckIds(),
+      alreadyIn: decksContainingCard(known.id),
+      onConfirm: (ids) => { void doLink(ids); },
+    });
   };
 
   return (
@@ -152,22 +173,23 @@ function TrendingRow({ row, rank, gainMode, getTune, getTargetDeckIds, ensureTar
         <MusicNoteIcon size={12} />
       </button>
 
-      {known ? (
-        // Card already exists: offer a quick link into the target deck(s)
-        // instead — additive only, never unlinks from decks not selected.
+      {known ? hasAnyDeck() && (
+        // Card already exists: offer to put it in a deck instead — additive
+        // only, never unlinks from decks left unticked. With no deck at all
+        // there is nothing to offer, so the button is not rendered.
         <button
-          class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
-          title={t('trending.linkToDeck')}
+          class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
+          title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
           disabled={actionBusy}
           dangerouslySetInnerHTML={{ __html: deckLinkIcon }}
-          onClick={() => onAddOrLinkClick(doLink)}
+          onClick={onLinkClick}
         />
       ) : (
         <button
           class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
           title={actionError ? t('trending.addFailed') : t('trending.add')}
           disabled={actionBusy}
-          onClick={() => onAddOrLinkClick(doAdd)}
+          onClick={onAddClick}
         >
           <PlusIcon size={12} />
         </button>
@@ -226,12 +248,10 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
     return tune;
   };
 
-  // Target deck(s) new cards join — shared across every "+" in this screen,
-  // same "(?) until touched at least once" convention as the sessions module.
-  const targetDeckIdsRef = useRef<Set<string> | undefined>(undefined);
-  const [, bumpDeckBtn] = useState(0);
-  const getTargetDeckIds = () => targetDeckIdsRef.current;
-  const ensureTargetDeckIds = () => { if (!targetDeckIdsRef.current) targetDeckIdsRef.current = new Set(); return targetDeckIdsRef.current; };
+  // Decks pinned in the deck choice modal, shared across every "+" on this
+  // screen and lasting only as long as it stays open — same rule as the
+  // sessions module (see components/deckSelector.tsx).
+  const pinnedDeckIdsRef = useRef<Set<string>>(new Set());
 
   const recompute = (db: PopularityDb, gm: GainMode, th: string, si: number, ei: number) => {
     const minEnd = Math.max(0, Number(th) || 0);
@@ -318,9 +338,6 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
     return () => observer.disconnect();
   }, []);
 
-  const ids = getTargetDeckIds();
-  const deckSuffix = ids === undefined ? ' (?)' : ids.size > 0 ? ` (${ids.size})` : '';
-
   return (
     <div class="p-6">
       <div class="flex items-center justify-between mb-1">
@@ -329,18 +346,6 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
           {t('trending.title')}
         </h1>
         <div class="flex items-center gap-3 shrink-0">
-          <button
-            class={`inline-flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${
-              ids === undefined ? 'text-warn hover:text-primary' : ids.size > 0 ? 'text-accent' : 'text-dim hover:text-primary'
-            }`}
-            title={t('newCard.selectDecks')}
-            dangerouslySetInnerHTML={{ __html: `${deckLinkIcon}${deckSuffix}` }}
-            onClick={() => {
-              const liveIds = ensureTargetDeckIds();
-              bumpDeckBtn(x => x + 1);
-              showDeckPickerPopover(liveIds, () => bumpDeckBtn(x => x + 1));
-            }}
-          />
           <button
             class={`text-dim hover:text-accent transition-colors cursor-pointer ${loading ? 'opacity-50 pointer-events-none' : ''}`}
             title={t('trending.refresh')}
@@ -444,9 +449,7 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
             rank={i + 1}
             gainMode={gainMode}
             getTune={getTune}
-            getTargetDeckIds={getTargetDeckIds}
-            ensureTargetDeckIds={ensureTargetDeckIds}
-            bumpDeckBtn={() => bumpDeckBtn(x => x + 1)}
+            getPinnedDeckIds={() => pinnedDeckIdsRef.current}
           />
         ))}
         <div ref={sentinelRef} class="h-4" style={{ display: revealed >= allRows.length ? 'none' : undefined }} />

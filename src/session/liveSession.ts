@@ -52,10 +52,11 @@ export class LiveSession {
   startedAt = 0;
   /** Editable during recording (renderLive title input) — same field `stop()` persists under. */
   name = '';
-  /** Target deck(s) for cards created from this session's recognised tunes —
-   *  in-memory only, not persisted with the session (resets next time).
-   *  `undefined` = never touched the picker yet (forces it open on first "Add card"). */
-  targetDeckIds: Set<string> | undefined = undefined;
+  /** Decks PINNED in the deck choice modal while this session is open — they
+   *  come back ticked on the next add or link, and that is all they do. Purely
+   *  in-memory and never persisted: picking a destination is a decision about
+   *  right now, not a preference (see components/deckSelector.tsx). */
+  pinnedDeckIds: Set<string> = new Set();
   /** Manual transposition (semitones, -12..12) applied to the ongoing
    *  analysis — e.g. a session played in Bb. In-memory only, resets to 0
    *  next recording. */

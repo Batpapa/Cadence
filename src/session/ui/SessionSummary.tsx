@@ -103,12 +103,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const [, setTick] = useState(0);
   const bump = () => setTick(x => x + 1);
 
-  // Not persisted — resets each time the summary is opened, on purpose.
-  const targetDeckIdsRef = useRef<Set<string> | undefined>(undefined);
-  const ensureSummaryTargetDeckIds = () => {
-    if (!targetDeckIdsRef.current) targetDeckIdsRef.current = new Set();
-    return targetDeckIdsRef.current;
-  };
+  // Decks pinned in the deck choice modal. Not persisted — resets each time
+  // the summary is opened, on purpose: a destination is a decision about the
+  // work happening right now (see components/deckSelector.tsx).
+  const pinnedDeckIdsRef = useRef<Set<string>>(new Set());
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -402,9 +400,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
     onOpenCard,
     onCardAdded: bump,
-    getTargetDeckIds: () => targetDeckIdsRef.current,
-    ensureTargetDeckIds: ensureSummaryTargetDeckIds,
-    onTargetDeckIdsChanged: bump,
+    getPinnedDeckIds: () => pinnedDeckIdsRef.current,
     onToggleLike: (id) => {
       const target = session.annotations.find(a => a.id === id);
       if (!target) return;
@@ -486,8 +482,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         onRename={(val) => { session.name = val; persist(); }}
         onDelete={() => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); }}
         onShare={() => showShareSessionModal(session)}
-        getTargetDeckIds={() => targetDeckIdsRef.current}
-        ensureTargetDeckIds={ensureSummaryTargetDeckIds}
       />
       <DateRow
         getDate={() => session.date}
