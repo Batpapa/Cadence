@@ -12,7 +12,7 @@ import { confirmModal, closeAllModals } from '../components/modal';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { removeCards } from '../services/cardService';
 import { localDayRange, hasReviewInRange } from '../services/reviewRange';
-import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showRefreshModal } from '../components/batchEdit';
+import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showCardTypeModal, showRefreshModal } from '../components/batchEdit';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId } from '../services/theSessionService';
 import { ensureItiMapping } from '../services/itiMappingService';
 import { defaultTuneRepeat } from '../services/abcService';
@@ -478,13 +478,17 @@ export function LibraryView() {
         }),
       ),
     }] : []),
+    // Importance, then type, then tags — the order the card page presents the
+    // same three fields in, so the bulk menu and a single card teach the same
+    // sequence rather than two.
+    { label: t('library.batch.importance'), onClick: () => showImportanceModal(selectedArr) },
+    { label: t('library.batch.type'), onClick: () => showCardTypeModal(selectedArr) },
     { label: t('library.batch.addTag'), onClick: () => showAddTagModal(selectedArr) },
     // Nothing to offer when the selection carries no tags at all — the modal
     // would open on an empty list.
     ...(selectedArr.some(cId => (user.cards[cId]?.tags ?? []).length > 0) ? [{
       label: t('library.batch.removeTag'), onClick: () => showRemoveTagModal(selectedArr),
     }] : []),
-    { label: t('library.batch.importance'), onClick: () => showImportanceModal(selectedArr) },
     // One block per SOURCE, listing the families of card that source can act
     // on — the menu says where the cards come from and what kind they are, the
     // dialog says what will be done to them. Each dialog then words its
