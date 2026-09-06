@@ -7,7 +7,7 @@
 // experiments/noise-study/README.md.
 //
 // Usage: node experiments/noise-study/regenerate-fixtures.js [name...]
-//   (no args = all 6 fixtures that still have their audio; 13th_Moon never did)
+//   (no args = every fixture; all 7 have their audio since 2026-09-06)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -43,6 +43,13 @@ const FIXTURES = [
   // project memory). Its low recall (64.6%) was a real signal quality issue,
   // not a detector bug, but it skews the dataset as a noise-study sample.
   { name: '20240721_tocane_2_chapiteau', audio: '20240721_tocane_2_chapiteau.m4a' },
+  // Audio finally supplied by the user (2026-09-06), so this one is no longer
+  // frozen at the old 15 s geometry — it can now be regenerated like the rest.
+  // It is 56 ground-truth tunes over 80 minutes, ~19% of the whole corpus.
+  { name: '13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24', audio: '13th Moon Gravity Well - Irish Trad Session 2024.01.24.mp3' },
+  // Added 2026-09-06 by the user. Timestamped, one tune per line — the same
+  // annotation format as One_of_the_Best, which is the one that measures best.
+  { name: '1Hour_Trad_Irish_Music_Session_in_Korea', audio: '1Hour Trad Irish Music Session in Korea.mp3' },
 ];
 
 function windowize(pcm) {

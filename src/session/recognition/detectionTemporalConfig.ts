@@ -29,8 +29,26 @@ export interface DetectionTemporalConfig {
    *  "probability of UNKNOWN" doesn't hold, and it backtested badly — it set
    *  an implicit 50% bar (1-p > p whenever p<0.5) that a lot of genuinely
    *  correct detections never clear (real tunes routinely score 0.30-0.50).
-   *  To retune: sweep 0.15/0.20/0.25/0.30 against the ground-truth backtests
-   *  and compare recall/precision, same methodology as segmenterConfig.ts. */
+   *
+   *  SWEPT 0.15 -> 0.30 (step 0.01) on 2026-09-06 over 7 annotated sessions
+   *  (315 ground-truth tunes) plus the pure-noise recording, and LOWERED from
+   *  0.25 to 0.20 — see experiments/threshold-sweep/. The trade is close to
+   *  one true tune per false positive across the whole range (0.30: 270/41,
+   *  0.25: 277/45, 0.20: 282/50), so it is a judgement call rather than an
+   *  optimum, settled on the user's explicit reasoning: in Cadence a false
+   *  positive is VISIBLE in the session list and dismissed in a click, while a
+   *  missed tune is invisible and was the complaint that prompted the sweep.
+   *  0.20 is also the knee — below it recall stops improving.
+   *
+   *  Two things that sweep established and that must survive any retune:
+   *   - the pure-noise recording yields ZERO detections at EVERY value here,
+   *     so this floor is NOT what defends against noise (the flat-window and
+   *     tempo-spread filters below are). Lowering it does not weaken that.
+   *   - the real limit is that this compares an ABSOLUTE score. Accompaniment
+   *     degrades the contour, so a correctly identified tune can sit at
+   *     0.17-0.25 for its whole run while still topping every window by a
+   *     healthy margin — see observationScoreFn, which exists so a V2 can
+   *     score on rank/margin instead and move the curve rather than walk it. */
   unknownObservationProbability: number;
 
   /** Cost of staying on the same tune between consecutive windows. */
@@ -177,7 +195,7 @@ export const DETECTION_TEMPORAL_CONFIG: DetectionTemporalConfig = {
 
   minCandidateProbability: 0.20,
   epsilon: 0.000001,
-  unknownObservationProbability: 0.25,
+  unknownObservationProbability: 0.20,
 
   sameTuneTransitionCost: 0,
   tuneChangePenalty: 1.0,
