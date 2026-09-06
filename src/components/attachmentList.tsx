@@ -137,12 +137,14 @@ function confirmRemove(name: string, isRef: boolean, remove: () => void): void {
 
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex, glyph, downloadName }: {
+function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex, reloadEntry, glyph, downloadName }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
   onSave?: (data: string) => void;
   onSetPreferredIndex?: (index: number | undefined) => void;
+  /** For a DERIVED file only — see PreviewModalOpts.reloadEntry. */
+  reloadEntry?: () => FileEntry | null;
   /** What the download is called, when that must differ from what is shown —
    *  a set name contains slashes, which no filesystem accepts, but the row is
    *  just a label and should read as the set is really called. */
@@ -158,7 +160,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex
       <span
         class={`text-xs font-mono truncate flex-1 ${previewable ? 'text-muted hover:text-primary cursor-pointer transition-colors' : 'text-dim'}`}
         // Favoriting a version isn't "editing" the card — available regardless of `editable`.
-        onClick={previewable ? () => showPreviewModal(entry, editable ? onSave : undefined, { initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex }) : undefined}
+        onClick={previewable ? () => showPreviewModal(entry, editable ? onSave : undefined, { initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex, reloadEntry }) : undefined}
       >
         {entry.name}
       </span>
@@ -462,8 +464,8 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
   // changes, so it cannot lag behind a tune being renamed, restarred, added or
   // removed — and it costs nothing in the synced blob.
   const generatedAbc = useMemo(
-    () => (card && isTuneset(card) ? tunesetAbcEntry(card, appState.value.cards) : null),
-    [card, appState.value.cards],
+    () => (card && isTuneset(card) ? tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats }) : null),
+    [card, appState.value.cards, appState.value.abcIncludeRepeats],
   );
   const hasTunesetAbc = attachments.some(a => a.type === 'file' && a.generatedBy === 'tuneset');
 
@@ -533,6 +535,9 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   // nor starring a version applies to it.
                   onSave={onUpdateFile && att.generatedBy !== 'tuneset' ? (data) => onUpdateFile(i, data) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
+                  reloadEntry={att.generatedBy === 'tuneset' && card
+                    ? () => tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats })
+                    : undefined}
                 />
               ) : att.type === 'card' ? (
                 <CardRefRowContent entry={att} onRemove={() => onRemove(i)} editable={editable} />

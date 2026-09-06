@@ -160,6 +160,10 @@ export interface User {
   abcTempoPercent?: number;
   /** General MIDI program. Absent = whatever the ABC itself asks for. */
   abcInstrument?: number;
+  /** Write a set's repeats out in its fused score. Absent = no, which is the
+   *  default: the counts still live on each tune and still show as ×N in the
+   *  card view, they are only spelled out in the notation when this is on. */
+  abcIncludeRepeats?: boolean;
 
   // Misc.
   /** How many times a tune is played through when it JOINS a set — three is
