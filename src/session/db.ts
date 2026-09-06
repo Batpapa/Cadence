@@ -512,3 +512,29 @@ export async function clearChunks(recordingId: string): Promise<void> {
   }
   await tx.done;
 }
+
+/** Drops everything this user's local session database holds: finalized audio,
+ *  interrupted drafts, their in-flight chunks, and the per-session window
+ *  results. For "reset my data", which otherwise leaves two things behind.
+ *
+ *  Orphan audio is the obvious one — blobs no metadata points at any more, and
+ *  recordings are the largest thing this app stores. The other is worse: a
+ *  draft interrupted before the reset is, by construction, what
+ *  recoverOrphanedSessions promotes into AppState the next time the sessions
+ *  library is opened. Left here, a session deleted by a reset would come back
+ *  by itself.
+ *
+ *  The whole database goes rather than each store being cleared: it is named
+ *  after the user and holds nothing else, so there is nothing to preserve, and
+ *  a dropped database cannot leave a store behind that a later version adds.
+ *  Best-effort like the migration's own cleanup — a blocked delete must not
+ *  make a reset fail, having already done the part that matters. */
+export async function deleteLocalSessionData(userId: string): Promise<void> {
+  if (_localDb && _userId === userId) { _localDb.close(); _localDb = null; }
+  await new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase(localDbName(userId));
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
+}

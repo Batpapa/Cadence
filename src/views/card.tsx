@@ -83,9 +83,9 @@ const toInputVal = (ts: number) => {
 function mkSessionForm(defaultTs: number, defaultRating: SessionRating) {
   let selected: SessionRating = defaultRating;
   const body      = document.createElement('div'); body.className = 'space-y-4';
-  const dtLbl     = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = t('card.logSession.dateLabel');
+  const dtLbl     = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = t('card.logReview.dateLabel');
   const inp       = document.createElement('input'); inp.type = 'datetime-local'; inp.value = toInputVal(defaultTs); inp.className = 'input';
-  const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = t('card.logSession.qualityLabel');
+  const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = t('card.logReview.qualityLabel');
   const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
   for (const def of RATING_DEFS) {
     const btn = document.createElement('button');
@@ -111,7 +111,7 @@ function openSessionModal(
   onDelete?: () => void,
 ) {
   const { body, inp, getRating } = mkSessionForm(defaultTs, defaultRating);
-  showModal(onDelete ? t('card.logSession.editTitle') : t('card.logSession.title'), body, [
+  showModal(onDelete ? t('card.logReview.editTitle') : t('card.logReview.title'), body, [
     ...(onDelete ? [{ label: '', icon: iconElement(TrashIcon), danger: true, align: 'start' as const, onClick: () => { closeModal(); onDelete(); } }] : []),
     { label: t('common.cancel'), onClick: closeModal },
     { label: t('common.save'), primary: true, onClick: () => {
@@ -895,7 +895,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               s.cardWorks[key]!.history.push({ ts, rating });
               s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
             }))
-          } class="btn-ghost px-2" title={t('card.logSession.add')}>
+          } class="btn-ghost px-2" title={t('card.logReview.add')}>
             <PlusIcon size={13} />
           </button>
         </div>
