@@ -820,7 +820,9 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         }),
         onSetPreferredIndex: (i, index) => mutate(s => {
           const att = s.cards[cardId]!.content.attachments[i];
-          if (att && att.type === 'file') att.preferredIndex = index;
+          if (att && att.type === 'file') {
+            if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
+          }
         }),
         onReorder: (from, insertBefore) => mutate(s => {
           const atts = s.cards[cardId]!.content.attachments;

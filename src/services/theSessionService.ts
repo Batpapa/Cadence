@@ -2,7 +2,7 @@ import type { Card, FileEntry, Attachment } from '../types';
 import { generateId } from '../utils';
 import { TuneUnavailableError, withTuneIdentity, type SkippedTune } from './tuneFetchError';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET } from './cardTypeService';
-import { TUNESET_ABC_NAME } from './abcService';
+import { TUNESET_ABC_NAME, isAbcFile, decodeAbc, splitAbcTunes } from './abcService';
 
 const BASE = 'https://thesession.org';
 
@@ -239,6 +239,26 @@ function settingToAbcBlock(setting: TuneSetting, tune: TuneResult, index: number
 
 function toBase64(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+}
+
+/** The `S:` line settingToAbcBlock writes, read back: which block of this
+ *  score is the given setting, or null if it is not in there at all.
+ *
+ *  The pair belongs together — this is the only reader of a convention the
+ *  function above is the only writer of (and abcPreview.tsx deliberately
+ *  mirrors, with a comment saying so).
+ *
+ *  Resolving against the FILE, rather than re-fetching the tune and counting
+ *  positions in `tune.settings`, is what makes this exact: the index is a
+ *  position in the very score the viewer is going to open, so it cannot drift
+ *  if TheSession reorders or adds settings. It also costs no request, which is
+ *  what lets the control be live on a card while offline. */
+export function settingIndexInScore(entry: FileEntry, settingId: number): number | null {
+  let blocks: string[];
+  try { blocks = splitAbcTunes(decodeAbc(entry)); } catch { return null; }
+  // Anchored on the fragment so setting 3 never matches setting 31.
+  const index = blocks.findIndex(b => new RegExp(`#setting${settingId}(?!\\d)`).test(b));
+  return index === -1 ? null : index;
 }
 
 function settingToAbcFile(setting: TuneSetting, tune: TuneResult): FileEntry {
@@ -478,6 +498,43 @@ export function setExternalId(memberId: number, setId: number): string {
  *  be resolved against the settings we just fetched, never assumed. A single
  *  setting produces one un-merged attachment per setting, where the notion of
  *  a preferred index has nothing to choose between. */
+/** Where a given setting sits on a card's own score: which attachment, which
+ *  block within it, and which block that attachment currently prefers.
+ *
+ *  It answers a question of the form "can I show this card's score opened on
+ *  the version that was just played" — hence the three numbers rather than a
+ *  yes/no: the viewer opens at `blockIndex` while the ★ stays on
+ *  `preferredIndex`, and those are only the same when the card already prefers
+ *  what was played. Deriving "already the favourite" here as well would be a
+ *  second copy of a comparison the caller can make in one line.
+ *
+ *  Null means there is nothing to open: no score on the card, a score that is
+ *  not ABC, or an ABC that simply does not carry this setting. Note that it
+ *  does NOT test `generatedBy: 'thesession'` — that marker is younger than the
+ *  data, and plenty of real libraries hold TheSession scores predating it
+ *  (365 of them on one measured backup). Asking the file whether it contains
+ *  the setting answers the same question without punishing early users.
+ *
+ *  The first ABC attachment that carries the setting wins, which is the rule
+ *  the score reader itself uses (abcService's blockForTune). */
+export function findSettingInScore(
+  card: Card,
+  settingId: number,
+): { attachmentIndex: number; blockIndex: number; preferredIndex: number | undefined } | null {
+  const attachments = card.content?.attachments ?? [];
+  for (let i = 0; i < attachments.length; i++) {
+    const a = attachments[i];
+    if (!a || a.type !== 'file' || !isAbcFile(a)) continue;
+    const blockIndex = settingIndexInScore(a, settingId);
+    if (blockIndex === null) continue;
+    // Forwarded raw: absent is not the same as an explicit 0 to the control
+    // that offers to clear it, even though every READER of the field treats
+    // the two alike.
+    return { attachmentIndex: i, blockIndex, preferredIndex: a.preferredIndex };
+  }
+  return null;
+}
+
 function applyPreferredSetting(card: Card, tune: TuneResult, settingId: number): void {
   if (tune.settings.length < 2) return;
   const index = tune.settings.findIndex(s => s.id === settingId);
