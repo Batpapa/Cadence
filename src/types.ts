@@ -225,7 +225,9 @@ export type Route =
   // the card itself: a card matches when the current profile reviewed it at
   // least once inside the range. Either end may stand alone (an open interval).
   // Local days, resolved to [00:00, 23:59:59.999] where they are read.
-  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean; reviewedFrom?: string; reviewedTo?: string }
+  // `types` has no OR flag of its own: a card holds ONE type, so several
+  // included types can only ever mean "any of these" — see LibraryView.
+  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; types?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean; reviewedFrom?: string; reviewedTo?: string }
   | { view: 'deck'; deckId: string }
   | { view: 'card'; cardId: string; contextDeckId?: string }
   | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null }

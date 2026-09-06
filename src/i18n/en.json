@@ -272,6 +272,7 @@
   "library.sort.ascending": "Ascending",
   "library.sort.descending": "Descending",
   "library.filterDecks": "Decks",
+  "library.filterTypes": "Types",
   "library.filterNoDecks": "No deck",
   "library.search": "Search cards…",
   "library.selected": "{count} selected",

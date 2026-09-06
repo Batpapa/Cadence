@@ -20,6 +20,17 @@ export const CARD_TYPE_TUNESET = 'tuneset';
  *  it's the absence of a choice, not a choice. */
 export const CARD_TYPES = [CARD_TYPE_TUNE, CARD_TYPE_TUNESET] as const;
 
+/** Which of this build's types a card actually counts as — `undefined` meaning
+ *  "no type", which covers an absent one AND a value this build does not know
+ *  (a future build's, a hand-edited import).
+ *
+ *  The same rule `cardTypeLabelKey` applies to labels, deliberately: what the
+ *  card view calls "no type" is then exactly what a filter on "no type" finds,
+ *  and no card can fall through every bucket of an open string. */
+export function knownCardType(card: Card | undefined): string | undefined {
+  return CARD_TYPES.includes(card?.type as typeof CARD_TYPES[number]) ? card?.type : undefined;
+}
+
 export function isTune(card: Card | undefined): boolean {
   return card?.type === CARD_TYPE_TUNE;
 }

@@ -3,6 +3,8 @@ import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
+import { cardTypeIcon } from '../components/cardTypeIcon';
+import { CARD_TYPES, cardTypeLabelKey, knownCardType } from '../services/cardTypeService';
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
@@ -154,6 +156,10 @@ function showExportModal(cards: Card[], user: AppState): void {
 }
 
 const NO_DECK = '__no_deck__';
+/** The "no type" chip. A sentinel rather than the empty string so it can never
+ *  be confused with a real, if unlikely, type value — same reasoning as
+ *  NO_DECK, and the same shape so the two read alike. */
+const NO_TYPE = '__no_type__';
 const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance', 'recall', 'difficulty'];
 const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
   alpha: SortAlphaIcon,
@@ -206,6 +212,7 @@ export function LibraryView() {
   const [searchQuery, setSearchQuery] = useState(savedRoute?.search ?? '');
   const [activeTags,  setActiveTags]  = useState<FilterMap>(() => new Map(savedRoute?.tags ?? []));
   const [activeDecks, setActiveDecks] = useState<FilterMap>(() => new Map(savedRoute?.decks ?? []));
+  const [activeTypes, setActiveTypes] = useState<FilterMap>(() => new Map(savedRoute?.types ?? []));
   // `sort` and `sortAsc` are written to the route as a pair, so a route carries
   // both or neither. A history entry (back/forward, or the route restored at
   // boot) therefore replays exactly what was on screen; a fresh navigation here
@@ -234,12 +241,18 @@ export function LibraryView() {
   }, [sortOpen]);
 
   useEffect(() => {
-    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo });
-  }, [searchQuery, activeTags, activeDecks, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo]);
+    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], types: [...activeTypes], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo });
+  }, [searchQuery, activeTags, activeDecks, activeTypes, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo]);
 
   useEffect(() => { if (searchRef.current) focusIfDesktop(searchRef.current); }, []);
 
   // ── Filter metadata ───────────────────────────────────────────────────────────
+  // Types come from what this BUILD knows, not from what the library happens to
+  // hold: `Card.type` is an open string, and a value from a future build would
+  // otherwise get a chip of its own instead of falling under "no type", where
+  // its label already puts it. "No type" leads, as NO_DECK does below and as
+  // "Aucun" does in the card view's own type selector.
+  const typeItems  = [NO_TYPE, ...CARD_TYPES];
   const allTags    = [...new Set(allCards.flatMap(c => c.tags ?? []))].sort();
   const hasOrphans = allCards.some(c => decksContainingCard(c.id, user).length === 0);
   const deckItems  = [
@@ -249,6 +262,33 @@ export function LibraryView() {
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(d => d.id),
   ];
+
+  // ── Which sections are worth a line ───────────────────────────────────────────
+  // A section earns its place only if clicking in it could actually split the
+  // library; offering to sort a pile of identical things is noise. All three are
+  // read from ALL cards, never from the filtered ones, or a section would
+  // vanish at the moment it did its job.
+  //
+  // Types and decks are exhaustive partitions — every card falls in exactly one
+  // bucket, "no type" and "no deck" included — so one occupied bucket means
+  // every card matches and nothing can be split. Tags are NOT a partition: a
+  // card may carry several or none, so a lone tag still splits the library,
+  // unless every single card happens to carry it.
+  //
+  // And each stays visible while it holds an active filter, whatever the
+  // library looks like: a route can arrive carrying one (a back navigation, a
+  // shared link), and a filter narrowing the list from a section nobody can see
+  // would be unexplainable.
+  const hasDeckMix = deckItems.length > 1 || activeDecks.size > 0;
+  const hasTagMix  = activeTags.size > 0 || allTags.length > 1
+    || (allTags.length === 1 && allCards.some(c => !(c.tags ?? []).includes(allTags[0]!)));
+  const hasTypeMix = activeTypes.size > 0
+    || new Set(allCards.map(c => knownCardType(c) ?? NO_TYPE)).size > 1;
+  // The rule above stops at the chip sections. The review dates stay whatever
+  // the library holds: with no review anywhere they still answer two different
+  // questions — everything, or the empty set that proves nothing was revised in
+  // that window — and unlike a chip, an unset date range shows nothing about
+  // what it would match, so hiding it would hide the question itself.
 
   // ── Filtered list (recomputed every render) ───────────────────────────────────
   const q = searchQuery.toLowerCase();
@@ -279,9 +319,23 @@ export function LibraryView() {
       (inclDecks.length === 0 || (deckFilterOr ? inclDecks.some(hasDeck) : inclDecks.every(hasDeck))) &&
       exclDecks.every(id => !hasDeck(id))
     );
+    // ALWAYS "any of", never "all of": a card holds exactly one type, so an AND
+    // over two included types matches nothing and reads as a broken filter.
+    // That is also why this section shows no AND/OR toggle — there is no second
+    // reading to offer. Excludes still apply on top, and "exclude sets" is the
+    // gesture that earns this filter its place: a set repeats its tunes' names
+    // in the list, and hiding them de-clutters it.
+    const typeKey     = knownCardType(c) ?? NO_TYPE;
+    const typeEntries = [...activeTypes];
+    const inclTypes   = typeEntries.filter(([, fs]) => fs === 'include').map(([id]) => id);
+    const exclTypes   = typeEntries.filter(([, fs]) => fs === 'exclude').map(([id]) => id);
+    const matchTypes  = activeTypes.size === 0 || (
+      (inclTypes.length === 0 || inclTypes.includes(typeKey)) && !exclTypes.includes(typeKey)
+    );
+
     const matchReviewed = hasReviewInRange(user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history, revRange);
 
-    return matchText && matchTags && matchDecks && matchReviewed;
+    return matchText && matchTags && matchDecks && matchTypes && matchReviewed;
   });
   let filtered: Card[];
   // Ties resolve alphabetically. The tie-break lives inside the comparator, so
@@ -321,10 +375,12 @@ export function LibraryView() {
   const availTags  = new Set(filtered.flatMap(c => c.tags ?? []));
   const availDecks = new Set<string>(filtered.flatMap(c => decksContainingCard(c.id, user)));
   if (filtered.some(c => decksContainingCard(c.id, user).length === 0)) availDecks.add(NO_DECK);
+  const availTypes = new Set(filtered.map(c => knownCardType(c) ?? NO_TYPE));
 
   // ── Toggle handlers ───────────────────────────────────────────────────────────
-  const toggleTag  = (tag: string) => setActiveTags(prev  => cycleFilter(prev, tag));
-  const toggleDeck = (id: string)  => setActiveDecks(prev => cycleFilter(prev, id));
+  const toggleTag  = (tag: string, back?: boolean) => setActiveTags(prev  => cycleFilter(prev, tag, back));
+  const toggleDeck = (id: string,  back?: boolean) => setActiveDecks(prev => cycleFilter(prev, id, back));
+  const toggleType = (id: string,  back?: boolean) => setActiveTypes(prev => cycleFilter(prev, id, back));
 
   // ── Selection toolbar data ────────────────────────────────────────────────────
   const selectedArr   = [...selected];
@@ -597,7 +653,7 @@ export function LibraryView() {
           onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
         />
 
-        {deckItems.length > 0 && (
+        {hasDeckMix && (
           <FilterSection
             labelKey="library.filterDecks"
             items={deckItems}
@@ -611,7 +667,21 @@ export function LibraryView() {
             onToggleOr={() => setDeckFilterOr(o => !o)}
           />
         )}
-        {allTags.length > 0 && (
+        {/* No `onToggleOr`: several included types can only mean "any of
+            these" (see the predicate), so there is no second reading to offer
+            and no toggle to show. */}
+        {hasTypeMix && (
+          <FilterSection
+            labelKey="library.filterTypes"
+            items={typeItems}
+            activeMap={activeTypes}
+            labelOf={id => t(cardTypeLabelKey(id === NO_TYPE ? undefined : id))}
+            titleOf={id => t(cardTypeLabelKey(id === NO_TYPE ? undefined : id))}
+            available={availTypes}
+            onToggle={toggleType}
+          />
+        )}
+        {hasTagMix && (
           <FilterSection
             labelKey="library.filterTags"
             items={allTags}
@@ -775,6 +845,7 @@ export function LibraryView() {
               const fsrs     = work ? replayFSRS(work.history) : undefined;
               const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
               const isSel    = selected.has(card.id);
+              const typeGlyph = cardTypeIcon(knownCardType(card), 12);
 
               return (
                 <div
@@ -835,6 +906,16 @@ export function LibraryView() {
                       title={cardEase !== undefined ? t('card.dot.ease', { pct: pct(cardEase) }) : t('card.neverReviewed')}
                     />
                   </span>
+
+                  {/* Nothing at all for a card with no type — so the mark says
+                      "this one is a tune" rather than making every ordinary
+                      card carry a badge saying it is ordinary. It is also what
+                      makes the type filter above filter on something visible. */}
+                  {typeGlyph && (
+                    <span class="text-dim shrink-0 flex items-center" title={t(cardTypeLabelKey(card.type))}>
+                      {typeGlyph}
+                    </span>
+                  )}
 
                   <span class={`text-sm text-primary flex-1 truncate ${selected.size === 0 ? 'hover:text-accent transition-colors' : ''}`}>
                     {card.name}

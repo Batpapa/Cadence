@@ -5,9 +5,22 @@ import { ChevronDownIcon, VennAndIcon, VennOrIcon } from './icons';
 
 export type FilterMap = Map<string, FilterState>;
 
-export function cycleFilter(prev: FilterMap, key: string): FilterMap {
+/** Steps a chip round: off → include → exclude → off.
+ *
+ *  `back` walks the same ring the other way, which is what a right click does.
+ *  With only three states the shortcut is small but real — "off → exclude" is
+ *  one gesture instead of two, and excluding is the common reason to touch a
+ *  chip you have not touched yet. Same grammar as the repeat counter on a
+ *  set's tunes, which already cycles up on click and down on right click. */
+export function cycleFilter(prev: FilterMap, key: string, back = false): FilterMap {
   const n = new Map(prev);
   const s = n.get(key);
+  if (back) {
+    if (s === undefined)       n.set(key, 'exclude');
+    else if (s === 'exclude')  n.set(key, 'include');
+    else                       n.delete(key);
+    return n;
+  }
   if (s === undefined)       n.set(key, 'include');
   else if (s === 'include')  n.set(key, 'exclude');
   else                       n.delete(key);
@@ -21,7 +34,8 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
   labelOf: (id: string) => string;
   titleOf: (id: string) => string;
   available: Set<string>;
-  onToggle: (id: string) => void;
+  /** `back` = the right-click direction round the three states. */
+  onToggle: (id: string, back?: boolean) => void;
   highlight?: string;
   orMode?: boolean;
   onToggleOr?: () => void;
@@ -72,6 +86,10 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
                 }`}
                 title={titleOf(id)}
                 onClick={() => onToggle(id)}
+                // Right click walks the ring backwards. preventDefault because
+                // a chip has no browser menu worth showing, and `disabled`
+                // buttons never fire this anyway.
+                onContextMenu={(e) => { e.preventDefault(); onToggle(id, true); }}
               >
                 {label}
               </button>
