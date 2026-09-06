@@ -1,7 +1,7 @@
 import LZString from 'lz-string';
 import type { FileEntry } from '../types';
 import { entryToObjectUrl, arrayBufferToBase64, focusIfDesktop } from '../utils';
-import { getMarked } from './markdown';
+import { renderMarkdown } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon } from './icons';
 import { t } from '../services/i18nService';
@@ -801,8 +801,8 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     if (isMarkdown(entry)) {
       const rendered = document.createElement('div');
       rendered.className = 'markdown text-sm leading-relaxed w-full';
-      getMarked().then(marked => {
-        rendered.innerHTML = marked.parse(text) as string;
+      renderMarkdown(text).then(html => {
+        rendered.innerHTML = html;
         rendered.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
       }).catch(() => { rendered.textContent = text; });
       body.appendChild(rendered);
@@ -841,8 +841,8 @@ export function renderNotes(notes: string): HTMLElement {
   // Empty notes render as nothing at all: the card page hides the body when
   // there is none, and study never calls this with an empty string.
   if (!notes.trim()) return wrap;
-  getMarked().then(marked => {
-    wrap.innerHTML = marked.parse(notes) as string;
+  renderMarkdown(notes).then(html => {
+    wrap.innerHTML = html;
     wrap.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
   }).catch(() => { wrap.textContent = notes; });
   return wrap;

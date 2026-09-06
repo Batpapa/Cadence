@@ -2,10 +2,18 @@ import type { MarkedExtension, Token } from 'marked';
 
 // ── Markdown rendering with the ||spoiler|| extension ─────────────────────────
 // Single entry point for `marked`: every markdown surface (card notes, .md
-// attachments) goes through getMarked(), so the spoiler syntax works
+// attachments) goes through renderMarkdown(), so the spoiler syntax works
 // everywhere. ||text|| renders as a click-to-reveal pill (Discord-style) and
 // may nest inline markdown (**bold**, links…). Spoilers start hidden on every
 // fresh render, so they re-hide naturally on each new study card.
+//
+// `getMarked` is deliberately NOT exported: marked passes raw HTML straight
+// through (verified — `<img src=x onerror=…>` comes out untouched) and every
+// caller writes the result into innerHTML. Notes are not always written by the
+// person reading them — a shared card package carries someone else's markdown —
+// so the parse and the sanitisation must be impossible to separate. Sanitising
+// inside the only exported function is what makes that structural rather than
+// a rule someone has to remember.
 
 const spoilerExtension: MarkedExtension = {
   extensions: [{
@@ -32,7 +40,7 @@ const spoilerExtension: MarkedExtension = {
 let markedPromise: Promise<typeof import('marked').marked> | null = null;
 
 /** Lazy-loads marked with the spoiler extension registered (once). */
-export function getMarked(): Promise<typeof import('marked').marked> {
+function getMarked(): Promise<typeof import('marked').marked> {
   if (!markedPromise) {
     markedPromise = import('marked').then(({ marked }) => {
       marked.use(spoilerExtension);
@@ -41,6 +49,30 @@ export function getMarked(): Promise<typeof import('marked').marked> {
     installSpoilerToggle();
   }
   return markedPromise;
+}
+
+let purifyPromise: Promise<typeof import('dompurify').default> | null = null;
+
+/** Lazy-loads DOMPurify alongside marked — both are only needed the first time
+ *  a markdown surface is rendered, and most sessions never open one. */
+function getPurify(): Promise<typeof import('dompurify').default> {
+  if (!purifyPromise) purifyPromise = import('dompurify').then(m => m.default);
+  return purifyPromise;
+}
+
+/**
+ * Parses markdown and returns HTML that is safe to assign to innerHTML.
+ *
+ * DOMPurify runs with its default profile, which was checked against what this
+ * app actually renders: the spoiler span keeps its class and tabindex, links,
+ * tables, task-list checkboxes and fenced code all survive, while `onerror` and
+ * other event-handler attributes, `<script>`, and `javascript:` hrefs are
+ * removed. No custom allow-list is needed, and not having one means nothing
+ * silently rots as the defaults improve.
+ */
+export async function renderMarkdown(src: string): Promise<string> {
+  const [marked, purify] = await Promise.all([getMarked(), getPurify()]);
+  return purify.sanitize(marked.parse(src) as string);
 }
 
 /** Delegated listeners so spoilers work on every innerHTML-rendered surface.
