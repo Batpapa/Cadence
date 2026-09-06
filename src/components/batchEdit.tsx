@@ -4,6 +4,9 @@ import type { ComponentChild } from 'preact';
 import { appState, mutate } from '../store';
 import { showModal, closeModal, renderModalBody } from './modal';
 import { CustomSelect } from './customSelect';
+import { cardTypeIcon } from './cardTypeIcon';
+import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, applyCardType, isTuneset } from '../services/cardTypeService';
+import { cardsPlayingInSets } from '../services/cardRefService';
 import { focusIfDesktop } from '../utils';
 import { t } from '../services/i18nService';
 import type { AppState, Card } from '../types';
@@ -19,11 +22,16 @@ import type { AppState, Card } from '../types';
 
 interface Draft { noop: Signal<boolean> }
 
-/** Wraps a Preact body in the modal shell, unmounting it when the modal closes. */
+/** Wraps a Preact body in the modal shell, unmounting it when the modal closes.
+ *
+ *  No Cancel button, on any of these: the ✕, Escape and a click outside all
+ *  back out already, and a dialog whose confirm greys itself out until
+ *  something would actually happen cannot be left half-done. The refresh dialog
+ *  further down never had one, for exactly these reasons; the rest caught up
+ *  on 2026-09-06. */
 function open(title: string, node: ComponentChild, confirmLabel: string, draft: Draft, onConfirm: () => void): void {
   const { el, cleanup } = renderModalBody(node);
   showModal(title, el, [
-    { label: t('common.cancel'), onClick: closeModal },
     { label: confirmLabel, primary: true, disabled: draft.noop, onClick: () => { onConfirm(); closeModal(); } },
   ], { maxWidth: '28rem', onDismiss: cleanup });
 }
@@ -287,6 +295,122 @@ export function showImportanceModal(cardIds: string[]): void {
           // Empty clears the override, so the card falls back to its base value.
           if (raw === '') delete entry.importance;
           else entry.importance = val;
+        }
+      });
+    });
+}
+
+// ── Card type ────────────────────────────────────────────────────────────────
+// The one bulk edit here that can DESTROY something: leaving 'tuneset' drops
+// the card's tune list and its auto-naming (applyCardType owns that rule), and
+// the app has no undo. That is exactly why it was refused on 2026-09-04, and
+// what makes it acceptable now is not a warning in prose but this: the loss is
+// COUNTED AND NAMED, per set, before the button can be pressed. A bare type
+// selector over a selection would be the dangerous version.
+
+/** The type the whole selection already shares, if it shares one — the value
+ *  the dialog opens on, so it starts by SHOWING what these cards are instead of
+ *  proposing a change nobody asked for. A mixed selection has no such answer
+ *  and opens on "none".
+ *
+ *  An unknown value (an open string from a future build) is not offered in the
+ *  list, so it cannot be the opening value either — the select would render a
+ *  blank label. It falls back to "none", which is where its own label already
+ *  puts it. */
+function sharedType(cards: Card[]): string {
+  if (cards.length === 0) return '';
+  const first = cards[0]!.type ?? '';
+  if (!cards.every(c => (c.type ?? '') === first)) return '';
+  return first === '' || (CARD_TYPES as readonly string[]).includes(first) ? first : '';
+}
+
+function CardTypeBody({ cardIds, draft }: { cardIds: string[]; draft: Draft & { type: string } }) {
+  const user = appState.value;
+  // One pass for the whole selection — findSetsContaining would rescan the
+  // library once per selected card.
+  const locked   = cardsPlayingInSets(user.cards);
+  const cards    = cardIds.map(id => user.cards[id]).filter((c): c is Card => !!c);
+  const [type, setType] = useState(() => {
+    const initial = sharedType(cards);
+    draft.type = initial;   // the confirm handler reads the draft, not this state
+    return initial;
+  });
+  // Being locked only blocks a card whose type would actually move: one already
+  // of the target type has nothing to stop, and reporting it as skipped would
+  // be a warning about nothing.
+  const differing = cards.filter(c => (c.type ?? '') !== type);
+  const blocked   = differing.filter(c => locked.has(c.id));
+  const changing  = differing.filter(c => !locked.has(c.id));
+  const losing    = changing.filter(c => isTuneset(c) && (c.tunes?.length ?? 0) > 0);
+
+  useEffect(() => { draft.noop.value = changing.length === 0; });
+
+  return (
+    <div class="space-y-3">
+      <div class="flex items-center gap-2">
+        <span class="label shrink-0">{t('library.batch.type.target')}</span>
+        <div class="flex-1 min-w-0">
+          <CustomSelect
+            value={type}
+            options={[
+              { value: '', label: t('card.type.none') },
+              ...CARD_TYPES.map(ct => ({ value: ct, label: t(cardTypeLabelKey(ct)) })),
+            ]}
+            onChange={(v) => { setType(v); draft.type = v; }}
+            triggerClass="flex items-center gap-2 w-full text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent"
+          />
+        </div>
+      </div>
+
+      <p class="text-xs text-dim leading-relaxed">
+        {t(changing.length === 1 ? 'library.batch.type.count' : 'library.batch.type.countPlural', { count: changing.length })}
+      </p>
+
+      {blocked.length > 0 && (
+        <p class="text-xs text-dim leading-relaxed">
+          {t(blocked.length === 1 ? 'library.batch.type.locked' : 'library.batch.type.lockedPlural', { count: blocked.length })}
+        </p>
+      )}
+
+      {losing.length > 0 && (
+        <div class="space-y-1 border-l-2 border-danger pl-3">
+          <p class="text-xs text-danger leading-relaxed">
+            {t(losing.length === 1 ? 'library.batch.type.losing' : 'library.batch.type.losingPlural', { count: losing.length })}
+          </p>
+          {/* Named, not just counted — and deliberately NOT clickable, unlike
+              the same list on a card page: there the sets are the way out of a
+              locked type, here leaving would drop the selection that is the
+              subject of the dialog. */}
+          {losing.map(c => (
+            <div key={c.id} class="flex items-center gap-2 text-xs font-mono text-muted truncate">
+              <span class="shrink-0 flex items-center text-dim">{cardTypeIcon(CARD_TYPE_TUNESET, 11)}</span>
+              <span class="truncate">{c.name}</span>
+              <span class="text-dim shrink-0">
+                {t((c.tunes?.length ?? 0) === 1 ? 'library.batch.type.tuneCount' : 'library.batch.type.tuneCountPlural', { count: c.tunes?.length ?? 0 })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Sets or clears the type of a whole selection. */
+export function showCardTypeModal(cardIds: string[]): void {
+  const draft = { type: '', noop: signal(true) };
+  open(t('library.batch.type.title'), <CardTypeBody cardIds={cardIds} draft={draft} />,
+    t('library.batch.type.confirm'), draft, () => {
+      void mutate(s => {
+        // Recomputed against the state being written, not against the snapshot
+        // the dialog was drawn from: the rule "a card playing in a set keeps
+        // its type" has to hold at the moment of the write.
+        const locked = cardsPlayingInSets(s.cards);
+        for (const id of cardIds) {
+          const card = s.cards[id];
+          if (!card || locked.has(card.id)) continue;
+          if ((card.type ?? '') === draft.type) continue;
+          applyCardType(card, draft.type);
         }
       });
     });

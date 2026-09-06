@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import type { ComponentChild } from 'preact';
+import { getZoom } from '../services/zoomService';
 
 export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger }: {
   value: string;
@@ -9,16 +11,49 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
   renderTrigger?: (label: string, open: boolean, toggle: () => void) => ComponentChild;
 }) {
   const [open, setOpen] = useState(false);
+  // Where the panel goes once it is out of the flow — see the portal below.
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const toggle = () => setOpen(o => !o);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // BOTH, because the panel is no longer a descendant of the wrapper:
+      // testing only the wrapper would close the list on the very mousedown
+      // that is choosing an option, and the click that follows would land on
+      // nothing.
+      if (!ref.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  // The panel is placed once, in viewport coordinates, so anything that moves
+  // the trigger afterwards would leave it stranded beside nothing. Closing is
+  // the honest answer — a select is a moment, not a state to maintain. Capture
+  // phase because the scrolling is usually a container's, not the window's.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !ref.current) { setPos(null); return; }
+    // Divided by the zoom: a `position: fixed` element placed from
+    // getBoundingClientRect would otherwise be scaled twice when the app runs
+    // at anything but 100% (see zoomService).
+    const z = getZoom() / 100;
+    const r = ref.current.getBoundingClientRect();
+    setPos({ top: (r.bottom + 4) / z, left: r.left / z, width: r.width / z });
   }, [open]);
 
   const label = options.find(o => o.value === value)?.label ?? '';
@@ -33,8 +68,17 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
           </svg>
         </button>
       )}
-      {open && (
-        <div class="absolute left-0 top-full z-40 mt-1 bg-elevated border border-border rounded-lg shadow-xl py-1 min-w-full max-h-52 overflow-y-auto">
+      {/* Portaled to the body rather than positioned inside the wrapper: an
+          absolutely placed panel is clipped by any scrolling ancestor, which is
+          what a modal body is as soon as its content is a little tall. Same
+          treatment as the import screen's suggestion list, for the same
+          reason. */}
+      {open && pos && createPortal((
+        <div
+          ref={panelRef}
+          class="fixed z-[100] bg-elevated border border-border rounded-lg shadow-xl py-1 max-h-52 overflow-y-auto"
+          style={{ top: `${pos.top}px`, left: `${pos.left}px`, width: `${pos.width}px` }}
+        >
           {options.map(opt => (
             <button
               key={opt.value}
@@ -46,7 +90,7 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
             </button>
           ))}
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

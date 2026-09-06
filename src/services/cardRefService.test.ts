@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveCardRef, findBacklinks, findSetsContaining } from './cardRefService';
+import { resolveCardRef, findBacklinks, findSetsContaining, cardsPlayingInSets } from './cardRefService';
 import type { Card, CardReferenceAttachment } from '../types';
 
 function card(id: string, over: Partial<Card> = {}): Card {
@@ -162,5 +162,59 @@ describe('findSetsContaining', () => {
       card('s3', { type: 'tuneset' }),
     );
     expect(findSetsContaining('t', cards).map(c => c.name)).toEqual(['Alpha', 'Zulu']);
+  });
+});
+
+describe('cardsPlayingInSets', () => {
+  const tuneset = (id: string, refs: CardReferenceAttachment[], over: Partial<Card> = {}) =>
+    card(id, { ...over, type: 'tuneset', tunes: refs });
+
+  it('answers for the whole library at once, and agrees with the per-card twin', () => {
+    const cards = lib(
+      card('a'), card('b'), card('free'),
+      tuneset('s1', [ref({ id: 'a', guid: 'guid-a' })]),
+      tuneset('s2', [ref({ id: 'b', guid: 'guid-b' })]),
+    );
+    const bulk = cardsPlayingInSets(cards);
+    expect([...bulk].sort()).toEqual(['a', 'b']);
+    for (const id of Object.keys(cards)) {
+      expect(bulk.has(id)).toBe(findSetsContaining(id, cards).length > 0);
+    }
+  });
+
+  it('ignores a tunes list on a card that is not typed as a set', () => {
+    const cards = lib(card('t'), card('s', { tunes: [ref({ id: 't', guid: 'guid-t' })] }));
+    expect(cardsPlayingInSets(cards).size).toBe(0);
+  });
+
+  it('ignores a mere mention in the attachments', () => {
+    const cards = lib(card('t'), withRefs('m', [ref({ id: 't', guid: 'guid-t' })]));
+    expect(cardsPlayingInSets(cards).size).toBe(0);
+  });
+
+  it('resolves the same way a click does, not by matching any of the three keys', () => {
+    // The reference's id wins over its guid, so 'a' plays here and 'b' does not
+    // — the same answer the row's own click gives.
+    const cards = lib(card('a'), card('b'), tuneset('s', [ref({ id: 'a', guid: 'guid-b' })]));
+    expect([...cardsPlayingInSets(cards)]).toEqual(['a']);
+  });
+
+  it('never locks a card through its own set, and survives an empty one', () => {
+    const cards = lib(
+      tuneset('s', [ref({ id: 's', guid: 'guid-s' })]),   // only possible via an import
+      card('e', { type: 'tuneset' }),
+    );
+    expect(cardsPlayingInSets(cards).size).toBe(0);
+  });
+
+  it('counts a card played by two sets once', () => {
+    const r = ref({ id: 't', guid: 'guid-t' });
+    const cards = lib(card('t'), tuneset('s1', [r]), tuneset('s2', [r]));
+    expect([...cardsPlayingInSets(cards)]).toEqual(['t']);
+  });
+
+  it('leaves an unresolved reference out — there is no card to lock', () => {
+    const cards = lib(tuneset('s', [ref({ id: 'gone', guid: 'also-gone' })]));
+    expect(cardsPlayingInSets(cards).size).toBe(0);
   });
 });

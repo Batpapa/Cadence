@@ -64,6 +64,33 @@ export function findSetsContaining(cardId: string, cards: Record<string, Card>):
   return collect(cards, cardId, source => (isTuneset(source) ? source.tunes ?? [] : []));
 }
 
+/** Every card that plays in at least one set — the bulk twin of
+ *  `findSetsContaining`, which answers for ONE card by scanning the library and
+ *  would be quadratic asked once per card of a selection. One pass over the
+ *  sets answers for all of them at once.
+ *
+ *  Same doctrine as its twin: derived on demand, never stored, and membership
+ *  decided by RUNNING the resolver rather than by comparing a reference's three
+ *  fields — so this agrees with where clicking that reference actually goes.
+ *
+ *  Only the ids are returned, because the one question it exists for is "may
+ *  this card still change type" (see isTypeLocked). Whoever needs to NAME the
+ *  sets is asking about a single card and should use the twin. */
+export function cardsPlayingInSets(cards: Record<string, Card>): Set<string> {
+  const out = new Set<string>();
+  for (const source of Object.values(cards)) {
+    if (!isTuneset(source)) continue;
+    for (const ref of source.tunes ?? []) {
+      const target = resolveCardRef(ref, cards);
+      // A set cannot contain itself (canBeTuneOf), but an imported or
+      // hand-edited list can say otherwise, and a card locked by its own
+      // membership would be locked by nothing real.
+      if (target && target.id !== source.id) out.add(target.id);
+    }
+  }
+  return out;
+}
+
 /** Shared body of the two lookups above: every card, other than the target,
  *  from which `refsOf` yields a reference resolving to the target. Sorted by
  *  name so the list is stable, and each card appears once however many of its
