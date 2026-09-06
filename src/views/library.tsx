@@ -3,7 +3,6 @@ import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
-import { cardTypeIcon } from '../components/cardTypeIcon';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType } from '../services/cardTypeService';
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, cardPackageText } from '../services/importExport';
@@ -26,6 +25,29 @@ import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
 import { FilterSection, ReviewedRangeSection, cycleFilter, type FilterMap } from '../components/filterSection';
 import { createLongPressHandlers } from '../components/longPress';
+
+/** The one figure a row shows on its right: whatever the current sort is
+ *  sorting by.
+ *
+ *  Two columns of statistics on every line were two answers to a question
+ *  nobody had asked. The sort mode IS the question, so the row answers that one
+ *  and stays quiet otherwise — and the reader never has to remember which
+ *  column the list is ordered by, because it is the only one there.
+ *
+ *  `alpha` and `lastAdded` return null: their criterion is the order itself,
+ *  and neither has a per-card value to print. Showing something else there
+ *  would be showing something irrelevant. */
+function sortReadout(
+  sort: LibrarySort, card: Card, lastTs: number | undefined, recall: number, ease: number | undefined,
+): string | null {
+  if (sort === 'lastReviewed') return lastTs ? timeAgo(lastTs) : t('card.neverReviewed');
+  if (sort === 'importance')   return `×${card.defaultImportance}`;
+  if (sort === 'recall')       return pct(recall);
+  // Never reviewed: FSRS has said nothing about this card, and a 0% would be a
+  // claim rather than a blank.
+  if (sort === 'difficulty')   return ease === undefined ? '—' : pct(ease);
+  return null;
+}
 
 /** The numeric source id inside an `externalId`. Throws rather than returning
  *  NaN: the bulk runner turns a throw into "this card was skipped", named in
@@ -817,7 +839,6 @@ export function LibraryView() {
         ) : (
           <div class="lib-list space-y-1">
             {(() => {
-              const impColWidth = Math.max(...filtered.map(c => String(`×${c.defaultImportance}`).length));
               // Shared by the row's click handler (treatAsShift = e.shiftKey)
               // and its long-press handler (treatAsShift = always true, long-press
               // being mobile's equivalent of holding Shift while clicking).
@@ -849,7 +870,7 @@ export function LibraryView() {
               const fsrs     = work ? replayFSRS(work.history) : undefined;
               const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
               const isSel    = selected.has(card.id);
-              const typeGlyph = cardTypeIcon(knownCardType(card), 12);
+              const readout  = sortReadout(sortMode, card, work?.history.at(-1)?.ts, k, cardEase);
 
               return (
                 <div
@@ -911,32 +932,21 @@ export function LibraryView() {
                     />
                   </span>
 
-                  {/* Nothing at all for a card with no type — so the mark says
-                      "this one is a tune" rather than making every ordinary
-                      card carry a badge saying it is ordinary. It is also what
-                      makes the type filter above filter on something visible. */}
-                  {typeGlyph && (
-                    <span class="text-dim shrink-0 flex items-center" title={t(cardTypeLabelKey(card.type))}>
-                      {typeGlyph}
-                    </span>
-                  )}
-
                   <span class={`text-sm text-primary flex-1 truncate ${selected.size === 0 ? 'hover:text-accent transition-colors' : ''}`}>
                     {card.name}
                   </span>
 
-                  <div class="flex items-center gap-3 shrink-0">
-                    <span class="lib-date text-xs font-mono text-dim shrink-0">
-                      {work?.history.at(-1)?.ts ? timeAgo(work.history.at(-1)!.ts) : t('card.neverReviewed')}
-                    </span>
+                  {/* Flush against the row's right edge, so the figures line up
+                      on their own without a reserved width. The tooltip names
+                      the criterion rather than repeating the value. */}
+                  {readout !== null && (
                     <span
-                      style={{ width: `${impColWidth}ch` }}
-                      class="text-xs font-mono text-dim shrink-0 text-right"
-                      title={t('library.baseImportance')}
+                      class="text-xs font-mono tabular-nums text-dim shrink-0"
+                      title={t(`library.sort.${sortMode}`)}
                     >
-                      ×{card.defaultImportance}
+                      {readout}
                     </span>
-                  </div>
+                  )}
                 </div>
               );
               });
