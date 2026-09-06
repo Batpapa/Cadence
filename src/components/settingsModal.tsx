@@ -3,6 +3,7 @@ import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
 import type { AppContext } from '../types';
 import { generateId, emptyState } from '../utils';
+import { deleteLocalSessionData } from '../session/db';
 import { TrashIcon, ResetIcon, HelpIcon } from './icons';
 import { confirmModal, closeModal, showModal, renderModalBody } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
@@ -520,11 +521,24 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
           class="btn-danger text-xs shrink-0"
           onClick={() => confirmModal(t('settings.reset.title'), t('settings.reset.message'), t('settings.reset.confirm'), async () => {
             closeModal(); closeSettings();
+            const userId = ctx.user.id;
             await ctx.mutate(s => {
               const fresh = emptyState(); fresh.id = s.id;
               ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
+              // EMPTIED first, not just overwritten. `Object.assign` only
+              // touches the keys `emptyState()` happens to name, so every
+              // optional field added since simply survived a "reset that
+              // deletes everything" — six of them by 2026-09-06, including the
+              // whole `modules` blob and with it every recorded session.
+              // Clearing first makes the rule "what emptyState does not name is
+              // gone", which stays true for fields nobody has thought of yet.
+              for (const key of Object.keys(s)) delete (s as unknown as Record<string, unknown>)[key];
               Object.assign(s, fresh);
             });
+            // The recordings themselves live outside the user blob, in a
+            // local-only database — see deleteLocalSessionData for why leaving
+            // it would resurrect a session rather than merely waste space.
+            await deleteLocalSessionData(userId);
             ctx.navigate({ view: 'folder', folderId: null });
           })}
         >
