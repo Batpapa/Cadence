@@ -30,17 +30,15 @@ export function DetectedIn({ cardId }: { cardId: string }) {
       <span class="section-title">{t('card.section.detectedIn')}</span>
       <div class="space-y-1">
         {groups.map(group => (
-          <div key={group.sessionId} class="flex items-center gap-2 flex-wrap">
+          // One line per session, never wrapped: the times come first because
+          // they are what is clicked, and the name last because it is what can
+          // afford to be cut — it is a label, while a time is a destination.
+          <div key={group.sessionId} class="flex items-center gap-2 min-w-0 overflow-hidden">
             <span class="text-[11px] text-dim shrink-0 w-4 text-center font-mono">♪</span>
-            <span
-              class="text-xs font-mono truncate text-muted hover:text-primary cursor-pointer transition-colors"
-              title={t('sessions.openSession')}
-              onClick={() => navigate({ view: 'sessions', sessionId: group.sessionId })}
-            >{group.name || defaultSessionName(group.date)}</span>
             {group.detections.map(d => (
               <button
                 key={d.annotationId}
-                class={`text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-border cursor-pointer transition-colors hover:border-accent ${
+                class={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-border cursor-pointer transition-colors hover:border-accent ${
                   d.confirmed ? 'text-success' : BUCKET_TEXT[d.bucket]}`}
                 title={t(d.confirmed ? 'sessions.alternates.confirmed' : `sessions.confidence.${d.bucket}`)}
                 onClick={() => navigate({ view: 'sessions', sessionId: group.sessionId, annotationId: d.annotationId })}
@@ -48,6 +46,11 @@ export function DetectedIn({ cardId }: { cardId: string }) {
                 {fmtLongTime(d.start)}
               </button>
             ))}
+            <span
+              class="text-xs font-mono truncate min-w-0 text-muted hover:text-primary cursor-pointer transition-colors"
+              title={t('sessions.openSession')}
+              onClick={() => navigate({ view: 'sessions', sessionId: group.sessionId })}
+            >{group.name || defaultSessionName(group.date)}</span>
           </div>
         ))}
       </div>
