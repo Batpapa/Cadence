@@ -14,7 +14,8 @@
     "dev": "webpack serve --mode development",
     "test": "vitest run",
     "test:nightly": "vitest run",
-    "deploy": "git add . && (git diff --cached --quiet && echo 'Nothing to commit.' || git commit -m \"${npm_config_msg:-deploy}\") && git push"
+    "deploy": "git add . && (git diff --cached --quiet && echo 'Nothing to commit.' || git commit -m \"${npm_config_msg:-deploy}\") && git push",
+    "sweep": "vitest run --config vitest.sweep.config.ts"
   },
   "devDependencies": {
     "@types/dom-webcodecs": "^0.1.18",
