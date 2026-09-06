@@ -66,9 +66,12 @@ interface SessionSummaryProps {
   ctx: AppContext;
   onOpenCard: (cardId: string) => void;
   onReanalyze: () => void;
+  /** One detection to arrive on, from a card's "detected in" link. Marks and
+   *  scrolls to it; see `targetId` for why that is not the same as selecting. */
+  annotationId?: string;
 }
 
-export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: SessionSummaryProps) {
+export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotationId }: SessionSummaryProps) {
   const listWrapRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const timeLblRef = useRef<HTMLSpanElement>(null);
@@ -117,6 +120,18 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
   // covering that instant is lit, in the strip and in the list alike: none in a
   // silence, two across a join. Nothing is remembered, so nothing can go stale.
   const [lit, setLit] = useState<{ ids: string[]; gapFrom: number | null }>({ ids: [], gapFrom: null });
+  // The detection someone followed a link to get to — a DIFFERENT question from
+  // `lit`, which answers "what covers the play head" and is plural by nature
+  // (detections overlap at 22 of 37 joins on a real session, so landing on one
+  // usually lights two). Asked once, answered once, and gone at the first
+  // gesture: after that, "which one did I come for" is a question nobody is
+  // still asking, and a stale mark competing with the honest reading is exactly
+  // what the timeline work removed elsewhere.
+  //
+  // It also has to survive with NO audio: sessions sync between devices, their
+  // recordings do not, so the mark cannot be something the play head sets.
+  const [targetId, setTargetId] = useState<string | null>(annotationId ?? null);
+  const dropTarget = () => setTargetId(id => (id === null ? id : null));
   // The last reading, as a key, so the list only re-renders when the answer
   // actually changes — a couple of times a tune, not four times a second.
   const litKeyRef = useRef('');
@@ -179,6 +194,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
       const a = audioRef.current;
       if (!a || !a.src) return;
       e.preventDefault(); // or the page scrolls under it
+      dropTarget();
       if (a.paused) void a.play().catch(() => {}); else a.pause();
     };
     document.addEventListener('keydown', onKeyDown);
@@ -260,6 +276,23 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
     listWrapRef.current?.querySelector(`[data-ann-id="${ann.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
+  // Arriving from a "detected in" link. Scrolling and marking is the whole
+  // job; moving the play head is a bonus for when there is a recording, and
+  // deliberately not the mechanism — see targetId.
+  useEffect(() => {
+    if (!annotationId) return;
+    const ann = session.annotations.find(a => a.id === annotationId);
+    if (!ann) return;
+    setTargetId(annotationId);
+    // After paint: the row has to exist before it can be scrolled to.
+    const id = requestAnimationFrame(() => {
+      listWrapRef.current?.querySelector(`[data-ann-id="${annotationId}"]`)?.scrollIntoView({ behavior: 'auto', block: 'center' });
+    });
+    if (audioRef.current?.src) seekTo(ann.start);
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line
+  }, [annotationId, session.id]);
+
   // The list follows the head: whatever is lit stays in the middle of the
   // screen, so the reading is legible without chasing it.
   //
@@ -281,6 +314,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
   // seeks where you pointed. Deciding at the end is what lets the same press
   // start either a scrub or a click without the two fighting.
   const onBarDown = (e: PointerEvent) => {
+    dropTarget();
     const bar = barRef.current;
     if (!bar) return;
     bar.setPointerCapture(e.pointerId);
@@ -582,7 +616,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze }: Sessio
                 data-ann-id={item.ann.id}
                 // The answer to "which one did I just scroll to": the card is
                 // ringed, not merely centred among identical neighbours.
-                class={`rounded-lg transition-shadow ${lit.ids.includes(item.ann.id) ? 'ring-2 ring-accent' : ''}`}
+                class={`rounded-lg transition-shadow ${
+                  item.ann.id === targetId ? 'ring-2 ring-warn'
+                  : lit.ids.includes(item.ann.id) ? 'ring-2 ring-accent' : ''}`}
               >
                 <AnnotationCard ann={item.ann} opts={cardOptsFor(item.ann, item.i)} />
               </div>

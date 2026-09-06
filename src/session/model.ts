@@ -132,6 +132,12 @@ export interface RecordedSession {
  *  touch this — see session/db.ts's local database. */
 export interface TuneAnalyserModuleData {
   sessions: Record<string, RecordedSession>;
+  /** Show the "detected in" panel on tune cards. Absent = yes: whoever records
+   *  sessions is the only one who ever sees it, and for them the cross-
+   *  reference is the point. Written only to turn it OFF, from the sessions
+   *  library — a flag on this module's own slice rather than on User, which
+   *  knows nothing about panels. */
+  detectionsOnCards?: boolean;
 }
 
 export const TUNE_ANALYSER_MODULE_KEY = 'tune-analyser';

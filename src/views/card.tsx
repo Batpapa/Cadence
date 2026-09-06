@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'preact/hooks';
+import { Fragment } from 'preact';
 import { appState, navigate, mutate } from '../store';
 import { pct, focusIfDesktop, externalSourceLink } from '../utils';
 import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
@@ -14,6 +15,7 @@ import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/k
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { removeCards } from '../services/cardService';
+import { cardPanels } from '../services/cardPanels';
 import { lookupItiMapping } from '../services/itiMappingService';
 import type { ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu, type ContextMenuItem } from '../components/contextMenu';
@@ -875,6 +877,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           </div>
         </div>
       )}
+
+      {/* ── What the modules have to say about this card ── */}
+      {/* Right after the incoming references, because that is what these are:
+          another thing out there points at this card. The view renders them
+          without knowing what any of them is — see services/cardPanels. */}
+      {cardPanels().map((panel, i) => <Fragment key={i}>{panel(cardId)}</Fragment>)}
 
       {/* ── Review history ── */}
       <div class="space-y-2">

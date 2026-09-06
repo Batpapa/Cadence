@@ -9,11 +9,15 @@ import { probeAudioDuration, canPlayFile } from '../audio/sources';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
 import { loadSessionAudio } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
-import type { RecordedSession } from '../model';
+import { TUNE_ANALYSER_MODULE_KEY, type RecordedSession, type TuneAnalyserModuleData } from '../model';
+import { detectionsOnCards } from '../detections';
+import { appState, mutate } from '../../store';
 import {
   activeLive, activeImport, setActiveLive, setActiveImport,
   lastImportDump, importStarting, importPlaybackWarn,
 } from './sessionStore';
+import { registerCardPanel } from '../../services/cardPanels';
+import { DetectedIn } from './DetectedIn';
 
 // ── Session orchestration ─────────────────────────────────────────────────────
 // Actions that start/stop/import a session — everything that used to also
@@ -328,4 +332,53 @@ export async function startReanalyze(ctx: AppContext, session: RecordedSession):
 export function startLiveSession(): void {
   setActiveLive(new LiveSession({}));
   void activeLive.value!.start().catch(() => { /* error surfaced via onError callback */ });
+}
+
+// ── This module's contribution to the card page ───────────────────────────────
+// At load, not at first use: appRoot imports SessionsView, which imports this
+// file, so the registration has already happened by the time any card page
+// renders. The panel decides for itself whether it has anything to say — see
+// DetectedIn, which returns nothing for a card no session ever recognised.
+registerCardPanel((cardId) => <DetectedIn cardId={cardId} />);
+
+// ── This module's own settings ────────────────────────────────────────────────
+// Behind a gear on the module's screen rather than inline on it: there is one
+// preference today and it concerns what the module does ELSEWHERE (on card
+// pages), which is not something the library screen is otherwise about.
+//
+// Stored on the module's slice, never on User — the core holds no flag about a
+// panel it does not know exists. Saved on change with no confirmation, like the
+// score playback preferences: one value, undone by setting it back.
+
+function SessionSettingsBody() {
+  const on = detectionsOnCards(appState.value);
+  return (
+    <label class="flex items-start gap-3 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        class="card-checkbox mt-0.5"
+        checked={on}
+        onChange={(e) => {
+          const next = (e.target as HTMLInputElement).checked;
+          void mutate(s => {
+            const mod = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+            // Written only to turn it OFF — absence is the default here as
+            // everywhere else in this codebase.
+            if (next) delete mod.detectionsOnCards; else mod.detectionsOnCards = false;
+            s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: mod };
+          });
+        }}
+      />
+      <span>
+        <span class="text-sm text-primary">{t('sessions.detectionsOnCards')}</span>
+        <span class="block text-xs text-muted mt-0.5">{t('sessions.detectionsOnCards.hint')}</span>
+      </span>
+    </label>
+  );
+}
+
+export function showSessionSettingsModal(): void {
+  const { el, cleanup } = renderModalBody(<SessionSettingsBody />);
+  // No footer: nothing to confirm, so nothing to press.
+  showModal(t('sessions.settings.title'), el, [], { maxWidth: '26rem', onDismiss: cleanup });
 }

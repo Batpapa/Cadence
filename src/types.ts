@@ -230,7 +230,11 @@ export type Route =
   | { view: 'card'; cardId: string; contextDeckId?: string }
   | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null }
   | { view: 'modules' }
-  | { view: 'sessions'; sessionId?: string }
+  // `annotationId` points at one detection inside the session — a "detected in"
+  // link from a card, where two passes through the same tune are two distinct
+  // destinations. It marks the row it names; it does not select it, which stays
+  // the play head's job (see SessionSummary).
+  | { view: 'sessions'; sessionId?: string; annotationId?: string }
   // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.
   | { view: 'trending'; from?: string; to?: string; gainMode?: TrendingGainMode; minTunebooks?: number };
