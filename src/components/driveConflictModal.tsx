@@ -15,21 +15,25 @@ import { statesEqual, diffStates, type StateDiff, type CollectionDiff } from '..
 // Used by both the settings connect flow and the startup reconciliation, so a
 // conflict at boot gets the exact same explicit choice as a manual reconnect.
 
-/** TEMPORARY, OFF DURING AN OBSERVATION PERIOD (user's call, 2026-09-03 — "juste
- *  pendant quelques jours").
+/** ON since 2026-09-06: a divergence whose two copies hold identical content
+ *  resolves itself, without a modal — see showDriveConflictModal for what that
+ *  case is and why nothing can be lost by settling it.
  *
- *  When true, a divergence whose two copies hold identical content resolves
- *  itself without a modal — see showDriveConflictModal for why that case exists
- *  and why it is safe. It is off for now precisely BECAUSE it is safe and
- *  silent: resolving those cases invisibly would hide the very reports needed
- *  to confirm that a lost upload acknowledgement is what single-device users
- *  are hitting. Until then the modal still appears, but says plainly that the
- *  two copies match, so nobody is asked to arbitrate blind.
+ *  It spent three days off (2026-09-03 → 09-06, the user's call) so the reports
+ *  would come in rather than be resolved invisibly. They did, and they all read
+ *  the same: one device, no difference, "written by this device". The one other
+ *  route to that exact screen is a manual reconnect, which voids both merge
+ *  bases by design — and the users confirmed they had not reconnected. So the
+ *  cause is the one the screen named: our own push, committed by Drive, whose
+ *  acknowledgement never came back.
  *
- *  The comparison itself runs either way, and the console line below fires
- *  either way — that is the observation. Flip this back to true to enable the
- *  fix; nothing else needs to change. */
-const RESOLVE_IDENTICAL_SILENTLY = false;
+ *  driveSync.simulation.test.ts walks every route to this screen and every
+ *  route that cannot reach it, including the two that matter for this flag:
+ *  an edit made AFTER the unrecorded write leaves the copies DIFFERENT, so the
+ *  user is still asked; and adopting silently keeps every local edit.
+ *
+ *  Flip to false to get the observation back; nothing else needs to change. */
+const RESOLVE_IDENTICAL_SILENTLY = true;
 
 /** Apply a Drive copy locally and record the new merge base. The local copy is
  *  about to be wholesale-replaced (IndexedDB included), so it is snapshotted
@@ -287,7 +291,7 @@ export function showDriveConflictModal(
   if (identical) {
     console.info('[drive] divergence sans différence de contenu'
       + (driveDeviceId === getDeviceId() ? ' — copie Drive écrite par cet appareil' : '')
-      + (RESOLVE_IDENTICAL_SILENTLY ? ' — résolue sans intervention' : ' — modale affichée (période d observation)'));
+      + (RESOLVE_IDENTICAL_SILENTLY ? ' — résolue sans intervention' : ' — modale affichée (résolution silencieuse désactivée)'));
     if (RESOLVE_IDENTICAL_SILENTLY) {
       // Nothing is applied: the two copies already hold the same thing, so only
       // the bookkeeping is behind. Recording the sync point adopts Drive's
