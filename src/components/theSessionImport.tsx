@@ -295,9 +295,13 @@ export interface TheSessionBodyProps {
   getTargetDeckIds?: () => Set<string> | undefined;
   onNavigateToCard?: () => void;
   withDeckChoice?: (onReady: () => void) => void;
+  /** Opens the tune tab with this already in its lookup field, as if typed.
+   *  One id previews that tune; several joined with ';' arm the batch — the
+   *  field's own parser decides, so a caller never has to know which. */
+  initialQuery?: string;
 }
 
-export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDeckChoice = onReady => onReady() }: TheSessionBodyProps) {
+export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDeckChoice = onReady => onReady(), initialQuery }: TheSessionBodyProps) {
   const [tab, setTab] = useState<'tune' | 'member' | 'bookmarks' | 'sets'>('tune');
   const [status, setStatus] = useState<ComponentChild>('');
 
@@ -388,7 +392,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
 
       <div class="space-y-3">
         {tab === 'tune' && (
-          <TuneTab withDeckChoice={withDeckChoice} setStatus={setStatus} importTune={importTune} importIds={importIds} />
+          <TuneTab withDeckChoice={withDeckChoice} setStatus={setStatus} importTune={importTune} importIds={importIds} initialQuery={initialQuery} />
         )}
         {tab === 'member' && (
           <MemberTab getTargetDeckIds={getTargetDeckIds} withDeckChoice={withDeckChoice} setStatus={setStatus} />
@@ -408,11 +412,12 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
 
 // ── Tab: Tune (ID, name search, or a pasted "1;5;97" ID list) ─────────────────
 
-function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
+function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuery }: {
   withDeckChoice: (onReady: () => void) => void;
   setStatus: (c: ComponentChild) => void;
   importTune: (tuneId: number, onSuccess: () => void, setBusy: (b: boolean) => void) => Promise<void>;
   importIds: (ids: number[], onProgress: (loaded: number, total: number) => void, onDone: () => void) => Promise<void>;
+  initialQuery?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
@@ -527,6 +532,12 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
       }, 300);
     }
   };
+
+  // Arrived with something to look up (repairing a broken card reference):
+  // play it through the SAME path a keystroke takes, so one id previews and
+  // several arm the batch without this knowing the difference. Once, on mount
+  // — afterwards the field belongs to the user.
+  useEffect(() => { if (initialQuery) onInputChange(initialQuery); }, []);
 
   const pick = (tune: { id: number; name: string; type: string }) => {
     setValue(tune.name);
@@ -1415,8 +1426,23 @@ function AiStep({ ensureSelectedDeckIds, withDeckChoice }: {
   );
 }
 
-function NewCardModal({ ctx, initialDeckIds, onClose }: { ctx: AppContext; initialDeckIds?: string[]; onClose: () => void }) {
-  const [step, setStep] = useState<Step>('root');
+/** Opens the modal straight on one source's lookup, already filled in.
+ *
+ *  The only caller today is the repair of a broken card reference, which knows
+ *  exactly which tune is missing and where it came from. Deliberately routed
+ *  through this modal rather than importing behind the user's back: the deck
+ *  gate lives here (`withDeckChoice`), and nothing should be created without
+ *  that decision having been offered. */
+export interface NewCardPreset {
+  source: 'thesession' | 'irishtuneinfo';
+  /** One id, or several joined with ';' — the field's own parser decides. */
+  query: string;
+}
+
+function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContext; initialDeckIds?: string[]; preset?: NewCardPreset; onClose: () => void }) {
+  // A preset skips the menu entirely: the user did not come here to choose a
+  // source, they came to repair one precise reference.
+  const [step, setStep] = useState<Step>(preset?.source ?? 'root');
   const selectedDeckIdsRef = useRef<Set<string> | undefined>(initialDeckIds ? new Set(initialDeckIds) : undefined);
   const deckSelectorOpenRef = useRef(false);
   const [, bump] = useState(0);
@@ -1505,8 +1531,8 @@ function NewCardModal({ ctx, initialDeckIds, onClose }: { ctx: AppContext; initi
           {step === 'root' && <RootStep navigate={setStep} />}
           {step === 'create' && <CreateStep withDeckChoice={withDeckChoice} ensureSelectedDeckIds={ensureSelectedDeckIds} onOpenCard={onOpenCard} />}
           {step === 'import' && <ImportStep navigate={setStep} />}
-          {step === 'thesession' && <TheSessionBody ctx={ctx} getTargetDeckIds={() => selectedDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} />}
-          {step === 'irishtuneinfo' && <IrishTuneInfoBody ctx={ctx} getTargetDeckIds={() => selectedDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} />}
+          {step === 'thesession' && <TheSessionBody ctx={ctx} getTargetDeckIds={() => selectedDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} initialQuery={preset?.source === 'thesession' ? preset.query : undefined} />}
+          {step === 'irishtuneinfo' && <IrishTuneInfoBody ctx={ctx} getTargetDeckIds={() => selectedDeckIdsRef.current} onNavigateToCard={onClose} withDeckChoice={withDeckChoice} initialQuery={preset?.source === 'irishtuneinfo' ? preset.query : undefined} />}
           {step === 'json' && <JsonStep navigate={setStep} />}
           {step === 'json-file' && <JsonFileStep ensureSelectedDeckIds={ensureSelectedDeckIds} withDeckChoice={withDeckChoice} />}
           {step === 'share' && <ShareStep ensureSelectedDeckIds={ensureSelectedDeckIds} withDeckChoice={withDeckChoice} />}
@@ -1517,9 +1543,9 @@ function NewCardModal({ ctx, initialDeckIds, onClose }: { ctx: AppContext; initi
   );
 }
 
-export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[]): void {
+export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[], preset?: NewCardPreset): void {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const close = () => { render(null, host); host.remove(); };
-  render(<NewCardModal ctx={ctx} initialDeckIds={initialDeckIds} onClose={close} />, host);
+  render(<NewCardModal ctx={ctx} initialDeckIds={initialDeckIds} preset={preset} onClose={close} />, host);
 }
