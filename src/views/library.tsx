@@ -9,6 +9,7 @@ import { uploadShare } from '../services/shareService';
 import { confirmModal, closeAllModals } from '../components/modal';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { removeCards } from '../services/cardService';
+import { localDayRange, hasReviewInRange } from '../services/reviewRange';
 import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showRefreshModal } from '../components/batchEdit';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId } from '../services/theSessionService';
 import { ensureItiMapping } from '../services/itiMappingService';
@@ -251,12 +252,7 @@ export function LibraryView() {
 
   // ── Filtered list (recomputed every render) ───────────────────────────────────
   const q = searchQuery.toLowerCase();
-  // A day in the route is a LOCAL day. The explicit time is what makes it one:
-  // `new Date('2026-09-03')` is parsed as UTC and lands on the 2nd for anyone
-  // west of Greenwich, which is exactly the kind of off-by-one nobody notices
-  // until a review sits on the wrong side of a boundary.
-  const revFromTs = revFrom ? new Date(`${revFrom}T00:00:00`).getTime() : null;
-  const revToTs   = revTo   ? new Date(`${revTo}T23:59:59.999`).getTime() : null;
+  const revRange = localDayRange(revFrom, revTo);
   const filteredUnsorted = allCards.filter(c => {
     const tags       = c.tags ?? [];
     // externalId match is EXACT (whole "source:id", or just the id part),
@@ -283,14 +279,7 @@ export function LibraryView() {
       (inclDecks.length === 0 || (deckFilterOr ? inclDecks.some(hasDeck) : inclDecks.every(hasDeck))) &&
       exclDecks.every(id => !hasDeck(id))
     );
-    // ANY review inside the range, not the LAST one: the question this answers
-    // is "what did I work on that week", and a card revisited since has not
-    // stopped being part of that week's work.
-    const matchReviewed = (revFromTs === null && revToTs === null) || (
-      user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history.some(e =>
-        (revFromTs === null || e.ts >= revFromTs) && (revToTs === null || e.ts <= revToTs)
-      ) ?? false
-    );
+    const matchReviewed = hasReviewInRange(user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history, revRange);
 
     return matchText && matchTags && matchDecks && matchReviewed;
   });
