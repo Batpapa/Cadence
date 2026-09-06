@@ -2,16 +2,17 @@ import { useEffect, useRef, useMemo } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
 import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance } from '../utils';
-import { TrashIcon, PlusIcon, GearIcon } from './icons';
+import { TrashIcon, PlusIcon, GearIcon, WrenchIcon } from './icons';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal } from './fileViewer';
 import { showEmbedModal } from './embedViewer';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
 import { resolveCardRef } from '../services/cardRefService';
 import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, TUNESET_ABC_NAME } from '../services/abcService';
-import { isTuneset } from '../services/cardTypeService';
-import { appState, navigate } from '../store';
-import { showModal, closeModal, confirmModal } from './modal';
+import { isTuneset, CARD_TYPE_TUNE } from '../services/cardTypeService';
+import { appState, navigate, getContext, mutate } from '../store';
+import { showModal, closeModal, confirmModal, renderModalBody } from './modal';
+import { showNewCardModal, type NewCardPreset } from './theSessionImport';
 import { t } from '../services/i18nService';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
@@ -214,11 +215,124 @@ function EmbedRowContent({ entry, onRemove, editable }: { entry: EmbedEntry; onR
   );
 }
 
-function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action }: {
+// ── A reference whose card is gone ───────────────────────────────────────────
+
+const SOURCE_LABEL: Record<NewCardPreset['source'], string> = {
+  thesession: 'TheSession',
+  irishtuneinfo: 'irishtune.info',
+};
+
+/** What, if anything, could put this reference's card back.
+ *
+ *  Importing is the ONLY repair that works, and only through the external id:
+ *  `resolveCardRef` tries id, then guid, then externalId, and a card created by
+ *  hand carries a fresh id and guid and no external id at all — it would not
+ *  resolve, leaving the reference exactly as broken as before. Re-importing
+ *  from the source stamps the same external id, the third key matches, and
+ *  `stateNormalise` then heals the reference back onto the fast path.
+ *
+ *  Anything whose id is not a plain number is left out on purpose — a set
+ *  (`thesession-set:12-34`) is imported by a different route, and offering a
+ *  button that lands on a tune lookup would be a lie. */
+function repairPreset(entry: CardRef): NewCardPreset | null {
+  const raw = entry.externalId;
+  if (!raw) return null;
+  const sep = raw.indexOf(':');
+  if (sep === -1) return null;
+  const source = raw.slice(0, sep);
+  const id = raw.slice(sep + 1);
+  if (!/^\d+$/.test(id)) return null;
+  if (source === 'thesession' || source === 'irishtuneinfo') return { source, query: id };
+  return null;
+}
+
+/** Recreates the missing card on the spot, so the reference resolves again.
+ *
+ *  The new card deliberately takes the reference's OWN id and guid rather than
+ *  fresh ones. Those two are free — the reference did not resolve, so no card
+ *  holds either — and they are the first two keys `resolveCardRef` consults, so
+ *  reusing them is what turns this from a look-alike into a repair. It also
+ *  mends every OTHER reference to the same vanished card in the same stroke.
+ *
+ *  The card arrives empty apart from its name: this puts back an identity, not
+ *  a copy of what was lost, and there is nothing to invent the rest from.
+ *
+ *  `type` is imposed by the role the reference plays, never chosen here — a
+ *  set's member must be a tune (`canBeTuneOf` refuses anything else, and a
+ *  non-tune sitting in a set is precisely the state that rule exists to
+ *  prevent), while a mention may point at any kind of card and so gets none. */
+async function createMissingCard(entry: CardRef, type: string | undefined): Promise<void> {
+  const id = entry.id || generateId();
+  const guid = entry.guid || generateId();
+  await mutate(s => {
+    if (s.cards[id]) return;   // raced by another repair of the same reference
+    s.cards[id] = {
+      id, guid, name: entry.title.trim(), defaultImportance: 1, tags: [],
+      content: { notes: '', attachments: [] },
+      ...(type ? { type } : {}),
+    };
+  });
+}
+
+/** Says what is missing and offers the one repair that fits.
+ *
+ *  Deliberately explains rather than acts: three quite different histories lead
+ *  here — the card was deleted, it was never imported (a shared set carries its
+ *  tunes as references, not as cards), or a sync applied a copy that never had
+ *  it — and nothing here can tell them apart.
+ *
+ *  One action, never two: with a source id, re-importing brings back the real
+ *  card, notation and all, and creating a blank one instead would be strictly
+ *  worse. Without one, creating is all there is. No Close button either — the
+ *  ✕, Escape and the backdrop already do that, and a modal that offers a way
+ *  out twice reads as if the two differed. */
+function showBrokenRefModal(entry: CardRef, type: string | undefined): void {
+  const preset = repairPreset(entry);
+  // Nothing to name it with — a nameless card is unsortable, unsearchable and
+  // effectively invisible, so it is not an offer worth making.
+  const canCreate = !preset && entry.title.trim() !== '';
+  const { el, cleanup } = renderModalBody(
+    <div class="space-y-3">
+      <p class="text-sm text-muted leading-relaxed">
+        {t('fileViewer.cardRef.missing.body', { title: entry.title })}
+      </p>
+      <p class="text-xs text-dim leading-relaxed">
+        {preset
+          ? t('fileViewer.cardRef.missing.canImport', { source: SOURCE_LABEL[preset.source], id: preset.query })
+          : t('fileViewer.cardRef.missing.canCreate')}
+      </p>
+      {canCreate && type === CARD_TYPE_TUNE && (
+        <p class="text-xs text-dim leading-relaxed">{t('fileViewer.cardRef.missing.asTune')}</p>
+      )}
+    </div>,
+  );
+  const close = () => { closeModal(); cleanup(); };
+  showModal(t('fileViewer.cardRef.missing.title'), el, [
+    ...(preset ? [{
+      label: t('fileViewer.cardRef.missing.import'),
+      primary: true,
+      // Closed BEFORE the import modal opens: that one mounts its own host on
+      // document.body rather than joining this stack, so leaving this one up
+      // would just sit behind it with nothing left to say.
+      onClick: () => { close(); showNewCardModal(getContext(), undefined, preset); },
+    }] : []),
+    ...(canCreate ? [{
+      label: t('fileViewer.cardRef.missing.create'),
+      primary: true,
+      onClick: () => { close(); void createMissingCard(entry, type); },
+    }] : []),
+  ], { maxWidth: '26rem', onDismiss: cleanup });
+}
+
+function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action, repairType }: {
   entry: CardRef;
   onRemove: () => void;
   editable: boolean;
   glyph?: ComponentChild;
+  /** The type a card recreated from this reference must take — decided by the
+   *  ROLE the reference plays, which only the caller knows. See
+   *  createMissingCard. */
+  repairType?: string;
   /** A control of this row's own, placed with the others and AHEAD of the
    *  trash — so remove stays last on every row, where the eye expects it,
    *  rather than having something appear beyond it on some rows only. */
@@ -238,9 +352,23 @@ function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action }:
           title={t('fileViewer.cardRef.open')} onClick={() => navigate({ view: 'card', cardId: resolved.id })}
         >{resolved.name}</span>
       ) : (
-        <span class="text-xs font-mono truncate flex-1 text-dim">
-          {entry.title}<span class="ml-1 text-danger text-[10px]">{t('fileViewer.cardRef.unresolved')}</span>
-        </span>
+        <>
+          <span class="text-xs font-mono truncate flex-1 text-dim">
+            {entry.title}<span class="ml-1 text-danger text-[10px]">{t('fileViewer.cardRef.unresolved')}</span>
+          </span>
+          {/* Shown whether or not the row is editable: a missing card is just
+              as missing while studying, and putting it back is not an edit of
+              THIS card — it creates another one. Rendered here rather than
+              through the `action` slot below, which the repeat counter already
+              occupies on a set's rows, and which knows nothing of resolution. */}
+          <button
+            class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0"
+            title={t('fileViewer.cardRef.repair')}
+            onClick={() => showBrokenRefModal(entry, repairType)}
+          >
+            <WrenchIcon size={11} />
+          </button>
+        </>
       )}
       {action}
       {editable && (
@@ -352,6 +480,10 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
         <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch}>
           <CardRefRowContent
             entry={ref} editable={editable} onRemove={() => onRemove(i)} glyph={glyph}
+            // This list IS a set's tune list — its repeat counter says as much
+            // — so anything recreated from one of its references is a tune, and
+            // the set's "members are tunes" invariant survives the repair.
+            repairType={CARD_TYPE_TUNE}
             // A control when it can be changed, a readout when it cannot —
             // which is why one shows at ×1 and the other does not. A control
             // has to be findable before you know you want it, so it is always

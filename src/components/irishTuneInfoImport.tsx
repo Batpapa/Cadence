@@ -295,9 +295,12 @@ export interface IrishTuneInfoBodyProps {
   getTargetDeckIds?: () => Set<string> | undefined;
   onNavigateToCard?: () => void;
   withDeckChoice?: (onReady: () => void) => void;
+  /** Opens the tune tab with this already in its lookup field — see the twin
+   *  prop on TheSessionBody. */
+  initialQuery?: string;
 }
 
-export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, withDeckChoice = onReady => onReady() }: IrishTuneInfoBodyProps) {
+export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, withDeckChoice = onReady => onReady(), initialQuery }: IrishTuneInfoBodyProps) {
   const [tab, setTab] = useState<'tune' | 'playlist'>('tune');
   const [includeAudio, setIncludeAudio] = useState(false);
   const [status, setStatus] = useState<ComponentChild>('');
@@ -475,6 +478,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
             setStatus={setStatus}
             importTune={importTune}
             importIds={importIds}
+            initialQuery={initialQuery}
           />
         ) : (
           <PlaylistTab
@@ -493,11 +497,12 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
 
 // ── Tab: Tune (ID, name search, or a pasted "1;5;97" ID list) ─────────────────
 
-function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
+function TuneTab({ withDeckChoice, setStatus, importTune, importIds, initialQuery }: {
   withDeckChoice: (onReady: () => void) => void;
   setStatus: (c: ComponentChild) => void;
   importTune: (tuneId: number, onSuccess: () => void, setBusy: (b: boolean) => void) => Promise<void>;
   importIds: (ids: number[], onProgress: (loaded: number, total: number) => void, onDone: () => void) => Promise<void>;
+  initialQuery?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
@@ -583,6 +588,11 @@ function TuneTab({ withDeckChoice, setStatus, importTune, importIds }: {
       }, 300);
     }
   };
+
+  // See the twin in theSessionImport: a query handed in at mount goes through
+  // the very path a keystroke takes, so one id previews and several arm the
+  // batch. Once only — afterwards the field belongs to the user.
+  useEffect(() => { if (initialQuery) onInputChange(initialQuery); }, []);
 
   const pick = (tune: TuneSearchResult) => {
     setValue(tune.name);
