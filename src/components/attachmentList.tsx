@@ -142,7 +142,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex
   onRemove: () => void;
   editable: boolean;
   onSave?: (data: string) => void;
-  onSetPreferredIndex?: (index: number) => void;
+  onSetPreferredIndex?: (index: number | undefined) => void;
   /** What the download is called, when that must differ from what is shown —
    *  a set name contains slashes, which no filesystem accepts, but the row is
    *  just a label and should read as the set is really called. */
@@ -158,7 +158,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex
       <span
         class={`text-xs font-mono truncate flex-1 ${previewable ? 'text-muted hover:text-primary cursor-pointer transition-colors' : 'text-dim'}`}
         // Favoriting a version isn't "editing" the card — available regardless of `editable`.
-        onClick={previewable ? () => showPreviewModal(entry, editable ? onSave : undefined, { initialIndex: entry.preferredIndex, onSetPreferredIndex }) : undefined}
+        onClick={previewable ? () => showPreviewModal(entry, editable ? onSave : undefined, { initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex }) : undefined}
       >
         {entry.name}
       </span>
@@ -439,7 +439,7 @@ export interface AttachmentListOptions {
   /** Persists the "★ default version" pick for a multi-tune ABC file — wired
    *  even where `editable` is false (study), since it's a viewing preference,
    *  not a content edit. */
-  onSetPreferredIndex?: (i: number, index: number) => void;
+  onSetPreferredIndex?: (i: number, index: number | undefined) => void;
   /** The card these attachments belong to. Only needed to resolve a set's
    *  generated score, whose stored `data` is empty by design — everything else
    *  here works from the attachments alone. */

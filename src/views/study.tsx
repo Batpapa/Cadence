@@ -323,7 +323,9 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               // content edit — allowed here even though the rest is read-only.
               onSetPreferredIndex: (i, index) => mutate(s => {
                 const att = s.cards[cardId!]?.content.attachments[i];
-                if (att && att.type === 'file') att.preferredIndex = index;
+                if (att && att.type === 'file') {
+                  if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
+                }
               }),
             }} />
           )}

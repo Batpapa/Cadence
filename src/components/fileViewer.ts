@@ -196,7 +196,21 @@ export interface PreviewModalOpts {
   /** Called when the user stars a version as the new default. Independent of
    *  `onSave` — available in read-only contexts (study) too, since picking a
    *  favorite version isn't "editing" the card's content. */
-  onSetPreferredIndex?: (index: number) => void;
+  /** `undefined` clears the preference — see the star button for what that means. */
+  onSetPreferredIndex?: (index: number | undefined) => void;
+  /** Which version wears the ★, `undefined` meaning none does.
+   *
+   *  Separate from `initialIndex` because the two only coincide where the
+   *  viewer opens a score AT its favourite. A session summary opens one at the
+   *  version just PLAYED, while the star belongs wherever the card actually put
+   *  it — possibly nowhere.
+   *
+   *  Deliberately NOT defaulted to `initialIndex`: that would make "no
+   *  favourite" indistinguishable from "field omitted" and light the star on
+   *  whatever version happened to be opened, which is exactly what a session
+   *  preview showed on 2026-09-06. Every caller offering `onSetPreferredIndex`
+   *  states it. */
+  favoriteIndex?: number;
 }
 
 export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => void, opts?: PreviewModalOpts): void {
@@ -277,7 +291,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     const tunes = splitAbcTunes(abcText);
     const versionCount = tunes.length;
     let currentIndex = Math.max(0, Math.min(versionCount - 1, opts?.initialIndex ?? 0));
-    let favoriteIndex = opts?.initialIndex;
+    let favoriteIndex = opts?.favoriteIndex;
     let currentMode: 'sheet' | 'text' = 'sheet';
     // Set when a text-mode edit is saved while notation is hidden — abcjs's
     // resize handling can make the SVG visibly reflow back in even inside a
@@ -340,6 +354,11 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     if (onSetPreferredIndex) {
       const starBtn = document.createElement('button');
       updateStarBtn = () => {
+        // Strictly the stored preference. A score with several versions and
+        // none chosen shows NO star at all: it still opens on the first,
+        // because that is how every reader defaults an absent value, but
+        // "where this opens by default" is not "the one you picked", and
+        // lighting the first would invent a choice nobody made.
         const isFavorite = currentIndex === favoriteIndex;
         starBtn.innerHTML = '';
         starBtn.appendChild(starIconElement(isFavorite, 12));
@@ -347,8 +366,12 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
         starBtn.title = t(isFavorite ? 'fileViewer.abc.isDefault' : 'fileViewer.abc.setDefault');
       };
       starBtn.onclick = () => {
-        favoriteIndex = currentIndex;
-        onSetPreferredIndex(currentIndex);
+        // A second click on the starred version CLEARS the choice rather than
+        // rewriting it — which is what made it look dead before 2026-09-06.
+        // Back to no favourite, not to another one.
+        const clearing = currentIndex === favoriteIndex;
+        favoriteIndex = clearing ? undefined : currentIndex;
+        onSetPreferredIndex(favoriteIndex);
         updateStarBtn!();
       };
       updateStarBtn();

@@ -251,7 +251,7 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
           />
         )}
 
-        <AbcPreview settingId={ann.settingId} displayName={ann.displayName} />
+        <AbcPreview settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx} />
 
         {!known ? (
           <button
