@@ -1,4 +1,4 @@
-import { openMicForMusic } from './capture';
+import { openMicForMusic, openDeviceAudio } from './capture';
 import { attachPcmWorklet } from './pcmWorklet';
 import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE } from '../sessionConfig';
 
@@ -30,24 +30,47 @@ export interface PcmSource {
   stop(): void;
 }
 
-// ── MicSource ─────────────────────────────────────────────────────────────────
+// ── Live stream sources (microphone, device audio) ───────────────────────────
 
-/** Microphone source: getUserMedia (music constraints) + PCM worklet.
- *  Two-phase: open() first (grabs the mic, fixes the sample rate), then start(). */
-export class MicSource implements PcmSource {
+/** Everything a live MediaStream needs, whatever produced it: the Web Audio
+ *  graph, the VU meter, the recording tap and the worklet feed are identical
+ *  for a microphone and for captured device audio. Subclasses differ by exactly
+ *  one method — which stream to acquire.
+ *  Two-phase: open() first (grabs the stream, fixes the sample rate), then
+ *  start(). open() MUST be reached synchronously from a user gesture: device
+ *  capture needs transient activation, and the mic prompt is better for it. */
+export abstract class LiveStreamSource implements PcmSource {
   private _stream: MediaStream | null = null;
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private recordingDest: MediaStreamAudioDestinationNode | null = null;
+  private stopping = false;
+
+  /** Acquires the stream. The only microphone/tab-specific step. */
+  protected abstract openStream(): Promise<MediaStream>;
+  /** Tag for debug logging. */
+  protected abstract get label(): string;
+
+  /** Fired when the stream dies on its own — the user pressing the browser's
+   *  own "Stop sharing" button, the shared tab closing, a device unplugged.
+   *  Never fired by our own stop(). */
+  onEnded: (() => void) | null = null;
 
   async open(): Promise<void> {
-    this._stream = await openMicForMusic();
+    this._stream = await this.openStream();
     this.audioContext = new AudioContext();
     // Some browsers create suspended contexts outside a user gesture chain.
     if (this.audioContext.state === 'suspended') await this.audioContext.resume();
 
     const track = this._stream.getAudioTracks()[0];
-    console.debug('[mic] track:', track?.label, JSON.stringify(track?.getSettings?.() ?? {}));
+    console.debug(`[${this.label}] track:`, track?.label, JSON.stringify(track?.getSettings?.() ?? {}));
+
+    // The source ending under us is a normal event for a captured surface (the
+    // browser's sharing bar has its own stop button) and an accident for a
+    // microphone — same handling either way. Our own stop() sets `stopping`
+    // first: track.stop() is specified NOT to fire this, but a source dying
+    // in the same tick for its own reasons would be indistinguishable.
+    if (track) track.addEventListener('ended', () => { if (!this.stopping) this.onEnded?.(); });
 
     const src = this.audioContext.createMediaStreamSource(this._stream);
 
@@ -70,17 +93,17 @@ export class MicSource implements PcmSource {
 
   /** The raw stream (recognition worklet input). */
   get stream(): MediaStream {
-    if (!this._stream) throw new Error('MicSource not opened');
+    if (!this._stream) throw new Error('source not opened');
     return this._stream;
   }
 
   /** Graph-routed stream for MediaRecorder (see open() for why). */
   get recordingStream(): MediaStream {
-    if (!this.recordingDest) throw new Error('MicSource not opened');
+    if (!this.recordingDest) throw new Error('source not opened');
     return this.recordingDest.stream;
   }
 
-  /** Mic level 0–1 for the VU meter (poll from UI). */
+  /** Signal level 0–1 for the VU meter (poll from UI). */
   getLevel(): number {
     if (!this.analyser) return 0;
     const data = new Uint8Array(this.analyser.fftSize);
@@ -94,7 +117,7 @@ export class MicSource implements PcmSource {
   }
 
   async start(sink: RecognitionSink): Promise<void> {
-    if (!this._stream || !this.audioContext) throw new Error('MicSource not opened');
+    if (!this._stream || !this.audioContext) throw new Error('source not opened');
     const channel = new MessageChannel();
     sink.connectWorkletPort(channel.port1);
     await attachPcmWorklet(this.audioContext, this._stream, channel.port2);
@@ -111,12 +134,44 @@ export class MicSource implements PcmSource {
   }
 
   stop(): void {
+    this.stopping = true;
+    this.onEnded = null;
     this._stream?.getTracks().forEach(trk => trk.stop());
     this._stream = null;
     void this.audioContext?.close().catch(() => { /* already closed */ });
     this.audioContext = null;
     this.analyser = null;
   }
+}
+
+/** Microphone: getUserMedia with music constraints. */
+export class MicSource extends LiveStreamSource {
+  protected openStream(): Promise<MediaStream> { return openMicForMusic(); }
+  protected get label(): string { return 'mic'; }
+}
+
+/** A browser tab, a window, or a whole screen's system audio — whatever the
+ *  user picks in the browser's own share dialog. Chromium only; see
+ *  openDeviceAudio() for what the other browsers do instead. */
+export class DeviceAudioSource extends LiveStreamSource {
+  protected openStream(): Promise<MediaStream> { return openDeviceAudio(); }
+  protected get label(): string { return 'device'; }
+}
+
+/** The two live sources, as chosen in the UI. A file import is not one of
+ *  these: it runs through ImportSession, not LiveSession. */
+export type LiveSourceKind = 'mic' | 'device';
+
+export function createLiveSource(kind: LiveSourceKind): LiveStreamSource {
+  return kind === 'device' ? new DeviceAudioSource() : new MicSource();
+}
+
+/** Whether the device-audio option is worth offering at all. False on iOS and
+ *  Android, where getDisplayMedia does not exist. True in Firefox and Safari
+ *  desktop, which HAVE the API but silently return no audio track — that case
+ *  can only be caught after the fact, as NoCapturedAudioError. */
+export function canCaptureDeviceAudio(): boolean {
+  return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
 }
 
 // ── FileSource ────────────────────────────────────────────────────────────────

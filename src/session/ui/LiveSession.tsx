@@ -54,6 +54,22 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   const [stopping, setStopping] = useState(false);
 
 
+  // Declared above the callback registration below, which needs it: the
+  // browser's own "Stop sharing" button has to land on exactly the same path
+  // as this screen's Stop button.
+  const onStopClick = async () => {
+    setStopping(true);
+    try {
+      const session = await live.stop();
+      lastLiveDump.value = { sessionId: session.id, windows: [...live.windows] };
+      setActiveLive(null);
+      ctx.navigate({ view: 'sessions', sessionId: session.id });
+    } catch (err) {
+      setActiveLive(null);
+      setInitStatus(`⚠ ${String(err)}`);
+    }
+  };
+
   useEffect(() => {
     live.setCallbacks({
       onPhase: (p) => {
@@ -73,6 +89,15 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       },
       onAnnotations: (_events, all) => setAnnotations(all),
       onError: (message) => setInitStatus(`⚠ ${message}`),
+      // The capture died under us — browser's own "Stop sharing", the shared
+      // tab closed, a microphone unplugged. Save rather than discard: what was
+      // recognised is real and the audio is already on disk, so this is a
+      // Stop, not a Cancel. Nothing further can be captured, so there is no
+      // decision left for the user to make and nothing to ask them.
+      onSourceEnded: () => {
+        setInitStatus(t('sessions.sourceEnded'));
+        void onStopClick();
+      },
     });
     // Re-entry (modal closed and reopened, or navigated away and back) while
     // a phase-changing event happened between the lazy useState initializers
@@ -174,19 +199,6 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   const onPauseClick = () => {
     if (phase === 'recording') void live.pause();
     else if (phase === 'paused') void live.resume();
-  };
-
-  const onStopClick = async () => {
-    setStopping(true);
-    try {
-      const session = await live.stop();
-      lastLiveDump.value = { sessionId: session.id, windows: [...live.windows] };
-      setActiveLive(null);
-      ctx.navigate({ view: 'sessions', sessionId: session.id });
-    } catch (err) {
-      setActiveLive(null);
-      setInitStatus(`⚠ ${String(err)}`);
-    }
   };
 
   return (

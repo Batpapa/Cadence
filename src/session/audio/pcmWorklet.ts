@@ -64,6 +64,15 @@ export async function attachPcmWorklet(
   const node = new AudioWorkletNode(audioContext, PROCESSOR_NAME, {
     numberOfInputs: 1,
     numberOfOutputs: 0,
+    // The processor reads inputs[0][0] — channel 0 and nothing else. Left to
+    // its defaults ('max'/2) a stereo stream would therefore be analysed as
+    // its LEFT CHANNEL ONLY. 'explicit' + channelCount 1 makes Web Audio
+    // downmix to mono before the processor sees anything. No-op for the
+    // microphone (it already asks for channelCount: 1), load-bearing for a
+    // captured tab, which is stereo whether we like it or not.
+    channelCount: 1,
+    channelCountMode: 'explicit',
+    channelInterpretation: 'speakers',
     processorOptions: { chunkSize: WORKLET_CHUNK_SAMPLES },
   });
   node.port.postMessage({ port: workerPort }, [workerPort]);

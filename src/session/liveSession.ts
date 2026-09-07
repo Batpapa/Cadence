@@ -1,5 +1,5 @@
 import { WakeLockManager } from './audio/capture';
-import { MicSource } from './audio/sources';
+import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
@@ -10,9 +10,13 @@ import type { IndexProgress } from './recognition/indexStore';
 // ── Live session orchestrator ─────────────────────────────────────────────────
 // One MediaStream, two parallel consumers:
 //   MediaRecorder → IndexedDB chunks → session file
-//   MicSource (worklet → MessagePort) → recognition worker → annotations
+//   LiveStreamSource (worklet → MessagePort) → recognition worker → annotations
 // Time source of truth is the worker's sample counter; recorder and worklet
 // start in the same frame (residual offset < 300 ms, accepted).
+//
+// Where the stream comes from — the microphone or a captured browser tab — is
+// decided once, at construction, and never appears again below: both are the
+// same LiveStreamSource, and everything downstream of it is identical.
 
 export type LiveSessionPhase = 'idle' | 'initializing' | 'recording' | 'paused' | 'stopping' | 'done' | 'error';
 
@@ -24,13 +28,19 @@ export interface LiveSessionCallbacks {
   onError?: (message: string) => void;
   /** #17: forwarded straight from RecognitionClient — see its onLiveGap doc. */
   onLiveGap?: (seconds: number) => void;
+  /** The audio source died on its own while recording — the user pressed the
+   *  browser's own "Stop sharing" button, closed the captured tab, or unplugged
+   *  the microphone. There is nothing left to record, so the UI should stop the
+   *  session and KEEP what was captured up to here: everything already
+   *  recognised is real, and the recorded audio is intact in IndexedDB. */
+  onSourceEnded?: () => void;
 }
 
 export class LiveSession {
   private cb: LiveSessionCallbacks;
   private phase: LiveSessionPhase = 'idle';
 
-  private mic = new MicSource();
+  private source: LiveStreamSource;
   private recognition: RecognitionClient | null = null;
   private recorder: SessionFileRecorder | null = null;
   private wakeLock = new WakeLockManager();
@@ -68,8 +78,12 @@ export class LiveSession {
     this.recognition?.setPitchShift(semitones);
   }
 
-  constructor(callbacks: LiveSessionCallbacks = {}) {
+  /** `sourceKind` is fixed for the life of the session: switching source
+   *  mid-recording would break the worker's single sample clock, which is the
+   *  session's only notion of time. */
+  constructor(callbacks: LiveSessionCallbacks = {}, readonly sourceKind: LiveSourceKind = 'mic') {
     this.cb = callbacks;
+    this.source = createLiveSource(sourceKind);
   }
 
   /** Rebind UI callbacks (the modal can close and reopen while recording). */
@@ -95,9 +109,9 @@ export class LiveSession {
     return this.recorder?.mimeType ?? '';
   }
 
-  /** Mic level 0–1 for the VU meter (poll from UI). */
+  /** Signal level 0–1 for the VU meter (poll from UI). */
   getLevel(): number {
-    return this.mic.getLevel();
+    return this.source.getLevel();
   }
 
   /** Elapsed recording time, excluding time spent paused. */
@@ -135,10 +149,19 @@ export class LiveSession {
     try {
       this.setPhase('initializing');
 
-      await this.mic.open();
+      // FIRST, and with nothing awaited before it: tab capture needs transient
+      // user activation, which an await between the click and the picker would
+      // spend. setPhase above is synchronous, so the gesture is still live.
+      this.source.onEnded = () => {
+        // Only meaningful while there is something to interrupt: stop() and
+        // cancel() clear the handler through source.stop() anyway, this guards
+        // the window before recording actually begins.
+        if (this.phase === 'recording' || this.phase === 'paused') this.cb.onSourceEnded?.();
+      };
+      await this.source.open();
 
       // Recognition worker: WASM + index (may trigger the big first download).
-      this.recognition = new RecognitionClient(this.mic.sampleRate, {
+      this.recognition = new RecognitionClient(this.source.sampleRate, {
         onIndexProgress: p => this.cb.onIndexProgress?.(p),
         onWindow: (result, abc) => {
           // A window firing implies phase === 'recording' (analysis is fed by
@@ -158,11 +181,11 @@ export class LiveSession {
       await this.recognition.ready;
 
       // Hot path: worklet → worker via dedicated MessageChannel.
-      await this.mic.start(this.recognition);
+      await this.source.start(this.recognition);
 
       // Recorder starts in the same frame as the worklet is now live.
       // recordingStream: graph-routed, NOT the raw track (silent-recording bug).
-      this.recorder = new SessionFileRecorder(this.mic.recordingStream, this.sessionId);
+      this.recorder = new SessionFileRecorder(this.source.recordingStream, this.sessionId);
       this.recorder.start();
       this.startedAt = Date.now();
       this.persistDraft();
@@ -235,14 +258,14 @@ export class LiveSession {
   async pause(): Promise<void> {
     if (this.phase !== 'recording') return;
     this.recorder?.pause();
-    await this.mic.suspend();
+    await this.source.suspend();
     this.pauseStartedAt = Date.now();
     this.setPhase('paused');
   }
 
   async resume(): Promise<void> {
     if (this.phase !== 'paused') return;
-    await this.mic.resume();
+    await this.source.resume();
     this.recorder?.resume();
     this.pausedAccumMs += Date.now() - this.pauseStartedAt;
     this.recognition?.notifyLiveResume();
@@ -308,6 +331,6 @@ export class LiveSession {
     this.wakeLock.stop();
     this.recognition?.dispose();
     this.recognition = null;
-    this.mic.stop();
+    this.source.stop();
   }
 }

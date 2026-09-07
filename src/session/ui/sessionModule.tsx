@@ -5,7 +5,8 @@ import { focusIfDesktop } from '../../utils';
 import { showModal, closeModal, renderModalBody } from '../../components/modal';
 import { LiveSession } from '../liveSession';
 import { ImportSession } from '../importSession';
-import { probeAudioDuration, canPlayFile } from '../audio/sources';
+import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
+import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
 import { loadSessionAudio } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
@@ -329,9 +330,41 @@ export async function startReanalyze(ctx: AppContext, session: RecordedSession):
   }
 }
 
-export function startLiveSession(): void {
-  setActiveLive(new LiveSession({}));
-  void activeLive.value!.start().catch(() => { /* error surfaced via onError callback */ });
+/** Starts a live session on the chosen source. MUST be reached synchronously
+ *  from the user's click: capturing a tab needs transient user activation,
+ *  which the browser spends on the first await — see openDeviceAudio(). */
+export function startLiveSession(kind: LiveSourceKind = 'mic'): void {
+  const live = new LiveSession({}, kind);
+  setActiveLive(live);
+  void live.start().catch((err: unknown) => {
+    // Acquisition failures are handled HERE rather than through onError,
+    // because they happen before the live screen has had a chance to register
+    // its callbacks — the failure would land on a listener that doesn't exist
+    // yet, leaving the user parked on a recording screen that never records.
+    // Anything failing later (index download, worker) still goes through
+    // onError exactly as before.
+    const name = err instanceof Error ? err.name : '';
+
+    // Dismissing the browser's share picker is a decision, not a failure:
+    // straight back to the library with nothing said. (The microphone keeps
+    // its old behaviour — a denied mic permission is worth a message, and it
+    // already gets one on the live screen.)
+    if (kind === 'device' && (name === 'NotAllowedError' || name === 'AbortError' || name === 'NotFoundError')) {
+      setActiveLive(null);
+      return;
+    }
+    if (err instanceof NoCapturedAudioError) {
+      setActiveLive(null);
+      alertModal(t('sessions.source'), t('sessions.source.device.noAudio'));
+      return;
+    }
+    if (err instanceof DisplayCaptureUnsupportedError) {
+      setActiveLive(null);
+      alertModal(t('sessions.source'), t('sessions.source.device.unsupported'));
+      return;
+    }
+    /* anything else: surfaced via the onError callback, as before */
+  });
 }
 
 // ── This module's contribution to the card page ───────────────────────────────

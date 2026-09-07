@@ -42,16 +42,34 @@ Symptom to watch for: if one session's recall collapses while the others hold,
 suspect the matching, not the detector. `One_of_the_Best` is the reference — it
 is the cleanest annotation and should sit around 25/27 with no false positives.
 
-## Baseline (2026-09-06, 7 sessions, 315 ground-truth tunes)
+5. **A timestamp is `mm:ss` OR `h:mm:ss`.** Skipping every `h:mm:ss` line as a
+   set header silently dropped every tune past the first hour — `1:00:55
+   Foxhunter` is a tune, `00:04:37 Reel set:` is a header. What separates them
+   is what *follows* the timestamp, not its shape.
+6. **A transposition is one typo, not two.** Plain Levenshtein preferred
+   `bryn s` (one deletion) over the real tune `byrne s` (a y/r swap, two
+   operations) for the hand-typed `Bryne's` — turning a session the detector had
+   got perfectly right into "one miss, one false positive". Hence
+   Damerau-Levenshtein, plus a tie-break on closeness in length, since a typo
+   rarely changes how long a title is. Roman numerals are folded to digits for
+   the same reason (`Toss the Feathers II` vs `toss the feathers 2`).
+
+Every one of these six was found because a number looked wrong to a human, not
+because the harness complained. It cannot validate itself — read the fuzzy log.
+
+## Baseline (2026-09-06, 7 sessions, 319 ground-truth tunes)
 
 | floor | recall | false positives | noise |
 |---|---|---|---|
-| 0.15–0.20 | 282 (89.5%) | 50 | 0 |
-| 0.25 | 277 (87.9%) | 45 | 0 |
-| 0.30 | 270 (85.7%) | 41 | 0 |
+| 0.20 (current) | 287 (90.0%) | 45 | 0 |
+| 0.25 (previous) | 281 (88.1%) | 41 | 0 |
 
-Four of the 33 misses are titles absent from the index, so the reachable ceiling
-is 311, not 315.
+Per session at 0.20: matin_Anglade 34/35·6, aprem_tabac 21/28·5, auberge_fleurie
+27/28·1, One_of_the_Best 25/27·0, tocane 118/129·27, 13th_Moon 31/41·6, Korea
+**31/31·0**.
+
+Four of the misses are titles absent from the index, so the reachable ceiling is
+315, not 319.
 
 Two findings worth more than the numbers: the pure-noise recording yields **zero**
 detections at every threshold — this floor is not what defends against noise —
