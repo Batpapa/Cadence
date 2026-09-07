@@ -1,5 +1,28 @@
 # Session fixtures
 
+## Provenance — which recording is which
+
+The audio is not in the repo. It lives outside it, under opaque names, and this
+table is the only thing tying the two together. Verified by MD5: each
+`Audio X - Help.txt` is byte-identical to the `-timings.txt` beside it.
+
+| Source audio | Fixture |
+|---|---|
+| `Audio A.mp3` | `1Hour_Trad_Irish_Music_Session_in_Korea` |
+| `Audio B.mp3` | `One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video` |
+| `Audio C.m4a` | `20260523_5_auberge_fleurie` |
+| `Audio D.m4a` | `20260523_2_aprem_tabac` |
+| `Audio E.m4a` | `20260523_1_matin_Anglade` |
+| `Audio F.m4a` | `20240721_tocane_2_chapiteau` |
+| `Audio G.mp3` | `13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24` |
+| `Noise.mp3` | `732984_11910076-lq` (no timings — see below) |
+
+The `Audio X` names are what the annotating group uses, so anything arriving
+from them (CSV ground truth in particular) is labelled that way and has to be
+translated through this table before it means anything here.
+
+## Files
+
 Two files per session:
 
 - `<name>-windows.json` — the raw per-window recognition output, exactly what
@@ -20,11 +43,11 @@ fixture is **10 s windows every 5 s**, matching `ANALYSIS_WINDOW_S` /
 `ANALYSIS_HOP_S` in `src/session/sessionConfig.ts` — which the generator now
 reads from that file rather than duplicating, so the two can no longer drift.
 
-**One exception**: `13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24` is
-still **15 s / 5 s**. Its audio was never kept, so it cannot be regenerated.
-It stays because it is 41 ground-truth tunes over 80 minutes and its window data
-is still perfectly valid — but anything comparing geometries across sessions
-must exclude it or account for it.
+**There is no longer an exception.** `13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24`
+was the last hold-out at 15 s / 5 s, because its audio had not been kept; the
+audio was supplied on **2026-09-06** and it was regenerated with the rest (956
+windows, 79.8 min). Every fixture now shares one geometry, so nothing needs to
+exclude or special-case it any more.
 
 Keeping a subset of windows is a legitimate way to simulate a larger hop: since
 nothing downstream reads `stepSeconds`, keeping every k-th window of a dump is

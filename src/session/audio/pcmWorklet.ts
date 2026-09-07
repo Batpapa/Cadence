@@ -1,4 +1,4 @@
-import { WORKLET_CHUNK_SAMPLES } from '../sessionConfig';
+import { WORKLET_CHUNK_SAMPLES, DEBUG_LIVE_AUDIO } from '../sessionConfig';
 
 // ── PCM forwarding AudioWorklet ───────────────────────────────────────────────
 // The processor does NO computation: it accumulates 128-sample render quanta
@@ -14,16 +14,42 @@ class PcmForwarder extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.chunkSize = options.processorOptions.chunkSize;
+    this.debug = options.processorOptions.debug;
     this.buf = new Float32Array(this.chunkSize);
     this.fill = 0;
     this.out = this.port;
+    // Pausing gates HERE rather than suspending the AudioContext - see
+    // LiveStreamSource.suspend() for why that had to change.
+    this.paused = false;
+    this.calls = 0;
+    this.posts = 0;
+    this.hadInput = null;
     this.port.onmessage = (e) => {
-      if (e.data && e.data.port) this.out = e.data.port;
+      if (!e.data) return;
+      if (e.data.port) this.out = e.data.port;
+      if (typeof e.data.paused === 'boolean') {
+        this.paused = e.data.paused;
+        if (this.debug) console.log('[live] worklet paused=' + this.paused + ' t=' + currentTime.toFixed(2));
+      }
     };
   }
   process(inputs) {
+    this.calls++;
     const ch = inputs[0] && inputs[0][0];
-    if (!ch) return true;
+    if (this.debug) {
+      const has = !!ch;
+      if (has !== this.hadInput) {
+        this.hadInput = has;
+        console.log('[live] worklet input ' + (has ? 'PRESENT' : 'ABSENT')
+          + ' chans=' + (inputs[0] ? inputs[0].length : 'noInput')
+          + ' calls=' + this.calls + ' posts=' + this.posts + ' t=' + currentTime.toFixed(2));
+      }
+      if (this.calls % 750 === 0) {
+        console.log('[live] worklet alive calls=' + this.calls + ' posts=' + this.posts
+          + ' paused=' + this.paused + ' fill=' + this.fill + ' t=' + currentTime.toFixed(2));
+      }
+    }
+    if (!ch || this.paused) return true;
     let i = 0;
     while (i < ch.length) {
       const n = Math.min(ch.length - i, this.chunkSize - this.fill);
@@ -34,6 +60,7 @@ class PcmForwarder extends AudioWorkletProcessor {
         const copy = this.buf.slice(0);
         this.out.postMessage(copy.buffer, [copy.buffer]);
         this.fill = 0;
+        this.posts++;
       }
     }
     return true;
@@ -73,7 +100,7 @@ export async function attachPcmWorklet(
     channelCount: 1,
     channelCountMode: 'explicit',
     channelInterpretation: 'speakers',
-    processorOptions: { chunkSize: WORKLET_CHUNK_SAMPLES },
+    processorOptions: { chunkSize: WORKLET_CHUNK_SAMPLES, debug: DEBUG_LIVE_AUDIO },
   });
   node.port.postMessage({ port: workerPort }, [workerPort]);
   source.connect(node);

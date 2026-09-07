@@ -64,6 +64,18 @@ export const FF_PCM_WINDOW = 1024;
 /** Samples per chunk posted from the audio worklet to the recognition worker (~340 ms @48kHz). */
 export const WORKLET_CHUNK_SAMPLES = 16384;
 
+/** Verbose console tracing of the live capture chain: worklet input presence
+ *  and forwarding, pause/resume steps, chunk arrivals at the worker, gaps the
+ *  worker padded. Every line is prefixed `[live]`, so the whole trace comes out
+ *  of a console filtered on that one word.
+ *
+ *  Left switchable rather than deleted, and it earned that: the chain crosses
+ *  three threads (page, audio, worker) and the 2026-09-08 pause bug was only
+ *  pinned down by a trace spanning all three — the context said `running` and
+ *  the worklet said it was being called, while its input had been empty since
+ *  the resume. No single vantage point showed it. */
+export const DEBUG_LIVE_AUDIO = false;
+
 /** MediaRecorder timeslice (ms) — one chunk every 5 s appended to IndexedDB. */
 export const RECORDER_TIMESLICE_MS = 5000;
 

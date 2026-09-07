@@ -4,7 +4,7 @@ import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
 import { normalizeDisplayName } from '../../utils';
 import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, AnnotationEvent } from '../model';
-import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW } from '../sessionConfig';
+import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO } from '../sessionConfig';
 
 // ── FolkFriend recognition worker ─────────────────────────────────────────────
 // Owns the WASM instance, the tune index, the PCM ring buffer and the
@@ -35,6 +35,7 @@ export type FFWorkerResponse =
   | { type: 'pcm-ack' }
   | { type: 'stopped'; events: AnnotationEvent[]; tFinal: number }
   | { type: 'live-gap'; seconds: number }
+  | { type: 'debug'; line: string }
   | { type: 'error'; message: string };
 
 const ctx = self as unknown as {
@@ -66,8 +67,11 @@ let lastAnalysisAt = 0;   // totalSamples value at last analysis
 // samples never arrive here at all, so totalSamples silently falls behind
 // real elapsed time with nothing to signal it happened. Only ever relevant
 // to the worklet (live) path — file import feeds PCM via the `pcm` message
-// instead, with its own PTS-based catch-up upstream. `null` = not anchored
-// yet (first worklet chunk sets it) or a live-resume just reset it.
+// instead, with its own PTS-based catch-up upstream. `null` = not anchored yet;
+// the first worklet chunk sets it. A live-resume does not null it, it
+// re-anchors directly — and LiveSession.resume() sends that BEFORE restarting
+// the audio, because a chunk arriving first would have the whole pause padded
+// as silence. See the comment there.
 let liveWallClockAnchorMs: number | null = null;
 const LIVE_DEFICIT_SAFETY_MARGIN_S = 1;
 
@@ -338,7 +342,20 @@ function handlePcm(buffer: ArrayBuffer): void {
 }
 
 /** Worklet (live) path only — file import never calls this, see padToWallClock(). */
+let workletChunks = 0;
+/** Chunks still to be logged individually — set on live-resume so the first
+ *  arrivals after a resume are always visible, however rare they are. */
+let verboseChunks = 3;
+
 function handleWorkletPcm(buffer: ArrayBuffer): void {
+  workletChunks++;
+  if (DEBUG_LIVE_AUDIO && (verboseChunks-- > 0 || workletChunks % 20 === 0)) {
+    post({
+      type: 'debug',
+      line: `chunk #${workletChunks} samples=${buffer.byteLength / 4} total=${(totalSamples / sampleRate).toFixed(1)}s `
+        + `lastAnalysis=${(lastAnalysisAt / sampleRate).toFixed(1)}s anchor=${liveWallClockAnchorMs === null ? 'null' : 'set'}`,
+    });
+  }
   padToWallClock();
   handlePcm(buffer);
 }
@@ -398,6 +415,10 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
         // audio — re-anchor so "expected samples" picks up exactly where
         // totalSamples already is, with no gap to catch up on.
         liveWallClockAnchorMs = Date.now() - (totalSamples / sampleRate) * 1000;
+        if (DEBUG_LIVE_AUDIO) {
+          verboseChunks = 3;   // make the first arrivals after this visible
+          post({ type: 'debug', line: `live-resume recu, re-ancre a total=${(totalSamples / sampleRate).toFixed(1)}s` });
+        }
         break;
       case 'stop':
         handleStop();

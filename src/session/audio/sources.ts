@@ -1,6 +1,6 @@
 import { openMicForMusic, openDeviceAudio } from './capture';
 import { attachPcmWorklet } from './pcmWorklet';
-import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE } from '../sessionConfig';
+import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE, DEBUG_LIVE_AUDIO } from '../sessionConfig';
 
 // ── PCM source abstraction ────────────────────────────────────────────────────
 // The recognition pipeline consumes a stream of mono PCM chunks and its own
@@ -44,6 +44,7 @@ export abstract class LiveStreamSource implements PcmSource {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private recordingDest: MediaStreamAudioDestinationNode | null = null;
+  private workletNode: AudioWorkletNode | null = null;
   private stopping = false;
 
   /** Acquires the stream. The only microphone/tab-specific step. */
@@ -120,17 +121,41 @@ export abstract class LiveStreamSource implements PcmSource {
     if (!this._stream || !this.audioContext) throw new Error('source not opened');
     const channel = new MessageChannel();
     sink.connectWorkletPort(channel.port1);
-    await attachPcmWorklet(this.audioContext, this._stream, channel.port2);
+    this.workletNode = await attachPcmWorklet(this.audioContext, this._stream, channel.port2);
   }
 
-  /** Suspends the whole graph: worklet (recognition feed) and recording tap
-   *  both stop producing audio in the same tick — no per-consumer wiring needed. */
+  /** Pause/resume gate the WORKLET, not the AudioContext.
+   *
+   *  Suspending the context was the obvious implementation and it is what this
+   *  did until 2026-09-08. It does not come back: a MediaStreamAudioSourceNode
+   *  feeding a suspended context is not guaranteed to deliver again once the
+   *  context resumes, and in Chromium it frequently does not — the context
+   *  reports `running`, the worklet keeps being called, and its input is empty
+   *  forever after. Reported as "the analysis feed is stuck", still stuck three
+   *  minutes later.
+   *
+   *  So the context now runs uninterrupted for the whole session and the
+   *  processor simply stops forwarding. The recording tap is unaffected because
+   *  MediaRecorder has its own pause(); the VU meter keeps reading, and the UI
+   *  already pins it to zero while not recording. */
   async suspend(): Promise<void> {
-    await this.audioContext?.suspend();
+    if (DEBUG_LIVE_AUDIO) console.log(`[live] suspend: ctx=${this.audioContext?.state} node=${!!this.workletNode}`);
+    this.workletNode?.port.postMessage({ paused: true });
   }
 
   async resume(): Promise<void> {
-    await this.audioContext?.resume();
+    // The context should never have stopped, but a browser may suspend it on
+    // its own (backgrounded tab, autoplay policy) — resuming an already-running
+    // context is a no-op, so this stays as a safety net.
+    if (this.audioContext?.state === 'suspended') await this.audioContext.resume();
+    if (DEBUG_LIVE_AUDIO) console.log(`[live] resume: ctx=${this.audioContext?.state} node=${!!this.workletNode} track=${this.trackState()}`);
+    this.workletNode?.port.postMessage({ paused: false });
+  }
+
+  /** Compact track diagnostics for the pause/resume trace. */
+  private trackState(): string {
+    const t = this._stream?.getAudioTracks()[0];
+    return t ? `${t.readyState}/muted=${t.muted}/enabled=${t.enabled}` : 'none';
   }
 
   stop(): void {
@@ -138,6 +163,8 @@ export abstract class LiveStreamSource implements PcmSource {
     this.onEnded = null;
     this._stream?.getTracks().forEach(trk => trk.stop());
     this._stream = null;
+    this.workletNode?.disconnect();
+    this.workletNode = null;
     void this.audioContext?.close().catch(() => { /* already closed */ });
     this.audioContext = null;
     this.analyser = null;
