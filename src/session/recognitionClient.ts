@@ -2,6 +2,7 @@ import type { FFWorkerRequest, FFWorkerResponse } from './recognition/ffWorker';
 import type { IndexProgress } from './recognition/indexStore';
 import type { WindowResult, AnnotationEvent } from './model';
 import type { RecognitionSink } from './audio/sources';
+import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 
 // ── Main-thread wrapper around the FolkFriend recognition worker ──────────────
 // Implements RecognitionSink: PCM sources (mic worklet, decoded file) feed it
@@ -60,7 +61,11 @@ export class RecognitionClient implements RecognitionSink {
         case 'annotations':   this.cb.onAnnotations?.(msg.events); break;
         case 'pcm-ack':       this.ackQueue.shift()?.(); break;
         case 'stopped':       this.stopDone?.({ events: msg.events, tFinal: msg.tFinal }); this.stopDone = null; break;
-        case 'live-gap':      this.cb.onLiveGap?.(msg.seconds); break;
+        case 'live-gap':      if (DEBUG_LIVE_AUDIO) console.log(`[live] gap comble par le worker : ${msg.seconds.toFixed(1)}s de silence`);
+          this.cb.onLiveGap?.(msg.seconds); break;
+        // The worker cannot write to the page console usefully on its own (its
+        // lines land in a separate context), so it ships them here.
+        case 'debug':         console.log(`[live] worker: ${msg.line}`); break;
         case 'error':         this.cb.onError?.(msg.message); rejectReady(new Error(msg.message)); break;
       }
     };

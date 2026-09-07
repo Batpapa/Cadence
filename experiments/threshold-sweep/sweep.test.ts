@@ -150,7 +150,55 @@ function resolve(label: string): Set<string> {
   return new Set<string>();
 }
 
-interface TruthEntry { label: string; ids: Set<string>; start?: number; end?: number }
+/** What a ground-truth row is worth to the score.
+ *   'tune'     - a real tune with an id. The only kind that counts, both as a
+ *                target to find and as a name a detection may match.
+ *   'unknown'  - id 0: the annotator did not recognise it. The tune is probably
+ *                IN the index; we simply cannot tell which. Scored NEITHER way -
+ *                counting a detection here as a false positive would penalise
+ *                the detector for knowing more than the annotator.
+ *   'offindex' - id -1: recognised, but genuinely absent from TheSession. The
+ *                detector's whole vocabulary is TheSession ids, so nothing it
+ *                says here can be right: any detection IS a false positive.
+ *                This is the only false-positive ground truth we have inside
+ *                real music - the noise fixture yields zero detections at every
+ *                threshold, so it constrains nothing. */
+type TruthKind = 'tune' | 'unknown' | 'offindex';
+
+interface TruthEntry { label: string; ids: Set<string>; kind: TruthKind; start?: number; end?: number }
+
+/** True when a detection and an annotated span share any time at all. */
+function overlaps(seg: { startTime: number; endTime: number }, g: TruthEntry): boolean {
+  if (g.start === undefined || g.end === undefined) return false;
+  return seg.startTime < g.end && seg.endTime > g.start;
+}
+
+type Seg = { tuneId: string; label: string; span: string; startTime: number; endTime: number };
+
+/** The detection that answers THIS row, or null.
+ *
+ *  Not `segs.find(s => g.ids.has(s.tuneId))`: a tune can legitimately be played
+ *  twice in one session - Audio E annotates 1035 at 05:16 AND at 57:55, and the
+ *  old .txt confirms it (X:11 then X:2, two settings of The Boys Of The Town).
+ *  Taking the first segment carrying the right id credited the SECOND occurrence
+ *  with the FIRST detection: a "hit" reported at 0% coverage, and a recall count
+ *  inflated by every repeat in the corpus.
+ *
+ *  Rows with no span (the .txt path) keep the old id-only behaviour - there is
+ *  nothing to match against there. */
+function matchFor(g: TruthEntry, segs: Seg[]): Seg | null {
+  const same = segs.filter(s => g.ids.has(s.tuneId));
+  if (!same.length) return null;
+  if (g.start === undefined || g.end === undefined) return same[0]!;
+
+  let best: Seg | null = null;
+  let bestOverlap = 0;
+  for (const s of same) {
+    const ov = Math.min(s.endTime, g.end) - Math.max(s.startTime, g.start);
+    if (ov > bestOverlap) { bestOverlap = ov; best = s; }
+  }
+  return best;
+}
 
 /** "1:02:17" / "01::02::17" -> seconds. Tolerates repeated colons because the
  *  format was dictated as "HH::MM::SS" and one of us has a typo; being lenient
@@ -183,19 +231,55 @@ function parseTruthCsv(file: string): TruthEntry[] {
 
   const out: TruthEntry[] = [];
   for (const line of lines.slice(1)) {                    // line 1 is the header
-    const cell = line.split(delim).map(c => c.trim().replace(/^"|"$/g, ''));
-    const [start, end, rawId, comment] = cell;
-    const id = (rawId ?? '').replace(/\D/g, '');
+    const [start, end, rawId, comment] = splitCsvLine(line, delim);
+    const raw = (rawId ?? '').trim();
+
+    // NEVER strip non-digits here. `raw.replace(/\D/g, '')` turned "-1" into
+    // "1" - a real tune on TheSession - and left "0" looking like an id of its
+    // own. Both sentinels were silently scored as ordinary tunes.
+    const kind: TruthKind = raw === '0' ? 'unknown' : raw === '-1' ? 'offindex' : 'tune';
+    const id = /^[1-9]\d*$/.test(raw) ? raw : '';
+
     out.push({
-      // A tune genuinely absent from TheSession is left blank on purpose: it
-      // counts as unreachable rather than pointing at the wrong tune.
+      kind,
       ids: id ? new Set([id]) : new Set<string>(),
-      label: comment?.trim() || (id ? `tune ${id}` : '(sans id)'),
+      // The comment ADDS to the identity, it never replaces it: a row labelled
+      // only "Played in A, but settings on TheSession are in G" no longer says
+      // which tune was missed, which is the one thing the line exists to say.
+      label: [
+        kind === 'unknown' ? '(non reconnu par annotateur)'
+          : kind === 'offindex' ? '(hors TheSession)'
+            : id ? `tune ${id}` : '(sans id)',
+        comment?.trim(),
+      ].filter(Boolean).join(' - '),
       start: toSeconds(start ?? ''),
       end: toSeconds(end ?? ''),
     });
   }
   return out;
+}
+
+/** Splits one CSV line, honouring double-quoted fields. Not a general CSV
+ *  parser - no embedded newlines - but the quotes matter: the group writes
+ *  commas inside comments ("Played in A, but settings on TheSession are in G"),
+ *  and a plain split(delim) does not just truncate that comment, it shifts
+ *  every column after it. */
+function splitCsvLine(line: string, delim: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    if (quoted) {
+      if (ch !== '"') cur += ch;
+      else if (line[i + 1] === '"') { cur += '"'; i++; }   // "" is a literal quote
+      else quoted = false;
+    } else if (ch === '"') quoted = true;
+    else if (ch === delim) { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(c => c.trim());
 }
 
 function parseTruth(file: string): TruthEntry[] {
@@ -219,7 +303,11 @@ function parseTruth(file: string): TruthEntry[] {
     const emdash = line.match(/^(.+?)\s+\u2014\s+\d+$/);
     const label = (rest !== null ? rest : emdash ? emdash[1]! : line.split('\t')[0]!).trim();
     if (!label) continue;
-    out.push({ label, ids: resolve(label) });
+    // The .txt path has no sentinels: every line is a tune someone named, and
+    // one that fails to resolve is a MATCHING FAILURE, not a deliberate marker.
+    // It stays in the denominator on purpose - excusing it would flatter the
+    // score for our own inability to map the name.
+    out.push({ label, ids: resolve(label), kind: 'tune' });
   }
   return out;
 }
@@ -290,9 +378,18 @@ it('sweeps the UNKNOWN floor', () => {
     .filter(d => d.windows);
   const noise = load(NOISE);
 
-  const totalTruth = data.reduce((a, d) => a + d.truth.length, 0);
-  const unresolved = data.flatMap(d => d.truth.filter(t => t.ids.size === 0).map(t => `${d.id.slice(0, 18)}: ${t.label}`));
+  // Only 'tune' rows are scoreable. The two sentinel kinds are reported on
+  // their own below rather than diluting the denominator.
+  const scorable = (d: { truth: TruthEntry[] }) => d.truth.filter(g => g.kind === 'tune');
+  const totalTruth = data.reduce((a, d) => a + scorable(d).length, 0);
+  const unresolved = data.flatMap(d => scorable(d).filter(t => t.ids.size === 0).map(t => `${d.id.slice(0, 18)}: ${t.label}`));
+  const unknownRows = data.flatMap(d => d.truth.filter(t => t.kind === 'unknown').map(t => `${d.id.slice(0, 18)}: ${t.label}`));
+  const offIndexRows = data.flatMap(d => d.truth.filter(t => t.kind === 'offindex').map(t => `${d.id.slice(0, 18)}: ${t.label}`));
   console.log(`\n${data.length} sessions, ${totalTruth} morceaux de référence`);
+  console.log(`  + ${unknownRows.length} non reconnus par annotateur (hors score), `
+    + `${offIndexRows.length} hors TheSession (toute détection = faux positif)`);
+  for (const l of offIndexRows) console.log(`    [hors index] ${l}`);
+  for (const l of unknownRows) console.log(`    [non reconnu] ${l}`);
   console.log(`\n---- rapprochements approximatifs (${fuzzyLog.length}) - ì AUDITER ----`);
   for (const l of fuzzyLog) console.log('  ' + l);
   console.log(`\n---- jamais résolus (${unresolved.length}), donc jamais trouvables ----`);
@@ -308,7 +405,18 @@ it('sweeps the UNKNOWN floor', () => {
       const found = new Set(segs.map(s => s.tuneId));
       console.log(`\n---- ${d.id} @ ${floor} ----`);
       for (const g of d.truth) {
-        const hit = segs.find(s => g.ids.has(s.tuneId));
+        if (g.kind !== 'tune') {
+          // Neither found nor missed - these rows are not scored. What matters
+          // is what was heard there: on an 'offindex' span anything heard is a
+          // confirmed false positive, and on an 'unknown' one it is a candidate
+          // name for a tune the annotator could not place.
+          const heard = segs.filter(s => overlaps(s, g)).map(s => `${s.label} (${s.span})`);
+          const tag = g.kind === 'offindex' ? '[hors index]' : '[non reconnu]';
+          console.log(`  . ${tag} ${g.label}`
+            + (heard.length ? `  -> entendu : ${heard.join(', ')}` : '  -> rien entendu'));
+          continue;
+        }
+        const hit = matchFor(g, segs);
         // With a CSV the annotation carries real spans, so a detection can be
         // judged on whether it COVERS the tune, not just on naming it somewhere
         // in the recording - a 15 s sliver of a 3 min set is not a success.
@@ -325,7 +433,7 @@ it('sweeps the UNKNOWN floor', () => {
       // that difference is finally visible, so it gets its own line.
       const covers = d.truth
         .map(g => {
-          const hit = segs.find(s => g.ids.has(s.tuneId));
+          const hit = matchFor(g, segs);
           if (!hit || g.start === undefined || g.end === undefined || g.end <= g.start) return null;
           return Math.max(0, Math.min(hit.endTime, g.end) - Math.max(hit.startTime, g.start)) / (g.end - g.start);
         })
@@ -337,9 +445,20 @@ it('sweeps the UNKNOWN floor', () => {
           + `${covers.filter(c => c >= 0.9).length} au-dessus de 90%`);
       }
 
-      const spurious = segs.filter(s => !d.truth.some(g => g.ids.has(s.tuneId)));
+      // Anything heard that no scoreable row claims. Tagged rather than
+      // filtered: one sitting on an 'unknown' span is excused by the score, and
+      // seeing WHICH ones were excused is how we find out whether the excuse is
+      // doing real work or quietly hiding false positives.
+      const spurious = segs
+        .filter(s => !d.truth.some(g => g.kind === 'tune' && g.ids.has(s.tuneId)))
+        .map(s => ({
+          ...s,
+          note: d.truth.some(g => g.kind === 'unknown' && overlaps(s, g)) ? '  [excusé - span non reconnu]'
+            : d.truth.some(g => g.kind === 'offindex' && overlaps(s, g)) ? '  [FAUX POSITIF confirmé - hors index]'
+              : '',
+        }));
       console.log(`  détections hors annotation (${spurious.length}) :`);
-      for (const s of spurious) console.log(`    ? ${s.label}  (${s.span})`);
+      for (const s of spurious) console.log(`    ? ${s.label}  (${s.span})${s.note}`);
       void found;
     }
     return;
@@ -364,11 +483,22 @@ it('sweeps the UNKNOWN floor', () => {
     let tp = 0, fp = 0;
     const rows: string[] = [];
     for (const d of data) {
-      const found = detectIds(d.windows!, p);
-      const t = d.truth.filter(g => [...g.ids].some(id => found.has(id))).length;
-      const f = [...found].filter(id => !d.truth.some(g => g.ids.has(id))).length;
+      // Segments, not just ids: excusing a detection needs to know WHERE it sat.
+      const segs = detectSegments(d.windows!, p);
+      const found = new Set(segs.map(s => s.tuneId));
+      const tunes = scorable(d);
+      // matchFor, not an id lookup: a tune annotated twice was otherwise
+      // counted found twice on the strength of a single detection.
+      const t = tunes.filter(g => matchFor(g, segs) !== null).length;
+      // A detection overlapping a span the annotator could not name is not
+      // scoreable either way - see TruthKind. Detections on an 'offindex' span
+      // are deliberately NOT excused: those are the real false positives.
+      const excused = new Set(segs
+        .filter(s => d.truth.some(g => g.kind === 'unknown' && overlaps(s, g)))
+        .map(s => s.tuneId));
+      const f = [...found].filter(id => !tunes.some(g => g.ids.has(id)) && !excused.has(id)).length;
       tp += t; fp += f;
-      rows.push(`${d.id.slice(0, 30).padEnd(30)} ${String(t).padStart(3)}/${String(d.truth.length).padEnd(3)} vrais, ${f} faux`);
+      rows.push(`${d.id.slice(0, 30).padEnd(30)} ${String(t).padStart(3)}/${String(tunes.length).padEnd(3)} vrais, ${f} faux`);
     }
     detail.set(p, rows);
     console.log(`  ${p.toFixed(2)}${p === CFG.unknownObservationProbability ? '*' : ' '}   | ${String(tp).padStart(3)}/${totalTruth} (${((tp / totalTruth) * 100).toFixed(1).padStart(5)}%) | ${String(fp).padStart(13)} | ${noise ? detectIds(noise, p).size : 0}`);

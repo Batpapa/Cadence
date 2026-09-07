@@ -6,6 +6,7 @@ import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWin
 import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent, AnnotationAlternate } from './model';
 import { alternatePickFields } from './model';
 import type { IndexProgress } from './recognition/indexStore';
+import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 
 // ── Live session orchestrator ─────────────────────────────────────────────────
 // One MediaStream, two parallel consumers:
@@ -256,20 +257,49 @@ export class LiveSession {
   /** Pauses the whole capture graph (recognition feed + recorder) in one shot —
    *  the worker's sample clock simply stops advancing, no offset bookkeeping needed. */
   async pause(): Promise<void> {
-    if (this.phase !== 'recording') return;
+    if (this.phase !== 'recording') {
+      if (DEBUG_LIVE_AUDIO) console.log(`[live] pause IGNOREE, phase=${this.phase}`);
+      return;
+    }
+    if (DEBUG_LIVE_AUDIO) console.log('[live] --- PAUSE demandee ---');
     this.recorder?.pause();
     await this.source.suspend();
     this.pauseStartedAt = Date.now();
     this.setPhase('paused');
+    if (DEBUG_LIVE_AUDIO) console.log('[live] pause effective');
   }
 
   async resume(): Promise<void> {
-    if (this.phase !== 'paused') return;
+    if (this.phase !== 'paused') {
+      if (DEBUG_LIVE_AUDIO) console.log(`[live] reprise IGNOREE, phase=${this.phase}`);
+      return;
+    }
+    if (DEBUG_LIVE_AUDIO) console.log(`[live] --- REPRISE demandee apres ${((Date.now() - this.pauseStartedAt) / 1000).toFixed(1)}s de pause ---`);
+
+    // BEFORE the audio restarts, never after. The worker pads its ring with
+    // silence whenever the sample counter falls behind the wall clock (#16,
+    // padToWallClock) — and a pause looks exactly like that: totalSamples has
+    // not moved while real time has. notifyLiveResume is what tells it the gap
+    // was deliberate, so it must arrive before the first post-resume chunk.
+    //
+    // It was a race, not a theoretical one. The worklet processor accumulates
+    // 16384 samples before posting and `suspend()` does NOT reset that partial
+    // fill, so a pause caught at 16000/16384 needs only 384 more samples — 8 ms
+    // — to post, while resume()'s promise resolves through the audio thread and
+    // back. When the chunk won, the worker padded the ENTIRE pause duration as
+    // silence: the 15 s ring filled with nothing, and totalSamples — the
+    // session's only clock — jumped forward by the whole pause, so every
+    // detection after it was timestamped that far late.
+    //
+    // Sending it first costs nothing: the anchor is set a few ms early, far
+    // inside LIVE_DEFICIT_SAFETY_MARGIN_S.
+    this.recognition?.notifyLiveResume();
+
     await this.source.resume();
     this.recorder?.resume();
     this.pausedAccumMs += Date.now() - this.pauseStartedAt;
-    this.recognition?.notifyLiveResume();
     this.setPhase('recording');
+    if (DEBUG_LIVE_AUDIO) console.log('[live] reprise effective — la suite doit montrer des chunks worker');
   }
 
   /** Stops everything and persists the session (audio + annotations). */
