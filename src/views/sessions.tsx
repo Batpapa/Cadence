@@ -88,7 +88,7 @@ export function SessionsView({ sessionId, annotationId }: { sessionId?: string; 
           </button>
         </div>
         <SessionLibrary
-          onStartLive={startLiveSession}
+          onStartLive={(kind) => startLiveSession(kind)}
           onImportFile={(file) => { void startImport(ctx, file); }}
           onImportSession={() => showImportSessionModal(ctx)}
           onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}

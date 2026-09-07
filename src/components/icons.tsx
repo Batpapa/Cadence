@@ -424,6 +424,21 @@ export function MicIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** The device's own sound — a screen with sound coming out of it. Deliberately
+ *  NOT a browser-tab glyph: what this source captures may be a tab, a window,
+ *  or the whole machine's output, and the screen reads as all three. */
+export function DeviceAudioIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="4" width="14" height="10" rx="1.5"/>
+      <line x1="6" y1="18" x2="12" y2="18"/>
+      <line x1="9" y1="14" x2="9" y2="18"/>
+      <path d="M18.5 9.2a3 3 0 0 1 0 4.6"/>
+      <path d="M21 6.8a6.5 6.5 0 0 1 0 9.4"/>
+    </svg>
+  );
+}
+
 export function PanelLeftIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

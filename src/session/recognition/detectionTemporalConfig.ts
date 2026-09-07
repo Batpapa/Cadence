@@ -31,11 +31,10 @@ export interface DetectionTemporalConfig {
    *  correct detections never clear (real tunes routinely score 0.30-0.50).
    *
    *  SWEPT 0.15 -> 0.30 (step 0.01) on 2026-09-06 over 7 annotated sessions
-   *  (315 ground-truth tunes) plus the pure-noise recording, and LOWERED from
-   *  0.25 to 0.20 — see experiments/threshold-sweep/. The trade is close to
-   *  one true tune per false positive across the whole range (0.30: 270/41,
-   *  0.25: 277/45, 0.20: 282/50), so it is a judgement call rather than an
-   *  optimum, settled on the user's explicit reasoning: in Cadence a false
+   *  (319 ground-truth tunes) plus the pure-noise recording, and LOWERED from
+   *  0.25 to 0.20 — see experiments/threshold-sweep/. It buys 6 real tunes for
+   *  4 false positives (0.25: 281/41, 0.20: 287/45), so it is a judgement call
+   *  rather than an optimum, settled on the user's explicit reasoning: a false
    *  positive is VISIBLE in the session list and dismissed in a click, while a
    *  missed tune is invisible and was the complaint that prompted the sweep.
    *  0.20 is also the knee — below it recall stops improving.
