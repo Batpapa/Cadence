@@ -965,6 +965,8 @@
   "sessions.syncAudio.totalPlural": "{count} enregistrements sur Drive — {size}",
   "sessions.syncAudio.on": "Copié sur Drive — cliquer pour supprimer la copie",
   "sessions.syncAudio.off": "Sur cet appareil uniquement — cliquer pour le copier sur Drive",
+  "sessions.syncAudio.uploading": "Copie sur Drive…",
+  "sessions.syncAudio.retry": "Échec de la copie sur Drive — cliquer pour réessayer",
   "sessions.syncAudio.confirm.title": "Copier sur Drive",
   "sessions.syncAudio.confirm.message": "Envoie cet enregistrement ({size}) dans le dossier cadence-data-ext sur Drive, pour qu'il soit écoutable sur les autres appareils. Il reste également sur cet appareil, et la copie peut être supprimée à tout moment.",
   "sessions.syncAudio.confirm.ok": "Copier",

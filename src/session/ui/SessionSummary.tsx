@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { formatBytes } from '../../utils';
-import { TrashIcon, ResetIcon, CloudIcon } from '../../components/icons';
+import { TrashIcon, ResetIcon, CloudUpIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, alertModal } from '../../components/modal';
 import {
   deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio,
-  syncedAudioOf, uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio,
+  uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio,
 } from '../db';
 import { isDriveConnected } from '../../services/driveService';
-import type { RecordedSession, SessionAnnotation, SyncedAudio } from '../model';
+import type { RecordedSession, SessionAnnotation, SyncedAudio, TuneAnalyserModuleData } from '../model';
+import { TUNE_ANALYSER_MODULE_KEY } from '../model';
 import { alternatePickFields } from '../model';
 import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { showShareSessionModal } from './ShareSessionModal';
@@ -20,6 +21,7 @@ import {
   BoundControls, ClipControls,
 } from './sessionUiShared';
 import { lastImportDump, lastLiveDump } from './sessionStore';
+import { appState } from '../../store';
 import { headPosition, withGaps } from './timelineModel';
 
 // ── Screen: summary ───────────────────────────────────────────────────────────
@@ -67,6 +69,40 @@ const HATCH = [hatch(-45), hatch(45)];   // rising, then falling
  *  threshold is not exposed, so this only has to be generous enough to cover
  *  the second click — it never decides anything on its own. */
 const DOUBLE_CLICK_MS = 400;
+
+/** Where this recording's Drive copy stands. Same four readings as the header's
+ *  own sync indicator, because it is the same question about a smaller thing. */
+type AudioSyncState = 'off' | 'uploading' | 'on' | 'error';
+
+const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
+  off:       'sessions.syncAudio.off',
+  uploading: 'sessions.syncAudio.uploading',
+  on:        'sessions.syncAudio.on',
+  error:     'sessions.syncAudio.retry',
+};
+
+/** Deliberately header.tsx's SyncBtn, one size down: same glyph, same colour
+ *  code — yellow-free here since a copy is either made or not — so "is this on
+ *  Drive" is read the same way in both places. A second visual language for the
+ *  same idea is how two indicators come to disagree. */
+function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () => void }) {
+  const cls =
+    state === 'uploading' ? 'text-accent animate-pulse cursor-default' :
+    state === 'on'        ? 'text-green-500 cursor-pointer' :
+    state === 'error'     ? 'text-danger cursor-pointer' :
+                            'text-dim hover:text-accent cursor-pointer';
+  return (
+    <button
+      class={`flex items-center shrink-0 transition-colors ${cls}`}
+      title={t(AUDIO_SYNC_TITLE[state] as Parameters<typeof t>[0])}
+      aria-pressed={state === 'on'}
+      disabled={state === 'uploading'}
+      onClick={state === 'uploading' ? undefined : onClick}
+    >
+      <CloudUpIcon size={12} />
+    </button>
+  );
+}
 interface SessionSummaryProps {
   session: RecordedSession;
   ctx: AppContext;
@@ -116,11 +152,24 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioBytes, setAudioBytes] = useState(0);
-  /** The Drive copy of this recording, if there is one. Null = none. */
-  const [synced, setSynced] = useState<SyncedAudio | null>(null);
+  /** The Drive copy of this recording, if there is one.
+   *
+   *  Read straight off appState on every render rather than snapshotted on
+   *  mount (2026-09-08). This is the one field that arrives from ANOTHER
+   *  device: the copy is made on the phone, and the laptop learns about it
+   *  whenever the next Drive pull lands — which is very often while this screen
+   *  is already open. A mount-time snapshot left the recording looking absent
+   *  until the page was reloaded, for a feature whose whole point is that the
+   *  other device can hear it. */
+  const modData = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const synced: SyncedAudio | null = modData?.syncedAudio?.[session.id] ?? null;
   /** An upload, removal or download in flight — all three touch the network and
    *  none may be started twice. */
   const [busySync, setBusySync] = useState(false);
+  /** The last transfer failed. Kept so the indicator stays red afterwards: the
+   *  modal explaining it is dismissed in a second, and without this the button
+   *  would go back to looking like nothing had been attempted. */
+  const [syncFailed, setSyncFailed] = useState(false);
   /** Conversion progress 0-1 while a download is being prepared, null when idle. */
   const [exporting, setExporting] = useState<number | null>(null);
   // Read once per render, not stored: connecting or disconnecting Drive
@@ -166,6 +215,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
 
   const persist = () => { void saveSessionMeta(session); };
 
+  const audioSyncState: AudioSyncState =
+    busySync ? 'uploading' : syncFailed ? 'error' : synced ? 'on' : 'off';
+
   // ── Audio load: streamed via a native <audio> element (no
   // decodeAudioData/waveform — sessions can run for hours). Revokes the
   // object URL whenever it's replaced (forgotten) or on unmount.
@@ -176,7 +228,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       setAudioBytes(blob.size);
       setAudioUrl(URL.createObjectURL(blob));
     });
-    void syncedAudioOf(session.id).then(entry => { if (!cancelled) setSynced(entry ?? null); });
     return () => { cancelled = true; };
     // eslint-disable-next-line
   }, []);
@@ -186,11 +237,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  the copy is not, because the recording stays on this device either way. */
   const toggleSync = () => {
     if (busySync) return;
+    // No local bookkeeping after either operation: both write through
+    // db.ts's mutate(), and `synced` above is read from that same state.
+    setSyncFailed(false);
     if (synced) {
       setBusySync(true);
-      void unsyncSessionAudio(session.id)
-        .then(() => setSynced(null))
-        .finally(() => setBusySync(false));
+      void unsyncSessionAudio(session.id).finally(() => setBusySync(false));
       return;
     }
     confirmModal(
@@ -200,11 +252,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       () => {
         setBusySync(true);
         void uploadSessionAudio(session.id)
-          .then(() => syncedAudioOf(session.id).then(e => setSynced(e ?? null)))
-          .catch((e: unknown) => alertModal(
-            t('sessions.syncAudio.failed.title'),
-            t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
-          ))
+          .catch((e: unknown) => {
+            setSyncFailed(true);
+            alertModal(
+              t('sessions.syncAudio.failed.title'),
+              t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
+            );
+          })
           .finally(() => setBusySync(false));
       },
     );
@@ -219,7 +273,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     void fetchSyncedAudio(session.id)
       .then(blob => {
         if (!blob) {
-          setSynced(null);   // the file is gone from Drive; the record went with it
+          // fetchSyncedAudio already dropped the dangling record; `synced`
+          // follows that state, so the offer disappears on its own.
           alertModal(t('sessions.syncAudio.gone.title'), t('sessions.syncAudio.gone.message'));
           return;
         }
@@ -627,17 +682,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
                 ? <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />
                 : `${Math.round(exporting * 100)}%`}
             </button>
-            {driveOn && (
-              <button
-                class={`transition-colors shrink-0 disabled:opacity-40 ${synced ? 'text-accent hover:text-dim' : 'text-dim hover:text-accent'} ${busySync ? '' : 'cursor-pointer'}`}
-                title={t(synced ? 'sessions.syncAudio.on' : 'sessions.syncAudio.off')}
-                aria-pressed={!!synced}
-                disabled={busySync}
-                onClick={toggleSync}
-              >
-                <CloudIcon size={14} filled={!!synced} />
-              </button>
-            )}
+            {driveOn && <AudioSyncBtn state={audioSyncState} onClick={toggleSync} />}
             <button
               class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0"
               title={t('sessions.reanalyze.hint')}
