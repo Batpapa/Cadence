@@ -86,11 +86,17 @@ const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
  *  Drive" is read the same way in both places. A second visual language for the
  *  same idea is how two indicators come to disagree. */
 function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () => void }) {
+  // Hover never changes the HUE, only its lightness, and only where there is
+  // no state colour to confuse: the accent is already what "copying" looks
+  // like, so an accent-on-hover idle button read as an upload that had started
+  // and stuck — removing a copy left the cursor on the button and the icon
+  // apparently went blue for good (2026-09-08). Colour means state here, the
+  // way it does in the header's own indicator, and nothing else.
   const cls =
     state === 'uploading' ? 'text-accent animate-pulse cursor-default' :
     state === 'on'        ? 'text-green-500 cursor-pointer' :
     state === 'error'     ? 'text-danger cursor-pointer' :
-                            'text-dim hover:text-accent cursor-pointer';
+                            'text-dim hover:text-muted cursor-pointer';
   return (
     <button
       class={`flex items-center shrink-0 transition-colors ${cls}`}
@@ -237,12 +243,21 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  the copy is not, because the recording stays on this device either way. */
   const toggleSync = () => {
     if (busySync) return;
-    // No local bookkeeping after either operation: both write through
-    // db.ts's mutate(), and `synced` above is read from that same state.
     setSyncFailed(false);
+    // Confirmed, because it destroys something: the copy on Drive is what the
+    // user's other devices play from, and this is the only control that removes
+    // it. The recording on THIS device is not touched — see forgetSessionAudio
+    // for the other half of that split.
     if (synced) {
-      setBusySync(true);
-      void unsyncSessionAudio(session.id).finally(() => setBusySync(false));
+      confirmModal(
+        t('sessions.syncAudio.remove.title'),
+        t('sessions.syncAudio.remove.message', { size: formatBytes(synced.bytes) }),
+        t('sessions.syncAudio.remove.ok'),
+        () => {
+          setBusySync(true);
+          void unsyncSessionAudio(session.id).finally(() => setBusySync(false));
+        },
+      );
       return;
     }
     confirmModal(
@@ -693,7 +708,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             <button
               class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
               title={t('sessions.forgetAudio.hint')}
-              onClick={() => confirmModal(t('sessions.forgetAudio.title'), t('sessions.forgetAudio.message'), t('sessions.forgetAudio'), () => {
+              // Two messages, because the act has two different consequences:
+              // with a copy on Drive this frees space and is undone by a
+              // download; without one it is the end of the recording.
+              onClick={() => confirmModal(t('sessions.forgetAudio.title'), t(synced ? 'sessions.forgetAudio.messageSynced' : 'sessions.forgetAudio.message'), t('sessions.forgetAudio'), () => {
                 void forgetSessionAudio(session.id).then(() => setAudioUrl(null));
               })}
             >
