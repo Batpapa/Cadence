@@ -1,3 +1,4 @@
+import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon } from '../../components/icons';
@@ -6,6 +7,7 @@ import { listSessions } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { activeLive } from './sessionStore';
+import { dateBesideName } from '../sessionNaming';
 import type { RecordedSession } from '../model';
 
 // ── Screen: library ───────────────────────────────────────────────────────────
@@ -25,11 +27,15 @@ function fmtLongTime(s: number): string {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-function defaultSessionName(dateIso: string | null): string {
-  return dateIso
-    ? t('sessions.defaultName', { date: new Date(dateIso).toLocaleDateString() })
-    : t('sessions.defaultNameNoDate');
-}
+
+/** What each kind of session is marked with in the list. Same glyphs as the
+ *  source selector on the start button, so the icon that chose a recording is
+ *  the icon that later identifies it. */
+const SOURCE_BADGE: Record<RecordedSession['source'], { icon: JSX.Element; title: string }> = {
+  live:   { icon: <MicIcon size={11} />,         title: 'sessions.source.mic' },
+  device: { icon: <DeviceAudioIcon size={11} />, title: 'sessions.source.device' },
+  import: { icon: <FileAudioIcon size={11} />,   title: 'sessions.importBadge' },
+};
 
 interface SessionLibraryProps {
   onStartLive: (source: LiveSourceKind) => void;
@@ -60,9 +66,12 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
     // eslint-disable-next-line
   }, []);
 
+  // By name alone. The default name already carries the date and time (see
+  // sessionNaming.ts), so typing a date still finds what it should, and the
+  // list's own chronological order does the rest.
   const q = query.trim().toLowerCase();
   const sessions = q
-    ? allSessions.filter(s => (s.name || defaultSessionName(s.date)).toLowerCase().includes(q))
+    ? allSessions.filter(s => s.name.toLowerCase().includes(q))
     : allSessions;
 
   return (
@@ -178,15 +187,19 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
             >
               <div class="flex-1 min-w-0">
                 <div class="text-sm font-medium text-primary truncate flex items-center gap-1.5">
-                  <span class="truncate">{session.name || defaultSessionName(session.date)}</span>
-                  {session.source === 'import' && (
-                    <span class="text-dim shrink-0 flex items-center" title={t('sessions.importBadge')}>
-                      <FileAudioIcon size={11} />
-                    </span>
-                  )}
+                  {/* Before the name, not after it: the three kinds of session
+                      are scanned down a column, and an icon that moves with the
+                      end of a truncated name cannot be scanned at all. */}
+                  <span class="text-dim shrink-0 flex items-center" title={t(SOURCE_BADGE[session.source].title)}>
+                    {SOURCE_BADGE[session.source].icon}
+                  </span>
+                  <span class="truncate">{session.name}</span>
                 </div>
                 <div class="text-xs text-dim">
-                  {session.date ? `${new Date(session.date).toLocaleDateString()} · ` : ''}
+                  {/* Only when the name does not already say it — see
+                      dateBesideName. A renamed session shows its date here; a
+                      default-named one would only repeat itself. */}
+                  {dateBesideName(session.name, session.date) && `${dateBesideName(session.name, session.date)} · `}
                   {fmtLongTime(session.duration)} · {t('sessions.tunesCount', { n: session.annotations.length })}
                 </div>
               </div>

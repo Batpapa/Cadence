@@ -40,11 +40,6 @@ export function fmtLongTime(s: number): string {
   return fmtTime(s);
 }
 
-export function defaultSessionName(dateIso: string | null): string {
-  return dateIso
-    ? t('sessions.defaultName', { date: new Date(dateIso).toLocaleDateString() })
-    : t('sessions.defaultNameNoDate');
-}
 
 /** ISO timestamp → 'YYYY-MM-DDTHH:mm' local time, what a datetime-local input shows/expects. */
 export function toLocalInput(iso: string): string {
@@ -223,7 +218,7 @@ export function clipTag(session: ClipSessionRef, ann: SessionAnnotation): string
 }
 
 export function clipFileName(session: ClipSessionRef, ann: SessionAnnotation): string {
-  const sessionName = session.name || defaultSessionName(session.date);
+  const sessionName = session.name;
   const range = `${fmtTime(ann.start)}–${fmtTime(ann.end ?? session.duration)}`.replace(/:/g, 'm');
   return `${ann.displayName} — ${sessionName} (${range}) ${clipTag(session, ann)}.mp3`;
 }

@@ -113,7 +113,13 @@ export interface RecordedSession {
   duration: number;    // seconds
   mimeType: string;
   /** 'live' = mic recording; 'import' = user-provided audio file (stored as-is). */
-  source: 'live' | 'import';
+  /** How the audio was obtained. 'live' and 'device' are both live recordings —
+   *  a microphone and a captured browser tab / system output respectively — and
+   *  they are told apart here only so a session can be NAMED for what it is
+   *  (see sessionNaming.ts); nothing in the recognition path reads this.
+   *  Sessions saved before 'device' existed read as 'live', which is what they
+   *  were. */
+  source: 'live' | 'device' | 'import';
   /** 'recording' = draft written while a live recording is still in progress
    *  (crash/refresh recovery); absent once the session is finalized. */
   status?: 'recording' | 'done';
@@ -138,6 +144,36 @@ export interface TuneAnalyserModuleData {
    *  library — a flag on this module's own slice rather than on User, which
    *  knows nothing about panels. */
   detectionsOnCards?: boolean;
+  /** Copy the recording to Drive for sessions saved from now on, so they can be
+   *  played on the user's other devices. Absent = no. */
+  syncAudioByDefault?: boolean;
+  /** Session id → the Drive file holding its recording, for the sessions where
+   *  that was chosen. A sibling map rather than a field on RecordedSession,
+   *  purely so this stays one obvious place to look. */
+  syncedAudio?: Record<string, SyncedAudio>;
+}
+
+/** A recording copied to the user's Drive as a file of its own — the one way to
+ *  hear a session on a device other than the one that recorded it.
+ *
+ *  A separate file rather than base64 inside this blob (which is what the first
+ *  implementation did, 2026-09-08). The blob is re-serialised and re-uploaded on
+ *  every push, so carrying recordings in it meant re-uploading tens of megabytes
+ *  after every unrelated edit, and needed an arbitrary cap to stay bearable. A
+ *  companion file is uploaded once, costs nothing afterwards, and is limited
+ *  only by the user's own Drive quota — see driveService.ts's companion files.
+ *
+ *  Recordings are write-once, so there is deliberately no version or checksum
+ *  here: the bytes behind `fileId` cannot change, and nothing can disagree
+ *  about them. */
+export interface SyncedAudio {
+  /** Drive file id. The local database may hold the same recording as well —
+   *  uploading never removes the local copy, and downloading caches it. */
+  fileId: string;
+  mimeType: string;
+  /** Size of the recording, so the settings screen can total what is on Drive
+   *  and a download can say how big it will be before starting. */
+  bytes: number;
 }
 
 export const TUNE_ANALYSER_MODULE_KEY = 'tune-analyser';

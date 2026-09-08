@@ -53,16 +53,62 @@ export function initRoutePersistence(userId: string): void {
   });
 }
 
-const _history: Route[] = [];
-const _future:  Route[] = [];
+// ── History, and the scroll position that belongs to each entry ──────────────
+//
+// Offsets are keyed by HISTORY ENTRY, not by route: going back to a list must
+// land where that particular visit left off, while arriving at the same list
+// afresh — a sidebar link, a command palette jump — must start at the top.
+// Keying by route conflates the two and gets the second one wrong.
+//
+// (Briefly tried the other way on 2026-09-08, as a fallback for reaching a
+// section through the sidebar. Reverted: going back and clicking a section are
+// not the same gesture, and pretending otherwise makes a deliberate "show me
+// this list" land somewhere the user did not ask to be.)
+//
+// Only the id travels through here — the offsets themselves are written by the
+// view layer (components/scrollRestoration.ts), which is the only part that
+// knows which element scrolls.
+
+interface HistoryEntry { route: Route; nav: number }
+
+const _history: HistoryEntry[] = [];
+const _future:  HistoryEntry[] = [];
+
+let _navSeq = 0;
+let _currentNav = 0;
+const _scrollByNav = new Map<number, number>();
+
+/** Id of the history entry now on screen. Subscribed to from outside the
+ *  component tree, so navigating costs no extra re-render of the app shell. */
+export const navEntry = signal(0);
+
+export function rememberScroll(navId: number, top: number): void {
+  _scrollByNav.set(navId, top);
+}
+
+/** Where to land. A history entry that has been scrolled before answers with
+ *  its own offset; anything else answers 0, which is the top — so arriving
+ *  somewhere new needs no special case. */
+export function recallScroll(navId: number): number {
+  return _scrollByNav.get(navId) ?? 0;
+}
+
+/** Entries that can never be returned to must not keep their offset alive —
+ *  the map would otherwise grow for the lifetime of the session. */
+function forgetScroll(entries: HistoryEntry[]): void {
+  for (const e of entries) _scrollByNav.delete(e.nav);
+}
 
 export function navigate(route: Route): void {
-  _history.push(routeSignal.value);
-  if (_history.length > 50) _history.shift();
+  _history.push({ route: routeSignal.value, nav: _currentNav });
+  if (_history.length > 50) forgetScroll(_history.splice(0, _history.length - 50));
+  forgetScroll(_future);
   _future.length     = 0;
+  _currentNav        = ++_navSeq;
   routeSignal.value  = route;
   canGoBack.value    = true;
   canGoForward.value = false;
+  navEntry.value     = _currentNav;
 }
 
 export function replaceRoute(route: Route): void {
@@ -72,19 +118,23 @@ export function replaceRoute(route: Route): void {
 export function goBack(): void {
   const prev = _history.pop();
   if (!prev) return;
-  _future.push(routeSignal.value);
-  routeSignal.value  = prev;
+  _future.push({ route: routeSignal.value, nav: _currentNav });
+  _currentNav        = prev.nav;
+  routeSignal.value  = prev.route;
   canGoBack.value    = _history.length > 0;
   canGoForward.value = true;
+  navEntry.value     = _currentNav;
 }
 
 export function goForward(): void {
   const next = _future.pop();
   if (!next) return;
-  _history.push(routeSignal.value);
-  routeSignal.value  = next;
+  _history.push({ route: routeSignal.value, nav: _currentNav });
+  _currentNav        = next.nav;
+  routeSignal.value  = next.route;
   canGoBack.value    = true;
   canGoForward.value = _future.length > 0;
+  navEntry.value     = _currentNav;
 }
 
 /** The single place a new state becomes the current one.

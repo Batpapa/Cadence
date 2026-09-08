@@ -1,7 +1,8 @@
 import { appState, navigate } from '../../store';
 import { t } from '../../services/i18nService';
 import { findCardDetections, sessionsOf, detectionsOnCards } from '../detections';
-import { fmtLongTime, defaultSessionName, BUCKET_TEXT } from './sessionUiShared';
+import { fmtLongTime, BUCKET_TEXT } from './sessionUiShared';
+
 
 // ── The Sessions module's panel on a card page ────────────────────────────────
 // Registered through services/cardPanels — the card view renders it without
@@ -46,11 +47,14 @@ export function DetectedIn({ cardId }: { cardId: string }) {
                 {fmtLongTime(d.start)}
               </button>
             ))}
+            {/* The name alone, never the date: this line sits at the end of a
+                row of detection times, in a panel already crowded with numbers,
+                and what identifies the session here is what it is called. */}
             <span
               class="text-xs font-mono truncate min-w-0 text-muted hover:text-primary cursor-pointer transition-colors"
               title={t('sessions.openSession')}
               onClick={() => navigate({ view: 'sessions', sessionId: group.sessionId })}
-            >{group.name || defaultSessionName(group.date)}</span>
+            >{group.name}</span>
           </div>
         ))}
       </div>

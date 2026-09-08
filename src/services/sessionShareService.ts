@@ -1,5 +1,5 @@
 import type { RecordedSession } from '../session/model';
-import { arrayBufferToBase64, generateId } from '../utils';
+import { arrayBufferToBase64, base64ToBlob, generateId } from '../utils';
 import { uploadShare, downloadShare, type ShareUploadResult } from './shareService';
 import { saveSessionMeta, saveSessionAudio } from '../session/db';
 
@@ -20,13 +20,6 @@ interface SessionPackage {
 
 function isSessionPackage(data: unknown): data is SessionPackage {
   return typeof data === 'object' && data !== null && 'session' in data;
-}
-
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const binary = atob(base64);
-  const arr = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-  return new Blob([arr], { type: mimeType });
 }
 
 async function buildPackageText(session: RecordedSession, audioBlob: Blob | null): Promise<string> {

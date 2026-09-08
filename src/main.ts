@@ -1,7 +1,7 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
-import { emptyState } from './utils';
+import { emptyState, formatBytes } from './utils';
 import { appState, commitState, routeSignal, goBack, goForward, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
@@ -9,7 +9,7 @@ import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
 import { clearSnapshotsForUser } from './services/snapshotService';
-import { initSessionDbForUser, collectUserSessionAudio, userDbName } from './session/db';
+import { initSessionDbForUser, collectUserSessionAudio, userDbName, deleteLocalSessionData, localSessionAudioStats } from './session/db';
 import { buildZip, audioExtension } from './services/zip';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
@@ -61,7 +61,21 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
   mountUserSelector(root, users,
     (id)   => openUser(id, root),
     (name) => createAndOpenUser(name, root),
-    async (id) => { clearDriveStateForUser(id); await clearSnapshotsForUser(id); removeUserFromOrder(id); await deleteUser(id); await showUserSelector(root); },
+    // deleteLocalSessionData is what "remove from this device" was missing
+    // (2026-09-08): deleteUser only drops the AppState blob, so every past
+    // recording's audio, the interrupted drafts and their chunks stayed behind
+    // in `cadence-tune-analyser-local-user-{id}` — a database no screen can
+    // reach any more once its owner is gone, quietly holding the largest thing
+    // this app stores. Ordered before deleteUser so a failure here leaves the
+    // user present and the data reachable, rather than the reverse.
+    async (id) => {
+      clearDriveStateForUser(id);
+      await clearSnapshotsForUser(id);
+      await deleteLocalSessionData(id);
+      removeUserFromOrder(id);
+      await deleteUser(id);
+      await showUserSelector(root);
+    },
   );
 }
 
@@ -222,6 +236,15 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
         audioBtn.innerHTML = `${EXPORT_SVG}Audio`;
         audioBtn.onclick = () => { void downloadSessionAudioZip(id, safeName, user); };
         btns.appendChild(audioBtn);
+        // How much is behind that button, once we can tell. This screen exists
+        // for someone whose app is broken and who is about to wait on a
+        // download; "Audio (1.2 GB)" is the difference between waiting on
+        // purpose and assuming it has hung. Fire-and-forget — the button is
+        // usable while the figure is still being counted, and stays usable if
+        // it never arrives.
+        void localSessionAudioStats(id).then(stats => {
+          if (stats) audioBtn.innerHTML = `${EXPORT_SVG}Audio (${formatBytes(stats.bytes)})`;
+        }).catch(() => { /* the plain label is already correct */ });
       }
 
       row.append(idTag, nameTag, btns);

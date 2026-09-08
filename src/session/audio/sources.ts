@@ -85,6 +85,19 @@ export abstract class LiveStreamSource implements PcmSource {
     // yields silence on some browsers. This way, what the VU meter shows is
     // exactly what lands in the file.
     this.recordingDest = this.audioContext.createMediaStreamDestination();
+    // Mono (2026-09-08). This node defaults to TWO channels, so every session
+    // was recorded in stereo — for a microphone, the same signal twice, and for
+    // captured device audio, a stereo image nothing downstream ever uses: the
+    // recognition worklet reads channel 0 alone, and clips are encoded mono.
+    // Half the samples, no perceptible loss, and it is the file the user
+    // downloads and (soon) may embed in their synced data.
+    //
+    // 'explicit' is what makes it a real down-mix rather than a channel being
+    // dropped, and it is this node's spec default — set here anyway so the
+    // intent survives someone reading only these two lines.
+    this.recordingDest.channelCount = 1;
+    this.recordingDest.channelCountMode = 'explicit';
+    this.recordingDest.channelInterpretation = 'speakers';
     src.connect(this.recordingDest);
   }
 

@@ -1,15 +1,17 @@
+import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
-import { focusIfDesktop } from '../../utils';
-import { showModal, closeModal, renderModalBody } from '../../components/modal';
+import { focusIfDesktop, formatBytes } from '../../utils';
+import { showModal, closeModal, renderModalBody, alertModal } from '../../components/modal';
 import { LiveSession } from '../liveSession';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
 import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
-import { loadSessionAudio } from '../db';
+import { loadSessionAudio, setSyncAudioByDefault } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
+import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type RecordedSession, type TuneAnalyserModuleData } from '../model';
 import { detectionsOnCards } from '../detections';
 import { appState, mutate } from '../../store';
@@ -35,13 +37,6 @@ import { DetectedIn } from './DetectedIn';
 // each other either.
 const SHARE_ICON_FILE_DOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
 const SHARE_ICON_SHARE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
-
-function alertModal(title: string, message: string): void {
-  const p = document.createElement('p');
-  p.className = 'text-sm text-muted leading-relaxed';
-  p.textContent = message;
-  showModal(title, p, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
-}
 
 // ── Share a session (annotations + optionally the audio) via a short key —
 // same mechanism as card sharing (shareService.ts). ─────────────────────────
@@ -383,30 +378,83 @@ registerCardPanel((cardId) => <DetectedIn cardId={cardId} />);
 // panel it does not know exists. Saved on change with no confirmation, like the
 // score playback preferences: one value, undone by setting it back.
 
-function SessionSettingsBody() {
-  const on = detectionsOnCards(appState.value);
+function SettingRow({ checked, onToggle, label, hint, children }: {
+  checked: boolean;
+  onToggle: (next: boolean) => void;
+  label: string;
+  hint: string;
+  children?: ComponentChild;
+}) {
   return (
-    <label class="flex items-start gap-3 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        class="card-checkbox mt-0.5"
-        checked={on}
-        onChange={(e) => {
-          const next = (e.target as HTMLInputElement).checked;
+    <div>
+      <label class="flex items-start gap-3 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          class="card-checkbox mt-0.5"
+          checked={checked}
+          onChange={(e) => onToggle((e.target as HTMLInputElement).checked)}
+        />
+        <span>
+          <span class="text-sm text-primary">{label}</span>
+          <span class="block text-xs text-muted mt-0.5">{hint}</span>
+        </span>
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function SessionSettingsBody() {
+  // Read straight off appState rather than through db.ts's async accessors:
+  // this component already re-renders on every state change, so the figures
+  // below follow a session being embedded or dropped with nothing to refresh.
+  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const synced = Object.values(mod?.syncedAudio ?? {});
+  const syncedBytes = synced.reduce((sum, e) => sum + e.bytes, 0);
+  // Copying recordings to Drive is meaningless without a Drive to copy them to,
+  // and a checkbox that silently does nothing is worse than one that says why.
+  const driveOn = isDriveConnected();
+
+  return (
+    <div class="space-y-4">
+      <SettingRow
+        checked={detectionsOnCards(appState.value)}
+        label={t('sessions.detectionsOnCards')}
+        hint={t('sessions.detectionsOnCards.hint')}
+        onToggle={(next) => {
           void mutate(s => {
-            const mod = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+            const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
             // Written only to turn it OFF — absence is the default here as
             // everywhere else in this codebase.
-            if (next) delete mod.detectionsOnCards; else mod.detectionsOnCards = false;
-            s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: mod };
+            if (next) delete m.detectionsOnCards; else m.detectionsOnCards = false;
+            s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
           });
         }}
       />
-      <span>
-        <span class="text-sm text-primary">{t('sessions.detectionsOnCards')}</span>
-        <span class="block text-xs text-muted mt-0.5">{t('sessions.detectionsOnCards.hint')}</span>
-      </span>
-    </label>
+
+      {/* Absent entirely without Drive rather than shown disabled: there is no
+          Drive to copy to, so the setting has nothing to mean. */}
+      {driveOn && (
+        <SettingRow
+          checked={!!mod?.syncAudioByDefault}
+          label={t('sessions.syncAudio')}
+          hint={t('sessions.syncAudio.hint')}
+          onToggle={(next) => { void setSyncAudioByDefault(next); }}
+        >
+          {/* Only once there is something to weigh: a zero here is noise. And no
+              budget line — the limit is the user's own Drive quota, so this is
+              information, not a gauge. */}
+          {synced.length > 0 && (
+            <p class="text-xs text-muted mt-2 ml-[27px]">
+              {t(synced.length === 1 ? 'sessions.syncAudio.total' : 'sessions.syncAudio.totalPlural', {
+                count: synced.length,
+                size: formatBytes(syncedBytes),
+              })}
+            </p>
+          )}
+        </SettingRow>
+      )}
+    </div>
   );
 }
 

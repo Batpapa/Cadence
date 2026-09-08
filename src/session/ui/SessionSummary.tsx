@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import { TrashIcon, ResetIcon } from '../../components/icons';
+import { formatBytes } from '../../utils';
+import { TrashIcon, ResetIcon, CloudIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
-import { confirmModal } from '../../components/modal';
-import { deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio } from '../db';
-import type { RecordedSession, SessionAnnotation } from '../model';
+import { confirmModal, alertModal } from '../../components/modal';
+import {
+  deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio,
+  syncedAudioOf, uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio,
+} from '../db';
+import { isDriveConnected } from '../../services/driveService';
+import type { RecordedSession, SessionAnnotation, SyncedAudio } from '../model';
 import { alternatePickFields } from '../model';
 import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { showShareSessionModal } from './ShareSessionModal';
+import { exportSessionMp3 } from '../audio/clipExtract';
 import {
-  fmtLongTime, defaultSessionName, TitleRow, DateRow,
+  fmtLongTime, TitleRow, DateRow,
   BoundControls, ClipControls,
 } from './sessionUiShared';
 import { lastImportDump, lastLiveDump } from './sessionStore';
@@ -109,6 +115,17 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const pinnedDeckIdsRef = useRef<Set<string>>(new Set());
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioBytes, setAudioBytes] = useState(0);
+  /** The Drive copy of this recording, if there is one. Null = none. */
+  const [synced, setSynced] = useState<SyncedAudio | null>(null);
+  /** An upload, removal or download in flight — all three touch the network and
+   *  none may be started twice. */
+  const [busySync, setBusySync] = useState(false);
+  /** Conversion progress 0-1 while a download is being prepared, null when idle. */
+  const [exporting, setExporting] = useState<number | null>(null);
+  // Read once per render, not stored: connecting or disconnecting Drive
+  // re-renders this screen through the state it changes.
+  const driveOn = isDriveConnected();
   const [playing, setPlaying] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   playingIdRef.current = playingId;
@@ -155,12 +172,66 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   useEffect(() => {
     let cancelled = false;
     void loadSessionAudio(session.id).then(blob => {
-      if (!blob || cancelled) return;
+      if (cancelled || !blob) return;
+      setAudioBytes(blob.size);
       setAudioUrl(URL.createObjectURL(blob));
     });
+    void syncedAudioOf(session.id).then(entry => { if (!cancelled) setSynced(entry ?? null); });
     return () => { cancelled = true; };
     // eslint-disable-next-line
   }, []);
+
+  /** Copies this recording to Drive, or removes the copy. Uploading is confirmed
+   *  first because it spends the user's bandwidth and their Drive space; removing
+   *  the copy is not, because the recording stays on this device either way. */
+  const toggleSync = () => {
+    if (busySync) return;
+    if (synced) {
+      setBusySync(true);
+      void unsyncSessionAudio(session.id)
+        .then(() => setSynced(null))
+        .finally(() => setBusySync(false));
+      return;
+    }
+    confirmModal(
+      t('sessions.syncAudio.confirm.title'),
+      t('sessions.syncAudio.confirm.message', { size: formatBytes(audioBytes) }),
+      t('sessions.syncAudio.confirm.ok'),
+      () => {
+        setBusySync(true);
+        void uploadSessionAudio(session.id)
+          .then(() => syncedAudioOf(session.id).then(e => setSynced(e ?? null)))
+          .catch((e: unknown) => alertModal(
+            t('sessions.syncAudio.failed.title'),
+            t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
+          ))
+          .finally(() => setBusySync(false));
+      },
+    );
+  };
+
+  /** Brings a recording made on another device onto this one. Never automatic:
+   *  opening a session summary must not spend tens of megabytes of someone's
+   *  mobile data without being asked. */
+  const downloadSynced = () => {
+    if (busySync) return;
+    setBusySync(true);
+    void fetchSyncedAudio(session.id)
+      .then(blob => {
+        if (!blob) {
+          setSynced(null);   // the file is gone from Drive; the record went with it
+          alertModal(t('sessions.syncAudio.gone.title'), t('sessions.syncAudio.gone.message'));
+          return;
+        }
+        setAudioBytes(blob.size);
+        setAudioUrl(URL.createObjectURL(blob));
+      })
+      .catch((e: unknown) => alertModal(
+        t('sessions.syncAudio.failed.title'),
+        t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
+      ))
+      .finally(() => setBusySync(false));
+  };
   useEffect(() => {
     if (!audioUrl) return;
     return () => URL.revokeObjectURL(audioUrl);
@@ -472,13 +543,46 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     },
   });
 
-  const downloadName = `${(session.name || defaultSessionName(session.date)).replace(/[^\w-]+/g, '_')}.${(session.mimeType.split('/')[1] || 'webm').split(';')[0]}`;
+  // The session's own name, nothing computed: what the library calls this
+  // recording is what the downloaded file is called.
+  const safeName = session.name.replace(/[^\w-]+/g, '_');
+
+  /** Hands the recording over as MP3, converting on the way out.
+   *
+   *  Falls back to the stored file on any failure — an unsupported browser, an
+   *  exotic container, a decode error. Someone who asked for their recording
+   *  should get their recording; the format is the nicety. */
+  const downloadAudio = () => {
+    if (exporting !== null) return;
+    setExporting(0);
+    void loadSessionAudio(session.id)
+      .then(async blob => {
+        if (!blob) return;
+        let out = blob;
+        let ext = (session.mimeType.split('/')[1] || 'webm').split(';')[0]!;
+        try {
+          out = await exportSessionMp3(blob, session.duration, r => setExporting(r));
+          ext = 'mp3';
+        } catch (e) {
+          console.warn('[sessions] MP3 conversion unavailable — handing over the original recording:', e);
+        }
+        const url = URL.createObjectURL(out);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${safeName}.${ext}`;
+        a.click();
+        // Long enough for the browser to have taken the blob; revoking straight
+        // away can cancel the download on some of them.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      })
+      .finally(() => setExporting(null));
+  };
 
   return (
     <>
       <TitleRow
         getName={() => session.name}
-        getDefaultName={() => defaultSessionName(session.date)}
+        getDefaultName={() => session.name}
         onRename={(val) => { session.name = val; persist(); }}
         onDelete={() => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); }}
         onShare={() => showShareSessionModal(session)}
@@ -508,13 +612,32 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       <div class="relative">
         {audioUrl && (
           <div class="absolute top-3 right-0 z-20 h-7 flex items-center gap-3">
-            <a
-              class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center"
+            {/* A button, not a link to the stored blob: the recording is
+                webm/opus and a downloaded webm plays in far fewer places than an
+                MP3 (see exportSessionMp3). The percentage replaces the icon
+                while converting — two hours takes a while, and a control that
+                looked idle would be pressed again. */}
+            <button
+              class={`text-dim hover:text-accent transition-colors shrink-0 flex items-center tabular-nums text-[11px] ${exporting === null ? 'cursor-pointer' : ''}`}
               title={t('sessions.downloadAudio')}
-              href={audioUrl}
-              download={downloadName}
-              dangerouslySetInnerHTML={{ __html: downloadIcon(14) }}
-            />
+              disabled={exporting !== null}
+              onClick={downloadAudio}
+            >
+              {exporting === null
+                ? <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />
+                : `${Math.round(exporting * 100)}%`}
+            </button>
+            {driveOn && (
+              <button
+                class={`transition-colors shrink-0 disabled:opacity-40 ${synced ? 'text-accent hover:text-dim' : 'text-dim hover:text-accent'} ${busySync ? '' : 'cursor-pointer'}`}
+                title={t(synced ? 'sessions.syncAudio.on' : 'sessions.syncAudio.off')}
+                aria-pressed={!!synced}
+                disabled={busySync}
+                onClick={toggleSync}
+              >
+                <CloudIcon size={14} filled={!!synced} />
+              </button>
+            )}
             <button
               class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0"
               title={t('sessions.reanalyze.hint')}
@@ -554,6 +677,29 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
               />
               <span ref={timeLblRef} class="text-[11px] font-mono text-dim tabular-nums">0:00 / 0:00</span>
             </div>
+          )}
+          {/* Says why there is no player, instead of just not drawing one. A
+              session opened on another device carries its annotations but not
+              its recording, and the controls silently vanishing reads as a bug —
+              which is exactly how it was reported.
+
+              When there IS a copy on Drive, this is where it is offered. The
+              size is on the button because the answer to "should I tap this"
+              depends on it and on nothing else. */}
+          {!audioUrl && (
+            synced && driveOn ? (
+              <button
+                class="text-xs text-accent hover:brightness-110 transition-[filter] cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                disabled={busySync}
+                onClick={downloadSynced}
+              >
+                {busySync
+                  ? t('sessions.syncAudio.downloading')
+                  : t('sessions.syncAudio.download', { size: formatBytes(synced.bytes) })}
+              </button>
+            ) : (
+              <p class="text-xs text-muted">{t('sessions.audioElsewhere')}</p>
+            )
           )}
 
           <div

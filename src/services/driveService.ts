@@ -837,3 +837,142 @@ export async function readDriveFile(interactive = false): Promise<DriveFileRead>
   if (!data || typeof data !== 'object') return { status: 'empty', version };
   return { status: 'ok', data: data as AppState & { _lastModified?: number; _deviceId?: string }, version };
 }
+
+// ── Companion files ───────────────────────────────────────────────────────────
+// Everything above synchronises ONE file: the user blob, small, mutable, and
+// merged under a version/counter protocol because two devices can genuinely
+// edit it at once.
+//
+// Session recordings are the opposite on every count. They are large, and they
+// are WRITE-ONCE: a recording is never edited after it exists, so two devices
+// can never disagree about its contents. Putting them in the blob would have
+// made every unrelated edit — a card renamed, a review logged — re-serialise
+// and re-upload tens of megabytes, and would have needed an arbitrary size cap
+// to stay tolerable (2026-09-08: that was the first implementation; this
+// replaced it).
+//
+// As separate files they cost nothing until asked for, need no merge logic at
+// all, and are bounded only by the user's own Drive quota. The blob keeps just
+// the file id, which is a few dozen bytes.
+//
+// The `drive.file` scope reaches only files this app created, so these are
+// visible and deletable by the user in their own Drive but invisible to
+// Cadence unless Cadence made them. A user deleting one there is a case the
+// callers must survive — see downloadCompanionFile's 404.
+
+/** Companion files go in a folder of their own rather than loose in Drive's
+ *  root next to cadence-data.json: thirty recordings would otherwise be thirty
+ *  items in the user's own Drive, which is their space, not ours.
+ *
+ *  Named alongside `cadence-data.json` — the blob and its external companions,
+ *  recognisable as a pair when someone finds them in their Drive. */
+const COMPANION_FOLDER_NAME = 'cadence-data-ext';
+const lsFolderId = (uid = _state.userId) => `cadence_drive_folder_id_${uid}`;
+
+/** Thrown when a companion operation is asked for without a usable Drive
+ *  connection. Distinct from a failed upload: nothing was attempted, and the
+ *  answer is to connect, not to retry. */
+export const DRIVE_NOT_CONNECTED = 'drive_not_connected';
+
+/** The recordings folder, created on first use. Memoised in localStorage per
+ *  user, and re-created transparently if the user deleted it in Drive — an
+ *  empty search result is not an error, it just means making it again. */
+async function companionFolderId(interactive: boolean): Promise<string> {
+  const cached = localStorage.getItem(lsFolderId());
+  if (cached) {
+    // Confirm it still exists: a folder the user trashed would otherwise make
+    // every upload fail forever with a 404 no retry could fix.
+    const check = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files/${cached}?fields=id,trashed`, {}, interactive,
+    );
+    if (check.ok) {
+      const info = await check.json() as { trashed?: boolean };
+      if (!info.trashed) return cached;
+    }
+    localStorage.removeItem(lsFolderId());
+  }
+
+  const q = encodeURIComponent(
+    `name='${COMPANION_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+  );
+  const search = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`, {}, interactive,
+  );
+  if (search.ok) {
+    const found = (await search.json() as { files?: Array<{ id: string }> }).files;
+    if (found?.length) {
+      localStorage.setItem(lsFolderId(), found[0]!.id);
+      return found[0]!.id;
+    }
+  }
+
+  const create = await driveRequest('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: COMPANION_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
+  }, interactive);
+  if (!create.ok) throw new Error(`companion_folder_failed: ${create.status}`);
+  const id = ((await create.json()) as { id: string }).id;
+  localStorage.setItem(lsFolderId(), id);
+  return id;
+}
+
+/** Uploads `blob` as a new file and returns its Drive id.
+ *
+ *  Multipart rather than resumable: an interrupted upload of a write-once file
+ *  costs a retry and nothing else, because the local copy is still there —
+ *  callers keep it until this resolves. Resumable would buy a faster retry on
+ *  very large recordings at the cost of a second protocol; worth revisiting if
+ *  people actually report failing uploads. */
+export async function uploadCompanionFile(
+  name: string, blob: Blob, interactive = false,
+): Promise<string> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  const parent = await companionFolderId(interactive);
+  const boundary = `cadence${Math.random().toString(36).slice(2)}`;
+  const metadata = JSON.stringify({ name, parents: [parent] });
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
+    `--${boundary}\r\nContent-Type: ${blob.type || 'application/octet-stream'}\r\n\r\n`,
+    blob,
+    `\r\n--${boundary}--\r\n`,
+  ]);
+  const resp = await driveRequest(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+    { method: 'POST', body, headers: { 'Content-Type': `multipart/related; boundary=${boundary}` } },
+    interactive,
+  );
+  if (!resp.ok) throw new Error(`companion_upload_failed: ${resp.status}`);
+  return ((await resp.json()) as { id: string }).id;
+}
+
+/** Fetches a companion file's bytes. Returns null when the file is gone —
+ *  the user may have deleted it from their own Drive, which is their right and
+ *  must read as "no longer there", not as a failure to retry. */
+export async function downloadCompanionFile(
+  fileId: string, interactive = false,
+): Promise<Blob | null> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  const resp = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {}, interactive,
+  );
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`companion_download_failed: ${resp.status}`);
+  return resp.blob();
+}
+
+/** Best-effort: a companion file that cannot be deleted right now (offline,
+ *  no token) must not stop the session it belonged to from being deleted
+ *  locally. It becomes an orphan in the user's Drive, visible and deletable
+ *  by them, which is a far better failure than a session that refuses to go. */
+export async function deleteCompanionFile(fileId: string): Promise<boolean> {
+  if (!_state.fileId) return false;
+  try {
+    const resp = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files/${fileId}`, { method: 'DELETE' },
+    );
+    return resp.ok || resp.status === 404;
+  } catch {
+    return false;
+  }
+}

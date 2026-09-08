@@ -145,6 +145,15 @@ export function confirmModal(title: string, message: string, confirmLabel: strin
   ]);
 }
 
+/** A message with nothing to decide — one dismissal, no cancel. Same body
+ *  styling as confirmModal, so a refusal reads like the question that led to it. */
+export function alertModal(title: string, message: string): void {
+  const body = document.createElement('p');
+  body.className = 'text-sm text-muted leading-relaxed';
+  body.textContent = message;
+  showModal(title, body, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
+}
+
 export function confirmModalWithOption(
   title: string,
   message: string,
