@@ -127,16 +127,6 @@ export function CloudUpIcon({ size = 13 }: { size?: number }) {
   );
 }
 
-/** A plain cloud, filled when what it marks is actually up there. Distinct from
- *  CloudUpIcon (an upload in progress): this one is a state, not an action. */
-export function CloudIcon({ size = 14, filled = false }: { size?: number; filled?: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M18 18.5H6.5A4.5 4.5 0 0 1 5.9 9.6a6 6 0 0 1 11.6-1.6A4.25 4.25 0 0 1 18 18.5z"/>
-    </svg>
-  );
-}
-
 export function ChevronDownIcon({ size = 10 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
