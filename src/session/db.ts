@@ -748,9 +748,9 @@ export async function deleteLocalSessionData(userId: string): Promise<void> {
  *  true of everything EXCEPT this, and a prompt that does not say so is
  *  promising something it cannot keep.
  *
- *  Counts the local database only, which is the right scope: audio the user
- *  chose to embed (model.ts's EmbeddedAudio) travels with the synced blob and
- *  really does survive on their other devices, so it is not at risk here.
+ *  Counts the local database only, which is the right scope: a recording the
+ *  user copied to Drive (model.ts's SyncedAudio) is a file of its own out
+ *  there, so it really does survive this and is not what the warning is about.
  *
  *  Reads `Blob.size` only, which is metadata: no audio bytes are copied.
  *
