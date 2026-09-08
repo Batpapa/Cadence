@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:nightly": "vitest run",
     "deploy": "git add . && (git diff --cached --quiet && echo 'Nothing to commit.' || git commit -m \"${npm_config_msg:-deploy}\") && git push",
-    "sweep": "vitest run --config vitest.sweep.config.ts"
+    "sweep": "vitest run --config vitest.sweep.config.ts",
+    "ranking": "vitest run --config vitest.ranking.config.ts"
   },
   "devDependencies": {
     "@types/dom-webcodecs": "^0.1.18",

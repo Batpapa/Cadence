@@ -10,3 +10,4 @@ test-fixtures/audio/
 experiments/noise-study/wasm-node/
 experiments/noise-study/.cache/
 experiments/noise-study/output/
+experiments/ranking-study/.out/
