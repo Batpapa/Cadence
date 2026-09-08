@@ -613,7 +613,7 @@ export async function uploadSessionAudio(sessionId: string, interactive = true):
   await recordSyncedAudio(sessionId, { fileId, mimeType, bytes: audio.size });
 }
 
-/** Removes this session's recording from Drive, keeping the copy on this device. */
+/** Deletes the Drive copy, leaving this device's untouched. */
 export async function unsyncSessionAudio(sessionId: string): Promise<void> {
   await dropSyncedAudio(sessionId);
 }
@@ -646,12 +646,14 @@ export async function fetchSyncedAudio(sessionId: string): Promise<Blob | null> 
   return typed;
 }
 
-/** Storage-saving: drops the recording, keeps metadata + annotations.
- *  Irreversible — clip attachments can no longer be extracted from this session
- *  afterward. Removes the Drive copy too: "forget this recording" means the
- *  recording, not whichever of its copies happens to be nearest. */
+/** Storage-saving: frees THIS device's copy, keeping metadata + annotations.
+ *
+ *  Local only, deliberately — the two controls divide cleanly: the cloud button
+ *  acts on Drive and nothing else, this acts on the device and nothing else.
+ *  So with a Drive copy in place this is reversible (the session falls back to
+ *  offering the download), and without one it is the end of the recording,
+ *  which is what its confirmation has to say. */
 export async function forgetSessionAudio(sessionId: string): Promise<void> {
-  await dropSyncedAudio(sessionId);
   await (await localDb()).delete(AUDIO_STORE, sessionId);
 }
 
