@@ -21,6 +21,25 @@ export function pickRecorderMime(): string {
   return ''; // let the browser choose
 }
 
+/** Bitrate for the recorded file, in bits per second.
+ *
+ *  Left unset until 2026-09-08, which meant every browser picked its own — so
+ *  the size of an hour of session was neither known nor stable. Now stated, and
+ *  stated for a MONO stream (see sources.ts): the recording tap down-mixes, so
+ *  this whole budget goes to one channel.
+ *
+ *  Opus at 64 kbit/s mono is transparent enough for a room full of instruments,
+ *  which is the only thing this file ever contains. AAC (Safari's `audio/mp4`,
+ *  the only other candidate) is a weaker codec at the same rate, so it gets
+ *  more rather than a worse recording.
+ *
+ *  This is also why converting these files to MP3 would not shrink them: MP3
+ *  loses to Opus at equal rate. The lever on size is the rate and the channel
+ *  count, both of which are set right here. */
+function recorderBitrate(mime: string): number {
+  return mime.includes('mp4') ? 96_000 : 64_000;
+}
+
 export class SessionFileRecorder {
   private recorder: MediaRecorder;
   private recordingId: string;
@@ -34,7 +53,10 @@ export class SessionFileRecorder {
   constructor(stream: MediaStream, recordingId: string) {
     this.recordingId = recordingId;
     this.mimeType = pickRecorderMime();
-    this.recorder = new MediaRecorder(stream, this.mimeType ? { mimeType: this.mimeType } : undefined);
+    this.recorder = new MediaRecorder(stream, {
+      ...(this.mimeType ? { mimeType: this.mimeType } : {}),
+      audioBitsPerSecond: recorderBitrate(this.mimeType),
+    });
     this.recorder.ondataavailable = (e: BlobEvent) => {
       console.debug(`[rec] chunk ${this.seq}: ${e.data.size} bytes`);
       if (e.data.size === 0) return;

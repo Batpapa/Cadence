@@ -101,7 +101,7 @@ export class ImportSession {
    *  re-analyzing an existing session (sessionModule.ts's startReanalyze), so
    *  a live recording re-processed this way still shows as "live" in the
    *  library, not "import". null = the normal fresh-import behavior. */
-  sourceOverride: 'live' | 'import' | null = null;
+  sourceOverride: RecordedSession['source'] | null = null;
   /** Decks PINNED in the deck choice modal while this import is open — they
    *  come back ticked on the next add or link, and that is all they do. Purely
    *  in-memory and never persisted: picking a destination is a decision about

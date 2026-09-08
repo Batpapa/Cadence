@@ -255,3 +255,137 @@ export async function extractClipMp3(
 
   return new Blob(parts as BlobPart[], { type: 'audio/mpeg' });
 }
+
+// ── Whole-session export: recording → MP3 ────────────────────────────────────
+// The session file itself is webm/opus (audio/recorder.ts), which is the right
+// thing to STORE — Opus beats MP3 at equal bitrate, and re-encoding to MP3 would
+// make it bigger, not smaller. What MP3 buys is playing anywhere: a downloaded
+// webm does not open in Windows Media Player, in a car, or on an older phone,
+// and someone exporting thirty recordings will meet all three. So the conversion
+// happens on the way OUT and nowhere else.
+//
+// Streamed packet by packet, never assembled. extractClipMp3 above can hold a
+// whole clip's PCM because a clip is a couple of minutes; two hours of mono
+// Float32 is 1.3 GB, so here each decoded packet is down-mixed, encoded, and
+// dropped. Peak memory is the MP3 being built, ~115 MB for two hours.
+
+/** Encoded at the recording's own sample rate rather than resampled to 44.1 kHz:
+ *  MP3 supports 48 kHz natively, and resampling two hours would cost time and a
+ *  generation of quality for nothing. */
+const EXPORT_KBPS = 128;
+
+/** Converts a whole session recording to MP3.
+ *
+ *  `durationS` only drives the progress ratio — the container's own duration is
+ *  unreliable for a MediaRecorder webm (that is why recorder.ts repairs it), so
+ *  the caller passes the duration the session itself records.
+ *
+ *  Throws if WebCodecs cannot handle this file. Callers should fall back to
+ *  handing over the original recording: an unconverted download is a far better
+ *  outcome than no download. */
+export async function exportSessionMp3(
+  sessionAudio: Blob,
+  durationS: number,
+  onProgress?: (ratio: number) => void,
+): Promise<Blob> {
+  if (typeof AudioDecoder === 'undefined') throw new Error('webcodecs_unavailable');
+
+  const file = new File([sessionAudio], 'session-audio', { type: sessionAudio.type });
+  // Lazy for the same reason as tryDecodeRangeViaWebCodecs: web-demuxer must
+  // not sit in the main bundle for everyone who never exports a recording.
+  const webDemuxerMod = await import('web-demuxer');
+  const { WEB_DEMUXER_WASM_URL } = await import('./streamingFileSource');
+  const demuxer = new webDemuxerMod.WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
+
+  try {
+    await demuxer.load(file);
+    const config = await demuxer.getDecoderConfig('audio');
+    if (!(await AudioDecoder.isConfigSupported(config)).supported) throw new Error('codec_unsupported');
+
+    // Built from the container's declared rate, before anything is decoded, so
+    // there is exactly one encoder for the whole file. MP3 handles 48 kHz
+    // natively, which is what a MediaRecorder webm carries.
+    const encoder = new Mp3Encoder(1, config.sampleRate, EXPORT_KBPS);
+    const parts: Uint8Array[] = [];
+    const pending: Float32Array[] = [];
+    let decodeError: unknown = null;
+    let decodedAnything = false;
+
+    const decoder = new AudioDecoder({
+      output: (audioData) => {
+        // The declared rate and the decoded rate disagreeing would make the MP3
+        // play at the wrong speed — a silent, total corruption. Bail instead,
+        // and let the caller hand over the original recording untouched.
+        if (audioData.sampleRate !== config.sampleRate) {
+          decodeError ??= new Error('sample_rate_mismatch');
+          audioData.close();
+          return;
+        }
+        decodedAnything = true;
+        const frames = audioData.numberOfFrames;
+        const channels = audioData.numberOfChannels;
+        const mono = new Float32Array(frames);
+        const tmp = new Float32Array(frames);
+        for (let ch = 0; ch < channels; ch++) {
+          audioData.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
+          for (let i = 0; i < frames; i++) mono[i]! += tmp[i]! / channels;
+        }
+        pending.push(mono);
+        audioData.close();
+      },
+      error: (e) => { decodeError = e; },
+    });
+    decoder.configure(config);
+
+    /** Encodes and releases everything decoded so far. Called from the read
+     *  loop rather than from the decoder callback so the encoding — pure JS,
+     *  the slow half — happens where it can be interleaved with yields. */
+    const drain = () => {
+      while (pending.length) {
+        const mono = pending.shift()!;
+        const int16 = new Int16Array(mono.length);
+        for (let i = 0; i < mono.length; i++) {
+          const v = Math.max(-1, Math.min(1, mono[i]!));
+          int16[i] = v < 0 ? v * 32768 : v * 32767;
+        }
+        const chunk = encoder.encodeBuffer(int16);
+        if (chunk.length > 0) parts.push(new Uint8Array(chunk));
+      }
+    };
+
+    const stream = demuxer.read('audio', 0, Math.max(durationS, 1) + 1);
+    const reader = stream.getReader();
+    let lastTickAt = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (decodeError) throw decodeError;
+        if (done) break;
+        decoder.decode(value);
+        drain();
+        // Throttled by time, not packet count: packet duration varies a lot by
+        // codec, and this is also where the main thread gets to breathe.
+        const now = Date.now();
+        if (now - lastTickAt >= 100) {
+          lastTickAt = now;
+          onProgress?.(Math.max(0, Math.min(1, (value.timestamp / 1e6) / Math.max(durationS, 1e-6))));
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+      await decoder.flush();
+      if (decodeError) throw decodeError;
+      drain();
+    } finally {
+      reader.releaseLock();
+    }
+    decoder.close();
+
+    if (!decodedAnything) throw new Error('no_audio_decoded');
+    const tail = encoder.flush();
+    if (tail.length > 0) parts.push(new Uint8Array(tail));
+    onProgress?.(1);
+    return new Blob(parts as BlobPart[], { type: 'audio/mpeg' });
+  } finally {
+    demuxer.destroy();
+  }
+}

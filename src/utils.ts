@@ -61,7 +61,13 @@ export function isMobileDevice(): boolean {
 /** Focus an input only on desktop (mouse+hover device). Prevents keyboard popup on mobile. */
 export function focusIfDesktop(el: HTMLElement): void {
   if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
-    setTimeout(() => el.focus(), 30);
+    // `preventScroll` because focusing an element inside a scrollable container
+    // scrolls that container to reveal it — and the library's search field sits
+    // at the top of the card list. Returning to the library was therefore
+    // restored to the right position and then yanked back to the top 30 ms
+    // later by this very call (2026-09-08). Giving a field focus is not a
+    // request to move the page.
+    setTimeout(() => el.focus({ preventScroll: true }), 30);
   }
 }
 
@@ -135,6 +141,29 @@ export function arrayBufferToBase64(buf: ArrayBuffer): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
   return btoa(binary);
+}
+
+/** Inverse of arrayBufferToBase64. */
+export function base64ToBlob(base64: string, mimeType: string): Blob {
+  const binary = atob(base64);
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mimeType });
+}
+
+/** Human-readable byte size, for the places where storage weight is the point
+ *  being made (removing a user, embedding session audio, sharing a recording).
+ *  Deliberately coarse: one decimal below 10 units and none above, because
+ *  these numbers exist to convey an order of magnitude, not an exact figure.
+ *  Uses MB/GB in the everyday (1024-based) sense the rest of the app already
+ *  displays. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ['kB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
 }
 
 export function emptyState(): AppState {

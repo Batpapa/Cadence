@@ -3,10 +3,12 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
+import { localSessionAudioStats } from './session/db';
 import { Sidebar } from './components/sidebar';
 import { AppHeader, BottomNav } from './components/header';
 import { confirmModal, ModalHost } from './components/modal';
 import { CommandPaletteHost } from './components/commandPalette';
+import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
 import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon } from './components/icons';
 import { t } from './services/i18nService';
@@ -185,6 +187,7 @@ function AppRoot() {
 export function mountApp(root: HTMLElement): void {
   render(null, root);
   render(<AppRoot />, root);
+  initScrollRestoration();
 }
 
 // ── User selector ─────────────────────────────────────────────────────────────
@@ -265,10 +268,19 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
     await onCreate(name);
   };
 
-  const confirmDelete = (u: User) => {
+  // Async because the warning has to know what it is warning about: session
+  // audio is the one thing that does NOT live on the user's other devices, so
+  // the generic "your data stays available elsewhere" is a promise this action
+  // cannot keep whenever there are recordings on this one. Unknown (null —
+  // Safari, or an unreadable database) falls back to the generic wording
+  // rather than guessing; see localSessionAudioStats.
+  const confirmDelete = async (u: User) => {
+    const stats = await localSessionAudioStats(u.id);
     confirmModal(
       t('userSelector.delete.title'),
-      t('userSelector.delete.message', { name: u.name }),
+      stats
+        ? t('userSelector.delete.messageWithAudio', { name: u.name })
+        : t('userSelector.delete.message', { name: u.name }),
       t('userSelector.delete.confirm'),
       () => void onDelete(u.id),
     );
@@ -319,7 +331,7 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
                 </button>
                 <button
                   disabled={!!loading}
-                  onClick={() => confirmDelete(u)}
+                  onClick={() => void confirmDelete(u)}
                   class="opacity-0 group-hover:opacity-100 shrink-0 text-dim hover:text-danger transition-all cursor-pointer"
                   title={t('userSelector.delete.title')}
                 >

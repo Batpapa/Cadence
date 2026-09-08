@@ -1,5 +1,9 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import { TUNE_ANALYSER_MODULE_KEY, type RecordedSession, type TuneAnalyserModuleData, type WindowResult } from './model';
+import {
+  TUNE_ANALYSER_MODULE_KEY,
+  type RecordedSession, type SyncedAudio, type TuneAnalyserModuleData, type WindowResult,
+} from './model';
+import { generatedSessionName } from './sessionNaming';
 
 // store.ts is imported lazily (dynamic import, below) rather than statically:
 // it transitively pulls in services/driveService.ts, which reads
@@ -13,6 +17,15 @@ import { TUNE_ANALYSER_MODULE_KEY, type RecordedSession, type TuneAnalyserModule
 // (ES module imports are cached after the first resolution).
 function storeModule(): Promise<typeof import('../store')> {
   return import('../store');
+}
+
+/** driveService is deferred for exactly the reason above — it is the module
+ *  whose top-level `sessionStorage` read forced storeModule() to be lazy in the
+ *  first place, so importing it statically here would reintroduce the very
+ *  crash that comment describes. Only the companion-file helpers are used, and
+ *  only from the audio paths far below. */
+function driveModule(): Promise<typeof import('../services/driveService')> {
+  return import('../services/driveService');
 }
 
 // ── Session-feature storage ───────────────────────────────────────────────────
@@ -89,6 +102,12 @@ let _localDb: IDBPDatabase | null = null;
 export async function initSessionDbForUser(userId: string): Promise<void> {
   if (_userId === userId) return;
   _userId = userId;
+  // CLOSED, not merely dropped (2026-09-08). Letting the reference go left the
+  // previous user's IndexedDB connection open for the life of the tab, and an
+  // open connection makes `indexedDB.deleteDatabase` fire `onblocked` instead of
+  // deleting — which is why removing a local user appeared to leave its
+  // recordings behind even once deleteLocalSessionData was being called.
+  _localDb?.close();
   _localDb = null; // force the next localDb() call to open the new user's database
   try {
     await migrateToFinalShape(userId);
@@ -134,9 +153,17 @@ async function localDb(): Promise<IDBPDatabase> {
   return _localDb;
 }
 
-/** Sessions saved before the `source` field existed were all mic recordings. */
+/** Sessions saved before the `source` field existed were all mic recordings.
+ *
+ *  The name is backfilled here too, for sessions recorded when it was derived at
+ *  display time and so could legitimately be empty. Doing it at the single point
+ *  every read passes through is what lets everything downstream simply print
+ *  `session.name` — see sessionNaming.ts. Recovery-finalized drafts arrive here
+ *  the same way. */
 function migrateSession(s: RecordedSession | undefined): RecordedSession | undefined {
-  if (s && s.source === undefined) s.source = 'live';
+  if (!s) return s;
+  if (s.source === undefined) s.source = 'live';
+  if (!s.name) s.name = generatedSessionName(s.source, s.date);
   return s;
 }
 
@@ -418,6 +445,11 @@ export async function loadSessionMeta(sessionId: string): Promise<RecordedSessio
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
+  // Its Drive copy first, while the record pointing at it still exists — the
+  // reverse order loses the file id and leaves the file orphaned in the user's
+  // Drive with nothing left to trace it back. Best-effort by design: a delete
+  // that cannot reach Drive right now must not stop the session from going.
+  await dropSyncedAudio(sessionId);
   const { mutate } = await storeModule();
   await mutate(user => {
     const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
@@ -433,8 +465,25 @@ export async function deleteSession(sessionId: string): Promise<void> {
  *  doc for why an in-progress draft never shows up here. */
 export async function listSessions(): Promise<RecordedSession[]> {
   const sessions = Object.values((await moduleData()).sessions).map(s => migrateSession(s)!);
-  // Undated sessions (fresh imports) sort first — they're the current work.
-  return sessions.sort((a, b) => (b.date ?? '￿').localeCompare(a.date ?? '￿'));
+  return sessions.sort(compareSessionsForLibrary);
+}
+
+/** Library order: dated sessions first, most recent first; undated ones (imports
+ *  whose date the user never set) after them, alphabetically.
+ *
+ *  Undated used to sort FIRST, on the grounds that a fresh import is the current
+ *  work. Reversed on request (2026-09-08), and the old argument no longer holds
+ *  anyway: finishing an import navigates straight to that session's summary, so
+ *  it is never something that has to be found in this list. Chronological order
+ *  is what a library of thirty recordings needs.
+ *
+ *  Exported for its test — it is the one piece of listSessions that has a rule
+ *  worth stating, and the rest of that function needs a store to run at all. */
+export function compareSessionsForLibrary(a: RecordedSession, b: RecordedSession): number {
+  if (a.date && b.date) return b.date.localeCompare(a.date);
+  if (a.date) return -1;
+  if (b.date) return 1;
+  return (a.name || '').localeCompare(b.name || '');
 }
 
 /** In-progress recording drafts (status:'recording') — used exclusively by
@@ -445,19 +494,164 @@ export async function listDraftSessions(): Promise<RecordedSession[]> {
   return sessions.map(s => migrateSession(s)!);
 }
 
-// ── Session audio (local-only — see module doc) ────────────────────────────────
+// ── Session audio ─────────────────────────────────────────────────────────────
+// The recording always lives in this device's local database. It may ALSO have
+// been copied to the user's Drive as a file of its own (model.ts's SyncedAudio),
+// which is what makes it playable on their other devices.
+//
+// The two are not alternatives, they are a cache and a durable copy: uploading
+// never removes the local blob, and downloading on another device stores one.
+// So no step below can leave a recording existing nowhere, which is the property
+// that really matters here — sessions are irreplaceable.
+//
+// Downloads are never automatic. A recording is tens of megabytes and opening a
+// session summary must not spend them; the UI offers the download and this
+// module performs it (fetchSyncedAudio), rather than loadSessionAudio quietly
+// reaching for the network.
 
-export async function saveSessionAudio(sessionId: string, audio: Blob): Promise<void> {
-  await (await localDb()).put(AUDIO_STORE, audio, sessionId);
+/** Whether this session's recording is on Drive as well as on this device. */
+export async function isSessionAudioSynced(sessionId: string): Promise<boolean> {
+  return !!(await moduleData()).syncedAudio?.[sessionId];
 }
 
+export async function syncedAudioOf(sessionId: string): Promise<SyncedAudio | undefined> {
+  return (await moduleData()).syncedAudio?.[sessionId];
+}
+
+/** Whether newly saved sessions get copied to Drive. */
+export async function syncAudioByDefault(): Promise<boolean> {
+  return !!(await moduleData()).syncAudioByDefault;
+}
+
+export async function setSyncAudioByDefault(on: boolean): Promise<void> {
+  const { mutate } = await storeModule();
+  await mutate(user => {
+    user.modules ??= {};
+    const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+    // Written only to turn it ON — absence is the default here as everywhere
+    // else in this codebase.
+    if (on) mod.syncAudioByDefault = true; else delete mod.syncAudioByDefault;
+    user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
+  });
+}
+
+async function recordSyncedAudio(sessionId: string, entry: SyncedAudio): Promise<void> {
+  const { mutate } = await storeModule();
+  await mutate(user => {
+    user.modules ??= {};
+    const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+    mod.syncedAudio ??= {};
+    mod.syncedAudio[sessionId] = entry;
+    user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
+  });
+}
+
+/** Drops the Drive record, and the Drive file with it unless `fileAlreadyGone`
+ *  — which is the 404 case, where deleting it again would be noise. */
+async function dropSyncedAudio(sessionId: string, fileAlreadyGone = false): Promise<void> {
+  const entry = await syncedAudioOf(sessionId);
+  if (!entry) return;
+  if (!fileAlreadyGone) await (await driveModule()).deleteCompanionFile(entry.fileId);
+  const { mutate } = await storeModule();
+  await mutate(user => {
+    const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+    if (mod?.syncedAudio) {
+      delete mod.syncedAudio[sessionId];
+      if (Object.keys(mod.syncedAudio).length === 0) delete mod.syncedAudio;
+    }
+  });
+}
+
+function audioExtensionFor(mimeType: string): string {
+  if (mimeType.includes('mp4')) return 'm4a';
+  if (mimeType.includes('ogg')) return 'ogg';
+  if (mimeType.includes('mpeg')) return 'mp3';
+  return 'webm';
+}
+
+/** Name a recording carries on Drive. The session id is in it so that someone
+ *  browsing their own Drive can tell two recordings apart, and so an orphan left
+ *  behind by a delete that failed offline can still be traced back. */
+function companionName(sessionId: string, mimeType: string): string {
+  return `cadence-session-${sessionId}.${audioExtensionFor(mimeType)}`;
+}
+
+/** Writes the recording to this device. `sync` additionally copies it to Drive;
+ *  omitted, the user's standing preference decides.
+ *
+ *  The local write is awaited; the upload is NOT, because it can take minutes
+ *  for a long recording on a phone connection and stopping a session would
+ *  appear to hang. Callers that need to know how the upload went — the summary's
+ *  own toggle — call uploadSessionAudio directly and await that. */
+export async function saveSessionAudio(sessionId: string, audio: Blob, sync?: boolean): Promise<void> {
+  await (await localDb()).put(AUDIO_STORE, audio, sessionId);
+  const wantSync = sync ?? await syncAudioByDefault();
+  if (!wantSync) return;
+  // Never interactive: this runs on its own after a recording is saved, and a
+  // consent window raised by something the user did not just click is the
+  // behaviour the Drive work spent so long removing.
+  void uploadSessionAudio(sessionId, false).catch((e: unknown) => {
+    // Nothing is lost: the recording is on this device, and the summary offers
+    // the upload again whenever the user wants it.
+    console.warn('[sessions] background upload of the recording failed:', e);
+  });
+}
+
+/** Copies this session's recording to Drive. Resolves once the file is there and
+ *  recorded; rejects on any failure, having changed nothing.
+ *
+ *  `interactive` may raise a consent window, so it is true only when a click led
+ *  here — see driveService's getToken. */
+export async function uploadSessionAudio(sessionId: string, interactive = true): Promise<void> {
+  if (await isSessionAudioSynced(sessionId)) return;
+  const audio = await (await localDb()).get(AUDIO_STORE, sessionId) as Blob | undefined;
+  if (!audio) throw new Error('no_local_audio');
+  const meta = await loadSessionMeta(sessionId);
+  const mimeType = audio.type || meta?.mimeType || 'audio/webm';
+  const fileId = await (await driveModule())
+    .uploadCompanionFile(companionName(sessionId, mimeType), audio, interactive);
+  await recordSyncedAudio(sessionId, { fileId, mimeType, bytes: audio.size });
+}
+
+/** Removes this session's recording from Drive, keeping the copy on this device. */
+export async function unsyncSessionAudio(sessionId: string): Promise<void> {
+  await dropSyncedAudio(sessionId);
+}
+
+/** The recording as held on THIS device. Never reaches for the network — see
+ *  this section's header. */
 export async function loadSessionAudio(sessionId: string): Promise<Blob | undefined> {
   return (await localDb()).get(AUDIO_STORE, sessionId);
 }
 
-/** Storage-saving: drops the (large) audio blob, keeps metadata + annotations.
- *  Irreversible — clip attachments can no longer be extracted from this session afterward. */
+/** Downloads a recording this device does not have, and caches it locally so the
+ *  next playback — and any clip extracted from it — costs nothing.
+ *
+ *  Returns null when the Drive file is gone: the user may have deleted it from
+ *  their own Drive, which is their right. The record is dropped in that case
+ *  rather than left pointing at nothing, so the UI stops offering a download
+ *  that cannot work. */
+export async function fetchSyncedAudio(sessionId: string): Promise<Blob | null> {
+  const entry = await syncedAudioOf(sessionId);
+  if (!entry) return null;
+  const blob = await (await driveModule()).downloadCompanionFile(entry.fileId, true);
+  if (!blob) {
+    await dropSyncedAudio(sessionId, true);
+    return null;
+  }
+  // Drive can hand back a generic content type; keep the one that was recorded
+  // so the <audio> element and the clip decoder get what they expect.
+  const typed = blob.type ? blob : new Blob([blob], { type: entry.mimeType });
+  await (await localDb()).put(AUDIO_STORE, typed, sessionId);
+  return typed;
+}
+
+/** Storage-saving: drops the recording, keeps metadata + annotations.
+ *  Irreversible — clip attachments can no longer be extracted from this session
+ *  afterward. Removes the Drive copy too: "forget this recording" means the
+ *  recording, not whichever of its copies happens to be nearest. */
 export async function forgetSessionAudio(sessionId: string): Promise<void> {
+  await dropSyncedAudio(sessionId);
   await (await localDb()).delete(AUDIO_STORE, sessionId);
 }
 
@@ -535,6 +729,61 @@ export async function deleteLocalSessionData(userId: string): Promise<void> {
     const req = indexedDB.deleteDatabase(localDbName(userId));
     req.onsuccess = () => resolve();
     req.onerror = () => resolve();
-    req.onblocked = () => resolve();
+    req.onblocked = () => {
+      // Only reachable if some connection to this database is still open — the
+      // bug initSessionDbForUser's `_localDb?.close()` fixed. Logged rather
+      // than swallowed: silently not deleting is exactly what made that one
+      // hard to see.
+      console.warn(`[sessions] deleting ${localDbName(userId)} was blocked by an open connection`);
+      resolve();
+    };
   });
+}
+
+/** How much local session audio a user has, for a confirmation that is about to
+ *  destroy it (removing a local user, resetting). A recording kept in the local
+ *  database exists nowhere else, so "your data stays on your other devices" is
+ *  true of everything EXCEPT this, and a prompt that does not say so is
+ *  promising something it cannot keep.
+ *
+ *  Counts the local database only, which is the right scope: audio the user
+ *  chose to embed (model.ts's EmbeddedAudio) travels with the synced blob and
+ *  really does survive on their other devices, so it is not at risk here.
+ *
+ *  Reads `Blob.size` only, which is metadata: no audio bytes are copied.
+ *
+ *  Returns null whenever the answer cannot be established cheaply and safely —
+ *  no local database, an unreadable one, or no `indexedDB.databases()` to check
+ *  existence with (Safari). That last case is why existence is not probed by
+ *  simply opening: `indexedDB.open` CREATES the database it cannot find, and
+ *  leaving an empty one behind as a side effect of drawing a warning — for a
+ *  user who may well then cancel — is worse than showing the generic wording.
+ *  Callers must treat null as "unknown", never as "nothing to lose". */
+export async function localSessionAudioStats(
+  userId: string,
+): Promise<{ count: number; bytes: number } | null> {
+  const name = localDbName(userId);
+  if (!indexedDB.databases) return null;
+  try {
+    const all = await indexedDB.databases();
+    if (!all.some(d => d.name === name)) return null;
+    const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(name);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error('indexeddb_blocked'));
+    });
+    try {
+      if (!raw.objectStoreNames.contains(AUDIO_STORE)) return null;
+      let count = 0, bytes = 0;
+      for (const { value } of await dumpRawStore(raw, AUDIO_STORE)) {
+        if (value instanceof Blob && value.size > 0) { count++; bytes += value.size; }
+      }
+      return count > 0 ? { count, bytes } : null;
+    } finally {
+      raw.close();
+    }
+  } catch {
+    return null;
+  }
 }

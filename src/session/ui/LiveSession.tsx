@@ -12,7 +12,7 @@ import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import {
-  fmtLongTime, defaultSessionName, indexProgressText, TitleRow,
+  fmtLongTime, indexProgressText, TitleRow,
   BoundControls, ClipControls, type ClipSessionRef,
 } from './sessionUiShared';
 import { setActiveLive, lastLiveDump } from './sessionStore';
@@ -205,7 +205,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     <>
       <TitleRow
         getName={() => live.name}
-        getDefaultName={() => defaultSessionName(effectiveDate())}
+        getDefaultName={() => live.name}
         onRename={(val) => { live.name = val; }}
         // No explicit "go back to the library" call needed: sessions.tsx
         // reads activeLive reactively, so clearing it alone switches the

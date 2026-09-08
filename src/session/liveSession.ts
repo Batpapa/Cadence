@@ -5,6 +5,7 @@ import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
 import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent, AnnotationAlternate } from './model';
 import { alternatePickFields } from './model';
+import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 
@@ -139,7 +140,7 @@ export class LiveSession {
       date: new Date(this.startedAt).toISOString(),
       duration: this.getElapsedMs() / 1000,
       mimeType: this.recorder?.mimeType ?? '',
-      source: 'live',
+      source: this.sourceKind === 'device' ? 'device' : 'live',
       status: 'recording',
       annotations: this.getAnnotations(),
     };
@@ -320,13 +321,18 @@ export class LiveSession {
       // used by recovery.ts for crash recovery, where the live annotation
       // map is gone) would produce — no need to pay for that extra replay
       // here too (2026-08-21).
+      const date = new Date(this.startedAt).toISOString();
+      const source: RecordedSession['source'] = this.sourceKind === 'device' ? 'device' : 'live';
       const session: RecordedSession = {
         id: this.sessionId,
-        name: this.name,
-        date: new Date(this.startedAt).toISOString(),
+        // Named here, once, rather than derived at display time — see
+        // sessionNaming.ts. `this.name` is whatever the user typed during the
+        // recording, and it wins.
+        name: this.name || generatedSessionName(source, date),
+        date,
         duration: Math.max(tFinal, fileResult.durationMs / 1000),
         mimeType: fileResult.mimeType,
-        source: 'live',
+        source,
         annotations: this.getAnnotations(),
       };
       await saveSessionAudio(session.id, fileResult.blob);

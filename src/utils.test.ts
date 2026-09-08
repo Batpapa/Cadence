@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDisplayName, scoreMatch, sortByRelevance } from './utils';
+import { normalizeDisplayName, scoreMatch, sortByRelevance, formatBytes } from './utils';
 
 describe('normalizeDisplayName', () => {
   it('moves a trailing ", The" to the front', () => {
@@ -81,5 +81,31 @@ describe('scoreMatch', () => {
   it('does not crash on regex-special characters in the query', () => {
     expect(() => scoreMatch("O'Carolan's Draught", "o'carolan's")).not.toThrow();
     expect(scoreMatch("O'Carolan's Draught", "o'carolan's")).toBe(1);
+  });
+});
+
+// formatBytes is what tells someone a recording is about to be re-uploaded on
+// every sync, and what stands between them and the embed budget. A figure that
+// reads wrong there is a decision made on wrong information.
+describe('formatBytes', () => {
+  it('keeps plain bytes below a kilobyte', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(999)).toBe('999 B');
+  });
+
+  it('drops the decimal once the number is big enough to carry itself', () => {
+    // Below ten units a tenth is information; above it, it is noise.
+    expect(formatBytes(1.5 * 1024 * 1024)).toBe('1.5 MB');
+    expect(formatBytes(42 * 1024 * 1024)).toBe('42 MB');
+  });
+
+  it('climbs a unit at a time', () => {
+    expect(formatBytes(1024)).toBe('1.0 kB');
+    expect(formatBytes(1024 * 1024)).toBe('1.0 MB');
+    expect(formatBytes(1024 * 1024 * 1024)).toBe('1.0 GB');
+  });
+
+  it('reports the embed budget as the round number it is', () => {
+    expect(formatBytes(50 * 1024 * 1024)).toBe('50 MB');
   });
 });

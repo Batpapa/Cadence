@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
-import { pct, availabilityColor, focusIfDesktop, sortByRelevance, timeAgo } from '../utils';
+import { pct, availabilityColor, sortByRelevance, timeAgo } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType } from '../services/cardTypeService';
 import { CardMap } from '../components/cardMap';
@@ -250,7 +250,6 @@ export function LibraryView() {
   const [revTo,       setRevTo]       = useState(savedRoute?.reviewedTo ?? '');
   const [mapOpen,     setMapOpen]     = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
-  const searchRef = useRef<HTMLInputElement>(null);
   const sortRef   = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -266,7 +265,12 @@ export function LibraryView() {
     replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], types: [...activeTypes], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo });
   }, [searchQuery, activeTags, activeDecks, activeTypes, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo]);
 
-  useEffect(() => { if (searchRef.current) focusIfDesktop(searchRef.current); }, []);
+  // No autofocus on the search field (2026-09-08). Every other focusIfDesktop
+  // call in the app is in something the user just opened IN ORDER to type — a
+  // modal, a rename, the command palette. This one fired on a page merely
+  // navigated to, which meant arriving at the library swallowed the keyboard
+  // and, because focusing scrolls a container to reveal its target, threw away
+  // the scroll position restored a frame earlier.
 
   // ── Filter metadata ───────────────────────────────────────────────────────────
   // Types come from what this BUILD knows, not from what the library happens to
@@ -671,7 +675,6 @@ export function LibraryView() {
       {/* ── Search + filters ── */}
       <div class="px-6 pb-2 space-y-1">
         <input
-          ref={searchRef}
           type="text"
           placeholder={t('library.search')}
           class="input"
