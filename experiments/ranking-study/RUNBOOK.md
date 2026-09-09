@@ -1,6 +1,8 @@
 # Campagne resserrée à sept sessions — mode d'emploi
 
-Écrit le 2026-09-09. **Prêt à lancer, non lancé.** Tout ce qu'il faut est ici :
+Écrit le 2026-09-09. **Lancée le 2026-09-09 : 720 évaluations en 80 minutes,
+résultats dans `RESULTS.md`, section « FINAL v2 ».** La procédure ci-dessous
+reste valable telle quelle pour la prochaine campagne. Tout ce qu'il faut est ici :
 ce fichier ne suppose aucune mémoire de la conversation qui l'a produit.
 
 `NEXT.md` garde les constats opérationnels, `RESULTS.md` les résultats. Ceci est
@@ -142,13 +144,19 @@ rien dire tel quel et doit être relu avant d'être cru.
 
 ## Ce qu'il ne faut pas conclure trop vite
 
+*Corrige apres coup le 2026-09-09 : ce paragraphe affirmait que l'ancienne
+campagne reposait sur une verite terrain fausse a 40 %. C'est faux, et
+l'arithmetique le dit — son `total` de 192 est exactement la somme des six
+sessions sans Audio F, qui n'y etait donc pas du tout. Les 40 % concernaient le
+corpus en fenetres du threshold-sweep, pas celui-ci.*
+
 Cette campagne **re-cherche** sur le nouveau corpus, elle ne se contente pas de
-re-noter l'ancienne recherche. C'est voulu : l'ancienne était guidée par un
-objectif dont 40 % du corpus reposait sur une vérité terrain fausse (voir
-`test-fixtures/sessions/README.md`, l'incident Audio F). Mais elle est aussi plus
-étroite — quatre transformations sur dix, un seul réglage du filtre plat. Si le
-front qui en sort ressemble peu à l'ancien, la première hypothèse à écarter est
-que la restriction ait exclu la bonne région, pas que la région ait bougé.
+re-noter l'ancienne recherche. C'est voulu : l'ancienne ignorait Audio F, la
+session la plus longue et celle qui porte le plus de faux positifs. Mais elle est
+aussi plus etroite — quatre transformations sur dix, un seul reglage du filtre
+plat. Si le front qui en sort ressemble peu a l'ancien, la premiere hypothese a
+ecarter est que la restriction ait exclu la bonne region, pas que la region ait
+bouge.
 
 Rien ici ne touche `src/`. Promouvoir un gagnant reste une question de conception
 séparée : où la transformation s'insère dans la chaîne réelle.

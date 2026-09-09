@@ -1,6 +1,125 @@
 # Ranking study — results, 2026-09-08
 
+## FINAL v2 — sept sessions, 720 evaluations, 2026-09-09
+
+Audio F (`20240721_tocane_2_chapiteau`, 149 morceaux) a rejoint le corpus, qui
+passe de 192 a 341 morceaux de reference. Campagne resserree : 4 transformations
+x `flat=off` x 3 lambda = 12 chaines de 60 pas, 6 processus, **80 minutes**.
+
+### Le titre de la v1 ne survit pas
+
+**A rappel egal, le gain tombe de 70 % a 15 %.**
+
+| | rappel | fp | transformation | plat | plancher | minSeg | confirm |
+|---|---|---|---|---|---|---|---|
+| production | 312/341 | 20 | `identity` | on | 0.20 | 2 | — |
+| meilleur a rappel egal | **312/341** | **17** | `share` | off | 0.1101 | 2 | none |
+
+Poids du gagnant : `chg=1.62 stay=0.05 out=0.72 in=0.00`.
+
+**5 evaluations sur 720 dominent la production**, et les cinq sont la meme
+configuration a des poids pres — contre 266 sur 12 700 en v1. Ce n'est plus une
+region, c'est un point.
+
+### Ce qui reste vrai : les gains existent, mais ce sont des echanges
+
+| rappel | fp | perte de rappel | gain sur les fp | transformation |
+|---|---|---|---|---|
+| 312/341 | 17 | 0 % | −15 % | `share` |
+| 308/341 | 10 | −1,3 % | −50 % | `share` |
+| 305/341 | 7 | −2,2 % | −65 % | `nullRatioTailMean` |
+| 294/341 | 3 | −5,8 % | −85 % | `share` |
+| 256/341 | 2 | −18 % | −90 % | `share` |
+
+Le bruit reste a **0** sur tout le front utilisable, comme en v1. La couverture
+plafonne a 82-83 % partout, y compris en production : elle ne discrimine pas.
+
+### Ce que le front dit, et ce qu'il ne dit pas
+
+Sur les 47 points du front :
+
+| dimension | distribution | vaut-il comme preuve ? |
+|---|---|---|
+| filtre plat | `off` 47 | **non** — la campagne l'a impose (`ANNEAL_FLAT=off`) |
+| transformation | `share` 25 · `nullRatio3` 15 · `nullRatioTailMean` 7 | partiellement — 4 des 10 seulement etaient candidates |
+| minSeg | 2 → 34 · 0 → 9 · 1 → 4 | **oui** — libre de bouger a chaque pas |
+| confirmation | `none` 42 · `peak` 5 | **oui** — libre de bouger |
+
+`shareXMargin` etait dans la campagne et n'a place **aucun** point sur le front,
+alors qu'il en tenait 6 sur 44 en v1. C'est le signe le plus net que le corpus a
+change de forme, pas seulement de taille.
+
+### La reserve qui compte le plus
+
+**Il n'y a pas de jeu de validation.** Les 720 evaluations optimisent sur le
+corpus exact qui sert ensuite a les juger. Un ecart de 3 faux positifs sur 20,
+trouve apres 720 tentatives, est parfaitement a portee du hasard : c'est un
+optimum dans l'echantillon, et rien ici ne dit qu'il tient hors echantillon.
+Promouvoir `share` sur la foi de ce seul chiffre serait surinterpreter.
+
+Les echanges du tableau precedent sont d'une autre nature : −65 % de faux
+positifs pour −2,2 % de rappel est un ecart trop grand pour etre du bruit
+d'echantillonnage. **Si quelque chose doit etre promu, c'est un point de ce
+tableau-la, choisi comme un arbitrage produit — pas le gagnant a rappel egal.**
+
+
+### Decoupage par session (2026-09-09) — `breakdown.test.ts`
+
+Le front donne une paire de chiffres par configuration, sommee sur tout le
+corpus. Audio F portant a elle seule 10 des 20 faux positifs de la production,
+un candidat peut ressembler a une amelioration du modele en n'etant qu'une
+particularite d'un enregistrement. Le decoupage tranche.
+
+**Le gagnant a rappel egal (312/17) est du bruit.** Son gain de 3 faux positifs
+est la somme algebrique de mouvements de ±1 a ±2 en sens contraires sur trois
+sessions : +1 sur Anglade, −2 sur tabac, −1 sur 13th Moon, −1 sur F, plus un
+morceau gagne ici et un perdu la. Il n'y a rien a promouvoir la-dedans, et c'est
+exactement ce que l'absence de jeu de validation laissait craindre.
+
+**Le gain de `nullRatioTailMean` (305/7), lui, est structurel.** Reparti sur
+trois sessions, la plus grosse n'en portant que 40 % :
+
+| session | rappel | faux positifs |
+|---|---|---|
+| `20260523_1_matin_Anglade` | 35/36 → **35/36** | 4 → **0** |
+| `20260523_2_aprem_tabac` | 21 → 20 | 5 → **1** |
+| `20240721_tocane_2_chapiteau` (F) | 135 → 133 | 10 → **8** |
+| `13th_Moon_Gravity_Well` | 36 → **33** | 1 → 1 |
+| `One_of_the_Best...` | 25 → 24 | 0 → 0 |
+| Korea, `auberge_fleurie` | inchange | inchange |
+
+Le fait le plus fort de toute l'etude est la premiere ligne : **sur Anglade, les
+quatre faux positifs disparaissent sans perdre un seul morceau.**
+
+Le cout, lui, est concentre ailleurs : 13th Moon perd 3 morceaux **sans aucun
+gain en faux positifs**, et c'est la moitie de la perte totale. La transformation
+ne fait donc pas un echange uniforme — elle nettoie les sessions bruyantes et
+abime une session difficile. Ce candidat tourne a `minSeg=0` la ou la production
+est a 2 : verifier si `minSeg=2` recupere 13th Moon sans rendre les faux
+positifs est le test suivant le moins cher.
+
+**Le 294/3 est a ecarter** : 41 % de son gain vient de F, qu'il paie de 10
+morceaux perdus sur cette seule session.
+
+### Pourquoi la v1 disait autre chose
+
+Contrairement a ce que le premier jet de `RUNBOOK.md` affirmait, la campagne v1
+ne reposait pas sur une verite terrain fausse : son `total` de 192 est exactement
+la somme des six sessions **sans** Audio F. Elle ne l'avait pas du tout. Audio F
+est la session la plus longue et celle qui porte le plus de faux positifs ; son
+arrivee ne corrige pas la v1, elle en revele l'etroitesse.
+
+Deux differences interdisent par ailleurs de lire v1 et v2 comme deux mesures du
+meme objet : 720 evaluations contre 12 700, et 4 transformations contre 10.
+L'absence d'un meilleur point en v2 est donc une preuve faible.
+
 ## FINAL — 12 700 evaluations, four annealing campaigns plus random search
+
+> **Depassee par la v2 ci-dessus (2026-09-09).** Mesuree sur six sessions
+> (192 morceaux), sans Audio F. Le « 70 % de faux positifs en moins a rappel
+> egal » ne se reproduit pas a sept sessions, ou le meme echange ne rend que
+> 15 %. La section reste ici pour la methode et pour la comparaison, pas comme
+> resultat courant.
 
 **Same recall as production for 70% fewer false positives.**
 
