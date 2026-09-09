@@ -132,7 +132,7 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare 
       ) : (
         <h1
           class="text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors flex-1 min-w-0 truncate"
-          title="Click to rename"
+          title={t('common.clickToRename')}
           onClick={startEdit}
         >
           {getName() || getDefaultName()}
@@ -142,7 +142,7 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare 
       {onShare && (
         <button
           class="btn-ghost px-2 shrink-0 inline-flex items-center justify-center"
-          title={t('sessions.share.button')}
+          title={t('sessions.export.title')}
           dangerouslySetInnerHTML={{ __html: SHARE_ICON_TRIGGER }}
           onClick={onShare}
         />

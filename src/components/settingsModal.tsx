@@ -57,7 +57,7 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
       ) : (
         <span
           class="text-sm flex-1 truncate cursor-text text-primary"
-          title={t('settings.profiles.clickToRename')}
+          title={t('common.clickToRename')}
           onClick={() => { setDraft(name); setEditing(true); }}
         >
           {name}

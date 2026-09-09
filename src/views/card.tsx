@@ -452,7 +452,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           ) : (
             <h1
               class="text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors"
-              title="Click to rename"
+              title={t('common.clickToRename')}
               onClick={() => { setEditName(card.name); setIsEditingName(true); }}
             >
               {card.name}
@@ -672,7 +672,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               ) : (
                 <span
                   class="cursor-text hover:text-primary transition-colors"
-                  title={t('card.renameTag')}
+                  title={t('common.clickToRename')}
                   onClick={() => { setEditingTag(tag); setTagEditValue(tag); }}
                 >
                   {tag}

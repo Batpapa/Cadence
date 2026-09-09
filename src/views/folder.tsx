@@ -404,7 +404,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             ) : (
               <h1
                 class="text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors"
-                title="Click to rename"
+                title={t('common.clickToRename')}
                 onClick={() => { setEditName(folder.name); setIsEditingName(true); }}
               >
                 {folder.name}
