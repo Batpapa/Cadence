@@ -16,8 +16,9 @@ import {
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon, ModulesIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
-  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon,
+  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, ShareIcon,
 } from './icons';
+import { showShareAppModal } from './shareAppModal';
 
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
@@ -181,6 +182,15 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         {/* Left side on purpose: the right group is already crowded, and the
             centred profile chip is absolutely positioned — anything added on
             the right runs under it on a phone. */}
+        {/* BEFORE the install pill, not after: everything here is a flat
+            monochrome icon except InstallBtn, which is filled and labelled, so
+            it has to terminate the run rather than sit inside it. And it
+            renders null once installed — which is precisely when the address
+            becomes unfindable, and when this button silently takes its place at
+            the end of the group. */}
+        <HeaderBtn title={t('shareApp.title')} onClick={showShareAppModal}>
+          <ShareIcon size={14} />
+        </HeaderBtn>
         <InstallBtn />
       </div>
 
