@@ -52,6 +52,7 @@
     "lz-string": "^1.5.0",
     "marked": "^18.0.0",
     "preact": "^10.29.1",
+    "qrcode-generator": "^2.0.4",
     "web-demuxer": "^4.0.0"
   },
   "optionalDependencies": {
