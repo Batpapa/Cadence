@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildZip, audioExtension } from './zip';
+import { buildZip, audioExtension, readZip } from './zip';
 
 const u8 = (...b: number[]) => new Uint8Array(b);
 const rd16 = (a: Uint8Array, o: number) => a[o]! | (a[o + 1]! << 8);
@@ -56,5 +56,49 @@ describe('audioExtension', () => {
     expect(audioExtension('audio/mp4')).toBe('m4a');
     expect(audioExtension(undefined)).toBe('bin');
     expect(audioExtension('application/x-whatever')).toBe('bin');
+  });
+});
+
+describe('readZip — the other half of the full backup', () => {
+  const bytes = (...n: number[]) => new Uint8Array(n);
+
+  it('reads back exactly what buildZip wrote', () => {
+    const entries = [
+      { name: 'data.cdb', data: new TextEncoder().encode('{"cards":{}}') },
+      { name: 'audio/s1.webm', data: bytes(1, 2, 3, 4, 5) },
+    ];
+    const round = readZip(buildZip(entries));
+    expect(round.map(e => e.name)).toEqual(['data.cdb', 'audio/s1.webm']);
+    expect(new TextDecoder().decode(round[0]!.data)).toBe('{"cards":{}}');
+    expect(Array.from(round[1]!.data)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('keeps UTF-8 names intact', () => {
+    const round = readZip(buildZip([{ name: 'audio/Si Bheag, Si Mhór.webm', data: bytes(9) }]));
+    expect(round[0]!.name).toBe('audio/Si Bheag, Si Mhór.webm');
+  });
+
+  it('handles an empty entry, which a zero-byte recording would produce', () => {
+    const round = readZip(buildZip([{ name: 'empty.bin', data: new Uint8Array(0) }]));
+    expect(round).toHaveLength(1);
+    expect(round[0]!.data.length).toBe(0);
+  });
+
+  it('refuses something that is not a zip rather than returning nothing', () => {
+    expect(() => readZip(new TextEncoder().encode('this is a .cdb, not an archive')))
+      .toThrow('not_a_zip');
+  });
+
+  it('refuses a compressed entry by name instead of skipping it', () => {
+    // A backup that quietly restores nine files out of ten is worse than one
+    // that fails, so the method field is checked rather than assumed.
+    const z = buildZip([{ name: 'audio/s1.webm', data: bytes(1, 2, 3) }]);
+    // Flip the central directory's compression method to DEFLATE (8).
+    const view = new DataView(z.buffer, z.byteOffset, z.byteLength);
+    let central = -1;
+    for (let i = 0; i < z.length - 4; i++) if (view.getUint32(i, true) === 0x02014b50) { central = i; break; }
+    expect(central).toBeGreaterThan(-1);
+    view.setUint16(central + 10, 8, true);
+    expect(() => readZip(z)).toThrow('zip_compressed_unsupported:audio/s1.webm');
   });
 });

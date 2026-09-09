@@ -36,7 +36,7 @@ function dosDateTime(d: Date): { time: number; date: number } {
   };
 }
 
-export function buildZip(entries: ZipEntry[], now: Date = new Date()): Uint8Array {
+export function buildZip(entries: ZipEntry[], now: Date = new Date()): Uint8Array<ArrayBuffer> {
   const enc = new TextEncoder();
   const { time, date } = dosDateTime(now);
   const locals: Uint8Array[] = [];
@@ -102,6 +102,68 @@ export function buildZip(entries: ZipEntry[], now: Date = new Date()): Uint8Arra
 }
 
 /** "audio/webm;codecs=opus" → "webm" — extension for an audio blob's mime. */
+// ── Reader ───────────────────────────────────────────────────────────────────
+// Added 2026-09-10 for the full backup (.cdbf), which is a zip so that the
+// audio travels as files rather than as base64 inside the JSON: base64 costs
+// 33% and, worse, has to exist as ONE JavaScript string, which throws outright
+// past roughly half a gigabyte. The share format (.cds) does embed base64 and
+// is capped at 70 MB for exactly that reason.
+//
+// Reads the central directory rather than scanning for local headers: it is
+// the only authoritative list of what an archive contains, and a local header
+// may legitimately defer its sizes to a data descriptor it does not carry.
+//
+// STORE only. This reads back what buildZip wrote, and buildZip never
+// compresses because the payload is already-compressed audio. Anything
+// deflated is refused by name rather than silently skipped — a backup that
+// quietly restores nine files out of ten is worse than one that fails.
+
+export interface ZipReadEntry { name: string; data: Uint8Array }
+
+const EOCD_SIG = 0x06054b50;
+const CENTRAL_SIG = 0x02014b50;
+
+export function readZip(buf: Uint8Array): ZipReadEntry[] {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const dec = new TextDecoder();
+
+  // The end-of-central-directory record sits last, but a trailing comment may
+  // follow it, so it is searched for backwards over the 64 KB it can hide in.
+  let eocd = -1;
+  const from = Math.max(0, buf.length - 22 - 0xffff);
+  for (let i = buf.length - 22; i >= from; i--) {
+    if (view.getUint32(i, true) === EOCD_SIG) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('not_a_zip');
+
+  const count = view.getUint16(eocd + 10, true);
+  let pos = view.getUint32(eocd + 16, true);
+
+  const out: ZipReadEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    if (view.getUint32(pos, true) !== CENTRAL_SIG) throw new Error('zip_central_corrupt');
+    const method = view.getUint16(pos + 10, true);
+    const size = view.getUint32(pos + 24, true);
+    const nameLen = view.getUint16(pos + 28, true);
+    const extraLen = view.getUint16(pos + 30, true);
+    const commentLen = view.getUint16(pos + 32, true);
+    const localOff = view.getUint32(pos + 42, true);
+    const name = dec.decode(buf.subarray(pos + 46, pos + 46 + nameLen));
+    if (method !== 0) throw new Error('zip_compressed_unsupported:' + name);
+
+    // The local header repeats the name and carries its own extra field, whose
+    // length routinely differs from the central one — so the data offset has
+    // to be computed from the LOCAL header, never from the central copy.
+    const lNameLen = view.getUint16(localOff + 26, true);
+    const lExtraLen = view.getUint16(localOff + 28, true);
+    const start = localOff + 30 + lNameLen + lExtraLen;
+    out.push({ name, data: buf.subarray(start, start + size) });
+
+    pos += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
 export function audioExtension(mime: string | undefined): string {
   const base = (mime ?? '').split(';')[0]!.trim().toLowerCase();
   const map: Record<string, string> = {

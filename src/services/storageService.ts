@@ -20,7 +20,6 @@
 // button in the storage panel.
 
 import { signal } from '@preact/signals';
-import { localSessionAudioStats } from '../session/db';
 
 /** What the browser last answered. `undefined` while the boot request is still
  *  in flight, `null` when the browser implements no StorageManager at all.
@@ -28,25 +27,70 @@ import { localSessionAudioStats } from '../session/db';
  *  after the first render. */
 export const storagePersisted = signal<boolean | null | undefined>(undefined);
 
-/** What the warning triangle means, and it is ONLY about durability — never
- *  about free space. A device that is merely getting full is not in danger of
- *  losing anything, and a triangle that is sometimes on for a reason the user
- *  cannot act on is a triangle they stop reading. Free space is shown inside
- *  the panel, where it informs rather than alarms. */
-export type StorageRisk = 'none' | 'refused' | 'unknown';
+/** Last known usage and quota, in bytes, or null when the browser will not say.
+ *  Signals for the same reason as above: the header's warning depends on them,
+ *  and they are refreshed after a recording is saved — the one moment usage
+ *  moves by hundreds of megabytes. */
+export const storageUsage = signal<number | null>(null);
+export const storageQuota = signal<number | null>(null);
+
+/** Re-reads the browser's estimate into the signals above. Cheap, and safe to
+ *  call from anywhere: every failure mode reports "unknown" rather than
+ *  throwing. */
+export async function refreshStorageEstimate(): Promise<void> {
+  try {
+    const est = await navigator.storage?.estimate?.();
+    storageUsage.value = est?.usage ?? null;
+    storageQuota.value = est?.quota ?? null;
+  } catch {
+    storageUsage.value = null;
+    storageQuota.value = null;
+  }
+}
+
+/** Two independent dangers, not one.
+ *
+ *  `refused` / `unknown` are about DURABILITY: the browser may delete
+ *  everything to reclaim space.
+ *
+ *  `full` is about CAPACITY, and it is worse. A persistent grant is not lost
+ *  when the origin fills up — there is no demotion back to best-effort, and
+ *  under Firefox a persistent origin is given a LARGER quota, not a smaller
+ *  one. What happens at the quota is that writes start failing with
+ *  QuotaExceededError, and SessionFileRecorder swallows exactly those:
+ *  "storage pressure — keep recording, chunk lost". So a full origin loses
+ *  pieces of the recording in progress, silently, while everything on screen
+ *  looks normal. That is why it outranks the durability warning and why it is
+ *  shown in red rather than amber. */
+export type StorageRisk = 'none' | 'refused' | 'unknown' | 'full';
+
+/** Ratio of the quota at which writes are close enough to failing to be worth
+ *  interrupting someone over. Not a free-space figure in bytes: quotas differ
+ *  by two orders of magnitude between a phone and a desktop, so a proportion
+ *  travels where a threshold does not. */
+const FULL_RATIO = 0.8;
 
 /** Pure, so the rule can be tested without a browser.
  *
- *  `null` — the browser implements no StorageManager — counts as a warning: a
- *  browser that will not say whether our data is safe is not a browser whose
- *  silence should be read as a yes.
+ *  `null` persisted — the browser implements no StorageManager — counts as a
+ *  warning: a browser that will not say whether our data is safe is not a
+ *  browser whose silence should be read as a yes.
  *
  *  `undefined` does not. It means the boot request has simply not settled yet,
  *  and warning there would flash a triangle on every cold start that resolves
  *  away a moment later — which is how people learn to ignore triangles. The
  *  distinction lives here rather than in the component so it is covered by a
  *  test rather than by a reader remembering it. */
-export function assessStorage(persisted: boolean | null | undefined): StorageRisk {
+export function assessStorage(
+  persisted: boolean | null | undefined,
+  usage?: number | null,
+  quota?: number | null,
+): StorageRisk {
+  // Capacity first: it is the one that is already losing data rather than
+  // merely risking it, and it applies whether or not persistence was granted.
+  if (typeof usage === 'number' && typeof quota === 'number' && quota > 0 && usage / quota >= FULL_RATIO) {
+    return 'full';
+  }
   if (persisted === true || persisted === undefined) return 'none';
   if (persisted === false) return 'refused';
   return 'unknown';
@@ -56,9 +100,6 @@ export interface StorageReport {
   persisted: boolean | null;
   usage: number | null;
   quota: number | null;
-  /** Bytes of this user's local recordings, or null if unreadable. */
-  audioBytes: number | null;
-  audioCount: number | null;
 }
 
 /** Asks the browser to stop evicting this origin automatically, and records
@@ -78,6 +119,9 @@ export async function ensurePersistentStorage(): Promise<boolean | null> {
     const already = await sm.persisted();
     const result = already ? true : await sm.persist();
     storagePersisted.value = result;
+    // The capacity half of the warning needs numbers, and boot is where they
+    // first become available.
+    void refreshStorageEstimate();
     return result;
   } catch {
     storagePersisted.value = null;
@@ -85,21 +129,16 @@ export async function ensurePersistentStorage(): Promise<boolean | null> {
   }
 }
 
-export async function storageReport(userId: string): Promise<StorageReport> {
+export async function storageReport(): Promise<StorageReport> {
   let persisted: boolean | null = null;
   try {
     persisted = (await navigator.storage?.persisted?.()) ?? null;
   } catch { /* unsupported or refused — reported as unknown */ }
   storagePersisted.value = persisted;
 
-  let usage: number | null = null;
-  let quota: number | null = null;
-  try {
-    const est = await navigator.storage?.estimate?.();
-    usage = est?.usage ?? null;
-    quota = est?.quota ?? null;
-  } catch { /* same */ }
+  await refreshStorageEstimate();
+  const usage = storageUsage.value;
+  const quota = storageQuota.value;
 
-  const stats = await localSessionAudioStats(userId);
-  return { persisted, usage, quota, audioBytes: stats?.bytes ?? null, audioCount: stats?.count ?? null };
+  return { persisted, usage, quota };
 }

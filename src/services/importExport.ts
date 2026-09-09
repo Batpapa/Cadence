@@ -15,10 +15,17 @@ function isValidBackup(data: unknown): data is Record<string, unknown> {
   return isOldFormat || isNewFormat;
 }
 
-/** Full backup — all user data except id (id is device-local). */
+/** Full backup — all user data except id (id is device-local).
+ *
+ *  Serialised compact, not indented (2026-09-10). Two-space indentation was
+ *  measured at x2.04 on a realistic library — it doubled every backup, every
+ *  snapshot and every shared card package for the benefit of a file nobody
+ *  opens in a text editor. Anyone who does can run it through a prettifier.
+ *  On a phone it also doubled the peak memory an export has to hold at once,
+ *  which is the resource the .cdbf size ceiling exists to protect. */
 export function exportBackup(user: AppState): void {
   const { id: _id, ...data } = user;
-  download(JSON.stringify(data, null, 2), `cadence-backup-${toDateStr(new Date())}.cdb`);
+  download(JSON.stringify(data), `cadence-backup-${toDateStr(new Date())}.cdb`);
 }
 
 /** Same format as exportBackup, for a stored safety-net snapshot: restoring
@@ -26,12 +33,12 @@ export function exportBackup(user: AppState): void {
  *  second restore machinery exists to drift out of sync with the first. */
 export function exportSnapshotBackup(state: AppState, ts: number): void {
   const { id: _id, ...data } = state as AppState & { id?: string };
-  download(JSON.stringify(data, null, 2), `cadence-snapshot-${toDateStr(new Date(ts))}.cdb`);
+  download(JSON.stringify(data), `cadence-snapshot-${toDateStr(new Date(ts))}.cdb`);
 }
 
 /** Serializes cards to CDC JSON string without downloading. */
 export function cardPackageText(cards: Card[]): string {
-  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards }, null, 2);
+  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards });
 }
 
 /** Card-only export — no history, no decks, no personal data. */
