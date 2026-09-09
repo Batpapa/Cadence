@@ -156,7 +156,7 @@ function ExhaustiveDiff({ local, drive }: { local: AppState; drive: AppState }) 
               )}
               {/* The point of the whole section, for a report: the person on the
                   phone can send this rather than describe it. */}
-              <button class="btn-ghost text-xs w-full border border-border rounded-md py-1.5" onClick={copy}>
+              <button class="btn-primary text-xs w-full" onClick={copy}>
                 {t(copied === 'no' ? 'settings.sync.diff.copyDetail' : copied === 'yes' ? 'common.copied' : 'common.copyFailed')}
               </button>
             </>
@@ -254,8 +254,10 @@ function showDiffModal(diff: StateDiff, driveDeviceId: string | null, identical:
   const { el, cleanup } = renderModalBody(<DiffBody diff={diff} driveDeviceId={driveDeviceId} identical={identical} local={local} drive={drive} />);
   showModal(
     t('settings.sync.diff.title'), el,
-    [{ label: t('common.close'), onClick: () => { closeModal(); cleanup(); } }],
-    { maxWidth: '30rem', onDismiss: cleanup },   // cleanup also runs on Escape / click-outside / ✕
+    // No footer button: the ✕, Escape and click-outside are the way out, and
+    // all three run cleanup through onDismiss below.
+    [],
+    { maxWidth: '30rem', onDismiss: cleanup },
   );
 }
 
