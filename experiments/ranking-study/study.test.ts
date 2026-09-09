@@ -39,6 +39,10 @@ const PRODUCTION_BASELINE: Record<string, { found: number; total: number }> = {
   '20260523_5_auberge_fleurie': { found: 29, total: 30 },
   'One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video': { found: 25, total: 26 },
   '13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24': { found: 36, total: 42 },
+  // Audio F, added 2026-09-09 with its CSV. Taken from the threshold-sweep
+  // harness at the production floor, which is the thing this test exists to
+  // agree with — not from this file, or the check would be circular.
+  '20240721_tocane_2_chapiteau': { found: 135, total: 149 },
 };
 
 /** Named transition-weight settings, chosen to move ONE structural quantity at

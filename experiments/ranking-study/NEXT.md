@@ -51,6 +51,38 @@ per evaluation. The bottleneck is memory bandwidth, not compute, which is what a
 0.36%-dense sweep would predict. **More processes will not help; a sparser
 representation would.**
 
+**Audio F costs 4.7× the other six put together.** Measured 2026-09-09, single
+process, identity transform, flat filter on — one decode each:
+
+| session | decode |
+|---|---|
+| 20240721_tocane_2_chapiteau (Audio F) | **20 095 ms** |
+| 20260523_1_matin_Anglade | 1 209 ms |
+| 1Hour_Trad_Irish_Music_Session_in_Korea | 882 ms |
+| 20260523_5_auberge_fleurie | 834 ms |
+| 20260523_2_aprem_tabac | 597 ms |
+| 13th_Moon_Gravity_Well | 529 ms |
+| One_of_the_Best_Traditional_Irish_Music | 241 ms |
+| **the six together** | **4 291 ms** |
+
+F is 41% of the corpus by windows and **82% of it by cost**, because the decode
+is O(T×S) and the state space grows with the recording: a 5 h 26 session admits
+far more tunes than a one-hour one. Consequences, on the 12 700 evaluations
+already in `.out/`: topping F up alone is **71 h** single-process, re-running
+everything at seven sessions **86 h**. So the top-up saves only about 18% — the
+cost is F, not the repetition, and no amount of caching changes that.
+
+Two levers, in order of payoff. **A sparser observation representation** is the
+one that matters: 0.36% density (above) means the decode is moving mostly zeros,
+and it is memory bandwidth that saturates at 8 processes. **A smaller campaign**
+is the cheap one: 12 700 evaluations was exploratory breadth, and re-scoring all
+of it under the new corpus buys less than a targeted run around the region that
+already dominates production.
+
+Worth keeping in mind for the corpus itself: F is not one session in any musical
+sense, it is a whole festival day. If it were ever split into hour-long parts,
+both T and S would drop per part and the superlinear term with them.
+
 **Shard by equal work, not by group.** The random search split by (transform,
 flat) group, and group sizes ran from 32 to 76 draws, so three processes idled
 while others finished. The annealing shards by chain, and chains have identical

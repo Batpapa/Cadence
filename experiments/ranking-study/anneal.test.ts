@@ -79,11 +79,25 @@ it('anneals around the promising regions', () => {
   // ordering, so every process does the same amount of work — the random search
   // sharded by GROUP instead and the largest shard had more than twice the
   // draws of the smallest, which left cores idle at the end.
+  // ANNEAL_ONLY / ANNEAL_FLAT narrow the campaign to a region already known to
+  // matter, which is the only affordable shape once Audio F is in the corpus:
+  // one evaluation costs 24 s against 4 s for the six other sessions, so breadth
+  // that was free before now costs hours. See RUNBOOK.md.
+  const only = process.env['ANNEAL_ONLY']?.split(',').map(s => s.trim()).filter(Boolean);
+  const flats: boolean[] = process.env['ANNEAL_FLAT'] === 'off' ? [false]
+    : process.env['ANNEAL_FLAT'] === 'on' ? [true]
+      : [true, false];
+
   const chains: { trName: string; flat: boolean; lambda: number }[] = [];
   for (const tr of ALL_TRANSFORMS) {
-    for (const flat of [true, false]) {
+    if (only && !only.includes(tr.name)) continue;
+    for (const flat of flats) {
       for (const lambda of LAMBDAS) chains.push({ trName: tr.name, flat, lambda });
     }
+  }
+  if (only) {
+    const unknown = only.filter(n => !ALL_TRANSFORMS.some(t => t.name === n));
+    if (unknown.length) throw new Error(`ANNEAL_ONLY : transformation inconnue ${unknown.join(', ')}`);
   }
   const mine = chains.filter((_, i) => i % SHARDS === SHARD);
   console.log(`recuit ${SHARD + 1}/${SHARDS} : ${mine.length} chaines x ${STEPS} pas = ${mine.length * STEPS} evaluations`);
@@ -91,6 +105,16 @@ it('anneals around the promising regions', () => {
   const outcomes: unknown[] = [];
   const t0 = Date.now();
   let evals = 0;
+
+  // Flushed as it goes, not once at the end. A campaign is now budgeted in
+  // wall-clock hours rather than run to completion, so it has to be safe to kill
+  // at any moment: the merge reads whatever files exist, and a shard stopped
+  // mid-chain must contribute everything it already paid for. The file is a few
+  // hundred kilobytes, so rewriting it whole every ten evaluations costs nothing
+  // next to a 24-second decode.
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const out = nodePath.join(OUT_DIR, `search-seed${SEED}-anneal${String(SHARD).padStart(2, '0')}.json`);
+  const flush = (): void => { fs.writeFileSync(out, JSON.stringify(outcomes), 'utf-8'); };
 
   for (const [ci, chain] of mine.entries()) {
     const tr = ALL_TRANSFORMS.find(t => t.name === chain.trName)!;
@@ -135,6 +159,7 @@ it('anneals around the promising regions', () => {
         coverage: found ? covs.reduce((a, b) => a + b, 0) / found : 0,
         lambda: chain.lambda,
       });
+      if (evals % 10 === 0) flush();
       return { found, fp, score: found - chain.lambda * fp };
     }
 
@@ -187,9 +212,7 @@ it('anneals around the promising regions', () => {
     }
   }
 
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  const out = nodePath.join(OUT_DIR, `search-seed${SEED}-anneal${String(SHARD).padStart(2, '0')}.json`);
-  fs.writeFileSync(out, JSON.stringify(outcomes), 'utf-8');
+  flush();
   console.log(`\n${outcomes.length} evaluations ecrites dans ${nodePath.basename(out)} `
     + `(${((Date.now() - t0) / 1000).toFixed(0)}s)`);
 }, 14_400_000);
