@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statesEqual, diffStates } from './stateDiff';
+import { statesEqual, diffStates, statePathDiff, briefValue } from './stateDiff';
 import type { AppState, SessionRating } from '../types';
 
 function base(): AppState {
@@ -135,5 +135,81 @@ describe('diffStates', () => {
     const local = base(), drive = clone(local);
     drive.language = 'en';
     expect(diffStates(local, drive).summarised).toBe(false);
+  });
+});
+
+describe('statePathDiff — the exhaustive walk behind the conflict panel', () => {
+  // The invariant the whole panel rests on. statesEqual decides whether the
+  // user is interrupted; if it says "different" and this comes back empty, the
+  // user is asked to choose between two copies with nothing on screen — which
+  // is exactly the report that prompted this (2026-09-09, identical counts on
+  // both sides and every category at zero).
+  const mustAgree = (a: AppState, b: AppState) => {
+    const equal = statesEqual(a, b);
+    const { paths } = statePathDiff(a, b);
+    expect(paths.length === 0).toBe(equal);
+  };
+
+  it('finds nothing when the copies are equal', () => {
+    mustAgree(base(), base());
+  });
+
+  it('finds a reordering, which no category reports', () => {
+    const a = base(), b = clone(a);
+    b.decks['d2'] = { id: 'd2', name: 'Reels', entries: [] };
+    a.decks['d2'] = { id: 'd2', name: 'Reels', entries: [] };
+    a.rootDeckIds = ['d1', 'd2'];
+    b.rootDeckIds = ['d2', 'd1'];
+    mustAgree(a, b);
+    expect(statePathDiff(a, b).paths.some(d => d.path.startsWith('rootDeckIds'))).toBe(true);
+  });
+
+  it('finds a field no category knows about', () => {
+    const a = base(), b = clone(a);
+    (b as unknown as Record<string, unknown>)['someFieldAddedLater'] = 42;
+    mustAgree(a, b);
+    const d = statePathDiff(a, b).paths.find(x => x.path === 'someFieldAddedLater');
+    expect(d?.kind).toBe('onlyDrive');
+    expect(d?.drive).toBe(42);
+  });
+
+  it('names the exact leaf inside a card rather than just the card', () => {
+    const a = base(), b = clone(a);
+    b.cards['c1']!.content.notes = 'appris à Tocane';
+    expect(statePathDiff(a, b).paths.map(d => d.path)).toContain('cards.c1.content.notes');
+  });
+
+  it('ignores the sync envelope, exactly like statesEqual', () => {
+    const a = base(), b = clone(a);
+    (b as unknown as Record<string, unknown>)['_lastModified'] = 999;
+    (b as unknown as Record<string, unknown>)['_deviceId'] = 'other';
+    b.id = 'someone-else';
+    mustAgree(a, b);
+  });
+
+  it('reports a longer history as one entry, not one per shifted index', () => {
+    const a = base(), b = clone(a);
+    b.cardWorks['p1:c1']!.history.push({ ts: 2000, rating: 'good' as SessionRating });
+    const paths = statePathDiff(a, b).paths;
+    expect(paths).toHaveLength(1);
+    expect(paths[0]!.path).toBe('cardWorks.p1:c1.history');
+  });
+});
+
+describe('briefValue', () => {
+  it('summarises an object by its keys rather than dumping it', () => {
+    expect(briefValue({ a: 1, b: 2 })).toBe('{a, b}');
+  });
+
+  it('summarises an array by its length', () => {
+    expect(briefValue([1, 2, 3])).toBe('[3 elements]');
+  });
+
+  it('marks an absent value rather than printing "undefined"', () => {
+    expect(briefValue(undefined)).toBe('—');
+  });
+
+  it('truncates a long string', () => {
+    expect(briefValue('x'.repeat(200), 10)).toBe('xxxxxxxxxx…');
   });
 });

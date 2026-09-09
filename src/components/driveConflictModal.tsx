@@ -1,4 +1,5 @@
 import { signal, computed, type Signal } from '@preact/signals';
+import { useState, useMemo } from 'preact/hooks';
 import type { AppState } from '../types';
 import { t } from '../services/i18nService';
 import { showModal, closeModal, renderModalBody } from './modal';
@@ -8,8 +9,9 @@ import {
   syncToCloud, manualSync, getLocalTimestamp, getDeviceId,
 } from '../services/driveService';
 import { applyFromDrive, appState } from '../store';
+import { copyText } from '../utils';
 import { saveSnapshot, countReviews, type SnapshotReason } from '../services/snapshotService';
-import { statesEqual, diffStates, type StateDiff, type CollectionDiff } from '../services/stateDiff';
+import { statesEqual, diffStates, statePathDiff, briefValue, type StateDiff, type CollectionDiff, type PathDiff } from '../services/stateDiff';
 
 // ── Shared Drive-state application + conflict resolution ─────────────────────
 // Used by both the settings connect flow and the startup reconciliation, so a
@@ -84,7 +86,88 @@ function Row({ label, local, drive, changed }: { label: string; local: number; d
 
 const counts = (c: CollectionDiff) => ({ local: c.onlyLocal.length, drive: c.onlyDrive.length, changed: c.changed.length });
 
-function DiffBody({ diff, driveDeviceId, identical }: { diff: StateDiff; driveDeviceId: string | null; identical: boolean }) {
+/** Every leaf on which the two copies disagree, whatever it is.
+ *
+ *  The summary above answers "how much work would each choice cost", which is
+ *  the right question when the categories have something to say. This answers
+ *  "what actually differs", which is the only question left when they do not —
+ *  and that is not a rare corner: the conflict that prompted this had identical
+ *  counts on both sides and every category at zero.
+ *
+ *  Collapsed by default, because on a normal conflict it is noise under a
+ *  summary that already explains things; one tap away, because when it matters
+ *  it is the whole screen. */
+function ExhaustiveDiff({ local, drive }: { local: AppState; drive: AppState }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
+  // Computed once, and only when asked: a full walk of two states is cheap
+  // next to rendering them, but there is no reason to pay it unopened.
+  const result = useMemo(() => (open ? statePathDiff(local, drive) : null), [open, local, drive]);
+
+  const copy = () => {
+    if (!result) return;
+    const lines = [
+      'Cadence — conflit de synchronisation',
+      new Date().toISOString(),
+      result.paths.length + ' difference(s)' + (result.truncated ? ' (+' + result.truncated + ' non listees)' : ''),
+      '',
+      ...result.paths.map(d => d.path + '  |  local: ' + briefValue(d.local, 300) + '  |  drive: ' + briefValue(d.drive, 300)),
+    ];
+    void copyText(lines.join(String.fromCharCode(10))).then(ok => {
+      setCopied(ok ? 'yes' : 'failed');
+      setTimeout(() => setCopied('no'), 2500);
+    });
+  };
+
+  return (
+    <div class="space-y-2 pt-1 border-t border-border">
+      <button
+        class="btn-ghost text-xs w-full text-left flex items-center gap-1.5 px-0"
+        onClick={() => setOpen(o => !o)}
+      >
+        <span class="text-dim">{open ? '▾' : '▸'}</span>
+        {t('settings.sync.diff.exhaustive')}
+      </button>
+
+      {open && result && (
+        <>
+          {/* A disagreement between the total comparison and this walk would be
+              a bug in one of them, and hiding it is how the original blank
+              panel happened. Say it instead. */}
+          {result.paths.length === 0 ? (
+            <p class="text-xs text-warn leading-relaxed">{t('settings.sync.diff.exhaustiveEmpty')}</p>
+          ) : (
+            <>
+              <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+                {result.paths.map((d: PathDiff) => (
+                  <div key={d.path} class="text-xs">
+                    <div class="font-mono text-dim break-all">{d.path}</div>
+                    <div class="pl-2 text-muted break-all">
+                      <span class="text-dim">{t('settings.sync.conflict.local')} : </span>{briefValue(d.local)}
+                    </div>
+                    <div class="pl-2 text-muted break-all">
+                      <span class="text-dim">{t('settings.sync.conflict.drive')} : </span>{briefValue(d.drive)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {result.truncated > 0 && (
+                <p class="text-xs text-dim">{t('settings.sync.diff.exhaustiveTruncated', { count: String(result.truncated) })}</p>
+              )}
+              {/* The point of the whole section, for a report: the person on the
+                  phone can send this rather than describe it. */}
+              <button class="btn-ghost text-xs w-full border border-border rounded-md py-1.5" onClick={copy}>
+                {t(copied === 'no' ? 'settings.sync.diff.copyDetail' : copied === 'yes' ? 'common.copied' : 'common.copyFailed')}
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function DiffBody({ diff, driveDeviceId, identical, local, drive }: { diff: StateDiff; driveDeviceId: string | null; identical: boolean; local: AppState; drive: AppState }) {
   const sameDevice = driveDeviceId !== null && driveDeviceId === getDeviceId();
   const fmtDate = (ts: number | null) => (ts ? new Date(ts).toLocaleString() : null);
   const moduleTotals = diff.modules.reduce(
@@ -155,19 +238,20 @@ function DiffBody({ diff, driveDeviceId, identical }: { diff: StateDiff; driveDe
         </div>
       )}
 
-      {/* statesEqual said they differ, so if nothing above shows anything the
-          difference is real but outside every category — ordering, or a field
-          added since this screen was written. Say so rather than show a blank
-          panel that reads as "nothing to see". */}
+      {/* The categories found nothing, so the summary above is empty. Say why,
+          and let the exhaustive list below answer it — that combination is what
+          the panel was missing when it simply shrugged. */}
       {diff.summarised && !identical && (
         <p class="text-xs text-dim leading-relaxed">{t('settings.sync.diff.outsideCategories')}</p>
       )}
+
+      {!identical && <ExhaustiveDiff local={local} drive={drive} />}
     </div>
   );
 }
 
-function showDiffModal(diff: StateDiff, driveDeviceId: string | null, identical: boolean): void {
-  const { el, cleanup } = renderModalBody(<DiffBody diff={diff} driveDeviceId={driveDeviceId} identical={identical} />);
+function showDiffModal(diff: StateDiff, driveDeviceId: string | null, identical: boolean, local: AppState, drive: AppState): void {
+  const { el, cleanup } = renderModalBody(<DiffBody diff={diff} driveDeviceId={driveDeviceId} identical={identical} local={local} drive={drive} />);
   showModal(
     t('settings.sync.diff.title'), el,
     [{ label: t('common.close'), onClick: () => { closeModal(); cleanup(); } }],
@@ -342,7 +426,7 @@ export function showDriveConflictModal(
     {
       label: t('settings.sync.conflict.seeDifferences'),
       align: 'start',
-      onClick: () => showDiffModal(diffStates(appState.value, drive), driveDeviceId, identical),
+      onClick: () => showDiffModal(diffStates(appState.value, drive), driveDeviceId, identical, appState.value, drive),
     },
     {
       label: t('common.confirm'),
