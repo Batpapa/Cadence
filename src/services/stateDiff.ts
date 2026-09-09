@@ -55,6 +55,19 @@ export function statesEqual(a: AppState, b: AppState): boolean {
 }
 
 // ── 2. Readable difference ───────────────────────────────────────────────────
+//
+// ⚠️ THIS HALF NEEDS MAINTENANCE WHEN THE MODEL CHANGES. Everything below is
+// hand-written categories: `SETTING_FIELDS` is an explicit list, and the
+// collection diffs name `cards` / `decks` / `folders` / `profiles` one by one.
+// A field or a collection added to AppState and not added here does not show
+// up in the summary table — it did not show up at all until section 3 existed,
+// which is how a user was once asked to choose between two copies with an
+// empty panel in front of them.
+//
+// Section 3 does NOT need that maintenance: it walks whatever is there. So a
+// new field is never invisible any more — at worst it is only in the detail
+// rather than in the summary. Adding it here is about making it READABLE, not
+// about making it visible.
 
 export interface CollectionDiff {
   onlyLocal: string[];
@@ -187,6 +200,105 @@ function modulesDiff(local: AppState, drive: AppState): ModuleDiff[] {
     out.push({ key, onlyLocal: c.onlyLocal.length, onlyDrive: c.onlyDrive.length, changed: c.changed.length });
   }
   return out;
+}
+
+// ── 3. Exhaustive difference ─────────────────────────────────────────────────
+// Added 2026-09-09 after a real conflict where the panel had nothing to say:
+// two copies, 46 cards and 61 reviews each, 38 seconds apart, and every
+// category above reported zero. The user was asked to choose between them with
+// no way to see what "them" meant.
+//
+// That gap is structural, not a missing case. Section 1 is total and section 2
+// is a set of hand-written categories, so anything outside those categories —
+// an ordering, a field added since, a module's inner shape — is invisible
+// exactly when it is the only thing there is to look at.
+//
+// This walks the same tree `deepEqual` walks, by the same rules, and names
+// every leaf that differs. It cannot come back empty when `statesEqual` says
+// the copies differ; if it ever does, that disagreement is itself reported
+// rather than swallowed.
+
+export interface PathDiff {
+  /** Dotted path from the root, e.g. `cards.a1b2.content.notes`. */
+  path: string;
+  kind: 'onlyLocal' | 'onlyDrive' | 'changed';
+  local: unknown;
+  drive: unknown;
+}
+
+/** Hard stop, so a copy that diverged wholesale cannot produce a list nothing
+ *  can render or send. The caller is told how many were left out. */
+const MAX_PATHS = 500;
+
+/** Every leaf on which the two copies disagree.
+ *
+ *  Mirrors `deepEqual`'s rules deliberately: a missing key and an explicit
+ *  `undefined` are the same thing, and array order is significant. Arrays of
+ *  different lengths are reported as one entry rather than as every shifted
+ *  index after the insertion point — the shift is one fact, not fifty. */
+export function deepDiffPaths(local: unknown, drive: unknown, ignoreKeys?: Set<string>): { paths: PathDiff[]; truncated: number } {
+  const paths: PathDiff[] = [];
+  let truncated = 0;
+
+  const push = (d: PathDiff) => {
+    if (paths.length < MAX_PATHS) paths.push(d);
+    else truncated++;
+  };
+
+  const walk = (a: unknown, b: unknown, path: string, ignore?: Set<string>): void => {
+    if (deepEqual(a, b, ignore)) return;
+
+    const aObj = a !== null && typeof a === 'object';
+    const bObj = b !== null && typeof b === 'object';
+    const aArr = Array.isArray(a), bArr = Array.isArray(b);
+
+    if (aArr || bArr) {
+      if (!aArr || !bArr || a.length !== b.length) { push({ path, kind: 'changed', local: a, drive: b }); return; }
+      for (let i = 0; i < a.length; i++) walk(a[i], b[i], path ? path + '.' + i : String(i));
+      return;
+    }
+
+    if (aObj && bObj) {
+      const ao = a as Record<string, unknown>, bo = b as Record<string, unknown>;
+      const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+      for (const k of keys) {
+        if (ignore?.has(k)) continue;
+        // Both absent-or-undefined is not a difference, same as deepEqual.
+        if (ao[k] === undefined && bo[k] === undefined) continue;
+        const sub = path ? path + '.' + k : k;
+        if (ao[k] === undefined) { push({ path: sub, kind: 'onlyDrive', local: undefined, drive: bo[k] }); continue; }
+        if (bo[k] === undefined) { push({ path: sub, kind: 'onlyLocal', local: ao[k], drive: undefined }); continue; }
+        walk(ao[k], bo[k], sub);
+      }
+      return;
+    }
+
+    push({ path: path || '(root)', kind: 'changed', local: a, drive: b });
+  };
+
+  walk(local, drive, '', ignoreKeys);
+  return { paths, truncated };
+}
+
+/** The exhaustive comparison of two states, using the same ignore list as
+ *  `statesEqual` so the two can never disagree about what counts. */
+export function statePathDiff(local: AppState, drive: AppState): { paths: PathDiff[]; truncated: number } {
+  return deepDiffPaths(local, drive, IGNORED_TOP_LEVEL);
+}
+
+/** One value, short enough to sit in a table cell or a support message.
+ *  Objects are summarised by shape rather than dumped: at this level the
+ *  question is "what changed", and the path already says where to look. */
+export function briefValue(v: unknown, max = 120): string {
+  if (v === undefined) return '—';
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return '[' + v.length + ' element' + (v.length === 1 ? '' : 's') + ']';
+  if (typeof v === 'object') {
+    const keys = Object.keys(v as Record<string, unknown>);
+    return '{' + keys.slice(0, 4).join(', ') + (keys.length > 4 ? ', …' : '') + '}';
+  }
+  const s = typeof v === 'string' ? v : JSON.stringify(v);
+  return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
 export function diffStates(local: AppState, drive: AppState): StateDiff {
