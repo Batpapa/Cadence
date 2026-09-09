@@ -7,7 +7,6 @@ import { DETECTION_TEMPORAL_CONFIG as CFG, type DetectionTemporalConfig } from '
 import type { WindowResult } from '../../src/session/model';
 
 const DIR = nodePath.resolve(__dirname, '../../test-fixtures/sessions');
-const INDEX = nodePath.resolve(__dirname, '../noise-study/.cache/tune-index.json');
 
 const SESSIONS = [
   '20260523_1_matin_Anglade',
@@ -20,135 +19,21 @@ const SESSIONS = [
 ];
 const NOISE = '732984_11910076-lq';
 
-// ---- Matching ground truth to detections ----------------------------------------------------------------------------
-// Three separate ways this measurement has already been wrong, all fixed here:
-//   1. TheSession inverts articles ("virginia, the"), the annotation does not.
-//   2. A tune carries many names - "cooley's" is also "reaping the rye" - so
-//      names must be resolved to tune IDS through the index's own alias table.
-//   3. The numeric column in the annotations is NOT a TheSession id (258 there
-//      is "westbrook bell", while the title on that line resolves to 635/661).
-// And the fourth, handled below: the annotations are TYPED BY HAND, so they
-// carry typos, missing dance words and stray punctuation.
-
-// Tune titles number their variants both ways - "Toss the Feathers II" in the
-// annotation, "toss the feathers 2" in the index. Standalone roman numerals
-// only; a bare "i" is left alone, being far too common a word to touch.
-const ROMAN: Record<string, string> = { ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10' };
-
-const base = (s: string): string => s
-  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  .replace(/x:\s*\d+/g, '').replace(/n[o°]\.?\s*\d+/g, '')
-  .replace(/[^a-z0-9]+/g, ' ').trim()
-  .replace(/\b(ii|iii|iv|vi{0,3}|ix|x)\b/g, (m) => ROMAN[m] ?? m)
-  .replace(/^(?:the|a|an) /, '').replace(/ (?:the|a|an)$/, '');
-
-const DANCES = /\b(?:jigs?|reels?|hornpipes?|polkas?|slides?|waltz(?:es)?|marches|march|mazurkas?|barndances?|strathspeys?|schottische|slip ?jigs?)\b/gi;
-
-/** Every reading of a hand-written title worth trying, because the annotations
- *  spell tunes several different ways:
- *   - with and without the parenthetical ("Kesh (jig)" must reach "kesh jig");
- *   - with and without the dance word ("Kesh Jig" must reach "kesh, the");
- *   - the first name only, when the line spells out an alias itself
- *     ("Dusty miller Also known as Lus Na mBanrion"). */
-function variants(label: string): string[] {
-  // "Rookery, The (reel) 752" - the annotator's own numbering, space-separated
-  // rather than tabbed, so it survives into the title and blocks every match.
-  // Both readings are kept, never one instead of the other: stripping the
-  // trailing number rescues "Rookery, The (reel) 752" but would wreck
-  // "Dowd's No. 9", where the number is part of the name.
-  const cleaned = label.replace(/\s+\d+\s*$/, '');
-  const heads = [label, cleaned].flatMap(l => l.split(/\s+(?:also known as|aka)\s+/i));
-  const out = new Set<string>();
-  for (const head of heads) {
-    for (const form of [head.replace(/\([^)]*\)/g, ' '), head.replace(/[()]/g, ' ')]) {
-      const b = base(form);
-      if (b) out.add(b);
-      const noDance = base(form.replace(DANCES, ' '));
-      if (noDance) out.add(noDance);
-    }
-  }
-  return [...out];
-}
-
-/** Damerau-Levenshtein, bounded - gives up as soon as it exceeds `max`, since
- *  the alias table has ~100k names and every unresolved label is compared
- *  against all of them.
- *
- *  Transpositions count as ONE edit, not two, and that is not a refinement: a
- *  swap is the most ordinary typo a human makes. Plain Levenshtein resolved
- *  "Bryne's" to "bryn s" (one deletion) in preference to the actual tune
- *  "byrne's" (a y/r swap, two operations under the plain metric) - and the
- *  detector had found byrne's correctly, so the harness turned a perfect
- *  session into "one miss, one false positive". */
-function within(a: string, b: string, max: number): number {
-  if (Math.abs(a.length - b.length) > max) return max + 1;
-  let prev2: number[] = [];
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    let best = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      let v = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + cost);
-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
-        v = Math.min(v, prev2[j - 2]! + 1);
-      }
-      cur[j] = v;
-      if (v < best) best = v;
-    }
-    if (best > max) return max + 1;
-    prev2 = prev;
-    prev = cur;
-  }
-  return prev[b.length]!;
-}
-
-const nameToIds = new Map<string, Set<string>>();
-{
-  const idx = JSON.parse(fs.readFileSync(INDEX, 'utf-8')) as { aliases: Record<string, string[]> };
-  for (const [tuneId, names] of Object.entries(idx.aliases)) {
-    for (const n of names) {
-      const k = base(n);
-      if (!k) continue;
-      if (!nameToIds.has(k)) nameToIds.set(k, new Set());
-      nameToIds.get(k)!.add(tuneId);
-    }
-  }
-}
-const ALL_KEYS = [...nameToIds.keys()];
-
-const fuzzyLog: string[] = [];
-
-function resolve(label: string): Set<string> {
-  for (const v of variants(label)) {
-    const exact = nameToIds.get(v);
-    if (exact) return exact;
-  }
-  // Typo tolerance, deliberately tight: ~15% of the title's length, at least 1.
-  // Every acceptance is logged - a loose fuzzy match silently inflates recall,
-  // which is exactly the class of error this harness has already made.
-  let bestKey: string | null = null, bestDist = Infinity, bestLenGap = Infinity;
-  for (const v of variants(label)) {
-    if (v.length < 4) continue;                      // too short to be safe
-    const max = Math.max(1, Math.round(v.length * 0.15));
-    for (const k of ALL_KEYS) {
-      const d = within(v, k, max);
-      if (d > max) continue;
-      // Ties are common once transpositions cost 1, and they are not arbitrary:
-      // a typo rarely changes a title's length, so the candidate closest in
-      // length is the better guess ("bryne s" -> "byrne s", not "bryn s").
-      const lenGap = Math.abs(k.length - v.length);
-      if (d < bestDist || (d === bestDist && lenGap < bestLenGap)) {
-        bestDist = d; bestKey = k; bestLenGap = lenGap;
-      }
-    }
-  }
-  if (bestKey) {
-    fuzzyLog.push(`"${label}" -0- "${bestKey}" (distance ${bestDist})`);
-    return nameToIds.get(bestKey)!;
-  }
-  return new Set<string>();
-}
+// ---- Ground truth ----------------------------------------------------------------------------------------------
+// CSV only since 2026-09-09. Every session now carries a `-timings.csv` whose
+// third column is a TheSession id, so nothing here reads a hand-written setlist
+// any more — and with it went ~130 lines that existed solely to turn a typed
+// title back into an id: the index's alias table, title normalisation (articles,
+// roman numerals, dance words), a bounded Levenshtein pass and the audit log its
+// fuzzy matches required. That machinery was a source of measurement error in
+// its own right, which is why the CSVs were asked for.
+//
+// The last setlist standing was Audio F's, and it turned out to describe a
+// DIFFERENT recording than the audio filed under that name: 8% of its ids appear
+// in the session's own CSV, 1-3% in any other. It had been ground truth for 129
+// of the 328 rows this sweep scored — about 40% of the corpus — which is why the
+// 2026-09-06 figures that moved unknownObservationProbability to 0.20 cannot be
+// trusted and this has to be re-run. The .txt files are gone.
 
 /** What a ground-truth row is worth to the score.
  *   'tune'     - a real tune with an id. The only kind that counts, both as a
@@ -282,34 +167,9 @@ function splitCsvLine(line: string, delim: string): string[] {
   return out.map(c => c.trim());
 }
 
-function parseTruth(file: string): TruthEntry[] {
-  // The CSV wins wherever it exists - a session converted by the group needs no
-  // name matching at all. The .txt path below stays only for the ones not yet
-  // converted, and should disappear with them.
-  const csv = file.replace(/\.txt$/, '.csv');
-  if (fs.existsSync(csv)) return parseTruthCsv(csv);
-  if (!fs.existsSync(file)) return [];
-
-  const out: TruthEntry[] = [];
-  for (const line of fs.readFileSync(file, 'utf-8').split('\n').map(l => l.trim()).filter(Boolean)) {
-    // A timestamp may be mm:ss OR h:mm:ss - and "00:04:37 Reel set:" is a set
-    // HEADER while "1:00:55 Foxhunter" is a tune an hour into the recording.
-    // Keying on the timestamp's shape got that wrong and silently dropped every
-    // tune past the first hour; what actually separates them is what FOLLOWS.
-    const stamped = line.match(/^\d{1,2}:\d{2}(?::\d{2})?\s+(.*)$/);
-    const rest = stamped ? stamped[1]!.trim() : null;
-    if (rest !== null && (rest === '' || /\bset\s*:?\s*$/i.test(rest))) continue;
-
-    const emdash = line.match(/^(.+?)\s+\u2014\s+\d+$/);
-    const label = (rest !== null ? rest : emdash ? emdash[1]! : line.split('\t')[0]!).trim();
-    if (!label) continue;
-    // The .txt path has no sentinels: every line is a tune someone named, and
-    // one that fails to resolve is a MATCHING FAILURE, not a deliberate marker.
-    // It stays in the denominator on purpose - excusing it would flatter the
-    // score for our own inability to map the name.
-    out.push({ label, ids: resolve(label), kind: 'tune' });
-  }
-  return out;
+function parseTruth(csv: string): TruthEntry[] {
+  if (!fs.existsSync(csv)) throw new Error(`pas de verite terrain : ${csv}`);
+  return parseTruthCsv(csv);
 }
 
 const load = (id: string): WindowResult[] | null => {
@@ -374,7 +234,7 @@ function detectIds(windows: WindowResult[], unknownProb: number): Set<string> {
 }
 
 it('sweeps the UNKNOWN floor', () => {
-  const data = SESSIONS.map(id => ({ id, windows: load(id), truth: parseTruth(nodePath.join(DIR, `${id}-timings.txt`)) }))
+  const data = SESSIONS.map(id => ({ id, windows: load(id), truth: parseTruth(nodePath.join(DIR, `${id}-timings.csv`)) }))
     .filter(d => d.windows);
   const noise = load(NOISE);
 
@@ -390,8 +250,6 @@ it('sweeps the UNKNOWN floor', () => {
     + `${offIndexRows.length} hors TheSession (toute détection = faux positif)`);
   for (const l of offIndexRows) console.log(`    [hors index] ${l}`);
   for (const l of unknownRows) console.log(`    [non reconnu] ${l}`);
-  console.log(`\n---- rapprochements approximatifs (${fuzzyLog.length}) - ì AUDITER ----`);
-  for (const l of fuzzyLog) console.log('  ' + l);
   console.log(`\n---- jamais résolus (${unresolved.length}), donc jamais trouvables ----`);
   for (const l of unresolved) console.log('  ' + l);
 

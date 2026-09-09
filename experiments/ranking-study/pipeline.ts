@@ -14,9 +14,11 @@ import type { Seg } from './truth';
 
 export const DIR = nodePath.resolve(__dirname, '../../test-fixtures/sessions');
 
-/** Every annotated session EXCEPT `20240721_tocane_2_chapiteau` (Audio F),
- *  whose CSV is not written yet. Excluding it also removes the last consumer of
- *  name matching: all six below carry a `-timings.csv`. */
+/** Every annotated session. Complete since 2026-09-09, when Audio F's CSV
+ *  finally arrived — it is the largest of the corpus at 5 h 26 and 149 scorable
+ *  tunes, so every figure measured before it landed was taken on roughly half
+ *  the material. All seven carry a `-timings.csv`; nothing here reads a
+ *  setlist by name any more. */
 export const SESSIONS = [
   '1Hour_Trad_Irish_Music_Session_in_Korea',
   '20260523_1_matin_Anglade',
@@ -24,6 +26,7 @@ export const SESSIONS = [
   '20260523_5_auberge_fleurie',
   'One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video',
   '13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24',
+  '20240721_tocane_2_chapiteau',
 ];
 
 /** Bar ambience, talk, glasses — no music at all. Ground truth is "zero

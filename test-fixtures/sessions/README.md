@@ -3,8 +3,10 @@
 ## Provenance — which recording is which
 
 The audio is not in the repo. It lives outside it, under opaque names, and this
-table is the only thing tying the two together. Verified by MD5: each
-`Audio X - Help.txt` is byte-identical to the `-timings.txt` beside it.
+table is the only thing tying the two together — which is exactly how Audio F
+came to carry a setlist for a different recording for months (see below). The
+mapping is worth re-checking against the audio whenever a new annotation lands,
+not assumed.
 
 | Source audio | Fixture |
 |---|---|
@@ -29,11 +31,36 @@ Two files per session:
   `ffWorker.ts` produces live, generated offline by
   `experiments/noise-study/regenerate-fixtures.js`. The audio itself is **not**
   committed (`test-fixtures/audio/` is gitignored — personal recordings).
-- `<name>-timings.txt` — the hand-written ground truth. Three formats coexist,
-  all parsed by the study harness: a plain setlist, `Name — tuneId`, and
-  timestamped lines. Only two sessions carry per-item timestamps
-  (`One_of_the_Best…` per tune, `13th_Moon…` per set), and they are the only
-  boundary ground truth there is.
+- `<name>-timings.csv` — the ground truth, one row per tune actually played:
+
+  ```
+  Début,Fin,TheSession ID,Commentaires
+  00:02:05,00:03:42,9802,
+  00:06:02,00:09:26,-1,chant
+  ```
+
+  Every session has one since **2026-09-09**. Timestamps are `HH:MM:SS` (`MM:SS`
+  is tolerated). Two sentinel ids: **`0`** = the annotator did not recognise the
+  tune, scored neither way; **`-1`** = recognised but genuinely absent from
+  TheSession, so any detection there *is* a false positive. Everything else is a
+  TheSession tune id.
+
+  ### The `.txt` setlists are gone, and why that matters
+
+  Until 2026-09-09 the ground truth was hand-written `-timings.txt` setlists,
+  and the harnesses turned a typed **title** back into an id through the index's
+  alias table plus a fuzzy match. That pipeline was itself a source of
+  measurement error, which is why the CSVs were commissioned; the ~130 lines
+  that did it are gone from `experiments/threshold-sweep/sweep.test.ts`.
+
+  The last setlist standing was Audio F's, and when its CSV finally arrived the
+  two turned out to describe **different recordings**: 8 % of the `.txt`'s ids
+  appear in the session's own CSV, 1–3 % in any other, while the CSV matches the
+  audio's 5 h 26 to within 39 seconds. That file had been ground truth for 129 of
+  the 328 rows the threshold sweep scored — about 40 % of the corpus — so the
+  2026-09-06 figures that moved `unknownObservationProbability` to 0.20 have to
+  be re-run before they mean anything. Where the bad setlist came from is not
+  known; it arrived from the annotating group under the right name.
 
 ## Window geometry — read this before running any backtest
 
@@ -56,7 +83,7 @@ made the 2026-09-01 hop study possible without re-running FolkFriend.
 
 ## The noise fixture
 
-`732984_11910076-lq` has no `-timings.txt` because it contains **no music at
+`732984_11910076-lq` has no `-timings.csv` because it contains **no music at
 all** — bar ambience, talk, glasses. Its ground truth is "zero detections,
 always", asserted unconditionally by `noiseBenchmark.test.ts`. It is the only
 fixture that can measure false positives without a recall trade-off, which makes
