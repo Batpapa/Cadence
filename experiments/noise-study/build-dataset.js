@@ -6,13 +6,13 @@
 //
 //   MUSIC        — the window's OWN top-1 raw candidate (debug.fullCandidates[0],
 //                   the same ranking FolkFriend itself produced) has a name
-//                   that appears in that session's real annotated setlist
-//                   (*-timings.txt). Doesn't touch Viterbi at all.
+//                   whose TheSession id appears in that session's annotated
+//                   ground truth (*-timings.csv). Doesn't touch Viterbi at all.
 //   NOISE_PURE   — every window of 732984_11910076-lq, a dedicated ~28min
 //                   pure-noise recording (no music at all, confirmed by the
 //                   user) — the cleanest possible NOISE label.
-//   NOISE_MISMATCH — real-session windows whose top-1 name is NOT in that
-//                   session's setlist. Ambiguous (could be true background
+//   NOISE_MISMATCH — real-session windows whose top-1 id is NOT in that
+//                   session's ground truth. Ambiguous (could be true background
 //                   noise, OR real music where FolkFriend just picked the
 //                   wrong tune) — kept as a separate, secondary label, never
 //                   merged into NOISE_PURE. Exactly the bucket the
@@ -21,7 +21,7 @@
 //                   from every export; there's nothing to compare.
 //
 // This intentionally never assumes "not detected = noise" (explicit user
-// instruction) — every label is anchored to either the real setlist or the
+// instruction) — every label is anchored to either the annotated truth or the
 // dedicated noise recording, never to Viterbi's own output.
 
 const fs = require('node:fs');
@@ -41,34 +41,28 @@ const REAL_SESSIONS = [
 ];
 const NOISE_PURE_SESSION = '732984_11910076-lq';
 
-function normalizeName(s) {
-  return s
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/x:\s*\d+/g, '')
-    .replace(/\([^)]*\)/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .split(' ')
-    .filter(w => w && w !== 'the')
-    .join(' ')
-    .trim();
-}
-
-// Three fixture formats seen across sessions, none using the same delimiter:
-//   "Name (dance)\tN"      (tab-separated; N's meaning unclear, ignored — see analyze.js)
-//   "M:SS Name"             (space-separated, mm:ss prefix)
-//   "Name — N"              (em-dash separated, N likely a duration in seconds)
-// All three are name-only for matching purposes, so only the name half matters.
-function parseTimings(file) {
+/** The set of TheSession ids a session's annotator listed.
+ *
+ *  CSV since 2026-09-09, ids instead of names. It used to read the hand-written
+ *  `-timings.txt` setlists and match on NORMALISED TITLES, which is what the
+ *  ground-truth CSVs were commissioned to replace: a title has to survive
+ *  article inversion, dance words, roman numerals and typos before it becomes an
+ *  id, and every one of those steps was a way to mislabel a window. The third
+ *  CSV column is the id outright.
+ *
+ *  Consequence worth knowing before re-running: this no longer reproduces the
+ *  2026-08 dataset byte for byte. Windows whose top-1 title failed to normalise
+ *  onto the setlist were labelled NOISE_MISMATCH then and are labelled MUSIC
+ *  now. That is a correction, but it means the committed dataset.csv and a fresh
+ *  one are not comparable row by row. */
+function parseTruthIds(file) {
   const lines = fs.readFileSync(file, 'utf-8').split('\n').map(l => l.trim()).filter(Boolean);
-  const names = new Set();
-  for (const line of lines) {
-    const mmss = line.match(/^\d+:\d{2}\s+(.+)$/);
-    const emdash = line.match(/^(.+?)\s+—\s+\d+$/);
-    const rawName = mmss ? mmss[1] : emdash ? emdash[1] : line.split('\t')[0].trim();
-    names.add(normalizeName(rawName));
+  const ids = new Set();
+  for (const line of lines.slice(1)) {
+    const id = (line.split(',')[2] ?? '').trim();
+    if (/^[1-9]\d*$/.test(id)) ids.add(id);   // 0 = unrecognised, -1 = off-index
   }
-  return names;
+  return ids;
 }
 
 const SCORE_THRESHOLDS = [0.20, 0.30, 0.40, 0.50];
@@ -136,8 +130,7 @@ function buildRows() {
 
   const groundTruthBySession = new Map();
   for (const name of REAL_SESSIONS) {
-    const timingsPath = path.join(SESSIONS_DIR, `${name}-timings.txt`);
-    groundTruthBySession.set(name, parseTimings(timingsPath));
+    groundTruthBySession.set(name, parseTruthIds(path.join(SESSIONS_DIR, `${name}-timings.csv`)));
   }
 
   const allSessions = [...REAL_SESSIONS, NOISE_PURE_SESSION];
@@ -157,8 +150,7 @@ function buildRows() {
       } else if (fullCandidates.length === 0) {
         return; // unlabeled, excluded
       } else {
-        const top1Name = normalizeName(fullCandidates[0].displayName);
-        label = gt.has(top1Name) ? 'MUSIC' : 'NOISE_MISMATCH';
+        label = gt.has(fullCandidates[0].tuneId) ? 'MUSIC' : 'NOISE_MISMATCH';
       }
       if (fullCandidates.length === 0 && label !== 'NOISE_PURE') return;
 
