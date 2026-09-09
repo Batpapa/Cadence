@@ -86,9 +86,14 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
 
   return (
     <div class="-mx-5 -my-4">
-      {!canChoose && (
-        <p class="text-xs text-dim text-center py-2 px-5 border-b border-border/50">{t('sessions.alternates.notFinalizedYet')}</p>
-      )}
+      {/* One line, always: the gesture is not self-evident either way. While the
+          result consolidates it says why nothing can be picked yet; once it can,
+          it says that picking IS the confirmation — and that picking the same
+          entry again undoes it. Neither was written anywhere before 2026-09-09,
+          and a user reported being unable to find how to confirm at all. */}
+      <p class="text-xs text-dim text-center py-2 px-5 border-b border-border/50">
+        {t(canChoose ? 'sessions.alternates.howToPick' : 'sessions.alternates.notFinalizedYet')}
+      </p>
       <div class="divide-y divide-border/50">
         {optionsFor(ann, viterbiPick).map(opt => {
           const isViterbi = opt.tuneId === viterbiPick.tuneId;

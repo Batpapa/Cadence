@@ -258,7 +258,7 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
   const range = ann.end === null
     ? `${fmtLongTime(ann.start)} · ${t('sessions.inProgress')}`
     : pending
-      ? `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)} · ${t('sessions.pendingConfirmation')}`
+      ? `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)} · ${t('sessions.consolidating')}`
       : `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)}`;
 
   const showReviewLog = known && opts.sessionStartMs !== undefined && ann.end !== null;
@@ -267,7 +267,7 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
     <div class={`p-3 rounded-lg border bg-bg space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
       <div class="flex items-center gap-2">
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
-        {pending && <span class="text-dim shrink-0" title={t('sessions.pendingConfirmation')}><HourglassIcon size={12} /></span>}
+        {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
 
         {opts.onPlay && (
           <button
