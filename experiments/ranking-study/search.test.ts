@@ -123,6 +123,24 @@ it('merges shard results', () => {
   if (!files.length) throw new Error(`aucun fragment (${prefix}*) dans ${OUT_DIR}`);
   const all: Outcome[] = files.flatMap(f => JSON.parse(fs.readFileSync(nodePath.join(OUT_DIR, f), 'utf-8')) as Outcome[]);
   console.log(`${files.length} fragments, ${all.length} evaluations au total`);
+
+  // A Pareto front is only meaningful over ONE corpus. `total` is the number of
+  // scorable ground-truth tunes, so it identifies the corpus exactly: 192 for
+  // the six sessions this study ran on until 2026-09-08, 341 once Audio F's CSV
+  // arrived. Pooling both would rank a configuration that found 178 of 192
+  // against one that found 178 of 341 and call the first better, silently.
+  // Refuse rather than mix — the campaigns belong in separate directories.
+  const byCorpus = new Map<number, number>();
+  for (const o of all) byCorpus.set(o.total, (byCorpus.get(o.total) ?? 0) + 1);
+  if (byCorpus.size > 1) {
+    const seen = [...byCorpus.entries()].sort((a, b) => b[1] - a[1])
+      .map(([t, n]) => `${n} evaluations sur ${t} morceaux`).join(', ');
+    throw new Error(
+      `${OUT_DIR} melange des corpus differents (${seen}). Une comparaison n'a de sens `
+      + `qu'a corpus constant : archiver les anciens fragments ailleurs avant de fusionner.`);
+  }
+  console.log(`corpus : ${[...byCorpus.keys()][0]} morceaux de reference`);
+
   report(all, process.env['SEARCH_SEED'] === 'all' ? 'toutes campagnes' : `graine ${SEED}`);
 
   // Where the front's configurations concentrate — the aggregate answer to

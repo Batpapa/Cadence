@@ -11,3 +11,10 @@ experiments/noise-study/wasm-node/
 experiments/noise-study/.cache/
 experiments/noise-study/output/
 experiments/ranking-study/.out/
+# Campaigns are archived beside .out/ when the corpus changes — a Pareto front is
+# only comparable at constant corpus, so old evaluations move rather than mix.
+experiments/ranking-study/.out-*/
+# Threshold sweep: decoded segments per (session, floor), keyed by a fingerprint
+# of the windows, the detector sources and the config. Derived data — but the
+# thing that makes adding a recording cost one recording instead of eight.
+experiments/threshold-sweep/.cache/

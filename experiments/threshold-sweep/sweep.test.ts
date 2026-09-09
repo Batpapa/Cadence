@@ -1,5 +1,6 @@
 import { it } from 'vitest';
 import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
 import * as nodePath from 'node:path';
 import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE, type TemporalTimeline } from '../../src/session/recognition/temporalObservationBuilder';
 import { runViterbiDetection, filterShortSegments, mergeNearbySameTune, type DetectedTuneSegment } from '../../src/session/recognition/viterbiDetector';
@@ -204,7 +205,9 @@ function finalise(segments: DetectedTuneSegment[], timeline: TemporalTimeline, c
 /** Same decode, keeping what each detection actually was and where - for
  *  SWEEP_DETAIL, which answers "which tune did it miss, and what did it hear
  *  instead?" rather than just how many. */
-function detectSegments(windows: WindowResult[], unknownProb: number) {
+/** The decode itself, as costly as it is pure: same windows and same floor give
+ *  the same segments, always. Everything expensive in this harness is here. */
+function decodeOnce(windows: WindowResult[], unknownProb: number): Seg[] {
   const cfg = { ...CFG, unknownObservationProbability: unknownProb };
   const timeline = buildTemporalTimeline(
     filterByTempoSpread(filterFlatWindows(windows, cfg.flatWindowTopN, cfg.flatWindowMarginThreshold), cfg.tempoSpreadThreshold),
@@ -223,15 +226,78 @@ function detectSegments(windows: WindowResult[], unknownProb: number) {
     }));
 }
 
-function detectIds(windows: WindowResult[], unknownProb: number): Set<string> {
-  const cfg = { ...CFG, unknownObservationProbability: unknownProb };
-  const timeline = buildTemporalTimeline(
-    filterByTempoSpread(filterFlatWindows(windows, cfg.flatWindowTopN, cfg.flatWindowMarginThreshold), cfg.tempoSpreadThreshold),
-    cfg,
-  );
-  const r = runViterbiDetection(timeline, cfg);
-  return new Set(finalise(r.segments, timeline, cfg).filter(s => s.tuneId !== UNKNOWN_STATE).map(s => s.tuneId));
+// ---- Decode cache ---------------------------------------------------------------------------------------------------
+// A full sweep is 16 floors x 8 recordings of Viterbi over the whole corpus:
+// hours, dominated by the longest session (Audio F alone is 3914 of the 9482
+// windows). Adding one recording used to mean paying for the other seven again,
+// which is why nothing was ever re-measured casually.
+//
+// What is cached is the DECODE, keyed on everything that can change its result.
+// Notably NOT the ground truth: a CSV never enters a decode, it is only scored
+// against afterwards. So correcting an annotation — or fixing a whole session's
+// truth, as happened on 2026-09-09 — re-scores in a second and recomputes
+// nothing. That is the case this exists for.
+//
+// The key is a fingerprint, not a version someone remembers to bump: the
+// windows dump, the three detector sources, the config minus the swept field,
+// and the source text of the two functions in THIS file that do the decoding.
+// Change any of them and the old entries simply stop being found.
+
+const CACHE_DIR = nodePath.join(__dirname, '.cache');
+const RECOG_SRC = nodePath.resolve(__dirname, '../../src/session/recognition');
+
+const sha1 = (s: string): string => crypto.createHash('sha1').update(s).digest('hex').slice(0, 16);
+
+const DECODE_FINGERPRINT = sha1([
+  fs.readFileSync(nodePath.join(RECOG_SRC, 'temporalObservationBuilder.ts'), 'utf-8'),
+  fs.readFileSync(nodePath.join(RECOG_SRC, 'viterbiDetector.ts'), 'utf-8'),
+  fs.readFileSync(nodePath.join(RECOG_SRC, 'detectionTemporalConfig.ts'), 'utf-8'),
+  decodeOnce.toString(),
+  finalise.toString(),
+  // The swept field is the key's own axis; every other config value is not.
+  JSON.stringify({ ...CFG, unknownObservationProbability: null, observationScoreFn: String(CFG.observationScoreFn) }),
+].join('|'));
+
+const windowsFingerprint = new Map<string, string>();
+const sessionCache = new Map<string, Record<string, Seg[]>>();
+let hits = 0, misses = 0;
+
+function cacheFor(session: string): Record<string, Seg[]> {
+  let c = sessionCache.get(session);
+  if (!c) {
+    try { c = JSON.parse(fs.readFileSync(nodePath.join(CACHE_DIR, `${session}.json`), 'utf-8')) as Record<string, Seg[]>; }
+    catch { c = {}; }
+    sessionCache.set(session, c);
+  }
+  return c;
 }
+
+/** Written after every miss, not once at the end: a sweep that dies in its
+ *  third hour must keep what it already paid for. */
+function persist(session: string): void {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  fs.writeFileSync(nodePath.join(CACHE_DIR, `${session}.json`), JSON.stringify(sessionCache.get(session)), 'utf-8');
+}
+
+function detectSegments(session: string, windows: WindowResult[], unknownProb: number): Seg[] {
+  let wf = windowsFingerprint.get(session);
+  if (!wf) {
+    wf = sha1(fs.readFileSync(nodePath.join(DIR, `${session}-windows.json`), 'utf-8'));
+    windowsFingerprint.set(session, wf);
+  }
+  const key = `${unknownProb.toFixed(4)}|${wf}|${DECODE_FINGERPRINT}`;
+  const cache = cacheFor(session);
+  const hit = cache[key];
+  if (hit) { hits++; return hit; }
+  misses++;
+  const segs = decodeOnce(windows, unknownProb);
+  cache[key] = segs;
+  persist(session);
+  return segs;
+}
+
+const detectIds = (session: string, windows: WindowResult[], unknownProb: number): Set<string> =>
+  new Set(detectSegments(session, windows, unknownProb).map(s => s.tuneId));
 
 it('sweeps the UNKNOWN floor', () => {
   const data = SESSIONS.map(id => ({ id, windows: load(id), truth: parseTruth(nodePath.join(DIR, `${id}-timings.csv`)) }))
@@ -259,7 +325,7 @@ it('sweeps the UNKNOWN floor', () => {
   if (wanted) {
     const floor = Number(process.env['SWEEP_POINTS'] ?? CFG.unknownObservationProbability);
     for (const d of data.filter(x => x.id.toLowerCase().includes(wanted.toLowerCase()))) {
-      const segs = detectSegments(d.windows!, floor);
+      const segs = detectSegments(d.id, d.windows!, floor);
       const found = new Set(segs.map(s => s.tuneId));
       console.log(`\n---- ${d.id} @ ${floor} ----`);
       for (const g of d.truth) {
@@ -342,7 +408,7 @@ it('sweeps the UNKNOWN floor', () => {
     const rows: string[] = [];
     for (const d of data) {
       // Segments, not just ids: excusing a detection needs to know WHERE it sat.
-      const segs = detectSegments(d.windows!, p);
+      const segs = detectSegments(d.id, d.windows!, p);
       const found = new Set(segs.map(s => s.tuneId));
       const tunes = scorable(d);
       // matchFor, not an id lookup: a tune annotated twice was otherwise
@@ -359,7 +425,7 @@ it('sweeps the UNKNOWN floor', () => {
       rows.push(`${d.id.slice(0, 30).padEnd(30)} ${String(t).padStart(3)}/${String(tunes.length).padEnd(3)} vrais, ${f} faux`);
     }
     detail.set(p, rows);
-    console.log(`  ${p.toFixed(2)}${p === CFG.unknownObservationProbability ? '*' : ' '}   | ${String(tp).padStart(3)}/${totalTruth} (${((tp / totalTruth) * 100).toFixed(1).padStart(5)}%) | ${String(fp).padStart(13)} | ${noise ? detectIds(noise, p).size : 0}`);
+    console.log(`  ${p.toFixed(2)}${p === CFG.unknownObservationProbability ? '*' : ' '}   | ${String(tp).padStart(3)}/${totalTruth} (${((tp / totalTruth) * 100).toFixed(1).padStart(5)}%) | ${String(fp).padStart(13)} | ${noise ? detectIds(NOISE, noise, p).size : 0}`);
   }
 
   console.log('\n* = valeur actuelle\n---- détail par session ----');
