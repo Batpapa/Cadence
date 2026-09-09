@@ -123,8 +123,6 @@ function ShareAppBody() {
           {t('shareApp.share')}
         </button>
       )}
-
-      <p class="text-xs text-muted text-center leading-relaxed">{t('shareApp.hint')}</p>
     </div>
   );
 }
