@@ -38,7 +38,7 @@ function ordered(session: Analysis): Detection[] {
  *  own end. */
 const endOf = (d: Detection, session: Analysis): number => d.end ?? session.duration;
 
-export function exportAnalysisTXT(session: Analysis): void {
+export function analysisTextReport(session: Analysis): string {
   const dets = ordered(session);
   const out: string[] = [
     session.name || 'Analysis',
@@ -61,7 +61,13 @@ export function exportAnalysisTXT(session: Analysis): void {
     out.push(`${hms(d.start)} - ${hms(endOf(d, session))}  ${label(d).padEnd(width + 2)}${marks}`.trimEnd());
   }
 
-  downloadTextFile(out.join('\r\n'), `${safeName(session)}-detections.txt`, 'text/plain;charset=utf-8');
+  return out.join('\r\n');
+}
+
+/** The same report, as a downloaded file. */
+export function exportAnalysisTXT(session: Analysis): void {
+  downloadTextFile(analysisTextReport(session),
+    `${safeName(session)}-detections.txt`, 'text/plain;charset=utf-8');
 }
 
 /** RFC 4180-ish: quote only when needed, double the quotes inside, and flatten

@@ -120,7 +120,7 @@ function ShareAppBody() {
           class="btn-ghost text-xs shrink-0 px-2 py-1 border border-border rounded-md"
           onClick={copy}
         >
-          {copied ? t('shareApp.copied') : t('shareApp.copy')}
+          {copied ? t('common.copied') : t('shareApp.copy')}
         </button>
       </div>
 
