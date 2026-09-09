@@ -10,25 +10,25 @@ import { AbcPreview } from './abcPreview';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE } from './sessionUiShared';
 import { getContext } from '../../store';
-import type { SessionAnnotation, AnnotationAlternate } from '../model';
+import type { Detection, DetectionAlternate } from '../model';
 
-// ── AnnotationCard ────────────────────────────────────────────────────────────
+// ── DetectionCard ────────────────────────────────────────────────────────────
 // The central unit of the session feed/summary: one recognised tune, with its
 // play/ABC-preview/add-to-library/like controls and (when applicable) review
 // logging. First leaf migrated from sessionModule.ts's imperative
 // document.createElement tree to Preact (2026-08-24 — see the migration
 // brief). Used directly as JSX by all three containers (LiveSession,
-// ImportAnalysis, SessionSummary) — the imperative annotationCard() bridge
+// ImportAnalysis, SessionSummary) — the imperative detectionCard() bridge
 // this started with is gone now that none of its callers are still
 // imperative (removed 2026-08-24 once SessionSummary, the last one, was
 // migrated).
 
-export interface AnnotationCardOptions {
+export interface DetectionCardOptions {
   ctx: AppContext;
   onOpenCard?: (cardId: string) => void;
   onCardAdded?: () => void;
-  /** Play/stop this annotation's audio slice; shows a ▶ button when provided. */
-  onPlay?: (ann: SessionAnnotation) => void;
+  /** Play/stop this detection's audio slice; shows a ▶ button when provided. */
+  onPlay?: (ann: Detection) => void;
   playingId?: string | null;
   /** Extra controls rendered at the bottom of the card (bound-adjust/clip
    *  buttons — finalized annotations only, gated by the caller). */
@@ -44,20 +44,20 @@ export interface AnnotationCardOptions {
   getPinnedDeckIds?: () => Set<string>;
   /** "I liked this tune" marker — purely personal, unrelated to any card. */
   onToggleLike?: (annotationId: string) => void;
-  /** Records the user's verdict on this annotation's identity — makes the
+  /** Records the user's verdict on this detection's identity — makes the
    *  confidence badge clickable (it opens the "explore alternatives" picker).
    *  A tune confirms it, `null` un-confirms and hands it back to the decoder.
-   *  Choosing anything is only allowed once the annotation is finalized
-   *  (see the picker's own doc) — requires `getLatestAnnotation` too. */
-  onSelectAlternate?: (annotationId: string, pick: AnnotationAlternate | null) => void;
-  /** Freshest copy of a still-live annotation, read on an interval while the
-   *  picker is open — a live/import annotation can still be revised (new
+   *  Choosing anything is only allowed once the detection is finalized
+   *  (see the picker's own doc) — requires `getLatestDetection` too. */
+  onSelectAlternate?: (annotationId: string, pick: DetectionAlternate | null) => void;
+  /** Freshest copy of a still-live detection, read on an interval while the
+   *  picker is open — a live/import detection can still be revised (new
    *  alternates/scores) or retracted entirely while the user is browsing it.
-   *  Reads straight from the engine (LiveSession/ImportSession.getAnnotations()),
+   *  Reads straight from the engine (LiveSession/ImportSession.getDetections()),
    *  never stale, unlike this card's own `ann` prop which only updates on
    *  the container's next re-render. Omit for a finished session's summary,
    *  where nothing can change out from under the picker. */
-  getLatestAnnotation?: (annotationId: string) => SessionAnnotation | undefined;
+  getLatestDetection?: (annotationId: string) => Detection | undefined;
 }
 
 
@@ -70,9 +70,9 @@ function fmtLongTime(s: number): string {
 }
 
 // ── Review logging from a recognised tune ─────────────────────────────────────
-// "I played it at this session" = one review entry at the annotation's end
+// "I played it at this session" = one review entry at the detection's end
 // time, in the same history the card view and FSRS read. The exact timestamp
-// doubles as the marker that this annotation was already logged: when an entry
+// doubles as the marker that this detection was already logged: when an entry
 // exists at that instant the four rating buttons are replaced by a single
 // remove control.
 
@@ -158,14 +158,14 @@ function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard }: {
   );
 }
 
-export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: AnnotationCardOptions }) {
+export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCardOptions }) {
   // Fresh state, not the snapshot captured at modal-open time: a card added a
   // second ago (onCardAdded) must flip this card to the "known" rendering.
   const user = getContext().user;
   const known = findByExternalId(`thesession:${ann.tuneId}`, user.cards);
   const isOpen = ann.end === null;
   // Closed, but the Viterbi decoder hasn't yet proven it can't still retract
-  // or revise this one as later windows arrive (see SessionAnnotation.finalized's
+  // or revise this one as later windows arrive (see Detection.finalized's
   // own doc) — distinct from `isOpen` (currently still the live tail) and from
   // fully finalized (never changes again). Both non-finalized states looked
   // identical to `isOpen` in the UI before 2026-08-24: a pending result showed
@@ -322,7 +322,7 @@ export function AnnotationCard({ ann, opts }: { ann: SessionAnnotation; opts: An
             e.stopPropagation();
             showAlternatesPopover(
               ann,
-              opts.getLatestAnnotation ? () => opts.getLatestAnnotation!(ann.id) : undefined,
+              opts.getLatestDetection ? () => opts.getLatestDetection!(ann.id) : undefined,
               (pick) => opts.onSelectAlternate!(ann.id, pick),
             );
           } : undefined}

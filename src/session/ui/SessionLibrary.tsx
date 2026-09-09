@@ -8,7 +8,7 @@ import { recoverOrphanedSessions } from '../recovery';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { activeLive } from './sessionStore';
 import { dateBesideName } from '../sessionNaming';
-import type { RecordedSession } from '../model';
+import type { Analysis } from '../model';
 
 // ── Screen: library ───────────────────────────────────────────────────────────
 // Past sessions + entry points into a new live recording / file import. Pure
@@ -31,7 +31,7 @@ function fmtLongTime(s: number): string {
 /** What each kind of session is marked with in the list. Same glyphs as the
  *  source selector on the start button, so the icon that chose a recording is
  *  the icon that later identifies it. */
-const SOURCE_BADGE: Record<RecordedSession['source'], { icon: JSX.Element; title: string }> = {
+const SOURCE_BADGE: Record<Analysis['source'], { icon: JSX.Element; title: string }> = {
   live:   { icon: <MicIcon size={11} />,         title: 'sessions.source.mic' },
   device: { icon: <DeviceAudioIcon size={11} />, title: 'sessions.source.device' },
   import: { icon: <FileAudioIcon size={11} />,   title: 'sessions.importBadge' },
@@ -45,7 +45,7 @@ interface SessionLibraryProps {
 }
 
 export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onOpenSession }: SessionLibraryProps) {
-  const [allSessions, setAllSessions] = useState<RecordedSession[]>([]);
+  const [allSessions, setAllSessions] = useState<Analysis[]>([]);
   const [query, setQuery] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [source, setSource] = useState<LiveSourceKind>('mic');

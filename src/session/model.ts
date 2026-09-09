@@ -3,14 +3,14 @@
 
 export type ConfidenceBucket = 'high' | 'medium' | 'low';
 
-export interface AnnotationEvidence {
+export interface DetectionEvidence {
   t: number;      // window start, seconds since session start
   tEnd?: number;  // window end — absent on annotations persisted before the end-vote (2026-07)
   score: number;  // top-1 Needleman-Wunsch score [0,1]
   margin: number; // top-1 − top-2 score
 }
 
-export interface AnnotationAlternate {
+export interface DetectionAlternate {
   tuneId: string;
   settingId: string;
   displayName: string;
@@ -19,7 +19,7 @@ export interface AnnotationAlternate {
   meanScore: number;
 }
 
-export interface SessionAnnotation {
+export interface Detection {
   id: string;
   tuneId: string;      // TheSession tune ID
   settingId: string;
@@ -29,41 +29,41 @@ export interface SessionAnnotation {
   /** Seconds since session start covered by the OBSERVATION WINDOWS that led
    *  to this detection (see DetectedTuneSegment's doc in viterbiDetector.ts)
    *  — not necessarily the exact instant the tune actually started/stopped.
-   *  Analysis windows overlap each other by design, so this annotation's
-   *  range can and does legitimately overlap the next annotation's — that
+   *  Analysis windows overlap each other by design, so this detection's
+   *  range can and does legitimately overlap the next detection's — that
    *  overlap is real signal (a transition/uncertainty zone), not a bug to be
    *  trimmed away. */
   start: number;
   end: number | null;  // null = still open (live)
-  confidence: number;  // [0,1] — consistency-weighted (win rate over the annotation's span), NOT comparable to alternates' meanScore below
+  confidence: number;  // [0,1] — consistency-weighted (win rate over the detection's span), NOT comparable to alternates' meanScore below
   bucket: ConfidenceBucket;
   /** Mean raw match score whenever this tune appeared as a window candidate —
    *  same metric as `alternates[].meanScore`, so the two are directly comparable
    *  in the detection-options panel (unlike `confidence`, which only this tune has). */
   meanScore: number;
-  evidence: AnnotationEvidence[];
+  evidence: DetectionEvidence[];
   /** Up to detectionTemporalConfig.ts's maxAlternates other tunes seen as
-   *  window candidates over this annotation's span, ranked by mean score —
+   *  window candidates over this detection's span, ranked by mean score —
    *  EXCLUDES viterbiPick's own tuneId (computeAlternates never scores the
    *  segment against itself). Together with viterbiPick, this is the full
-   *  set of choices the "explore alternatives" picker offers (AnnotationCard.tsx). */
-  alternates: AnnotationAlternate[];
+   *  set of choices the "explore alternatives" picker offers (DetectionCard.tsx). */
+  alternates: DetectionAlternate[];
   /** Snapshot of what the Viterbi decoder itself currently picks for this
    *  segment — same shape as an entry in `alternates` (and directly
    *  comparable by meanScore), captured fresh on every segmenter-driven
-   *  update (viterbiSegmenter.ts's toAnnotation), so it keeps tracking the
+   *  update (viterbiSegmenter.ts's toDetection), so it keeps tracking the
    *  algorithm's actual live answer even after the user has overridden the
    *  DISPLAYED identity below via selectAlternate() (tuneId/settingId/
    *  displayName/dance/meter, gated the same way as userConfirmed). Always
    *  favored over any alternate with a higher meanScore when nothing has
    *  been overridden — "Viterbi decides" takes transition costs/hysteresis
    *  into account, not just this one span's raw mean score. */
-  viterbiPick: AnnotationAlternate;
-  /** True once the user has explicitly vouched for this annotation's identity
+  viterbiPick: DetectionAlternate;
+  /** True once the user has explicitly vouched for this detection's identity
    *  via selectAlternate() — freezes tuneId/settingId/displayName/dance/meter
-   *  across future segmenter updates and protects the annotation from ever
+   *  across future segmenter updates and protects the detection from ever
    *  being retracted (see viterbiSegmenter.ts's vanish-cleanup and
-   *  AnnotationEvent's 'retract' doc).
+   *  DetectionEvent's 'retract' doc).
    *
    *  Confirming the algorithm's OWN pick counts (2026-09-04): "this detection
    *  is right" is a statement about the result, not about disagreeing with it,
@@ -75,7 +75,7 @@ export interface SessionAnnotation {
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */
   liked: boolean;
-  /** false while the Viterbi detector could still revise this annotation's
+  /** false while the Viterbi detector could still revise this detection's
    *  bounds or existence as more windows arrive (see viterbiSegmenter.ts) —
    *  the UI gates destructive/committing actions (delete, merge, attach, SRS
    *  logging) on this. Always true for file imports (all windows are known
@@ -87,15 +87,15 @@ export interface SessionAnnotation {
 /** Emitted by the recognition pipeline (viterbiSegmenter.ts's
  *  IncrementalViterbiSegmenter) as annotations are created/revised/settled —
  *  the session orchestrators (liveSession.ts, importSession.ts) merge these
- *  into their annotation map. */
-export type AnnotationEvent =
-  | { type: 'open'; annotation: SessionAnnotation }
-  | { type: 'update'; annotation: SessionAnnotation }
-  | { type: 'close'; annotation: SessionAnnotation }
-  /** A provisional annotation that was shown (opened) while it was still the
+ *  into their detection map. */
+export type DetectionEvent =
+  | { type: 'open'; detection: Detection }
+  | { type: 'update'; detection: Detection }
+  | { type: 'close'; detection: Detection }
+  /** A provisional detection that was shown (opened) while it was still the
    *  live tail (see minSegmentWindows in detectionTemporalConfig.ts) but
    *  never actually reached the confirmation threshold before being
-   *  superseded — remove it from the annotation list entirely, as if it had
+   *  superseded — remove it from the detection list entirely, as if it had
    *  never appeared (2026-08-15: `close` with `finalized:false` still left a
    *  permanent, if unconfirmed, entry sitting in the UI — the user explicitly
    *  wants it gone, not just marked unreliable). Orchestrators should ignore
@@ -103,7 +103,7 @@ export type AnnotationEvent =
    *  choice must never be silently erased. */
   | { type: 'retract'; id: string };
 
-export interface RecordedSession {
+export interface Analysis {
   id: string;
   name: string;
   /** ISO timestamp of the session's t=0. Live recordings set it to the
@@ -123,7 +123,17 @@ export interface RecordedSession {
   /** 'recording' = draft written while a live recording is still in progress
    *  (crash/refresh recovery); absent once the session is finalized. */
   status?: 'recording' | 'done';
-  annotations: SessionAnnotation[];
+  /** ⚠️ NAME FROZEN. The 2026-09-09 vocabulary pass renamed the TYPE
+   *  (SessionAnnotation → Detection) but deliberately NOT this field, because
+   *  it is serialized: it sits in every user's IndexedDB and in the Drive blob
+   *  their other devices read. Renaming it needs a migration AND would break
+   *  across versions in the meantime — a device still on the old bundle keeps
+   *  writing `annotations` into the shared Drive copy, which is exactly the
+   *  shape of the 2026-08-31 data loss. Same reasoning as
+   *  TuneAnalyserModuleData.sessions below. Not worth it for a name — the full
+   *  argument, including why an IndexedDB migration is a different and easier
+   *  question than this one, is in session/db.ts's header. */
+  annotations: Detection[];
   // The audio Blob (+ in-progress crash-recovery scratch data) lives in a
   // local-only, non-Drive-synced IndexedDB under the session id — see
   // session/db.ts. This record itself is small (no audio), so it's kept
@@ -137,7 +147,13 @@ export interface RecordedSession {
  *  (raw per-window results, MediaRecorder chunks) are local-only and never
  *  touch this — see session/db.ts's local database. */
 export interface TuneAnalyserModuleData {
-  sessions: Record<string, RecordedSession>;
+  /** ⚠️ NAME FROZEN, same reason as Analysis.annotations above: this key is in
+   *  every user's synced blob. The UI says "analyse"/"analysis" everywhere
+   *  since 2026-09-09 and the types followed; the STORAGE keys deliberately
+   *  did not. That divergence is the price of not migrating user data for a
+   *  rename, and it is intentional — do not "finish the job" here. The reasoning
+   *  in full is in session/db.ts's header. */
+  sessions: Record<string, Analysis>;
   /** Show the "detected in" panel on tune cards. Absent = yes: whoever records
    *  sessions is the only one who ever sees it, and for them the cross-
    *  reference is the point. Written only to turn it OFF, from the sessions
@@ -148,7 +164,7 @@ export interface TuneAnalyserModuleData {
    *  played on the user's other devices. Absent = no. */
   syncAudioByDefault?: boolean;
   /** Session id → the Drive file holding its recording, for the sessions where
-   *  that was chosen. A sibling map rather than a field on RecordedSession,
+   *  that was chosen. A sibling map rather than a field on Analysis,
    *  purely so this stays one obvious place to look. */
   syncedAudio?: Record<string, SyncedAudio>;
 }
@@ -247,40 +263,40 @@ export interface WindowDebugFeatures {
   features: NoteAndTempoFeatures | null;
 }
 
-// ── Choosing an identity for an annotation ───────────────────────────────────
+// ── Choosing an identity for a detection ───────────────────────────────────
 // Both engines and the finished-session summary write the user's choice, and
 // all three wrote the same five assignments by hand before this — which is how
 // one of them ends up disagreeing with the others about what confirming means.
 
 /** `viterbiPick` (2026-08-25) is absent on every session recorded before this
  *  feature shipped — no migration, same "no UI path/no migration" convention
- *  already established for `finalized`. A live/import annotation is always
+ *  already established for `finalized`. A live/import detection is always
  *  freshly built by the segmenter, which has populated this field from day one
  *  of its own existence, so this fallback only ever matters for a
- *  RecordedSession loaded from IndexedDB (SessionSummary.tsx) — for that case,
+ *  Analysis loaded from IndexedDB (SessionSummary.tsx) — for that case,
  *  the current identity IS effectively what the algorithm originally picked
  *  (there was no override mechanism yet when it was recorded). */
-export function viterbiPickOf(ann: SessionAnnotation): AnnotationAlternate {
+export function viterbiPickOf(ann: Detection): DetectionAlternate {
   return ann.viterbiPick ?? {
     tuneId: ann.tuneId, settingId: ann.settingId, displayName: ann.displayName,
     dance: ann.dance, meter: ann.meter, meanScore: ann.meanScore,
   };
 }
 
-/** What choosing an identity writes onto an annotation.
+/** What choosing an identity writes onto a detection.
  *
  *  A tune — ANY of them, the algorithm's own current pick included — means the
  *  user has looked at this detection and vouched for it: the identity freezes
- *  and the annotation can no longer be retracted. Confirming what the
+ *  and the detection can no longer be retracted. Confirming what the
  *  algorithm already said is the common case, not a no-op: it is the whole
  *  point of being able to confirm a result.
  *
- *  `null` is the way back: the annotation returns to displaying whatever the
+ *  `null` is the way back: the detection returns to displaying whatever the
  *  decoder currently picks, and to being the decoder's to revise. */
 export function alternatePickFields(
-  ann: SessionAnnotation,
-  pick: AnnotationAlternate | null,
-): Pick<SessionAnnotation, 'tuneId' | 'settingId' | 'displayName' | 'dance' | 'meter' | 'userConfirmed'> {
+  ann: Detection,
+  pick: DetectionAlternate | null,
+): Pick<Detection, 'tuneId' | 'settingId' | 'displayName' | 'dance' | 'meter' | 'userConfirmed'> {
   const chosen = pick ?? viterbiPickOf(ann);
   return {
     tuneId: chosen.tuneId,

@@ -3,7 +3,7 @@ import { getContext } from '../store';
 import { t } from '../services/i18nService';
 import type { AppContext } from '../types';
 import { loadSessionMeta } from '../session/db';
-import type { RecordedSession } from '../session/model';
+import type { Analysis } from '../session/model';
 import { activeLive, activeImport } from '../session/ui/sessionStore';
 import { SessionLibrary } from '../session/ui/SessionLibrary';
 import { LiveSessionScreen } from '../session/ui/LiveSession';
@@ -25,7 +25,7 @@ import { GearIcon } from '../components/icons';
 
 
 function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; sessionId: string; annotationId?: string }) {
-  const [session, setSession] = useState<RecordedSession | null>(null);
+  const [session, setSession] = useState<Analysis | null>(null);
 
   // Keyed on sessionId alone (not e.g. a generation counter) is deliberate:
   // re-analyzing an existing session can navigate here again with the SAME

@@ -1,5 +1,5 @@
 import type { Card } from '../types';
-import { TUNE_ANALYSER_MODULE_KEY, type RecordedSession, type SessionAnnotation, type TuneAnalyserModuleData } from './model';
+import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection, type TuneAnalyserModuleData } from './model';
 
 // ── "Detected in": the sessions where a card's tune was recognised ────────────
 // The third twin of cardRefService's findBacklinks/findSetsContaining, and for
@@ -17,7 +17,7 @@ export interface CardDetection {
    *  link seeks to when there is audio to seek. */
   start: number;
   confirmed: boolean;
-  bucket: SessionAnnotation['bucket'];
+  bucket: Detection['bucket'];
   confidence: number;
 }
 
@@ -47,9 +47,9 @@ export function theSessionTuneId(card: Card): string | null {
 /** Every session that recognised this card's tune, newest session first, each
  *  with its detections in playing order.
  *
- *  Matching is on the annotation's OWN `tuneId`, which is the displayed
+ *  Matching is on the detection's OWN `tuneId`, which is the displayed
  *  identity: where the user corrected a detection, the correction is what
- *  counts, not the algorithm's first answer. An annotation that has since been
+ *  counts, not the algorithm's first answer. A detection that has since been
  *  re-identified as another tune therefore leaves this list, which is the point
  *  of deriving rather than storing.
  *
@@ -57,7 +57,7 @@ export function theSessionTuneId(card: Card): string | null {
  *  few dozen detections. Deliberately not indexed: an index would be a second
  *  copy of a fact, with every add, delete, re-analysis and correction to
  *  maintain, for a scan that costs nothing at the moment a card is opened. */
-export function findCardDetections(card: Card, sessions: Record<string, RecordedSession>): CardDetectionGroup[] {
+export function findCardDetections(card: Card, sessions: Record<string, Analysis>): CardDetectionGroup[] {
   const tuneId = theSessionTuneId(card);
   if (tuneId === null) return [];
 
@@ -91,6 +91,6 @@ export function detectionsOnCards(user: { modules?: Record<string, unknown> }): 
 
 /** The module's slice of a user blob — read here rather than through db.ts so
  *  this stays a pure function of state, testable without a database. */
-export function sessionsOf(user: { modules?: Record<string, unknown> }): Record<string, RecordedSession> {
+export function sessionsOf(user: { modules?: Record<string, unknown> }): Record<string, Analysis> {
   return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.sessions ?? {};
 }

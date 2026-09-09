@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { annotationsAt, withGaps, headPosition } from './timelineModel';
-import type { SessionAnnotation } from '../model';
+import { detectionsAt, withGaps, headPosition } from './timelineModel';
+import type { Detection } from '../model';
 
-const ann = (id: string, start: number, end: number | null): SessionAnnotation => ({
+const ann = (id: string, start: number, end: number | null): Detection => ({
   id, tuneId: id, settingId: id, displayName: id, dance: 'reel', meter: '4/4',
   start, end, confidence: 0.9, bucket: 'high', meanScore: 0.5, evidence: [], alternates: [],
   viterbiPick: { tuneId: id, settingId: id, displayName: id, dance: 'reel', meter: '4/4', meanScore: 0.5 },
@@ -15,20 +15,20 @@ describe('what the play head covers', () => {
   const overlapping = [ann('a', 0, 70), ann('b', 60, 130)];
 
   it('reports BOTH tunes across a join rather than picking one', () => {
-    expect(annotationsAt(overlapping, 65, 130)).toEqual(['a', 'b']);
+    expect(detectionsAt(overlapping, 65, 130)).toEqual(['a', 'b']);
   });
 
   it('reports the one tune everywhere else', () => {
-    expect(annotationsAt(overlapping, 10, 130)).toEqual(['a']);
-    expect(annotationsAt(overlapping, 100, 130)).toEqual(['b']);
+    expect(detectionsAt(overlapping, 10, 130)).toEqual(['a']);
+    expect(detectionsAt(overlapping, 100, 130)).toEqual(['b']);
   });
 
   it('reports nothing in a hole, rather than the last thing it saw', () => {
-    expect(annotationsAt([ann('a', 0, 30), ann('b', 90, 120)], 60, 120)).toEqual([]);
+    expect(detectionsAt([ann('a', 0, 30), ann('b', 90, 120)], 60, 120)).toEqual([]);
   });
 
-  it('reads an open annotation as running to the end', () => {
-    expect(annotationsAt([ann('a', 0, null)], 500, 600)).toEqual(['a']);
+  it('reads an open detection as running to the end', () => {
+    expect(detectionsAt([ann('a', 0, null)], 500, 600)).toEqual(['a']);
   });
 });
 

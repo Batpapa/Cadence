@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import type { ImportSession, ImportProgress } from '../importSession';
-import type { SessionAnnotation } from '../model';
-import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
+import type { Detection } from '../model';
+import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import {
@@ -15,14 +15,14 @@ import { useThrottled } from './throttle';
 
 // ── Screen: file import ───────────────────────────────────────────────────────
 // Turns an audio file into a full session: same recognition pipeline as live,
-// faster than real time, with progress + ETA. The annotation feed reuses the
+// faster than real time, with progress + ETA. The detection feed reuses the
 // live cards — watching them appear in accelerated time is the point.
 //
 // `imp.setCallbacks({...})` is a single-registration API (each call REPLACES
 // the previous callbacks, not additive) — this component is the ONE place
 // that calls it, fanning updates out to local state.
 //
-// Uses <AnnotationCard>/<PitchShiftControl> directly as JSX. Earlier
+// Uses <DetectionCard>/<PitchShiftControl> directly as JSX. Earlier
 // versions of this component mounted them via a synchronous Preact render()
 // call from inside a useMemo instead — reentrant (a render() call during
 // another component's own render pass) and it corrupted Preact's hooks
@@ -47,7 +47,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     return t('sessions.initializing');
   });
   const [progress, setProgress] = useState<{ analyzedS: number; totalS: number; etaS: number | null }>({ analyzedS: 0, totalS: 0, etaS: null });
-  const [annotations, setAnnotations] = useState<SessionAnnotation[]>(() => (imp.getPhase() === 'analyzing' ? imp.getAnnotations() : []));
+  const [annotations, setDetections] = useState<Detection[]>(() => (imp.getPhase() === 'analyzing' ? imp.getDetections() : []));
   const [playingId, setPlayingId] = useState<string | null>(null);
 
 
@@ -74,7 +74,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   const sliceEndRef = useRef(0);
   playingIdRef.current = playingId;
 
-  const playSlice = (ann: SessionAnnotation) => {
+  const playSlice = (ann: Detection) => {
     if (playingId === ann.id) { audio.pause(); return; }
     sliceEndRef.current = ann.end ?? Number.POSITIVE_INFINITY;
     audio.currentTime = ann.start;
@@ -83,7 +83,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   };
 
   // Latest known total duration, for the clip-filename fallback only — a
-  // finalized annotation (the only ones offered clip extraction below)
+  // finalized detection (the only ones offered clip extraction below)
   // always has a concrete `end`, so this is never actually load-bearing, just
   // satisfying ClipSessionRef's shape.
   const impRef = (): ClipSessionRef => ({ id: imp.sessionId, name: imp.name || imp.defaultName(), date: imp.dateOverride, duration: progress.totalS });
@@ -96,7 +96,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   // its `transition-[width] duration-200` very nearly bridges the 250ms between
   // updates. Change one and look at the other.
   const onProgress = useThrottled((p: ImportProgress) => setProgress(p));
-  const onAnnotations = useThrottled((all: SessionAnnotation[]) => setAnnotations(all));
+  const onDetections = useThrottled((all: Detection[]) => setDetections(all));
 
   useEffect(() => {
     imp.setCallbacks({
@@ -107,27 +107,27 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       },
       onIndexProgress: p => setStatusText(indexProgressText(p)),
       onProgress,
-      onAnnotations: (_events, all) => onAnnotations(all),
+      onDetections: (_events, all) => onDetections(all),
       onError: (message) => setStatusText(`⚠ ${message}`),
     });
     // First render happens just before start() (phase 'idle'), or as a
     // re-entry after the modal was closed and reopened mid-import — matches
     // the lazy useState initializers above, this just covers a genuine
     // re-entry racing with a phase change between mount and this effect.
-    if (imp.getPhase() === 'analyzing') setAnnotations(imp.getAnnotations());
+    if (imp.getPhase() === 'analyzing') setDetections(imp.getDetections());
     // eslint-disable-next-line
   }, []);
 
-  const cardOptsFor = (ann: SessionAnnotation): AnnotationCardOptions => ({
+  const cardOptsFor = (ann: Detection): DetectionCardOptions => ({
     ctx,
     onPlay: importPlaybackWarn.value ? undefined : playSlice,
     playingId,
     onOpenCard,
-    onCardAdded: () => setAnnotations(imp.getAnnotations()),
+    onCardAdded: () => setDetections(imp.getDetections()),
     getPinnedDeckIds: () => imp.pinnedDeckIds,
-    onToggleLike: (id) => { imp.toggleLike(id); setAnnotations(imp.getAnnotations()); },
-    onSelectAlternate: (id, pick) => { imp.selectAlternate(id, pick); setAnnotations(imp.getAnnotations()); },
-    getLatestAnnotation: (id) => imp.getAnnotations().find(a => a.id === id),
+    onToggleLike: (id) => { imp.toggleLike(id); setDetections(imp.getDetections()); },
+    onSelectAlternate: (id, pick) => { imp.selectAlternate(id, pick); setDetections(imp.getDetections()); },
+    getLatestDetection: (id) => imp.getDetections().find(a => a.id === id),
     // Clip extraction only once finalized: the full file is already sitting
     // right there in imp.file from the very first instant, unlike a live
     // recording — no reason to make the user wait for the whole import to
@@ -139,10 +139,10 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         <BoundControls
           ann={ann}
           getDuration={() => progress.totalS}
-          refresh={() => setAnnotations([...imp.getAnnotations()])}
+          refresh={() => setDetections([...imp.getDetections()])}
           previewBound={(tSec) => { audio.currentTime = Math.max(0, tSec); void audio.play().catch(() => { /* not loaded yet */ }); setTimeout(() => audio.pause(), 3000); }}
         />
-        <ClipControls ann={ann} session={impRef()} audioAvailable={true} getAudio={async () => imp.file} ctx={ctx} onAttached={() => setAnnotations([...imp.getAnnotations()])} />
+        <ClipControls ann={ann} session={impRef()} audioAvailable={true} getAudio={async () => imp.file} ctx={ctx} onAttached={() => setDetections([...imp.getDetections()])} />
       </div>
     ) : undefined,
   });
@@ -184,7 +184,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       {importPlaybackWarn.value && <p class="text-xs text-amber-500 mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
 
       <div ref={feedAnchorRef} class="mt-3 space-y-2">
-        {annotations.map(ann => <AnnotationCard key={ann.id} ann={ann} opts={cardOptsFor(ann)} />)}
+        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOptsFor(ann)} />)}
       </div>
     </>
   );

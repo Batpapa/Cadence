@@ -1,18 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { compareSessionsForLibrary } from './db';
-import type { RecordedSession } from './model';
+import type { Analysis } from './model';
 
 // The library's order is the whole answer to "which of these thirty recordings
 // is the one I want" — the default name no longer carries a date, so the list's
 // order and its date column are all there is to go on.
 
-function session(name: string, date: string | null): RecordedSession {
+function session(name: string, date: string | null): Analysis {
   return {
     id: name, name, date, duration: 60, mimeType: 'audio/webm', source: 'live', annotations: [],
   };
 }
 
-const order = (list: RecordedSession[]) =>
+const order = (list: Analysis[]) =>
   [...list].sort(compareSessionsForLibrary).map(s => s.name);
 
 describe('library order', () => {

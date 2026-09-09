@@ -4,7 +4,7 @@ import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
-import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent, AnnotationAlternate } from './model';
+import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
 import { alternatePickFields } from './model';
 import type { IndexProgress } from './recognition/indexStore';
 
@@ -65,7 +65,7 @@ export interface ImportSessionCallbacks {
   onPhase?: (phase: ImportPhase) => void;
   onIndexProgress?: (p: IndexProgress) => void;
   onProgress?: (p: ImportProgress) => void;
-  onAnnotations?: (events: AnnotationEvent[], all: SessionAnnotation[]) => void;
+  onDetections?: (events: DetectionEvent[], all: Detection[]) => void;
   onError?: (message: string) => void;
 }
 
@@ -78,7 +78,7 @@ export class ImportSession {
   private recognition: RecognitionClient | null = null;
   private source: PcmSource | null = null;
   private wakeLock = new WakeLockManager();
-  private annotations = new Map<string, SessionAnnotation>();
+  private annotations = new Map<string, Detection>();
   /** Raw per-window results — the detectionTemporalConfig.ts calibration dump. */
   readonly windows: WindowResult[] = [];
   private cancelRequested = false;
@@ -101,14 +101,17 @@ export class ImportSession {
    *  re-analyzing an existing session (sessionModule.ts's startReanalyze), so
    *  a live recording re-processed this way still shows as "live" in the
    *  library, not "import". null = the normal fresh-import behavior. */
-  sourceOverride: RecordedSession['source'] | null = null;
+  sourceOverride: Analysis['source'] | null = null;
   /** Decks PINNED in the deck choice modal while this import is open — they
    *  come back ticked on the next add or link, and that is all they do. Purely
    *  in-memory and never persisted: picking a destination is a decision about
    *  right now, not a preference (see components/deckSelector.tsx). */
   pinnedDeckIds: Set<string> = new Set();
-  /** Manual transposition (semitones, -12..12) applied to the ongoing
-   *  analysis — e.g. a file recorded in Bb. In-memory only. */
+  /** Manual transposition (semitones, -12..12) applied to the ongoing analysis.
+   *  ENGINE sign: positive raises the transcribed contour to meet an index held
+   *  at written pitch, so a recording a tone DOWN is +2 here — the opposite of
+   *  what a musician says, flipped for display in PitchShiftControl.tsx.
+   *  In-memory only. */
   pitchShift = 0;
 
   /** Live-adjustable: affects analysis windows from now on, not past ones. */
@@ -136,26 +139,26 @@ export class ImportSession {
 
   getPhase(): ImportPhase { return this.phase; }
 
-  getAnnotations(): SessionAnnotation[] {
+  getDetections(): Detection[] {
     return [...this.annotations.values()].sort((a, b) => a.start - b.start);
   }
 
   /** Closed annotations — what a partial keep after cancellation would retain. */
   getClosedCount(): number {
-    return this.getAnnotations().filter(a => a.end !== null).length;
+    return this.getDetections().filter(a => a.end !== null).length;
   }
 
   /**
    * Runs the full import. Returns the saved session, or null when cancelled —
    * call keepPartial() afterwards to save what was recognised anyway.
    */
-  async start(): Promise<RecordedSession | null> {
+  async start(): Promise<Analysis | null> {
     try {
       this.setPhase('initializing');
       this.recognition = new RecognitionClient(ANALYSIS_SAMPLE_RATE, {
         onIndexProgress: p => this.cb.onIndexProgress?.(p),
         onWindow: result => this.onWindow(result),
-        onAnnotations: events => this.applyEvents(events),
+        onDetections: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
       }, { hopS: HOP_S_IMPORT });
       if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
@@ -223,7 +226,7 @@ export class ImportSession {
   }
 
   /** After a cancellation: save the partially analysed session anyway. */
-  async keepPartial(): Promise<RecordedSession> {
+  async keepPartial(): Promise<Analysis> {
     this.setPhase('saving');
     return this.save();
   }
@@ -239,7 +242,7 @@ export class ImportSession {
     this.cb.onProgress?.({ analyzedS, totalS, etaS });
   }
 
-  private applyEvents(events: AnnotationEvent[]): void {
+  private applyEvents(events: DetectionEvent[]): void {
     for (const ev of events) {
       if (ev.type === 'retract') {
         // A guess the user hasn't touched never got confirmed — remove it
@@ -248,10 +251,10 @@ export class ImportSession {
         if (!this.annotations.get(ev.id)?.userConfirmed) this.annotations.delete(ev.id);
         continue;
       }
-      const existing = this.annotations.get(ev.annotation.id);
+      const existing = this.annotations.get(ev.detection.id);
       if (existing?.userConfirmed) {
-        this.annotations.set(ev.annotation.id, {
-          ...ev.annotation,
+        this.annotations.set(ev.detection.id, {
+          ...ev.detection,
           tuneId: existing.tuneId,
           settingId: existing.settingId,
           displayName: existing.displayName,
@@ -263,10 +266,10 @@ export class ImportSession {
       } else {
         // The aggregator never knows about the like marker — carry it forward
         // across updates the same as any other user choice.
-        this.annotations.set(ev.annotation.id, { ...ev.annotation, liked: existing?.liked ?? false });
+        this.annotations.set(ev.detection.id, { ...ev.detection, liked: existing?.liked ?? false });
       }
     }
-    this.cb.onAnnotations?.(events, this.getAnnotations());
+    this.cb.onDetections?.(events, this.getDetections());
   }
 
   /** Toggle the "I liked this tune" marker — no bearing on recognition. */
@@ -276,9 +279,9 @@ export class ImportSession {
     this.annotations.set(annotationId, { ...ann, liked: !ann.liked });
   }
 
-  /** Records the user's verdict on this annotation's identity — see
+  /** Records the user's verdict on this detection's identity — see
    *  LiveSession's identical method for the full doc. */
-  selectAlternate(annotationId: string, pick: AnnotationAlternate | null): void {
+  selectAlternate(annotationId: string, pick: DetectionAlternate | null): void {
     const ann = this.annotations.get(annotationId);
     if (!ann) return;
     this.annotations.set(annotationId, { ...ann, ...alternatePickFields(ann, pick) });
@@ -289,18 +292,18 @@ export class ImportSession {
     return this.file.name.replace(/\.[^.]+$/, '');
   }
 
-  private async save(): Promise<RecordedSession> {
+  private async save(): Promise<Analysis> {
     this.setPhase('saving');
-    // this.getAnnotations() is now trustworthy as the FINAL result, not just
+    // this.getDetections() is now trustworthy as the FINAL result, not just
     // a live snapshot: viterbiSegmenter.ts only marks a segment `finalized`
     // once ViterbiResult.convergedThroughIndex (an exact, provable property
     // of the Viterbi decode — see its doc) shows no future window could ever
     // revise it, rather than the old finalizationLagSeconds time guess. A
     // finished import therefore already matches what a from-scratch
-    // recomputeAnnotations() replay (still used by recovery.ts for crash
-    // recovery, where the live annotation map is gone) would produce — no
+    // recomputeDetections() replay (still used by recovery.ts for crash
+    // recovery, where the live detection map is gone) would produce — no
     // need to pay for that extra replay here too (2026-08-21).
-    const session: RecordedSession = {
+    const session: Analysis = {
       id: this.sessionId,
       name: this.name || this.defaultName(),
       // No trustworthy t=0 for a file (mtime survives transfers erratically):
@@ -313,7 +316,7 @@ export class ImportSession {
       duration: Math.max(this.source!.duration!, this.analyzedDurationS),
       mimeType: this.file.type || 'application/octet-stream',
       source: this.sourceOverride ?? 'import',
-      annotations: this.getAnnotations(),
+      annotations: this.getDetections(),
     };
     // Store the original file untouched: no webm duration bug, native seeking.
     await saveSessionAudio(session.id, this.file);

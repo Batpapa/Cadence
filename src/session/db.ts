@@ -1,7 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import {
   TUNE_ANALYSER_MODULE_KEY,
-  type RecordedSession, type SyncedAudio, type TuneAnalyserModuleData, type WindowResult,
+  type Analysis, type SyncedAudio, type TuneAnalyserModuleData, type WindowResult,
 } from './model';
 import { generatedSessionName } from './sessionNaming';
 
@@ -42,6 +42,53 @@ function driveModule(): Promise<typeof import('../services/driveService')> {
 //    the (large) downloaded FolkFriend/TheSession tune index. Not personal
 //    data, so it's kept shared across every local user rather than
 //    re-downloaded per user.
+//
+// ── Why the storage says "session" and the rest of the app says "analysis" ────
+// Deliberate, decided 2026-09-09. Read this before "fixing" any name below.
+//
+// The product vocabulary was settled that day and the UI and types follow it
+// everywhere: an ANALYSIS is the persistent object; its AUDIO is the sound,
+// optional and detachable; its DETECTIONS are the recognition results;
+// ANALYSING is the process, RECORDING the act of acquiring sound. The word
+// "session" was dropped outright — it names a real event in Irish music
+// (players in a pub), and asserting that was false for an album, a concert or
+// an imported file, which are exactly the same object here.
+//
+// The STORAGE KEYS were deliberately left behind: the databases and stores
+// named just above, `TUNE_ANALYSER_MODULE_KEY`, `TuneAnalyserModuleData.
+// sessions` and `Analysis.annotations`. Not an oversight, and not laziness —
+// the two storage kinds each have their own reason.
+//
+// IndexedDB (local): a migration would be honest — versioned, transactional,
+// one device, the `upgrade` hook already exists. The cost is the COPY. There is
+// no rename API for a database or a store: you open the new one, copy every
+// record, then delete the old. The per-user database holds the AUDIO, which
+// runs to gigabytes, so the migration transiently doubles the footprint on a
+// phone, against a quota that is entitled to refuse — and a refusal midway has
+// to leave the original untouched. Real work, real failure mode, for a name.
+//
+// The synced blob (`sessions`, `annotations`): structurally worse, and this is
+// the part that settles it. That blob is a SHARED MUTABLE DOCUMENT on Drive,
+// and there is no instant at which every reader is upgraded — the service
+// worker keeps its bundle, a device can sit on an old one for days. Device A,
+// updated, migrates and writes `detections`; device B, not yet updated, reads
+// the same file, finds no `annotations`, shows zero results — and writes back.
+// The version/counter machinery from 2026-08-31 guards against two concurrent
+// WRITERS, not against a reader that cannot understand the shape; it would
+// reconcile the two happily. That is the exact silhouette of the data loss
+// that machinery was built after.
+//
+// Doing it safely means the three-phase dance: ship "read both, write old",
+// wait for the fleet, ship "read both, write new", then months later drop the
+// old read. Three deploys during which the code carries BOTH names — less
+// legible than the single frozen name it was meant to improve. (The project
+// already pays that toll once: decideReconcile's transitional branch, due out
+// around 2026-11-30.) A cosmetic gain does not buy that.
+//
+// So: the boundary is the disk. Above it the code says analysis/detection;
+// at it and below, the keys say what they have always said. Do not "finish
+// the job" — see the frozen-name comments in model.ts.
+//
 // Works in both window and worker contexts — kvGet/kvSet run inside the
 // FolkFriend worker (ffWorker.ts → indexStore.ts), everything else runs on
 // the main thread (liveSession.ts, importSession.ts, recovery.ts, …), which
@@ -53,7 +100,7 @@ const SHARED_DB_VERSION = 1;
 const KV_STORE = 'kv'; // tune index + metadata
 
 const LOCAL_DB_VERSION = 1;
-const DRAFT_STORE   = 'draft';   // session id → RecordedSession (status:'recording' only — see saveSessionMeta)
+const DRAFT_STORE   = 'draft';   // session id → Analysis (status:'recording' only — see saveSessionMeta)
 const AUDIO_STORE   = 'audio';   // session id → Blob
 const WINDOWS_STORE = 'windows'; // session id → WindowResult[] (in-progress live recordings only)
 const CHUNKS_STORE  = 'chunks';  // in-flight recording chunks (crash recovery)
@@ -160,7 +207,7 @@ async function localDb(): Promise<IDBPDatabase> {
  *  every read passes through is what lets everything downstream simply print
  *  `session.name` — see sessionNaming.ts. Recovery-finalized drafts arrive here
  *  the same way. */
-function migrateSession(s: RecordedSession | undefined): RecordedSession | undefined {
+function migrateSession(s: Analysis | undefined): Analysis | undefined {
   if (!s) return s;
   if (s.source === undefined) s.source = 'live';
   if (!s.name) s.name = generatedSessionName(s.source, s.date);
@@ -204,13 +251,13 @@ function migrateSession(s: RecordedSession | undefined): RecordedSession | undef
  *  migrated) resolves almost instantly — a couple of existence checks and
  *  nothing more to do. */
 async function migrateToFinalShape(userId: string): Promise<void> {
-  const migratedMeta: Record<string, RecordedSession> = {};   // finalized → AppState.modules
-  const migratedDrafts: Record<string, RecordedSession> = {}; // status:'recording' → local DRAFT_STORE, never AppState
+  const migratedMeta: Record<string, Analysis> = {};   // finalized → AppState.modules
+  const migratedDrafts: Record<string, Analysis> = {}; // status:'recording' → local DRAFT_STORE, never AppState
   const migratedAudio: Array<[string, Blob]> = [];
   const migratedWindows: Array<[string, WindowResult[]]> = [];
   const migratedChunks: unknown[] = [];
 
-  const sortMetaRow = (k: string, v: RecordedSession) => {
+  const sortMetaRow = (k: string, v: Analysis) => {
     if (v.status === 'recording') migratedDrafts[k] = v;
     else                           migratedMeta[k] = v;
   };
@@ -229,7 +276,7 @@ async function migrateToFinalShape(userId: string): Promise<void> {
         keys.forEach((k, i) => {
           if (k.endsWith(':audio'))        migratedAudio.push([k.slice(0, -':audio'.length), values[i] as Blob]);
           else if (k.endsWith(':windows')) migratedWindows.push([k.slice(0, -':windows'.length), values[i] as WindowResult[]]);
-          else                              sortMetaRow(k, values[i] as RecordedSession);
+          else                              sortMetaRow(k, values[i] as Analysis);
         });
       }
       if (perUser.objectStoreNames.contains(CHUNKS_STORE)) {
@@ -253,7 +300,7 @@ async function migrateToFinalShape(userId: string): Promise<void> {
     keys.forEach((k, i) => {
       if (k.endsWith(':audio'))        migratedAudio.push([k.slice(0, -':audio'.length), values[i] as Blob]);
       else if (k.endsWith(':windows')) migratedWindows.push([k.slice(0, -':windows'.length), values[i] as WindowResult[]]);
-      else                              sortMetaRow(k, values[i] as RecordedSession);
+      else                              sortMetaRow(k, values[i] as Analysis);
     });
   }
   if (shared.objectStoreNames.contains(CHUNKS_STORE)) {
@@ -423,7 +470,7 @@ async function moduleData(): Promise<TuneAnalyserModuleData> {
  *  session is actually finalized (status absent/'done' — a clean stop() or a
  *  recovery.ts crash-recovery finalize) does it get "promoted" into the
  *  synced AppState.modules, and any local draft row for it is cleared. */
-export async function saveSessionMeta(session: RecordedSession): Promise<void> {
+export async function saveSessionMeta(session: Analysis): Promise<void> {
   if (session.status === 'recording') {
     await (await localDb()).put(DRAFT_STORE, session, session.id);
     return;
@@ -438,7 +485,7 @@ export async function saveSessionMeta(session: RecordedSession): Promise<void> {
   await (await localDb()).delete(DRAFT_STORE, session.id); // superseded by the finalized copy above
 }
 
-export async function loadSessionMeta(sessionId: string): Promise<RecordedSession | undefined> {
+export async function loadSessionMeta(sessionId: string): Promise<Analysis | undefined> {
   const finalized = (await moduleData()).sessions[sessionId];
   if (finalized) return migrateSession(finalized);
   return migrateSession(await (await localDb()).get(DRAFT_STORE, sessionId));
@@ -463,7 +510,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
 
 /** Finalized sessions only (what the library shows) — see saveSessionMeta's
  *  doc for why an in-progress draft never shows up here. */
-export async function listSessions(): Promise<RecordedSession[]> {
+export async function listSessions(): Promise<Analysis[]> {
   const sessions = Object.values((await moduleData()).sessions).map(s => migrateSession(s)!);
   return sessions.sort(compareSessionsForLibrary);
 }
@@ -479,7 +526,7 @@ export async function listSessions(): Promise<RecordedSession[]> {
  *
  *  Exported for its test — it is the one piece of listSessions that has a rule
  *  worth stating, and the rest of that function needs a store to run at all. */
-export function compareSessionsForLibrary(a: RecordedSession, b: RecordedSession): number {
+export function compareSessionsForLibrary(a: Analysis, b: Analysis): number {
   if (a.date && b.date) return b.date.localeCompare(a.date);
   if (a.date) return -1;
   if (b.date) return 1;
@@ -489,8 +536,8 @@ export function compareSessionsForLibrary(a: RecordedSession, b: RecordedSession
 /** In-progress recording drafts (status:'recording') — used exclusively by
  *  recovery.ts to find orphans left behind by a crash/refresh; never shown
  *  directly in the library (see saveSessionMeta's doc). */
-export async function listDraftSessions(): Promise<RecordedSession[]> {
-  const sessions = await (await localDb()).getAll(DRAFT_STORE) as RecordedSession[];
+export async function listDraftSessions(): Promise<Analysis[]> {
+  const sessions = await (await localDb()).getAll(DRAFT_STORE) as Analysis[];
   return sessions.map(s => migrateSession(s)!);
 }
 
@@ -661,10 +708,10 @@ export async function forgetSessionAudio(sessionId: string): Promise<void> {
 
 /** Raw per-window recognition results for an in-progress LIVE recording
  *  (2026-08-15) — recovery.ts replays these through a fresh
- *  IncrementalViterbiSegmenter instead of trusting a persisted annotation
+ *  IncrementalViterbiSegmenter instead of trusting a persisted detection
  *  snapshot, so a crash mid-session can never resurrect a short-lived,
  *  never-confirmed guess (which the live snapshot could contain at any given
- *  instant) as a "real" finalized annotation. Overwritten wholesale on every
+ *  instant) as a "real" finalized detection. Overwritten wholesale on every
  *  persistDraft() call, same as the audio blob and the metadata row —
  *  simplest correct thing, not bounded, per the same "recompute is cheap
  *  enough" call made throughout this feature. Local-only, never synced — a
