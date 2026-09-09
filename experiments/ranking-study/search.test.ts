@@ -102,10 +102,25 @@ function report(outcomes: Outcome[], label: string): void {
       + `| ${o.floor.toFixed(4).padStart(8)} | ${String(o.minSeg).padStart(6)} | ${o.confirm.padEnd(11)} | ${w(o.weights)}`);
   }
 
-  // Production is (177, 10) on these six sessions. Anything reaching both is a
-  // strict improvement rather than a trade.
-  const better = outcomes.filter(o => o.found >= 177 && o.fp <= 10).sort((a, b) => b.found - a.found || a.fp - b.fp);
-  console.log(`\n  configurations dominant la production (>=177 morceaux, <=10 faux positifs) : ${better.length}`);
+  // Anything reaching BOTH production numbers is a strict improvement rather
+  // than a trade. The pair is keyed by corpus size instead of written as a bare
+  // literal, because it silently went stale once: the (177, 10) of the
+  // six-session corpus survived the arrival of Audio F and kept printing a
+  // headline that counted winners against a bar two thirds too low. `total` is
+  // carried by every evaluation, so an unknown corpus now says so rather than
+  // flattering itself.
+  const PRODUCTION: Record<number, { found: number; fp: number }> = {
+    192: { found: 177, fp: 10 },   // six sessions, before Audio F
+    341: { found: 312, fp: 20 },   // seven sessions; measured by threshold-sweep at floor 0.20, 2026-09-09
+  };
+  const corpus = outcomes[0]!.total;
+  const prod = PRODUCTION[corpus];
+  if (!prod) {
+    console.log(`\n  (corpus de ${corpus} morceaux inconnu — repere de production a mesurer avant de comparer)`);
+    return;
+  }
+  const better = outcomes.filter(o => o.found >= prod.found && o.fp <= prod.fp).sort((a, b) => b.found - a.found || a.fp - b.fp);
+  console.log(`\n  configurations dominant la production (>=${prod.found} morceaux, <=${prod.fp} faux positifs) : ${better.length}`);
   for (const o of better.slice(0, 12)) {
     console.log(`    ${o.found}/${o.total} fp=${o.fp} bruit=${o.noise} couv=${(o.coverage * 100).toFixed(0)}% | ${o.transform} plat=${o.flat ? 'on' : 'off'} `
       + `plancher=${o.floor.toFixed(4)} minSeg=${o.minSeg} conf=${o.confirm} | ${w(o.weights)}`);

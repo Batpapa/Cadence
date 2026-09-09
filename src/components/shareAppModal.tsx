@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { showModal, renderModalBody } from './modal';
 import { t } from '../services/i18nService';
-import { ShareIcon } from './icons';
+import { ShareIcon, WhatsAppIcon, ExternalLinkIcon } from './icons';
 
 // ── "Share Cadence" ──────────────────────────────────────────────────────────
 // From a festival report (2026-09-09): the address appeared NOWHERE in the
@@ -22,6 +22,13 @@ function appUrl(): string {
   const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href;
   return canonical || new URL('.', location.href).href;
 }
+
+/** The Cadence Community group. Handed over by the author on 2026-09-09; a
+ *  WhatsApp invite link stays valid until it is explicitly reset from the
+ *  group settings, at which point THIS LINE is the single place to change.
+ *  Not in i18n: it is an address, not a translated string, and duplicating it
+ *  per locale is how one copy quietly goes stale. */
+const COMMUNITY_URL = 'https://chat.whatsapp.com/IrkMyOn07niE9Xjvtj6qKQ';
 
 const PLATE_PX = 216;
 /** Modules the QR spec wants clear all around the symbol. Scanners genuinely
@@ -123,6 +130,63 @@ function ShareAppBody() {
           {t('shareApp.share')}
         </button>
       )}
+
+      {/* A rule, because what follows is a different act from the three above:
+          they hand Cadence to someone standing next to you, this one joins a
+          group. Same modal all the same — "pass it on" and "come talk to us"
+          are the two things a person reaches for after a good session, and a
+          second entry point in the header would cost more than it returns. */}
+      <div class="h-px bg-border" />
+
+      {/* Tinted WhatsApp green rather than the theme accent, same exception and
+          same reason as WhatsAppIcon in icons.tsx: the colour is a promise about
+          where the link goes.
+          These four values are Tailwind arbitrary classes and NOT an inline
+          `style`, despite being one-off colours. An inline style would win on
+          specificity over any `hover:` class, so the card would simply never
+          light up — the rest state has to live in a class for the hover state to
+          be able to replace it. */}
+      <a
+        href={COMMUNITY_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="flex flex-col gap-3 rounded-[10px] p-3.5 border transition-colors
+               border-[rgba(37,211,102,.28)] bg-[rgba(37,211,102,.07)]
+               hover:border-[rgba(37,211,102,.6)] hover:bg-[rgba(37,211,102,.12)]"
+      >
+        {/* items-START, not center. An earlier version centred the badge against
+            the whole block, so when the hint wrapped to a second line the badge
+            landed opposite the gap between the two and the row read as crooked.
+            Centring only ever looks right at one exact line count, which no
+            translated string can be relied on to hold. Anchored to the title,
+            the row survives any number of hint lines. */}
+        <span class="flex items-start gap-2.5">
+          {/* Nudged down to sit on the title's optical centre rather than its
+              cap height, which reads as aligned where a flush top does not. */}
+          <span class="shrink-0 mt-px"><WhatsAppIcon size={32} /></span>
+          <span class="flex-1 min-w-0">
+            <span class="block text-sm font-medium text-primary">{t('shareApp.community')}</span>
+            {/* text-pretty, because at 20rem the hint wraps and the default
+                algorithm is happy to leave one word alone on the last line. */}
+            <span class="block text-xs text-muted leading-snug text-pretty">
+              {t('shareApp.communityHint')}
+            </span>
+          </span>
+        </span>
+
+        {/* A span, not a button: it already sits inside the anchor, and nesting
+            interactive elements is invalid and breaks keyboard navigation.
+            Very dark green on the brand green, NOT white — white on #25D366 is
+            1.98:1 and unreadable, this pairing is 7.4:1. Inline style is safe
+            here precisely because this element has no hover state of its own. */}
+        <span
+          class="flex items-center justify-center gap-1.5 rounded-md px-3 py-[7px] text-[13px] font-semibold"
+          style={{ background: '#25D366', color: '#062f16' }}
+        >
+          {t('shareApp.communityCta')}
+          <ExternalLinkIcon size={11} />
+        </span>
+      </a>
     </div>
   );
 }
