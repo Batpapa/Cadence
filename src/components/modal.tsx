@@ -66,6 +66,14 @@ export interface ModalOptions {
    *  look lost in it. Deliberately NOT remembered between openings: it is a
    *  way to look closer at what is on screen now, not a preference. */
   expandable?: boolean;
+  /** Turns the header title into a second level: a back arrow appears before
+   *  it, and the caller decides what going back means. For a modal whose body
+   *  navigates — an export picker whose formats open a sub-choice — so the
+   *  way out sits where every other modal puts its chrome, rather than as a
+   *  link the body has to draw for itself.
+   *  Set it after opening with `updateTopModal`, which is how a body that owns
+   *  the navigation state drives its own header. */
+  onBack?: () => void;
 }
 
 interface ModalEntry {
@@ -78,6 +86,7 @@ interface ModalEntry {
   onDismiss?: () => void;
   headerActions: ModalHeaderAction[];
   expandable: boolean;
+  onBack?: () => void;
 }
 
 let nextId = 0;
@@ -104,6 +113,18 @@ export function closeAllModals(): void {
   for (const entry of open) entry.onDismiss?.();
 }
 
+/** Changes the open modal's header after the fact. The body is mounted as a
+ *  detached element and renders in its own tree, so a body that navigates has
+ *  no other way to keep the shell's title and back arrow in step with what it
+ *  is showing. Only the header is patchable on purpose: the id, body and
+ *  actions are what the shell is keyed and laid out on. */
+export function updateTopModal(patch: { title?: string; onBack?: (() => void) | undefined }): void {
+  const stack = modalStack.value;
+  const top = stack[stack.length - 1];
+  if (!top) return;
+  modalStack.value = [...stack.slice(0, -1), { ...top, ...patch }];
+}
+
 export function showModal(title: string, body: HTMLElement, actions: ModalAction[], opts: ModalOptions = {}): void {
   modalStack.value = [...modalStack.value, {
     id: nextId++,
@@ -115,6 +136,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     onDismiss: opts.onDismiss,
     headerActions: opts.headerActions ?? [],
     expandable: opts.expandable ?? false,
+    onBack: opts.onBack,
   }];
 }
 
@@ -257,7 +279,19 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
         style={expanded ? undefined : { maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85) }}
       >
         <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 class="text-xs font-semibold text-muted uppercase tracking-widest truncate">{entry.title}</h2>
+          {/* Same shape as the card export modal, which is the reference:
+              arrow and title share a row, the title truncates, the arrow
+              never shrinks. */}
+          <div class="flex items-center gap-2 min-w-0">
+            {entry.onBack && (
+              <button
+                class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0"
+                title={t('modal.back')}
+                onClick={entry.onBack}
+              >←</button>
+            )}
+            <h2 class="text-xs font-semibold text-muted uppercase tracking-widest truncate">{entry.title}</h2>
+          </div>
           <div class="flex items-center gap-3 shrink-0">
             {entry.headerActions.map((action, i) => (
               <button

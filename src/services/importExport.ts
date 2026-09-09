@@ -1,5 +1,5 @@
-import type { AppState, Card, EmbedEntry } from '../types';
-import { toDateStr, generateId, arrayBufferToBase64 } from '../utils';
+import type { AppState, Card } from '../types';
+import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile } from '../utils';
 import { SCHEMA_VERSION, stampTuneType } from './migration';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -279,56 +279,105 @@ export async function parseImport(file: File): Promise<Record<string, unknown>> 
   return data;
 }
 
-/** CSV export — read-only, no reimport intended. */
-export function exportCardsCSV(cards: Card[], user: AppState): void {
-  const escape = (v: string): string => {
-    const s = v.replace(/\n|\r\n?/g, '\\n');
-    return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+// ── Read-only card exports ───────────────────────────────────────────────────
+// TXT and CSV carry the SAME fields, which is why they share `cardFacts` below
+// rather than each reaching into the card themselves. Two independent readers
+// drift the moment a field is added to one of them; one reader cannot.
 
-  const headers = ['Name', 'Tags', 'Decks', 'Importance per deck', 'Notes', 'External links', 'Review count', 'Reviews'];
-  const rows: string[][] = [headers];
+interface CardFacts {
+  name: string;
+  type: string;
+  tags: string;
+  decks: string;
+  importances: string;
+  tunes: string;
+  notes: string;
+  reviewCount: string;
+  reviews: string;
+}
 
-  for (const card of cards) {
-    const cardDecks = Object.values(user.decks).filter(d => d.entries.some(e => e.cardId === card.id));
-    const deckNames = cardDecks.map(d => d.name);
-    const deckImportances = cardDecks.map(d => {
+function cardFacts(card: Card, user: AppState): CardFacts {
+  const cardDecks = Object.values(user.decks).filter(d => d.entries.some(e => e.cardId === card.id));
+  const history = user.cardWorks[`${user.currentProfileId}:${card.id}`]?.history ?? [];
+  return {
+    name: card.name,
+    type: card.type ?? '',
+    tags: (card.tags ?? []).join('; '),
+    decks: cardDecks.map(d => d.name).join('; '),
+    importances: cardDecks.map(d => {
       const entry = d.entries.find(e => e.cardId === card.id);
       return entry?.importance !== undefined ? String(entry.importance) : '';
-    });
-    const embeds = (card.content.attachments ?? [])
-      .filter((a): a is { type: 'embed' } & EmbedEntry => a.type === 'embed')
-      .map(a => a.url);
-    const work = user.cardWorks[`${user.currentProfileId}:${card.id}`];
-    const history = work?.history ?? [];
-    const reviews = history.map(e => `${new Date(e.ts).toISOString().slice(0, 10)}:${e.rating}`);
+    }).join('; '),
+    // A set IS its list of members, so leaving this out exports a named empty
+    // container. Same rendering in both files.
+    tunes: (card.tunes ?? [])
+      .map(ref => `${ref.title}${ref.repeat && ref.repeat > 1 ? ` ×${ref.repeat}` : ''}`)
+      .join('; '),
+    notes: card.content.notes,
+    reviewCount: String(history.length),
+    reviews: history.map(e => `${new Date(e.ts).toISOString().slice(0, 10)}:${e.rating}`).join('; '),
+  };
+}
 
-    rows.push([
-      card.name,
-      (card.tags ?? []).join(';'),
-      deckNames.join(';'),
-      deckImportances.join(';'),
-      card.content.notes,
-      embeds.join(';'),
-      String(history.length),
-      reviews.join(';'),
-    ]);
+/** RFC 4180-ish: quote only when needed, double the quotes inside, and flatten
+ *  newlines rather than emitting a multi-line field. */
+function csvEscape(v: string): string {
+  const s = v.replace(/\n|\r\n?/g, '\\n');
+  return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** CSV export — read-only, no reimport intended. */
+export function exportCardsCSV(cards: Card[], user: AppState): void {
+  const rows: string[][] = [
+    ['Name', 'Type', 'Tags', 'Decks', 'Importance per deck', 'Tunes', 'Notes', 'Review count', 'Reviews'],
+  ];
+  for (const card of cards) {
+    const f = cardFacts(card, user);
+    rows.push([f.name, f.type, f.tags, f.decks, f.importances, f.tunes, f.notes, f.reviewCount, f.reviews]);
+  }
+  const csv = rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+  // BOM: without it Excel reads the file as the system codepage and mangles
+  // every accented card name.
+  downloadTextFile('﻿' + csv, `cadence-cards-${toDateStr(new Date())}.csv`, 'text/csv;charset=utf-8');
+}
+
+/** Plain-text export — the same fields as the CSV, laid out to be read rather
+ *  than parsed. Labels are English literals like the CSV's headers: an exported
+ *  file travels outside the app and is usually read somewhere other than the
+ *  exporting device's locale. */
+export function exportCardsTXT(cards: Card[], user: AppState): void {
+  const out: string[] = [
+    `Cadence — cards export — ${toDateStr(new Date())}`,
+    `${cards.length} card${cards.length === 1 ? '' : 's'}`,
+  ];
+
+  for (const card of cards) {
+    const f = cardFacts(card, user);
+    out.push('', '─'.repeat(60), f.name || '(untitled)');
+    // Only lines that carry something: a file full of empty "Tags:" rows is
+    // harder to skim than one that simply omits them.
+    const field = (label: string, value: string) => { if (value) out.push(`  ${(label + ':').padEnd(10)}${value}`); };
+    field('Type', f.type);
+    field('Tags', f.tags);
+    // The CSV keeps decks and their importances in two columns because a
+    // spreadsheet wants them separable; read by a human they belong together.
+    field('Decks', f.decks
+      ? f.decks.split('; ').map((d, i) => {
+        const imp = f.importances.split('; ')[i];
+        return imp ? `${d} (importance ${imp})` : d;
+      }).join('; ')
+      : '');
+    field('Tunes', f.tunes);
+    field('Reviews', f.reviewCount === '0' ? '' : `${f.reviewCount} — ${f.reviews}`);
+    if (f.notes.trim()) {
+      out.push('  Notes:');
+      for (const line of f.notes.split(/\r?\n/)) out.push(`    ${line}`);
+    }
   }
 
-  const csv = rows.map(row => row.map(escape).join(',')).join('\r\n');
-  downloadRaw('﻿' + csv, `cadence-cards-${toDateStr(new Date())}.csv`, 'text/csv;charset=utf-8');
+  downloadTextFile(out.join('\r\n'), `cadence-cards-${toDateStr(new Date())}.txt`, 'text/plain;charset=utf-8');
 }
 
 function download(json: string, filename: string): void {
-  downloadRaw(json, filename, 'application/json');
-}
-
-function downloadRaw(content: string, filename: string, mime: string): void {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(json, filename, 'application/json');
 }

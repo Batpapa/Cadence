@@ -165,7 +165,7 @@ export function DeckView({ deckId }: { deckId: string }) {
             ) : (
               <h1
                 class="text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors"
-                title="Click to rename"
+                title={t('common.clickToRename')}
                 onClick={() => { setEditName(deck.name); setIsEditingName(true); }}
               >
                 {deck.name}

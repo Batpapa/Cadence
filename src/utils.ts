@@ -157,6 +157,20 @@ export function base64ToBlob(base64: string, mimeType: string): Blob {
  *  these numbers exist to convey an order of magnitude, not an exact figure.
  *  Uses MB/GB in the everyday (1024-based) sense the rest of the app already
  *  displays. */
+/** Client-side "save as": a Blob URL, clicked once, revoked immediately.
+ *  Shared by every export in the app rather than re-typed in each — the revoke
+ *  is the part that gets forgotten when this is copied around, and a leaked
+ *  object URL pins its whole Blob in memory for the life of the document. */
+export function downloadTextFile(content: string, filename: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${Math.round(bytes)} B`;
   const units = ['kB', 'MB', 'GB', 'TB'];
