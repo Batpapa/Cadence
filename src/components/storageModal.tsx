@@ -3,7 +3,6 @@ import { useEffect, useState } from 'preact/hooks';
 import { showModal } from './modal';
 import { t } from '../services/i18nService';
 import { formatBytes } from '../utils';
-import { appState } from '../store';
 import { ensurePersistentStorage, storageReport, assessStorage, type StorageReport } from '../services/storageService';
 
 // ── "Where your data lives" ──────────────────────────────────────────────────
@@ -30,12 +29,12 @@ function StorageBody() {
   // nothing visible when the answer is "no" reads as a button that is broken.
   const [outcome, setOutcome] = useState<'granted' | 'refused' | null>(null);
 
-  const refresh = () => { void storageReport(appState.value.id).then(setReport); };
+  const refresh = () => { void storageReport().then(setReport); };
   useEffect(refresh, []);
 
   if (!report) return <p class="text-xs text-muted text-center py-3">{t('storage.reading')}</p>;
 
-  const risk = assessStorage(report.persisted);
+  const risk = assessStorage(report.persisted, report.usage, report.quota);
   const used = report.usage !== null ? formatBytes(report.usage) : t('storage.unknown');
   const free = report.quota !== null && report.usage !== null ? formatBytes(report.quota - report.usage) : t('storage.unknown');
 
@@ -55,27 +54,24 @@ function StorageBody() {
     <div class="space-y-4">
       {/* The verdict first, in words, because "persistent storage: false" is
           not something anyone should have to interpret. */}
-      <p class={`text-xs leading-relaxed ${risk === 'none' ? 'text-muted' : 'text-warn'}`}>
-        {t(risk === 'none' ? 'storage.safe' : risk === 'refused' ? 'storage.atRisk' : 'storage.unknownState')}
+      <p class={`text-xs leading-relaxed ${risk === 'full' ? 'text-danger' : risk === 'none' ? 'text-muted' : 'text-warn'}`}>
+        {t(risk === 'full' ? 'storage.full'
+          : risk === 'none' ? 'storage.safe'
+            : risk === 'refused' ? 'storage.atRisk' : 'storage.unknownState')}
       </p>
 
       <div>
         <Row
           label={t('storage.durability')}
-          value={t(risk === 'none' ? 'storage.durable' : risk === 'refused' ? 'storage.evictable' : 'storage.unknown')}
-          tone={risk === 'none' ? 'ok' : 'warn'}
+          value={t(report.persisted === true ? 'storage.durable'
+            : report.persisted === false ? 'storage.evictable' : 'storage.unknown')}
+          tone={report.persisted === true ? 'ok' : 'warn'}
         />
         <Row label={t('storage.used')} value={used} />
         <Row label={t('storage.free')} value={free} />
-        <Row
-          label={t('storage.recordings')}
-          value={report.audioBytes !== null
-            ? t('storage.recordingsValue', { count: String(report.audioCount ?? 0), size: formatBytes(report.audioBytes) })
-            : t('storage.unknown')}
-        />
       </div>
 
-      {risk !== 'none' && (
+      {(risk === 'refused' || risk === 'unknown') && (
         <button class="btn-primary w-full text-sm" disabled={asking} onClick={ask}>
           {t(asking ? 'storage.asking' : 'storage.askAgain')}
         </button>

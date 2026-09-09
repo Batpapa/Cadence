@@ -9,7 +9,7 @@ import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
 import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
-import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT } from '../db';
+import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
@@ -404,6 +404,55 @@ function SettingRow({ checked, onToggle, label, hint, children }: {
   );
 }
 
+/** Copies every recording this device holds that is not on Drive yet.
+ *
+ *  The setting above only ever applied to sessions saved AFTER it was switched
+ *  on, which is not what "copy my recordings to Drive" sounds like — a user
+ *  turned it on, saw nothing happen to their library, and reported the sync as
+ *  broken. This is the missing half: the backlog, with its size stated before
+ *  anything is spent, and disabled once there is none. */
+function BackfillRow() {
+  const [pending, setPending] = useState<{ ids: string[]; bytes: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [result, setResult] = useState<{ ok: number; failed: number } | null>(null);
+
+  const refresh = () => { void pendingAudioUploads().then(setPending); };
+  useEffect(refresh, []);
+
+  if (!pending) return null;
+
+  const nothingToDo = pending.ids.length === 0;
+
+  const run = () => {
+    setResult(null);
+    setProgress({ done: 0, total: pending.ids.length });
+    void uploadPendingAudio((done, total) => setProgress({ done, total }))
+      .then(r => { setResult(r); setProgress(null); refresh(); });
+  };
+
+  return (
+    <div class="pt-3 border-t border-border space-y-2">
+      <button class="btn-primary w-full text-sm" disabled={nothingToDo || progress !== null} onClick={run}>
+        {progress
+          ? t('sessions.syncAudio.backfill.running', { done: String(progress.done), total: String(progress.total) })
+          : nothingToDo
+            ? t('sessions.syncAudio.backfill.allDone')
+            : t('sessions.syncAudio.backfill.action', {
+              count: String(pending.ids.length),
+              size: formatBytes(pending.bytes),
+            })}
+      </button>
+      {result && (
+        <p class={result.failed ? 'text-xs text-warn' : 'text-xs text-success'}>
+          {result.failed
+            ? t('sessions.syncAudio.backfill.partial', { ok: String(result.ok), failed: String(result.failed) })
+            : t('sessions.syncAudio.backfill.done', { ok: String(result.ok) })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SessionSettingsBody() {
   // Read straight off appState rather than through db.ts's async accessors:
   // this component already re-renders on every state change, so the figures
@@ -454,6 +503,8 @@ function SessionSettingsBody() {
           )}
         </SettingRow>
       )}
+
+      {driveOn && <BackfillRow />}
     </div>
   );
 }

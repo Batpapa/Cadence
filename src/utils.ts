@@ -162,7 +162,14 @@ export function base64ToBlob(base64: string, mimeType: string): Blob {
  *  is the part that gets forgotten when this is copied around, and a leaked
  *  object URL pins its whole Blob in memory for the life of the document. */
 export function downloadTextFile(content: string, filename: string, mime: string): void {
-  const blob = new Blob([content], { type: mime });
+  downloadBlob(new Blob([content], { type: mime }), filename);
+}
+
+/** The same save-as for something that is already bytes. Separate from the
+ *  text helper rather than widening it to BlobPart: a function called
+ *  downloadTextFile handed a Uint8Array reads as a bug at every call site,
+ *  and the archive path is bytes all the way down. */
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

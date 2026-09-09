@@ -20,7 +20,7 @@ import {
 } from './icons';
 import { showShareAppModal } from './shareAppModal';
 import { showStorageModal } from './storageModal';
-import { storagePersisted, assessStorage } from '../services/storageService';
+import { storagePersisted, storageUsage, storageQuota, assessStorage } from '../services/storageService';
 
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
@@ -108,13 +108,20 @@ function InstallBtn() {
  *  incident that prompted all this (2026-09-09) is exactly a user finding out
  *  afterwards. */
 function StorageWarnBtn() {
-  // Reads the signal, so this re-renders on its own when the boot request
-  // settles. assessStorage owns every case, including "not asked yet".
-  if (assessStorage(storagePersisted.value) === 'none') return null;
+  // Reads the signals, so this re-renders on its own when the boot request
+  // settles and when the estimate is refreshed. assessStorage owns every case,
+  // including "not asked yet".
+  const risk = assessStorage(storagePersisted.value, storageUsage.value, storageQuota.value);
+  if (risk === 'none') return null;
+  // Red is reserved for the one that is already losing data — a full origin
+  // drops recording chunks silently. Amber is "this could be deleted later".
+  const full = risk === 'full';
   return (
     <button
-      class="flex items-center px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0 text-warn hover:bg-warn/10"
-      title={t('storage.warning')}
+      class={`flex items-center px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0 ${
+        full ? 'text-danger hover:bg-danger/10' : 'text-warn hover:bg-warn/10'
+      }`}
+      title={t(full ? 'storage.warningFull' : 'storage.warning')}
       onClick={showStorageModal}
     >
       <WarningTriangleIcon size={14} />

@@ -1,3 +1,4 @@
+import { signal, computed, type Signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
@@ -5,12 +6,13 @@ import type { AppContext } from '../types';
 import { generateId, emptyState } from '../utils';
 import { deleteLocalSessionData } from '../session/db';
 import { TrashIcon, ResetIcon, HelpIcon } from './icons';
-import { confirmModal, closeModal, showModal, renderModalBody } from './modal';
+import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
 import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { applyExternalData } from '../services/migration';
 import { exportBackup, exportSnapshotBackup, parseImport } from '../services/importExport';
+import { exportFullBackup, fullBackupSize, parseFullBackup, restoreFullBackupAudio, BackupTooLarge, MAX_FULL_BACKUP_BYTES } from '../services/fullBackup';
 import { listSnapshots, getSnapshotState, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
 import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
@@ -20,6 +22,8 @@ import { appState, getContext } from '../store';
 import { CustomSelect } from './customSelect';
 import { clearLastUserId } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT } from '../services/abcService';
+import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
+import { formatBytes } from '../utils';
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
@@ -162,11 +166,12 @@ export function showProfileModal(ctx: AppContext): void {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-type SectionId = 'study' | 'user' | 'display' | 'misc' | 'about';
+type SectionId = 'study' | 'user' | 'storage' | 'display' | 'misc' | 'about';
 
 const SECTION_ICONS: Record<SectionId, string> = {
   study: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
   user: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  storage: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
   display: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
   misc: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
   about: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
@@ -440,7 +445,298 @@ function SnapshotsRow({ userId }: { userId: string }) {
   );
 }
 
-function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: () => void }) {
+/** Applies a backup, of either kind.
+ *
+ *  Module-level rather than a closure inside the section, because the buttons
+ *  moved to the Storage section while the logic did not change: keeping it here
+ *  makes that a move rather than a rewrite.
+ *
+ *  Order matters. The state goes in first, then the recordings: the audio is
+ *  written under session ids the restored state has to already know about, and
+ *  a failure between the two leaves recordings that the next import can still
+ *  place, rather than metadata pointing at nothing. */
+async function runImport(file: File, full: boolean, setBusy: (b: boolean) => void): Promise<void> {
+  setBusy(true);
+  try {
+    const parsed = full ? await parseFullBackup(file) : { raw: await parseImport(file), audio: null };
+    closeAllModals(); closeSettingsModal?.();
+    const ctx = getContext();
+    await ctx.mutate(s => { Object.assign(s, applyExternalData(parsed.raw, s.id)); });
+    if (parsed.audio) await restoreFullBackupAudio(parsed.audio);
+    ctx.navigate({ view: 'folder', folderId: null });
+  } catch (e) {
+    alertModal(t('settings.import.failed.title'), e instanceof Error ? e.message : String(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function runReset(): Promise<void> {
+  closeAllModals(); closeSettingsModal?.();
+  const ctx = getContext();
+  const userId = ctx.user.id;
+  await ctx.mutate(s => {
+    const fresh = emptyState(); fresh.id = s.id;
+    ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
+    // EMPTIED first, not just overwritten. `Object.assign` only touches the
+    // keys `emptyState()` happens to name, so every optional field added since
+    // simply survived a "reset that deletes everything" — six of them by
+    // 2026-09-06, including the whole `modules` blob and with it every recorded
+    // session. Clearing first makes the rule "what emptyState does not name is
+    // gone", which stays true for fields nobody has thought of yet.
+    for (const key of Object.keys(s)) delete (s as unknown as Record<string, unknown>)[key];
+    Object.assign(s, fresh);
+  });
+  // The recordings themselves live outside the user blob, in a local-only
+  // database — see deleteLocalSessionData for why leaving it would resurrect a
+  // session rather than merely waste space.
+  await deleteLocalSessionData(userId);
+  ctx.navigate({ view: 'folder', folderId: null });
+}
+
+/** Export, import, reset — as icons, because the row they sit on already names
+ *  what they act on and three labelled buttons would not fit beside a figure.
+ *  Each keeps its title attribute; none is destructive without a confirmation.
+ *
+ *  Export asks which of the two formats, rather than guessing: the small one is
+ *  what someone wants when moving a library between devices, the full one is
+ *  what they want before wiping a phone, and the difference between them can be
+ *  three orders of magnitude. */
+function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioBytes: number | null }) {
+  const [busy, setBusy] = useState(false);
+
+  const chooseExport = () => {
+    const choice = signal<ExportKind | null>(null);
+    const body = document.createElement('div');
+    render(<ExportChoice dataBytes={dataBytes} choice={choice} />, body);
+    showModal(t('settings.export'), body, [{
+      label: t('common.confirm'),
+      primary: true,
+      disabled: computed(() => choice.value === null),
+      onClick: () => {
+        const picked = choice.value;
+        if (!picked) return;   // unreachable — the button is disabled until then
+        closeModal();
+        void runExport(picked === 'full', setBusy);
+      },
+    }], { maxWidth: '22rem' });
+  };
+
+  const doImport = (file: File) => {
+    // The extension decides which reader runs, and the confirmation differs:
+    // only a .cdb leaves the recordings behind, so only a .cdb has to say so.
+    const full = file.name.toLowerCase().endsWith('.cdbf');
+    confirmModal(
+      t('settings.import.title'),
+      t(full ? 'settings.import.messageFull' : 'settings.import.message'),
+      t('settings.import.confirm'),
+      () => { void runImport(file, full, setBusy); },
+    );
+  };
+
+  return (
+    <>
+      <button
+        class="btn-ghost text-xs inline-flex items-center justify-center px-2"
+        disabled={busy}
+        title={t('settings.export')}
+        dangerouslySetInnerHTML={{ __html: EXPORT_SVG }}
+        onClick={chooseExport}
+      />
+      <label class={`btn-ghost text-xs inline-flex items-center justify-center px-2 ${busy ? 'opacity-40' : 'cursor-pointer'}`} title={t('settings.import')}>
+        {/* The icon markup goes on an inner span, never on the <label> itself:
+            dangerouslySetInnerHTML replaces an element's children, so putting it
+            on the label wiped out the file input and the button did nothing. */}
+        <span class="inline-flex items-center" dangerouslySetInnerHTML={{ __html: IMPORT_SVG }} />
+        <input
+          type="file"
+          accept=".cdb,.cdbf"
+          class="hidden"
+          disabled={busy}
+          onChange={(e) => {
+            const input = e.currentTarget;
+            const file = input.files?.[0];
+            // Clear it, or picking the same file twice in a row fires no change
+            // event and the second import silently does nothing.
+            input.value = '';
+            if (file) doImport(file);
+          }}
+        />
+      </label>
+      <button
+        class="btn-ghost text-xs inline-flex items-center justify-center px-2 text-danger"
+        disabled={busy || audioBytes === null}
+        title={t('settings.reset')}
+        onClick={() => confirmModal(
+          t('settings.reset.title'),
+          t('settings.reset.message', { size: formatBytes(dataBytes + (audioBytes ?? 0)) }),
+          t('settings.reset.confirm'),
+          () => { void runReset(); },
+        )}
+      >
+        <TrashIcon size={14} />
+      </button>
+    </>
+  );
+}
+
+type ExportKind = 'data' | 'full';
+
+/** Shared by both outcomes so the busy state and the failure path are one
+ *  thing rather than two that have to agree. */
+async function runExport(full: boolean, setBusy: (b: boolean) => void): Promise<void> {
+  const user = getContext().user;
+  if (!full) { exportBackup(user); return; }
+  setBusy(true);
+  try {
+    await exportFullBackup(user);
+  } catch (e) {
+    alertModal(t('settings.export.failed.title'), e instanceof BackupTooLarge
+      ? t('settings.export.tooBig', { size: formatBytes(e.bytes), max: formatBytes(MAX_FULL_BACKUP_BYTES) })
+      : String(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+/** The export choice, as a picked option plus a Confirm — the same shape the
+ *  Drive conflict modal uses, and for the same reason: the two outcomes differ
+ *  by two orders of magnitude, so neither is a safe default and one tap must
+ *  not commit to either. Nothing is preselected on purpose.
+ *
+ *  The footer button lives outside this tree (showModal declares its actions up
+ *  front), which is what `disabled` being a signal is for. */
+function ExportChoice({ dataBytes, choice }: { dataBytes: number; choice: Signal<ExportKind | null> }) {
+  // Measured, not inherited from the section: its figure walks the audio store
+  // and so counts orphans too — blobs no analysis points at any more. Those are
+  // not written to the archive, so announcing them here would put a size on the
+  // option that the file never reaches.
+  const [audioBytes, setAudioBytes] = useState<number | null>(null);
+  useEffect(() => { void fullBackupSize(getContext().user).then(r => setAudioBytes(r.audioBytes)); }, []);
+
+  return (
+    <div class="space-y-2" role="radiogroup" aria-label={t('settings.export')}>
+      <ExportOption
+        kind="data"
+        choice={choice}
+        label={t('settings.export.dataOnly', { size: formatBytes(dataBytes) })}
+      />
+      <ExportOption
+        kind="full"
+        choice={choice}
+        disabled={audioBytes === null}
+        label={audioBytes === null
+          ? t('settings.export.measuring')
+          : t('settings.export.full', { size: formatBytes(dataBytes + audioBytes) })}
+      />
+    </div>
+  );
+}
+
+function ExportOption({ kind, label, choice, disabled }: {
+  kind: ExportKind; label: string; choice: Signal<ExportKind | null>; disabled?: boolean;
+}) {
+  const selected = choice.value === kind;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={() => { choice.value = kind; }}
+      class={'w-full text-left rounded-lg border px-3 py-2.5 transition-colors '
+        + (disabled ? 'border-border opacity-50 cursor-default '
+          : selected ? 'border-accent bg-accent/10 cursor-pointer ' : 'border-border bg-bg hover:border-accent/60 cursor-pointer ')}
+    >
+      <div class="flex items-center gap-2">
+        {/* Drawn rather than a checkbox glyph so the whole card reads as one
+            control; aria-checked above is what actually announces the state. */}
+        <span
+          class={'w-3.5 h-3.5 rounded-full border shrink-0 flex items-center justify-center '
+            + (selected ? 'border-accent' : 'border-border')}
+          aria-hidden="true"
+        >
+          {selected && <span class="w-1.5 h-1.5 rounded-full bg-accent" />}
+        </span>
+        <span class={'text-sm ' + (selected ? 'text-accent' : 'text-primary')}>{label}</span>
+      </div>
+    </button>
+  );
+}
+
+/** Everything this device holds, and the three things that can be done to it.
+ *
+ *  The buttons sit on the "User" line and nowhere else because that is exactly
+ *  their scope: export writes both sub-lines, import replaces both, reset
+ *  deletes both. Hanging them off "Data" — which is where they used to live,
+ *  under a heading that said "all your data" — was the mislabelling that let a
+ *  user believe their recordings were backed up when the .cdb had never carried
+ *  a single byte of audio. */
+function StorageSection({ userId }: { userId: string }) {
+  const [audioBytes, setAudioBytes] = useState<number | null>(null);
+  const [total, setTotal] = useState<{ usage: number | null; quota: number | null } | null>(null);
+
+  useEffect(() => {
+    // fullBackupSize, not localSessionAudioStats: the latter walks the audio
+    // store and so counts orphans — blobs no analysis points at any more,
+    // which an import can strand and which nothing but the recovery screen
+    // can reach. Counting space the user cannot act on is noise, so the
+    // figure here is the one the export writes and the app can play.
+    void fullBackupSize(appState.value).then(r => setAudioBytes(r.audioBytes));
+    void refreshStorageEstimate().then(() => setTotal({ usage: storageUsage.value, quota: storageQuota.value }));
+    // appState.value, not just userId: a fresh object on every mutation, so
+    // the figures follow an import, a reset, or a Drive state landing while
+    // this section is on screen. Nothing else here mutates, so it is not a
+    // recount on every keystroke.
+  }, [userId, appState.value]);
+
+  // Structured clone is not JSON, so this is an approximation — stated as one
+  // rather than dressed up with a precision it does not have.
+  const dataBytes = new Blob([JSON.stringify(appState.value)]).size;
+  const unknown = t('storage.unknown');
+
+  return (
+    <>
+      {/* Not a <Row>: the actions belong beside the name, not out in the
+          value column where a figure lives. Same vertical rhythm as Row so
+          the two kinds of line still align. */}
+      <div class="flex items-center justify-between gap-4 py-2">
+        <div class="flex items-center gap-1 min-w-0">
+          <span class="text-sm text-primary shrink-0">{t('settings.storage.user')}</span>
+          <BackupButtons dataBytes={dataBytes} audioBytes={audioBytes} />
+        </div>
+        <span class="text-sm text-muted tabular-nums shrink-0">
+          {audioBytes === null ? '…' : formatBytes(dataBytes + audioBytes)}
+        </span>
+      </div>
+      <SubRow label={t('settings.storage.data')} value={formatBytes(dataBytes)} />
+      <SubRow
+        label={t('settings.storage.audio')}
+        value={audioBytes === null ? '…' : formatBytes(audioBytes)}
+      />
+
+      <Row label={t('settings.storage.device')}>
+        <span class="text-sm text-muted tabular-nums">
+          {!total || total.usage === null ? unknown
+            : total.quota === null ? formatBytes(total.usage)
+              : t('settings.storage.totalValue', { used: formatBytes(total.usage), quota: formatBytes(total.quota) })}
+        </span>
+      </Row>
+    </>
+  );
+}
+
+/** A breakdown line under its total: same grid, quieter, indented. */
+function SubRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div class="flex items-center justify-between gap-4 py-1 pl-4">
+      <span class="text-xs text-dim">{label}</span>
+      <span class="text-xs text-dim tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function UserSection({ ctx }: { ctx: AppContext }) {
   const user = appState.value;
   const [nameDraft, setNameDraft] = useState(user.name ?? '');
   useEffect(() => { setNameDraft(user.name ?? ''); }, [user.name]);
@@ -449,19 +745,6 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
     const val = nameDraft.trim();
     if (val && val !== user.name) void ctx.mutate(s => { s.name = val; });
     else setNameDraft(user.name ?? '');
-  };
-
-  const doImportFile = async (file: File) => {
-    try {
-      const raw = await parseImport(file);
-      confirmModal(t('settings.import.title'), t('settings.import.message'), t('settings.import.confirm'), async () => {
-        closeModal(); closeSettings();
-        await ctx.mutate(s => { Object.assign(s, applyExternalData(raw, s.id)); });
-        ctx.navigate({ view: 'folder', folderId: null });
-      });
-    } catch (e) {
-      alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
   };
 
   return (
@@ -482,69 +765,9 @@ function UserSection({ ctx, closeSettings }: { ctx: AppContext; closeSettings: (
 
       {isDriveFeatureEnabled() && <DriveRow />}
 
-      <Sep />
-      <Row label={t('settings.backup')} hint={t('settings.backupHint')}>
-        <div class="flex items-center gap-2 shrink-0">
-          <button
-            class="btn-ghost text-xs inline-flex items-center justify-center gap-1.5"
-            dangerouslySetInnerHTML={{ __html: `${EXPORT_SVG}${t('settings.export')}` }}
-            onClick={() => exportBackup(getContext().user)}
-          />
-          {/* The icon markup goes on an inner span, never on the <label> itself:
-              dangerouslySetInnerHTML replaces an element's children, so putting
-              it on the label wiped out the file input and the button did
-              nothing at all. */}
-          <label class="btn-ghost text-xs cursor-pointer inline-flex items-center justify-center gap-1.5">
-            <span class="inline-flex items-center gap-1.5" dangerouslySetInnerHTML={{ __html: `${IMPORT_SVG}${t('settings.import')}` }} />
-            <input
-              type="file"
-              accept=".cdb"
-              class="hidden"
-              onChange={(e) => {
-                const input = e.currentTarget;
-                const file = input.files?.[0];
-                // Clear it, or picking the same file twice in a row fires no
-                // change event and the second import silently does nothing.
-                input.value = '';
-                if (file) void doImportFile(file);
-              }}
-            />
-          </label>
-        </div>
-      </Row>
 
       <SnapshotsRow userId={user.id} />
 
-      <Sep />
-      <Row label={t('settings.reset')} hint={t('settings.resetHint')}>
-        <button
-          class="btn-danger text-xs shrink-0"
-          onClick={() => confirmModal(t('settings.reset.title'), t('settings.reset.message'), t('settings.reset.confirm'), async () => {
-            closeModal(); closeSettings();
-            const userId = ctx.user.id;
-            await ctx.mutate(s => {
-              const fresh = emptyState(); fresh.id = s.id;
-              ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
-              // EMPTIED first, not just overwritten. `Object.assign` only
-              // touches the keys `emptyState()` happens to name, so every
-              // optional field added since simply survived a "reset that
-              // deletes everything" — six of them by 2026-09-06, including the
-              // whole `modules` blob and with it every recorded session.
-              // Clearing first makes the rule "what emptyState does not name is
-              // gone", which stays true for fields nobody has thought of yet.
-              for (const key of Object.keys(s)) delete (s as unknown as Record<string, unknown>)[key];
-              Object.assign(s, fresh);
-            });
-            // The recordings themselves live outside the user blob, in a
-            // local-only database — see deleteLocalSessionData for why leaving
-            // it would resurrect a session rather than merely waste space.
-            await deleteLocalSessionData(userId);
-            ctx.navigate({ view: 'folder', folderId: null });
-          })}
-        >
-          {t('settings.reset')}
-        </button>
-      </Row>
       <Sep />
     </>
   );
@@ -715,6 +938,7 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
   const SECTIONS: Array<{ id: SectionId; labelKey: string }> = [
     { id: 'study', labelKey: 'settings.study' },
     { id: 'user', labelKey: 'settings.user' },
+    { id: 'storage', labelKey: 'settings.storage' },
     { id: 'display', labelKey: 'settings.display' },
     { id: 'misc', labelKey: 'settings.misc' },
     { id: 'about', labelKey: 'settings.about' },
@@ -778,7 +1002,8 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
 
           <div class="flex-1 overflow-y-auto p-4 space-y-1">
             {section === 'study' && <StudySection ctx={ctx} />}
-            {section === 'user' && <UserSection ctx={ctx} closeSettings={onClose} />}
+            {section === 'user' && <UserSection ctx={ctx} />}
+            {section === 'storage' && <StorageSection userId={ctx.user.id} />}
             {section === 'display' && <DisplaySection ctx={ctx} onZoomChange={() => bumpDialog(x => x + 1)} />}
             {section === 'misc' && <MiscSection ctx={ctx} />}
             {section === 'about' && <AboutSection />}
@@ -789,9 +1014,17 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
   );
 }
 
+/** Set while the settings modal is open. It renders into its own host
+ *  rather than the shared stack, so nothing else can dismiss it — and two
+ *  actions in it need to: import and reset both navigate elsewhere, and
+ *  leaving the settings open over the result reads as nothing having
+ *  happened. Module-level because only one can ever be open. */
+let closeSettingsModal: (() => void) | null = null;
+
 export function showSettingsModal(ctx: AppContext): void {
   const host = document.createElement('div');
   document.body.appendChild(host);
-  const close = () => { render(null, host); host.remove(); };
+  const close = () => { render(null, host); host.remove(); closeSettingsModal = null; };
+  closeSettingsModal = close;
   render(<SettingsModal ctx={ctx} onClose={close} />, host);
 }

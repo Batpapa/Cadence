@@ -648,6 +648,10 @@ function companionName(sessionId: string, mimeType: string): string {
  *  own toggle — call uploadSessionAudio directly and await that. */
 export async function saveSessionAudio(sessionId: string, audio: Blob, sync?: boolean): Promise<void> {
   await (await localDb()).put(AUDIO_STORE, audio, sessionId);
+  // Usage just moved by however long the session was — tens or hundreds of
+  // megabytes. Re-read it so the header's capacity warning reflects reality
+  // now rather than at the next launch, which is a whole evening too late.
+  void (await import('../services/storageService')).refreshStorageEstimate();
   const wantSync = sync ?? await syncAudioByDefault();
   if (!wantSync) return;
   // Never interactive: this runs on its own after a recording is saved, and a
@@ -674,6 +678,61 @@ export async function uploadSessionAudio(sessionId: string, interactive = true):
   const fileId = await (await driveModule())
     .uploadCompanionFile(companionName(sessionId, mimeType), audio, interactive);
   await recordSyncedAudio(sessionId, { fileId, mimeType, bytes: audio.size });
+}
+
+/** The recordings this device holds that are NOT on Drive.
+ *
+ *  Exists because `syncAudioByDefault` only ever applied to sessions saved
+ *  after it was switched on. A user who turned it on reasonably expected their
+ *  library to follow, found it had not, and reported the sync as broken
+ *  (2026-09-10) — it was working exactly as written, which is its own kind of
+ *  bug. Nothing else in the app could see, let alone fix, that backlog.
+ *
+ *  Keyed off the sessions the module knows about rather than off the audio
+ *  store: a blob left behind by a deleted session is an orphan, and uploading
+ *  orphans to someone's Drive is not a favour. */
+export async function pendingAudioUploads(): Promise<{ ids: string[]; bytes: number }> {
+  const mod = await moduleData();
+  const synced = mod.syncedAudio ?? {};
+  const db = await localDb();
+  const ids: string[] = [];
+  let bytes = 0;
+  for (const id of Object.keys(mod.sessions ?? {})) {
+    if (synced[id]) continue;
+    const blob = await db.get(AUDIO_STORE, id) as Blob | undefined;
+    if (!blob) continue;   // recorded elsewhere, or the audio was freed here
+    ids.push(id);
+    bytes += blob.size;
+  }
+  return { ids, bytes };
+}
+
+/** Uploads that backlog, one at a time, reporting progress.
+ *
+ *  Sequential on purpose: these are tens of megabytes each on a phone
+ *  connection, and a parallel burst would compete with itself and with
+ *  whatever else the app is doing. Failures are counted rather than thrown —
+ *  one recording that will not upload must not abandon the twenty after it,
+ *  and every one of them stays on the device either way. */
+export async function uploadPendingAudio(
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ ok: number; failed: number }> {
+  const { ids } = await pendingAudioUploads();
+  let ok = 0, failed = 0;
+  for (const [i, id] of ids.entries()) {
+    try {
+      // Only the first may raise a consent window: it is the one the click
+      // paid for. After that the token is in hand, and a popup per recording
+      // would be indefensible.
+      await uploadSessionAudio(id, i === 0);
+      ok++;
+    } catch (e) {
+      console.warn('[sessions] backlog upload failed for ' + id, e);
+      failed++;
+    }
+    onProgress?.(i + 1, ids.length);
+  }
+  return { ok, failed };
 }
 
 /** Deletes the Drive copy, leaving this device's untouched. */
