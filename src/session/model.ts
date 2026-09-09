@@ -161,7 +161,14 @@ export interface TuneAnalyserModuleData {
    *  knows nothing about panels. */
   detectionsOnCards?: boolean;
   /** Copy the recording to Drive for sessions saved from now on, so they can be
-   *  played on the user's other devices. Absent = no. */
+   *  played on the user's other devices — and so the device is not holding the
+   *  only copy of them.
+   *
+   *  ⚠️ Absent = YES since 2026-09-09, unlike every other optional flag here.
+   *  Read it through `SYNC_AUDIO_BY_DEFAULT` / `syncAudioByDefault()` in
+   *  session/db.ts, never as a bare truthiness check: `!!flag` reads an
+   *  untouched install as off, which is the opposite of what happens. Both
+   *  values are written now, precisely so a deliberate "no" survives. */
   syncAudioByDefault?: boolean;
   /** Session id → the Drive file holding its recording, for the sessions where
    *  that was chosen. A sibling map rather than a field on Analysis,

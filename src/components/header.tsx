@@ -16,9 +16,11 @@ import {
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon, ModulesIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
-  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, ShareIcon,
+  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, ShareIcon, WarningTriangleIcon,
 } from './icons';
 import { showShareAppModal } from './shareAppModal';
+import { showStorageModal } from './storageModal';
+import { storagePersisted, assessStorage } from '../services/storageService';
 
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
@@ -91,6 +93,31 @@ function InstallBtn() {
     >
       <InstallIcon size={14} />
       <span class="text-xs font-medium">{t('sidebar.install')}</span>
+    </button>
+  );
+}
+
+/** Shown ONLY when the browser has not granted persistent storage — that is,
+ *  when it is entitled to delete everything Cadence holds on this device
+ *  without asking. Deliberately not tied to free space: a full device loses
+ *  nothing, and a triangle that is sometimes on for a reason the user cannot
+ *  act on is a triangle they stop reading.
+ *
+ *  Unknown counts as a warning. A browser that will not say whether the data
+ *  is safe is not a browser whose silence should be read as a yes — and the
+ *  incident that prompted all this (2026-09-09) is exactly a user finding out
+ *  afterwards. */
+function StorageWarnBtn() {
+  // Reads the signal, so this re-renders on its own when the boot request
+  // settles. assessStorage owns every case, including "not asked yet".
+  if (assessStorage(storagePersisted.value) === 'none') return null;
+  return (
+    <button
+      class="flex items-center px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0 text-warn hover:bg-warn/10"
+      title={t('storage.warning')}
+      onClick={showStorageModal}
+    >
+      <WarningTriangleIcon size={14} />
     </button>
   );
 }
@@ -179,6 +206,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
           <SyncBtn status={driveStatus} />
         )}
+        <StorageWarnBtn />
         {/* Left side on purpose: the right group is already crowded, and the
             centred profile chip is absolutely positioned — anything added on
             the right runs under it on a phone. */}
