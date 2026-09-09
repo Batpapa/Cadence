@@ -4,9 +4,10 @@ import { t } from '../../services/i18nService';
 import { showModal, closeModal, updateTopModal } from '../../components/modal';
 import { loadSessionAudio } from '../db';
 import { shareSession, exportSessionFile } from '../../services/sessionShareService';
-import { exportAnalysisCSV, exportAnalysisTXT } from '../../services/analysisExport';
+import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport } from '../../services/analysisExport';
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
 import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
+import { copyText } from '../../utils';
 import type { Analysis } from '../model';
 
 // ── Share a session (annotations + optionally the audio) via a short key —
@@ -19,6 +20,7 @@ const SHARE_ICON_FILE_UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill
 const SHARE_ICON_SHARE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
 const SHARE_ICON_CSV = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>';
 const SHARE_ICON_TXT = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>';
+const SHARE_ICON_CLIPBOARD = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 
 function ShareChoiceCard({ icon, label, desc, color, onClick }: {
   icon: string; label: string; desc: string; color: string; onClick: () => void;
@@ -53,7 +55,7 @@ function ShareKeyResult({ keyValue, secondsRemaining }: { keyValue: string; seco
           setTimeout(() => setCopied(false), 2000);
         }}
       >
-        {copied ? t('library.share.copied') : t('library.share.copy')}
+        {copied ? t('common.copied') : t('library.share.copy')}
       </button>
       <p class="text-xs text-muted text-center">{t('library.share.validity', { minutes: Math.floor(secondsRemaining / 60) })}</p>
     </>
@@ -70,7 +72,8 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   const [audioBlob, setAudioBlob] = useState<Blob | null | undefined>(undefined); // undefined = still checking
   const [includeAudio, setIncludeAudio] = useState(false);
   const [upload, setUpload] = useState<UploadState>({ phase: 'idle' });
-  const [view, setView] = useState<'root' | 'package'>('root');
+  const [view, setView] = useState<'root' | 'package' | 'txt'>('root');
+  const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
 
   // The header belongs to the shell, not to this body, so the two levels are
   // kept in step from here — same title-plus-back-arrow the card export modal
@@ -85,6 +88,8 @@ function ShareSessionModal({ session }: { session: Analysis }) {
       updateTopModal({ title: packageTitle, onBack: undefined });
     } else if (upload.phase === 'error') {
       updateTopModal({ title: packageTitle, onBack: () => setUpload({ phase: 'idle' }) });
+    } else if (view === 'txt') {
+      updateTopModal({ title: 'TXT', onBack: () => setView('root') });
     } else if (view === 'package') {
       updateTopModal({ title: packageTitle, onBack: () => setView('root') });
     } else {
@@ -125,6 +130,37 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   };
 
   const tooBig = audioBlob !== null && audioBlob.size > SHARE_MAX_AUDIO_BYTES;
+
+  // TXT has two destinations for the same bytes, so it gets a level of its
+  // own — the shape the card export modal already uses for its package.
+  if (view === 'txt') {
+    return (
+      <div class="space-y-2">
+        <ShareChoiceCard
+          icon={SHARE_ICON_FILE_UP}
+          label={t('library.export.file')}
+          desc={t('sessions.export.txtDesc')}
+          color="var(--color-warn)"
+          onClick={() => { exportAnalysisTXT(session); closeModal(); }}
+        />
+        <ShareChoiceCard
+          icon={SHARE_ICON_CLIPBOARD}
+          label={copied === 'no' ? t('common.copyToClipboard') : t(copied === 'yes' ? 'common.copied' : 'common.copyFailed')}
+          desc={t('common.copyToClipboardDesc')}
+          color="var(--color-success)"
+          onClick={() => {
+            void copyText(analysisTextReport(session)).then(ok => {
+              setCopied(ok ? 'yes' : 'failed');
+              // Long enough to read the confirmation, short enough not to
+              // feel stuck. A failure keeps the modal open: there is nothing
+              // in the clipboard, so closing would look like success.
+              if (ok) setTimeout(closeModal, 900);
+            });
+          }}
+        />
+      </div>
+    );
+  }
 
   // Two levels, mirroring the card export modal: the root offers the three
   // FORMATS, and the .cds package — whose two destinations (a file, a share
@@ -194,7 +230,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
         label="TXT"
         desc={t('sessions.export.txtDesc')}
         color="var(--color-muted)"
-        onClick={() => { exportAnalysisTXT(session); closeModal(); }}
+        onClick={() => setView('txt')}
       />
     </div>
   );

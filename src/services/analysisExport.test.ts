@@ -5,7 +5,7 @@
 // synchronous, so intercepting the construction is the only place the content
 // is still a string.
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { exportAnalysisCSV, exportAnalysisTXT } from './analysisExport';
+import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport } from './analysisExport';
 import type { Analysis, Detection } from '../session/model';
 
 // ── Why this file exists ─────────────────────────────────────────────────────
@@ -139,5 +139,17 @@ describe('the two formats stay in step', () => {
     for (const v of [start, end, tune, dance, meter, `${confidence}%`]) expect(line).toContain(v!);
     expect(liked).toBe('yes');
     expect(line).toContain('liked');
+  });
+});
+
+
+describe('the clipboard and the file carry the same text', () => {
+  // The report builder was split out of the download so the copy button and
+  // the saved file cannot drift. If someone re-inlines the building, this is
+  // what notices.
+  it('writes exactly what analysisTextReport returns', () => {
+    const a = analysis([det({}), det({ start: 200, end: 260, displayName: 'B' })]);
+    exportAnalysisTXT(a);
+    expect(captured[0]).toBe(analysisTextReport(a));
   });
 });

@@ -171,6 +171,37 @@ export function downloadTextFile(content: string, filename: string, mime: string
   URL.revokeObjectURL(url);
 }
 
+/** Copies text, and says whether it worked.
+ *
+ *  `navigator.clipboard` is absent outside a secure context and can be refused
+ *  by permission, so the textarea + execCommand path stays: it is deprecated,
+ *  not gone, and it is the only thing that works when the modern API is not
+ *  there. The caller gets a boolean rather than a rejected promise because
+ *  "the copy did not happen" is a normal outcome to show in the UI, not an
+ *  error to log. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* refused or unavailable — try the old way below */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    // Off-screen rather than hidden: execCommand needs a focusable, selectable
+    // element, and display:none is neither.
+    ta.style.cssText = 'position:fixed;top:-9999px;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${Math.round(bytes)} B`;
   const units = ['kB', 'MB', 'GB', 'TB'];

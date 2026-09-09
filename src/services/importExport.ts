@@ -345,7 +345,7 @@ export function exportCardsCSV(cards: Card[], user: AppState): void {
  *  than parsed. Labels are English literals like the CSV's headers: an exported
  *  file travels outside the app and is usually read somewhere other than the
  *  exporting device's locale. */
-export function exportCardsTXT(cards: Card[], user: AppState): void {
+export function cardsTextReport(cards: Card[], user: AppState): string {
   const out: string[] = [
     `Cadence — cards export — ${toDateStr(new Date())}`,
     `${cards.length} card${cards.length === 1 ? '' : 's'}`,
@@ -375,7 +375,13 @@ export function exportCardsTXT(cards: Card[], user: AppState): void {
     }
   }
 
-  downloadTextFile(out.join('\r\n'), `cadence-cards-${toDateStr(new Date())}.txt`, 'text/plain;charset=utf-8');
+  return out.join('\r\n');
+}
+
+/** The same report, as a downloaded file. */
+export function exportCardsTXT(cards: Card[], user: AppState): void {
+  downloadTextFile(cardsTextReport(cards, user),
+    `cadence-cards-${toDateStr(new Date())}.txt`, 'text/plain;charset=utf-8');
 }
 
 function download(json: string, filename: string): void {
