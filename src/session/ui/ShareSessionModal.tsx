@@ -6,7 +6,7 @@ import { loadSessionAudio } from '../db';
 import { shareSession, exportSessionFile } from '../../services/sessionShareService';
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
 import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
-import type { RecordedSession } from '../model';
+import type { Analysis } from '../model';
 
 // ── Share a session (annotations + optionally the audio) via a short key —
 // same mechanism as card sharing (shareService.ts). showModal/closeModal are
@@ -63,7 +63,7 @@ type UploadState =
   | { phase: 'result'; key: string; secondsRemaining: number }
   | { phase: 'error'; message: string };
 
-function ShareSessionModal({ session }: { session: RecordedSession }) {
+function ShareSessionModal({ session }: { session: Analysis }) {
   const [audioBlob, setAudioBlob] = useState<Blob | null | undefined>(undefined); // undefined = still checking
   const [includeAudio, setIncludeAudio] = useState(false);
   const [upload, setUpload] = useState<UploadState>({ phase: 'idle' });
@@ -144,7 +144,7 @@ function ShareSessionModal({ session }: { session: RecordedSession }) {
 /** Imperative bridge — showModal (the shared modal shell) still needs a plain
  *  HTMLElement body; everything inside it is this component's own JSX now.
  *  Same name/signature as the function it replaces. */
-export function showShareSessionModal(session: RecordedSession): void {
+export function showShareSessionModal(session: Analysis): void {
   const body = document.createElement('div');
   render(<ShareSessionModal session={session} />, body);
   showModal(t('sessions.share.title'), body, []);

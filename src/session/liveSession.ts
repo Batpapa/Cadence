@@ -3,7 +3,7 @@ import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
-import type { RecordedSession, SessionAnnotation, WindowResult, AnnotationEvent, AnnotationAlternate } from './model';
+import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
 import { alternatePickFields } from './model';
 import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
@@ -26,7 +26,7 @@ export interface LiveSessionCallbacks {
   onPhase?: (phase: LiveSessionPhase) => void;
   onIndexProgress?: (p: IndexProgress) => void;
   onWindow?: (result: WindowResult, abc: string | null) => void;
-  onAnnotations?: (events: AnnotationEvent[], all: SessionAnnotation[]) => void;
+  onDetections?: (events: DetectionEvent[], all: Detection[]) => void;
   onError?: (message: string) => void;
   /** #17: forwarded straight from RecognitionClient — see its onLiveGap doc. */
   onLiveGap?: (seconds: number) => void;
@@ -46,7 +46,7 @@ export class LiveSession {
   private recognition: RecognitionClient | null = null;
   private recorder: SessionFileRecorder | null = null;
   private wakeLock = new WakeLockManager();
-  private annotations = new Map<string, SessionAnnotation>();
+  private annotations = new Map<string, Detection>();
   private pauseStartedAt = 0;
   private pausedAccumMs = 0;
   /** Raw per-window results with a wall-clock cross-reference — doubles as
@@ -69,9 +69,11 @@ export class LiveSession {
    *  in-memory and never persisted: picking a destination is a decision about
    *  right now, not a preference (see components/deckSelector.tsx). */
   pinnedDeckIds: Set<string> = new Set();
-  /** Manual transposition (semitones, -12..12) applied to the ongoing
-   *  analysis — e.g. a session played in Bb. In-memory only, resets to 0
-   *  next recording. */
+  /** Manual transposition (semitones, -12..12) applied to the ongoing analysis.
+   *  ENGINE sign: positive raises the transcribed contour to meet an index held
+   *  at written pitch, so a session played a tone DOWN is +2 here — the
+   *  opposite of what a musician says, flipped for display in
+   *  PitchShiftControl.tsx. In-memory only, resets to 0 next recording. */
   pitchShift = 0;
 
   /** Live-adjustable: affects analysis windows from now on, not past ones. */
@@ -100,13 +102,13 @@ export class LiveSession {
 
   getPhase(): LiveSessionPhase { return this.phase; }
 
-  getAnnotations(): SessionAnnotation[] {
+  getDetections(): Detection[] {
     return [...this.annotations.values()].sort((a, b) => a.start - b.start);
   }
 
   /** The MediaRecorder mime type once recording has actually started, '' before
    *  then — used to assemble a playable Blob from collectChunks() mid-recording
-   *  (clip extraction on an already-finalized annotation, sessionModule.ts). */
+   *  (clip extraction on an already-finalized detection, sessionModule.ts). */
   get mimeType(): string {
     return this.recorder?.mimeType ?? '';
   }
@@ -134,7 +136,7 @@ export class LiveSession {
    *  minSegmentWindows/'retract' in viterbiSegmenter.ts) that a crash would
    *  otherwise resurrect as if it were a real, finalized detection. */
   private persistDraft(): void {
-    const session: RecordedSession = {
+    const session: Analysis = {
       id: this.sessionId,
       name: this.name,
       date: new Date(this.startedAt).toISOString(),
@@ -142,7 +144,7 @@ export class LiveSession {
       mimeType: this.recorder?.mimeType ?? '',
       source: this.sourceKind === 'device' ? 'device' : 'live',
       status: 'recording',
-      annotations: this.getAnnotations(),
+      annotations: this.getDetections(),
     };
     void saveSessionMeta(session).catch(() => { /* best-effort — stop() still writes the final copy */ });
   }
@@ -170,12 +172,12 @@ export class LiveSession {
           // the worklet, which pause() suspends) — no "currently paused" branch needed.
           this.windows.push({ ...result, wallMs: Date.now() - this.startedAt - this.pausedAccumMs });
           // Crash-recovery source of truth — kept in step with every window,
-          // not just annotation-changing ones, so a crash loses at most the
+          // not just detection-changing ones, so a crash loses at most the
           // very last window's worth of signal (~stepSeconds).
           void saveSessionWindows(this.sessionId, this.windows).catch(() => { /* best-effort */ });
           this.cb.onWindow?.(result, abc);
         },
-        onAnnotations: events => this.applyEvents(events),
+        onDetections: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
         onLiveGap: seconds => this.cb.onLiveGap?.(seconds),
       });
@@ -202,7 +204,7 @@ export class LiveSession {
     }
   }
 
-  private applyEvents(events: AnnotationEvent[]): void {
+  private applyEvents(events: DetectionEvent[]): void {
     for (const ev of events) {
       if (ev.type === 'retract') {
         // A guess the user hasn't touched never got confirmed — remove it
@@ -211,12 +213,12 @@ export class LiveSession {
         if (!this.annotations.get(ev.id)?.userConfirmed) this.annotations.delete(ev.id);
         continue;
       }
-      const existing = this.annotations.get(ev.annotation.id);
+      const existing = this.annotations.get(ev.detection.id);
       if (existing?.userConfirmed) {
-        // The user relabelled this annotation — keep their tune identity,
+        // The user relabelled this detection — keep their tune identity,
         // only track timing/confidence coming from the aggregator.
-        this.annotations.set(ev.annotation.id, {
-          ...ev.annotation,
+        this.annotations.set(ev.detection.id, {
+          ...ev.detection,
           tuneId: existing.tuneId,
           settingId: existing.settingId,
           displayName: existing.displayName,
@@ -228,11 +230,11 @@ export class LiveSession {
       } else {
         // The aggregator never knows about the like marker — carry it forward
         // across updates the same as any other user choice.
-        this.annotations.set(ev.annotation.id, { ...ev.annotation, liked: existing?.liked ?? false });
+        this.annotations.set(ev.detection.id, { ...ev.detection, liked: existing?.liked ?? false });
       }
     }
     this.persistDraft();
-    this.cb.onAnnotations?.(events, this.getAnnotations());
+    this.cb.onDetections?.(events, this.getDetections());
   }
 
   /** Toggle the "I liked this tune" marker — no bearing on recognition. */
@@ -243,12 +245,12 @@ export class LiveSession {
     this.persistDraft();
   }
 
-  /** Records the user's verdict on this annotation's identity: any tune —
+  /** Records the user's verdict on this detection's identity: any tune —
    *  including the decoder's own current pick — freezes it and protects it
    *  from retraction, `null` hands it back to the decoder. See
    *  model.ts's alternatePickFields, which owns that rule for all three
    *  writers (both engines and the finished-session summary). */
-  selectAlternate(annotationId: string, pick: AnnotationAlternate | null): void {
+  selectAlternate(annotationId: string, pick: DetectionAlternate | null): void {
     const ann = this.annotations.get(annotationId);
     if (!ann) return;
     this.annotations.set(annotationId, { ...ann, ...alternatePickFields(ann, pick) });
@@ -304,26 +306,26 @@ export class LiveSession {
   }
 
   /** Stops everything and persists the session (audio + annotations). */
-  async stop(): Promise<RecordedSession> {
+  async stop(): Promise<Analysis> {
     this.setPhase('stopping');
     try {
       const fileResult = await this.recorder!.stop();
       const { events, tFinal } = await this.recognition!.stop();
       this.applyEvents(events);
 
-      // this.getAnnotations() is now trustworthy as the FINAL result, not
+      // this.getDetections() is now trustworthy as the FINAL result, not
       // just a live snapshot: viterbiSegmenter.ts only marks a segment
       // `finalized` once ViterbiResult.convergedThroughIndex (an exact,
       // provable property of the Viterbi decode — see its doc) shows no
       // future window could ever revise it, rather than the old
       // finalizationLagSeconds time guess. A clean stop() therefore already
-      // matches what a from-scratch recomputeAnnotations() replay (still
-      // used by recovery.ts for crash recovery, where the live annotation
+      // matches what a from-scratch recomputeDetections() replay (still
+      // used by recovery.ts for crash recovery, where the live detection
       // map is gone) would produce — no need to pay for that extra replay
       // here too (2026-08-21).
       const date = new Date(this.startedAt).toISOString();
-      const source: RecordedSession['source'] = this.sourceKind === 'device' ? 'device' : 'live';
-      const session: RecordedSession = {
+      const source: Analysis['source'] = this.sourceKind === 'device' ? 'device' : 'live';
+      const session: Analysis = {
         id: this.sessionId,
         // Named here, once, rather than derived at display time — see
         // sessionNaming.ts. `this.name` is whatever the user typed during the
@@ -333,7 +335,7 @@ export class LiveSession {
         duration: Math.max(tFinal, fileResult.durationMs / 1000),
         mimeType: fileResult.mimeType,
         source,
-        annotations: this.getAnnotations(),
+        annotations: this.getDetections(),
       };
       await saveSessionAudio(session.id, fileResult.blob);
       await saveSessionMeta(session);

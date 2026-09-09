@@ -1,4 +1,4 @@
-import type { WindowResult, SessionAnnotation, AnnotationAlternate, AnnotationEvidence, AnnotationEvent } from '../model';
+import type { WindowResult, Detection, DetectionAlternate, DetectionEvidence, DetectionEvent } from '../model';
 import { StreamingViterbiDecoder, filterShortSegments, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
 import { IncrementalTimelineBuilder, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
@@ -38,7 +38,7 @@ import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detec
 // a byte-identical TemporalTimeline, validated in
 // temporalTimelineStreamingEquivalence.test.ts.
 //
-// UNKNOWN_STATE segments never become annotations — they represent silence,
+// UNKNOWN_STATE segments never become detections — they represent silence,
 // talk, or noise, not a tune.
 //
 // Segment identity across recomputes is re-derived every call (tuneId + time
@@ -63,7 +63,7 @@ interface Tracked {
   seg: DetectedTuneSegment;
   finalized: boolean;
   /** Whether this segment was `lastSegment` (still the live tail, `end: null`
-   *  in the emitted annotation) the last time an event was emitted for it.
+   *  in the emitted detection) the last time an event was emitted for it.
    *  Tracked separately from `seg` because `openEnded` depends on this
    *  segment's POSITION in the current recompute's array (is something else
    *  now the tail?), not on any of `seg`'s own fields — `segEqual` alone
@@ -83,10 +83,10 @@ function computeAlternates(
   firstWindowIndex: number,
   windowCount: number,
   cfg: DetectionTemporalConfig,
-): AnnotationAlternate[] {
+): DetectionAlternate[] {
   // meanScore must be DENSE — averaged over every window in [start, end),
   // treating a window where this tune wasn't even a top-N candidate as a 0
-  // for it — to stay the metric SessionAnnotation.meanScore's own doc
+  // for it — to stay the metric Detection.meanScore's own doc
   // promises it's "directly comparable" to (extractSegments/viterbiDetector.ts
   // computes the WINNING tune's own meanScore the same dense way, off a
   // zero-filled observations array). A 2026-08-25 bug (reported by the user
@@ -124,13 +124,13 @@ function computeAlternates(
 }
 
 /** Exported for AlternatesPopover.tsx — reused to color a raw meanScore
- *  (SessionAnnotation.meanScore/AnnotationAlternate.meanScore) the same way
+ *  (Detection.meanScore/DetectionAlternate.meanScore) the same way
  *  the confidence badge colors `ann.bucket`, even though that badge's own
  *  bucket is actually computed from `confidence` (a different, win-rate-
  *  style metric — see its own doc). Same 0-1 thresholds, reused as a rough
  *  but consistent visual grammar across both metrics, not a claim they're
  *  the same number. */
-export function bucketOf(confidence: number, cfg: DetectionTemporalConfig): SessionAnnotation['bucket'] {
+export function bucketOf(confidence: number, cfg: DetectionTemporalConfig): Detection['bucket'] {
   if (confidence >= cfg.bucketHighConfidence) return 'high';
   if (confidence >= cfg.bucketMediumConfidence) return 'medium';
   return 'low';
@@ -156,13 +156,13 @@ export class IncrementalViterbiSegmenter {
     this.timelineBuilder = new IncrementalTimelineBuilder(cfg);
   }
 
-  step(win: WindowResult): AnnotationEvent[] {
+  step(win: WindowResult): DetectionEvent[] {
     this.windows.push(win);
     return this.recompute(false);
   }
 
   /** No more windows will ever arrive — everything still standing is final. */
-  finalize(): AnnotationEvent[] {
+  finalize(): DetectionEvent[] {
     return this.recompute(true);
   }
 
@@ -177,21 +177,21 @@ export class IncrementalViterbiSegmenter {
    *  one recompute() this actually needs. Produces byte-identical results to
    *  step()-ing through the same windows one at a time, since recompute() is
    *  a pure function of `this.windows` (fully present either way by the time
-   *  finalize() is called) — `this.tracked` only affects which AnnotationEvent
+   *  finalize() is called) — `this.tracked` only affects which DetectionEvent
    *  TYPE gets emitted (open/update vs close/retract), never which segments
    *  are detected. */
-  feedAll(wins: WindowResult[]): AnnotationEvent[] {
+  feedAll(wins: WindowResult[]): DetectionEvent[] {
     this.windows.push(...wins);
     return this.recompute(false);
   }
 
-  private toAnnotation(id: string, seg: DetectedTuneSegment, openEnded: boolean, finalized: boolean): SessionAnnotation {
+  private toDetection(id: string, seg: DetectedTuneSegment, openEnded: boolean, finalized: boolean): Detection {
     const alternates = computeAlternates(this.windows, seg.tuneId, seg.firstWindowIndex, seg.windowCount, this.cfg);
     // By index, not by time — same reason as computeAlternates above: a
     // segment's boundaries now sit inside its own first and last windows, so a
-    // timestamp comparison would drop the very evidence the annotation is made
+    // timestamp comparison would drop the very evidence the detection is made
     // of (2026-09-01).
-    const evidence: AnnotationEvidence[] = [];
+    const evidence: DetectionEvidence[] = [];
     for (let i = seg.firstWindowIndex; i < seg.firstWindowIndex + seg.windowCount; i++) {
       const w = this.windows[i];
       if (!w) continue;
@@ -224,20 +224,20 @@ export class IncrementalViterbiSegmenter {
       // identity override itself, only the orchestrators' applyEvents()
       // (liveSession.ts/importSession.ts) do, by preserving a prior true
       // across this fresh rebuild (see their own doc). A freshly (re)built
-      // annotation with no prior state starts unconfirmed.
+      // detection with no prior state starts unconfirmed.
       userConfirmed: false,
       liked: false,
       finalized,
     };
   }
 
-  private recompute(forceFinalizeAll: boolean): AnnotationEvent[] {
+  private recompute(forceFinalizeAll: boolean): DetectionEvent[] {
     if (this.windows.length === 0) return [];
 
     // filterFlatWindows/filterByTempoSpread (applied inside timelineBuilder,
     // margin first then tempo — same order as before, still A/B tested
     // stacked, not in isolation) only shape what Viterbi sees as evidence —
-    // evidence/alternates displayed to the user (toAnnotation/computeAlternates
+    // evidence/alternates displayed to the user (toDetection/computeAlternates
     // below) still read from this.windows unfiltered, since a flattened
     // window's real raw scores are still legitimate to show, just not to
     // detect from. Catch the builder up to this.windows (recompute() can run
@@ -263,7 +263,7 @@ export class IncrementalViterbiSegmenter {
 
     const claimed = new Set<number>();
     const nextTracked: Tracked[] = [];
-    const events: AnnotationEvent[] = [];
+    const events: DetectionEvent[] = [];
 
     for (const seg of newSegments) {
       let matchIdx = -1;
@@ -292,9 +292,9 @@ export class IncrementalViterbiSegmenter {
         || result.convergedThroughIndex >= lastWindowIndex + this.cfg.sameTuneMergeGapWindows;
 
       if (matchIdx < 0) {
-        const annotation = this.toAnnotation(crypto.randomUUID(), seg, openEnded, finalized);
-        events.push({ type: 'open', annotation });
-        nextTracked.push({ id: annotation.id, seg, finalized, openEnded });
+        const detection = this.toDetection(crypto.randomUUID(), seg, openEnded, finalized);
+        events.push({ type: 'open', detection });
+        nextTracked.push({ id: detection.id, seg, finalized, openEnded });
         continue;
       }
 
@@ -304,14 +304,14 @@ export class IncrementalViterbiSegmenter {
       const openEndedChanged = openEnded !== prev.openEnded;
       if (prev.finalized || (segEqual(prev.seg, seg) && !justFinalized && !openEndedChanged)) {
         // Nothing worth telling the UI about — carry the tracking forward
-        // under the same id without rebuilding an annotation (skips the
+        // under the same id without rebuilding a detection (skips the
         // alternates/evidence scan for the common "unchanged history" case).
         nextTracked.push({ id: prev.id, seg, finalized, openEnded });
         continue;
       }
 
-      const annotation = this.toAnnotation(prev.id, seg, openEnded, finalized);
-      events.push({ type: justFinalized ? 'close' : 'update', annotation });
+      const detection = this.toDetection(prev.id, seg, openEnded, finalized);
+      events.push({ type: justFinalized ? 'close' : 'update', detection });
       nextTracked.push({ id: prev.id, seg, finalized, openEnded });
     }
 
@@ -338,7 +338,7 @@ export class IncrementalViterbiSegmenter {
     // on its own merits — same "fine to disappear and come back, never fine
     // to linger as a permanent phantom" philosophy already established for
     // minSegmentWindows (2026-08-15). Never retract an id the orchestrator
-    // says the user has already confirmed, though — see AnnotationEvent's doc.
+    // says the user has already confirmed, though — see DetectionEvent's doc.
     for (let i = 0; i < this.tracked.length; i++) {
       if (claimed.has(i)) continue;
       const prev = this.tracked[i]!;

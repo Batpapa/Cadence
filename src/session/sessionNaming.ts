@@ -1,5 +1,5 @@
 import { t } from '../services/i18nService';
-import type { RecordedSession } from './model';
+import type { Analysis } from './model';
 
 // ── What a session is called ─────────────────────────────────────────────────
 // A session's name is DATA, not a rendering. It is written once, when the
@@ -26,7 +26,7 @@ export function fmtSessionDateTime(dateIso: string): string {
  *
  *  Imports never come here — a file already has a name, and it is a better one
  *  than anything this could invent. */
-export function generatedSessionName(source: RecordedSession['source'], dateIso: string | null): string {
+export function generatedSessionName(source: Analysis['source'], dateIso: string | null): string {
   const when = dateIso ? fmtSessionDateTime(dateIso) : '';
   const key = source === 'device' ? 'sessions.defaultName.device' : 'sessions.defaultName.mic';
   return when ? t(key, { when }) : t(`${key}.undated`);

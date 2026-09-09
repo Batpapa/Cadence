@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 
 // ── Interop primitives for the session UI ─────────────────────────────────────
 // Small, generic, reused by more than one container — that's the bar for
-// living here instead of duplicated per-file (see AnnotationCard.tsx's doc
+// living here instead of duplicated per-file (see DetectionCard.tsx's doc
 // for the general "duplicate small local helpers" convention this codebase
 // otherwise follows).
 
@@ -17,7 +17,7 @@ function scrollContainerOf(el: HTMLElement | null): HTMLElement | null {
 
 /** Mirrors the original imperative renderFeed()'s "stay pinned to the bottom
  *  of the feed unless the user has scrolled away" behavior, for the live and
- *  import screens' growing annotation feeds. `anchorRef` should point to an
+ *  import screens' growing detection feeds. `anchorRef` should point to an
  *  element INSIDE the scrollable container (its actual scrolling ancestor is
  *  found via scrollContainerOf, same lookup as before) — pass the feed list's
  *  own wrapper. Re-snaps to the bottom whenever `deps` changes, unless the

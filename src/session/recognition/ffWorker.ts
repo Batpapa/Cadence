@@ -3,7 +3,7 @@ import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
 import { normalizeDisplayName } from '../../utils';
-import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, AnnotationEvent } from '../model';
+import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, DetectionEvent } from '../model';
 import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO } from '../sessionConfig';
 
 // ── FolkFriend recognition worker ─────────────────────────────────────────────
@@ -31,9 +31,9 @@ export type FFWorkerResponse =
   | { type: 'init-progress'; progress: IndexProgress }
   | { type: 'ready'; version: string }
   | { type: 'window'; result: WindowResult; abc: string | null }
-  | { type: 'annotations'; events: AnnotationEvent[] }
+  | { type: 'annotations'; events: DetectionEvent[] }
   | { type: 'pcm-ack' }
-  | { type: 'stopped'; events: AnnotationEvent[]; tFinal: number }
+  | { type: 'stopped'; events: DetectionEvent[]; tFinal: number }
   | { type: 'live-gap'; seconds: number }
   | { type: 'debug'; line: string }
   | { type: 'error'; message: string };
@@ -263,8 +263,15 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   const rawContour = rawDebug.contour;
   const features = rawDebug.features;
 
-  // Manual shift first (user-selected, e.g. -2 for a Bb session) — everything
-  // below operates on this as the new baseline.
+  // Manual shift first — everything below operates on this as the new baseline.
+  //
+  // SIGN, since this had it backwards in a comment until 2026-09-09 and no user
+  // could guess it either: the shift is applied to the RECORDING's contour, and
+  // the index stores tunes at WRITTEN pitch with no transposition invariance.
+  // So a session played a tone DOWN needs +2 here — the transcription is raised
+  // to meet the index. That is the opposite of how a musician says it ("we're a
+  // tone down"), which is why PitchShiftControl.tsx flips the sign at the UI
+  // boundary and never shows this one.
   const contour = manualShift !== 0 ? shiftContour(rawContour, manualShift) : rawContour;
   if (manualShift !== 0 && contour.length === 0) {
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
@@ -369,13 +376,13 @@ function handleStop(): void {
   // import alike. It legitimately overlaps its predecessor by more than the
   // usual hop; windowRangeToTime reads real window centres, so an uneven last
   // step needs no special handling there.
-  let tailEvents: AnnotationEvent[] = [];
+  let tailEvents: DetectionEvent[] = [];
   if (totalSamples >= ANALYSIS_WINDOW_S * sampleRate && totalSamples > lastAnalysisAt) {
     const windowSamples = ANALYSIS_WINDOW_S * sampleRate;
     const tEnd = totalSamples / sampleRate;
     const { result, abc } = analyzeSignal(tailOfRing(windowSamples), tEnd - ANALYSIS_WINDOW_S, tEnd);
     post({ type: 'window', result, abc });
-    // Kept and prepended, not dropped: step() may OPEN an annotation that
+    // Kept and prepended, not dropped: step() may OPEN a detection that
     // finalize() then only closes, and an orchestrator receiving a `close` for
     // an id it never saw opened would have nothing to close.
     tailEvents = segmenter.step(result);

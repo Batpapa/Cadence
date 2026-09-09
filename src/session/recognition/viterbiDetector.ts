@@ -226,7 +226,7 @@ export function countTop1Windows(tuneId: string, firstIdx: number, windowCount: 
  *  shown even if still short — the user explicitly wants this (2026-08-15:
  *  "si c'est la dernière fenêtre alors j'accepte de l'afficher, c'est juste
  *  qu'il va ensuite disparaître"). A single-window guess can therefore still
- *  get opened as a real annotation and then be superseded a few seconds
+ *  get opened as a real detection and then be superseded a few seconds
  *  later — see viterbiSegmenter.ts's vanish-cleanup for how that close is
  *  marked NOT finalized (not confirmed, but not hidden either) rather than
  *  pretending it was never shown. Once truly finalized (no more windows will

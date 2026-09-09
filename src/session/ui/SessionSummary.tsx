@@ -10,10 +10,10 @@ import {
   uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio,
 } from '../db';
 import { isDriveConnected } from '../../services/driveService';
-import type { RecordedSession, SessionAnnotation, SyncedAudio, TuneAnalyserModuleData } from '../model';
+import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
 import { TUNE_ANALYSER_MODULE_KEY } from '../model';
 import { alternatePickFields } from '../model';
-import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
+import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { showShareSessionModal } from './ShareSessionModal';
 import { exportSessionMp3 } from '../audio/clipExtract';
 import {
@@ -25,19 +25,19 @@ import { appState } from '../../store';
 import { headPosition, withGaps } from './timelineModel';
 
 // ── Screen: summary ───────────────────────────────────────────────────────────
-// A finished session: audio player, clickable segment timeline, annotation
-// list with per-tune edit controls. Uses <AnnotationCard> directly as JSX,
-// never the annotationCard() bridge — see ImportAnalysis.tsx's header doc for
+// A finished session: audio player, clickable segment timeline, detection
+// list with per-tune edit controls. Uses <DetectionCard> directly as JSX,
+// never the detectionCard() bridge — see ImportAnalysis.tsx's header doc for
 // why (reentrant render() during this component's own render pass corrupts
 // Preact's hooks bookkeeping).
 //
-// `session` is a mutable RecordedSession, edited in place (same object
+// `session` is a mutable Analysis, edited in place (same object
 // db.ts/saveSessionMeta persists) — merge/delete/bound-adjust/like all mutate
 // it directly and then `bump()` a tick counter to force a re-render, rather
 // than mirroring it into Preact state; matches the original's own
 // renderList()/renderBar() re-invocation after each mutation.
 
-const BUCKET_SEGMENT: Record<SessionAnnotation['bucket'], string> = {
+const BUCKET_SEGMENT: Record<Detection['bucket'], string> = {
   high: 'rgb(34 197 94 / 0.75)',
   medium: 'rgb(245 158 11 / 0.75)',
   low: 'rgb(120 120 120 / 0.55)',
@@ -110,7 +110,7 @@ function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () =
   );
 }
 interface SessionSummaryProps {
-  session: RecordedSession;
+  session: Analysis;
   ctx: AppContext;
   onOpenCard: (cardId: string) => void;
   onReanalyze: () => void;
@@ -343,7 +343,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   }, []);
 
   // Play head + time label (direct DOM writes on 'timeupdate' — high
-  // frequency, not worth a Preact re-render) and per-annotation slice
+  // frequency, not worth a Preact re-render) and per-detection slice
   // playback: pauses at the slice's end bound, clears playingId when the
   // player stops for any reason.
   //
@@ -383,7 +383,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // eslint-disable-next-line
   }, []);
 
-  const playSlice = (ann: SessionAnnotation) => {
+  const playSlice = (ann: Detection) => {
     const a = audioRef.current;
     if (!a) return;
     if (playingIdRef.current === ann.id) { a.pause(); return; }
@@ -427,7 +427,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  Scrolled after paint, because arriving from a link happens before the row
    *  exists — and instantly in that case, a smooth scroll from the top of a
    *  long list being an animation nobody asked to watch. */
-  const goToAnn = (ann: SessionAnnotation, behavior: ScrollBehavior = 'smooth') => {
+  const goToAnn = (ann: Detection, behavior: ScrollBehavior = 'smooth') => {
     setTargetId(ann.id);
     seekTo(ann.start);
     requestAnimationFrame(() => {
@@ -534,7 +534,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     : lastLiveDump.value?.sessionId === session.id ? lastLiveDump.value
     : null;
 
-  const cardOptsFor = (ann: SessionAnnotation, i: number): AnnotationCardOptions => ({
+  const cardOptsFor = (ann: Detection, i: number): DetectionCardOptions => ({
     ctx,
     onPlay: audioUrl ? playSlice : undefined,
     playingId,
@@ -561,7 +561,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       bump();
     },
     extraControls: () => {
-      // Merge with previous annotation of the same tune (false set change).
+      // Merge with previous detection of the same tune (false set change).
       const prev = session.annotations[i - 1];
       return (
         <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
@@ -596,8 +596,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             class="text-dim hover:text-danger transition-colors cursor-pointer ml-auto"
             title={t('common.delete')}
             onClick={() => confirmModal(
-              t('sessions.annotation.delete.title'),
-              t('sessions.annotation.delete.message', { name: ann.displayName }),
+              t('sessions.detection.delete.title'),
+              t('sessions.detection.delete.message', { name: ann.displayName }),
               t('common.delete'),
               () => {
                 session.annotations.splice(i, 1);
@@ -857,7 +857,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
                   item.ann.id === targetId ? 'ring-2 ring-warn'
                   : lit.ids.includes(item.ann.id) ? 'ring-2 ring-accent' : ''}`}
               >
-                <AnnotationCard ann={item.ann} opts={cardOptsFor(item.ann, item.i)} />
+                <DetectionCard ann={item.ann} opts={cardOptsFor(item.ann, item.i)} />
               </div>
             )
           ))}

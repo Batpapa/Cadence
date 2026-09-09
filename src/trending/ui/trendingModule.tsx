@@ -26,7 +26,7 @@ export interface TrendingRouteParams {
 // TheSession_PopularityExplorer tool (free date range, absolute/percent gain,
 // per-row sparkline) but adapted to Cadence's mobile-first / no-new-dependency
 // conventions. Per-row actions (sheet music, add to Cadence) and the shared
-// deck-target picker mirror the session module's AnnotationCard exactly,
+// deck-target picker mirror the session module's DetectionCard exactly,
 // rather than a separate detail screen.
 
 const PAGE_SIZE = 50;
@@ -163,7 +163,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
       <span class="text-xs text-dim w-6 text-right shrink-0">{rank}</span>
 
       {/* Icons to the left of the name, same order/placement as the session
-         module's AnnotationCard row (ABC preview, then add-to-Cadence). */}
+         module's DetectionCard row (ABC preview, then add-to-Cadence). */}
       <button
         class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
         title={sheetError ? t('trending.detailLoadError') : t('trending.viewSheet')}

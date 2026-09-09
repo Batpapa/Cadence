@@ -7,7 +7,7 @@ import { BUCKET_TEXT } from './sessionUiShared';
 import { bucketOf } from '../recognition/viterbiSegmenter';
 import { DETECTION_TEMPORAL_CONFIG } from '../recognition/detectionTemporalConfig';
 import { viterbiPickOf } from '../model';
-import type { AnnotationAlternate, SessionAnnotation } from '../model';
+import type { DetectionAlternate, Detection } from '../model';
 
 // ── "Explore alternatives" picker ─────────────────────────────────────────────
 // Single-select over the up to 5 tunes actually seen as window candidates for
@@ -15,11 +15,11 @@ import type { AnnotationAlternate, SessionAnnotation } from '../model';
 // it's favored even when an alternate's raw mean score is higher, since
 // Viterbi also weighs transition costs/hysteresis the mean score alone
 // doesn't see) plus up to 4 alternates ranked by mean score
-// (SessionAnnotation.alternates, already sorted).
+// (Detection.alternates, already sorted).
 //
 // It opens with NOTHING ticked on an unconfirmed detection (2026-09-04, user
 // request), and the selection toggles: clicking what is already ticked hands
-// the annotation back to the decoder. So the three states the card shows —
+// the detection back to the decoder. So the three states the card shows —
 // proposal, confirmed-as-proposed, confirmed-as-something-else — are all
 // reachable and all reversible from this one list, with no separate control.
 //
@@ -29,11 +29,11 @@ import type { AnnotationAlternate, SessionAnnotation } from '../model';
 // read a name and a score.
 //
 // Browsable but not choosable until finalized (2026-08-25, user request): a
-// live/import annotation can still be revised — or vanish outright — while
+// live/import detection can still be revised — or vanish outright — while
 // this is open, so the picker polls `getLatest` (when given) and reacts:
 // updates the list on a revision, shows a "no longer valid" message on
 // retraction, and only enables actually picking once finalized. `getLatest`
-// reads straight off the ENGINE (LiveSession/ImportSession.getAnnotations()),
+// reads straight off the ENGINE (LiveSession/ImportSession.getDetections()),
 // not the container's own React state — that only updates on its next
 // re-render, this popover is a separate render() tree that wouldn't see it.
 //
@@ -46,7 +46,7 @@ import type { AnnotationAlternate, SessionAnnotation } from '../model';
 
 const POLL_MS = 500;
 
-function optionsFor(ann: SessionAnnotation, viterbiPick: AnnotationAlternate): AnnotationAlternate[] {
+function optionsFor(ann: Detection, viterbiPick: DetectionAlternate): DetectionAlternate[] {
   const options = [viterbiPick, ...(ann.alternates ?? [])];
   // Defensive: the currently-displayed pick could in principle have fallen out
   // of the top-N alternates since it was chosen (the window range's candidate
@@ -62,13 +62,13 @@ function optionsFor(ann: SessionAnnotation, viterbiPick: AnnotationAlternate): A
 }
 
 function AlternatesPopover({ initial, getLatest, onSelect }: {
-  initial: SessionAnnotation;
-  getLatest?: () => SessionAnnotation | undefined;
-  onSelect: (pick: AnnotationAlternate | null) => void;
+  initial: Detection;
+  getLatest?: () => Detection | undefined;
+  onSelect: (pick: DetectionAlternate | null) => void;
 }) {
   // undefined = retracted (only reachable once getLatest is polled and comes
-  // back empty — `initial` is always a real annotation the card just showed).
-  const [ann, setAnn] = useState<SessionAnnotation | undefined>(initial);
+  // back empty — `initial` is always a real detection the card just showed).
+  const [ann, setAnn] = useState<Detection | undefined>(initial);
 
   useEffect(() => {
     if (!getLatest) return; // finished-session summary: nothing to poll, static forever
@@ -148,15 +148,15 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
  *  HTMLElement body; everything inside it is this component's own JSX now.
  *  showModal already handles the title bar, close button, Escape, and
  *  click-outside — no need to reimplement any of that here. Safe to render()
- *  here: called from a plain click handler (AnnotationCard's confidence
- *  badge), never mid-Preact-render — see AnnotationCard.tsx's own doc for
+ *  here: called from a plain click handler (DetectionCard's confidence
+ *  badge), never mid-Preact-render — see DetectionCard.tsx's own doc for
  *  why that distinction matters. `getLatest` is omitted for a finished
- *  session's summary (AnnotationCard.tsx only passes it when its own
- *  `getLatestAnnotation` option is set) — see the component's own doc. */
+ *  session's summary (DetectionCard.tsx only passes it when its own
+ *  `getLatestDetection` option is set) — see the component's own doc. */
 export function showAlternatesPopover(
-  ann: SessionAnnotation,
-  getLatest: (() => SessionAnnotation | undefined) | undefined,
-  onSelect: (pick: AnnotationAlternate | null) => void,
+  ann: Detection,
+  getLatest: (() => Detection | undefined) | undefined,
+  onSelect: (pick: DetectionAlternate | null) => void,
 ): void {
   const body = document.createElement('div');
   // showModal's closeModal() only removes the overlay from the DOM — it has
@@ -171,7 +171,7 @@ export function showAlternatesPopover(
   // button" pattern showModal's own doc describes, deliberately bypassing
   // onDismiss for that path).
   const cleanup = () => render(null, body);
-  const handleSelect = (pick: AnnotationAlternate | null) => {
+  const handleSelect = (pick: DetectionAlternate | null) => {
     onSelect(pick);
     closeModal();
     cleanup();

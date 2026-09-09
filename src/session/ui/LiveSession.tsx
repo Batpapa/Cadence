@@ -7,8 +7,8 @@ import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../live
 import { collectChunks } from '../db';
 import fixWebmDuration from 'fix-webm-duration';
 import { RECORDER_TIMESLICE_MS } from '../sessionConfig';
-import type { SessionAnnotation } from '../model';
-import { AnnotationCard, type AnnotationCardOptions } from './AnnotationCard';
+import type { Detection } from '../model';
+import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import {
@@ -18,8 +18,8 @@ import {
 import { setActiveLive, lastLiveDump } from './sessionStore';
 
 // ── Screen: live recording ───────────────────────────────────────────────────
-// Uses <AnnotationCard>/<PitchShiftControl> directly as JSX, never the
-// annotationCard()/pitchShiftControl() bridges — see ImportAnalysis.tsx's
+// Uses <DetectionCard>/<PitchShiftControl> directly as JSX, never the
+// detectionCard()/pitchShiftControl() bridges — see ImportAnalysis.tsx's
 // header doc for why (reentrant render() during this component's own render
 // pass corrupts Preact's hooks bookkeeping).
 //
@@ -47,7 +47,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   const [phase, setPhase] = useState<LiveSessionPhase>(() => live.getPhase());
   const [dateText, setDateText] = useState(() => new Date(effectiveDate()).toLocaleString());
   const [initStatus, setInitStatus] = useState(() => (live.getPhase() === 'initializing' ? t('sessions.initializing') : ''));
-  const [annotations, setAnnotations] = useState<SessionAnnotation[]>(() => live.getAnnotations());
+  const [annotations, setDetections] = useState<Detection[]>(() => live.getDetections());
   const [stateZoneText, setStateZoneText] = useState('');
   const [abcTickerText, setAbcTickerText] = useState('');
   const [bgWarningText, setBgWarningText] = useState<string | null>(null);
@@ -81,13 +81,13 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       },
       onIndexProgress: (p) => setInitStatus(indexProgressText(p)),
       onWindow: (result, abc) => {
-        const hasOpen = live.getAnnotations().some(a => a.end === null);
+        const hasOpen = live.getDetections().some(a => a.end === null);
         if (hasOpen) setStateZoneText('');
         else if (result.empty) setStateZoneText(t('sessions.listening'));
         else setStateZoneText(t('sessions.recognizing'));
         setAbcTickerText(abc ?? '');
       },
-      onAnnotations: (_events, all) => setAnnotations(all),
+      onDetections: (_events, all) => setDetections(all),
       onError: (message) => setInitStatus(`⚠ ${message}`),
       // The capture died under us — browser's own "Stop sharing", the shared
       // tab closed, a microphone unplugged. Save rather than discard: what was
@@ -104,7 +104,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     // above and this effect committing.
     const p = live.getPhase();
     setPhase(p);
-    if (p === 'recording' || p === 'paused') setAnnotations(live.getAnnotations());
+    if (p === 'recording' || p === 'paused') setDetections(live.getDetections());
     else if (p === 'initializing') setInitStatus(t('sessions.initializing'));
     // eslint-disable-next-line
   }, []);
@@ -171,23 +171,23 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     return blob;
   };
 
-  const cardOptsFor = (ann: SessionAnnotation): AnnotationCardOptions => ({
+  const cardOptsFor = (ann: Detection): DetectionCardOptions => ({
     ctx,
     onOpenCard,
-    onCardAdded: () => setAnnotations(live.getAnnotations()),
+    onCardAdded: () => setDetections(live.getDetections()),
     sessionStartMs: live.startedAt || undefined,
     getPinnedDeckIds: () => live.pinnedDeckIds,
-    onToggleLike: (id) => { live.toggleLike(id); setAnnotations(live.getAnnotations()); },
-    onSelectAlternate: (id, pick) => { live.selectAlternate(id, pick); setAnnotations(live.getAnnotations()); },
-    getLatestAnnotation: (id) => live.getAnnotations().find(a => a.id === id),
+    onToggleLike: (id) => { live.toggleLike(id); setDetections(live.getDetections()); },
+    onSelectAlternate: (id, pick) => { live.selectAlternate(id, pick); setDetections(live.getDetections()); },
+    getLatestDetection: (id) => live.getDetections().find(a => a.id === id),
     // Clip extraction only once finalized (2026-08-21) — before that the
     // tune's own bounds/existence could still be revised.
     extraControls: ann.finalized ? () => (
       <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
         {/* No previewBound here — a live recording has no seekable file to
            preview from (raw mic capture), unlike summary/import. */}
-        <BoundControls ann={ann} getDuration={() => live.getElapsedMs() / 1000} refresh={() => setAnnotations([...live.getAnnotations()])} />
-        <ClipControls ann={ann} session={liveRef()} audioAvailable={true} getAudio={getLiveAudioBlob} ctx={ctx} onAttached={() => setAnnotations([...live.getAnnotations()])} />
+        <BoundControls ann={ann} getDuration={() => live.getElapsedMs() / 1000} refresh={() => setDetections([...live.getDetections()])} />
+        <ClipControls ann={ann} session={liveRef()} audioAvailable={true} getAudio={getLiveAudioBlob} ctx={ctx} onAttached={() => setDetections([...live.getDetections()])} />
       </div>
     ) : undefined,
   });
@@ -239,7 +239,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}
 
       <div ref={feedAnchorRef} class="mt-3 space-y-2">
-        {annotations.map(ann => <AnnotationCard key={ann.id} ann={ann} opts={cardOptsFor(ann)} />)}
+        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOptsFor(ann)} />)}
       </div>
 
       <p class="text-xs text-dim mt-3 text-center min-h-[1rem]">{stateZoneText}</p>

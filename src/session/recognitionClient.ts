@@ -1,6 +1,6 @@
 import type { FFWorkerRequest, FFWorkerResponse } from './recognition/ffWorker';
 import type { IndexProgress } from './recognition/indexStore';
-import type { WindowResult, AnnotationEvent } from './model';
+import type { WindowResult, DetectionEvent } from './model';
 import type { RecognitionSink } from './audio/sources';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 
@@ -11,7 +11,7 @@ import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 export interface RecognitionCallbacks {
   onIndexProgress?: (p: IndexProgress) => void;
   onWindow?: (result: WindowResult, abc: string | null) => void;
-  onAnnotations?: (events: AnnotationEvent[]) => void;
+  onDetections?: (events: DetectionEvent[]) => void;
   onError?: (message: string) => void;
   /** #17: a real live-capture gap was caught up on (worklet path only) — how
    *  many seconds of silence got padded in to keep pace with wall-clock time. */
@@ -29,7 +29,7 @@ export class RecognitionClient implements RecognitionSink {
   /** Resolves with the FolkFriend version once WASM + index are loaded. */
   readonly ready: Promise<string>;
   private ackQueue: (() => void)[] = [];
-  private stopDone: ((r: { events: AnnotationEvent[]; tFinal: number }) => void) | null = null;
+  private stopDone: ((r: { events: DetectionEvent[]; tFinal: number }) => void) | null = null;
 
   constructor(sampleRate: number, callbacks: RecognitionCallbacks = {}, options: RecognitionOptions = {}) {
     this.cb = callbacks;
@@ -58,7 +58,7 @@ export class RecognitionClient implements RecognitionSink {
         case 'init-progress': this.cb.onIndexProgress?.(msg.progress); break;
         case 'ready':         resolveReady(msg.version); break;
         case 'window':        this.cb.onWindow?.(msg.result, msg.abc); break;
-        case 'annotations':   this.cb.onAnnotations?.(msg.events); break;
+        case 'annotations':   this.cb.onDetections?.(msg.events); break;
         case 'pcm-ack':       this.ackQueue.shift()?.(); break;
         case 'stopped':       this.stopDone?.({ events: msg.events, tFinal: msg.tFinal }); this.stopDone = null; break;
         case 'live-gap':      if (DEBUG_LIVE_AUDIO) console.log(`[live] gap comble par le worker : ${msg.seconds.toFixed(1)}s de silence`);
@@ -104,7 +104,7 @@ export class RecognitionClient implements RecognitionSink {
   }
 
   /** End the stream: flushes the aggregator, returns closing events. */
-  stop(): Promise<{ events: AnnotationEvent[]; tFinal: number }> {
+  stop(): Promise<{ events: DetectionEvent[]; tFinal: number }> {
     return new Promise(resolve => {
       this.stopDone = resolve;
       this.send({ type: 'stop' });

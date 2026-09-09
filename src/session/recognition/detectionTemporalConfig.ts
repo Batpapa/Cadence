@@ -76,7 +76,7 @@ export interface DetectionTemporalConfig {
    *  BUCKET_HIGH/BUCKET_MEDIUM). */
   bucketHighConfidence: number;
   bucketMediumConfidence: number;
-  /** Number of alternate candidates kept on an annotation besides the current
+  /** Number of alternate candidates kept on a detection besides the current
    *  pick (formerly segmenterConfig.ts's MAX_ALTERNATES). */
   maxAlternates: number;
 

@@ -9,7 +9,7 @@ import { fileToEntry } from '../../utils';
 import { extractClipMp3 } from '../audio/clipExtract';
 import { getContext } from '../../store';
 import type { IndexProgress } from '../recognition/indexStore';
-import type { SessionAnnotation } from '../model';
+import type { Detection } from '../model';
 
 // ── Shared UI helpers ────────────────────────────────────────────────────────
 // Small pieces used by more than one of the session containers
@@ -48,11 +48,11 @@ export function toLocalInput(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** Colors for SessionAnnotation['bucket'] — shared by AnnotationCard.tsx's
+/** Colors for Detection['bucket'] — shared by DetectionCard.tsx's
  *  confidence badge and AlternatesPopover.tsx's per-option score (living here
- *  rather than in either of those, since AnnotationCard.tsx imports
+ *  rather than in either of those, since DetectionCard.tsx imports
  *  AlternatesPopover.tsx — a shared leaf avoids the circular import). */
-export const BUCKET_BADGE: Record<SessionAnnotation['bucket'], string> = {
+export const BUCKET_BADGE: Record<Detection['bucket'], string> = {
   high: 'bg-green-500/10 text-green-500',
   medium: 'bg-amber-500/10 text-amber-500',
   low: 'bg-elevated text-dim border border-border',
@@ -61,7 +61,7 @@ export const BUCKET_BADGE: Record<SessionAnnotation['bucket'], string> = {
 /** Same color code as BUCKET_BADGE, text-only (no pill background/border) —
  *  for coloring a plain score readout, e.g. AlternatesPopover.tsx's per-option
  *  percentage, without stacking a second badge-looking element next to it. */
-export const BUCKET_TEXT: Record<SessionAnnotation['bucket'], string> = {
+export const BUCKET_TEXT: Record<Detection['bucket'], string> = {
   high: 'text-green-500',
   medium: 'text-amber-500',
   low: 'text-dim',
@@ -89,7 +89,7 @@ const SHARE_ICON_TRIGGER = '<svg width="13" height="13" viewBox="0 0 24 24" fill
 /** Card.tsx-style header shared by the three "one particular session/recording"
  *  screens (a finished session, a live recording, an import in progress): plain
  *  heading that turns into an input on click, plus a delete button — no back
- *  arrow. `getName`/`getDefaultName` abstract over RecordedSession/LiveSession/
+ *  arrow. `getName`/`getDefaultName` abstract over Analysis/LiveSession/
  *  ImportSession, which don't share a base type. */
 export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare }: {
   getName: () => string;
@@ -201,8 +201,8 @@ export function DateRow({ getDate, setDate, onChange }: {
   );
 }
 
-/** The subset of RecordedSession the clip-extraction helpers actually need —
- *  lets a still-in-progress LiveSession/ImportSession (no RecordedSession row
+/** The subset of Analysis the clip-extraction helpers actually need —
+ *  lets a still-in-progress LiveSession/ImportSession (no Analysis row
  *  saved yet) build a lightweight literal instead. */
 export interface ClipSessionRef {
   id: string;
@@ -212,26 +212,26 @@ export interface ClipSessionRef {
 }
 
 /** Stable identity of a clip, embedded in the filename: survives session
- *  renames and annotation relabels (session id fragment + start second). */
-export function clipTag(session: ClipSessionRef, ann: SessionAnnotation): string {
+ *  renames and detection relabels (session id fragment + start second). */
+export function clipTag(session: ClipSessionRef, ann: Detection): string {
   return `[${session.id.slice(0, 8)}·${Math.round(ann.start)}]`;
 }
 
-export function clipFileName(session: ClipSessionRef, ann: SessionAnnotation): string {
+export function clipFileName(session: ClipSessionRef, ann: Detection): string {
   const sessionName = session.name;
   const range = `${fmtTime(ann.start)}–${fmtTime(ann.end ?? session.duration)}`.replace(/:/g, 'm');
   return `${ann.displayName} — ${sessionName} (${range}) ${clipTag(session, ann)}.mp3`;
 }
 
 /** True when this exact clip is already attached, whatever it was renamed to look like. */
-export function isClipAttached(session: ClipSessionRef, ann: SessionAnnotation): boolean {
+export function isClipAttached(session: ClipSessionRef, ann: Detection): boolean {
   const card = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
   if (!card) return false;
   const tag = clipTag(session, ann);
   return card.content.attachments.some(a => a.type === 'file' && a.name.includes(tag));
 }
 
-/** Extracts the annotation's audio slice as a standalone MP3 file and attaches
+/** Extracts the detection's audio slice as a standalone MP3 file and attaches
  *  it to the card — independent from the session file. `audio` is already
  *  resolved by the caller (loadSessionAudio for a saved session, or a
  *  lazily-assembled Blob for a still-in-progress live/import one — see
@@ -239,7 +239,7 @@ export function isClipAttached(session: ClipSessionRef, ann: SessionAnnotation):
 export async function attachClip(
   ctx: AppContext,
   session: ClipSessionRef,
-  ann: SessionAnnotation,
+  ann: Detection,
   audio: Blob,
   onProgress?: (ratio: number) => void,
 ): Promise<boolean> {
@@ -270,7 +270,7 @@ function BoundStepper({ label, value, onChange }: { label: string; value: number
 /** ±5s start/end bound adjustment, shared by the summary, live, and
  *  import-in-progress feeds. Mutates `ann` in place — for a live/import
  *  session that's enough on its own: `ann` is the SAME object
- *  getAnnotations() already returns, so the edit is naturally included
+ *  getDetections() already returns, so the edit is naturally included
  *  whenever that session is next saved, no separate persist step required
  *  (`persist`, when given, is for the summary's "write it out right now" case
  *  only). `previewBound` plays a 3s preview at the new bound when given —
@@ -278,7 +278,7 @@ function BoundStepper({ label, value, onChange }: { label: string; value: number
  *  (raw mic capture, not played-back audio); the value still updates, just
  *  silently. */
 export function BoundControls({ ann, getDuration, persist, refresh, previewBound }: {
-  ann: SessionAnnotation;
+  ann: Detection;
   getDuration: () => number;
   persist?: () => void;
   refresh?: () => void;
@@ -301,7 +301,7 @@ export function BoundControls({ ann, getDuration, persist, refresh, previewBound
 }
 
 /** Download-clip + attach-to-card controls, shared by the summary, live, and
- *  import-in-progress feeds — a finalized annotation can show up before a
+ *  import-in-progress feeds — a finalized detection can show up before a
  *  session is fully done (see ViterbiResult.convergedThroughIndex), so this
  *  isn't summary-only. `getAudio` is a lazy Blob provider so a live recording
  *  only pays to assemble its (still-growing) chunk dump when the user
@@ -309,7 +309,7 @@ export function BoundControls({ ann, getDuration, persist, refresh, previewBound
  *  summary's existing "hidden once the session's audio has been forgotten"
  *  rule — always true for live/import, where there's no such action yet. */
 export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAttached }: {
-  ann: SessionAnnotation;
+  ann: Detection;
   session: ClipSessionRef;
   audioAvailable: boolean;
   getAudio: () => Promise<Blob | undefined>;

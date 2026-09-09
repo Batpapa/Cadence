@@ -3,7 +3,7 @@ import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { runViterbiDetection, filterShortSegments, mergeNearbySameTune } from './viterbiDetector';
 import { buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE } from './temporalObservationBuilder';
 import type { DetectionTemporalConfig } from './detectionTemporalConfig';
-import type { WindowResult, WindowCandidate, SessionAnnotation, AnnotationEvent } from '../model';
+import type { WindowResult, WindowCandidate, Detection, DetectionEvent } from '../model';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -74,21 +74,21 @@ function winWithTempo(i: number, candidates: WindowCandidate[], tempoScores: num
   };
 }
 
-/** Narrows out 'retract' (which carries no `.annotation`) for tests that only
+/** Narrows out 'retract' (which carries no `.detection`) for tests that only
  *  care about open/update/close events. */
-function hasAnnotation(e: AnnotationEvent): e is Exclude<AnnotationEvent, { type: 'retract' }> {
+function hasDetection(e: DetectionEvent): e is Exclude<DetectionEvent, { type: 'retract' }> {
   return e.type !== 'retract';
 }
 
 /** Mirrors liveSession.ts's/importSession.ts's applyEvents: last event per id
  *  wins, 'retract' deletes (unless the user already confirmed it). */
-function apply(store: Map<string, SessionAnnotation>, events: AnnotationEvent[]): void {
+function apply(store: Map<string, Detection>, events: DetectionEvent[]): void {
   for (const ev of events) {
     if (ev.type === 'retract') {
       if (!store.get(ev.id)?.userConfirmed) store.delete(ev.id);
       continue;
     }
-    store.set(ev.annotation.id, ev.annotation);
+    store.set(ev.detection.id, ev.detection);
   }
 }
 
@@ -110,7 +110,7 @@ function batchSegments(windows: WindowResult[], cfg: DetectionTemporalConfig = T
 describe('IncrementalViterbiSegmenter', () => {
   it('a segment stays unfinalized (and open-ended) while actively playing', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([{ A: 0.9 }, { A: 0.92 }, { A: 0.9 }]);
     for (const w of windows) apply(store, seg.step(w));
 
@@ -123,7 +123,7 @@ describe('IncrementalViterbiSegmenter', () => {
 
   it('viterbiPick mirrors the winning segment\'s own identity, and alternates carry dance/meter — the "explore alternatives" picker (2026-08-25) needs both', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     // B loses every window (lower score) but still shows up as a real
     // candidate throughout A's span — exactly the shape computeAlternates
     // ranks by mean score.
@@ -141,7 +141,7 @@ describe('IncrementalViterbiSegmenter', () => {
 
   it('alternates\' meanScore is averaged over EVERY window in the span (zero-filled where absent), not just the windows the tune happened to appear in — regression (2026-08-25, reported by the user eyeballing an implausibly high alternate)', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     // A wins all 4 windows. B is only ever a candidate in ONE of them (a
     // brief spike, score 0.8) — absent (not even a weak candidate) the other
     // 3. A sparse average (old, buggy behavior) would report B at 0.8 (as if
@@ -159,7 +159,7 @@ describe('IncrementalViterbiSegmenter', () => {
 
   it('finalizes as soon as the Viterbi decode provably converges — not after a fixed time lag (2026-08-21, replaces the old finalizationLagSeconds heuristic)', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG); // sameTuneMergeGapWindows: 0
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     // A plays windows 0-3, then goes silent. Not finalized right when A's
     // last real window lands (window 3 alone still leaves open "maybe this
     // drops back to A next window" — no future evidence ruling that out
@@ -181,7 +181,7 @@ describe('IncrementalViterbiSegmenter', () => {
   it('finalization also waits out sameTuneMergeGapWindows past the segment — a same-tune neighbour could still merge in from later, even once the raw Viterbi path itself has converged', () => {
     const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 3 };
     const seg = new IncrementalViterbiSegmenter(HOP, cfg);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     // Same shape as above (raw path converges at step 4), but now a same-tune
     // reappearance up to 3 windows later could still retroactively merge into
     // this segment — finality must wait for that margin to clear too, not
@@ -197,10 +197,10 @@ describe('IncrementalViterbiSegmenter', () => {
     expect(finalizedAt).toEqual([false, false, false, false, false, false, false, true]);
   });
 
-  it('a superseded segment stops showing end:null ("playing…") the moment it is no longer the live tail, even though it is not finalized yet — regression (2026-08-24): the "nothing worth telling the UI about" shortcut only compared the segment\'s OWN fields (tuneId/bounds/confidence), which can legitimately stay identical across the very recompute where a LATER segment takes over the tail, silently swallowing the open->closed transition and leaving the annotation stuck at end:null indefinitely', () => {
+  it('a superseded segment stops showing end:null ("playing…") the moment it is no longer the live tail, even though it is not finalized yet — regression (2026-08-24): the "nothing worth telling the UI about" shortcut only compared the segment\'s OWN fields (tuneId/bounds/confidence), which can legitimately stay identical across the very recompute where a LATER segment takes over the tail, silently swallowing the open->closed transition and leaving the detection stuck at end:null indefinitely', () => {
     const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 3 };
     const seg = new IncrementalViterbiSegmenter(HOP, cfg);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     // Same shape as the sibling "waits out sameTuneMergeGapWindows" test
     // above: A's raw Viterbi assignment converges at step 4, but with
     // sameTuneMergeGapWindows=3, finalization itself doesn't land until step
@@ -235,7 +235,7 @@ describe('IncrementalViterbiSegmenter', () => {
     const batch = batchSegments(windows);
 
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     for (const w of windows) apply(store, seg.step(w));
     apply(store, seg.finalize());
 
@@ -248,7 +248,7 @@ describe('IncrementalViterbiSegmenter', () => {
 
   it('finalize() forces every remaining segment final, even one still actively playing', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([{ A: 0.9 }, { A: 0.92 }, { A: 0.9 }]);
     for (const w of windows) apply(store, seg.step(w));
     apply(store, seg.finalize());
@@ -260,44 +260,44 @@ describe('IncrementalViterbiSegmenter', () => {
 
   it('does not resurrect a segment already finalized once new unrelated windows keep arriving', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
-    const events1: AnnotationEvent[] = [];
+    const store = new Map<string, Detection>();
+    const events1: DetectionEvent[] = [];
     const windows = sequence([
       { A: 0.9 }, { A: 0.92 }, { A: 0.9 }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
     ]);
     windows.forEach(w => events1.push(...seg.step(w)));
     apply(store, events1);
-    const finalizedEventCount = events1.filter(hasAnnotation).filter(e => e.annotation.tuneId === 'A' && e.annotation.finalized).length;
+    const finalizedEventCount = events1.filter(hasDetection).filter(e => e.detection.tuneId === 'A' && e.detection.finalized).length;
     expect(finalizedEventCount).toBeGreaterThan(0);
 
     // Feed 10 more empty windows — A is long finalized, should stay silent (no more events for it).
     const more = sequence(Array.from({ length: 10 }, () => ({})), windows.length);
-    const events2: AnnotationEvent[] = [];
+    const events2: DetectionEvent[] = [];
     more.forEach(w => events2.push(...seg.step(w)));
-    expect(events2.filter(hasAnnotation).filter(e => e.annotation.tuneId === 'A')).toHaveLength(0);
+    expect(events2.filter(hasDetection).filter(e => e.detection.tuneId === 'A')).toHaveLength(0);
   });
 
-  it('never emits an annotation for UNKNOWN_STATE (silence/talk/noise)', () => {
+  it('never emits a detection for UNKNOWN_STATE (silence/talk/noise)', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const events: AnnotationEvent[] = [];
+    const events: DetectionEvent[] = [];
     const windows = sequence([{}, {}, {}, {}, {}, {}]);
     windows.forEach(w => events.push(...seg.step(w)));
     events.push(...seg.finalize());
-    expect(events.filter(hasAnnotation).every(e => e.annotation.tuneId !== UNKNOWN_STATE)).toBe(true);
+    expect(events.filter(hasDetection).every(e => e.detection.tuneId !== UNKNOWN_STATE)).toBe(true);
     expect(events).toHaveLength(0);
   });
 
-  it('a clean back-to-back transition produces two annotations that ABUT exactly — no overlap, no gap', () => {
-    // 2026-09-01: an annotation's start/end are the ESTIMATED boundaries, each
+  it('a clean back-to-back transition produces two detections that ABUT exactly — no overlap, no gap', () => {
+    // 2026-09-01: a detection's start/end are the ESTIMATED boundaries, each
     // placed midway between the centres of the two windows straddling it — so a
-    // clean back-to-back transition (no silent gap) produces two annotations
+    // clean back-to-back transition (no silent gap) produces two detections
     // that meet at one instant. Until this date they overlapped by
     // windowSeconds - stepSeconds, which measured 5s early against ground
     // truth; see windowRangeToTime. Guarded here at the ANNOTATION level (the
     // object the UI renders), not just at the raw segment level (already
     // covered in viterbiDetector.test.ts).
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 },
       { B: 0.93 }, { B: 0.9 }, { B: 0.92 }, { B: 0.91 },
@@ -307,7 +307,7 @@ describe('IncrementalViterbiSegmenter', () => {
 
     const anns = [...store.values()].sort((a, b) => a.start - b.start);
     expect(anns.map(a => a.tuneId)).toEqual(['A', 'B']);
-    const [a, b] = anns as [SessionAnnotation, SessionAnnotation];
+    const [a, b] = anns as [Detection, Detection];
     // windows[k] spans [5k, 5k+15], so centre(k) = 5k + 7.5.
     expect(a.start).toBe(0);   // recording edge
     expect(a.end).toBe(25);    // (centre(3) + centre(4)) / 2 = (22.5 + 27.5) / 2
@@ -319,17 +319,17 @@ describe('IncrementalViterbiSegmenter', () => {
   it('minSegmentWindows: a short segment IS shown while it is the live tail, but is RETRACTED (removed entirely) once superseded without ever reaching the threshold', () => {
     // 2026-08-15: user explicitly wants the live tail exempt from
     // minSegmentWindows — a single-window Viterbi guess is allowed to open
-    // as a real annotation while it's the most recent thing seen so far
+    // as a real detection while it's the most recent thing seen so far
     // ("j'accepte de l'afficher"). But once superseded without ever reaching
     // the threshold, a `close` (even with finalized:false) still left a
     // permanent, if unconfirmed, stub sitting in the final list — not
     // acceptable per the user's explicit follow-up ("ils devraient être
     // rejetés et disparaître... ils sont toujours présents dans l'UI"). It
-    // must be retracted — removed from the annotation map entirely, as if it
+    // must be retracted — removed from the detection map entirely, as if it
     // had never been shown — matching the real-world pattern reported
     // against a real recording (a chain of different single-window guesses).
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG); // minSegmentWindows: 2
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 }, // A: 5 windows, safely above the floor
       { B: 0.9 },                                                     // B: a single stray window
@@ -353,9 +353,9 @@ describe('IncrementalViterbiSegmenter', () => {
     expect(anns.every(a => a.finalized)).toBe(true);
   });
 
-  it('minSegmentWindows: never retracts an annotation the caller has already marked userConfirmed', () => {
+  it('minSegmentWindows: never retracts a detection the caller has already marked userConfirmed', () => {
     const seg = new IncrementalViterbiSegmenter(HOP, TEST_CFG);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 },
       { B: 0.9 },
@@ -374,10 +374,10 @@ describe('IncrementalViterbiSegmenter', () => {
     expect(bAfter!.userConfirmed).toBe(true);
   });
 
-  it('mergeNearbySameTune: bridges a brief UNKNOWN gap between two occurrences of the SAME tune into one continuous annotation', () => {
+  it('mergeNearbySameTune: bridges a brief UNKNOWN gap between two occurrences of the SAME tune into one continuous detection', () => {
     const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 10 };
     const seg = new IncrementalViterbiSegmenter(HOP, cfg);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 }, // A: 5 windows
       {}, {}, {},                                                     // gap: 3 empty windows (< 10) -> UNKNOWN
@@ -397,7 +397,7 @@ describe('IncrementalViterbiSegmenter', () => {
   it('mergeNearbySameTune: does NOT bridge a gap of >= sameTuneMergeGapWindows — stays two separate detections', () => {
     const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 3 };
     const seg = new IncrementalViterbiSegmenter(HOP, cfg);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 },
       {}, {}, {}, {}, // gap: 4 empty windows (>= 3) -> should NOT merge
@@ -413,7 +413,7 @@ describe('IncrementalViterbiSegmenter', () => {
   it('mergeNearbySameTune: never merges across a DIFFERENT confirmed tune in between (A, B, A stays three results)', () => {
     const cfg = { ...TEST_CFG, sameTuneMergeGapWindows: 10 };
     const seg = new IncrementalViterbiSegmenter(HOP, cfg);
-    const store = new Map<string, SessionAnnotation>();
+    const store = new Map<string, Detection>();
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 },
       { B: 0.92 }, { B: 0.95 }, { B: 0.94 }, { B: 0.91 }, { B: 0.93 },
@@ -436,13 +436,13 @@ describe('IncrementalViterbiSegmenter', () => {
     ]);
 
     const withoutFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, flatWindowMarginThreshold: 0 });
-    const storeWithout = new Map<string, SessionAnnotation>();
+    const storeWithout = new Map<string, Detection>();
     for (const w of windows) apply(storeWithout, withoutFilter.step(w));
     apply(storeWithout, withoutFilter.finalize());
     expect([...storeWithout.values()].map(a => a.tuneId)).toEqual(['A']);
 
     const withFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, flatWindowTopN: 2, flatWindowMarginThreshold: 0.05 });
-    const storeWith = new Map<string, SessionAnnotation>();
+    const storeWith = new Map<string, Detection>();
     for (const w of windows) apply(storeWith, withFilter.step(w));
     apply(storeWith, withFilter.finalize());
     expect([...storeWith.values()]).toHaveLength(0);
@@ -464,13 +464,13 @@ describe('IncrementalViterbiSegmenter', () => {
     ];
 
     const withoutFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, tempoSpreadThreshold: 0 });
-    const storeWithout = new Map<string, SessionAnnotation>();
+    const storeWithout = new Map<string, Detection>();
     for (const w of windows) apply(storeWithout, withoutFilter.step(w));
     apply(storeWithout, withoutFilter.finalize());
     expect([...storeWithout.values()].map(a => a.tuneId)).toEqual(['A']);
 
     const withFilter = new IncrementalViterbiSegmenter(HOP, { ...TEST_CFG, tempoSpreadThreshold: 0.10 });
-    const storeWith = new Map<string, SessionAnnotation>();
+    const storeWith = new Map<string, Detection>();
     for (const w of windows) apply(storeWith, withFilter.step(w));
     apply(storeWith, withFilter.finalize());
     expect([...storeWith.values()]).toHaveLength(0);

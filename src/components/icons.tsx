@@ -72,6 +72,15 @@ export function ExternalLinkIcon({ size = 10 }: { size?: number }) {
   );
 }
 
+export function TuningForkIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5.5 2v5.5a2.5 2.5 0 0 0 5 0V2"/>
+      <path d="M8 10.5v3.5"/>
+    </svg>
+  );
+}
+
 export function ShareIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -194,7 +203,7 @@ export function ClockIcon({ size = 14 }: { size?: number }) {
 }
 
 /** A closed-but-not-yet-finalized detection: the Viterbi decoder could still
- *  retract or revise it as later windows arrive. See AnnotationCard.tsx's
+ *  retract or revise it as later windows arrive. See DetectionCard.tsx's
  *  "pending" state. */
 export function HourglassIcon({ size = 14 }: { size?: number }) {
   return (

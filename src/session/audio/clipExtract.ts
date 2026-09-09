@@ -188,9 +188,9 @@ async function decodeRangeViaFullDecode(
   return mono;
 }
 
-/** Seconds of slack added on each side of an annotation before cutting.
+/** Seconds of slack added on each side of a detection before cutting.
  *
- *  An annotation's bounds used to be the raw span of the observation windows,
+ *  A detection's bounds used to be the raw span of the observation windows,
  *  which happened to run about 5s wide on each side and gave every clip a
  *  comfortable lead-in for free. Since 2026-09-01 they are the ESTIMATED
  *  musical boundaries (median error ~1s), which is what the timeline and the

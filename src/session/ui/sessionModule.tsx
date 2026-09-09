@@ -12,7 +12,7 @@ import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
 import { loadSessionAudio, setSyncAudioByDefault } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
-import { TUNE_ANALYSER_MODULE_KEY, type RecordedSession, type TuneAnalyserModuleData } from '../model';
+import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
 import { detectionsOnCards } from '../detections';
 import { appState, mutate } from '../../store';
 import {
@@ -62,7 +62,7 @@ function ShareChoiceCard({ icon, label, desc, accentColor, onClick }: {
 }
 
 /** Same look as theSessionImport.ts's mkInputRow, without the unused info span. */
-function KeyEntryStep({ onImported }: { onImported: (session: RecordedSession) => void }) {
+function KeyEntryStep({ onImported }: { onImported: (session: Analysis) => void }) {
   const [key, setKey] = useState('');
   const [status, setStatus] = useState('');
   const [importing, setImporting] = useState(false);
@@ -306,7 +306,7 @@ async function finishImportRun(
  *  tied to it stay put and existing card attachments, which are independent
  *  extracted files, are unaffected). Never available without stored audio
  *  (caller gates the triggering button on that; this is just a safety net). */
-export async function startReanalyze(ctx: AppContext, session: RecordedSession): Promise<void> {
+export async function startReanalyze(ctx: AppContext, session: Analysis): Promise<void> {
   if (recognitionBusy()) { alertModal(t('sessions.import'), t('sessions.alreadyRunning')); return; }
   importStarting.value = true;
   try {

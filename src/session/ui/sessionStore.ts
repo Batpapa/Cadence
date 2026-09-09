@@ -15,7 +15,7 @@ import type { WindowResult } from '../model';
 // Step 1 of the Preact migration (2026-08-24): this file exists purely to
 // hold what used to be sessionModule.ts's own module-level variables, with
 // the exact same read/write semantics — no UI behavior changes here. The
-// live annotation feed / import progress become their own signals in a later
+// live detection feed / import progress become their own signals in a later
 // step, once something actually consumes them reactively (wiring them now,
 // unconsumed, would be dead code carrying real risk for a checkpoint whose
 // entire point is "verify nothing changed").

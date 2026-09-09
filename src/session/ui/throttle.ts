@@ -3,12 +3,12 @@ import { useEffect, useMemo, useRef } from 'preact/hooks';
 // ── Coalescing a high-frequency callback down to a render budget ─────────────
 // File import analyses faster than real time, and got faster again when the
 // analysis window shrank to 10s (2026-09-02): the worker emits a window roughly
-// every 60ms on a desktop, and both `onProgress` and `onAnnotations` fire on
+// every 60ms on a desktop, and both `onProgress` and `onDetections` fire on
 // each one — so the import screen was re-rendering a dozen-plus times a second
 // to move a progress bar a fraction of a pixel.
 //
 // Only the UI feed is throttled. The session orchestrators keep receiving and
-// applying every single event exactly as before: their annotation map, their
+// applying every single event exactly as before: their detection map, their
 // window array and their IndexedDB writes are untouched. Nothing about the
 // RESULT changes, only how often the screen is asked to redraw it.
 //

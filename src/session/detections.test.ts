@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { findCardDetections, theSessionTuneId, detectionsOnCards, sessionsOf } from './detections';
-import { TUNE_ANALYSER_MODULE_KEY, type RecordedSession, type SessionAnnotation } from './model';
+import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection } from './model';
 import type { Card } from '../types';
 
 // The "detected in" panel is derived on every render, so what it says is only
@@ -12,7 +12,7 @@ function card(externalId?: string): Card {
   return { id: 'c', guid: 'g', name: 'A Tune', defaultImportance: 1, tags: [], ...(externalId ? { externalId } : {}), content: { notes: '', attachments: [] } };
 }
 
-function ann(id: string, tuneId: string, start: number, extra: Partial<SessionAnnotation> = {}): SessionAnnotation {
+function ann(id: string, tuneId: string, start: number, extra: Partial<Detection> = {}): Detection {
   return {
     id, tuneId, settingId: '1', displayName: 'A Tune', dance: 'reel', meter: '4/4',
     start, end: start + 60, confidence: 0.8, bucket: 'high', meanScore: 0.9,
@@ -20,14 +20,14 @@ function ann(id: string, tuneId: string, start: number, extra: Partial<SessionAn
     viterbiPick: { tuneId, settingId: '1', displayName: 'A Tune', dance: 'reel', meter: '4/4', meanScore: 0.9 },
     userConfirmed: false, liked: false, finalized: true,
     ...extra,
-  } as SessionAnnotation;
+  } as Detection;
 }
 
-function session(id: string, date: string | null, annotations: SessionAnnotation[]): RecordedSession {
+function session(id: string, date: string | null, annotations: Detection[]): Analysis {
   return { id, name: '', date, duration: 3600, mimeType: 'audio/webm', source: 'live', annotations };
 }
 
-const lib = (...s: RecordedSession[]) => Object.fromEntries(s.map(x => [x.id, x]));
+const lib = (...s: Analysis[]) => Object.fromEntries(s.map(x => [x.id, x]));
 
 describe('theSessionTuneId', () => {
   it('reads the numeric id of a TheSession card', () => {
@@ -63,7 +63,7 @@ describe('findCardDetections', () => {
     expect(groups[0]!.detections.map(d => d.start)).toEqual([120, 900]);
   });
 
-  // Matching on the annotation's own tuneId means a correction is followed:
+  // Matching on the detection's own tuneId means a correction is followed:
   // re-identifying a detection moves it from one card's list to another's, with
   // nothing to rewrite anywhere.
   it('follows a corrected identity rather than the algorithm first answer', () => {
