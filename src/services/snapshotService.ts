@@ -90,6 +90,30 @@ export async function listSnapshots(userId: string): Promise<SnapshotMeta[]> {
   }
 }
 
+/** Every snapshot on this device, newest first, regardless of whether the
+ *  user it belongs to still exists.
+ *
+ *  That last part is the point (added 2026-09-09). `listSnapshots` filters by
+ *  a user id, which is fine in Settings — you are logged in, so the user is
+ *  there by definition. The recovery screen is the opposite case: it exists
+ *  for the device where the user store came back EMPTY, and a snapshot keyed
+ *  to a user who no longer appears anywhere would then be invisible in the
+ *  one place it could still save someone. */
+export async function listAllSnapshots(): Promise<SnapshotMeta[]> {
+  try {
+    const d = await db();
+    const keys = (await d.getAllKeys(STORE) as string[]).slice().sort().reverse();
+    const out: SnapshotMeta[] = [];
+    for (const key of keys) {
+      const rec = await d.get(STORE, key) as SnapshotRecord | undefined;
+      if (rec) out.push({ key, userId: rec.userId, ts: rec.ts, reason: rec.reason, cards: rec.cards, reviews: rec.reviews });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export async function getSnapshotState(key: string): Promise<AppState | null> {
   try {
     const d = await db();

@@ -7,8 +7,9 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
+import { ensurePersistentStorage } from './services/storageService';
 import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
-import { clearSnapshotsForUser } from './services/snapshotService';
+import { clearSnapshotsForUser, listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName, deleteLocalSessionData, localSessionAudioStats } from './session/db';
 import { buildZip, audioExtension } from './services/zip';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
@@ -29,6 +30,19 @@ if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
 // is lost if no listener exists yet; boot is async and, on the user-selector
 // screen, never reaches finishBoot() at all. See pwaService's own comment.
 initPWA();
+
+// Top-level and deliberately not awaited: nothing downstream depends on the
+// answer, and boot must not wait on a permission heuristic.
+//
+// Once per launch is enough, and this is the only automatic call. The
+// request is idempotent — it early-returns when already granted — so
+// repeating it elsewhere in the same run would do nothing: a browser that
+// refused decides on the interaction HISTORY of the site, not on whatever
+// the user just clicked, so there is no second moment within a session that
+// is worth asking at. A refusal gets its next chance at the next launch, or
+// from the button in the storage panel. See storageService.ts for what
+// best-effort storage means and why this exists at all.
+void ensurePersistentStorage();
 
 screen.orientation?.unlock?.();
 
@@ -173,6 +187,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
            <div class="flex justify-center"><button id="recovery-retry" class="btn-primary text-sm">Retry</button></div>`
         : `<p class="text-xs text-muted text-center">Download your data below, then use "Report a bug" to send it over.</p>`}
       <div id="recovery-users" class="space-y-2 overflow-x-auto"></div>
+      <div id="recovery-snapshots" class="space-y-2"></div>
       <div class="flex gap-2 justify-center pt-2 border-t border-border">
         <button id="recovery-raw" class="btn-ghost text-sm">Download full raw dump</button>
         <button id="recovery-report" class="btn-ghost text-sm">Report a bug on GitHub</button>
@@ -253,6 +268,78 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
   } catch (listErr) {
     console.error('Recovery: failed to list users:', listErr);
     usersEl.innerHTML = `<p class="text-xs text-muted text-center">Couldn't list individual users — try "Download full raw dump" instead.</p>`;
+  }
+
+  await renderRecoverySnapshots();
+}
+
+
+/** The safety-net snapshots, on the one screen that can still be reached when
+ *  there is no user to log in as.
+ *
+ *  Until 2026-09-09 these were listed in Settings only, which meant they were
+ *  unreachable in exactly the situation they were built for: a device whose
+ *  user store came back empty. They live in their own database
+ *  (`cadence-snapshots`), so they can perfectly well survive whatever emptied
+ *  the main one — and each one is a full AppState, downloadable here as the
+ *  same .cdb that Settings → Backup → Import accepts.
+ *
+ *  Read-only on purpose. Restoring from here would mean writing to a database
+ *  this screen already suspects, on behalf of a user who may not exist; the
+ *  download plus the ordinary import path is one machine less to get wrong. */
+async function renderRecoverySnapshots(): Promise<void> {
+  const host = document.getElementById('recovery-snapshots');
+  if (!host) return;
+  let snaps: SnapshotMeta[] = [];
+  try {
+    snaps = await listAllSnapshots();
+  } catch (e) {
+    console.error('Recovery: failed to list snapshots:', e);
+    return;
+  }
+  if (snaps.length === 0) return;
+
+  const title = document.createElement('p');
+  title.className = 'text-xs font-semibold uppercase tracking-widest text-muted pt-4 border-t border-border';
+  title.textContent = 'Automatic backups';
+  host.appendChild(title);
+
+  const hint = document.createElement('p');
+  hint.className = 'text-xs text-muted';
+  hint.textContent = 'Taken automatically before a sync replaced your data. Download one, then restore it from Settings -> Backup -> Import.';
+  host.appendChild(hint);
+
+  for (const s of snaps) {
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-3 p-2 rounded border border-border whitespace-nowrap';
+
+    const when = document.createElement('span');
+    when.className = 'text-xs font-mono text-muted shrink-0';
+    when.textContent = new Date(s.ts).toISOString().slice(0, 16).replace(String.fromCharCode(84), " ");
+
+    const what = document.createElement('span');
+    what.className = 'text-sm truncate min-w-0 flex-1';
+    what.textContent = s.cards + ' cards, ' + s.reviews + ' reviews  (' + s.reason + ')';
+
+    const who = document.createElement('span');
+    who.className = 'text-xs text-dim font-mono select-all shrink-0';
+    who.textContent = s.userId;
+
+    const btn = document.createElement('button');
+    btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
+    btn.innerHTML = EXPORT_SVG + 'Download';
+    btn.onclick = () => {
+      void getSnapshotState(s.key).then(state => {
+        if (!state) { alert("That snapshot could not be read."); return; }
+        // id stripped, exactly like the per-user download above: it is
+        // device-local, and the import path assigns its own.
+        const { id: _id, ...data } = state as unknown as Record<string, unknown> & { id?: string };
+        downloadJson(data, "cadence-snapshot-" + s.userId + "-" + s.ts + ".cdb");
+      });
+    };
+
+    row.append(when, what, who, btn);
+    host.appendChild(row);
   }
 }
 

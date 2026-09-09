@@ -565,9 +565,23 @@ export async function syncedAudioOf(sessionId: string): Promise<SyncedAudio | un
   return (await moduleData()).syncedAudio?.[sessionId];
 }
 
-/** Whether newly saved sessions get copied to Drive. */
+/** Whether newly saved sessions get copied to Drive. Defaults to ON since
+ *  2026-09-09.
+ *
+ *  It defaulted to off until a user lost every recording on their phone: the
+ *  browser is entitled to evict a site's storage wholesale, and the local copy
+ *  is the ONLY copy of a recording — the synced blob carries the analysis, never
+ *  the sound. Off by default meant the app quietly held the sole copy of the
+ *  thing it exists to produce. Costs nothing when Drive is not connected: the
+ *  upload simply fails and is logged, the recording stays on the device. */
+/** The value an absent flag means. Exported because the settings checkbox
+ *  reads the stored field directly — it renders from the module data it
+ *  already has rather than awaiting this accessor — and the two disagreeing
+ *  would show an unchecked box while every recording uploaded. */
+export const SYNC_AUDIO_BY_DEFAULT = true;
+
 export async function syncAudioByDefault(): Promise<boolean> {
-  return !!(await moduleData()).syncAudioByDefault;
+  return (await moduleData()).syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT;
 }
 
 export async function setSyncAudioByDefault(on: boolean): Promise<void> {
@@ -575,9 +589,11 @@ export async function setSyncAudioByDefault(on: boolean): Promise<void> {
   await mutate(user => {
     user.modules ??= {};
     const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
-    // Written only to turn it ON — absence is the default here as everywhere
-    // else in this codebase.
-    if (on) mod.syncAudioByDefault = true; else delete mod.syncAudioByDefault;
+    // Both values are written, unlike everywhere else in this codebase where
+    // absence is the default. It has to be: the default is now ON, so deleting
+    // the key on "off" would store the opposite of what the user just asked
+    // for, and their choice would be undone at the next read.
+    mod.syncAudioByDefault = on;
     user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
   });
 }

@@ -9,7 +9,7 @@ import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
 import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
 import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
-import { loadSessionAudio, setSyncAudioByDefault } from '../db';
+import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
@@ -436,7 +436,7 @@ function SessionSettingsBody() {
           Drive to copy to, so the setting has nothing to mean. */}
       {driveOn && (
         <SettingRow
-          checked={!!mod?.syncAudioByDefault}
+          checked={mod?.syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT}
           label={t('sessions.syncAudio')}
           hint={t('sessions.syncAudio.hint')}
           onToggle={(next) => { void setSyncAudioByDefault(next); }}
