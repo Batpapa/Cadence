@@ -180,6 +180,10 @@ export interface User {
    *  nothing else: it is not an invariant, and a set someone stripped the
    *  score from must stay stripped. */
   addTunesetAbcOnConvert?: boolean;
+  /** Where to show a tune's opening bars — see `components/incipit.tsx`.
+   *  Absent = 'card', the default: the reminder is the feature, and one that
+   *  has to be switched on is one nobody finds. */
+  incipitDisplay?: IncipitDisplay;
 
   // Profiles
   profileIds: string[];
@@ -225,6 +229,11 @@ export type FilterState = 'include' | 'exclude';
 export type LibrarySort = 'alpha' | 'lastReviewed' | 'lastAdded' | 'importance' | 'recall' | 'difficulty';
 
 export type TrendingGainMode = 'absolute' | 'percent';
+
+/** Where a tune's opening bars are shown. `card` is the card page alone;
+ *  `study` means the card page AND a review — it is a superset, not a third
+ *  place, so the three values read as one dial from less to more. */
+export type IncipitDisplay = 'none' | 'card' | 'study';
 
 export type Route =
   | { view: 'folder'; folderId: string | null }

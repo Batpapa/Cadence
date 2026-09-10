@@ -1092,5 +1092,13 @@
   "sessions.extracting": "Extracting… {pct}%",
   "sessions.merge": "Merge with previous",
   "sessions.clip.unavailable": "Audio unavailable on this device (recorded elsewhere)",
-  "sessions.downloadClip": "Download clip (MP3)"
+  "sessions.downloadClip": "Download clip (MP3)",
+  "card.section.incipit": "Opening bars",
+  "settings.incipit": "Show the opening bars",
+  "settings.incipitHint": "The first two bars of a tune, or of each tune in a set — the reminder you want in a session, without opening the score. Shown as notation only: the full score, and the sound, stay one tap away.",
+  "settings.incipit.none": "Nowhere",
+  "settings.incipit.card": "On the card",
+  "settings.incipit.study": "Card and review",
+  "card.incipit.play": "Hear the opening bars",
+  "card.incipit.stop": "Stop"
 }

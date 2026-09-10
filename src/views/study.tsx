@@ -6,6 +6,7 @@ import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
 import { AttachmentList, CardRefList } from '../components/attachmentList';
 import { isTuneset } from '../services/cardTypeService';
+import { IncipitRow } from '../components/incipit';
 import { TuneIcon } from '../components/icons';
 import { STRATEGY_ICONS } from '../components/studyModal';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
@@ -308,6 +309,11 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               <CardRefList refs={card.tunes ?? []} editable={false} onRemove={() => {}} onReorder={() => {}} glyph={<TuneIcon size={11} />} />
             </div>
           )}
+
+          {/* The opening bars, when the user asked for them in study too.
+              Under the tune list, above the score: it answers "how does this
+              start" for someone who has just been shown the name. */}
+          <IncipitRow card={card} where="study" />
 
           {card.content.attachments.length > 0 && (
             <AttachmentList options={{

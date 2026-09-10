@@ -2,7 +2,7 @@ import { signal, computed, type Signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
-import type { AppContext } from '../types';
+import type { AppContext, IncipitDisplay } from '../types';
 import { generateId, emptyState } from '../utils';
 import { deleteLocalSessionData } from '../session/db';
 import { TrashIcon, ResetIcon, HelpIcon } from './icons';
@@ -876,6 +876,28 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
         <Toggle
           checked={addTunesetAbcOnConvert(user)}
           onChange={(v) => void ctx.mutate(s => updateUser(s, { addTunesetAbcOnConvert: v }))}
+        />
+      </Row>
+      <Sep />
+
+      {/* Three values on one dial, least to most, rather than two switches:
+          showing the opening bars in a review without showing them on the
+          card is not a state anybody wants, and two checkboxes would have
+          offered it. `card` is the default — a reminder nobody switches on is
+          a reminder nobody has. */}
+      <Row label={t('settings.incipit')} hint={t('settings.incipitHint')}>
+        <CustomSelect
+          value={user.incipitDisplay ?? 'card'}
+          options={[
+            { value: 'none',  label: t('settings.incipit.none') },
+            { value: 'card',  label: t('settings.incipit.card') },
+            { value: 'study', label: t('settings.incipit.study') },
+          ]}
+          onChange={(v) => void ctx.mutate(s => updateUser(s, { incipitDisplay: v as IncipitDisplay }))}
+          // Wide enough for its longest option: the trigger truncates, and
+          // "Card and review" arriving as "Card and…" is a menu that hides
+          // the very choice it is offering.
+          triggerClass="flex items-center gap-2 min-w-[10.5rem] text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent"
         />
       </Row>
       <Sep />

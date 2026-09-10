@@ -186,6 +186,13 @@
     .tap-btn { min-width: 3rem; min-height: 3rem; }
   }
 
+  /* The tempo mark on an incipit. HIDDEN, not removed: the ABC keeps its
+     `Q:` so the ▸ beside the stave takes a reel at reel speed, while
+     "♩ = 190" stops claiming a line of its own above three centimetres of
+     music. abcjs ignores a zero-sized `tempofont` — tried first — so the
+     class it already emits (`add_classes`) does the job instead. */
+  .incipit .abcjs-tempo { display: none; }
+
   .card-checkbox {
     appearance: none; -webkit-appearance: none;
     @apply w-3.5 h-3.5 rounded cursor-pointer shrink-0 relative border border-muted bg-transparent transition-colors;

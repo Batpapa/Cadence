@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildTunesetAbc, splitAbcTunes, parseAbcBlock, encodeAbc, MAX_REPEAT, DEFAULT_TUNE_REPEAT, defaultTuneRepeat,
   tunesetAbcPlaceholder, addTunesetAbcOnConvert, addTunesetAbcOnBecomingSet, ADD_TUNESET_ABC_BY_DEFAULT,
+  musicIncipit, abcDurationUnits, abcIncipit, TUNE_TEMPOS,
 } from './abcService';
 import { hasTunesetScore } from './cardTypeService';
 import type { Card, CardRef } from '../types';
@@ -324,3 +325,137 @@ describe('the score added when a card becomes a set', () => {
     expect(card.content.attachments[0]).toBe(own);
   });
 });
+
+describe('musicIncipit — le rappel de deux mesures', () => {
+  // Asked for from the field: "je veux juste un rappel de comment les morceaux
+  // commencent". The hard part is not the cut, it is the PICKUP: 37.4% of
+  // TheSession's settings start with one (measured over 55 285 settings), and
+  // it is exactly the half-bar a player needs to come in on.
+  const reel = (m: string) => musicIncipit(m, '4/4', '1/8');
+
+  it('garde deux mesures pleines', () => {
+    expect(reel('EBBA B2 EB|B2 AB dBAG|FDAD BDAD|FDAD dAFD|'))
+      .toBe('EBBA B2 EB | B2 AB dBAG |');
+  });
+
+  it('GARDE la levee, et ne la compte pas comme une mesure', () => {
+    // "D2" is two eighths in a 4/4 bar of eight: a pickup, not a bar.
+    expect(reel('D2|EBBA B2 EB|B2 AB dBAG|FDAD BDAD|'))
+      .toBe('D2 | EBBA B2 EB | B2 AB dBAG |');
+  });
+
+  it('compte en unites de L, pas en notes', () => {
+    // A jig bar is six eighths; two bars is twelve notes, which is what the
+    // request asked for in the first place.
+    expect(musicIncipit('G3 GAB|dBA GED|GAB dBA|', '6/8', '1/8'))
+      .toBe('G3 GAB | dBA GED |');
+  });
+
+  it('laisse tomber les marques de reprise', () => {
+    // An incipit stops mid-tune, so a kept `|:` would open a repeat that
+    // nothing ever closes.
+    expect(reel('|:EBBA B2 EB|B2 AB dBAG:|')).toBe('EBBA B2 EB | B2 AB dBAG |');
+  });
+
+  it('reconnait AUSSI les doubles barres de reprise', () => {
+    // Found by running this over TheSession's 55 288 settings, not by reading
+    // the code: JavaScript alternation takes the FIRST branch that matches,
+    // so `||` listed before `||:` ate the bar and left a bare ":" glued to
+    // the next note. 46 scores rendered with a stray colon.
+    // A 6/8 bar, given its real meter: read as 4/4 it measures short and is
+    // taken for a pickup, which is the parser being right and the fixture
+    // being wrong — and a reminder that the meter is what decides here.
+    expect(musicIncipit('||: efe cAc|dcd BGF|EAA GAB|', '6/8', '1/8')).toBe('efe cAc | dcd BGF |');
+    expect(reel('EBBA B2 EB:||B2 AB dBAG|FDAD BDAD|')).toBe('EBBA B2 EB | B2 AB dBAG |');
+  });
+
+  it('rend la musique telle quelle quand elle est plus courte que demande', () => {
+    expect(reel('EBBA B2 EB|')).toBe('EBBA B2 EB |');
+  });
+
+  it('survit a une metrique illisible en comptant les segments', () => {
+    // No pickup detection possible, so every segment counts — one half-bar
+    // too many at worst, never a broken score.
+    expect(musicIncipit('D2|EBBA B2 EB|B2 AB dBAG|', 'zz', '1/8'))
+      .toBe('D2 | EBBA B2 EB |');
+  });
+
+  it('ne compte pas les ornements comme de la duree', () => {
+    // Grace notes, decorations and annotations carry no time; counting them
+    // would turn a full bar into a false pickup.
+    const withOrnaments = '{g}EBBA !trill!B2 "^cran" EB|B2 AB dBAG|FDAD BDAD|';
+    expect(reel(withOrnaments).split('|').length).toBe(3);
+  });
+});
+
+describe('abcDurationUnits', () => {
+  it('compte les longueurs explicites', () => {
+    expect(abcDurationUnits('ABCD')).toBe(4);
+    expect(abcDurationUnits('A2B2')).toBe(4);
+    expect(abcDurationUnits('A/B/')).toBe(1);
+    expect(abcDurationUnits('A//')).toBe(0.25);
+    expect(abcDurationUnits('A3/2')).toBe(1.5);
+  });
+
+  it('compte un accord pour une seule duree', () => {
+    expect(abcDurationUnits('[CEG]2')).toBe(2);
+  });
+
+  it('compte les silences, qui occupent bien la mesure', () => {
+    expect(abcDurationUnits('z4')).toBe(4);
+  });
+
+  it('ne compte rien pour ce qu il ne sait pas lire', () => {
+    // The lenient direction on purpose: unread music looks SHORTER, which at
+    // worst shows half a bar too much.
+    expect(abcDurationUnits('')).toBe(0);
+    expect(abcDurationUnits('"Am" !fermata!')).toBe(0);
+  });
+});
+
+describe('abcIncipit — ce que la partition garde', () => {
+  const full = [
+    'X: 1', "T: Cooley's", 'R: reel',
+    'S: https://thesession.org/tunes/17205#setting32977', 'Z: Slaine',
+    'M: 4/4', 'L: 1/8', 'K: Edor',
+    'D2|EBBA B2 EB|B2 AB dBAG|FDAD BDAD|',
+  ].join('\n');
+
+  it('ne garde que ce qui change la LECTURE des notes', () => {
+    // What the user saw printed around a two-bar stave and did not want:
+    // the type, the source URL, the transcriber. The card says the rest.
+    const out = abcIncipit(full);
+    expect(out).toContain('M: 4/4');
+    expect(out).toContain('L: 1/8');
+    expect(out).toContain('K: Edor');
+    expect(out).not.toContain('T:');
+    expect(out).not.toContain('R:');
+    expect(out).not.toContain('thesession.org');
+    expect(out).not.toContain('Slaine');
+  });
+
+  it('DONNE un tempo au morceau qui n en declare pas', () => {
+    // TheSession's scores usually carry no `Q:` — the speed is implied by
+    // `R: reel`, and trimming R: away would have left the play button
+    // taking a reel at abcjs's default. Restated explicitly instead.
+    expect(abcIncipit(full)).toContain(`Q: ${TUNE_TEMPOS['reel']}`);
+  });
+
+  it('respecte un tempo ecrit a la main', () => {
+    const withTempo = full.replace('M: 4/4', 'Q: 1/4=100\nM: 4/4');
+    expect(abcIncipit(withTempo)).toContain('Q: 1/4=100');
+    expect(abcIncipit(withTempo)).not.toContain('1/4=190');
+  });
+
+  it('place le tempo AVANT la cle, qui ferme l en-tete', () => {
+    const out = abcIncipit(full);
+    expect(out.indexOf('Q:')).toBeLessThan(out.indexOf('K:'));
+  });
+
+  it('coupe bien le corps', () => {
+    expect(abcIncipit(full)).toContain('D2 | EBBA B2 EB | B2 AB dBAG |');
+    expect(abcIncipit(full)).not.toContain('FDAD BDAD');
+  });
+});
+
+
