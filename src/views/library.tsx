@@ -25,6 +25,7 @@ import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
 import { FilterSection, ReviewedRangeSection, cycleFilter, type FilterMap } from '../components/filterSection';
 import { createLongPressHandlers } from '../components/longPress';
+import { registerOverlay } from '../components/overlayStack';
 
 /** The one figure a row shows on its right: whatever the current sort is
  *  sorting by.
@@ -98,7 +99,9 @@ function showExportModal(cards: Card[], user: AppState): void {
   dialog.append(header, body);
   overlay.appendChild(dialog);
 
-  const close = () => overlay.remove();
+  let unregister = () => {};
+  const close = () => { unregister(); overlay.remove(); };
+  unregister = registerOverlay(close);
   closeBtn.onclick = close;
   let mouseDownOnOverlay = false;
   overlay.addEventListener('mousedown', e => { mouseDownOnOverlay = e.target === overlay; });

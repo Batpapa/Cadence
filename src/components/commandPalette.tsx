@@ -4,6 +4,7 @@ import { createPortal } from 'preact/compat';
 import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
 import { focusIfDesktop, scoreMatch, NO_SCORE_MATCH } from '../utils';
+import { registerOverlay } from './overlayStack';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -74,9 +75,16 @@ const activeGetCtx = signal<(() => AppContext) | null>(null);
 export function showCommandPalette(getCtx: () => AppContext): void {
   if (activeGetCtx.value) return;
   activeGetCtx.value = getCtx;
+  _unregister = registerOverlay(closePalette);
 }
 
+/** Registration held here rather than in the component: the palette is
+ *  opened and closed by a signal, so its lifetime is these two functions. */
+let _unregister: () => void = () => {};
+
 function closePalette(): void {
+  _unregister();
+  _unregister = () => {};
   activeGetCtx.value = null;
 }
 
