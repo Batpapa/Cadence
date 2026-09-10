@@ -192,6 +192,17 @@
      class it already emits (`add_classes`) does the job instead. */
   .incipit .abcjs-tempo { display: none; }
 
+  /* The last line of defence against a cut-off stave, and the only one that
+     always holds. `staffwidth` is a REQUEST: abcjs will not compress music
+     below its natural minimum, so asking for 179 px on a narrow phone still
+     drew 247 and clipped the final bar (measured, which is how the request
+     came in). `cropToInk` leaves a viewBox behind, so max-width + height:auto
+     is all it takes for the drawing to scale down to whatever room there is —
+     and to stay at its intrinsic size when there is room to spare, which is
+     the whole difference from abcjs's own `responsive: 'resize'` (that one
+     STRETCHES a two-bar stave across a 1600 px desktop). */
+  .incipit svg { max-width: 100%; height: auto; }
+
   .card-checkbox {
     appearance: none; -webkit-appearance: none;
     @apply w-3.5 h-3.5 rounded cursor-pointer shrink-0 relative border border-muted bg-transparent transition-colors;

@@ -23,9 +23,46 @@ import { t } from '../services/i18nService';
 // the cursor, the tempo and instrument controls — stays in the viewer, which
 // this deliberately does not touch.
 
-/** Fixed, so a two-bar stave is the size of a line of music and not of the
- *  screen it happens to be on. */
+/** The widest a two-bar stave is ever drawn, so it stays the size of a line of
+ *  music and not of the screen it happens to be on. A narrower row gets a
+ *  narrower stave — see `staffWidthFor`. */
 const INCIPIT_STAFF_WIDTH = 420;
+
+/** `staffwidth` is measured in abcjs's own units, BEFORE `scale`: 420 at 0.8
+ *  produces an svg whose width attribute is 525, painted through a transform
+ *  at 420. `fitToInk` folds that transform away, so what finally lands on the
+ *  page is `staffwidth` pixels wide — which is why nothing below multiplies
+ *  by this. It is here to be passed to abcjs, and nowhere else. */
+const INCIPIT_SCALE = 0.8;
+
+/** Below this the stave stops being readable and scrolling is the better
+ *  answer, so a genuinely tiny column gets a scrollbar rather than a squint.
+ *  Low on purpose: a floor high enough to overflow a phone would be the bug
+ *  this whole function exists to fix. Measured on a 228 px column, a floor of
+ *  200 drew 251 px and cut the last bar off — exactly what was reported. */
+const MIN_STAFF_WIDTH = 120;
+
+/** abcjs does not honour `staffwidth` to the pixel — measured, it came back
+ *  1.4 px over on one width and exact on another — and a stave that misses by
+ *  one is a stave with a scrollbar. Cheaper to give back four pixels than to
+ *  model whatever abcjs adds. */
+const FIT_MARGIN = 4;
+
+/** How much the row has to change width before the stave is re-engraved.
+ *  Wide enough to swallow a scrollbar appearing (~15 px), which is the one
+ *  width change a redraw can cause by itself. */
+const RESIZE_HYSTERESIS = 20;
+
+/** The stave width that fits `avail` layout pixels — the phone fix.
+ *
+ *  A fixed 420 is 525 px of SVG, and a phone card column is about 380: the
+ *  last bar was simply cut off the right edge. Capped rather than merely
+ *  scaled, so a desktop keeps the size that was tuned by eye instead of
+ *  stretching a two-bar reminder across the whole page. */
+export function staffWidthFor(avail: number): number {
+  if (avail <= 0) return INCIPIT_STAFF_WIDTH;         // not measured yet
+  return Math.round(Math.max(MIN_STAFF_WIDTH, Math.min(INCIPIT_STAFF_WIDTH, avail - FIT_MARGIN)));
+}
 
 /** Whether the opening bars belong on this screen, for this user. */
 export function showsIncipit(user: Pick<AppState, 'incipitDisplay'>, where: 'card' | 'study'): boolean {
@@ -83,29 +120,76 @@ export function IncipitRow({ card, where, class: className = '' }: {
   class?: string;
 }) {
   const user = appState.value;
+  /** Which face the openings show — ONE switch for the whole section, beside
+   *  its title (the user's call, 2026-09-11). A set stacks three staves and
+   *  they are three views of the same question; flipping them one at a time
+   *  was three taps to answer it, and left the section half in one notation
+   *  and half in the other.
+   *
+   *  Starts from the user's preference, the same one the full viewer opens
+   *  on, and never writes it back: this is a look at the source, not a new
+   *  default. */
+  const [mode, setMode] = useState<AbcOpenMode>(() => abcOpenMode(appState.value));
+
   if (!showsIncipit(user, where)) return null;
   const scores = incipitScores(card, user.cards);
   if (scores.length === 0) return null;
   return (
     <div class={`space-y-1 ${className}`}>
-      <span class="section-title">{t('card.section.incipit')}</span>
-      {scores.map(s => <Incipit key={s.key} abc={s.abc} />)}
+      <div class="flex items-center gap-2">
+        <span class="section-title">{t('card.section.incipit')}</span>
+        <button
+          type="button"
+          class="tap-btn shrink-0 cursor-pointer"
+          title={t(mode === 'sheet' ? 'card.incipit.showSource' : 'card.incipit.showScore')}
+          onClick={() => setMode(m => (m === 'sheet' ? 'text' : 'sheet'))}
+        >
+          {/* Shows the face it would switch TO, in the viewer's own
+              vocabulary — the "ABC" tab there is this "ABC" here. */}
+          <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
+            {mode === 'sheet'
+              ? <span class="text-[8px] font-mono font-bold leading-none">ABC</span>
+              : <MusicNoteIcon size={11} />}
+          </span>
+        </button>
+      </div>
+      {scores.map(s => <Incipit key={s.key} abc={s.abc} mode={mode} />)}
     </div>
   );
 }
 
-/** Trims the empty band abcjs leaves above the staff.
+/** Makes what abcjs produced occupy exactly the room it draws in — no more.
  *
- *  It lays a score out with room for the things a score usually has — the
- *  title, the tempo mark — and those are hidden here, not absent: the tempo
- *  is still in the ABC so the ▸ plays at the right speed, and it is taken out
- *  with CSS. abcjs had already reserved its height by then, so the staff sits
- *  low in a box that is 12 px too tall, and beside a centred ▸ that reads as
- *  misaligned. Measured, not guessed: content at y=12 in a 108 px box.
+ *  Two separate pieces of dead space, both of them abcjs's own doing and
+ *  neither visible to the compiler. Measured in the browser, on the phone
+ *  that reported them.
  *
- *  Cropping the viewBox to the ink fixes it whatever the cause — a title, a
- *  tempo, a future field — instead of subtracting a magic number. */
-function cropToInk(host: HTMLElement): void {
+ *  **Above the staff.** abcjs lays a score out with room for the things a
+ *  score usually has — the title, the tempo mark — and those are hidden here,
+ *  not absent: the tempo stays in the ABC so the ▸ plays at the right speed,
+ *  and it is taken out with CSS. abcjs had already reserved its height by
+ *  then, so the staff sat low in a box 12 px too tall, beside a centred ▸ that
+ *  read as misaligned. Cropping the viewBox to the ink fixes that whatever the
+ *  cause — a title, a tempo, a future field — instead of subtracting a magic
+ *  number.
+ *
+ *  **To the right.** `scale` is applied as a CSS TRANSFORM on the svg
+ *  (`transform: scale(0.8)`, origin 0 0), so the element still takes its full
+ *  untransformed width in the layout while painting only 80 % of it: a 228 px
+ *  box showing 182 px of music and 46 px of nothing. Folding the factor into
+ *  the width and height attributes — the viewBox already carries the drawing's
+ *  own coordinates — paints exactly the same picture in a box that matches it.
+ *
+ *  It also writes `overflow: hidden` and a fixed width/height onto OUR
+ *  container, which is what beat `overflow-x-auto` and turned an overflow into
+ *  a clean cut with the last bar missing. Handing those back to the stylesheet
+ *  is the rest of the fix. */
+function fitToInk(host: HTMLElement): void {
+  // abcjs styles the container it was handed. Ours is laid out by CSS.
+  host.style.removeProperty('overflow');
+  host.style.removeProperty('width');
+  host.style.removeProperty('height');
+
   const svg = host.querySelector('svg');
   if (!svg) return;
   let top = Infinity, bottom = -Infinity;
@@ -119,8 +203,14 @@ function cropToInk(host: HTMLElement): void {
   if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom <= top) return;
   const width = parseFloat(svg.getAttribute('width') ?? '') || svg.getBoundingClientRect().width;
   const height = bottom - top;
+  // Read back rather than assumed: if abcjs ever stops scaling this way, the
+  // factor is 1 and everything below is a no-op.
+  const scale = parseFloat(/scale\(\s*([\d.]+)/.exec(svg.style.transform)?.[1] ?? '1') || 1;
   svg.setAttribute('viewBox', `0 ${top} ${width} ${height}`);
-  svg.setAttribute('height', String(height));
+  svg.setAttribute('width', String(width * scale));
+  svg.setAttribute('height', String(height * scale));
+  svg.style.removeProperty('transform');
+  svg.style.removeProperty('transform-origin');
 }
 
 /** Draws one ABC string as a small stave, with a ▸ beside it.
@@ -130,7 +220,7 @@ function cropToInk(host: HTMLElement): void {
  *  front. It arrives, the stave appears; until then the row simply is not
  *  there. Nothing waits on it and nothing reports its failure: this improves a
  *  page, it is not a feature anyone is blocked on. */
-export function Incipit({ abc, class: className = '' }: { abc: string; class?: string }) {
+function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcOpenMode; class?: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   // Everything the play button needs, filled in by the render below. A ref,
@@ -138,11 +228,43 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
   const audio = useRef<{ visualObj: TuneObject | null; synth: MidiBuffer | null }>({ visualObj: null, synth: null });
   const [playing, setPlaying] = useState(false);
   const [audible, setAudible] = useState(false);
-  /** Which face this one shows. Starts from the user's preference — the same
-   *  one the full viewer opens on — and is then this row's own business: a
-   *  switch here is a look at the source, not a new default, and the next
-   *  card opens where the setting says again. */
-  const [mode, setMode] = useState<AbcOpenMode>(() => abcOpenMode(appState.value));
+  /** How much room the stave actually has, in layout pixels. */
+  const [avail, setAvail] = useState(0);
+
+  // Measured, never assumed. A ResizeObserver and not a window listener: the
+  // sidebar opening or closing changes this row's width without the window
+  // changing size at all, and so does rotating a phone mid-view.
+  //
+  // Two precautions, both learnt the hard way from "ResizeObserver loop
+  // completed with undelivered notifications" while dragging a window edge:
+  //
+  //  1. The measurement is deferred to the next frame. Redrawing a score is
+  //     layout work, and doing layout work INSIDE the callback is what turns
+  //     one notification into a loop the browser gives up on.
+  //  2. Small changes are ignored. Redrawing changes the stave's HEIGHT,
+  //     which can make the page's scrollbar appear or vanish, which changes
+  //     every width on the page — a genuine oscillation, not just a warning.
+  //     A stave is capped at 420 px and scales with CSS in between, so a few
+  //     pixels of width are worth nothing and a redraw for them is worth less.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let raf = 0;
+    let last = -1;
+    const measure = () => {
+      const w = host.clientWidth;
+      if (last >= 0 && Math.abs(w - last) < RESIZE_HYSTERESIS) return;
+      last = w;
+      setAvail(w);
+    };
+    measure();
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measure);
+    });
+    ro.observe(host);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, [mode]);
 
   // The sound belongs to the MUSIC, not to the drawing: built from `abc`
   // alone, so switching faces neither stops it nor throws the primed buffer
@@ -173,8 +295,8 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
           // a line of music; the wrapper scrolls it on a narrow screen.
           add_classes: true,
           paddingtop: 0, paddingbottom: 0, paddingleft: 0, paddingright: 0,
-          staffwidth: INCIPIT_STAFF_WIDTH,
-          scale: 0.8,
+          staffwidth: staffWidthFor(avail),
+          scale: INCIPIT_SCALE,
           // Belt and braces on top of the header trimming in abcIncipit: even
           // if a field slips through, none of it gets a visible size here.
           // The tempo mark is the exception — abcjs ignores a zero-sized
@@ -182,7 +304,7 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
           // which keeps `Q:` in the ABC for the play button.
           format: { titlefont: 'Verdana 0', composerfont: 'Verdana 0', annotationfont: 'Verdana 9' },
         }) : abcjs.parseOnly(abc);
-        if (host) cropToInk(host);
+        if (host) fitToInk(host);
         audio.current.visualObj = visual?.[0] ?? null;
         // Only offer the button where sound can actually come out.
         if (alive && abcjs.synth.supportsAudio()) setAudible(true);
@@ -191,7 +313,7 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
       }
     }).catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; };
-  }, [abc, mode]);
+  }, [abc, mode, avail]);
 
   /** Plays, pauses, resumes — the whole point being that not everyone reads
    *  music.
@@ -278,24 +400,11 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
         // Selectable, unlike the stave — reading it or lifting it out is the
         // reason to want this face at all. `whitespace-pre`, not `pre-wrap`:
         // a wrapped bar is a different bar to read, so it scrolls instead.
-        ? <pre class="text-xs font-mono text-primary whitespace-pre overflow-x-auto min-w-0 m-0">{parseAbcBlock(abc).music}</pre>
-        : <div ref={hostRef} class="incipit overflow-x-auto min-w-0" aria-hidden="true" />}
-      {/* Right of the score, hugging it rather than pushed to the far edge:
-          it belongs to THIS opening, and a set stacks three of them. Shows
-          the face it would switch TO, in the viewer's own vocabulary — the
-          "ABC" tab there is this "ABC" here. */}
-      <button
-        type="button"
-        class="tap-btn shrink-0 cursor-pointer"
-        title={t(mode === 'sheet' ? 'card.incipit.showSource' : 'card.incipit.showScore')}
-        onClick={() => setMode(m => (m === 'sheet' ? 'text' : 'sheet'))}
-      >
-        <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
-          {mode === 'sheet'
-            ? <span class="text-[8px] font-mono font-bold leading-none">ABC</span>
-            : <MusicNoteIcon size={11} />}
-        </span>
-      </button>
+        ? <pre class="flex-1 text-xs font-mono text-primary whitespace-pre overflow-x-auto min-w-0 m-0">{parseAbcBlock(abc).music}</pre>
+        // `flex-1`, and not merely `min-w-0`: an EMPTY flex item that may
+        // shrink measures zero, and this one has to be measured before there
+        // is anything in it to give abcjs a width to draw at.
+        : <div ref={hostRef} class="incipit flex-1 overflow-x-auto min-w-0" aria-hidden="true" />}
     </div>
   );
 }
