@@ -1092,5 +1092,13 @@
   "sessions.extracting": "Extraction… {pct}%",
   "sessions.merge": "Fusionner avec le précédent",
   "sessions.clip.unavailable": "Audio indisponible sur cet appareil (enregistré ailleurs)",
-  "sessions.downloadClip": "Télécharger l'extrait (MP3)"
+  "sessions.downloadClip": "Télécharger l'extrait (MP3)",
+  "card.section.incipit": "Premières mesures",
+  "settings.incipit": "Afficher les premières mesures",
+  "settings.incipitHint": "Les deux premières mesures d'un morceau, ou de chaque morceau d'une suite : le rappel utile en session, sans ouvrir la partition. Notation seule ; la partition complète et le son restent à un geste.",
+  "settings.incipit.none": "Nulle part",
+  "settings.incipit.card": "Sur la carte",
+  "settings.incipit.study": "Carte et révision",
+  "card.incipit.play": "Écouter les premières mesures",
+  "card.incipit.stop": "Arrêter"
 }

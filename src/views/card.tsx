@@ -12,6 +12,7 @@ import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf
 import { cardTypeIcon } from '../components/cardTypeIcon';
 import { tunesetAutoName } from '../services/stateNormalise';
 import { defaultTuneRepeat, addTunesetAbcOnBecomingSet } from '../services/abcService';
+import { IncipitRow } from '../components/incipit';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
@@ -830,6 +831,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           )}
         </div>
       )}
+
+      {/* ── The opening bars ── */}
+      {/* Between the tune list and the attachments, which is where it is
+          useful: the list says WHAT is played, this says how it starts, and
+          the full score below is for when two bars are not enough. */}
+      <IncipitRow card={card} where="card" />
 
       {/* ── Attachments ── */}
       <AttachmentList options={{
