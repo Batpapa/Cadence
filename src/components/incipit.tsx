@@ -184,6 +184,31 @@ export function IncipitRow({ card, where, class: className = '' }: {
  *  container, which is what beat `overflow-x-auto` and turned an overflow into
  *  a clean cut with the last bar missing. Handing those back to the stylesheet
  *  is the rest of the fix. */
+/** The y of the middle of the five staff lines, in the drawing's own units.
+ *
+ *  Found by shape rather than by class: abcjs names only the top line, and a
+ *  staff line is unmistakable anyway — a rule two pixels thick running the
+ *  whole width. Five of them, so the middle one is the median. Anything else
+ *  (a barline is tall and narrow, a ledger line is short, a beam is thick)
+ *  fails one of the two tests.
+ *
+ *  Null when the staff cannot be recognised, which leaves the caller doing
+ *  nothing rather than guessing — a misplaced score is worse than one sitting
+ *  where abcjs put it. */
+function middleStaffLineY(svg: SVGSVGElement, width: number): number | null {
+  const ys: number[] = [];
+  for (const el of Array.from(svg.querySelectorAll('path'))) {
+    let box: DOMRect;
+    try { box = (el as SVGGraphicsElement).getBBox(); } catch { continue; }
+    if (box.height > 2) continue;                 // not a rule
+    if (box.width < width * 0.8) continue;        // not a full-width one
+    ys.push(box.y + box.height / 2);
+  }
+  if (ys.length < 5) return null;
+  ys.sort((a, b) => a - b);
+  return ys[Math.floor(ys.length / 2)] ?? null;
+}
+
 function fitToInk(host: HTMLElement): void {
   // abcjs styles the container it was handed. Ours is laid out by CSS.
   host.style.removeProperty('overflow');
@@ -211,6 +236,21 @@ function fitToInk(host: HTMLElement): void {
   svg.setAttribute('height', String(height * scale));
   svg.style.removeProperty('transform');
   svg.style.removeProperty('transform-origin');
+
+  // Sit the MIDDLE STAFF LINE on the row's centre line, so the ▸ beside it
+  // and the staff read as being on the same line. Cropping to the ink centres
+  // the INK, which is not the same thing at all: a tune that climbs high puts
+  // more ink above the staff than below, and the staff then rides low while
+  // the row's other controls stay centred.
+  //
+  // A CSS transform, deliberately: it moves the paint and not the layout, so
+  // the row keeps exactly the height the ink asked for and the notes that now
+  // fall outside simply show — which is why the host no longer clips. The
+  // user's call: the height must not move, the music may spill.
+  const mid = middleStaffLineY(svg, width);
+  if (mid === null) return;
+  const dy = (height * scale) / 2 - (mid - top) * scale;
+  if (Math.abs(dy) > 0.5) svg.style.transform = `translateY(${dy}px)`;
 }
 
 /** Draws one ABC string as a small stave, with a ▸ beside it.
@@ -404,7 +444,13 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
         // `flex-1`, and not merely `min-w-0`: an EMPTY flex item that may
         // shrink measures zero, and this one has to be measured before there
         // is anything in it to give abcjs a width to draw at.
-        : <div ref={hostRef} class="incipit flex-1 overflow-x-auto min-w-0" aria-hidden="true" />}
+        //
+        // No `overflow-x-auto` any more. It was the guard against a stave too
+        // wide for the row, and the CSS cap in `.incipit svg` now makes that
+        // impossible — while clipping was actively in the way, because a box
+        // that scrolls on one axis cannot stay visible on the other, and the
+        // vertical centring below spills on purpose.
+        : <div ref={hostRef} class="incipit flex-1 min-w-0" aria-hidden="true" />}
     </div>
   );
 }
