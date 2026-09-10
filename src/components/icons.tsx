@@ -383,10 +383,12 @@ export function WrenchIcon({ size = 12 }: { size?: number }) {
 }
 
 /** A pushpin — "keep this one ticked for the next time". Used by the deck
- *  choice modal for the third state of a deck row. */
-export function PinIcon({ size = 12 }: { size?: number }) {
+ *  choice modal for the third state of a deck row, and by the modules page to
+ *  pin one module to the navigation bars (`filled` = pinned, so the state
+ *  reads without colour alone). */
+export function PinIcon({ size = 12, filled = false }: { size?: number; filled?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 17v5"/>
       <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>
     </svg>
@@ -499,10 +501,15 @@ export function PanelLeftIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-/** Rising line with a corner arrow — the trending module on the welcome
- *  screen's feature list. Not FlameIcon (which labels the module itself in
- *  views/modules.tsx): here it sits in a row of four line icons and a filled
- *  flame would break that row's weight. */
+/** Rising line with a corner arrow — the trending module, everywhere it is
+ *  named: the welcome screen's feature list, the module card, its own header,
+ *  and the pinned shortcut.
+ *
+ *  It used to be the flame on the module and this only on the welcome screen.
+ *  The flame said "hot", which is a mood; this says "going up", which is what
+ *  the module actually measures — the tunes gaining tunebooks fastest. The
+ *  user picked it for that reason (2026-09-10). FlameIcon stays where it still
+ *  means intensity: the library's difficulty sort. */
 export function TrendIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">

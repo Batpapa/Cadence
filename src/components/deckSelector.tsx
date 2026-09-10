@@ -206,7 +206,7 @@ function DeckChoiceBody({ pinned, alreadyIn, initial, draft }: {
             onBlur={commitAdd}
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-              if (e.key === 'Escape') { setNewName(''); setAddingNew(false); }
+              if (e.key === 'Escape') { e.stopPropagation(); setNewName(''); setAddingNew(false); }
             }}
           />
         ) : (
@@ -280,11 +280,9 @@ function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onCh
   const addInputRef = useRef<HTMLInputElement>(null);
   const mouseDownOnOverlay = useRef(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closePicker(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  // Escape: see main.ts. This picker registers itself as an overlay, so the
+  // single listener there closes it when it is the topmost thing — and leaves
+  // it alone when it is not.
 
   useEffect(() => { if (addingNew) addInputRef.current?.focus(); }, [addingNew]);
 
@@ -350,7 +348,7 @@ function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onCh
                 onBlur={commitAdd}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                  if (e.key === 'Escape') { setNewName(''); setAddingNew(false); }
+                  if (e.key === 'Escape') { e.stopPropagation(); setNewName(''); setAddingNew(false); }
                 }}
               />
             ) : (

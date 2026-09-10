@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { FlameIcon, ResetIcon, MusicNoteIcon, PlusIcon } from '../../components/icons';
+import { TrendIcon, ResetIcon, MusicNoteIcon, PlusIcon } from '../../components/icons';
 import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { showPreviewModal } from '../../components/fileViewer';
-import { computeRows, sortRows, formatGain, type TuneRow, type GainMode } from '../../services/trendingService';
+import { computeRows, sortRows, formatGain, growthIndex, inflationBetween, netGain, deflateFromRoute, type TuneRow, type GainMode } from '../../services/trendingService';
 import { syncPopularityHistory, type SyncProgress } from '../../services/trendingSyncService';
 import {
   fetchTuneById, tuneResultToCard, findByExternalId, settingsToMergedAbcFile, type TuneResult,
@@ -19,6 +19,8 @@ export interface TrendingRouteParams {
   to?: string;
   gainMode?: GainMode;
   minTunebooks?: number;
+  /** Absent means ON — see DEFLATE_BY_DEFAULT. */
+  deflate?: boolean;
 }
 
 // ── Trending module UI (routed page under Modules) ────────────────────────────
@@ -218,7 +220,10 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
         <div class="text-xs text-dim">{t('trending.tunebooks', { n: row.endValue })}</div>
       </div>
 
-      <span class={`text-xs font-semibold shrink-0 ${row.gain >= 0 ? 'text-success' : 'text-danger'}`}>{formatGain(row, gainMode)}</span>
+      {/* Coloured on the figure actually shown, not on the raw gain: deflated,
+          a tune can gain 30 tunebooks and still be below its baseline, and a
+          green "−12" is a straight contradiction. */}
+      <span class={`text-xs font-semibold shrink-0 ${netGain(row) >= 0 ? 'text-success' : 'text-danger'}`}>{formatGain(row, gainMode)}</span>
 
       <Sparkline values={row.periodValues} width={50} height={22} class="shrink-0" />
     </div>
@@ -232,6 +237,7 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
   const [startIdx, setStartIdx] = useState(0);
   const [endIdx, setEndIdx] = useState(0);
   const [gainMode, setGainMode] = useState<GainMode>(initial?.gainMode ?? 'percent');
+  const [deflate, setDeflate] = useState(() => deflateFromRoute(initial?.deflate));
   const [threshValue, setThreshValue] = useState(String(initial?.minTunebooks ?? DEFAULT_MIN_TUNEBOOKS));
   const [allRows, setAllRows] = useState<TuneRow[]>([]);
   const [revealed, setRevealed] = useState(0);
@@ -253,9 +259,9 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
   // sessions module (see components/deckSelector.tsx).
   const pinnedDeckIdsRef = useRef<Set<string>>(new Set());
 
-  const recompute = (db: PopularityDb, gm: GainMode, th: string, si: number, ei: number) => {
+  const recompute = (db: PopularityDb, gm: GainMode, th: string, si: number, ei: number, df = deflate) => {
     const minEnd = Math.max(0, Number(th) || 0);
-    const rows = sortRows(computeRows(db, si, ei, minEnd), gm);
+    const rows = sortRows(computeRows(db, si, ei, minEnd, df), gm);
     setAllRows(rows);
     setRevealed(Math.min(PAGE_SIZE, rows.length));
   };
@@ -263,13 +269,14 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
   // Persists the current filter params (not the deck-picker target, which
   // stays session-only) into the route — via replaceRoute, not navigate, so
   // tweaking a filter doesn't spam the back-stack. Restored on next mount.
-  const pushRoute = (db: PopularityDb, gm: GainMode, th: string, si: number, ei: number) => {
+  const pushRoute = (db: PopularityDb, gm: GainMode, th: string, si: number, ei: number, df = deflate) => {
     replaceRoute({
       view: 'trending',
       from: db.snapshots[si] ? toDateInputValue(db.snapshots[si]!) : undefined,
       to: db.snapshots[ei] ? toDateInputValue(db.snapshots[ei]!) : undefined,
       gainMode: gm,
       minTunebooks: Number(th) || undefined,
+      deflate: df,
     });
   };
 
@@ -342,7 +349,7 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
     <div class="p-6">
       <div class="flex items-center justify-between mb-1">
         <h1 class="text-xl font-semibold text-primary flex items-center gap-2">
-          <FlameIcon size={18} />
+          <TrendIcon size={18} />
           {t('trending.title')}
         </h1>
         <div class="flex items-center gap-3 shrink-0">
@@ -420,6 +427,32 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
               {t('trending.gainPercent')}
             </button>
           </div>
+
+          {/* On by default: without it this table ranks by popularity, not by
+              trend — the same four tunes hold the top every week because the
+              biggest stock takes the biggest share of the site's growth. The
+              rate for the chosen period is spelled out beside it, or a
+              corrected figure is a number with no unit. */}
+          <label class="flex items-center gap-1.5 cursor-pointer select-none" title={t('trending.deflateHint')}>
+            <input
+              type="checkbox"
+              class="card-checkbox"
+              checked={deflate}
+              onChange={(e) => {
+                const on = (e.target as HTMLInputElement).checked;
+                setDeflate(on);
+                recompute(dbState, gainMode, threshValue, startIdx, endIdx, on);
+                pushRoute(dbState, gainMode, threshValue, startIdx, endIdx, on);
+              }}
+            />
+            <span class="text-xs text-muted">{t('trending.deflate')}</span>
+            <span class="text-xs text-dim tabular-nums">
+              {(() => {
+                const i = inflationBetween(growthIndex(dbState), startIdx, endIdx) * 100;
+                return `(${i >= 0 ? '+' : ''}${i.toFixed(1)}%)`;
+              })()}
+            </span>
+          </label>
 
           <div class="flex items-center gap-1.5">
             <span class="text-xs text-dim">{t('trending.minTunebooks')}</span>

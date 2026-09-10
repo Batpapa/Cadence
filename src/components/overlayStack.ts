@@ -11,7 +11,12 @@
 // handler, and anything reaching back into the modal layer from there would
 // close a cycle.
 
-type Closer = () => void;
+/** Returning `false` means "I am still open on purpose" — a dialog that
+ *  deliberately has no way out (a Drive conflict waiting for a decision, an
+ *  account choice) refuses rather than closing. The gesture is still consumed:
+ *  the alternative is navigating away behind a dialog that is blocking on
+ *  purpose, which is worse than doing nothing. Anything else counts as closed. */
+type Closer = () => void | boolean;
 
 interface Entry { id: number; close: Closer }
 
@@ -35,7 +40,18 @@ export function anyOverlayOpen(): boolean {
   return stack.length > 0;
 }
 
-/** Closes the topmost overlay and says whether there was one.
+/** How many layers are open. For anything that wants to unwind the stack:
+ *  `closeTopOverlay` answers "was the gesture consumed?", which is true for a
+ *  refusal too, so `while (closeTopOverlay())` never ends once something
+ *  refuses. Bound the loop with this instead. */
+export function overlayCount(): number {
+  return stack.length;
+}
+
+/** Closes the topmost overlay and says whether the gesture WAS CONSUMED — not
+ *  whether anything closed. A refusal (see `Closer`) consumes it and leaves
+ *  the overlay standing, which is the point: the caller must not go on to
+ *  navigate. Never loop on this return value; see `overlayCount`.
  *
  *  The closer is expected to end up calling its own unregister — so this pops
  *  optimistically first, and a closer that forgets cannot leave an entry that
@@ -43,6 +59,9 @@ export function anyOverlayOpen(): boolean {
 export function closeTopOverlay(): boolean {
   const top = stack.pop();
   if (!top) return false;
-  top.close();
+  // Popped first so a closer that forgets to unregister cannot leave an entry
+  // nothing can ever close again; put straight back when it refuses, since it
+  // is still the topmost thing on screen.
+  if (top.close() === false) stack.push(top);
   return true;
 }

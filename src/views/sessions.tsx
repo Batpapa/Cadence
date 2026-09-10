@@ -57,7 +57,7 @@ function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; 
   );
 }
 
-export function SessionsView({ sessionId, annotationId }: { sessionId?: string; annotationId?: string }) {
+export function SessionsView({ sessionId, annotationId, search }: { sessionId?: string; annotationId?: string; search?: string }) {
   const ctx = getContext();
   const onOpenCard = (cardId: string) => ctx.navigate({ view: 'card', cardId });
 
@@ -92,6 +92,7 @@ export function SessionsView({ sessionId, annotationId }: { sessionId?: string; 
           onImportFile={(file) => { void startImport(ctx, file); }}
           onImportSession={() => showImportSessionModal(ctx)}
           onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}
+          initialSearch={search}
         />
       </>
     );

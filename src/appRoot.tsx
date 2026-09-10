@@ -43,7 +43,7 @@ function ContentSwitch() {
   if (route.view === 'card')    return <CardView   key={e + route.cardId}   cardId={route.cardId} contextDeckId={route.contextDeckId} />;
   if (route.view === 'folder')  return <FolderView key={e + (route.folderId ?? 'root')} folderId={route.folderId} />;
   if (route.view === 'modules') return <ModulesView key={e} />;
-  if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? 'library'} sessionId={route.sessionId} annotationId={route.annotationId} />;
+  if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? "library"} sessionId={route.sessionId} annotationId={route.annotationId} search={route.search} />;
   if (route.view === 'trending') return <TrendingView key={e} />;
   const _: never = route; return _;
 }

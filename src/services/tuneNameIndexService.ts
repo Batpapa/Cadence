@@ -138,9 +138,67 @@ async function syncTuneNameIndex(onProgress?: (p: IndexSyncProgress) => void): P
 export function ensureTuneNameIndex(onProgress?: (p: IndexSyncProgress) => void): Promise<LocalTune[]> {
   if (_memoryIndex) return Promise.resolve(_memoryIndex);
   if (!_inFlight) {
-    _inFlight = syncTuneNameIndex(onProgress).finally(() => { _inFlight = null; });
+    // The by-id lookup is rebuilt on the way out, so a screen that asked for
+    // the index because it had none gets the real names as soon as it lands.
+    _inFlight = syncTuneNameIndex(onProgress)
+      .then(tunes => { buildLookup(tunes); return tunes; })
+      .finally(() => { _inFlight = null; });
   }
   return _inFlight;
+}
+
+// ── Looking one name up, for the recogniser's sake ───────────────────────────
+// The recognition index (folkfriend-non-user-data.json) holds its names
+// ENTIRELY in lower case — measured on the real file, 0 capitals across its
+// 46 867 aliases — because it is a search index and matching ignores case. So
+// a tune imported from TheSession reads "McGoldrick's" while the same tune
+// recognised from a recording reads "mcgoldrick's".
+//
+// THIS index has the real names, keyed by the same TheSession tune id, so the
+// answer is a lookup rather than a reconstruction. Guessing the capitals from
+// the letters was tried and rejected (2026-09-10): the rules that get
+// "McGoldrick's" right are the rules that get someone else's name wrong, and
+// they would need revisiting forever.
+//
+// Deliberately never triggers the 24 MB download: this is a nicety on a screen
+// nobody opened to search for a tune. It reads what is already cached, and
+// where nothing is cached the recogniser's own lower-case name stands — which
+// is what shipped for a year. `ensureTuneNameIndex`, called from the import
+// screen, is still the only thing that fetches.
+
+let _nameById: Map<number, string> | null = null;
+let _cacheLoad: Promise<boolean> | null = null;
+
+function buildLookup(tunes: LocalTune[]): void {
+  _nameById = new Map(tunes.map(t => [t.id, t.name]));
+}
+
+/** Reads the already-stored index into a lookup, once, WITHOUT downloading.
+ *  Resolves to whether this device actually had one — the caller decides
+ *  whether an absent index is worth fetching. */
+export function primeCachedTuneNames(): Promise<boolean> {
+  if (_nameById) return Promise.resolve(_nameById.size > 0);
+  if (!_cacheLoad) {
+    _cacheLoad = (async () => {
+      try {
+        buildLookup(_memoryIndex ?? normalizeTunes((await loadTuneNameIndexDb()).tunes));
+      } catch {
+        // Storage refused: the lookup simply never answers.
+        buildLookup([]);
+      }
+      return _nameById!.size > 0;
+    })();
+  }
+  return _cacheLoad;
+}
+
+/** TheSession's own name for a tune id, or undefined when this device has no
+ *  index cached (or the id is not in it — a tune added upstream since the last
+ *  sync). Synchronous by design: it is called per rendered row. */
+export function cachedTuneName(tuneId: string | number): string | undefined {
+  const id = typeof tuneId === 'number' ? tuneId : parseInt(tuneId, 10);
+  if (!Number.isFinite(id)) return undefined;
+  return _nameById?.get(id);
 }
 
 /** Local, offline-capable substring + relevance search — replaces hitting

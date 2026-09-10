@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
 import { AbcPreview } from './abcPreview';
-import { BUCKET_TEXT } from './sessionUiShared';
+import { BUCKET_TEXT, tuneName } from './sessionUiShared';
 import { bucketOf } from '../recognition/viterbiSegmenter';
 import { DETECTION_TEMPORAL_CONFIG } from '../recognition/detectionTemporalConfig';
 import { viterbiPickOf } from '../model';
@@ -123,7 +123,7 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
 
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class="text-sm text-primary truncate capitalize">{opt.displayName}</span>
+                  <span class="text-sm text-primary truncate">{tuneName(opt).text}</span>
                   {isViterbi && (
                     <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-accent/15 text-accent" title={t('sessions.alternates.viterbiHint')}>
                       {t('sessions.alternates.viterbiBadge')}

@@ -2,13 +2,13 @@ import { useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import type { AppContext, Card, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { PlusIcon, HeartIcon, HourglassIcon } from '../../components/icons';
+import { PlusIcon, HeartIcon, HourglassIcon, ChevronDownIcon } from '../../components/icons';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { AbcPreview } from './abcPreview';
 import { showAlternatesPopover } from './AlternatesPopover';
-import { BUCKET_BADGE } from './sessionUiShared';
+import { BUCKET_BADGE, tuneName, useTuneNames } from './sessionUiShared';
 import { getContext } from '../../store';
 import type { Detection, DetectionAlternate } from '../model';
 
@@ -141,7 +141,12 @@ function ReviewLogControl({ cardId, ts, ctx }: { cardId: string; ts: number; ctx
 function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard }: {
   label: string; tuneId: string; settingId: string; knownCardId: string | undefined; onOpenCard?: (cardId: string) => void;
 }) {
-  const cls = 'text-sm font-semibold text-primary capitalize truncate flex-1 cursor-pointer hover:text-accent transition-colors';
+  // The card's name, else TheSession's, else the recogniser's re-cased — see
+  // tuneName in sessionUiShared. No CSS `capitalize` any more: it was what
+  // produced "Mcgoldrick's", and each of the three sources above is already
+  // cased properly.
+  const cls = 'text-sm font-semibold text-primary truncate flex-1 cursor-pointer hover:text-accent transition-colors';
+  label = tuneName({ tuneId, displayName: label }).text;
   if (knownCardId) {
     return <span class={cls} title={t('sessions.openCard')} onClick={() => onOpenCard?.(knownCardId)}>{label}</span>;
   }
@@ -163,6 +168,9 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // second ago (onCardAdded) must flip this card to the "known" rendering.
   const user = getContext().user;
   const known = findByExternalId(`thesession:${ann.tuneId}`, user.cards);
+  // Makes this card re-render once the cached name index has been read, so the
+  // recogniser's lower-case name is replaced by TheSession's own spelling.
+  useTuneNames();
   const isOpen = ann.end === null;
   // Closed, but the Viterbi decoder hasn't yet proven it can't still retract
   // or revise this one as later windows arrive (see Detection.finalized's
@@ -310,9 +318,18 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             green check — the score stops mattering once a human has vouched
             for the identity, and keeping it would invite re-reading a verdict
             that has already been given. Clicking it reopens the picker either
-            way, which is also the only way back. */}
+            way, which is also the only way back.
+
+            The chevron is the whole point of the control being findable. A
+            coloured pill holding a percentage reads as a STATUS — a user who
+            wanted to correct a wrong tune reported hunting for the way in and
+            finding it by accident (2026-09-09), and the instruction line that
+            explains it only exists once the popover is already open. A
+            disclosure caret is the one mark that says "there is more behind
+            this" without a word, in any language, and it appears only when the
+            picker can actually be opened. */}
         <button
-          class={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
+          class={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 ${
             ann.userConfirmed ? 'bg-success/15 text-success' : BUCKET_BADGE[ann.bucket]
           } ${opts.onSelectAlternate ? 'cursor-pointer hover:brightness-110 transition-[filter]' : 'cursor-default'}`}
           title={opts.onSelectAlternate
@@ -327,7 +344,10 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             );
           } : undefined}
         >
-          {ann.userConfirmed ? '✓' : `${t(`sessions.confidence.${ann.bucket}`)} ${Math.round(ann.confidence * 100)}%`}
+          <span>{ann.userConfirmed ? '✓' : `${t(`sessions.confidence.${ann.bucket}`)} ${Math.round(ann.confidence * 100)}%`}</span>
+          {opts.onSelectAlternate && (
+            <span class="flex items-center opacity-70"><ChevronDownIcon size={9} /></span>
+          )}
         </button>
 
         {opts.onToggleLike && (

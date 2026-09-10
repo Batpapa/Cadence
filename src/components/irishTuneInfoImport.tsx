@@ -629,7 +629,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
           onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') setDropdownOpen(false);
+            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
             if (e.key === 'Enter' && (pendingId !== null || pendingIds !== null)) doImport();
           }}
         />
