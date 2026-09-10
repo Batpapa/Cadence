@@ -82,14 +82,15 @@ export function useContextMenu(items: ContextMenuEntry[]) {
       if (menuRef.current?.contains(e.target as Node)) return;
       close();
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    // The outside-click stays here — it is about THIS element's bounds, which
+    // only this component knows. Escape does not: it is about what is topmost,
+    // which is the overlay registry's business (registered just above, closed
+    // from main.ts's single listener).
     document.addEventListener('mousedown', onOutside);
     document.addEventListener('touchstart', onOutside);
-    document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onOutside);
       document.removeEventListener('touchstart', onOutside);
-      document.removeEventListener('keydown', onKey);
     };
   }, [pos]);
 

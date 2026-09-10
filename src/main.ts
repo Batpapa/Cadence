@@ -19,6 +19,7 @@ import { applyTheme } from './services/themeService';
 import { mountApp, mountUserSelector } from './appRoot';
 import { showHelpModal } from './components/help';
 import { getContext } from './store';
+import { closeTopOverlay } from './components/overlayStack';
 import type { User } from './types';
 
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
@@ -515,4 +516,19 @@ function finishBoot(root: HTMLElement): void {
   // bridge went in, the native gesture lands on the same popstate handler
   // the buttons do. Intercepting it only to re-issue it was a duplicate that
   // could drift from the platform, never a feature.
+
+  // Escape closes the topmost overlay — ONE listener, asking the one registry
+  // that knows what is really on top. Before this (2026-09-10) every overlay
+  // ran its own document-level listener, so each could only reason about its
+  // own kind: a modal knew about modals and nothing about the lightbox opened
+  // over it. Two of them firing on one keypress closed two things.
+  //
+  // Bubble phase, not capture: an Escape inside an overlay that means
+  // something narrower — cancelling an inline rename, closing a dropdown —
+  // has to be able to stop it before it gets here, and a capturing listener
+  // would beat every one of those to it.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (closeTopOverlay()) e.preventDefault();
+  });
 }

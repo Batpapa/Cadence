@@ -304,10 +304,12 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
       const closeLightbox = () => {
         unregisterLightbox();
         lightbox.remove();
-        document.removeEventListener('keydown', onLightboxKey, true);
       };
-      const onLightboxKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); closeLightbox(); } };
-      document.addEventListener('keydown', onLightboxKey, true);
+      // No Escape listener of its own. It used to need a CAPTURING one with
+      // stopImmediatePropagation, for one reason: the modal underneath ran its
+      // own listener, and without cutting the event off, one Escape closed the
+      // enlarged image and the dialog behind it. Registering as an overlay
+      // says the same thing properly — this is on top, so this is what closes.
       lightbox.addEventListener('click', closeLightbox);
       document.body.appendChild(lightbox);
       unregisterLightbox = registerOverlay(closeLightbox);

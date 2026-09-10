@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDisplayName, scoreMatch, sortByRelevance, formatBytes } from './utils';
+import { normalizeDisplayName, scoreMatch, sortByRelevance, formatBytes, titleCaseTuneName } from './utils';
 
 describe('normalizeDisplayName', () => {
   it('moves a trailing ", The" to the front', () => {
@@ -107,5 +107,52 @@ describe('formatBytes', () => {
 
   it('reports the embed budget as the round number it is', () => {
     expect(formatBytes(50 * 1024 * 1024)).toBe('50 MB');
+  });
+});
+
+describe('titleCaseTuneName — le repli, en attendant le vrai nom', () => {
+  // Only ever shown while TheSession's name index is downloading (see
+  // sessionUiShared's tuneName): the card's name and the index both win over
+  // it. Rules are acceptable here because nothing is stored from them and the
+  // index corrects whatever they get wrong.
+  it('capitalise un nom ordinaire', () => {
+    expect(titleCaseTuneName('the kesh')).toBe('The Kesh');
+    expect(titleCaseTuneName("cooley's")).toBe("Cooley's");
+  });
+
+  it('laisse les petits mots en bas de casse A L INTERIEUR du titre', () => {
+    // What CSS `capitalize` could not do: it produced "The Bucks Of Oranmore".
+    expect(titleCaseTuneName('the bucks of oranmore')).toBe('The Bucks of Oranmore');
+    expect(titleCaseTuneName('the boys on the hilltop')).toBe('The Boys on the Hilltop');
+  });
+
+  it('reconstruit la majuscule interne des noms en Mc et O', () => {
+    // The other thing CSS could not do: it produced "Mcgoldrick's".
+    expect(titleCaseTuneName("mcgoldrick's")).toBe("McGoldrick's");
+    expect(titleCaseTuneName("o'neill's march")).toBe("O'Neill's March");
+    expect(titleCaseTuneName("'ma' mcnulty's favourite")).toBe("'ma' McNulty's Favourite");
+  });
+
+  it('ne touche pas a Mac, ou la regle se tromperait', () => {
+    expect(titleCaseTuneName('macklin')).toBe('Macklin');
+  });
+
+  it('traite chaque morceau d une suite comme un titre a part', () => {
+    expect(titleCaseTuneName('the wise maid / the bucks of oranmore'))
+      .toBe('The Wise Maid / The Bucks of Oranmore');
+  });
+
+  it('capitalise les deux moities d un mot compose', () => {
+    expect(titleCaseTuneName('sean-nós')).toBe('Sean-Nós');
+  });
+
+  it('ne retouche pas un nom qui a deja des majuscules', () => {
+    // It came from a source that kept them — TheSession, or a person typing.
+    expect(titleCaseTuneName("McGoldrick's")).toBe("McGoldrick's");
+    expect(titleCaseTuneName('The Kesh')).toBe('The Kesh');
+  });
+
+  it('survit a un nom vide', () => {
+    expect(titleCaseTuneName('')).toBe('');
   });
 });

@@ -23,6 +23,18 @@ export interface Detection {
   id: string;
   tuneId: string;      // TheSession tune ID
   settingId: string;
+  /** The tune's name, LOWERCASE — that is how the recognition index holds it,
+   *  and `normalizeDisplayName` only moves the trailing article back to the
+   *  front ("kesh, the" → "the kesh"), it does not re-case anything.
+   *
+   *  So every view that shows this must add `capitalize`, and they all do
+   *  (DetectionCard, AlternatesPopover, the library's search results). Written
+   *  here rather than left as folklore: it was missed at the fourth display
+   *  site, which shipped "the kesh" (2026-09-10).
+   *
+   *  Not fixed at the source on purpose — re-casing a name is guesswork the
+   *  moment it contains "McGuire" or "O'Neill's", and CSS `capitalize` at
+   *  least fails identically everywhere. */
   displayName: string;
   dance: string;       // reel, jig, …
   meter: string;

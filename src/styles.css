@@ -24,8 +24,10 @@
   --color-surface:        #141414;
   --color-elevated:       #1e1e1e;
   --color-border:         #252525;
-  --color-muted:          #888888;
-  --color-dim:            #555555;
+  /* Raised to clear WCAG AA (2026-09-10) — see the note above `--color-dim`
+     in the light theme for the measurements and the reasoning. */
+  --color-muted:          #a8a8a8;
+  --color-dim:            #858585;
   --color-primary:        #e8e8e8;
   --color-accent:         #8b7cf8;
   --color-accent-hover:   #7c6af7;
@@ -40,8 +42,8 @@
   --color-surface-ch:  20 20 20;
   --color-elevated-ch: 30 30 30;
   --color-border-ch:   37 37 37;
-  --color-muted-ch:    136 136 136;
-  --color-dim-ch:      85 85 85;
+  --color-muted-ch:    168 168 168;
+  --color-dim-ch:      133 133 133;
   --color-primary-ch:  232 232 232;
   --color-accent-ch:   139 124 248;
   --color-danger-ch:   248 113 113;
@@ -54,8 +56,8 @@
   --color-surface:        #edf4e8;
   --color-elevated:       #ffffff;
   --color-border:         #c8dec0;
-  --color-muted:          #4a7a5a;
-  --color-dim:            #7aa886;
+  --color-muted:          #365942;
+  --color-dim:            #4e7859;
   --color-primary:        #1a3320;
   --color-accent:         #169b62;
   --color-accent-hover:   #117a4d;
@@ -69,8 +71,8 @@
   --color-surface-ch:  237 244 232;
   --color-elevated-ch: 255 255 255;
   --color-border-ch:   200 222 192;
-  --color-muted-ch:    74 122 90;
-  --color-dim-ch:      122 168 134;
+  --color-muted-ch:    54 89 66;
+  --color-dim-ch:      78 120 89;
   --color-primary-ch:  26 51 32;
   --color-accent-ch:   22 155 98;
   --color-danger-ch:   220 38 38;
@@ -83,8 +85,24 @@
   --color-surface:        #f5f5f5;
   --color-elevated:       #ececec;
   --color-border:         #d8d8d8;
-  --color-muted:          #6b6b6b;
-  --color-dim:            #9f9f9f;
+  /* Text colour ladder, measured rather than eyeballed (2026-09-10).
+     `dim` used to sit at 2,41–2,66:1 in all three themes — a failure of WCAG
+     AA (4,5) and even of the 3,0 large-text floor, on a token used ~190 times
+     including the session library's metadata line. Reported from the field
+     before it was measured.
+
+     Each value is the SMALLEST lightness change, at constant hue and
+     saturation, that clears its target against the worst background it can
+     land on (`elevated` here and in the dark theme, `surface` in the green
+     one): `dim` to 4,5 and `muted` to 7,0, so the two stay a visible step
+     apart (1,55:1 between them) instead of collapsing into one — raising
+     `dim` alone would have put it exactly on the old `muted`.
+
+     `muted` moved because it had to: in the green theme it was 4,43 on
+     `surface`, failing AA as well, and in the light theme it cleared by 0,01.
+     `primary` was already 13–19:1 and is untouched. */
+  --color-muted:          #4e4e4e;
+  --color-dim:            #6b6b6b;
   --color-primary:        #111111;
   --color-accent:         #6d5ef0;
   --color-accent-hover:   #5d4ee0;
@@ -98,8 +116,8 @@
   --color-surface-ch:  245 245 245;
   --color-elevated-ch: 236 236 236;
   --color-border-ch:   216 216 216;
-  --color-muted-ch:    107 107 107;
-  --color-dim-ch:      159 159 159;
+  --color-muted-ch:    78 78 78;
+  --color-dim-ch:      107 107 107;
   --color-primary-ch:  17 17 17;
   --color-accent-ch:   109 94 240;
   --color-danger-ch:   220 38 38;
@@ -138,6 +156,36 @@
   .view-enter { animation: fadeSlideIn 0.15s ease-out; }
   .knowledge-bar { @apply h-1.5 rounded-full bg-border overflow-hidden; }
   .knowledge-fill { @apply h-full rounded-full transition-all duration-500; }
+  /* An icon control sized as a TARGET rather than as a glyph — the top bar's
+     buttons, and anything else small enough to be missed by a thumb.
+     The header used to hand each one `px-2 py-1` around a 14 px icon — 30 × 22
+     px, which is under the 24 × 24 floor of WCAG 2.2 AA (2.5.8) on one axis,
+     and a long way under the 44 × 44 of WCAG 2.5.5 AAA / Apple's HIG. A user
+     reported it from the field before any of this was measured.
+
+     Two sizes because the two pointers are not the same problem: a mouse is
+     precise and a desktop toolbar has no vertical room to spare, so 32 px is
+     both comfortable and AA with margin. A finger gets the full 44, and the
+     header grows to fit — on a phone the bar is a third of the app's chrome,
+     not a strip above a 1400 px page.
+
+     `min-*` rather than fixed sizes, so a labelled control (the install pill,
+     the profile chip) still sizes to its text and only gains the height.
+
+     The numbers are pre-divided by the app's own zoom, which is NOT 100% by
+     default (zoomService: 125% on desktop, 90% on a phone). What the finger
+     meets is the zoomed size, so a literal 44 px here would arrive at 39,6 on
+     the very devices the rule is for. 48 × 0,90 = 43,2 and 32 × 1,25 = 40 —
+     both measured in the browser, both past the AA floor with room. */
+  .tap-btn {
+    @apply flex items-center justify-center rounded-md transition-colors shrink-0;
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+  @media (pointer: coarse) {
+    .tap-btn { min-width: 3rem; min-height: 3rem; }
+  }
+
   .card-checkbox {
     appearance: none; -webkit-appearance: none;
     @apply w-3.5 h-3.5 rounded cursor-pointer shrink-0 relative border border-muted bg-transparent transition-colors;

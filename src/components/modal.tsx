@@ -1,5 +1,5 @@
 import { signal, type Signal } from '@preact/signals';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { render } from 'preact';
 import type { ComponentChild } from 'preact';
@@ -97,13 +97,11 @@ const modalStack = signal<ModalEntry[]>([]);
  *  bookkeeping the renderer has no business seeing. */
 const _unregisterByModalId = new Map<number, () => void>();
 
-/** True while any modal from this stack is on screen. For the few overlays
- *  that are NOT part of the stack (the new-card modal) and run their own
- *  Escape handler: without this, one Escape would close both the dialog on
- *  top and the overlay underneath it. */
-export function anyModalOpen(): boolean {
-  return modalStack.value.length > 0;
-}
+// anyModalOpen() lived here until 2026-09-10. It existed so an overlay outside
+// this stack could ask whether a dialog was covering it before acting on its
+// own Escape — a workaround for there being no single answer to "what is on
+// top". The overlay registry is that answer now, and nothing needs the
+// question any more.
 
 export function closeModal(): void {
   const top = modalStack.value[modalStack.value.length - 1];
@@ -133,11 +131,31 @@ export function updateTopModal(patch: { title?: string; onBack?: (() => void) | 
   modalStack.value = [...stack.slice(0, -1), { ...top, ...patch }];
 }
 
+/** Closes modal `id` the way a USER dismissal does — which is not what
+ *  `closeModal` alone does: that one pops the stack and stops there, while a
+ *  dismissal also runs `onDismiss`, and `onDismiss` is where a Preact body
+ *  unmounts itself (renderModalBody). The back gesture used to take the first
+ *  path and leaked a mounted tree per dialog it closed.
+ *
+ *  Refuses — returns false — for anything but the topmost dialog, and for one
+ *  declared `dismissable: false`: those exist to hold a decision (a Drive
+ *  conflict, an account switch) and have no way out on purpose. */
+function dismissModalById(id: number): boolean {
+  const stack = modalStack.value;
+  const top = stack[stack.length - 1];
+  if (!top || top.id !== id || !top.dismissable) return false;
+  closeModal();
+  top.onDismiss?.();
+  return true;
+}
+
 export function showModal(title: string, body: HTMLElement, actions: ModalAction[], opts: ModalOptions = {}): void {
-  // Registered as the topmost overlay, so the back gesture closes THIS
-  // rather than navigating behind it. The unregister runs from closeModal
-  // and from every dismissal path below, which all go through it.
-  const unregister = registerOverlay(() => closeModal());
+  // Registered as the topmost overlay, so the back gesture and Escape both
+  // close THIS rather than navigating behind it or reaching past it. The
+  // unregister runs from closeModal and from every dismissal path below,
+  // which all go through it.
+  const id = nextId;
+  const unregister = registerOverlay(() => dismissModalById(id));
   _unregisterByModalId.set(nextId, unregister);
   modalStack.value = [...modalStack.value, {
     id: nextId++,
@@ -165,7 +183,10 @@ export function promptModal(title: string, label: string, defaultValue: string, 
   input.className = 'input';
   body.append(lbl, input);
   const confirm = () => { const val = input.value.trim(); if (!val) return; closeModal(); onConfirm(val); };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') closeModal(); });
+  // Enter only: Escape is the shell's business now (main.ts → overlay stack),
+  // and closing here as well would let one keypress take this dialog AND
+  // whatever it was opened from.
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); });
   showModal(title, body, [{ label: t('common.cancel'), onClick: closeModal }, { label: t('common.confirm'), primary: true, onClick: confirm }]);
   focusIfDesktop(input);
 }
@@ -264,20 +285,12 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
   const [expanded, setExpanded] = useState(false);
   const dismiss = () => { closeModal(); entry.onDismiss?.(); };
 
-  // Escape closes only the TOPMOST modal — checked fresh on every keydown
-  // (not captured once) since another modal can open/close while this one
-  // is still mounted, changing who's actually on top.
-  useEffect(() => {
-    if (!entry.dismissable) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      const top = modalStack.value[modalStack.value.length - 1];
-      if (top?.id === entry.id) dismiss();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line
-  }, [entry.id, entry.dismissable]);
+  // No Escape listener here any more (2026-09-10). Every dialog used to run
+  // its own, each re-deriving "am I the topmost?" from this stack — which was
+  // right for modals and blind to everything else on screen: a lightbox over a
+  // modal, a context menu over that. One listener in main.ts now asks the
+  // overlay registry, which is the only thing that knows the real order, and
+  // it lands back here through this modal's registered closer.
 
   return (
     <div

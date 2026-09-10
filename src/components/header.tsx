@@ -20,6 +20,7 @@ import {
 } from './icons';
 import { showShareAppModal } from './shareAppModal';
 import { showStorageModal } from './storageModal';
+import { pinnedModule, isPinnedRouteActive } from './pinnedModule';
 import { storagePersisted, storageUsage, storageQuota, assessStorage } from '../services/storageService';
 
 const initialsOf = (name: string) =>
@@ -30,7 +31,7 @@ function HeaderBtn({ title, active, onClick, children }: {
 }) {
   return (
     <button
-      class={`flex items-center px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0
+      class={`tap-btn cursor-pointer
         ${active ? 'bg-accent/10 text-accent' : 'text-dim hover:text-primary hover:bg-elevated'}`}
       title={title}
       onClick={onClick}
@@ -58,7 +59,7 @@ function SyncBtn({ status }: { status: DriveStatus }) {
   const clickable = status === 'pending' || status === 'error';
   return (
     <button
-      class={`flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${cls}`}
+      class={`tap-btn ${cls}`}
       title={t(SYNC_TITLE[status] as Parameters<typeof t>[0])}
       onClick={clickable ? () => void manualSync() : undefined}
     >
@@ -87,7 +88,7 @@ function InstallBtn() {
 
   return (
     <button
-      class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer shrink-0"
+      class="tap-btn gap-1.5 px-2 bg-accent/10 text-accent hover:bg-accent/20 cursor-pointer"
       title={t('sidebar.installTitle')}
       onClick={onClick}
     >
@@ -118,7 +119,7 @@ function StorageWarnBtn() {
   const full = risk === 'full';
   return (
     <button
-      class={`flex items-center px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0 ${
+      class={`tap-btn cursor-pointer ${
         full ? 'text-danger hover:bg-danger/10' : 'text-warn hover:bg-warn/10'
       }`}
       title={t(full ? 'storage.warningFull' : 'storage.warning')}
@@ -183,6 +184,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
   const homeActive    = route.view === 'folder' && route.folderId === null;
   const libActive     = route.view === 'library';
   const modulesActive = route.view === 'modules' || route.view === 'sessions';
+  const pinned        = pinnedModule();
 
   return (
     <header
@@ -210,6 +212,19 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             <ModulesIcon size={14} />
           </HeaderBtn>
         )}
+        {/* The pinned module, right after the three fixed destinations and
+            before the status icons: it IS a destination, and grouping it with
+            the warning triangle would file a shortcut under "things that are
+            wrong". Absent for everyone who has not pinned one — the default. */}
+        {!isPortraitPhone && pinned && (
+          <HeaderBtn
+            title={t(pinned.labelKey)}
+            active={isPinnedRouteActive(route, pinned)}
+            onClick={() => ctx.navigate(pinned.route)}
+          >
+            <pinned.Icon size={14} />
+          </HeaderBtn>
+        )}
         {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
           <SyncBtn status={driveStatus} />
         )}
@@ -233,7 +248,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
       <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none">
         {!isPortraitPhone && (
           <button
-            class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoBack ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
+            class={`pointer-events-auto tap-btn ${canGoBack ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
             title={t('sidebar.back')}
             disabled={!canGoBack}
             onClick={() => ctx.back()}
@@ -243,7 +258,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         <div ref={profileRef} class="relative pointer-events-auto">
           <button
             ref={profileBtnRef}
-            class="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
+            class="tap-btn gap-1.5 px-2 hover:bg-elevated cursor-pointer border-none bg-transparent"
             onClick={toggleProfileOpen}
           >
             <div
@@ -301,12 +316,19 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         </div>
 
         {sessionRecordingSignal.value && (
-          <RecordingPulseDot title={t('sessions.recordingIndicator')} onClick={() => ctx.navigate({ view: 'sessions' })} />
+          <RecordingPulseDot
+            title={t('sessions.recordingIndicator')}
+            onClick={() => ctx.navigate({ view: 'sessions' })}
+            // A 12 px dot is a 12 px target: it needs the class more than the
+            // icon buttons do, not less. The dot keeps its size, the reachable
+            // area around it does not.
+            class="tap-btn"
+          />
         )}
 
         {!isPortraitPhone && (
           <button
-            class={`pointer-events-auto flex items-center px-2 py-1 rounded-md transition-colors shrink-0 ${canGoForward ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
+            class={`pointer-events-auto tap-btn ${canGoForward ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
             title={t('sidebar.forward')}
             disabled={!canGoForward}
             onClick={() => ctx.forward()}
@@ -359,6 +381,7 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
   const homeActive    = route.view === 'folder' && route.folderId === null;
   const libActive     = route.view === 'library';
   const modulesActive = route.view === 'modules' || route.view === 'sessions';
+  const pinned        = pinnedModule();
 
   return (
     <nav
@@ -374,6 +397,20 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
       <BottomNavBtn title={t('sidebar.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
         <ModulesIcon size={20} />
       </BottomNavBtn>
+      {/* Between the destinations and the two history controls: it is one of
+          the former, and putting it after Back would separate a pair that is
+          read as a pair. Six items on a 360 px phone is 60 px each, still past
+          the touch floor — and the bar only holds six for someone who asked
+          for the sixth. */}
+      {pinned && (
+        <BottomNavBtn
+          title={t(pinned.labelKey)}
+          active={isPinnedRouteActive(route, pinned)}
+          onClick={() => ctx.navigate(pinned.route)}
+        >
+          <pinned.Icon size={20} />
+        </BottomNavBtn>
+      )}
       <BottomNavBtn title={t('sidebar.back')} disabled={!canGoBack} onClick={() => ctx.back()}>
         <ArrowLeftIcon size={20} />
       </BottomNavBtn>

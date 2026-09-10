@@ -243,10 +243,15 @@ export type Route =
   // link from a card, where two passes through the same tune are two distinct
   // destinations. It marks the row it names; it does not select it, which stays
   // the play head's job (see SessionSummary).
-  | { view: 'sessions'; sessionId?: string; annotationId?: string }
+  // `search` is the library screen's search box, carried the same way the card
+  // library carries its filters: a search is a place you were, so back returns
+  // to the list you were looking at rather than to an empty one.
+  | { view: 'sessions'; sessionId?: string; annotationId?: string; search?: string }
   // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.
-  | { view: 'trending'; from?: string; to?: string; gainMode?: TrendingGainMode; minTunebooks?: number };
+  // `deflate` absent means ON — see DEFLATE_BY_DEFAULT. A refusal is therefore
+  // written as an explicit `false`, never as an omission.
+  | { view: 'trending'; from?: string; to?: string; gainMode?: TrendingGainMode; minTunebooks?: number; deflate?: boolean };
 
 export interface AppContext {
   user: AppState;

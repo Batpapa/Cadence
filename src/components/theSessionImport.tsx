@@ -20,7 +20,6 @@ import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
 import { showDeckChoiceModal, hasAnyDeck } from './deckSelector';
-import { anyModalOpen } from './modal';
 import { AI_IMPORT_PROMPT } from './aiImportPrompt';
 import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '../services/irishTuneInfoService';
 import { CheckIcon } from './icons';
@@ -586,7 +585,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
           onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') setDropdownOpen(false);
+            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
             if (e.key === 'Enter' && (pendingId !== null || pendingIds !== null)) doImport();
           }}
         />
@@ -768,7 +767,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
           onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') setDropdownOpen(false);
+            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
             if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
           }}
         />
@@ -973,7 +972,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
           onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') setDropdownOpen(false);
+            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
             if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
           }}
         />
@@ -1187,7 +1186,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           onFocus={() => { if (suggestions.length) setDropdownOpen(true); }}
           onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') setDropdownOpen(false);
+            if (e.key === 'Escape') { e.stopPropagation(); setDropdownOpen(false); }
             if (e.key === 'Enter' && selectedMemberIdRef.current !== null) void doImportAll();
           }}
         />
@@ -1568,12 +1567,11 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
     });
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !anyModalOpen()) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line
-  }, []);
+  // Escape comes through the overlay registry now (main.ts), which knows this
+  // overlay's place among everything else on screen. The `!anyModalOpen()`
+  // guard that used to be needed here was this file compensating for not
+  // having that order — a modal raised from this screen would otherwise have
+  // been closed along with the screen underneath it.
 
   const TITLES: Record<Step, string> = {
     root:         t('newCard.title'),

@@ -8,7 +8,10 @@ import { recoverOrphanedSessions } from '../recovery';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { activeLive } from './sessionStore';
 import { dateBesideName } from '../sessionNaming';
-import type { Analysis } from '../model';
+import { BUCKET_TEXT, tuneName, useTuneNames } from './sessionUiShared';
+import { matchingDetections, readSearchTunes, writeSearchTunes } from './sessionSearch';
+import { navigate, replaceRoute } from '../../store';
+import type { Analysis, Detection } from '../model';
 
 // ── Screen: library ───────────────────────────────────────────────────────────
 // Past sessions + entry points into a new live recording / file import. Pure
@@ -42,14 +45,20 @@ interface SessionLibraryProps {
   onImportFile: (file: File) => void;
   onImportSession: () => void;
   onOpenSession: (sessionId: string) => void;
+  /** What the search box starts with, from the route — so coming back to this
+   *  screen restores the search that was running, exactly as the card library
+   *  restores its filters. */
+  initialSearch?: string;
 }
 
-export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onOpenSession }: SessionLibraryProps) {
+export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onOpenSession, initialSearch }: SessionLibraryProps) {
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialSearch ?? '');
+  const [searchTunes, setSearchTunes] = useState(readSearchTunes);
   const [dragOver, setDragOver] = useState(false);
   const [source, setSource] = useState<LiveSourceKind>('mic');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  useTuneNames();
 
   // Hidden entirely where getDisplayMedia does not exist (iOS, Android) —
   // the button then looks exactly as it always did. Firefox and Safari desktop
@@ -66,13 +75,29 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
     // eslint-disable-next-line
   }, []);
 
-  // By name alone. The default name already carries the date and time (see
-  // sessionNaming.ts), so typing a date still finds what it should, and the
-  // list's own chronological order does the rest.
+  // The search lives in the route, like the card library's filters. Same
+  // reasons: leaving for a session and coming back must not throw the search
+  // away, and `replaceRoute` (not navigate) keeps typing out of the history —
+  // it is throttled in store.ts precisely because this fires per keystroke.
+  // Empty is written as absent rather than as '', so a route that carries no
+  // search stays a route that carries no search.
+  useEffect(() => {
+    replaceRoute({ view: 'sessions', search: query || undefined });
+  }, [query]);
+
   const q = query.trim().toLowerCase();
+  // Name always; tunes only when asked. Searching names alone left the one
+  // question people actually ask unanswerable — "which evening did we play the
+  // Kesh?", a session being remembered by what was played in it far more often
+  // than by what it is called — but it is not what most searches are for, so
+  // the wider search is a switch rather than the behaviour. The default name
+  // already carries date and time (sessionNaming.ts), so typing a date works
+  // the same either way.
   const sessions = q
-    ? allSessions.filter(s => s.name.toLowerCase().includes(q))
-    : allSessions;
+    ? allSessions
+        .map(s => ({ session: s, hits: searchTunes ? matchingDetections(s, q) : [] }))
+        .filter(r => r.hits.length > 0 || r.session.name.toLowerCase().includes(q))
+    : allSessions.map(s => ({ session: s, hits: [] as Detection[] }));
 
   return (
     <div
@@ -175,14 +200,31 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
         onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
       />
 
+      <label class="flex items-center gap-2 mt-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          class="card-checkbox"
+          checked={searchTunes}
+          onChange={(e) => {
+            const on = (e.target as HTMLInputElement).checked;
+            setSearchTunes(on);
+            writeSearchTunes(on);
+          }}
+        />
+        <span class="text-xs text-muted">{t('sessions.searchTunes')}</span>
+      </label>
+
       <div class="mt-4 space-y-2">
         {sessions.length === 0 ? (
           <p class="text-xs text-dim text-center py-4">{q ? t('sessions.noSearchResults') : t('sessions.empty')}</p>
         ) : (
-          sessions.map(session => (
+          sessions.map(({ session, hits }) => (
             <div
               key={session.id}
-              class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors cursor-pointer"
+              class="rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors"
+            >
+            <div
+              class="flex items-center gap-3 p-3 cursor-pointer"
               onClick={() => onOpenSession(session.id)}
             >
               <div class="flex-1 min-w-0">
@@ -203,6 +245,55 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
                   {fmtLongTime(session.duration)} · {t('sessions.tunesCount', { n: session.annotations.length })}
                 </div>
               </div>
+            </div>
+
+            {/* Why this session is in the list, and a way straight in. One row
+                per detection rather than a list of names: two passes through
+                the same tune are two moments in the recording, so they are two
+                destinations — the same rule the card view's "Detected in"
+                panel follows. In playing order, which is the order they are
+                found again in the analysis.
+
+                Not nested inside the session row above: a button inside a
+                clickable div is fine, a button inside a button is invalid
+                HTML, and each of these has its own destination anyway. */}
+            {hits.length > 0 && (
+              <div class="border-t border-border/60 px-3 py-2 space-y-1">
+                {hits.map(hit => (
+                  <button
+                    key={hit.id}
+                    class="w-full flex items-start gap-2 min-w-0 text-left rounded px-1 py-1 hover:bg-accent/10 cursor-pointer transition-colors"
+                    title={t('sessions.openDetection')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate({ view: 'sessions', sessionId: session.id, annotationId: hit.id });
+                    }}
+                  >
+                    {/* Same pill as "Detected in": the time is what is being
+                        aimed at, and its colour carries how sure the
+                        recogniser is — one glance, two facts. */}
+                    <span
+                      class={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-border ${
+                        hit.userConfirmed ? 'text-success' : BUCKET_TEXT[hit.bucket]}`}
+                      title={t(hit.userConfirmed ? 'sessions.alternates.confirmed' : `sessions.confidence.${hit.bucket}`)}
+                    >
+                      {fmtLongTime(hit.start)}
+                    </span>
+                    {/* The card's name, else TheSession's, else the
+                        recogniser's re-cased — see tuneName.
+                        Never truncated either: the tune name IS the answer to
+                        the search, cutting it is cutting the result, and a set
+                        of three cut at "Cooley's / The Wise…" answers nothing.
+                        It wraps instead; a row taller than its neighbours is
+                        cheaper than an unreadable one. */}
+                    {(() => {
+                      const n = tuneName(hit);
+                      return <span class="text-sm text-muted min-w-0 break-words">{n.text}</span>;
+                    })()}
+                  </button>
+                ))}
+              </div>
+            )}
             </div>
           ))
         )}

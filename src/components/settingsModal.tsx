@@ -57,7 +57,7 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
           class="text-sm bg-transparent border-b border-accent outline-none flex-1 min-w-0"
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
           onBlur={commit}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') setEditing(false); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); } }}
         />
       ) : (
         <span
@@ -135,7 +135,7 @@ function AddProfileRow({ ctx }: { ctx: AppContext }) {
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          if (e.key === 'Escape') { setName(''); setAdding(false); }
+          if (e.key === 'Escape') { e.stopPropagation(); setName(''); setAdding(false); }
         }}
       />
     </div>
@@ -757,10 +757,11 @@ function UserSection({ ctx }: { ctx: AppContext }) {
           value={nameDraft}
           onInput={(e) => setNameDraft((e.target as HTMLInputElement).value)}
           onBlur={commitName}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-            if (e.key === 'Escape') { setNameDraft(user.name ?? ''); (e.target as HTMLInputElement).blur(); }
-          }}
+          // Enter commits; Escape does nothing special and closes the dialog,
+          // as it does everywhere else in the app. It used to revert the field
+          // — a leftover from before there was one Escape rule, and the only
+          // text field in Cadence that behaved that way (removed 2026-09-10).
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         />
       </Row>
 
@@ -941,12 +942,10 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line
-  }, []);
+  // Escape is handled once, in main.ts, through the overlay registry this
+  // dialog registers with (see showSettingsModal). The listener that used to
+  // live here fired whatever else was on top: a confirmation raised FROM this
+  // dialog took the keypress and so did this, closing both at once.
 
   const SECTIONS: Array<{ id: SectionId; labelKey: string }> = [
     { id: 'study', labelKey: 'settings.study' },

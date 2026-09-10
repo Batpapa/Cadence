@@ -108,7 +108,9 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, items.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); const item = items[activeIndex]; if (item) select(item); }
-    else if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
+    // Escape is not here: the palette is a registered overlay and main.ts's
+    // single listener closes it, in the right order relative to anything it
+    // may have opened.
   };
 
   const mouseDownOnOverlay = useRef(false);
