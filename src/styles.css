@@ -159,31 +159,30 @@
   /* An icon control sized as a TARGET rather than as a glyph — the top bar's
      buttons, and anything else small enough to be missed by a thumb.
      The header used to hand each one `px-2 py-1` around a 14 px icon — 30 × 22
-     px, which is under the 24 × 24 floor of WCAG 2.2 AA (2.5.8) on one axis,
-     and a long way under the 44 × 44 of WCAG 2.5.5 AAA / Apple's HIG. A user
-     reported it from the field before any of this was measured.
+     px, which is under the 24 × 24 floor of WCAG 2.2 AA (2.5.8) on one axis.
+     A user reported it from the field before any of this was measured.
 
-     Two sizes because the two pointers are not the same problem: a mouse is
-     precise and a desktop toolbar has no vertical room to spare, so 32 px is
-     both comfortable and AA with margin. A finger gets the full 44, and the
-     header grows to fit — on a phone the bar is a third of the app's chrome,
-     not a strip above a 1400 px page.
+     ONE size for every pointer (the user's call, 2026-09-11). A coarse-pointer
+     branch used to raise this to 48 px so a finger got the full 44 × 44 of
+     WCAG 2.5.5 AAA / Apple's HIG, and it was removed: the header packs its
+     buttons at fixed widths around an absolutely centred profile chip, so
+     the wider targets pushed the row off the right edge of a phone. Between
+     a header that overflows and targets that clear AA but not AAA, the
+     second is the one nobody has complained about — and a phone-only branch
+     is a second header to maintain for one form factor.
 
      `min-*` rather than fixed sizes, so a labelled control (the install pill,
      the profile chip) still sizes to its text and only gains the height.
 
-     The numbers are pre-divided by the app's own zoom, which is NOT 100% by
-     default (zoomService: 125% on desktop, 90% on a phone). What the finger
-     meets is the zoomed size, so a literal 44 px here would arrive at 39,6 on
-     the very devices the rule is for. 48 × 0,90 = 43,2 and 32 × 1,25 = 40 —
-     both measured in the browser, both past the AA floor with room. */
+     32 px is measured against the app's own zoom, which is NOT 100% by default
+     (zoomService: 125% on desktop, 90% on a phone). What the finger meets is
+     the zoomed size: 32 × 1,25 = 40 on desktop, 32 × 0,90 = 28,8 on a phone —
+     both past the 24 px AA floor, the phone with less room than the desktop.
+     If the touch complaint comes back, that number is why. */
   .tap-btn {
     @apply flex items-center justify-center rounded-md transition-colors shrink-0;
     min-width: 2rem;
     min-height: 2rem;
-  }
-  @media (pointer: coarse) {
-    .tap-btn { min-width: 3rem; min-height: 3rem; }
   }
 
   /* The tempo mark on an incipit. HIDDEN, not removed: the ABC keeps its

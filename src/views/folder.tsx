@@ -6,6 +6,7 @@ import { promptModal, confirmModal, confirmModalWithOption } from '../components
 import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
 import { CustomSelect } from '../components/customSelect';
+import { createLongPressHandlers } from '../components/longPress';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, isFolderDescendant, moveFolderToParent } from '../services/deckService';
 import { removeCards } from '../services/cardService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
@@ -110,6 +111,13 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
   const lo = range ? Math.min(range.anchor, range.end) : -1;
   const hi = range ? Math.max(range.anchor, range.end) : -1;
 
+  // Shared long-press state (one bar touched at a time) — created once here,
+  // not per-bar, since createLongPressHandlers is a plain function and not a
+  // hook, precisely so it can be called inside the .map() below.
+  const lpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lpStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lpFiredRef = useRef(false);
+
   const handleClick = (i: number, shift: boolean) => {
     if (shift && range !== null) {
       setRange({ anchor: range.anchor, end: i });
@@ -119,6 +127,24 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
       setRange({ anchor: i, end: i });
     }
   };
+
+  /** Everything a bar needs to be selectable, by mouse or by thumb.
+   *
+   *  Long-press is Shift+click on a phone — the same equivalence the card
+   *  library already makes for its multi-select, and the reason the gesture
+   *  lives in a shared primitive rather than in either screen. Holding a bar
+   *  extends the range from the anchor; a plain tap still starts a new one,
+   *  and the gesture never leaves a stray tap behind (`onTouchEnd` cancels
+   *  the synthetic click once it has fired, which would otherwise collapse
+   *  the range the hold just made). */
+  const barProps = (i: number) => ({
+    class: 'flex flex-col items-center gap-1 flex-1 cursor-pointer',
+    onClick: (e: MouseEvent) => handleClick(i, e.shiftKey),
+    ...createLongPressHandlers(
+      { timer: lpTimerRef, start: lpStartRef, fired: lpFiredRef },
+      () => handleClick(i, true),
+    ),
+  });
 
   const selection = (() => {
     if (range === null) return null;
@@ -142,14 +168,14 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
           if (period === '7d') {
             const d = new Date(); d.setDate(d.getDate() - (6 - i));
             return (
-              <div key={i} class="flex flex-col items-center gap-1 flex-1 cursor-pointer" onClick={e => handleClick(i, e.shiftKey)}>
+              <div key={i} {...barProps(i)}>
                 <div class={`rounded-sm w-full transition-colors ${barColor}`} style={{ height: `${h}px` }} title={title} />
                 <div class="text-[9px] text-dim">{t(DAY_NAMES_KEYS[d.getDay()]!)}</div>
               </div>
             );
           }
           return (
-            <div key={i} class="flex flex-col items-center gap-1 flex-1 cursor-pointer" onClick={e => handleClick(i, e.shiftKey)}>
+            <div key={i} {...barProps(i)}>
               <div class={`rounded-sm w-full transition-colors ${barColor}`} style={{ height: `${h}px` }} title={title} />
             </div>
           );
