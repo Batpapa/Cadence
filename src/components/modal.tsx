@@ -7,6 +7,7 @@ import { t } from '../services/i18nService';
 import { focusIfDesktop } from '../utils';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
 import { ExpandIcon, CollapseIcon } from './icons';
+import { registerOverlay } from './overlayStack';
 
 // ── Modal infrastructure (Preact — 2026-08-26) ──────────────────────────────────
 // The shell (overlay, dialog frame, header, footer, stacking, outside-click
@@ -91,6 +92,10 @@ interface ModalEntry {
 
 let nextId = 0;
 const modalStack = signal<ModalEntry[]>([]);
+/** Modal id → its overlay registration. Keyed by id rather than kept on the
+ *  entry because ModalEntry is what the shell renders from, and this is
+ *  bookkeeping the renderer has no business seeing. */
+const _unregisterByModalId = new Map<number, () => void>();
 
 /** True while any modal from this stack is on screen. For the few overlays
  *  that are NOT part of the stack (the new-card modal) and run their own
@@ -101,6 +106,8 @@ export function anyModalOpen(): boolean {
 }
 
 export function closeModal(): void {
+  const top = modalStack.value[modalStack.value.length - 1];
+  if (top) { _unregisterByModalId.get(top.id)?.(); _unregisterByModalId.delete(top.id); }
   modalStack.value = modalStack.value.slice(0, -1);
 }
 
@@ -109,6 +116,7 @@ export function closeModal(): void {
  *  dialogs below it hanging over a view they have nothing to do with. */
 export function closeAllModals(): void {
   const open = modalStack.value;
+  for (const e of open) { _unregisterByModalId.get(e.id)?.(); _unregisterByModalId.delete(e.id); }
   modalStack.value = [];
   for (const entry of open) entry.onDismiss?.();
 }
@@ -126,6 +134,11 @@ export function updateTopModal(patch: { title?: string; onBack?: (() => void) | 
 }
 
 export function showModal(title: string, body: HTMLElement, actions: ModalAction[], opts: ModalOptions = {}): void {
+  // Registered as the topmost overlay, so the back gesture closes THIS
+  // rather than navigating behind it. The unregister runs from closeModal
+  // and from every dismissal path below, which all go through it.
+  const unregister = registerOverlay(() => closeModal());
+  _unregisterByModalId.set(nextId, unregister);
   modalStack.value = [...modalStack.value, {
     id: nextId++,
     title,

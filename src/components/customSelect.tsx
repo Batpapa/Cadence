@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { getZoom } from '../services/zoomService';
+import { registerOverlay } from './overlayStack';
 
 export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger }: {
   value: string;
@@ -45,6 +46,10 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
       window.removeEventListener('resize', close);
     };
   }, [open]);
+
+  // A dropdown is something on top too: the back gesture should put it away
+  // rather than navigate out from under it.
+  useEffect(() => (open ? registerOverlay(() => setOpen(false)) : undefined), [open]);
 
   useEffect(() => {
     if (!open || !ref.current) { setPos(null); return; }

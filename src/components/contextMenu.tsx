@@ -3,6 +3,7 @@ import type { ComponentChild } from 'preact';
 import { createPortal } from 'preact/compat';
 import { getZoom } from '../services/zoomService';
 import { useLongPress } from './longPress';
+import { registerOverlay } from './overlayStack';
 
 // ── Context menu (right-click / long-press) ──────────────────────────────────
 // Generic, not card-specific: anchors a small menu at the click/touch point
@@ -70,6 +71,9 @@ export function useContextMenu(items: ContextMenuEntry[]) {
     });
   };
   const close = () => setPos(null);
+  // Registered for as long as it is on screen; the cleanup drops it however
+  // it was dismissed.
+  useEffect(() => (pos ? registerOverlay(close) : undefined), [pos]);
   const { firedRef: _longPressFired, ...longPress } = useLongPress(open);
 
   useEffect(() => {

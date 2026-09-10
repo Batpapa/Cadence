@@ -7,6 +7,7 @@ import { showModal, closeModal, renderModalBody } from './modal';
 import { PinIcon } from './icons';
 import { appState, mutate } from '../store';
 import { generateId } from '../utils';
+import { registerOverlay } from './overlayStack';
 
 // ── Deck choice ──────────────────────────────────────────────────────────────
 // One modal for every "this card is about to land somewhere" moment: adding a
@@ -261,9 +262,14 @@ const pickerState = signal<PickerState | null>(null);
 
 export function showDeckPickerPopover(selected: Set<string>, onChange: () => void): void {
   pickerState.value = { selected, onChange };
+  _unregisterPicker = registerOverlay(closePicker);
 }
 
+let _unregisterPicker: () => void = () => {};
+
 function closePicker(): void {
+  _unregisterPicker();
+  _unregisterPicker = () => {};
   pickerState.value = null;
 }
 

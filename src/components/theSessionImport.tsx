@@ -24,6 +24,7 @@ import { anyModalOpen } from './modal';
 import { AI_IMPORT_PROMPT } from './aiImportPrompt';
 import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '../services/irishTuneInfoService';
 import { CheckIcon } from './icons';
+import { registerOverlay } from './overlayStack';
 
 /** Merges the AI-authored card onto the real fetched one: the fetch is always
  *  authoritative for the tune's identity/ABC (never trust the AI for that —
@@ -1631,6 +1632,11 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
 export function showNewCardModal(ctx: AppContext, initialDeckIds?: string[], preset?: NewCardPreset): void {
   const host = document.createElement('div');
   document.body.appendChild(host);
-  const close = () => { render(null, host); host.remove(); };
+  // Declared like any dialog, though it is not in the shared stack: without
+  // this the back gesture navigated behind it, which is exactly the report
+  // that prompted the registry.
+  let unregister = () => {};
+  const close = () => { unregister(); render(null, host); host.remove(); };
+  unregister = registerOverlay(close);
   render(<NewCardModal ctx={ctx} initialDeckIds={initialDeckIds} preset={preset} onClose={close} />, host);
 }

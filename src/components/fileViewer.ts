@@ -9,6 +9,7 @@ import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes } from '../services/ab
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { showModal } from './modal';
 import { appState, mutate } from '../store';
+import { registerOverlay } from './overlayStack';
 
 // ── ABC Transcription Tools share-link integration ────────────────────────────
 // https://michaeleskin.com/abctools/userguide.html#generate_share_link — the
@@ -299,11 +300,17 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
       big.src = img.src; big.alt = img.alt;
       big.style.cssText = `max-width:${modalMaxW(1.0)};max-height:${modalMaxH(1.0)};object-fit:contain;`;
       lightbox.appendChild(big);
-      const closeLightbox = () => { lightbox.remove(); document.removeEventListener('keydown', onLightboxKey); };
+      let unregisterLightbox = () => {};
+      const closeLightbox = () => {
+        unregisterLightbox();
+        lightbox.remove();
+        document.removeEventListener('keydown', onLightboxKey, true);
+      };
       const onLightboxKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); closeLightbox(); } };
       document.addEventListener('keydown', onLightboxKey, true);
       lightbox.addEventListener('click', closeLightbox);
       document.body.appendChild(lightbox);
+      unregisterLightbox = registerOverlay(closeLightbox);
     });
 
     body.appendChild(img);

@@ -2,7 +2,7 @@ import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
 import { emptyState, formatBytes } from './utils';
-import { appState, commitState, routeSignal, goBack, goForward, loadSavedRoute, initRoutePersistence } from './store';
+import { appState, commitState, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
@@ -510,8 +510,9 @@ function finishBoot(root: HTMLElement): void {
   mountApp(root);
   registerCommandPalette(getContext);
 
-  document.addEventListener('keydown', (e) => {
-    if (e.altKey && e.key === 'ArrowLeft')  { e.preventDefault(); goBack(); }
-    if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); goForward(); }
-  });
+  // Alt+← / Alt+→ used to be handled here. Removed on 2026-09-10: they are
+  // the browser's OWN shortcut for back and forward, and since the history
+  // bridge went in, the native gesture lands on the same popstate handler
+  // the buttons do. Intercepting it only to re-issue it was a duplicate that
+  // could drift from the platform, never a feature.
 }

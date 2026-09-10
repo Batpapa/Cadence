@@ -24,6 +24,7 @@ import { clearLastUserId } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT } from '../services/abcService';
 import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
 import { formatBytes } from '../utils';
+import { registerOverlay } from './overlayStack';
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
@@ -1024,7 +1025,11 @@ let closeSettingsModal: (() => void) | null = null;
 export function showSettingsModal(ctx: AppContext): void {
   const host = document.createElement('div');
   document.body.appendChild(host);
-  const close = () => { render(null, host); host.remove(); closeSettingsModal = null; };
+  // Registered like any modal, even though it is not in the shared stack:
+  // the back gesture has one question and needs one answer.
+  let unregister = () => {};
+  const close = () => { unregister(); render(null, host); host.remove(); closeSettingsModal = null; };
+  unregister = registerOverlay(close);
   closeSettingsModal = close;
   render(<SettingsModal ctx={ctx} onClose={close} />, host);
 }
