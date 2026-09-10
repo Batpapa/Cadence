@@ -164,6 +164,11 @@ export interface User {
    *  default: the counts still live on each tune and still show as ×N in the
    *  card view, they are only spelled out in the notation when this is on. */
   abcIncludeRepeats?: boolean;
+  /** Which face a score opens on, in the viewer and in an incipit alike.
+   *  Absent = 'sheet' — see `abcOpenMode` in abcService, the single reader.
+   *  Someone who edits ABC by hand all day sets it once instead of pressing
+   *  the same tab on every score. */
+  abcOpenMode?: AbcOpenMode;
 
   // Misc.
   /** How many times a tune is played through when it JOINS a set — three is
@@ -234,6 +239,11 @@ export type TrendingGainMode = 'absolute' | 'percent';
  *  `study` means the card page AND a review — it is a superset, not a third
  *  place, so the three values read as one dial from less to more. */
 export type IncipitDisplay = 'none' | 'card' | 'study';
+
+/** Which face a score shows FIRST — the drawn stave or the ABC source. Both
+ *  the full viewer and an incipit read it, and both keep their own switch, so
+ *  this decides where you land and never where you can go. */
+export type AbcOpenMode = 'sheet' | 'text';
 
 export type Route =
   | { view: 'folder'; folderId: string | null }

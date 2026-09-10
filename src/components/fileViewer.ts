@@ -1,11 +1,11 @@
 import LZString from 'lz-string';
-import type { FileEntry } from '../types';
+import type { AbcOpenMode, FileEntry } from '../types';
 import { entryToObjectUrl, arrayBufferToBase64, focusIfDesktop } from '../utils';
 import { renderMarkdown } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon } from './icons';
 import { t } from '../services/i18nService';
-import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes } from '../services/abcService';
+import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, abcOpenMode } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { showModal } from './modal';
 import { appState, mutate } from '../store';
@@ -192,10 +192,27 @@ export function showAbcPrefsModal(onApply: () => void): void {
       .then(() => onApply());
   });
 
+  // ── Which face a score opens on ──
+  // Saved only, like the speed: it describes the NEXT score to be opened, and
+  // flipping the one already on screen would answer a question nobody asked —
+  // the tabs are right there, two centimetres away. The incipit reads the same
+  // value, so a preference set here is honoured on the card page too.
+  const { el: openSelect } = mkCustomSelect(
+    [
+      { value: 'sheet', label: t('fileViewer.abc.sheetTab') },
+      { value: 'text',  label: t('fileViewer.abc.textTab') },
+    ],
+    abcOpenMode(appState.value),
+    (v) => void mutate(st => { st.abcOpenMode = v as AbcOpenMode; }),
+    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
+  );
+  openSelect.style.maxWidth = '14rem';
+
   body.append(
     row('fileViewer.abc.prefs.speed', speedControl),
     row('fileViewer.abc.instrument', instrSelect),
     row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
+    row('fileViewer.abc.prefs.openOn', openSelect),
   );
 
   // No footer: nothing to confirm, so nothing to press. The ✕ is the only way
@@ -333,7 +350,10 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     let versionCount = tunes.length;
     let currentIndex = Math.max(0, Math.min(versionCount - 1, opts?.initialIndex ?? 0));
     let favoriteIndex = opts?.favoriteIndex;
-    let currentMode: 'sheet' | 'text' = 'sheet';
+    // Where this score lands, from the user's preference — the stave unless
+    // they said otherwise. Read once, at opening: the tabs below reassign it
+    // freely and never write it back.
+    let currentMode: 'sheet' | 'text' = abcOpenMode(appState.value);
     // Set when a text-mode edit is saved while notation is hidden — abcjs's
     // resize handling can make the SVG visibly reflow back in even inside a
     // display:none container (see setAbcMode's comment below), so the
@@ -554,7 +574,7 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     }
 
     goToVersion(currentIndex); // initializes prev/next disabled state + label (respects opts.initialIndex)
-    setAbcMode('sheet');
+    setAbcMode(currentMode);
 
     import('abcjs').then((abcjs) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -796,7 +816,13 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
           } catch { /* nothing primed to resume */ }
         });
       };
-      renderTune(currentIndex);
+      // Only if the stave is the face we opened on. Drawing into a
+      // display:none container is exactly what `sheetNeedsRerender` exists to
+      // avoid (abcjs's resize handling makes the SVG reflow visibly when it
+      // reappears), and someone who opens on the source may never look at the
+      // notation at all.
+      if (currentMode === 'sheet') renderTune(currentIndex);
+      else sheetNeedsRerender = true;
     }).catch(() => {
       const err = document.createElement('p');
       err.className = 'text-sm text-dim italic';

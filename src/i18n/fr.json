@@ -735,6 +735,7 @@
   "fileViewer.abc.prefs.title": "Préférences de lecture",
   "fileViewer.abc.prefs.speed": "Vitesse par défaut",
   "fileViewer.abc.prefs.includeRepeats": "Écrire les répétitions dans les suites",
+  "fileViewer.abc.prefs.openOn": "Ouvrir les partitions sur",
   "fileViewer.abc.instrument.default": "Défaut",
   "fileViewer.abc.instrument.fiddle": "Violon",
   "fileViewer.abc.instrument.whistle": "Tin whistle",
@@ -1100,5 +1101,7 @@
   "settings.incipit.card": "Sur la carte",
   "settings.incipit.study": "Carte et révision",
   "card.incipit.play": "Écouter les premières mesures",
-  "card.incipit.stop": "Arrêter"
+  "card.incipit.stop": "Arrêter",
+  "card.incipit.showSource": "Afficher le texte ABC",
+  "card.incipit.showScore": "Afficher la partition"
 }
