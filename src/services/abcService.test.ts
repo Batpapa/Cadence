@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildTunesetAbc, splitAbcTunes, parseAbcBlock, encodeAbc, MAX_REPEAT, DEFAULT_TUNE_REPEAT, defaultTuneRepeat } from './abcService';
+import {
+  buildTunesetAbc, splitAbcTunes, parseAbcBlock, encodeAbc, MAX_REPEAT, DEFAULT_TUNE_REPEAT, defaultTuneRepeat,
+  tunesetAbcPlaceholder, addTunesetAbcOnConvert, addTunesetAbcOnBecomingSet, ADD_TUNESET_ABC_BY_DEFAULT,
+} from './abcService';
+import { hasTunesetScore } from './cardTypeService';
 import type { Card, CardRef } from '../types';
 
 function abcBlock(x: number, title: string, rhythm: string, meter: string, key: string, music: string): string {
@@ -267,5 +271,56 @@ describe('the default number of repeats', () => {
     expect(defaultTuneRepeat({ defaultTuneRepeat: 999 })).toBe(MAX_REPEAT);
     expect(defaultTuneRepeat({ defaultTuneRepeat: 0 })).toBe(1);
     expect(defaultTuneRepeat({ defaultTuneRepeat: NaN })).toBe(1);
+  });
+});
+
+describe('the score added when a card becomes a set', () => {
+  const asSet = (attachments: Card['content']['attachments'] = []): Card => ({
+    id: 'x', guid: 'guid-x', name: 'New set', defaultImportance: 1, tags: [],
+    type: 'tuneset', content: { notes: '', attachments },
+  });
+
+  it('is a placeholder, not a score: empty data, marked as generated', () => {
+    const att = tunesetAbcPlaceholder();
+    expect(att.type).toBe('file');
+    if (att.type !== 'file') return;
+    expect(att.data).toBe('');
+    expect(att.generatedBy).toBe('tuneset');
+  });
+
+  it('is added when the user has said nothing — absence means yes', () => {
+    const card = asSet();
+    addTunesetAbcOnBecomingSet(card, {});
+    expect(hasTunesetScore(card.content.attachments)).toBe(true);
+    expect(addTunesetAbcOnConvert({})).toBe(ADD_TUNESET_ABC_BY_DEFAULT);
+  });
+
+  it('is NOT added when the user turned the setting off', () => {
+    const card = asSet();
+    addTunesetAbcOnBecomingSet(card, { addTunesetAbcOnConvert: false });
+    expect(card.content.attachments).toHaveLength(0);
+  });
+
+  it('never lands twice on the same card', () => {
+    const card = asSet();
+    addTunesetAbcOnBecomingSet(card, {});
+    addTunesetAbcOnBecomingSet(card, {});
+    expect(card.content.attachments).toHaveLength(1);
+  });
+
+  it('leaves a card that is not a set alone', () => {
+    const card = { ...asSet(), type: 'tune' };
+    addTunesetAbcOnBecomingSet(card, {});
+    expect(card.content.attachments).toHaveLength(0);
+  });
+
+  it('keeps the attachments the card already had', () => {
+    const own = { type: 'file' as const, name: 'ABC', mimeType: 'text/vnd.abc', data: encodeAbc('X: 1') };
+    const card = asSet([own]);
+    addTunesetAbcOnBecomingSet(card, {});
+    expect(card.content.attachments).toHaveLength(2);
+    // A file of the user's own called "ABC" is not the generated one: the
+    // marker is `generatedBy`, never the name.
+    expect(card.content.attachments[0]).toBe(own);
   });
 });

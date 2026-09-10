@@ -11,7 +11,7 @@ import { findBacklinks, findSetsContaining } from '../services/cardRefService';
 import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
 import { cardTypeIcon } from '../components/cardTypeIcon';
 import { tunesetAutoName } from '../services/stateNormalise';
-import { defaultTuneRepeat } from '../services/abcService';
+import { defaultTuneRepeat, addTunesetAbcOnBecomingSet } from '../services/abcService';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
@@ -161,13 +161,24 @@ function showContextMenuError(message: string): void {
  *  type that does not move, has nothing to confirm, and a dialog over nothing
  *  is how people learn to click through dialogs. */
 function setCardType(cardId: string, type: string): void {
+  const card = appState.value.cards[cardId];
+  // The menu offers the type the card already carries, so "changing" a card to
+  // what it already is has to be a no-op — not a re-application. Re-applying
+  // would hand a set back the score somebody deliberately removed, which is
+  // the automatic repair this feature is explicitly not. The bulk version
+  // skips those cards for the same reason.
+  if (card && (card.type ?? '') === type) return;
+
   const apply = () => {
     void mutate(s => {
       const c = s.cards[cardId];
-      if (c) applyCardType(c, type);
+      if (!c) return;
+      applyCardType(c, type);
+      // Becoming a set brings the fused score along, unless the user turned
+      // that off in Misc.
+      addTunesetAbcOnBecomingSet(c, s);
     });
   };
-  const card  = appState.value.cards[cardId];
   const tunes = card && isTuneset(card) && type !== CARD_TYPE_TUNESET ? card.tunes?.length ?? 0 : 0;
   if (tunes === 0 || !card) { apply(); return; }
   confirmModal(

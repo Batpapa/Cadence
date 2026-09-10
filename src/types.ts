@@ -173,6 +173,13 @@ export interface User {
    *  every set already built, nor make an exported set mean something else on
    *  the machine that opens it. */
   defaultTuneRepeat?: number;
+  /** Whether turning a card into a set also gives it the fused score. Absent =
+   *  yes, so both values are written explicitly (see `addTunesetAbcOnConvert`
+   *  in abcService, the single reader). Applies to the two MANUAL conversions
+   *  — the card view's type selector and the library's bulk change — and to
+   *  nothing else: it is not an invariant, and a set someone stripped the
+   *  score from must stay stripped. */
+  addTunesetAbcOnConvert?: boolean;
 
   // Profiles
   profileIds: string[];

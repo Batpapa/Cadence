@@ -1,4 +1,4 @@
-import type { Card } from '../types';
+import type { Attachment, Card } from '../types';
 
 /** The card specialisations this build knows about.
  *
@@ -51,6 +51,22 @@ export function tunesOf(card: Card | undefined): Card['tunes'] {
   return isTuneset(card) ? (card?.tunes ?? []) : [];
 }
 
+/** A set's generated score, recognised by its marker and never by its name —
+ *  a user may perfectly well attach a file of their own called "ABC".
+ *
+ *  Lives here rather than with the rest of the ABC code because it states what
+ *  a SET carries, alongside `tunes` and `computedName`: `applyCardType` below
+ *  has to strip all three together, and abcService already depends on this
+ *  module (it may not depend back). The placeholder is BUILT there — that
+ *  shape is ABC's business, this predicate is the type's. */
+function isTunesetScore(att: Attachment): boolean {
+  return att.type === 'file' && att.generatedBy === 'tuneset';
+}
+
+export function hasTunesetScore(attachments: Attachment[]): boolean {
+  return attachments.some(isTunesetScore);
+}
+
 /** i18n key for a type, for the selector and any label that shows one.
  *  `undefined` and unknown values share the "no type" label. */
 export function cardTypeLabelKey(type: string | undefined): string {
@@ -76,10 +92,10 @@ export function canBeTuneOf(candidate: Card, set: Card): boolean {
 
 /** Applies a type to a card in place; an empty string clears it.
  *
- *  A card that is not a set carries no tune list — the rule is stated on the
- *  RESULTING type rather than on the transition, so it holds unconditionally
- *  and a stray list (from an import, say) cannot survive by arriving through
- *  an unexpected path.
+ *  A card that is not a set carries no tune list, no automatic name and no
+ *  generated score — the rule is stated on the RESULTING type rather than on
+ *  the transition, so it holds unconditionally and a stray list (from an
+ *  import, say) cannot survive by arriving through an unexpected path.
  *
  *  This DISCARDS the set's contents, and the app has no undo: the caller is
  *  responsible for whatever confirmation the gesture deserves. */
@@ -88,6 +104,12 @@ export function applyCardType(card: Card, type: string): void {
   if (!isTuneset(card)) {
     delete card.tunes;
     delete card.computedName;
+    // The generated score goes with the list it was made of. It is DERIVED
+    // from `tunes` and stores no content of its own, and the rebuild that
+    // fills it in only runs for a set — so on a card that is no longer one it
+    // would sit there as a row promising a score and opening an empty file.
+    const atts = card.content?.attachments;
+    if (atts) card.content.attachments = atts.filter(a => !isTunesetScore(a));
   }
   // Becoming a set leaves automatic naming OFF — `computedName` absent, which
   // is how "off" is written everywhere else (the toggle deletes the field

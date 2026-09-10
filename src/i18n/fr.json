@@ -468,6 +468,8 @@
   "settings.misc": "Divers",
   "settings.defaultTuneRepeat": "Répétitions par défaut",
   "settings.defaultTuneRepeatHint": "Combien de fois un morceau est joué quand il entre dans une suite. Le nombre est inscrit sur le morceau au moment où il rejoint la suite : changer ce réglage n'altère aucune suite déjà constituée, il ne s'applique qu'aux ajouts suivants.",
+  "settings.addTunesetAbc": "Ajouter la partition aux nouvelles suites",
+  "settings.addTunesetAbcHint": "Quand une carte devient une suite — depuis son sélecteur de type, ou par un changement en masse dans la bibliothèque — la partition ABC fusionnée est ajoutée à ses pièces jointes. Elle est reconstruite à partir des morceaux de la suite à chaque ouverture, et les suites déjà existantes restent inchangées.",
   "settings.export": "Exporter",
   "settings.import": "Importer",
   "settings.reset": "Réinitialiser",
