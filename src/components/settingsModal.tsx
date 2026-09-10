@@ -21,7 +21,7 @@ import type { Lang } from '../services/i18nService';
 import { appState, getContext } from '../store';
 import { CustomSelect } from './customSelect';
 import { clearLastUserId } from '../db';
-import { defaultTuneRepeat, MAX_REPEAT } from '../services/abcService';
+import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
 import { formatBytes } from '../utils';
 import { registerOverlay } from './overlayStack';
@@ -863,6 +863,18 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        />
+      </Row>
+      <Sep />
+
+      {/* Both values written explicitly, and the current one read through
+          `addTunesetAbcOnConvert` rather than off the raw field: the absent
+          state means "on", so a plain `!!user.addTunesetAbcOnConvert` would
+          draw this switch off while the app kept adding the score. */}
+      <Row label={t('settings.addTunesetAbc')} hint={t('settings.addTunesetAbcHint')}>
+        <Toggle
+          checked={addTunesetAbcOnConvert(user)}
+          onChange={(v) => void ctx.mutate(s => updateUser(s, { addTunesetAbcOnConvert: v }))}
         />
       </Row>
       <Sep />

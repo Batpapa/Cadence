@@ -2,7 +2,7 @@ import type { Card, FileEntry, Attachment } from '../types';
 import { generateId } from '../utils';
 import { TuneUnavailableError, withTuneIdentity, type SkippedTune } from './tuneFetchError';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET } from './cardTypeService';
-import { TUNESET_ABC_NAME, isAbcFile, decodeAbc, splitAbcTunes } from './abcService';
+import { tunesetAbcPlaceholder, isAbcFile, decodeAbc, splitAbcTunes } from './abcService';
 
 const BASE = 'https://thesession.org';
 
@@ -620,10 +620,7 @@ export async function buildSetCards(
     // removing it is a choice, and a refresh has no business undoing it.
     content: previous?.content ?? {
       notes: '',
-      attachments: [{
-        type: 'file', name: TUNESET_ABC_NAME, mimeType: 'text/vnd.abc',
-        data: '', generatedBy: 'tuneset',
-      }],
+      attachments: [tunesetAbcPlaceholder()],
     },
   };
   return { setCard, newTunes };

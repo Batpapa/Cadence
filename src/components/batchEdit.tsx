@@ -6,6 +6,7 @@ import { showModal, closeModal, renderModalBody } from './modal';
 import { CustomSelect } from './customSelect';
 import { cardTypeIcon } from './cardTypeIcon';
 import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, applyCardType, isTuneset } from '../services/cardTypeService';
+import { addTunesetAbcOnBecomingSet } from '../services/abcService';
 import { cardsPlayingInSets } from '../services/cardRefService';
 import { focusIfDesktop } from '../utils';
 import { t } from '../services/i18nService';
@@ -411,6 +412,11 @@ export function showCardTypeModal(cardIds: string[]): void {
           if (!card || locked.has(card.id)) continue;
           if ((card.type ?? '') === draft.type) continue;
           applyCardType(card, draft.type);
+          // Same rule as the card view's selector, from the same helper: a card
+          // that BECOMES a set here gets its fused score, unless the user has
+          // turned that off. Cards already of the target type were skipped
+          // above, so this can never touch an existing set.
+          addTunesetAbcOnBecomingSet(card, s);
         }
       });
     });

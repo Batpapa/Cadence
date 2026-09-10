@@ -468,6 +468,8 @@
   "settings.misc": "Misc.",
   "settings.defaultTuneRepeat": "Default repeats",
   "settings.defaultTuneRepeatHint": "How many times a tune is played through when it joins a set. The number is written onto the tune as it joins, so changing this leaves every set you have already built alone — it only applies to what you add next.",
+  "settings.addTunesetAbc": "Add the score to new sets",
+  "settings.addTunesetAbcHint": "When a card is turned into a set — from its type selector, or from a bulk change in the library — the fused ABC score is added to its attachments. The score is rebuilt from the set's tunes every time it is opened, and sets that already exist are left as they are.",
   "settings.export": "Export",
   "settings.import": "Import",
   "settings.reset": "Reset",

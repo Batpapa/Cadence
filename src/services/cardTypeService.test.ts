@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   CARD_TYPE_TUNE, CARD_TYPE_TUNESET, CARD_TYPES,
-  isTune, isTuneset, tunesOf, cardTypeLabelKey, canBeTuneOf, isTypeLocked, applyCardType,
+  isTune, isTuneset, tunesOf, cardTypeLabelKey, canBeTuneOf, isTypeLocked, applyCardType, hasTunesetScore,
 } from './cardTypeService';
+import { tunesetAbcPlaceholder } from './abcService';
 import type { Card } from '../types';
 
 function card(id: string, over: Partial<Card> = {}): Card {
@@ -148,6 +149,30 @@ describe('applyCardType', () => {
     const c = card('a', { type: CARD_TYPE_TUNE, tunes: [ref('x')] });
     applyCardType(c, CARD_TYPE_TUNE);
     expect('tunes' in c).toBe(false);
+  });
+
+  it('DISCARDS the generated score when a set stops being a set', () => {
+    const c = set();
+    c.content.attachments = [tunesetAbcPlaceholder()];
+    applyCardType(c, CARD_TYPE_TUNE);
+    expect(hasTunesetScore(c.content.attachments)).toBe(false);
+  });
+
+  it('keeps every attachment the user put there themselves', () => {
+    const own = { type: 'file' as const, name: 'ABC', mimeType: 'text/vnd.abc', data: 'WDogMQ==' };
+    const c = set();
+    c.content.attachments = [own, tunesetAbcPlaceholder()];
+    applyCardType(c, '');
+    // Same name as the generated one, and it survives: the marker is
+    // `generatedBy`, never the file name.
+    expect(c.content.attachments).toEqual([own]);
+  });
+
+  it('keeps the generated score when a set stays a set', () => {
+    const c = set();
+    c.content.attachments = [tunesetAbcPlaceholder()];
+    applyCardType(c, CARD_TYPE_TUNESET);
+    expect(hasTunesetScore(c.content.attachments)).toBe(true);
   });
 
   it('touches nothing else', () => {

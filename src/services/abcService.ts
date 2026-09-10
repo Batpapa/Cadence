@@ -1,5 +1,6 @@
-import type { Card, CardRef, FileEntry } from '../types';
+import type { Attachment, Card, CardRef, FileEntry } from '../types';
 import { resolveCardRef } from './cardRefService';
+import { isTuneset, hasTunesetScore } from './cardTypeService';
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 // Shared with fileViewer.ts, which used to own private copies. Splitting and
@@ -262,4 +263,53 @@ export function tunesetAbcEntry(set: Card, cards: Record<string, Card>, opts?: T
     mimeType: 'text/vnd.abc',
     data: encodeAbc(abc),
   };
+}
+
+// ── The stored placeholder ───────────────────────────────────────────────────
+// One builder and one test, used by every path that gives a set its score: the
+// TheSession importer, the "+" menu on a card's attachments, and the automatic
+// addition on a manual type change. The shape is load-bearing (`generatedBy`
+// is what makes the row non-editable, unique and rebuilt at display time), so
+// it is written once rather than in four places that could drift.
+
+/** The attachment a set carries to say "show my fused score". Empty by
+ *  design — the notation is rebuilt by `tunesetAbcEntry` whenever it is
+ *  shown, so it can never lag behind a tune being renamed or reordered. */
+export function tunesetAbcPlaceholder(): Attachment {
+  return {
+    type: 'file', name: TUNESET_ABC_NAME, mimeType: 'text/vnd.abc',
+    data: '', generatedBy: 'tuneset',
+  };
+}
+
+/** Whether a card turning into a set gets its score along with it, when the
+ *  user has said nothing.
+ *
+ *  Absence means YES, so — the `syncAudioByDefault` lesson — the setting must
+ *  write BOTH values explicitly (a refusal stored as "absent" would read back
+ *  as a yes), and every read must come through here rather than through a bare
+ *  `!!user.addTunesetAbcOnConvert`, which is how a checkbox ends up showing
+ *  the opposite of what the app does. */
+export const ADD_TUNESET_ABC_BY_DEFAULT = true;
+
+export function addTunesetAbcOnConvert(user: { addTunesetAbcOnConvert?: boolean }): boolean {
+  return user.addTunesetAbcOnConvert ?? ADD_TUNESET_ABC_BY_DEFAULT;
+}
+
+/** Gives a card that has just BECOME a set its score, if the user wants it.
+ *
+ *  Called from the two manual conversions only — the card view's type selector
+ *  and the library's bulk type change — and deliberately NOT from `commitState`
+ *  or any normalisation: this describes what happens at the moment of the
+ *  change, not an invariant to maintain. Enforcing it continuously would put
+ *  the attachment back on every existing set, including the ones somebody
+ *  removed it from on purpose.
+ *
+ *  Idempotent anyway, so a set that already shows its score never gains a
+ *  second row. */
+export function addTunesetAbcOnBecomingSet(card: Card, user: { addTunesetAbcOnConvert?: boolean }): void {
+  if (!isTuneset(card)) return;
+  if (!addTunesetAbcOnConvert(user)) return;
+  if (hasTunesetScore(card.content.attachments)) return;
+  card.content.attachments.push(tunesetAbcPlaceholder());
 }

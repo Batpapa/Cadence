@@ -8,8 +8,8 @@ import { showPreviewModal } from './fileViewer';
 import { showEmbedModal } from './embedViewer';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
 import { resolveCardRef } from '../services/cardRefService';
-import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, TUNESET_ABC_NAME } from '../services/abcService';
-import { isTuneset, CARD_TYPE_TUNE } from '../services/cardTypeService';
+import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder } from '../services/abcService';
+import { isTuneset, hasTunesetScore, CARD_TYPE_TUNE } from '../services/cardTypeService';
 import { appState, navigate, getContext, mutate } from '../store';
 import { showModal, closeModal, confirmModal, renderModalBody } from './modal';
 import { showNewCardModal, type NewCardPreset } from './theSessionImport';
@@ -599,7 +599,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
     () => (card && isTuneset(card) ? tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats }) : null),
     [card, appState.value.cards, appState.value.abcIncludeRepeats],
   );
-  const hasTunesetAbc = attachments.some(a => a.type === 'file' && a.generatedBy === 'tuneset');
+  const hasAbc = hasTunesetScore(attachments);
 
   /** The stored entry carries no content and a placeholder name; this is what
    *  is shown, previewed and downloaded. The NAME is derived too, so it follows
@@ -621,14 +621,8 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
     { label: t('fileViewer.addCard'), onClick: () => showCardRefPicker(onAdd) },
     // Sets only, and once only — the entry disappears rather than being offered
     // and refused, like every other impossible action in this app.
-    ...(card && isTuneset(card) && !hasTunesetAbc
-      ? [{
-          label: t('fileViewer.addTunesetAbc'),
-          onClick: () => onAdd({
-            type: 'file' as const, name: TUNESET_ABC_NAME, mimeType: 'text/vnd.abc',
-            data: '', generatedBy: 'tuneset' as const,
-          }),
-        }]
+    ...(card && isTuneset(card) && !hasAbc
+      ? [{ label: t('fileViewer.addTunesetAbc'), onClick: () => onAdd(tunesetAbcPlaceholder()) }]
       : []),
   ]);
 
