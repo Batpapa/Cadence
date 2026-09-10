@@ -3,6 +3,7 @@ import {
   buildTunesetAbc, splitAbcTunes, parseAbcBlock, encodeAbc, MAX_REPEAT, DEFAULT_TUNE_REPEAT, defaultTuneRepeat,
   tunesetAbcPlaceholder, addTunesetAbcOnConvert, addTunesetAbcOnBecomingSet, ADD_TUNESET_ABC_BY_DEFAULT,
   musicIncipit, abcDurationUnits, abcIncipit, TUNE_TEMPOS,
+  abcOpenMode, ABC_OPEN_MODE_DEFAULT,
 } from './abcService';
 import { hasTunesetScore } from './cardTypeService';
 import type { Card, CardRef } from '../types';
@@ -458,4 +459,14 @@ describe('abcIncipit — ce que la partition garde', () => {
   });
 });
 
+describe('abcOpenMode', () => {
+  it('ouvre sur la partition quand l utilisateur n a rien dit', () => {
+    expect(abcOpenMode({})).toBe('sheet');
+    expect(abcOpenMode({})).toBe(ABC_OPEN_MODE_DEFAULT);
+  });
 
+  it('respecte le choix explicite, dans les deux sens', () => {
+    expect(abcOpenMode({ abcOpenMode: 'text' })).toBe('text');
+    expect(abcOpenMode({ abcOpenMode: 'sheet' })).toBe('sheet');
+  });
+});

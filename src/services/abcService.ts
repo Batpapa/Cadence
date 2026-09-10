@@ -1,4 +1,4 @@
-import type { Attachment, Card, CardRef, FileEntry } from '../types';
+import type { AbcOpenMode, Attachment, Card, CardRef, FileEntry } from '../types';
 import { resolveCardRef } from './cardRefService';
 import { isTuneset, hasTunesetScore } from './cardTypeService';
 
@@ -417,6 +417,21 @@ export function tunesetAbcPlaceholder(): Attachment {
  *  `!!user.addTunesetAbcOnConvert`, which is how a checkbox ends up showing
  *  the opposite of what the app does. */
 export const ADD_TUNESET_ABC_BY_DEFAULT = true;
+
+/** Which face a score opens on. The stave, unless the user says otherwise:
+ *  notation is what a score IS to almost everyone who opens one, and the
+ *  source is a tool for the few who edit it.
+ *
+ *  One reader for two very different screens — the full viewer's Sheet/ABC
+ *  tabs and the two-bar incipit's little switch. Neither writes it back when
+ *  its own switch is used: the setting says where a score OPENS, and a viewer
+ *  that quietly rewrote it would turn one glance at the source into a new
+ *  default nobody chose. */
+export const ABC_OPEN_MODE_DEFAULT: AbcOpenMode = 'sheet';
+
+export function abcOpenMode(user: { abcOpenMode?: AbcOpenMode }): AbcOpenMode {
+  return user.abcOpenMode ?? ABC_OPEN_MODE_DEFAULT;
+}
 
 export function addTunesetAbcOnConvert(user: { addTunesetAbcOnConvert?: boolean }): boolean {
   return user.addTunesetAbcOnConvert ?? ADD_TUNESET_ABC_BY_DEFAULT;

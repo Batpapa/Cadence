@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AppState, Card, IncipitDisplay } from '../types';
+import type { AbcOpenMode, AppState, Card, IncipitDisplay } from '../types';
 // Type-only: erased at compile time, so it costs nothing at runtime and the
 // module itself stays lazily imported below.
 import type { TuneObject, MidiBuffer } from 'abcjs';
 import { isTuneset } from '../services/cardTypeService';
-import { INCIPIT_BARS, abcIncipit, isAbcFile, decodeAbc, splitAbcTunes } from '../services/abcService';
+import { INCIPIT_BARS, abcIncipit, abcOpenMode, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock } from '../services/abcService';
 import { resolveCardRef } from '../services/cardRefService';
 import { appState } from '../store';
 import { playIcon, stopIcon } from './playbackIcons';
+import { MusicNoteIcon } from './icons';
 import { t } from '../services/i18nService';
 
 // ── The opening bars, in place ───────────────────────────────────────────────
@@ -137,15 +138,34 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
   const audio = useRef<{ visualObj: TuneObject | null; synth: MidiBuffer | null }>({ visualObj: null, synth: null });
   const [playing, setPlaying] = useState(false);
   const [audible, setAudible] = useState(false);
+  /** Which face this one shows. Starts from the user's preference — the same
+   *  one the full viewer opens on — and is then this row's own business: a
+   *  switch here is a look at the source, not a new default, and the next
+   *  card opens where the setting says again. */
+  const [mode, setMode] = useState<AbcOpenMode>(() => abcOpenMode(appState.value));
+
+  // The sound belongs to the MUSIC, not to the drawing: built from `abc`
+  // alone, so switching faces neither stops it nor throws the primed buffer
+  // away. Only a different tune — or leaving the page — ends it.
+  useEffect(() => {
+    setPlaying(false);
+    return () => {
+      try { audio.current.synth?.stop(); } catch { /* never started */ }
+      audio.current = { visualObj: null, synth: null };
+    };
+  }, [abc]);
 
   useEffect(() => {
     let alive = true;
-    const host = hostRef.current;
-    if (!host) return;
     void import('abcjs').then(abcjs => {
-      if (!alive || !hostRef.current) return;
+      if (!alive) return;
       try {
-        const visual = abcjs.renderAbc(hostRef.current, abc, {
+        const host = hostRef.current;
+        // No host means the source is on screen instead of the stave. Parse
+        // it anyway: the synth never needed the engraving, only the parse,
+        // and the ▸ has to work on either face — someone reading the ABC is
+        // exactly the person who wants to check it against the sound.
+        const visual = host ? abcjs.renderAbc(host, abc, {
           // NOT `responsive: 'resize'`. That makes the SVG fill its container,
           // and a two-bar stave stretched across a 1600 px desktop is drawn at
           // four times the size of the text around it — which is exactly how
@@ -161,8 +181,8 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
           // `tempofont`, so it is hidden in CSS instead (`.abcjs-tempo`),
           // which keeps `Q:` in the ABC for the play button.
           format: { titlefont: 'Verdana 0', composerfont: 'Verdana 0', annotationfont: 'Verdana 9' },
-        });
-        cropToInk(hostRef.current);
+        }) : abcjs.parseOnly(abc);
+        if (host) cropToInk(host);
         audio.current.visualObj = visual?.[0] ?? null;
         // Only offer the button where sound can actually come out.
         if (alive && abcjs.synth.supportsAudio()) setAudible(true);
@@ -170,14 +190,8 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
         if (alive) setFailed(true);
       }
     }).catch(() => { if (alive) setFailed(true); });
-    return () => {
-      alive = false;
-      // Leaving the page stops the sound. Anything else would keep playing
-      // over whatever comes next.
-      try { audio.current.synth?.stop(); } catch { /* never started */ }
-      audio.current = { visualObj: null, synth: null };
-    };
-  }, [abc]);
+    return () => { alive = false; };
+  }, [abc, mode]);
 
   /** Plays, pauses, resumes — the whole point being that not everyone reads
    *  music.
@@ -253,7 +267,35 @@ export function Incipit({ abc, class: className = '' }: { abc: string; class?: s
           />
         </button>
       )}
-      <div ref={hostRef} class="incipit overflow-x-auto min-w-0" aria-hidden="true" />
+      {mode === 'text'
+        // The NOTES ALONE — `parseAbcBlock` cuts at `K:`, the one structural
+        // rule of an ABC body. The same reasoning as the stave, which shows
+        // no title, no rhythm and no tempo mark either: this is a reminder of
+        // how a tune starts, and four lines of header above two bars of music
+        // would bury the answer under its own paperwork. The full source is
+        // one tap away in the viewer.
+        //
+        // Selectable, unlike the stave — reading it or lifting it out is the
+        // reason to want this face at all. `whitespace-pre`, not `pre-wrap`:
+        // a wrapped bar is a different bar to read, so it scrolls instead.
+        ? <pre class="text-xs font-mono text-primary whitespace-pre overflow-x-auto min-w-0 m-0">{parseAbcBlock(abc).music}</pre>
+        : <div ref={hostRef} class="incipit overflow-x-auto min-w-0" aria-hidden="true" />}
+      {/* Right of the score, hugging it rather than pushed to the far edge:
+          it belongs to THIS opening, and a set stacks three of them. Shows
+          the face it would switch TO, in the viewer's own vocabulary — the
+          "ABC" tab there is this "ABC" here. */}
+      <button
+        type="button"
+        class="tap-btn shrink-0 cursor-pointer"
+        title={t(mode === 'sheet' ? 'card.incipit.showSource' : 'card.incipit.showScore')}
+        onClick={() => setMode(m => (m === 'sheet' ? 'text' : 'sheet'))}
+      >
+        <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
+          {mode === 'sheet'
+            ? <span class="text-[8px] font-mono font-bold leading-none">ABC</span>
+            : <MusicNoteIcon size={11} />}
+        </span>
+      </button>
     </div>
   );
 }
