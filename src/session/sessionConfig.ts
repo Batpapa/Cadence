@@ -47,8 +47,48 @@ export const ANALYSIS_WINDOW_S = 10;
  *  (~700 MB/h decoded) is what IMPORT_WARN_MINUTES guards against. */
 export const ANALYSIS_SAMPLE_RATE = 48000;
 
-/** Warn before decoding files longer than this (duration × rate × 4 bytes in RAM). */
-export const IMPORT_WARN_MINUTES = 90;
+// ── The whole-file decode, and when to warn about it ─────────────────────────
+// Only ever reached when StreamingFileSource cannot handle the file: the
+// chunked decoder holds a few seconds at a time and does not care how long the
+// recording is. The fallback (`FileSource.fromFile` → one decodeAudioData over
+// the whole file) is the one that scales with duration, and the one that kills
+// a tab.
+//
+// Reported from the field (2026-09-11): an import died at ~20 minutes on a
+// phone, with NO warning at all, because the threshold was a single hand-picked
+// 90 minutes — a desktop number. Hence a budget divided by a measured cost,
+// rather than a constant: the same formula that yields 15 minutes on a phone
+// reproduces the old 90 on a desktop, which is where that number came from.
+
+/** RAM a whole-file decode needs per second of audio.
+ *
+ *  Two copies exist at once: the mono PCM we keep at the analysis rate, and the
+ *  decoder's own copy of the original before it is resampled and mixed down.
+ *  The second is assumed to be 44.1 kHz stereo — the common case for anything
+ *  recorded on a phone, and the conservative direction. */
+export const WHOLE_FILE_BYTES_PER_S = ANALYSIS_SAMPLE_RATE * 4 + 44100 * 2 * 4;   // ≈ 545 kB/s, ≈ 1.9 GB/h
+
+/** What a renderer can allocate before it is killed. Not a measurement of this
+ *  device — no API reports it — but the order of magnitude that separates a
+ *  phone from a desktop, and the two numbers this app has actually observed
+ *  failing and succeeding. */
+const MEMORY_BUDGET_SMALL = 500_000_000;     // a phone tab
+const MEMORY_BUDGET_LARGE = 3_000_000_000;   // a desktop browser
+
+/** Bytes a whole-file decode of `durationS` is expected to need. Shown to the
+ *  user, so it must stay a number they can check against the file they picked. */
+export function wholeFileDecodeBytes(durationS: number): number {
+  return Math.max(0, durationS) * WHOLE_FILE_BYTES_PER_S;
+}
+
+/** Minutes of audio beyond which that decode is expected to fail here.
+ *
+ *  `smallMemory` is the caller's reading of the device (mobile), kept as a
+ *  parameter so this stays a pure function of its inputs. */
+export function importWarnMinutes(smallMemory: boolean): number {
+  const budget = smallMemory ? MEMORY_BUDGET_SMALL : MEMORY_BUDGET_LARGE;
+  return Math.round(budget / WHOLE_FILE_BYTES_PER_S / 60);
+}
 
 /** Reject imported files shorter than this. Deliberately left at 20s when the
  *  window shrank to 10s (2026-09-01): it now admits two full windows rather
