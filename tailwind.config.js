@@ -42,7 +42,10 @@ module.exports = {
       // user reaches them precisely BECAUSE hover sticks. Turning the flag on
       // would make them unreachable on a phone, so they need their own way in
       // first.
-      addVariant('hoverable', '@media (hover: hover) { &:hover }');
+      // `pointer: fine` as well as `hover: hover`: a few Android browsers (and
+      // device emulators) claim to hover when they cannot, and the pair is the
+      // combination that actually means "there is a mouse here".
+      addVariant('hoverable', '@media (hover: hover) and (pointer: fine) { &:hover }');
     }),
   ],
 };

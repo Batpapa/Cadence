@@ -16,7 +16,7 @@ import { BUCKET_TEXT, tuneName, ClipControls, TuneDeckButton, attachClip, isClip
 import { showBatchProgress, type BatchStep, type StepOutcome } from './batchRunner';
 import { deckGain } from './tuneBatch';
 import { AbcPreview } from './abcPreview';
-import { rankDetectedTunes, occurrencesOf, sortTuneRows, TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
+import { rankDetectedTunes, occurrencesOf, sortTuneRows } from './tuneRanking';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
 // The analyses read the other way round: by tune instead of by evening. It is
@@ -472,10 +472,17 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                     <button
                       key={m}
                       class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
-                      // Picking a criterion also points it the way that
-                      // criterion is usually read — names up, counts and dates
-                      // down — instead of keeping whatever the last one used.
-                      onClick={() => { onView({ sort: m, sortAsc: TUNE_SORT_DEFAULT_ASC[m] }); setSortOpen(false); }}
+                      // The criterion changes, the DIRECTION does not — the
+                      // card library's own rule (views/library.tsx sets the
+                      // mode and leaves sortAsc alone). This once also pointed
+                      // each criterion the way it is usually read, which was a
+                      // nice idea and a surprising one: turning the list upside
+                      // down was not what was asked for, and the arrow beside
+                      // this menu is right there to do it (2026-09-12).
+                      // TUNE_SORT_DEFAULT_ASC still decides where a criterion
+                      // STARTS, in SessionLibrary — just not where it lands
+                      // when you switch to it later.
+                      onClick={() => { onView({ sort: m }); setSortOpen(false); }}
                     >
                       <span class="shrink-0 flex items-center"><Icon size={12} /></span>
                       <span class="flex-1">{t(`sessions.ranking.sort.${m}`)}</span>
