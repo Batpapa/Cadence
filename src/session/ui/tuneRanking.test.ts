@@ -111,6 +111,39 @@ describe('rankDetectedTunes', () => {
     expect(rows[0]!.lastHeard).toBe(Date.parse('2026-01-01T20:00:00Z'));
   });
 
+  it('dates a tune by when it was PLAYED, not by when the evening began', () => {
+    const rows = rankDetectedTunes([
+      session('s1', '2026-01-01T20:00:00Z', [det({ tuneId: '1', start: 1800 })]),
+    ]);
+    expect(rows[0]!.lastHeard).toBe(Date.parse('2026-01-01T20:30:00Z'));
+  });
+
+  it('tells two passes in one evening apart, which a session date cannot', () => {
+    const rows = rankDetectedTunes([
+      session('s1', '2026-01-01T20:00:00Z', [
+        det({ tuneId: '1', displayName: 'early', start: 60 }),
+        det({ tuneId: '1', displayName: 'late', start: 3000 }),
+      ]),
+    ]);
+    expect(rows[0]!.lastHeard).toBe(Date.parse('2026-01-01T20:50:00Z'));
+    // ...and the newest name is the later pass's, not whichever came last in
+    // the array.
+    expect(rows[0]!.displayName).toBe('late');
+  });
+
+  it('orders two overlapping evenings by the real instant, not by their starts', () => {
+    // The evening that began EARLIER holds the more recent pass. Comparing the
+    // two session dates would answer the other way round.
+    const rows = rankDetectedTunes([
+      session('long', '2026-01-01T20:00:00Z', [det({ tuneId: '1', start: 3600 * 3 + 1800 })]), // 23:30
+      session('late', '2026-01-01T23:00:00Z', [det({ tuneId: '2', start: 300 })]),             // 23:05
+    ]);
+    const byId = new Map(rows.map(r => [r.tuneId, r.lastHeard]));
+    expect(byId.get('1')).toBe(Date.parse('2026-01-01T23:30:00Z'));
+    expect(byId.get('2')).toBe(Date.parse('2026-01-01T23:05:00Z'));
+    expect(byId.get('1')! > byId.get('2')!).toBe(true);
+  });
+
   it('reports no date rather than a wrong one when nothing is dated', () => {
     const rows = rankDetectedTunes([session('s1', null, [det({ tuneId: '1' })])]);
     expect(rows[0]!.lastHeard).toBeNull();
