@@ -101,14 +101,11 @@ export function rankDetectedTunes(sessions: Analysis[]): TuneRankRow[] {
 // screen is FOR, but a list you cannot find a name in is a report rather than
 // a tool, and the count is one click away.
 
-/** Which direction reads as the useful one for each criterion. Names go A→Z;
- *  "most heard" and "heard most recently" are questions whose answer people
- *  want at the top, so those start descending. */
-export const TUNE_SORT_DEFAULT_ASC: Record<TuneSort, boolean> = {
-  alpha: true,
-  lastHeard: false,
-  count: false,
-};
+/** Every criterion starts in its natural order, which `sortTuneRows` now
+ *  builds directly — so the useful direction is simply "not reversed", for all
+ *  three. Same default as the card library's (`?? false`), and the reason the
+ *  per-criterion table this used to be no longer has anything to say. */
+export const TUNE_SORT_DEFAULT_ASC = false;
 
 /** Orders the rows, and never leaves two of them interchangeable.
  *
@@ -125,25 +122,33 @@ export function sortTuneRows<T extends { row: TuneRankRow; name: string }>(
     || b.row.sessions - a.row.sessions
     || a.name.localeCompare(b.name);
 
+  // Each criterion's NATURAL order — the one worth landing on: names A→Z,
+  // and for the two questions ("most heard", "heard most recently") the answer
+  // at the top. `asc` then flips the whole thing.
   const primary = (a: T, b: T): number => {
     switch (mode) {
       case 'alpha':
         return a.name.localeCompare(b.name);
       case 'count':
-        return a.row.count - b.row.count;
+        return b.row.count - a.row.count;
       case 'lastHeard':
-        // Never heard on a dated evening sorts as the oldest thing there is,
-        // whichever way the list is pointing — an unknown date is not a recent
-        // one, the same call "Detected in" makes.
-        return (a.row.lastHeard ?? -Infinity) - (b.row.lastHeard ?? -Infinity);
+        // A tune nobody has dated sorts as the oldest thing there is — an
+        // unknown date is not a recent one, the same call "Detected in" makes.
+        // Reversing the list does carry it to the top, exactly as the card
+        // library's never-reviewed cards travel with theirs.
+        return (b.row.lastHeard ?? -Infinity) - (a.row.lastHeard ?? -Infinity);
     }
   };
 
-  return [...rows].sort((a, b) => {
-    const p = primary(a, b);
-    if (p !== 0) return asc ? p : -p;
-    return tiebreak(a, b);
-  });
+  // Sorted, THEN reversed — never a flipped comparator. This is the card
+  // library's own shape (views/library.tsx: `if (sortAsc) filtered.reverse()`)
+  // and it matters twice over. It keeps the tie-break travelling with the
+  // primary key rather than staying put while everything else turns over; and
+  // it makes `sortAsc: false` mean the same thing on both screens. It did not:
+  // this used to flip the comparator instead, so at an identical arrow the two
+  // lists ran opposite ways (2026-09-12).
+  const sorted = [...rows].sort((a, b) => primary(a, b) || tiebreak(a, b));
+  return asc ? sorted.reverse() : sorted;
 }
 
 /** Every detection of one tune, newest session first, each with where it is.

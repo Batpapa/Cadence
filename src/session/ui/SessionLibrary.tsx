@@ -79,7 +79,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
    *  each other's fields, which is the whole failure mode this avoids. */
   const [tuneView, setTuneView] = useState<TuneViewState>(() => ({
     sort: initialSort ?? 'alpha',
-    sortAsc: initialSortAsc ?? TUNE_SORT_DEFAULT_ASC[initialSort ?? 'alpha'],
+    sortAsc: initialSortAsc ?? TUNE_SORT_DEFAULT_ASC,
     analyses: new Map(initialAnalyses ?? []),
     analysesOr: initialAnalysesOr ?? true,
     others: new Map(initialOthers ?? []),
@@ -127,7 +127,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
       tab: tab === 'sessions' ? undefined : tab,
       folder: folderId ?? undefined,
       sort: tuneView.sort === 'alpha' ? undefined : tuneView.sort,
-      sortAsc: tuneView.sortAsc === TUNE_SORT_DEFAULT_ASC[tuneView.sort] ? undefined : tuneView.sortAsc,
+      sortAsc: tuneView.sortAsc === TUNE_SORT_DEFAULT_ASC ? undefined : tuneView.sortAsc,
       others: tuneView.others.size > 0 ? [...tuneView.others] : undefined,
       othersOr: tuneView.othersOr || undefined,
       analyses: tuneView.analyses.size > 0 ? [...tuneView.analyses] : undefined,

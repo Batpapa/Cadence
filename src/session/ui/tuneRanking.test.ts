@@ -135,9 +135,16 @@ describe('sortTuneRows', () => {
     mk('c', 'Cooley\'s', 5, 5, 900),
   ];
 
+  // `asc: false` is each criterion's natural order — the card library's
+  // convention, where sortAsc only ever means "reversed" (see sortTuneRows).
   it('sorts names A→Z by default', () => {
-    expect(sortTuneRows(rows, 'alpha', true).map(r => r.name)).toEqual(
+    expect(sortTuneRows(rows, 'alpha', false).map(r => r.name)).toEqual(
       ['Apples in Winter', 'Banish Misfortune', "Cooley's"]);
+  });
+
+  it('reverses names on demand', () => {
+    expect(sortTuneRows(rows, 'alpha', true).map(r => r.name)).toEqual(
+      ["Cooley's", 'Banish Misfortune', 'Apples in Winter']);
   });
 
   it('puts the most heard first when asked for counts', () => {
@@ -150,9 +157,9 @@ describe('sortTuneRows', () => {
 
   it('reverses on demand, in every mode', () => {
     for (const mode of ['alpha', 'count', 'lastHeard'] as const) {
-      const up = sortTuneRows(rows, mode, true).map(r => r.row.tuneId);
-      const down = sortTuneRows(rows, mode, false).map(r => r.row.tuneId);
-      expect(down).toEqual([...up].reverse());
+      const natural = sortTuneRows(rows, mode, false).map(r => r.row.tuneId);
+      const reversed = sortTuneRows(rows, mode, true).map(r => r.row.tuneId);
+      expect(reversed).toEqual([...natural].reverse());
     }
   });
 
@@ -166,8 +173,8 @@ describe('sortTuneRows', () => {
     // Same name and same count: without a tiebreak the order would depend on
     // the input order, and the list would reshuffle under the reader.
     const tied = [mk('x', 'Same', 3, 1, 10), mk('y', 'Same', 3, 2, 20)];
-    const once = sortTuneRows(tied, 'alpha', true).map(r => r.row.tuneId);
-    const twice = sortTuneRows([...tied].reverse(), 'alpha', true).map(r => r.row.tuneId);
+    const once = sortTuneRows(tied, 'alpha', false).map(r => r.row.tuneId);
+    const twice = sortTuneRows([...tied].reverse(), 'alpha', false).map(r => r.row.tuneId);
     expect(once).toEqual(twice);
   });
 
@@ -177,10 +184,8 @@ describe('sortTuneRows', () => {
     expect(rows.map(r => r.row.tuneId)).toEqual(before);
   });
 
-  it('points each criterion the way it is usually read', () => {
-    expect(TUNE_SORT_DEFAULT_ASC.alpha).toBe(true);        // A→Z
-    expect(TUNE_SORT_DEFAULT_ASC.count).toBe(false);       // most first
-    expect(TUNE_SORT_DEFAULT_ASC.lastHeard).toBe(false);   // newest first
+  it('starts every criterion unreversed, like the card library', () => {
+    expect(TUNE_SORT_DEFAULT_ASC).toBe(false);
   });
 });
 
