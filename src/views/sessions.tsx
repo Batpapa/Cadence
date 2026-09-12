@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { getContext } from '../store';
 import { t } from '../services/i18nService';
-import type { AppContext } from '../types';
+import type { AppContext, Route } from '../types';
 import { loadSessionMeta } from '../session/db';
 import type { Analysis } from '../session/model';
 import { activeLive, activeImport } from '../session/ui/sessionStore';
@@ -57,7 +57,7 @@ function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; 
   );
 }
 
-export function SessionsView({ sessionId, annotationId, search }: { sessionId?: string; annotationId?: string; search?: string }) {
+export function SessionsView({ sessionId, annotationId, search, tab, folder, sort, sortAsc, others, othersOr, analyses, analysesOr }: Extract<Route, { view: 'sessions' }>) {
   const ctx = getContext();
   const onOpenCard = (cardId: string) => ctx.navigate({ view: 'card', cardId });
 
@@ -88,11 +88,20 @@ export function SessionsView({ sessionId, annotationId, search }: { sessionId?: 
           </button>
         </div>
         <SessionLibrary
-          onStartLive={(kind) => startLiveSession(kind)}
-          onImportFile={(file) => { void startImport(ctx, file); }}
+          ctx={ctx}
+          onStartLive={(kind, destination) => startLiveSession(ctx, kind, destination)}
+          onImportFile={(file, destination) => { void startImport(ctx, file, destination); }}
           onImportSession={() => showImportSessionModal(ctx)}
           onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}
           initialSearch={search}
+          initialTab={tab}
+          initialFolder={folder}
+          initialSort={sort}
+          initialSortAsc={sortAsc}
+          initialOthers={others}
+          initialOthersOr={othersOr}
+          initialAnalyses={analyses}
+          initialAnalysesOr={analysesOr}
         />
       </>
     );

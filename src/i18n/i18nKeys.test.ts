@@ -78,6 +78,11 @@ describe('i18n keys', () => {
   // slip past the test.
   it('lists the keys built dynamically, which nothing here can verify', () => {
     const { dynamic } = collect();
-    expect(dynamic.length).toBeLessThanOrEqual(12);
+    // 13 since 2026-09-12: the tune ranking's sort menu builds
+    // `sessions.ranking.sort.${mode}`, the same shape the card library's own
+    // sort menu already contributes. Raised deliberately, which is the point
+    // of the ceiling — the three keys it can produce were checked in both
+    // locales by hand, because nothing here can.
+    expect(dynamic.length).toBeLessThanOrEqual(13);
   });
 });

@@ -10,6 +10,7 @@ import {
   fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta,
   BoundControls, ClipControls, type ClipSessionRef,
 } from './sessionUiShared';
+import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { importPlaybackWarn } from './sessionStore';
 import { useThrottled } from './throttle';
 
@@ -159,6 +160,9 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         onRename={(val) => { imp.name = val; }}
         onDelete={() => imp.cancel()}
       />
+      {/* Same as the live screen: where it will be filed is decided while the
+          analysis runs, not afterwards. */}
+      <AnalysisFolderPicker ctx={ctx} sessionId={imp.sessionId} />
       <DateRow
         getDate={() => imp.dateOverride}
         setDate={(date) => { imp.dateOverride = date; }}

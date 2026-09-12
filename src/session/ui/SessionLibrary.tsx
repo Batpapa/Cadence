@@ -1,4 +1,3 @@
-import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon } from '../../components/icons';
@@ -7,11 +6,13 @@ import { listSessions } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { activeLive } from './sessionStore';
-import { dateBesideName } from '../sessionNaming';
-import { BUCKET_TEXT, tuneName, useTuneNames } from './sessionUiShared';
-import { matchingDetections, readSearchTunes, writeSearchTunes } from './sessionSearch';
-import { navigate, replaceRoute } from '../../store';
-import type { Analysis, Detection } from '../model';
+import { useTuneNames } from './sessionUiShared';
+import { AnalysisBrowser } from './AnalysisBrowser';
+import { TuneRankingPanel, type TuneViewState } from './TuneRankingPanel';
+import { TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
+import { replaceRoute } from '../../store';
+import type { AppContext, FilterState, TuneSort } from '../../types';
+import type { Analysis } from '../model';
 
 // ── Screen: library ───────────────────────────────────────────────────────────
 // Past sessions + entry points into a new live recording / file import. Pure
@@ -22,40 +23,68 @@ import type { Analysis, Detection } from '../model';
 // component (also avoids a circular import — sessionModule.ts doesn't need
 // to know about this component at all any more).
 
-function fmtLongTime(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = Math.floor(Math.max(0, s) % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-  return `${m}:${String(sec).padStart(2, '0')}`;
+
+/** Whether a drag is carrying FILES from outside the page.
+ *
+ *  This whole screen is a drop target for importing an audio file, and it used
+ *  to light up for any drag at all — including one of its own rows being moved
+ *  in the analyses tree. Worse, the row stops that drop from bubbling (it has
+ *  its own), so the handler that turns the tint back off never ran and the
+ *  panel stayed blue until the next reload. Asking what the drag CARRIES is the
+ *  fix and the better question: an internal row carries text, not files.
+ *
+ *  `types` rather than `files`, because during a drag the file list is
+ *  deliberately empty — only its presence is exposed, not its contents. */
+function isFileDrag(e: DragEvent): boolean {
+  return !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
 }
-
-
-/** What each kind of session is marked with in the list. Same glyphs as the
- *  source selector on the start button, so the icon that chose a recording is
- *  the icon that later identifies it. */
-const SOURCE_BADGE: Record<Analysis['source'], { icon: JSX.Element; title: string }> = {
-  live:   { icon: <MicIcon size={11} />,         title: 'sessions.source.mic' },
-  device: { icon: <DeviceAudioIcon size={11} />, title: 'sessions.source.device' },
-  import: { icon: <FileAudioIcon size={11} />,   title: 'sessions.importBadge' },
-};
 
 interface SessionLibraryProps {
-  onStartLive: (source: LiveSourceKind) => void;
-  onImportFile: (file: File) => void;
+  /** Needed by the folder browser, which reads and writes the tree on the
+   *  synced user blob — the one thing on this screen that is not a callback. */
+  ctx: AppContext;
+  /** The folder to file the new analysis in — null for the root. Decided by
+   *  this component rather than read from the route: the route is written by a
+   *  throttled effect, so it can still be a keystroke behind. */
+  onStartLive: (source: LiveSourceKind, folderId: string | null) => void;
+  onImportFile: (file: File, folderId: string | null) => void;
   onImportSession: () => void;
   onOpenSession: (sessionId: string) => void;
-  /** What the search box starts with, from the route — so coming back to this
-   *  screen restores the search that was running, exactly as the card library
-   *  restores its filters. */
+  /** What the screen starts as, from the route — so coming back to it restores
+   *  the list that was running, exactly as the card library restores its
+   *  filters. All optional: absent means the default. */
   initialSearch?: string;
+  initialTab?: 'sessions' | 'tunes';
+  initialFolder?: string;
+  initialSort?: TuneSort;
+  initialSortAsc?: boolean;
+  initialOthers?: [string, FilterState][];
+  initialOthersOr?: boolean;
+  initialAnalyses?: [string, FilterState][];
+  initialAnalysesOr?: boolean;
 }
 
-export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onOpenSession, initialSearch }: SessionLibraryProps) {
+export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr }: SessionLibraryProps) {
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
   const [query, setQuery] = useState(initialSearch ?? '');
-  const [searchTunes, setSearchTunes] = useState(readSearchTunes);
   const [dragOver, setDragOver] = useState(false);
+  /** Which way the same material is being read: by evening, or by tune. */
+  const [tab, setTab] = useState<'sessions' | 'tunes'>(initialTab ?? 'sessions');
+  /** Which folder the analyses list is showing; null is the root ("Home").
+   *  In the route like everything else here, so that opening an analysis and
+   *  coming back lands in the folder you left rather than at the top. */
+  const [folderId, setFolderId] = useState<string | null>(initialFolder ?? null);
+  /** The tune list's own settings, held here rather than inside the panel so
+   *  that ONE effect writes the route. Two writers would take turns erasing
+   *  each other's fields, which is the whole failure mode this avoids. */
+  const [tuneView, setTuneView] = useState<TuneViewState>(() => ({
+    sort: initialSort ?? 'alpha',
+    sortAsc: initialSortAsc ?? TUNE_SORT_DEFAULT_ASC[initialSort ?? 'alpha'],
+    analyses: new Map(initialAnalyses ?? []),
+    analysesOr: initialAnalysesOr ?? true,
+    others: new Map(initialOthers ?? []),
+    othersOr: initialOthersOr ?? false,
+  }));
   const [source, setSource] = useState<LiveSourceKind>('mic');
   const fileInputRef = useRef<HTMLInputElement>(null);
   useTuneNames();
@@ -70,6 +99,11 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
     { value: 'device', label: t('sessions.source.device') },
   ];
 
+  // Deleting a folder deletes the recordings it holds, and that is the only
+  // action on this screen that changes what EXISTS rather than how it is
+  // arranged — so the list has to be re-read rather than re-derived.
+  const reloadSessions = () => { void listSessions().then(setAllSessions); };
+
   useEffect(() => {
     void recoverOrphanedSessions(activeLive.value?.sessionId).then(() => listSessions()).then(setAllSessions);
     // eslint-disable-next-line
@@ -81,34 +115,46 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
   // it is throttled in store.ts precisely because this fires per keystroke.
   // Empty is written as absent rather than as '', so a route that carries no
   // search stays a route that carries no search.
+  //
+  // Everything that shapes the list travels with it, not just the search: the
+  // tab, the ordering, the chips. A default is written as ABSENT rather than
+  // as its value, so a route that was never touched stays a bare
+  // `{view:'sessions'}` instead of accumulating the defaults it already has.
   useEffect(() => {
-    replaceRoute({ view: 'sessions', search: query || undefined });
-  }, [query]);
+    replaceRoute({
+      view: 'sessions',
+      search: query || undefined,
+      tab: tab === 'sessions' ? undefined : tab,
+      folder: folderId ?? undefined,
+      sort: tuneView.sort === 'alpha' ? undefined : tuneView.sort,
+      sortAsc: tuneView.sortAsc === TUNE_SORT_DEFAULT_ASC[tuneView.sort] ? undefined : tuneView.sortAsc,
+      others: tuneView.others.size > 0 ? [...tuneView.others] : undefined,
+      othersOr: tuneView.othersOr || undefined,
+      analyses: tuneView.analyses.size > 0 ? [...tuneView.analyses] : undefined,
+      analysesOr: tuneView.analysesOr ? undefined : false,
+    });
+  }, [query, tab, folderId, tuneView]);
+
+  /** Where a new analysis is filed: the folder on screen — but only while the
+   *  analyses tab is the one being looked at. The entry buttons sit ABOVE the
+   *  tabs and work from the tunes side too, where "the open folder" is not
+   *  something the user can see, and filing into it would be a surprise rather
+   *  than a convenience. */
+  const destinationFolder = tab === 'sessions' ? folderId : null;
 
   const q = query.trim().toLowerCase();
-  // Name always; tunes only when asked. Searching names alone left the one
-  // question people actually ask unanswerable — "which evening did we play the
-  // Kesh?", a session being remembered by what was played in it far more often
-  // than by what it is called — but it is not what most searches are for, so
-  // the wider search is a switch rather than the behaviour. The default name
-  // already carries date and time (sessionNaming.ts), so typing a date works
-  // the same either way.
-  const sessions = q
-    ? allSessions
-        .map(s => ({ session: s, hits: searchTunes ? matchingDetections(s, q) : [] }))
-        .filter(r => r.hits.length > 0 || r.session.name.toLowerCase().includes(q))
-    : allSessions.map(s => ({ session: s, hits: [] as Detection[] }));
 
   return (
     <div
       class={dragOver ? 'bg-accent/5' : ''}
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragOver={(e) => { if (!isFileDrag(e)) return; e.preventDefault(); setDragOver(true); }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }}
       onDrop={(e) => {
+        if (!isFileDrag(e)) return;
         e.preventDefault();
         setDragOver(false);
         const file = e.dataTransfer?.files[0];
-        if (file && (file.type.startsWith('audio/') || !file.type)) onImportFile(file);
+        if (file && (file.type.startsWith('audio/') || !file.type)) onImportFile(file, destinationFolder);
       }}
     >
       {/* Split button: pressing it starts a session on the source shown by its
@@ -130,7 +176,7 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
               // "Appareil" is short enough to fit the selector but vague on its
               // own — the tooltip says which sounds it actually covers.
               title={source === 'device' ? t('sessions.source.device.hint') : undefined}
-              onClick={() => onStartLive(source)}
+              onClick={() => onStartLive(source, destinationFolder)}
             >
               {source === 'device' ? <DeviceAudioIcon size={14} /> : <MicIcon size={14} />}
               <span>{t('sessions.start')}</span>
@@ -175,7 +221,7 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
           // attempt does nothing, with nothing to say why. Which is exactly
           // what a user does after a first import that did not go their way.
           if (input) input.value = '';
-          if (file) onImportFile(file);
+          if (file) onImportFile(file, destinationFolder);
         }}
       />
       <button
@@ -191,113 +237,51 @@ export function SessionLibrary({ onStartLive, onImportFile, onImportSession, onO
         <ImportTrayIcon size={13} />
         <span>{t('sessions.share.importSession')}</span>
       </button>
+      {/* Two readings of the same material, side by side: the evenings, and
+          what was played across them. A tab rather than a second module —
+          the ranking is derived from these sessions and means nothing without
+          them. The search box below serves both. */}
+      {/* The ABC viewer's segmented control, to the class: a background pill
+          holding the two choices, rather than two loose buttons. Same gesture
+          in two places, so it should look like the same gesture. */}
+      <div class="flex gap-1 p-1 mt-3 bg-bg rounded-lg w-fit">
+        {([['sessions', 'sessions.tab.sessions'], ['tunes', 'sessions.tab.tunes']] as const).map(([id, key]) => (
+          <button
+            key={id}
+            class={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+              tab === id ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-elevated'}`}
+            onClick={() => setTab(id)}
+          >
+            {t(key)}
+          </button>
+        ))}
+      </div>
 
+
+      {/* Outside the tabs: one search box, whichever way the list is being
+          read. On the tunes side it filters tune names, on this side session
+          names — the same question either way, "where is the Kesh". */}
       <input
         type="text"
         class="input text-sm mt-3"
-        placeholder={t('sessions.search')}
+        placeholder={t(tab === 'tunes' ? 'sessions.ranking.search' : 'sessions.search')}
         value={query}
         onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
       />
 
-      <label class="flex items-center gap-2 mt-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          class="card-checkbox"
-          checked={searchTunes}
-          onChange={(e) => {
-            const on = (e.target as HTMLInputElement).checked;
-            setSearchTunes(on);
-            writeSearchTunes(on);
-          }}
+      {tab === 'tunes' && <div class="mt-3"><TuneRankingPanel sessions={allSessions} query={q} view={tuneView} onView={(patch) => setTuneView(v => ({ ...v, ...patch }))} /></div>}
+
+      {tab === 'sessions' && (
+        <AnalysisBrowser
+          ctx={ctx}
+          sessions={allSessions}
+          query={q}
+          folderId={folderId}
+          onOpenFolder={setFolderId}
+          onOpenSession={onOpenSession}
+          onSessionsChanged={reloadSessions}
         />
-        <span class="text-xs text-muted">{t('sessions.searchTunes')}</span>
-      </label>
-
-      <div class="mt-4 space-y-2">
-        {sessions.length === 0 ? (
-          <p class="text-xs text-dim text-center py-4">{q ? t('sessions.noSearchResults') : t('sessions.empty')}</p>
-        ) : (
-          sessions.map(({ session, hits }) => (
-            <div
-              key={session.id}
-              class="rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors"
-            >
-            <div
-              class="flex items-center gap-3 p-3 cursor-pointer"
-              onClick={() => onOpenSession(session.id)}
-            >
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium text-primary truncate flex items-center gap-1.5">
-                  {/* Before the name, not after it: the three kinds of session
-                      are scanned down a column, and an icon that moves with the
-                      end of a truncated name cannot be scanned at all. */}
-                  <span class="text-dim shrink-0 flex items-center" title={t(SOURCE_BADGE[session.source].title)}>
-                    {SOURCE_BADGE[session.source].icon}
-                  </span>
-                  <span class="truncate">{session.name}</span>
-                </div>
-                <div class="text-xs text-dim">
-                  {/* Only when the name does not already say it — see
-                      dateBesideName. A renamed session shows its date here; a
-                      default-named one would only repeat itself. */}
-                  {dateBesideName(session.name, session.date) && `${dateBesideName(session.name, session.date)} · `}
-                  {fmtLongTime(session.duration)} · {t('sessions.tunesCount', { n: session.annotations.length })}
-                </div>
-              </div>
-            </div>
-
-            {/* Why this session is in the list, and a way straight in. One row
-                per detection rather than a list of names: two passes through
-                the same tune are two moments in the recording, so they are two
-                destinations — the same rule the card view's "Detected in"
-                panel follows. In playing order, which is the order they are
-                found again in the analysis.
-
-                Not nested inside the session row above: a button inside a
-                clickable div is fine, a button inside a button is invalid
-                HTML, and each of these has its own destination anyway. */}
-            {hits.length > 0 && (
-              <div class="border-t border-border/60 px-3 py-2 space-y-1">
-                {hits.map(hit => (
-                  <button
-                    key={hit.id}
-                    class="w-full flex items-start gap-2 min-w-0 text-left rounded px-1 py-1 hover:bg-accent/10 cursor-pointer transition-colors"
-                    title={t('sessions.openDetection')}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate({ view: 'sessions', sessionId: session.id, annotationId: hit.id });
-                    }}
-                  >
-                    {/* Same pill as "Detected in": the time is what is being
-                        aimed at, and its colour carries how sure the
-                        recogniser is — one glance, two facts. */}
-                    <span
-                      class={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-border ${
-                        hit.userConfirmed ? 'text-success' : BUCKET_TEXT[hit.bucket]}`}
-                      title={t(hit.userConfirmed ? 'sessions.alternates.confirmed' : `sessions.confidence.${hit.bucket}`)}
-                    >
-                      {fmtLongTime(hit.start)}
-                    </span>
-                    {/* The card's name, else TheSession's, else the
-                        recogniser's re-cased — see tuneName.
-                        Never truncated either: the tune name IS the answer to
-                        the search, cutting it is cutting the result, and a set
-                        of three cut at "Cooley's / The Wise…" answers nothing.
-                        It wraps instead; a row taller than its neighbours is
-                        cheaper than an unreadable one. */}
-                    {(() => {
-                      const n = tuneName(hit);
-                      return <span class="text-sm text-muted min-w-0 break-words">{n.text}</span>;
-                    })()}
-                  </button>
-                ))}
-              </div>
-            )}
-            </div>
-          ))
-        )}
-      </div>
+      )}
     </div>
   );
 }

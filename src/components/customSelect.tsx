@@ -4,6 +4,16 @@ import type { ComponentChild } from 'preact';
 import { getZoom } from '../services/zoomService';
 import { registerOverlay } from './overlayStack';
 
+/** A panel is never narrower than this, whatever its trigger measures.
+ *
+ *  The width normally follows the trigger, which is right for a full-width
+ *  select and wrong for a small inline one: the analyses library's "Dossier :"
+ *  row is a text button the width of the current folder's NAME, so its list
+ *  came out a few characters wide and every option read "A…". A floor rather
+ *  than a per-caller prop — a list narrower than its own options is unusable
+ *  wherever it happens, and anything already wider is untouched. */
+const MIN_PANEL_PX = 180;
+
 export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger }: {
   value: string;
   options: Array<{ value: string; label: string }>;
@@ -58,7 +68,11 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
     // at anything but 100% (see zoomService).
     const z = getZoom() / 100;
     const r = ref.current.getBoundingClientRect();
-    setPos({ top: (r.bottom + 4) / z, left: r.left / z, width: r.width / z });
+    const width = Math.max(r.width / z, MIN_PANEL_PX);
+    // Pulled back inside when the floor above makes the panel wider than the
+    // trigger it hangs from, and that trigger sits near the right edge.
+    const left = Math.max(8, Math.min(r.left / z, window.innerWidth / z - width - 8));
+    setPos({ top: (r.bottom + 4) / z, left, width });
   }, [open]);
 
   const label = options.find(o => o.value === value)?.label ?? '';

@@ -41,4 +41,3 @@ export function dateBesideName(name: string, dateIso: string | null): string {
   const when = fmtSessionDateTime(dateIso);
   return name.includes(when) ? '' : when;
 }
-

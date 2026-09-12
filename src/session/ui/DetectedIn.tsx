@@ -2,6 +2,7 @@ import { appState, navigate } from '../../store';
 import { t } from '../../services/i18nService';
 import { findCardDetections, sessionsOf, detectionsOnCards } from '../detections';
 import { fmtLongTime, BUCKET_TEXT } from './sessionUiShared';
+import { HeartIcon } from '../../components/icons';
 
 
 // ── The Sessions module's panel on a card page ────────────────────────────────
@@ -55,6 +56,14 @@ export function DetectedIn({ cardId }: { cardId: string }) {
               title={t('sessions.openSession')}
               onClick={() => navigate({ view: 'sessions', sessionId: group.sessionId })}
             >{group.name}</span>
+            {/* Right of the name, as in the analyser's tunes tab — the heart is
+                ticked on a detection and had, until now, nowhere on a card that
+                read it back. */}
+            {group.liked && (
+              <span class="text-danger shrink-0 flex items-center" title={t('sessions.like')}>
+                <HeartIcon size={10} filled />
+              </span>
+            )}
           </div>
         ))}
       </div>

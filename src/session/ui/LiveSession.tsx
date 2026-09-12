@@ -15,6 +15,8 @@ import {
   fmtLongTime, indexProgressText, TitleRow,
   BoundControls, ClipControls, type ClipSessionRef,
 } from './sessionUiShared';
+import { AnalysisFolderPicker } from './AnalysisFolderPicker';
+import { generatedSessionName } from '../sessionNaming';
 import { setActiveLive, lastLiveDump } from './sessionStore';
 
 // ── Screen: live recording ───────────────────────────────────────────────────
@@ -205,13 +207,19 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     <>
       <TitleRow
         getName={() => live.name}
-        getDefaultName={() => live.name}
+        getDefaultName={() => generatedSessionName(live.sourceKind === 'device' ? 'device' : 'live', effectiveDate())}
         onRename={(val) => { live.name = val; }}
         // No explicit "go back to the library" call needed: sessions.tsx
         // reads activeLive reactively, so clearing it alone switches the
         // screen on its own.
         onDelete={() => { void live.cancel().then(() => setActiveLive(null)); }}
       />
+      {/* Where it will be filed, decided while it records. The tree only holds
+          the id, so pointing it at a recording that has not been saved yet is
+          harmless: every read filters against the analyses that actually exist
+          (sessionTree.ts), and the entry comes to life the moment this one is
+          finalized. */}
+      <AnalysisFolderPicker ctx={ctx} sessionId={live.sessionId} />
       <p class="text-sm text-primary mt-2 mb-3">{dateText}</p>
 
       <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg sticky top-0">

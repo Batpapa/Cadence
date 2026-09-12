@@ -31,6 +31,11 @@ export interface CardDetectionGroup {
    *  yet — the summary screen lets it be set and erased. */
   date: string | null;
   detections: CardDetection[];
+  /** Whether ANY of this card's passes in that session was hearted. Per group
+   *  and not per pass, because this line names a session: it answers "did I
+   *  like this tune that evening", which is the question the heart was ticked
+   *  to answer. Same rule as the tune ranking's own heart. */
+  liked: boolean;
 }
 
 /** TheSession's numeric tune id for a card, or null when there is nothing to
@@ -74,7 +79,8 @@ export function findCardDetections(card: Card, sessions: Record<string, Analysis
       }))
       .sort((a, b) => a.start - b.start);
     if (detections.length > 0) {
-      groups.push({ sessionId: session.id, name: session.name, date: session.date, detections });
+      const liked = (session.annotations ?? []).some(a => a.tuneId === tuneId && a.liked);
+      groups.push({ sessionId: session.id, name: session.name, date: session.date, detections, liked });
     }
   }
   // Newest first, and an undated import last rather than first: an unknown date

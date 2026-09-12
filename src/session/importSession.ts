@@ -143,14 +143,10 @@ export class ImportSession {
     return [...this.annotations.values()].sort((a, b) => a.start - b.start);
   }
 
-  /** Closed annotations — what a partial keep after cancellation would retain. */
-  getClosedCount(): number {
-    return this.getDetections().filter(a => a.end !== null).length;
-  }
-
   /**
-   * Runs the full import. Returns the saved session, or null when cancelled —
-   * call keepPartial() afterwards to save what was recognised anyway.
+   * Runs the full import. Returns the saved session, or null when cancelled:
+   * a cancelled import keeps nothing, not even what had already been
+   * recognised (2026-09-12 — the dialog that used to offer that is gone).
    */
   async start(): Promise<Analysis | null> {
     try {
@@ -223,12 +219,6 @@ export class ImportSession {
   cancel(): void {
     this.cancelRequested = true;
     this.source?.stop();
-  }
-
-  /** After a cancellation: save the partially analysed session anyway. */
-  async keepPartial(): Promise<Analysis> {
-    this.setPhase('saving');
-    return this.save();
   }
 
   private onWindow(result: WindowResult): void {

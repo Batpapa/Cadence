@@ -235,6 +235,10 @@ export type LibrarySort = 'alpha' | 'lastReviewed' | 'lastAdded' | 'importance' 
 
 export type TrendingGainMode = 'absolute' | 'percent';
 
+/** How the tune ranking is ordered. Here rather than beside its component for
+ *  the same reason `LibrarySort` is: it travels in the route. */
+export type TuneSort = 'alpha' | 'lastHeard' | 'count';
+
 /** Where a tune's opening bars are shown. `card` is the card page alone;
  *  `study` means the card page AND a review — it is a superset, not a third
  *  place, so the three values read as one dial from less to more. */
@@ -265,7 +269,18 @@ export type Route =
   // `search` is the library screen's search box, carried the same way the card
   // library carries its filters: a search is a place you were, so back returns
   // to the list you were looking at rather than to an empty one.
-  | { view: 'sessions'; sessionId?: string; annotationId?: string; search?: string }
+  // Everything that shapes the library screen travels in the route, exactly as
+  // the card library's filters do: leaving for a detection and coming back has
+  // to land on the list you left, not on its defaults. Absent means the
+  // default, so a plain `{view:'sessions'}` stays a plain one.
+  | {
+      view: 'sessions'; sessionId?: string; annotationId?: string; search?: string;
+      tab?: 'sessions' | 'tunes';
+      /** Which folder the analyses list is open on; absent = the root. */
+      folder?: string;
+      sort?: TuneSort; sortAsc?: boolean; others?: [string, FilterState][]; othersOr?: boolean;
+      analyses?: [string, FilterState][]; analysesOr?: boolean;
+    }
   // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.
   // `deflate` absent means ON — see DEFLATE_BY_DEFAULT. A refusal is therefore

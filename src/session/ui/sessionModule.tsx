@@ -5,6 +5,7 @@ import { t } from '../../services/i18nService';
 import { focusIfDesktop, formatBytes, isMobileDevice } from '../../utils';
 import { showModal, closeModal, renderModalBody, alertModal } from '../../components/modal';
 import { LiveSession } from '../liveSession';
+import { editSessionTree, placeSession } from '../sessionTree';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
 import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
@@ -174,14 +175,28 @@ export function importScreenActive(): boolean {
 }
 const recognitionBusy = () => liveScreenActive() || importScreenActive() || importStarting.value;
 
-export async function startImport(ctx: AppContext, file: File): Promise<void> {
+/** Files a brand-new analysis in the folder the library was showing.
+ *
+ *  Called with an id that does not exist as an analysis YET — the recording is
+ *  still running, or the file is still being decoded. That is safe by
+ *  construction: the tree only ever stores ids, and every read of it filters
+ *  against the analyses that actually exist (sessionTree.ts's rootOrder /
+ *  folderOrder), so the entry simply lies dormant until the analysis is saved.
+ *  It also means the destination is already ticked in the folder chooser on the
+ *  recording screen, where it can still be changed. */
+function fileNewAnalysis(ctx: AppContext, sessionId: string, folderId: string | null): void {
+  if (folderId === null) return; // the root is where an unplaced analysis already goes
+  void ctx.mutate(s => editSessionTree(s, tr => placeSession(tr, sessionId, folderId)));
+}
+
+export async function startImport(ctx: AppContext, file: File, folderId: string | null = null): Promise<void> {
   // Never silently: a file the user picked that produces nothing and says
   // nothing is indistinguishable from an app that has stopped working.
   if (recognitionBusy()) { alertModal(t('sessions.import'), t('sessions.alreadyRunning')); return; }
   importStarting.value = true;
 
   try {
-    await preflightImport(ctx, file);
+    await preflightImport(ctx, file, folderId);
   } catch (err) {
     // preflight probes the file and loads the streaming decoder; anything it
     // throws used to escape into a floating rejection nobody ever saw.
@@ -191,7 +206,7 @@ export async function startImport(ctx: AppContext, file: File): Promise<void> {
   }
 }
 
-async function preflightImport(ctx: AppContext, file: File): Promise<void> {
+async function preflightImport(ctx: AppContext, file: File, folderId: string | null = null): Promise<void> {
   const duration = await probeAudioDuration(file);
   if (duration !== null && duration < IMPORT_MIN_S) {
     alertModal(t('sessions.import'), t('sessions.tooShort', { n: IMPORT_MIN_S }));
@@ -259,6 +274,7 @@ async function preflightImport(ctx: AppContext, file: File): Promise<void> {
   importPlaybackWarn.value = !canPlayFile(file);
 
   const imp = new ImportSession(file, {});
+  fileNewAnalysis(ctx, imp.sessionId, folderId);
   setActiveImport(imp);
   await finishImportRun(ctx, imp);
 }
@@ -285,40 +301,11 @@ async function finishImportRun(
       ctx.navigate({ view: 'sessions', sessionId: session.id });
       return;
     }
-    // Cancelled: offer to keep the partial result when enough was recognised.
-    if (imp.getClosedCount() > 1) {
-      // Deliberately NOT falling through to the unconditional fallback below
-      // while this decision is pending (2026-08-23 bug fix): re-analyzing an
-      // existing session reuses the SAME sessionId for both outcomes, and
-      // SessionsView only reloads its data when the route's sessionId
-      // actually CHANGES (see sessions.tsx's SessionByIdScreen effect).
-      // Eagerly navigating to session.id here (to have "the fallback screen
-      // already rendered" if the user dismisses) used to run BEFORE the
-      // user's choice was known — so clicking "Keep" landed on the SAME
-      // sessionId a second time, sessionId-unchanged, no reload: the screen
-      // kept showing the stale pre-reanalysis result (A) instead of the
-      // freshly-saved partial one (B). Only ever navigate ONCE, after the
-      // outcome is known, so the sessionId always genuinely changes (or is
-      // the first navigation to it this run).
-      const dismiss = () => { setActiveImport(null); onCancelledOrError(); };
-      const body = document.createElement('p');
-      body.className = 'text-sm text-muted leading-relaxed';
-      body.textContent = t('sessions.keepPartial.message', { n: imp.getClosedCount() });
-      showModal(t('sessions.keepPartial.title'), body, [
-        { label: t('common.cancel'), onClick: () => { closeModal(); dismiss(); } },
-        {
-          label: t('sessions.keepPartial.keep'), danger: true, onClick: () => {
-            closeModal();
-            void imp.keepPartial().then(session2 => {
-              lastImportDump.value = { sessionId: session2.id, windows: [...imp.windows] };
-              setActiveImport(null);
-              ctx.navigate({ view: 'sessions', sessionId: session2.id });
-            });
-          },
-        },
-      ], { maxWidth: '28rem', onDismiss: dismiss }); // onDismiss covers the X button / outside click too
-      return;
-    }
+    // Cancelled: nothing is kept. This used to open a dialog offering to save
+    // what had been recognised so far, which asked a question nobody was
+    // asking — pressing cancel on an analysis means the analysis goes,
+    // half-done or not (2026-09-12). The navigate-once subtlety that dialog
+    // carried for re-analysis goes with it: there is one outcome now.
     setActiveImport(null);
     onCancelledOrError();
   } catch (err) {
@@ -363,8 +350,9 @@ export async function startReanalyze(ctx: AppContext, session: Analysis): Promis
 /** Starts a live session on the chosen source. MUST be reached synchronously
  *  from the user's click: capturing a tab needs transient user activation,
  *  which the browser spends on the first await — see openDeviceAudio(). */
-export function startLiveSession(kind: LiveSourceKind = 'mic'): void {
+export function startLiveSession(ctx: AppContext, kind: LiveSourceKind = 'mic', folderId: string | null = null): void {
   const live = new LiveSession({}, kind);
+  fileNewAnalysis(ctx, live.sessionId, folderId);
   setActiveLive(live);
   void live.start().catch((err: unknown) => {
     // Acquisition failures are handled HERE rather than through onError,

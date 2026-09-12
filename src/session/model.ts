@@ -186,6 +186,29 @@ export interface TuneAnalyserModuleData {
    *  that was chosen. A sibling map rather than a field on Analysis,
    *  purely so this stays one obvious place to look. */
   syncedAudio?: Record<string, SyncedAudio>;
+  /** The analyses library's folders, by id. Absent until the user makes their
+   *  first one — see sessionTree.ts, which is the only thing that reads or
+   *  writes these three fields, and which explains why the tree is an
+   *  arrangement of `sessions` rather than an index of it. */
+  folders?: Record<string, SessionFolder>;
+  /** Top-level folders, in display order. */
+  rootFolderIds?: string[];
+  /** Analyses arranged at the top level, in display order. Deliberately NOT
+   *  the list of analyses outside a folder: one that appears here nowhere
+   *  still shows at the root (sessionTree.ts's `rootOrder`). */
+  rootSessionIds?: string[];
+}
+
+/** One folder of the analyses library. Mirrors types.ts's `Folder` (the decks'
+ *  own tree) field for field, minus `deckIds` — see sessionTree.ts's header for
+ *  why the two trees are separate. */
+export interface SessionFolder {
+  id: string;
+  name: string;
+  /** Sub-folders, in display order. */
+  folderIds: string[];
+  /** Analyses in this folder, in display order. */
+  sessionIds: string[];
 }
 
 /** A recording copied to the user's Drive as a file of its own — the one way to
