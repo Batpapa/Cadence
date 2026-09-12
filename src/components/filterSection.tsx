@@ -80,8 +80,8 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
                   state === 'include' ? 'bg-accent text-white border-accent cursor-pointer' :
                   state === 'exclude' ? 'bg-danger/10 text-danger border-danger/50 line-through cursor-pointer' :
                   isHighlighted       ? `bg-warn/10 text-warn border-warn/40 ${isAvail || orMode ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}` :
-                  isAvail             ? 'border-border text-muted hover:border-accent hover:text-accent cursor-pointer' :
-                  orMode              ? 'border-border text-muted opacity-50 hover:border-accent hover:text-accent cursor-pointer' :
+                  isAvail             ? 'border-border text-muted hoverable:border-accent hoverable:text-accent cursor-pointer' :
+                  orMode              ? 'border-border text-muted opacity-50 hoverable:border-accent hoverable:text-accent cursor-pointer' :
                                         'border-border text-muted opacity-30 cursor-not-allowed'
                 }`}
                 title={titleOf(id)}

@@ -143,10 +143,15 @@ export class ImportSession {
     return [...this.annotations.values()].sort((a, b) => a.start - b.start);
   }
 
+  /** Closed annotations — what a partial keep after cancellation would retain. */
+  getClosedCount(): number {
+    return this.getDetections().filter(a => a.end !== null).length;
+  }
+
   /**
-   * Runs the full import. Returns the saved session, or null when cancelled:
-   * a cancelled import keeps nothing, not even what had already been
-   * recognised (2026-09-12 — the dialog that used to offer that is gone).
+   * Runs the full import. Returns the saved session, or null when cancelled —
+   * call keepPartial() afterwards to save what was recognised anyway. Deleting
+   * the analysis (cancel({ discard: true })) never gets that offer.
    */
   async start(): Promise<Analysis | null> {
     try {
@@ -210,15 +215,32 @@ export class ImportSession {
     }
   }
 
+  /** Set when the cancellation came from DELETE rather than from "Cancel"
+   *  beside the progress bar. Two buttons, two meanings: cancelling stops the
+   *  work and leaves what was recognised worth offering, deleting means the
+   *  analysis goes — partial or not (2026-09-12). Only the caller that handles
+   *  the outcome can tell them apart, so which one it was is recorded here
+   *  rather than guessed there. */
+  discardOnCancel = false;
+
   /** Stop the analysis; start() then resolves null (nothing saved). Safe to
    *  call at any phase — during initializing/decoding there's no `source`
    *  yet to stop(), so the two cancelRequested checks in start() (right
    *  after each of those phases) are what actually makes cancelling early
    *  take effect immediately instead of only once the file finishes
-   *  analyzing on its own. */
-  cancel(): void {
+   *  analyzing on its own.
+   *
+   *  `discard` says this was the delete button: see discardOnCancel. */
+  cancel(opts: { discard?: boolean } = {}): void {
+    this.discardOnCancel = opts.discard === true;
     this.cancelRequested = true;
     this.source?.stop();
+  }
+
+  /** After a cancellation: save the partially analysed session anyway. */
+  async keepPartial(): Promise<Analysis> {
+    this.setPhase('saving');
+    return this.save();
   }
 
   private onWindow(result: WindowResult): void {

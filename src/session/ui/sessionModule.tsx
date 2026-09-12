@@ -301,11 +301,43 @@ async function finishImportRun(
       ctx.navigate({ view: 'sessions', sessionId: session.id });
       return;
     }
-    // Cancelled: nothing is kept. This used to open a dialog offering to save
-    // what had been recognised so far, which asked a question nobody was
-    // asking — pressing cancel on an analysis means the analysis goes,
-    // half-done or not (2026-09-12). The navigate-once subtlety that dialog
-    // carried for re-analysis goes with it: there is one outcome now.
+    // Cancelled: offer to keep the partial result when enough was recognised.
+    // ...unless DELETE is what cancelled it: that button means the analysis
+    // goes, and asking whether to keep half of it answers a question nobody
+    // was asking (2026-09-12).
+    if (!imp.discardOnCancel && imp.getClosedCount() > 1) {
+      // Deliberately NOT falling through to the unconditional fallback below
+      // while this decision is pending (2026-08-23 bug fix): re-analyzing an
+      // existing session reuses the SAME sessionId for both outcomes, and
+      // SessionsView only reloads its data when the route's sessionId
+      // actually CHANGES (see sessions.tsx's SessionByIdScreen effect).
+      // Eagerly navigating to session.id here (to have "the fallback screen
+      // already rendered" if the user dismisses) used to run BEFORE the
+      // user's choice was known — so clicking "Keep" landed on the SAME
+      // sessionId a second time, sessionId-unchanged, no reload: the screen
+      // kept showing the stale pre-reanalysis result (A) instead of the
+      // freshly-saved partial one (B). Only ever navigate ONCE, after the
+      // outcome is known, so the sessionId always genuinely changes (or is
+      // the first navigation to it this run).
+      const dismiss = () => { setActiveImport(null); onCancelledOrError(); };
+      const body = document.createElement('p');
+      body.className = 'text-sm text-muted leading-relaxed';
+      body.textContent = t('sessions.keepPartial.message', { n: imp.getClosedCount() });
+      showModal(t('sessions.keepPartial.title'), body, [
+        { label: t('common.cancel'), onClick: () => { closeModal(); dismiss(); } },
+        {
+          label: t('sessions.keepPartial.keep'), danger: true, onClick: () => {
+            closeModal();
+            void imp.keepPartial().then(session2 => {
+              lastImportDump.value = { sessionId: session2.id, windows: [...imp.windows] };
+              setActiveImport(null);
+              ctx.navigate({ view: 'sessions', sessionId: session2.id });
+            });
+          },
+        },
+      ], { maxWidth: '28rem', onDismiss: dismiss }); // onDismiss covers the X button / outside click too
+      return;
+    }
     setActiveImport(null);
     onCancelledOrError();
   } catch (err) {
