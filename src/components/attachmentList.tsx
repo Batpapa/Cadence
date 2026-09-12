@@ -14,6 +14,7 @@ import { appState, navigate, getContext, mutate } from '../store';
 import { showModal, closeModal, confirmModal, renderModalBody } from './modal';
 import { showNewCardModal, type NewCardPreset } from './theSessionImport';
 import { t } from '../services/i18nService';
+import { downloadIcon } from './playbackIcons';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
@@ -165,11 +166,15 @@ function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex
       >
         {entry.name}
       </span>
+      {/* The same glyph the session module downloads with — this was the one
+          place still using a bare arrow character, which read as a smaller,
+          lighter control than the identical action everywhere else. */}
       <a
         href={entryToObjectUrl(entry)} download={downloadName ?? entry.name}
-        class="text-xs text-dim hover:text-accent transition-colors shrink-0"
+        class="text-dim hover:text-accent transition-colors shrink-0 flex items-center"
         title={t('fileViewer.download')}
-      >↓</a>
+        dangerouslySetInnerHTML={{ __html: downloadIcon(12) }}
+      />
       {editable && (
         <button
           class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AppContext } from '../../types';
+import type { AppContext, Card } from '../../types';
 import { t } from '../../services/i18nService';
-import { TrashIcon } from '../../components/icons';
+import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
-import { findByExternalId } from '../../services/theSessionService';
+import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
+import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName } from '../../utils';
 import { extractClipMp3 } from '../audio/clipExtract';
@@ -362,13 +363,18 @@ export function BoundControls({ ann, getDuration, persist, refresh, previewBound
  *  actually clicks, not on every render. `audioAvailable` mirrors the
  *  summary's existing "hidden once the session's audio has been forgotten"
  *  rule — always true for live/import, where there's no such action yet. */
-export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAttached }: {
+export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAttached, aligned }: {
   ann: Detection;
   session: ClipSessionRef;
   audioAvailable: boolean;
   getAudio: () => Promise<Blob | undefined>;
   ctx: AppContext;
   onAttached?: () => void;
+  /** Keep both slots even when their button is absent, so that several of
+   *  these stacked one under the other line their glyphs up. Off by default:
+   *  in a free-flowing row (the analysis summary's, which also holds the bound
+   *  controls and a merge link) a reserved empty slot is just a hole. */
+  aligned?: boolean;
 }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadTitle, setDownloadTitle] = useState(t('sessions.downloadClip'));
@@ -414,9 +420,30 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
     }
   };
 
+  // doAttach leaves `attaching` set on failure — the control stays disabled
+  // and carries the reason, which is the behaviour this had before it became a
+  // glyph. The reason has to stay READABLE, so a failed slot gives up its fixed
+  // width: a message in a 24px box would be a message nobody can read, and on a
+  // phone there is no tooltip to fall back on. One row out of line is a cheap
+  // price, and it points at the row that went wrong.
+  const failed = !!attachText?.startsWith('⚠');
+
+  /** A slot rather than nothing, when the caller asks for it — see `aligned`.
+   *
+   *  ⚠️ A plain function returning a vnode, NOT a component — never write
+   *  `const Slot = (props) => ...` and render it as `<Slot>`. A component
+   *  declared inside a render is a NEW function on every pass, so Preact reads
+   *  it as a different type and unmounts the old subtree to mount a fresh one
+   *  each time. The buttons in it were then destroyed between mousedown and
+   *  mouseup and the browser never fired a click at all: the control looked
+   *  perfectly normal and did nothing (2026-09-12). Calling a function inlines
+   *  the vnode into this component's own tree, where the diff can keep it. */
+  const slot = (children: preact.ComponentChildren, wide = false) =>
+    aligned && !wide ? <span class="w-6 flex items-center justify-center shrink-0">{children}</span> : <>{children}</>;
+
   return (
     <>
-      {audioAvailable && (
+      {slot(audioAvailable && (
         <button
           class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center disabled:opacity-50"
           title={downloadTitle}
@@ -424,21 +451,156 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
           dangerouslySetInnerHTML={{ __html: downloadIcon(13) }}
           onClick={() => { void doDownload(); }}
         />
-      )}
+      ))}
 
       {/* Add clip as a standalone MP3 attachment (known card only) — hidden
          once the session's audio has been forgotten, unless a clip was
          already extracted before that (nothing left to extract, but still
-         worth showing as done). */}
-      {known && (already || audioAvailable) && (
+         worth showing as done).
+
+         A glyph rather than the words it used to be: it sits in a row of
+         glyphs, and one text link among them broke both the alignment and the
+         eye. The waveform says which object, the plus and the tick say which
+         of the two states it is in. While the MP3 is being cut the percentage
+         replaces the glyph — the same trade the summary's download makes, and
+         for the same reason: two hours of audio takes a while, and a control
+         that looked idle would be pressed again. */}
+      {known && (already || audioAvailable) && slot(
         <button
-          class={already ? 'text-[11px] text-green-500 cursor-default' : `text-[11px] text-accent ${attaching ? '' : 'hover:underline cursor-pointer'}`}
+          class={`shrink-0 flex items-center transition-colors ${
+            already ? 'text-green-500 cursor-default'
+              : failed ? 'text-danger cursor-default'
+              : `text-accent ${attaching ? 'cursor-default' : 'hover:text-accent/70 cursor-pointer'}`}`}
+          title={already ? t('sessions.attached') : attachText ?? t('sessions.attach')}
+          aria-label={already ? t('sessions.attached') : t('sessions.attach')}
           disabled={!already && attaching}
           onClick={already ? undefined : () => { void doAttach(); }}
         >
-          {already ? t('sessions.attached') : attachText ?? t('sessions.attach')}
-        </button>
+          {already ? <ClipAttachedIcon size={13} />
+            : failed ? <span class="text-[11px]">{attachText}</span>
+            : attachText ? <span class="text-[10px] font-mono tabular-nums">{attachText}</span>
+            : <AddClipIcon size={13} />}
+        </button>,
+        failed,
       )}
     </>
+  );
+}
+
+// ── The one button that turns a recognised tune into a card ──────────────────
+// Lifted out of DetectionCard (2026-09-12) when the tune ranking needed the
+// same control: this is a subtle enough flow — fetch, then ask, then write,
+// with a re-check inside the transaction — that a second copy of it would be
+// a second thing to get wrong. DetectionCard renders it per DETECTION, the
+// ranking per TUNE; neither knows anything the other does not.
+
+export interface TuneDeckButtonProps {
+  tuneId: string;
+  ctx: AppContext;
+  /** Decks pinned on the page this belongs to — they come back ticked in the
+   *  deck choice modal. */
+  getPinnedDeckIds?: () => Set<string>;
+  onCardAdded?: () => void;
+}
+
+export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: TuneDeckButtonProps) {
+  const known = findByExternalId(`thesession:${tuneId}`, getContext().user.cards);
+  const [busy, setBusy] = useState(false);
+
+  /** Writes the already-fetched card. Split from the fetch on purpose: the tune
+   *  is downloaded BEFORE the deck question is asked, so a failed lookup never
+   *  wastes the user's answer, and dismissing the modal imports nothing at all.
+   *
+   *  The gap between fetch and commit is wide enough for the same tune to have
+   *  arrived by another route in the meantime, so the externalId is re-checked
+   *  inside the transaction rather than trusted from before it. */
+  const commitAdd = async (card: Card, deckIds: string[]) => {
+    setBusy(true);
+    try {
+      await ctx.mutate(s => {
+        const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : undefined;
+        const id = existing?.id ?? card.id;
+        if (!existing) s.cards[id] = card;
+        for (const deckId of deckIds) {
+          const deck = s.decks[deckId];
+          if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
+        }
+      });
+      onCardAdded?.();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doLink = async (deckIds: string[]) => {
+    if (!known) return;
+    setBusy(true);
+    try {
+      await ctx.mutate(s => {
+        for (const deckId of deckIds) {
+          const deck = s.decks[deckId];
+          if (deck && !deck.entries.some(e => e.cardId === known.id)) deck.entries.push({ cardId: known.id });
+        }
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Every add and every link asks where the card goes. With no deck at all
+  // there is nothing to ask, so creating goes straight through — and the link
+  // button is not rendered in the first place, since linking to nothing is not
+  // an action.
+  const onAddClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    void (async () => {
+      setBusy(true);
+      let card: Card;
+      try {
+        card = tuneResultToCard(await fetchTuneById(Number(tuneId)));
+      } catch {
+        setBusy(false);   // nothing was fetched, so nothing is asked and nothing is written
+        return;
+      }
+      setBusy(false);
+      if (!hasAnyDeck()) { void commitAdd(card, []); return; }
+      showDeckChoiceModal({
+        pinned: getPinnedDeckIds?.() ?? new Set(),
+        onConfirm: (deckIds) => { void commitAdd(card, deckIds); },
+      });
+    })();
+  };
+
+  const onLinkClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!known) return;
+    showDeckChoiceModal({
+      pinned: getPinnedDeckIds?.() ?? new Set(),
+      alreadyIn: decksContainingCard(known.id),
+      onConfirm: (deckIds) => { void doLink(deckIds); },
+    });
+  };
+
+  const round = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50';
+
+  if (!known) {
+    return (
+      <button class={round} title={t('sessions.addCard')} disabled={busy} onClick={onAddClick}>
+        <PlusIcon size={12} />
+      </button>
+    );
+  }
+  if (!hasAnyDeck()) return null;
+  // Dimmed, not disabled, once the card is in every deck: there is nothing
+  // left to add, but this is also the only place that shows WHERE it already
+  // sits, so it stays open for a look.
+  return (
+    <button
+      class={`${round} ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
+      title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
+      disabled={busy}
+      dangerouslySetInnerHTML={{ __html: deckLinkIcon }}
+      onClick={onLinkClick}
+    />
   );
 }

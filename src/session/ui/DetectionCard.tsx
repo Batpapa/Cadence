@@ -1,14 +1,13 @@
 import { useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
-import type { AppContext, Card, SessionRating } from '../../types';
+import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { PlusIcon, HeartIcon, HourglassIcon, ChevronDownIcon } from '../../components/icons';
+import { HeartIcon, HourglassIcon, ChevronDownIcon } from '../../components/icons';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
-import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
-import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
+import { findByExternalId } from '../../services/theSessionService';
 import { AbcPreview } from './abcPreview';
 import { showAlternatesPopover } from './AlternatesPopover';
-import { BUCKET_BADGE, tuneName, useTuneNames } from './sessionUiShared';
+import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
 import { getContext } from '../../store';
 import type { Detection, DetectionAlternate } from '../model';
 
@@ -183,86 +182,6 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   const pending = !isOpen && !ann.finalized;
   const playing = opts.onPlay && opts.playingId === ann.id;
 
-  const [busy, setBusy] = useState(false);
-
-  /** Writes the already-fetched card. Split from the fetch on purpose: the tune
-   *  is downloaded BEFORE the deck question is asked, so a failed lookup never
-   *  wastes the user's answer, and dismissing the modal imports nothing at all.
-   *
-   *  The gap between fetch and commit is wide enough for the same tune to have
-   *  arrived by another route in the meantime, so the externalId is re-checked
-   *  inside the transaction rather than trusted from before it. */
-  const commitAdd = async (card: Card, deckIds: string[]) => {
-    setBusy(true);
-    try {
-      await opts.ctx.mutate(s => {
-        const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : undefined;
-        const id = existing?.id ?? card.id;
-        if (!existing) s.cards[id] = card;
-        for (const deckId of deckIds) {
-          const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
-        }
-      });
-      opts.onCardAdded?.();
-    } finally {
-      // Was `catch` only: on success `busy` stayed true for good. It went
-      // unnoticed while the row's two buttons were separate concerns, but the
-      // add turns this very row into the "add to decks" button — which shares
-      // this flag and was therefore dead from the moment the card existed.
-      setBusy(false);
-    }
-  };
-
-  const doLink = async (deckIds: string[]) => {
-    if (!known) return;
-    setBusy(true);
-    try {
-      await opts.ctx.mutate(s => {
-        for (const deckId of deckIds) {
-          const deck = s.decks[deckId];
-          if (deck && !deck.entries.some(e => e.cardId === known.id)) deck.entries.push({ cardId: known.id });
-        }
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Every add and every link asks where the card goes. With no deck at all
-  // there is nothing to ask, so creating goes straight through — and the link
-  // button is not rendered in the first place, since linking to nothing is not
-  // an action.
-  const onAddClick = (e: MouseEvent) => {
-    e.stopPropagation();
-    void (async () => {
-      setBusy(true);
-      let card: Card;
-      try {
-        card = tuneResultToCard(await fetchTuneById(Number(ann.tuneId)));
-      } catch {
-        setBusy(false);   // nothing was fetched, so nothing is asked and nothing is written
-        return;
-      }
-      setBusy(false);
-      if (!hasAnyDeck()) { void commitAdd(card, []); return; }
-      showDeckChoiceModal({
-        pinned: opts.getPinnedDeckIds?.() ?? new Set(),
-        onConfirm: (deckIds) => { void commitAdd(card, deckIds); },
-      });
-    })();
-  };
-
-  const onLinkClick = (e: MouseEvent) => {
-    e.stopPropagation();
-    if (!known) return;
-    showDeckChoiceModal({
-      pinned: opts.getPinnedDeckIds?.() ?? new Set(),
-      alreadyIn: decksContainingCard(known.id),
-      onConfirm: (deckIds) => { void doLink(deckIds); },
-    });
-  };
-
   const range = ann.end === null
     ? `${fmtLongTime(ann.start)} · ${t('sessions.inProgress')}`
     : pending
@@ -289,27 +208,12 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
 
         <AbcPreview settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx} />
 
-        {!known ? (
-          <button
-            class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
-            title={t('sessions.addCard')}
-            disabled={busy}
-            onClick={onAddClick}
-          >
-            <PlusIcon size={12} />
-          </button>
-        ) : hasAnyDeck() && (
-          // Dimmed, not disabled, once the card is in every deck: there is
-          // nothing left to add, but this is also the only place that shows
-          // WHERE it already sits, so it stays open for a look.
-          <button
-            class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
-            title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
-            disabled={busy}
-            dangerouslySetInnerHTML={{ __html: deckLinkIcon }}
-            onClick={onLinkClick}
-          />
-        )}
+        <TuneDeckButton
+          tuneId={ann.tuneId}
+          ctx={opts.ctx}
+          getPinnedDeckIds={opts.getPinnedDeckIds}
+          onCardAdded={opts.onCardAdded}
+        />
 
         <NavigableName label={ann.displayName} tuneId={ann.tuneId} settingId={ann.settingId} knownCardId={known?.id} onOpenCard={opts.onOpenCard} />
 

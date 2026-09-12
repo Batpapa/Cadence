@@ -4,6 +4,7 @@ import {
   type Analysis, type SyncedAudio, type TuneAnalyserModuleData, type WindowResult,
 } from './model';
 import { generatedSessionName } from './sessionNaming';
+import { editSessionTree, forgetSession } from './sessionTree';
 
 // store.ts is imported lazily (dynamic import, below) rather than statically:
 // it transitively pulls in services/driveService.ts, which reads
@@ -501,6 +502,10 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await mutate(user => {
     const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
     if (mod) delete mod.sessions[sessionId];
+    // Tidiness only — every read of the tree already filters against the real
+    // list of analyses (sessionTree.ts), so a stale id breaks nothing. It is
+    // dropped here simply so the synced blob does not collect them.
+    editSessionTree(user, tree => forgetSession(tree, sessionId));
   });
   const d = await localDb();
   await d.delete(DRAFT_STORE, sessionId);

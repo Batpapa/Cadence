@@ -15,6 +15,7 @@ import { TUNE_ANALYSER_MODULE_KEY } from '../model';
 import { alternatePickFields } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { showShareSessionModal } from './ShareSessionModal';
+import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { exportSessionMp3 } from '../audio/clipExtract';
 import {
   fmtLongTime, TitleRow, DateRow,
@@ -657,6 +658,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         onDelete={() => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); }}
         onShare={() => showShareSessionModal(session)}
       />
+      <AnalysisFolderPicker ctx={ctx} sessionId={session.id} />
       <DateRow
         getDate={() => session.date}
         setDate={(date) => { session.date = date; persist(); }}

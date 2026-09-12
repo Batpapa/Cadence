@@ -419,6 +419,38 @@ export function CollapseIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** "Put this clip on the card": the same waveform as below, cut short to make
+ *  room for a plus. A pair with ClipAttachedIcon — one asks, the other answers,
+ *  and they have to read as the same object in two states.
+ *
+ *  Drawn edge to edge (y 4→20, x 2→23) and at stroke-width 2, to carry the same
+ *  optical weight as playbackIcons' download, which is what it sits beside. A
+ *  first version kept to the middle third of the box and read as a smaller
+ *  icon at the same nominal size — the box is not what the eye measures. */
+export function AddClipIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <line x1="2"  y1="9"  x2="2"  y2="15"/>
+      <line x1="6"  y1="4"  x2="6"  y2="20"/>
+      <line x1="10" y1="7"  x2="10" y2="17"/>
+      <line x1="18" y1="7"  x2="18" y2="17"/>
+      <line x1="13" y1="12" x2="23" y2="12"/>
+    </svg>
+  );
+}
+
+/** The clip is already on the card. Same waveform, a tick instead of a plus. */
+export function ClipAttachedIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="2"  y1="9"  x2="2"  y2="15"/>
+      <line x1="6"  y1="4"  x2="6"  y2="20"/>
+      <line x1="10" y1="7"  x2="10" y2="17"/>
+      <polyline points="13 13 16.5 16.5 23 7"/>
+    </svg>
+  );
+}
+
 export function WaveformIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
