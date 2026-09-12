@@ -2,13 +2,13 @@ import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
-import { focusIfDesktop, formatBytes } from '../../utils';
+import { focusIfDesktop, formatBytes, isMobileDevice } from '../../utils';
 import { showModal, closeModal, renderModalBody, alertModal } from '../../components/modal';
 import { LiveSession } from '../liveSession';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
 import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
-import { IMPORT_WARN_MINUTES, IMPORT_MIN_S } from '../sessionConfig';
+import { importWarnMinutes, wholeFileDecodeBytes, IMPORT_MIN_S } from '../sessionConfig';
 import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
@@ -202,18 +202,53 @@ async function preflightImport(ctx: AppContext, file: File): Promise<void> {
   // regardless of duration — the RAM warning below only applies to the
   // one-shot decodeAudioData fallback, so skip it when streaming will be used.
   const { StreamingFileSource } = await import('../audio/streamingFileSource');
-  const streamProbe = await StreamingFileSource.tryCreate(file);
-  streamProbe?.stop();
-  const canStream = streamProbe !== null;
+  const probe = await StreamingFileSource.probe(file);
+  probe.source?.stop();
+  const canStream = probe.source !== null;
 
-  if (!canStream && duration !== null && duration > IMPORT_WARN_MINUTES * 60) {
+  // Logged whatever the duration, and even when nothing is shown: a short file
+  // that falls back decodes fine, but it tells us the same thing about this
+  // device as the long one that fails — and this is the line someone can read
+  // back to us from a phone we will never hold.
+  if (!canStream) {
+    console.warn(`[sessions] chunked decoding unavailable (${probe.reason})`, probe.detail ?? '', file.type || '(no mime type)');
+  }
+
+  // The threshold follows the DEVICE, because the wall does: the same
+  // whole-file decode that a desktop survives for an hour and a half kills a
+  // phone tab in a quarter of an hour. A single number warned nobody on the
+  // machine that needed it — see sessionConfig's derivation.
+  const warnMinutes = importWarnMinutes(isMobileDevice());
+
+  if (!canStream && duration !== null && duration > warnMinutes * 60) {
     // Non-dismissable two-button modal: the promise always settles, so the
     // importStarting guard can never get stuck.
     const proceed = await new Promise<boolean>(resolve => {
       const p = document.createElement('p');
       p.className = 'text-sm text-muted leading-relaxed';
-      p.textContent = t('sessions.longFile.message', { min: Math.round(duration / 60) });
-      showModal(t('sessions.longFile.title'), p, [
+      // Says WHY, and gives both numbers the user can check: what this file
+      // will cost, and where the limit is on this device. "Too long" alone is
+      // a verdict; a verdict with its arithmetic is something to act on —
+      // shorten the file, or move to a machine with room.
+      p.textContent = t('sessions.longFile.message', {
+        min: Math.round(duration / 60),
+        need: formatBytes(wholeFileDecodeBytes(duration)),
+        limit: warnMinutes,
+      });
+      // The precise reason, under the arithmetic. Two audiences in one line:
+      // the sentence tells this user whether the fault is their file or their
+      // browser (only one of those is worth acting on), and the technical
+      // detail beside it is what we need read back to us from a phone we will
+      // never hold. Left in English on purpose — it is the library's own word.
+      const why = document.createElement('p');
+      why.className = 'text-xs text-dim leading-relaxed mt-2';
+      why.textContent = t(`sessions.longFile.reason.${probe.reason ?? 'unknown'}`)
+        + (probe.detail ? ` (${probe.detail})` : '');
+
+      const body = document.createElement('div');
+      body.append(p, why);
+
+      showModal(t('sessions.longFile.title'), body, [
         { label: t('common.cancel'), onClick: () => { closeModal(); resolve(false); } },
         { label: t('common.confirm'), primary: true, onClick: () => { closeModal(); resolve(true); } },
       ], { dismissable: false });

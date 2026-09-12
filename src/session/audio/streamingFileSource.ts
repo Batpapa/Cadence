@@ -27,6 +27,42 @@ export const WEB_DEMUXER_WASM_URL = new URL('../../../node_modules/web-demuxer/d
 /** Cap on in-flight decode() calls not yet output — bounds decoder-side memory. */
 const MAX_DECODE_QUEUE = 8;
 
+/** Why chunked decoding is not available for a file.
+ *
+ *  Named, because the fallback it triggers is what kills a phone tab on a long
+ *  recording — and until 2026-09-12 every one of these was swallowed by a bare
+ *  `catch {}`, so a field report ("it fails on my phone at 20 minutes") could
+ *  only ever be answered with a ranked list of guesses. The five cases were
+ *  already distinct in the control flow; they just had no names. */
+export type StreamFailure =
+  | 'no-webcodecs'      // the browser has no AudioDecoder at all
+  | 'container'         // the demuxer could not open the file (or its wasm never loaded)
+  | 'no-audio-stream'   // opened, but no usable audio track
+  | 'codec'             // the audio codec is not decodable here
+  | 'no-duration'       // no usable duration declared
+  | 'unknown';
+
+export interface StreamProbe {
+  /** Null when chunked decoding is unavailable — then `reason` says why. */
+  source: StreamingFileSource | null;
+  reason: StreamFailure | null;
+  /** The library's own words, or the codec string. English, technical, and
+   *  exactly what identifies a broken file in a screenshot from the field.
+   *  Capped, because a wasm error can run to pages. */
+  detail?: string;
+}
+
+function detailOf(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  return raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
+}
+
+/** `destroy()` on a demuxer that never finished loading can itself throw, and
+ *  a probe must never fail louder than the thing it was probing. */
+function discard(demuxer: WebDemuxer | null): void {
+  try { demuxer?.destroy(); } catch { /* nothing to release */ }
+}
+
 /** Re-samples via a short OfflineAudioContext render — same mechanism
  *  decodeAudioData uses internally, never a hand-rolled resampler (accuracy
  *  matters here: sessionConfig.ts documents 22050 vs 48000 changing FolkFriend's
@@ -59,27 +95,61 @@ export class StreamingFileSource implements PcmSource {
   /** Probes support without decoding anything (container parse only) — null
    *  on any failure, so the caller can fall back to FileSource unconditionally. */
   static async tryCreate(file: File): Promise<StreamingFileSource | null> {
-    if (typeof AudioDecoder === 'undefined') return null;
+    return (await StreamingFileSource.probe(file)).source;
+  }
+
+  /** The same probe, but saying WHY when it fails.
+   *
+   *  One `try` per step rather than one around the lot: "the demuxer could not
+   *  open this container" and "this browser cannot decode that codec" are two
+   *  different answers to give someone whose import just failed, and a single
+   *  catch cannot tell them apart. Still never throws — the caller's job is to
+   *  fall back, not to handle an error. */
+  static async probe(file: File): Promise<StreamProbe> {
+    if (typeof AudioDecoder === 'undefined') return { source: null, reason: 'no-webcodecs' };
 
     let demuxer: WebDemuxer | null = null;
     try {
+      // Constructing it also starts fetching the wasm, so a failure here is
+      // usually "the 3 MB module never arrived", not "the file is bad".
       demuxer = new WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
       await demuxer.load(file);
+    } catch (e) {
+      discard(demuxer);
+      return { source: null, reason: 'container', detail: detailOf(e) };
+    }
 
-      const config = await demuxer.getDecoderConfig('audio');
+    let config: AudioDecoderConfig;
+    try {
+      config = await demuxer.getDecoderConfig('audio');
+    } catch (e) {
+      discard(demuxer);
+      return { source: null, reason: 'no-audio-stream', detail: detailOf(e) };
+    }
+
+    try {
       const support = await AudioDecoder.isConfigSupported(config);
-      if (!support.supported) { demuxer.destroy(); return null; }
+      if (!support.supported) {
+        discard(demuxer);
+        // The codec string is the whole answer here, and the one thing worth
+        // reading back off a screenshot.
+        return { source: null, reason: 'codec', detail: config.codec };
+      }
+    } catch (e) {
+      discard(demuxer);
+      return { source: null, reason: 'codec', detail: detailOf(e) };
+    }
 
+    try {
       const info = await demuxer.getMediaInfo();
       if (!(info.duration > 0)) {
-        demuxer.destroy();
-        return null;
+        discard(demuxer);
+        return { source: null, reason: 'no-duration', detail: String(info.duration) };
       }
-
-      return new StreamingFileSource(demuxer, config, info.duration);
-    } catch {
-      demuxer?.destroy();
-      return null;
+      return { source: new StreamingFileSource(demuxer, config, info.duration), reason: null };
+    } catch (e) {
+      discard(demuxer);
+      return { source: null, reason: 'unknown', detail: detailOf(e) };
     }
   }
 
