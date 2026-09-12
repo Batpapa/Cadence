@@ -29,8 +29,10 @@ export interface TuneRankRow {
   /** Whether ANY detection of it was hearted. One heart is the user saying
    *  "this one", and no amount of un-hearted passes elsewhere unsays it. */
   liked: boolean;
-  /** Epoch ms of the most recent dated session it was heard in, null when
-   *  every one of them is undated (imports start with no date). */
+  /** Epoch ms of the last time it was actually played — the recording's t=0
+   *  plus the detection's own offset into it (see heardAt), not merely the date
+   *  of the evening. null when every session it appears in is undated (imports
+   *  start with no date). */
   lastHeard: number | null;
 }
 
@@ -40,12 +42,29 @@ function sessionTime(session: Analysis): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
+/** When a tune was ACTUALLY played: the recording's t=0 plus how far into it
+ *  the detection sits.
+ *
+ *  The offset is not a detail. Without it every tune in one evening carries the
+ *  same instant, so "heard most recently" cannot order them at all and the
+ *  tie-break decides instead — and worse, across two overlapping evenings it
+ *  gets the answer wrong: a tune at 23:30 of a session that began at 20:00 is
+ *  more recent than one at 23:05 of a session that began at 23:00, which
+ *  comparing the two START times reverses.
+ *
+ *  null stays null: an offset into an undated recording is still no date. */
+function heardAt(sessionStart: number | null, detectionStart: number): number | null {
+  return sessionStart === null ? null : sessionStart + detectionStart * 1000;
+}
+
 /** Every tune any session recognised, most heard first.
  *
  *  Grouped by `tuneId` and not by name: two spellings of the same reel are one
  *  tune, and the id is the only thing that says so. The name kept is the one
  *  from the most recent detection — where a name was corrected, the correction
- *  is the newer of the two.
+ *  is the newer of the two. "Most recent" means the moment the tune was
+ *  PLAYED, offset included (see heardAt), so two passes in one evening are
+ *  told apart rather than tying.
  *
  *  Ties are broken by session spread, then by name, so the order is total and
  *  the list does not reshuffle under the reader between two identical states. */
@@ -53,9 +72,10 @@ export function rankDetectedTunes(sessions: Analysis[]): TuneRankRow[] {
   const byTune = new Map<string, { row: TuneRankRow; sessionIds: Set<string>; newest: number }>();
 
   for (const session of sessions) {
-    const at = sessionTime(session);
+    const sessionAt = sessionTime(session);
     for (const ann of session.annotations ?? []) {
       if (!ann.tuneId) continue;
+      const at = heardAt(sessionAt, ann.start);
       const found = byTune.get(ann.tuneId);
       if (!found) {
         byTune.set(ann.tuneId, {
