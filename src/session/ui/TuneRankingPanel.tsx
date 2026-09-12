@@ -448,7 +448,13 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
         </label>
 
         <div class="flex gap-1 items-center">
-          <div class="relative">
+          {/* The ref is what the outside-click effect measures "outside"
+              against, and it was missing: `sortRef.current` stayed null, so the
+              guard `!sortRef.current?.contains(...)` was true for EVERY
+              mousedown — including one on a menu entry, which unmounted the
+              menu before the click could land on it. The menu opened, and
+              picking from it did nothing (2026-09-12). */}
+          <div class="relative" ref={sortRef}>
             <button
               type="button"
               class="btn-ghost text-xs inline-flex items-center justify-center"

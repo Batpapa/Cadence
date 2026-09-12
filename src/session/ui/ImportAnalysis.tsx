@@ -158,7 +158,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         getName={() => imp.name}
         getDefaultName={() => imp.defaultName()}
         onRename={(val) => { imp.name = val; }}
-        onDelete={() => imp.cancel()}
+        onDelete={() => imp.cancel({ discard: true })}
       />
       {/* Same as the live screen: where it will be filed is decided while the
           analysis runs, not afterwards. */}
