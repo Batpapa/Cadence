@@ -57,7 +57,7 @@ function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; 
   );
 }
 
-export function SessionsView({ sessionId, annotationId, search, tab, folder, sort, sortAsc, others, othersOr, analyses, analysesOr }: Extract<Route, { view: 'sessions' }>) {
+export function SessionsView({ sessionId, annotationId, search, tab, folder, sort, sortAsc, others, othersOr, analyses, analysesOr, dances, modes }: Extract<Route, { view: 'sessions' }>) {
   const ctx = getContext();
   const onOpenCard = (cardId: string) => ctx.navigate({ view: 'card', cardId });
 
@@ -102,6 +102,8 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
           initialOthersOr={othersOr}
           initialAnalyses={analyses}
           initialAnalysesOr={analysesOr}
+          initialDances={dances}
+          initialModes={modes}
         />
       </>
     );

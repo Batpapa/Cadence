@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { t } from '../../services/i18nService';
-import { HeartIcon, ChevronDownIcon, CheckIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon } from '../../components/icons';
-import { playIcon, stopIcon } from '../../components/playbackIcons';
+import { HeartIcon, ChevronDownIcon, CheckIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon, LibraryIcon } from '../../components/icons';
 import { FilterSection, cycleFilter, type FilterMap } from '../../components/filterSection';
 import { createLongPressHandlers } from '../../components/longPress';
 import { useContextMenu } from '../../components/contextMenu';
@@ -10,13 +9,14 @@ import { navigate, getContext } from '../../store';
 import { showDeckPickerModal } from '../../components/batchEdit';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import type { TuneSort } from '../../types';
-import type { Analysis } from '../model';
+import type { Analysis, Detection } from '../model';
+import { getSettingAbcMeta, getSettingAbcMetaSync } from '../recognition/indexStore';
 import { loadSessionAudio } from '../db';
-import { BUCKET_TEXT, tuneName, ClipControls, TuneDeckButton, attachClip, isClipAttached } from './sessionUiShared';
+import { tuneName, TuneDeckButton, attachClip, isClipAttached } from './sessionUiShared';
 import { showBatchProgress, type BatchStep, type StepOutcome } from './batchRunner';
 import { deckGain } from './tuneBatch';
-import { AbcPreview } from './abcPreview';
-import { rankDetectedTunes, occurrencesOf, sortTuneRows } from './tuneRanking';
+import { PassRow, useSlicePlayer } from './PassRow';
+import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, type PassFacet } from './tuneRanking';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
 // The analyses read the other way round: by tune instead of by evening. It is
@@ -35,14 +35,6 @@ const SORT_ICON: Record<TuneSort, ComponentType<{ size?: number }>> = {
   lastHeard: ClockIcon,
   count: WeightedBarsIcon,
 };
-
-function fmtTime(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = Math.floor(Math.max(0, s) % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-  return `${m}:${String(sec).padStart(2, '0')}`;
-}
 
 /** The card each detected tune already has, if any — built once per render
  *  rather than searched per row: a lookup per tune over every card is the kind
@@ -77,6 +69,13 @@ export interface TuneViewState {
    *  the question people arrive with — but both readings are real, so the
    *  section carries the same toggle the decks and tags do. */
   othersOr: boolean;
+  /** Tune types (reel, jig…) and keys (Dmajor, Edorian…), read off each PASS
+   *  rather than each tune, like the analyses — see filterByFacets for why.
+   *  Spelled as TheSession spells them, which is also how a TheSession card
+   *  carries them as tags. A pass has one of each, so both sections are "any
+   *  of" and carry no toggle (decided with the user, 2026-09-13). */
+  dances: FilterMap;
+  modes: FilterMap;
 }
 
 /** Chip keys for the "other" section. Strings rather than an enum because
@@ -91,7 +90,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
   onView: (patch: Partial<TuneViewState>) => void;
 }) {
   const ctx = getContext();
-  const { sort: sortMode, sortAsc, analyses: activeAnalyses, analysesOr, others, othersOr } = view;
+  const { sort: sortMode, sortAsc, analyses: activeAnalyses, analysesOr, others, othersOr, dances, modes } = view;
   const [openTuneId, setOpenTuneId] = useState<string | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -124,79 +123,43 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
   const lpStartRef = useRef<{ x: number; y: number } | null>(null);
   const lpFiredRef = useRef(false);
 
-  // ── Audio, loaded one analysis at a time ──
-  // The rows of one tune come from different evenings, so there is no single
-  // recording to hold open. The one that is playing is the one that is loaded;
-  // switching tunes switches the source.
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const loadedRef = useRef<{ sessionId: string; url: string } | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const sliceEndRef = useRef<number>(Infinity);
-  const [hasAudio, setHasAudio] = useState<Record<string, boolean>>({});
+  // Audio, loaded one analysis at a time — shared with a card's "Detected in".
+  const player = useSlicePlayer();
 
-  const occurrences = openTuneId === null ? [] : occurrencesOf(sessions, openTuneId);
+  // A pass's key is the key of the setting it matched, which only the
+  // recognition index knows. The map loads lazily — the ABC preview loads the
+  // very same one — so the key section appears once it has arrived; on a device
+  // that never had the index it stays away rather than offering chips that
+  // could match nothing.
+  const [, setIndexLoaded] = useState(false);
+  useEffect(() => { void getSettingAbcMeta('').then(() => setIndexLoaded(true)); }, []);
+  const modeOf = (d: Detection): string | undefined => getSettingAbcMetaSync(d.settingId)?.mode || undefined;
+
+  /** The three sections that read a value off each pass — which analysis it is
+   *  in, its tune type, its key — and so filter passes rather than tunes. */
+  const facetAnalyses: PassFacet = { chips: activeAnalyses, or: analysesOr, valueOf: (_d, s) => s.id };
+  const facetDances: PassFacet = { chips: dances, or: true, valueOf: d => d.dance || undefined };
+  const facetModes: PassFacet = { chips: modes, or: true, valueOf: d => modeOf(d) };
+  const facets = [facetAnalyses, facetDances, facetModes];
+  /** What the list is built from: only the passes those chips let through, so
+   *  every count, date and heart below is one of THOSE. */
+  const heard = filterByFacets(sessions, facets);
+
+  const occurrences = openTuneId === null ? [] : occurrencesOf(heard, openTuneId);
 
   /** Opens one tune's passages and closes whatever was open. Shared by the
    *  chevron and by the row behind it, so the two can never disagree. */
   const toggleOpen = (tuneId: string) => {
     const next = openTuneId === tuneId ? null : tuneId;
     setOpenTuneId(next);
-    if (next) probeAudio(occurrencesOf(sessions, next).map(o => o.session.id));
-  };
-
-  /** Probed only for the tune that is open, never for the whole library. */
-  const probeAudio = (ids: string[]) => {
-    const unknown = [...new Set(ids)].filter(id => !(id in hasAudio));
-    if (unknown.length === 0) return;
-    void Promise.all(unknown.map(async id => [id, !!(await loadSessionAudio(id))] as const))
-      .then(pairs => setHasAudio(prev => ({ ...prev, ...Object.fromEntries(pairs) })));
-  };
-
-  const playSlice = async (sessionId: string, detectionId: string, start: number, end: number | null) => {
-    const a = audioRef.current;
-    if (!a) return;
-    // STOP, not pause — the same call the incipit's button makes. A passage is
-    // under a minute, so there is nothing to come back to in the middle of it,
-    // and pressing it again plays it from its own start.
-    if (playingId === detectionId) { a.pause(); a.currentTime = start; setPlayingId(null); return; }
-
-    if (loadedRef.current?.sessionId !== sessionId) {
-      const blob = await loadSessionAudio(sessionId);
-      if (!blob) return;
-      if (loadedRef.current) URL.revokeObjectURL(loadedRef.current.url);
-      const url = URL.createObjectURL(blob);
-      loadedRef.current = { sessionId, url };
-      a.src = url;
-    }
-    sliceEndRef.current = end ?? Infinity;
-    a.currentTime = Math.max(0, start);
-    try { await a.play(); } catch { setPlayingId(null); return; }
-    setPlayingId(detectionId);
+    // Probed only for the tune that is open, never for the whole library.
+    if (next) player.probe(occurrencesOf(heard, next).map(o => o.session.id));
   };
 
   const cards = cardIdByTuneId();
+  // Every tune whatever the chips say — what a selection acts on, and how the
+  // empty screen tells "nothing detected yet" from "nothing matches".
   const all = rankDetectedTunes(sessions);
-
-  // Which analyses a tune was heard in — needed by the chips below, and by the
-  // filter itself. One pass, not one per row.
-  const analysesOfTune = new Map<string, Set<string>>();
-  for (const session of sessions) {
-    for (const ann of session.annotations ?? []) {
-      if (!ann.tuneId) continue;
-      let set = analysesOfTune.get(ann.tuneId);
-      if (!set) { set = new Set(); analysesOfTune.set(ann.tuneId, set); }
-      set.add(session.id);
-    }
-  }
-
-  const includes = [...activeAnalyses].filter(([, s]) => s === 'include').map(([id]) => id);
-  const excludes = [...activeAnalyses].filter(([, s]) => s === 'exclude').map(([id]) => id);
-  const passesAnalyses = (tuneId: string): boolean => {
-    const heard = analysesOfTune.get(tuneId) ?? new Set<string>();
-    if (excludes.some(id => heard.has(id))) return false;
-    if (includes.length === 0) return true;
-    return analysesOr ? includes.some(id => heard.has(id)) : includes.every(id => heard.has(id));
-  };
 
   /** The "other" chips, read against a tune's two facts.
    *
@@ -215,16 +178,19 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
     return inclOk && excl.every(k => !holds(k));
   };
 
-  // The name is resolved before filtering, not just for display: someone typing
-  // "Cooley" is typing the name they see, which may be their own card's.
-  const rows = sortTuneRows(
-    all
+  /** The tunes a set of passes gives, past the tune-level chips and the search,
+   *  not yet sorted. A function because the pass sections need it again to say
+   *  what they could still add (see availOf). */
+  const listFrom = (from: Analysis[]) =>
+    // The name is resolved before filtering, not just for display: someone
+    // typing "Cooley" is typing the name they see, which may be their own card's.
+    rankDetectedTunes(from)
       .map(row => ({ row, name: tuneName(row).text, cardId: cards.get(row.tuneId) }))
       .filter(r => passesOthers(r.row.liked, !!r.cardId))
-      .filter(r => passesAnalyses(r.row.tuneId))
-      .filter(r => !query || r.name.toLowerCase().includes(query) || r.row.tuneId === query),
-    sortMode, sortAsc,
-  );
+      .filter(r => !query || r.name.toLowerCase().includes(query) || r.row.tuneId === query);
+
+  const shown = listFrom(heard);
+  const rows = sortTuneRows(shown, sortMode, sortAsc);
 
   // ── Which chips could still do something ──
   // Derived from what is ON SCREEN, not from the whole corpus: a chip that
@@ -232,10 +198,49 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
   // as the card library dims a tag no visible card carries. An already-pinned
   // chip stays live whatever this says (FilterSection's own rule), or a filter
   // would disable the control that undoes it.
-  const availAnalyses = new Set(rows.flatMap(r => [...(analysesOfTune.get(r.row.tuneId) ?? [])]));
   const availOthers = new Set<string>();
   if (rows.some(r => r.row.liked)) availOthers.add(OTHER_LIKED);
   if (rows.some(r => !r.cardId)) availOthers.add(OTHER_NO_CARD);
+
+  /** The values a pass section could still act on: those carried by a pass of
+   *  a tune it would leave listed, every OTHER section applied but not its own
+   *  — its own has already removed the very passes that carry the alternatives.
+   *  - "Any of": the tunes listed without this section. A section that dimmed
+   *    every value but the one pinned would be refusing its own second choice.
+   *  - "All of": the tunes listed now. A value narrows the list only if one of
+   *    them was ALSO heard in it. */
+  const availOf = (facet: PassFacet): Set<string> => {
+    const rest = filterByFacets(sessions, facets.filter(f => f !== facet));
+    const listed = new Set((facet.or ? listFrom(rest) : shown).map(r => r.row.tuneId));
+    const out = new Set<string>();
+    for (const s of rest) {
+      for (const d of s.annotations) {
+        if (!listed.has(d.tuneId)) continue;
+        const v = facet.valueOf(d, s);
+        if (v) out.add(v);
+      }
+    }
+    return out;
+  };
+  const availAnalyses = availOf(facetAnalyses);
+  const availDances = availOf(facetDances);
+  const availModes = availOf(facetModes);
+
+  /** The chips a section offers: every value any pass carries, plus whatever
+   *  is pinned — a chip restored from the route before the index has loaded
+   *  would otherwise filter the list while nowhere to be seen. */
+  const chipsOf = (pick: (d: Detection) => string | undefined, pinned: FilterMap): string[] => {
+    const out = new Set<string>(pinned.keys());
+    for (const s of sessions) {
+      for (const d of s.annotations ?? []) {
+        const v = pick(d);
+        if (v) out.add(v);
+      }
+    }
+    return [...out].sort((a, b) => a.localeCompare(b));
+  };
+  const danceChips = chipsOf(d => d.dance || undefined, dances);
+  const modeChips = chipsOf(modeOf, modes);
 
   const hasSelection = selected.size > 0;
   if (masterRef.current) masterRef.current.indeterminate = hasSelection && selected.size < rows.length;
@@ -273,6 +278,11 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
   const selectedRows = all
     .map(row => ({ row, name: tuneName(row).text }))
     .filter(r => selected.has(r.row.tuneId));
+  /** The cards behind the selection — a tune with no card has nothing to show
+   *  in the library, so it simply does not travel. */
+  const selectedCardIds = selectedRows
+    .map(r => cards.get(r.row.tuneId))
+    .filter((id): id is string => !!id);
 
   /** Add to decks, creating the card where there is none.
    *
@@ -319,7 +329,9 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
     });
   };
 
-  /** Add the audio clips — EVERY passage of every selected tune.
+  /** Add the audio clips — EVERY passage the list shows of every selected
+   *  tune: with a key pinned, the passes heard in another key are not the ones
+   *  being looked at, and are left out exactly as they are left out of the count.
    *
    *  Not one clip per tune: two passes through the same tune are two different
    *  performances, which is the rule this whole panel is built on (a tune
@@ -339,7 +351,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
         if (!findByExternalId(`thesession:${row.tuneId}`, getContext().user.cards)) {
           return { status: 'skipped', reason: t('sessions.batch.skip.noCard') };
         }
-        const passages = occurrencesOf(sessions, row.tuneId);
+        const passages = occurrencesOf(heard, row.tuneId);
         let added = 0, already = 0;
         for (let i = 0; i < passages.length; i++) {
           const { session, detection } = passages[i]!;
@@ -385,18 +397,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
 
   return (
     <div>
-      {/* One element, re-pointed as the reader moves between evenings. Native
-          <audio>, never decodeAudioData: an analysis can run for hours. */}
-      <audio
-        ref={audioRef}
-        class="hidden"
-        onPause={() => setPlayingId(null)}
-        onEnded={() => setPlayingId(null)}
-        onTimeUpdate={(e) => {
-          const a = e.currentTarget;
-          if (a.currentTime >= sliceEndRef.current) a.pause();
-        }}
-      />
+      {player.audio}
 
       <div class="mt-3 space-y-1">
         <FilterSection
@@ -411,6 +412,35 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
           orMode={analysesOr}
           onToggleOr={() => onView({ analysesOr: !analysesOr })}
         />
+        {/* `orMode` with no toggle: one value per pass, so "any of" is the only
+            reading — and it keeps a dimmed chip clickable, which is how a
+            second type or key gets added to the first. */}
+        {danceChips.length > 0 && (
+          <FilterSection
+            labelKey="sessions.ranking.filterDances"
+            items={danceChips}
+            activeMap={dances}
+            labelOf={v => v}
+            titleOf={() => ''}
+            available={availDances}
+            onToggle={(v, back) => onView({ dances: cycleFilter(dances, v, back) })}
+            highlight={query}
+            orMode
+          />
+        )}
+        {modeChips.length > 0 && (
+          <FilterSection
+            labelKey="sessions.ranking.filterModes"
+            items={modeChips}
+            activeMap={modes}
+            labelOf={v => v}
+            titleOf={() => ''}
+            available={availModes}
+            onToggle={(v, back) => onView({ modes: cycleFilter(modes, v, back) })}
+            highlight={query}
+            orMode
+          />
+        )}
         <FilterSection
           labelKey="sessions.ranking.filterOther"
           items={[OTHER_LIKED, OTHER_NO_CARD]}
@@ -506,6 +536,22 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
           </button>
           {hasSelection && <>
             <div class="w-px h-4 bg-border mx-1" />
+            {/* The deck page's "view in library" button, carrying the selection
+                instead of a deck filter: the library opens limited to those
+                cards, where its own filters — decks, tags — apply to them.
+                Limited rather than pre-ticked: a selection is lost as soon as a
+                filter hides part of it, and while one exists a click ticks a
+                card instead of opening it; "select all" is one click away. */}
+            {selectedCardIds.length > 0 && (
+              <button
+                type="button"
+                class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+                title={t('sessions.ranking.viewInLibrary')}
+                onClick={() => navigate({ view: 'library', cards: selectedCardIds })}
+              >
+                <LibraryIcon size={12} />
+              </button>
+            )}
             <button
               class="btn-ghost text-xs inline-flex items-center justify-center"
               title={t('library.batch.more')}
@@ -584,6 +630,13 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                     }}
                   />
 
+                  {/* Create the card, or file the existing one — the same
+                      control an analysis offers, not a second copy of it.
+                      Left of the name (2026-09-13): it answers "is this one
+                      of mine" before the name is read, as the play button
+                      leads each pass below. */}
+                  <TuneDeckButton tuneId={row.tuneId} ctx={ctx} onCardAdded={refresh} />
+
                   {/* One line, truncated — a library row never grows to two,
                       and a list whose rows are all the same height is a list
                       you can run your eye down. */}
@@ -624,10 +677,6 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                     {row.liked && <span class="text-danger shrink-0 flex items-center"><HeartIcon size={11} filled /></span>}
                   </div>
 
-                  {/* Create the card, or file the existing one — the same
-                      control an analysis offers, not a second copy of it. */}
-                  <TuneDeckButton tuneId={row.tuneId} ctx={ctx} onCardAdded={refresh} />
-
                   {/* Count and chevron are ONE control, not two slots: the
                       number is the size of what the chevron opens, so reading
                       them apart never made sense, and two boxes side by side
@@ -653,74 +702,20 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                 {isOpen && (
                   <div class="pl-10 pr-3 pb-2 space-y-2">
                     {occurrences.map(({ session, detection }) => (
-                      // Never wraps. A pass is one line, and the glyphs at
-                      // its end are a column read downwards — a row that folded
-                      // took its column with it.
-                      <div key={detection.id} class="flex items-center gap-2">
-                        <button
-                          class={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-border ${selected.size === 0 ? 'cursor-pointer hover:border-accent' : ''} ${
-                            detection.userConfirmed ? 'text-success' : BUCKET_TEXT[detection.bucket]}`}
-                          title={t('sessions.openDetection')}
-                          onClick={(e) => {
-                            if (claimedBySelection(e, row.tuneId)) return;
-                            navigate({ view: 'sessions', sessionId: session.id, annotationId: detection.id });
-                          }}
-                        >
-                          {fmtTime(detection.start)}
-                        </button>
-
-                        <button
-                          class={`text-sm text-muted min-w-0 text-left flex-1 inline-flex items-center gap-1.5 ${selected.size === 0 ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
-                          // The full name, since the visible one is cut.
-                          title={session.name}
-                          onClick={(e) => {
-                            if (claimedBySelection(e, row.tuneId)) return;
-                            navigate({ view: 'sessions', sessionId: session.id, annotationId: detection.id });
-                          }}
-                        >
-                          <span class="truncate min-w-0">{session.name}</span>
-                          {/* THIS pass, not the tune: the heart on the title
-                              above says one of them was hearted, this one says
-                              which. Without it a tune hearted once looks
-                              hearted everywhere. */}
-                          {detection.liked && (
-                            <span class="text-danger shrink-0 flex items-center"><HeartIcon size={10} filled /></span>
-                          )}
-                        </button>
-
-                        {/* Four fixed slots, filled or not. What can be done
-                            with a pass depends on the pass — an analysis whose
-                            audio was forgotten offers no listening and no clip
-                            — and without reserved room the glyphs of one row
-                            would sit under the wrong glyphs of the next. */}
-                        <div class="shrink-0 flex items-center gap-1.5">
-                          {/* Hearing it comes before reading it: this list is
-                              for tunes you do not know yet. */}
-                          <span class="w-6 flex items-center justify-center shrink-0">
-                            {hasAudio[session.id] && (
-                              <button
-                                class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
-                                  playingId === detection.id ? 'bg-accent text-white' : 'bg-accent/10 text-accent hover:bg-accent/20'}`}
-                                title={t(playingId === detection.id ? 'sessions.stopSlice' : 'sessions.playSlice')}
-                                dangerouslySetInnerHTML={{ __html: playingId === detection.id ? stopIcon(10) : playIcon(10) }}
-                                onClick={() => { void playSlice(session.id, detection.id, detection.start, detection.end); }}
-                              />
-                            )}
-                          </span>
-
-                          <AbcPreview settingId={detection.settingId} displayName={detection.displayName} cardId={cardId} ctx={ctx} />
-
-                          <ClipControls
-                            ann={detection}
-                            session={session}
-                            audioAvailable={!!hasAudio[session.id]}
-                            getAudio={() => loadSessionAudio(session.id)}
-                            ctx={ctx}
-                            onAttached={refresh}
-                            aligned
-                          />
-                        </div>
-                      </div>
+                      <PassRow
+                        key={detection.id}
+                        session={session}
+                        detection={detection}
+                        cardId={cardId}
+                        ctx={ctx}
+                        player={player}
+                        interactive={selected.size === 0}
+                        onOpen={(e) => {
+                          if (claimedBySelection(e, row.tuneId)) return;
+                          navigate({ view: 'sessions', sessionId: session.id, annotationId: detection.id });
+                        }}
+                        onAttached={refresh}
+                      />
                     ))}
                   </div>
                 )}

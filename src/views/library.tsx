@@ -278,6 +278,14 @@ export function LibraryView() {
   const [revTo,       setRevTo]       = useState(savedRoute?.reviewedTo ?? '');
   const [mapOpen,     setMapOpen]     = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
+  /** The cards another screen limited the library to (see Route's `cards`);
+   *  null = every card. */
+  const [onlyCards,   setOnlyCards]   = useState<string[] | null>(savedRoute?.cards ?? null);
+  // The cards in play: the whole library, or the ones it was limited to. Ids of
+  // cards deleted since simply match nothing.
+  const onlySet = onlyCards ? new Set(onlyCards) : null;
+  const inPool  = (cardId: string) => !!user.cards[cardId] && (!onlySet || onlySet.has(cardId));
+  const pool    = onlySet ? allCards.filter(c => onlySet.has(c.id)) : allCards;
   const sortRef   = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -290,8 +298,8 @@ export function LibraryView() {
   }, [sortOpen]);
 
   useEffect(() => {
-    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], types: [...activeTypes], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo });
-  }, [searchQuery, activeTags, activeDecks, activeTypes, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo]);
+    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], types: [...activeTypes], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo, cards: onlyCards ?? undefined });
+  }, [searchQuery, activeTags, activeDecks, activeTypes, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo, onlyCards]);
 
   // No autofocus on the search field (2026-09-08). Every other focusIfDesktop
   // call in the app is in something the user just opened IN ORDER to type — a
@@ -307,12 +315,12 @@ export function LibraryView() {
   // its label already puts it. "No type" leads, as NO_DECK does below and as
   // "Aucun" does in the card view's own type selector.
   const typeItems  = [NO_TYPE, ...CARD_TYPES];
-  const allTags    = [...new Set(allCards.flatMap(c => c.tags ?? []))].sort();
-  const hasOrphans = allCards.some(c => decksContainingCard(c.id, user).length === 0);
+  const allTags    = [...new Set(pool.flatMap(c => c.tags ?? []))].sort();
+  const hasOrphans = pool.some(c => decksContainingCard(c.id, user).length === 0);
   const deckItems  = [
     ...(hasOrphans ? [NO_DECK] : []),
     ...Object.values(user.decks)
-      .filter(d => d.entries.some(e => user.cards[e.cardId]))
+      .filter(d => d.entries.some(e => inPool(e.cardId)))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(d => d.id),
   ];
@@ -320,8 +328,9 @@ export function LibraryView() {
   // ── Which sections are worth a line ───────────────────────────────────────────
   // A section earns its place only if clicking in it could actually split the
   // library; offering to sort a pile of identical things is noise. All three are
-  // read from ALL cards, never from the filtered ones, or a section would
-  // vanish at the moment it did its job.
+  // read from ALL the cards in play — the library, or the cards it was limited
+  // to — never from the filtered ones, or a section would vanish at the moment
+  // it did its job.
   //
   // Types and decks are exhaustive partitions — every card falls in exactly one
   // bucket, "no type" and "no deck" included — so one occupied bucket means
@@ -335,9 +344,9 @@ export function LibraryView() {
   // would be unexplainable.
   const hasDeckMix = deckItems.length > 1 || activeDecks.size > 0;
   const hasTagMix  = activeTags.size > 0 || allTags.length > 1
-    || (allTags.length === 1 && allCards.some(c => !(c.tags ?? []).includes(allTags[0]!)));
+    || (allTags.length === 1 && pool.some(c => !(c.tags ?? []).includes(allTags[0]!)));
   const hasTypeMix = activeTypes.size > 0
-    || new Set(allCards.map(c => knownCardType(c) ?? NO_TYPE)).size > 1;
+    || new Set(pool.map(c => knownCardType(c) ?? NO_TYPE)).size > 1;
   // The rule above stops at the chip sections. The review dates stay whatever
   // the library holds: with no review anywhere they still answer two different
   // questions — everything, or the empty set that proves nothing was revised in
@@ -347,7 +356,7 @@ export function LibraryView() {
   // ── Filtered list (recomputed every render) ───────────────────────────────────
   const q = searchQuery.toLowerCase();
   const revRange = localDayRange(revFrom, revTo);
-  const filteredUnsorted = allCards.filter(c => {
+  const filteredUnsorted = pool.filter(c => {
     const tags       = c.tags ?? [];
     // externalId match is EXACT (whole "source:id", or just the id part),
     // not a substring — "729" must not also pull in "thesession:7290".
@@ -458,7 +467,7 @@ export function LibraryView() {
     const visible = new Set(filtered.map(c => c.id));
     const next = new Set([...selected].filter(id => visible.has(id)));
     if (next.size !== selected.size) setSelected(next);
-  }, [q, activeTags, activeDecks]);
+  }, [q, activeTags, activeDecks, onlyCards]);
 
   // A selected card can vanish without the selection being told: the toolbar's
   // delete clears it by hand, but the duplicate cleanup at the end of a
@@ -709,6 +718,24 @@ export function LibraryView() {
           value={searchQuery}
           onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
         />
+
+        {/* Always in sight while it applies: a library that silently holds
+            fewer cards than the user owns reads as lost data. It says how many,
+            not where they came from — the library does not know, and the next
+            screen to hand it a set of cards should not need a new label. */}
+        {onlyCards && (
+          <div class="flex pt-1">
+            <button
+              type="button"
+              class="text-xs px-2 py-0.5 rounded-full border bg-accent text-white border-accent inline-flex items-center gap-1.5 cursor-pointer"
+              title={t('library.limited.clear')}
+              onClick={() => setOnlyCards(null)}
+            >
+              {t(pool.length === 1 ? 'library.limited.one' : 'library.limited.other', { count: pool.length })}
+              <span aria-hidden="true">✕</span>
+            </button>
+          </div>
+        )}
 
         {hasDeckMix && (
           <FilterSection

@@ -257,7 +257,12 @@ export type Route =
   // Local days, resolved to [00:00, 23:59:59.999] where they are read.
   // `types` has no OR flag of its own: a card holds ONE type, so several
   // included types can only ever mean "any of these" — see LibraryView.
-  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; types?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean; reviewedFrom?: string; reviewedTo?: string }
+  // `cards` limits the library to those card ids; absent = every card. Generic
+  // on purpose — any screen can hand over a set of cards (the analyser's tunes
+  // tab is the first), and the library does not know or say where it came from.
+  // It is state like the filters, kept in the route, so coming back from a card
+  // lands on the same limited list; it goes when the user removes it.
+  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; types?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean; reviewedFrom?: string; reviewedTo?: string; cards?: string[] }
   | { view: 'deck'; deckId: string }
   | { view: 'card'; cardId: string; contextDeckId?: string }
   | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null }
@@ -280,6 +285,7 @@ export type Route =
       folder?: string;
       sort?: TuneSort; sortAsc?: boolean; others?: [string, FilterState][]; othersOr?: boolean;
       analyses?: [string, FilterState][]; analysesOr?: boolean;
+      dances?: [string, FilterState][]; modes?: [string, FilterState][];
     }
   // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.

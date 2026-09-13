@@ -62,9 +62,11 @@ interface SessionLibraryProps {
   initialOthersOr?: boolean;
   initialAnalyses?: [string, FilterState][];
   initialAnalysesOr?: boolean;
+  initialDances?: [string, FilterState][];
+  initialModes?: [string, FilterState][];
 }
 
-export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr }: SessionLibraryProps) {
+export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes }: SessionLibraryProps) {
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
   const [query, setQuery] = useState(initialSearch ?? '');
   const [dragOver, setDragOver] = useState(false);
@@ -84,6 +86,8 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
     analysesOr: initialAnalysesOr ?? true,
     others: new Map(initialOthers ?? []),
     othersOr: initialOthersOr ?? false,
+    dances: new Map(initialDances ?? []),
+    modes: new Map(initialModes ?? []),
   }));
   const [source, setSource] = useState<LiveSourceKind>('mic');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -132,6 +136,8 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
       othersOr: tuneView.othersOr || undefined,
       analyses: tuneView.analyses.size > 0 ? [...tuneView.analyses] : undefined,
       analysesOr: tuneView.analysesOr ? undefined : false,
+      dances: tuneView.dances.size > 0 ? [...tuneView.dances] : undefined,
+      modes: tuneView.modes.size > 0 ? [...tuneView.modes] : undefined,
     });
   }, [query, tab, folderId, tuneView]);
 
