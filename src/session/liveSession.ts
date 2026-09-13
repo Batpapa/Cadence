@@ -4,7 +4,7 @@ import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
-import { alternatePickFields } from './model';
+import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from './model';
 import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
@@ -226,11 +226,17 @@ export class LiveSession {
           meter: existing.meter,
           userConfirmed: true,
           liked: existing.liked,
+          manualAlternates: existing.manualAlternates,
         });
       } else {
-        // The aggregator never knows about the like marker — carry it forward
-        // across updates the same as any other user choice.
-        this.annotations.set(ev.detection.id, { ...ev.detection, liked: existing?.liked ?? false });
+        // The aggregator never knows about the like marker or the tunes named
+        // by hand — carry them forward across updates like any other user
+        // choice. Hand-named tunes outlive an un-confirmation, hence this branch.
+        this.annotations.set(ev.detection.id, {
+          ...ev.detection,
+          liked: existing?.liked ?? false,
+          manualAlternates: existing?.manualAlternates,
+        });
       }
     }
     this.persistDraft();
@@ -254,6 +260,23 @@ export class LiveSession {
     const ann = this.annotations.get(annotationId);
     if (!ann) return;
     this.annotations.set(annotationId, { ...ann, ...alternatePickFields(ann, pick) });
+    this.persistDraft();
+  }
+
+  /** Adds a tune named by hand to this detection's variants, choosing nothing
+   *  — see model.ts's withManualAlternate. */
+  addManualAlternate(annotationId: string, tune: DetectionAlternate): void {
+    const ann = this.annotations.get(annotationId);
+    if (!ann) return;
+    this.annotations.set(annotationId, { ...ann, manualAlternates: withManualAlternate(ann, tune) });
+    this.persistDraft();
+  }
+
+  /** Removes a hand-named variant — see model.ts's manualAlternateRemovalFields. */
+  removeManualAlternate(annotationId: string, tuneId: string): void {
+    const ann = this.annotations.get(annotationId);
+    if (!ann) return;
+    this.annotations.set(annotationId, { ...ann, ...manualAlternateRemovalFields(ann, tuneId) });
     this.persistDraft();
   }
 

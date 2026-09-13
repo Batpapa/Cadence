@@ -49,6 +49,12 @@ export interface DetectionCardOptions {
    *  Choosing anything is only allowed once the detection is finalized
    *  (see the picker's own doc) — requires `getLatestDetection` too. */
   onSelectAlternate?: (annotationId: string, pick: DetectionAlternate | null) => void;
+  /** Adds a tune named by hand to the picker's list, choosing nothing — it is
+   *  ticked afterwards like any other variant. Without it the picker offers no
+   *  "Another tune…". */
+  onAddManualAlternate?: (annotationId: string, tune: DetectionAlternate) => void;
+  /** Removes a hand-named variant from the picker's list (its grey trash). */
+  onRemoveManualAlternate?: (annotationId: string, tuneId: string) => void;
   /** Freshest copy of a still-live detection, read on an interval while the
    *  picker is open — a live/import detection can still be revised (new
    *  alternates/scores) or retracted entirely while the user is browsing it.
@@ -245,6 +251,8 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
               ann,
               opts.getLatestDetection ? () => opts.getLatestDetection!(ann.id) : undefined,
               (pick) => opts.onSelectAlternate!(ann.id, pick),
+              opts.onAddManualAlternate ? (tune) => opts.onAddManualAlternate!(ann.id, tune) : undefined,
+              opts.onRemoveManualAlternate ? (tuneId) => opts.onRemoveManualAlternate!(ann.id, tuneId) : undefined,
             );
           } : undefined}
         >

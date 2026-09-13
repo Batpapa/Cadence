@@ -128,6 +128,8 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     getPinnedDeckIds: () => imp.pinnedDeckIds,
     onToggleLike: (id) => { imp.toggleLike(id); setDetections(imp.getDetections()); },
     onSelectAlternate: (id, pick) => { imp.selectAlternate(id, pick); setDetections(imp.getDetections()); },
+    onAddManualAlternate: (id, tune) => { imp.addManualAlternate(id, tune); setDetections(imp.getDetections()); },
+    onRemoveManualAlternate: (id, tuneId) => { imp.removeManualAlternate(id, tuneId); setDetections(imp.getDetections()); },
     getLatestDetection: (id) => imp.getDetections().find(a => a.id === id),
     // Clip extraction only once finalized: the full file is already sitting
     // right there in imp.file from the very first instant, unlike a live
