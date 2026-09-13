@@ -94,8 +94,10 @@ export class ImportSession {
   readonly sessionId: string;
   /** Editable during analysis (renderImportAnalysis title input) — same field save() persists under. */
   name = '';
-  /** Editable during analysis — no trustworthy t=0 for a file, so this starts
-   *  null unless the user sets it (same as a finished import's date in the summary). */
+  /** Editable during analysis. No trustworthy t=0 for a file: a new import
+   *  starts on a guess from the file's modification time (see fileStartDate),
+   *  null when that says nothing — and the user corrects or erases it here or
+   *  in the summary. */
   dateOverride: string | null = null;
   /** Overrides the persisted session's `source` on save() — only set when
    *  re-analyzing an existing session (sessionModule.ts's startReanalyze), so
@@ -340,7 +342,8 @@ export class ImportSession {
       id: this.sessionId,
       name: this.name || this.defaultName(),
       // No trustworthy t=0 for a file (mtime survives transfers erratically):
-      // dateless unless the user set one during analysis or in the summary.
+      // whatever the date field holds — the modification-time guess, or what
+      // the user made of it.
       date: this.dateOverride,
       // Prefer the worker's own sample-accurate clock over source.duration
       // when the latter was only a pre-decode estimate that undershot it
