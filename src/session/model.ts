@@ -84,6 +84,12 @@ export interface Detection {
    *  green check. Un-confirming (picking the selected tune again) is what
    *  hands it back to the algorithm. */
   userConfirmed: boolean;
+  /** Tunes the user named by hand for this detection ("Another tune…",
+   *  2026-09-13) — kept as variants in their own right, so one that has been
+   *  un-ticked is still in the list to tick again rather than gone with the
+   *  choice. Never scored. Optional: absent on every detection that never had
+   *  one, and on every session saved before it existed, which read as none. */
+  manualAlternates?: DetectionAlternate[];
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */
   liked: boolean;
@@ -334,7 +340,11 @@ export function viterbiPickOf(ann: Detection): DetectionAlternate {
  *  point of being able to confirm a result.
  *
  *  `null` is the way back: the detection returns to displaying whatever the
- *  decoder currently picks, and to being the decoder's to revise. */
+ *  decoder currently picks, and to being the decoder's to revise.
+ *
+ *  It never touches `manualAlternates`: a tune named by hand is added to the
+ *  list first (withManualAlternate) and picked from it like any other, so it is
+ *  still there whatever is picked next. */
 export function alternatePickFields(
   ann: Detection,
   pick: DetectionAlternate | null,
@@ -347,5 +357,34 @@ export function alternatePickFields(
     dance: chosen.dance,
     meter: chosen.meter,
     userConfirmed: pick !== null,
+  };
+}
+
+/** A detection's hand-named variants with `tune` among them — and nothing
+ *  chosen: adding a tune to the list is not a verdict on the detection (user
+ *  request, 2026-09-13: "Add", then tick it like the others). A tune the list
+ *  already holds, scored or named before, is not added a second time. */
+export function withManualAlternate(ann: Detection, tune: DetectionAlternate): DetectionAlternate[] | undefined {
+  const listed = [viterbiPickOf(ann), ...(ann.alternates ?? []), ...(ann.manualAlternates ?? [])];
+  return listed.some(o => o.tuneId === tune.tuneId)
+    ? ann.manualAlternates
+    : [...(ann.manualAlternates ?? []), tune];
+}
+
+/** What removing a hand-named variant writes onto a detection (user request,
+ *  2026-09-13: a grey trash on the row, no confirmation — it is only a line in
+ *  a list, and "Another tune…" brings it back).
+ *
+ *  If it is the tune currently ticked, the detection goes back to the decoder
+ *  as well: a confirmation cannot outlive the variant it chose, or the list
+ *  would keep showing a tune the user just removed from it. */
+export function manualAlternateRemovalFields(
+  ann: Detection,
+  tuneId: string,
+): Partial<Pick<Detection, 'tuneId' | 'settingId' | 'displayName' | 'dance' | 'meter' | 'userConfirmed' | 'manualAlternates'>> {
+  const left = (ann.manualAlternates ?? []).filter(o => o.tuneId !== tuneId);
+  return {
+    manualAlternates: left.length > 0 ? left : undefined,
+    ...(ann.userConfirmed && ann.tuneId === tuneId ? alternatePickFields(ann, null) : {}),
   };
 }

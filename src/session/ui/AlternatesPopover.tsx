@@ -3,10 +3,12 @@ import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
 import { AbcPreview } from './abcPreview';
+import { ManualTunePick } from './ManualTunePick';
 import { BUCKET_TEXT, tuneName } from './sessionUiShared';
 import { bucketOf } from '../recognition/viterbiSegmenter';
 import { DETECTION_TEMPORAL_CONFIG } from '../recognition/detectionTemporalConfig';
-import { viterbiPickOf } from '../model';
+import { viterbiPickOf, withManualAlternate, manualAlternateRemovalFields } from '../model';
+import { TrashIcon } from '../../components/icons';
 import type { DetectionAlternate, Detection } from '../model';
 
 // ── "Explore alternatives" picker ─────────────────────────────────────────────
@@ -28,6 +30,13 @@ import type { DetectionAlternate, Detection } from '../model';
 // listen to its sheet/synth rendering against the extracted audio, not just
 // read a name and a score.
 //
+// And when the right tune is none of them, "Another tune…" names it by hand
+// (2026-09-13) — see ManualTunePick. "Add" puts it in this list and chooses
+// nothing (user request): it is then ticked, and un-ticked, like any option,
+// and stays in the list either way (Detection.manualAlternates). It is told
+// apart by what it is not — neither the decoder's pick nor an alternate —
+// which is why it shows "manual" instead of a score it never had.
+//
 // Browsable but not choosable until finalized (2026-08-25, user request): a
 // live/import detection can still be revised — or vanish outright — while
 // this is open, so the picker polls `getLatest` (when given) and reacts:
@@ -48,6 +57,12 @@ const POLL_MS = 500;
 
 function optionsFor(ann: Detection, viterbiPick: DetectionAlternate): DetectionAlternate[] {
   const options = [viterbiPick, ...(ann.alternates ?? [])];
+  // Tunes named by hand stay in the list once named, ticked or not — see
+  // Detection.manualAlternates. After the scored ones, in the order named; a
+  // tune the recogniser has since come to score shows once, with its score.
+  for (const manual of ann.manualAlternates ?? []) {
+    if (!options.some(o => o.tuneId === manual.tuneId)) options.push(manual);
+  }
   // Defensive: the currently-displayed pick could in principle have fallen out
   // of the top-N alternates since it was chosen (the window range's candidate
   // set can shift slightly before a segment finalizes) — never let the picker
@@ -61,10 +76,12 @@ function optionsFor(ann: Detection, viterbiPick: DetectionAlternate): DetectionA
   return options;
 }
 
-function AlternatesPopover({ initial, getLatest, onSelect }: {
+function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
   initial: Detection;
   getLatest?: () => Detection | undefined;
   onSelect: (pick: DetectionAlternate | null) => void;
+  onAdd?: (tune: DetectionAlternate) => void;
+  onRemove?: (tuneId: string) => void;
 }) {
   // undefined = retracted (only reachable once getLatest is polled and comes
   // back empty — `initial` is always a real detection the card just showed).
@@ -83,6 +100,24 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
 
   const canChoose = ann.finalized;
   const viterbiPick = viterbiPickOf(ann);
+  const options = optionsFor(ann, viterbiPick);
+  /** Everything the recogniser actually scored. An option outside it can only
+   *  have been named by hand. */
+  const scored = [viterbiPick, ...(ann.alternates ?? [])];
+  const isManual = (opt: DetectionAlternate) => !scored.some(o => o.tuneId === opt.tuneId);
+
+  /** Stores the tune, and shows it here at once: a finished session has no
+   *  engine to poll, and a live one would only bring it back on the next tick. */
+  const add = (tune: DetectionAlternate) => {
+    onAdd?.(tune);
+    setAnn(prev => prev && { ...prev, manualAlternates: withManualAlternate(prev, tune) });
+  };
+  const remove = (tuneId: string) => {
+    onRemove?.(tuneId);
+    setAnn(prev => prev && { ...prev, ...manualAlternateRemovalFields(prev, tuneId) });
+  };
+  const isRemovable = (opt: DetectionAlternate) =>
+    !!onRemove && isManual(opt) && !!ann.manualAlternates?.some(m => m.tuneId === opt.tuneId);
 
   return (
     <div class="-mx-5 -my-4">
@@ -95,7 +130,7 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
         {t(canChoose ? 'sessions.alternates.howToPick' : 'sessions.alternates.notFinalizedYet')}
       </p>
       <div class="divide-y divide-border/50">
-        {optionsFor(ann, viterbiPick).map(opt => {
+        {options.map(opt => {
           const isViterbi = opt.tuneId === viterbiPick.tuneId;
           // Selection is the user's verdict, not the algorithm's: until they
           // have confirmed something, NOTHING is ticked here — the card is
@@ -133,13 +168,37 @@ function AlternatesPopover({ initial, getLatest, onSelect }: {
                 <div class="text-xs text-dim truncate">{opt.dance} · {opt.meter}</div>
               </div>
 
-              <span class={`text-xs font-mono tabular-nums shrink-0 ${BUCKET_TEXT[bucketOf(opt.meanScore, DETECTION_TEMPORAL_CONFIG)]}`}>
-                {Math.round(opt.meanScore * 100)}%
-              </span>
+              {/* A hand-picked tune was never scored: the percentage beside it
+                  would be the DETECTION's own score, belonging to another tune. */}
+              {isManual(opt) ? (
+                <span class="text-xs text-dim shrink-0" title={t('sessions.alternates.manualHint')}>
+                  {t('sessions.alternates.manual')}
+                </span>
+              ) : (
+                <span class={`text-xs font-mono tabular-nums shrink-0 ${BUCKET_TEXT[bucketOf(opt.meanScore, DETECTION_TEMPORAL_CONFIG)]}`}>
+                  {Math.round(opt.meanScore * 100)}%
+                </span>
+              )}
+              {/* Grey and unconfirmed on purpose: removing a hand-named line
+                  costs a search to undo, nothing more. Stops the row's click,
+                  or removing a variant would also tick it. */}
+              {isRemovable(opt) && (
+                <button
+                  type="button"
+                  class="shrink-0 flex items-center text-dim hover:text-danger transition-colors cursor-pointer"
+                  title={t('sessions.alternates.remove')}
+                  aria-label={t('sessions.alternates.remove')}
+                  onClick={(e) => { e.stopPropagation(); remove(opt.tuneId); }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <TrashIcon size={12} />
+                </button>
+              )}
             </div>
           );
         })}
       </div>
+      {canChoose && onAdd && <ManualTunePick onAdd={add} />}
     </div>
   );
 }
@@ -157,6 +216,8 @@ export function showAlternatesPopover(
   ann: Detection,
   getLatest: (() => Detection | undefined) | undefined,
   onSelect: (pick: DetectionAlternate | null) => void,
+  onAdd?: (tune: DetectionAlternate) => void,
+  onRemove?: (tuneId: string) => void,
 ): void {
   const body = document.createElement('div');
   // showModal's closeModal() only removes the overlay from the DOM — it has
@@ -176,6 +237,7 @@ export function showAlternatesPopover(
     closeModal();
     cleanup();
   };
-  render(<AlternatesPopover initial={ann} getLatest={getLatest} onSelect={handleSelect} />, body);
+  // Adding keeps the modal open: the tune is then ticked from the list.
+  render(<AlternatesPopover initial={ann} getLatest={getLatest} onSelect={handleSelect} onAdd={onAdd} onRemove={onRemove} />, body);
   showModal(t('sessions.alternates.title'), body, [], { maxWidth: '420px', onDismiss: cleanup });
 }

@@ -181,6 +181,8 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     getPinnedDeckIds: () => live.pinnedDeckIds,
     onToggleLike: (id) => { live.toggleLike(id); setDetections(live.getDetections()); },
     onSelectAlternate: (id, pick) => { live.selectAlternate(id, pick); setDetections(live.getDetections()); },
+    onAddManualAlternate: (id, tune) => { live.addManualAlternate(id, tune); setDetections(live.getDetections()); },
+    onRemoveManualAlternate: (id, tuneId) => { live.removeManualAlternate(id, tuneId); setDetections(live.getDetections()); },
     getLatestDetection: (id) => live.getDetections().find(a => a.id === id),
     // Clip extraction only once finalized (2026-08-21) — before that the
     // tune's own bounds/existence could still be revised.

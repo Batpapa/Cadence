@@ -12,7 +12,7 @@ import {
 import { isDriveConnected } from '../../services/driveService';
 import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
 import { TUNE_ANALYSER_MODULE_KEY } from '../model';
-import { alternatePickFields } from '../model';
+import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { showShareSessionModal } from './ShareSessionModal';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
@@ -558,6 +558,20 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       const target = session.annotations.find(a => a.id === id);
       if (!target) return;
       Object.assign(target, alternatePickFields(target, pick));
+      persist();
+      bump();
+    },
+    onAddManualAlternate: (id, tune) => {
+      const target = session.annotations.find(a => a.id === id);
+      if (!target) return;
+      target.manualAlternates = withManualAlternate(target, tune);
+      persist();
+      bump();
+    },
+    onRemoveManualAlternate: (id, tuneId) => {
+      const target = session.annotations.find(a => a.id === id);
+      if (!target) return;
+      Object.assign(target, manualAlternateRemovalFields(target, tuneId));
       persist();
       bump();
     },
