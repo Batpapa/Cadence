@@ -4,7 +4,6 @@ import type { AppContext } from '../../types';
 import type { ImportSession, ImportProgress } from '../importSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
-import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import {
   fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta,
@@ -23,7 +22,12 @@ import { useThrottled } from './throttle';
 // the previous callbacks, not additive) — this component is the ONE place
 // that calls it, fanning updates out to local state.
 //
-// Uses <DetectionCard>/<PitchShiftControl> directly as JSX. Earlier
+// No pitch control here (2026-09-13): an import outruns anyone reaching for
+// it, and changing it midway would analyse half the file at one pitch and half
+// at another. The instruments' pitch is the module's setting, read when the
+// import starts — see TuneAnalyserModuleData.pitchShift.
+//
+// Uses <DetectionCard> directly as JSX. Earlier
 // versions of this component mounted them via a synchronous Preact render()
 // call from inside a useMemo instead — reentrant (a render() call during
 // another component's own render pass) and it corrupted Preact's hooks
@@ -175,7 +179,6 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         <div class="flex-1 h-1.5 rounded-full bg-elevated overflow-hidden">
           <div class="h-full bg-accent transition-[width] duration-200" style={{ width: `${pct}%` }} />
         </div>
-        <PitchShiftControl value={imp.pitchShift} onChange={(s) => imp.setPitchShift(s)} />
         <button
           class="btn-danger px-3 shrink-0 disabled:opacity-50"
           disabled={cancelling}

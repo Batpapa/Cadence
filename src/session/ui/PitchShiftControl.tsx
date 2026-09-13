@@ -12,6 +12,11 @@ import { TuningForkIcon } from '../../components/icons';
 // Both are answered by moving the choice OUT of the bar: what stays there is one
 // round button the size of the pause button beside it, and the room freed up
 // buys the space to state the question in words.
+//
+// Since 2026-09-13 the value is the analyser module's setting, and this button
+// sits on the module's screen too — beside the gear, where it is set before a
+// recording or an import starts. It stays on the live screen only: an import is
+// over before anyone could reach for it.
 
 /** SIGN. The engine's parameter shifts the RECORDING's transcribed contour, and
  *  the tune index stores everything at written pitch with no transposition

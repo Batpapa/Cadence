@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findCardDetections, theSessionTuneId, detectionsOnCards, sessionsOf } from './detections';
+import { findCardDetections, theSessionTuneId, detectionsOnCards, sessionsOf, pitchShiftSetting } from './detections';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection } from './model';
 import type { Card } from '../types';
 
@@ -109,6 +109,27 @@ describe('detectionsOnCards', () => {
     expect(detectionsOnCards({ modules: {} })).toBe(true);
     expect(detectionsOnCards({ modules: { [TUNE_ANALYSER_MODULE_KEY]: { sessions: {} } } })).toBe(true);
     expect(detectionsOnCards({ modules: { [TUNE_ANALYSER_MODULE_KEY]: { sessions: {}, detectionsOnCards: false } } })).toBe(false);
+  });
+});
+
+describe('pitchShiftSetting', () => {
+  const withShift = (pitchShift: unknown) => ({ modules: { [TUNE_ANALYSER_MODULE_KEY]: { sessions: {}, pitchShift } } });
+
+  it('is as written until set', () => {
+    expect(pitchShiftSetting({})).toBe(0);
+    expect(pitchShiftSetting({ modules: { [TUNE_ANALYSER_MODULE_KEY]: { sessions: {} } } })).toBe(0);
+  });
+
+  it('reads what the control can write', () => {
+    expect(pitchShiftSetting(withShift(2))).toBe(2);
+    expect(pitchShiftSetting(withShift(-12))).toBe(-12);
+  });
+
+  // It arrives through a synced blob, so anything else means nothing.
+  it('ignores a value the control could never have written', () => {
+    expect(pitchShiftSetting(withShift(13))).toBe(0);
+    expect(pitchShiftSetting(withShift(1.5))).toBe(0);
+    expect(pitchShiftSetting(withShift('2'))).toBe(0);
   });
 });
 

@@ -73,6 +73,14 @@ export function detectionsOnCards(user: { modules?: Record<string, unknown> }): 
   return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.detectionsOnCards !== false;
 }
 
+/** The instruments' pitch setting, in engine semitones — 0 when absent, and
+ *  when the synced blob holds anything but a whole number the control could
+ *  have written. */
+export function pitchShiftSetting(user: { modules?: Record<string, unknown> }): number {
+  const value = (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.pitchShift;
+  return typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= 12 ? value : 0;
+}
+
 /** The module's slice of a user blob — read here rather than through db.ts so
  *  this stays a pure function of state, testable without a database. */
 export function sessionsOf(user: { modules?: Record<string, unknown> }): Record<string, Analysis> {

@@ -17,7 +17,7 @@ import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pending
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
-import { detectionsOnCards } from '../detections';
+import { detectionsOnCards, pitchShiftSetting } from '../detections';
 import { appState, mutate } from '../../store';
 import {
   activeLive, activeImport, setActiveLive, setActiveImport,
@@ -319,6 +319,7 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
   importPlaybackWarn.value = !canPlayFile(file);
 
   const imp = new ImportSession(file, {});
+  imp.pitchShift = pitchShiftSetting(appState.value);
   // A first guess at when it was recorded, in the date field from the start of
   // the analysis so it can be corrected there. The file's own record of it
   // first (recordingDate.ts — it survives being sent), its modification time
@@ -428,6 +429,9 @@ export async function startReanalyze(ctx: AppContext, session: Analysis): Promis
     imp.name = session.name;
     imp.dateOverride = session.date;
     imp.sourceOverride = session.source;
+    // The setting as it is NOW, not as it was for the first analysis: this
+    // re-runs the recording with what the user currently says about it.
+    imp.pitchShift = pitchShiftSetting(appState.value);
     setActiveImport(imp);
     ctx.navigate({ view: 'sessions' });
     await finishImportRun(ctx, imp, () => ctx.navigate({ view: 'sessions', sessionId: session.id }));
@@ -436,11 +440,24 @@ export async function startReanalyze(ctx: AppContext, session: Analysis): Promis
   }
 }
 
+/** Stores the instruments' pitch as the module's setting (engine semitones) —
+ *  see TuneAnalyserModuleData.pitchShift. Written by the tuning fork on the
+ *  module's screen and by the one on the live screen, so there is one value. */
+export function setPitchShiftSetting(semitones: number): void {
+  void mutate(s => {
+    const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+    // Absent is "as written", the one default this can have.
+    if (semitones === 0) delete m.pitchShift; else m.pitchShift = semitones;
+    s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
+  });
+}
+
 /** Starts a live session on the chosen source. MUST be reached synchronously
  *  from the user's click: capturing a tab needs transient user activation,
  *  which the browser spends on the first await — see openDeviceAudio(). */
 export function startLiveSession(ctx: AppContext, kind: LiveSourceKind = 'mic', folderId: string | null = null): void {
   const live = new LiveSession({}, kind);
+  live.pitchShift = pitchShiftSetting(appState.value);
   fileNewAnalysis(ctx, live.sessionId, folderId);
   setActiveLive(live);
   void live.start().catch((err: unknown) => {

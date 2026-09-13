@@ -18,6 +18,7 @@ import {
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { generatedSessionName } from '../sessionNaming';
 import { setActiveLive, lastLiveDump } from './sessionStore';
+import { setPitchShiftSetting } from './sessionModule';
 
 // ── Screen: live recording ───────────────────────────────────────────────────
 // Uses <DetectionCard>/<PitchShiftControl> directly as JSX, never the
@@ -237,7 +238,10 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
           onClick={onPauseClick}
           dangerouslySetInnerHTML={{ __html: paused ? playIcon(12) : pauseIcon(12) }}
         />
-        <PitchShiftControl value={live.pitchShift} onChange={(s) => live.setPitchShift(s)} />
+        {/* The same fork as on the module's screen, and the same value: it
+            starts from the setting, and changing it mid-recording — from the
+            next window on — is also the setting from now on. */}
+        <PitchShiftControl value={live.pitchShift} onChange={(s) => { live.setPitchShift(s); setPitchShiftSetting(s); }} />
         <button class="btn-danger px-3 shrink-0" disabled={stopping} onClick={() => { void onStopClick(); }}>
           {t('sessions.stop')}
         </button>

@@ -113,14 +113,11 @@ export class ImportSession {
    *  ENGINE sign: positive raises the transcribed contour to meet an index held
    *  at written pitch, so a recording a tone DOWN is +2 here — the opposite of
    *  what a musician says, flipped for display in PitchShiftControl.tsx.
-   *  In-memory only. */
+   *  Set once, before start(), from the module's setting (sessionModule.tsx) —
+   *  never changed while running since 2026-09-13: an import outruns anyone
+   *  reaching for a control, and a change midway would analyse the file at two
+   *  pitches. See TuneAnalyserModuleData.pitchShift. */
   pitchShift = 0;
-
-  /** Live-adjustable: affects analysis windows from now on, not past ones. */
-  setPitchShift(semitones: number): void {
-    this.pitchShift = semitones;
-    this.recognition?.setPitchShift(semitones);
-  }
 
   constructor(file: File, callbacks: ImportSessionCallbacks = {}, sessionId?: string) {
     this.file = file;

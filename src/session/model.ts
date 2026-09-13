@@ -180,6 +180,14 @@ export interface TuneAnalyserModuleData {
    *  library — a flag on this module's own slice rather than on User, which
    *  knows nothing about panels. */
   detectionsOnCards?: boolean;
+  /** How far the instruments are tuned off written pitch, in ENGINE semitones
+   *  (see PitchShiftControl's `flip` for why that is the opposite sign of what a
+   *  player says). Absent = as written. The module's own setting since
+   *  2026-09-13: a file import runs too fast to catch with a control on its own
+   *  screen, so the value is chosen on the module's screen before anything
+   *  starts, and read at the start of a live recording, an import and a
+   *  re-analysis alike. Read it through `pitchShiftSetting()`. */
+  pitchShift?: number;
   /** Copy the recording to Drive for sessions saved from now on, so they can be
    *  played on the user's other devices — and so the device is not holding the
    *  only copy of them.
