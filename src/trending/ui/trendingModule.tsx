@@ -236,6 +236,25 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
   const [dbState, setDbState] = useState<PopularityDb | null>(null);
   const [startIdx, setStartIdx] = useState(0);
   const [endIdx, setEndIdx] = useState(0);
+
+  // ── The two date fields ──
+  // What they SHOW is the date typed or picked, and the code never writes over
+  // it; the table runs on the weekly snapshot closest to it (startIdx/endIdx).
+  // They used to show that snapshot instead, rewritten on every `change` — and
+  // a browser fires `change` for each complete date WHILE a year is being
+  // typed ("2" is already 0002-…), so the field jumped under the keys, and a
+  // day picked in the calendar came back as another one (field report,
+  // 2026-09-13). Refs beside the state, because a handler reads them in the
+  // same tick it sets them (pushRoute), before any re-render.
+  const [fromText, setFromText] = useState('');
+  const [toText, setToText] = useState('');
+  /** The last value each field held that the table acted on — what leaving a
+   *  field with an incomplete or impossible date goes back to. */
+  const acceptedFromRef = useRef('');
+  const acceptedToRef = useRef('');
+  const acceptFrom = (v: string) => { acceptedFromRef.current = v; setFromText(v); };
+  const acceptTo = (v: string) => { acceptedToRef.current = v; setToText(v); };
+
   const [gainMode, setGainMode] = useState<GainMode>(initial?.gainMode ?? 'percent');
   const [deflate, setDeflate] = useState(() => deflateFromRoute(initial?.deflate));
   const [threshValue, setThreshValue] = useState(String(initial?.minTunebooks ?? DEFAULT_MIN_TUNEBOOKS));
@@ -272,10 +291,15 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
   const pushRoute = (db: PopularityDb, gm: GainMode, th: string, si: number, ei: number, df = deflate) => {
     replaceRoute({
       view: 'trending',
-      from: db.snapshots[si] ? toDateInputValue(db.snapshots[si]!) : undefined,
-      to: db.snapshots[ei] ? toDateInputValue(db.snapshots[ei]!) : undefined,
+      // The dates as chosen, so coming back shows what was chosen; they
+      // resolve to the same snapshots on the way in.
+      from: acceptedFromRef.current || (db.snapshots[si] ? toDateInputValue(db.snapshots[si]!) : undefined),
+      to: acceptedToRef.current || (db.snapshots[ei] ? toDateInputValue(db.snapshots[ei]!) : undefined),
       gainMode: gm,
-      minTunebooks: Number(th) || undefined,
+      // Not `Number(th) || undefined`: 0 is a threshold someone chose ("every
+      // tune"), and that dropped it, so coming back restored the default 300.
+      // Only an empty or unreadable field is "not set".
+      minTunebooks: th.trim() !== '' && Number.isFinite(Number(th)) ? Number(th) : undefined,
       deflate: df,
     });
   };
@@ -316,6 +340,14 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
         si = Math.min(startIdx, db.snapshots.length - 1);
       }
 
+      if (isFirstLoad) {
+        acceptFrom(initial?.from ?? toDateInputValue(db.snapshots[si]!));
+        acceptTo(initial?.to ?? toDateInputValue(db.snapshots[ei]!));
+      } else if (wasLatest) {
+        // "Up to now" stays up to now once a newer snapshot arrives.
+        acceptTo(toDateInputValue(db.snapshots[ei]!));
+      }
+
       setStartIdx(si);
       setEndIdx(ei);
       recompute(db, gainMode, threshValue, si, ei);
@@ -330,6 +362,13 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
   };
 
   useEffect(() => { void load(); /* eslint-disable-line */ }, []);
+
+  /** A date the table can act on: complete, and inside the synced history.
+   *  ISO dates compare correctly as strings. */
+  const inHistory = (db: PopularityDb, v: string) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(v)
+    && v >= toDateInputValue(db.snapshots[0]!)
+    && v <= toDateInputValue(db.snapshots[db.snapshots.length - 1]!);
 
   const allRowsRef = useRef<TuneRow[]>([]);
   useEffect(() => { allRowsRef.current = allRows; }, [allRows]);
@@ -373,16 +412,23 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
               type="date"
               class="text-xs px-2 py-1 rounded border border-border bg-bg text-primary"
               min={toDateInputValue(dbState.snapshots[0]!)}
-              max={toDateInputValue(dbState.snapshots[dbState.snapshots.length - 1]!)}
-              value={toDateInputValue(dbState.snapshots[startIdx]!)}
+              // Never past the other end: a period that runs backwards is not
+              // a period.
+              max={toText || toDateInputValue(dbState.snapshots[dbState.snapshots.length - 1]!)}
+              value={fromText}
               onChange={(e) => {
                 const v = (e.target as HTMLInputElement).value;
-                if (!v) return;
-                const si = closestSnapshotIndex(dbState.snapshots, new Date(v).getTime());
+                setFromText(v);
+                // Mid-typing, or after the other end: shown, not acted on.
+                if (!inHistory(dbState, v) || v > acceptedToRef.current) return;
+                acceptFrom(v);
+                const si = Math.min(closestSnapshotIndex(dbState.snapshots, new Date(v).getTime()), endIdx);
                 setStartIdx(si);
                 recompute(dbState, gainMode, threshValue, si, endIdx);
                 pushRoute(dbState, gainMode, threshValue, si, endIdx);
               }}
+              onBlur={() => setFromText(acceptedFromRef.current)}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             />
           </div>
 
@@ -391,17 +437,21 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
             <input
               type="date"
               class="text-xs px-2 py-1 rounded border border-border bg-bg text-primary"
-              min={toDateInputValue(dbState.snapshots[0]!)}
+              min={fromText || toDateInputValue(dbState.snapshots[0]!)}
               max={toDateInputValue(dbState.snapshots[dbState.snapshots.length - 1]!)}
-              value={toDateInputValue(dbState.snapshots[endIdx]!)}
+              value={toText}
               onChange={(e) => {
                 const v = (e.target as HTMLInputElement).value;
-                if (!v) return;
-                const ei = closestSnapshotIndex(dbState.snapshots, new Date(v).getTime());
+                setToText(v);
+                if (!inHistory(dbState, v) || v < acceptedFromRef.current) return;
+                acceptTo(v);
+                const ei = Math.max(closestSnapshotIndex(dbState.snapshots, new Date(v).getTime()), startIdx);
                 setEndIdx(ei);
                 recompute(dbState, gainMode, threshValue, startIdx, ei);
                 pushRoute(dbState, gainMode, threshValue, startIdx, ei);
               }}
+              onBlur={() => setToText(acceptedToRef.current)}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             />
           </div>
 

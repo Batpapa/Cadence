@@ -335,6 +335,9 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     body.appendChild(img);
 
   } else if (m === 'application/pdf') {
+    // An <embed> loading a blob: URL is governed by the page's object-src —
+    // which must keep allowing blob: (webpack.config.js's CSP). With 'none'
+    // this rendered an empty frame and said nothing (2026-09-06 to 14).
     const embed = document.createElement('embed'); embed.src = entryToObjectUrl(entry);
     embed.type = 'application/pdf'; embed.className = 'w-full rounded';
     embed.style.height = mediaMaxH;
