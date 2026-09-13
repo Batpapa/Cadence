@@ -96,14 +96,29 @@ Reste la contention : `NEXT.md` mesure que le débit sature vers 8 processus
 (bande passante mémoire, pas calcul), le temps par processus passant d'environ
 10 s à 17 s par évaluation. À six processus, compter ×1,7 à ×2,5.
 
+> ⚠️ **Chiffres périmés — remesurés deux fois le 2026-09-13.** Après
+> l'optimisation du décodage puis la timeline creuse (voir `NEXT.md`), sur ce
+> corpus à sept sessions : **2,1 s par évaluation en processus unique**, et le
+> débit plafonne toujours vers **6 processus**, à **1,67 évaluation/s**
+> (12 processus n'en donnent que 2 % de plus). Les six processus de la commande
+> ci-dessus restent le bon réglage, et **la campagne de 720 évaluations prend
+> désormais ~7 minutes au lieu de 1 h 20**. Le balayage de `study.test.ts`,
+> chiffré à 1 h 45, tourne dans **un seul** processus : compter ~9 minutes.
+> (Une version précédente de cet avertissement annonçait 4 minutes, en divisant
+> à tort par le débit parallèle.)
+
 **Essai de validation déjà fait** : la commande ci-dessus tourne, sélectionne bien
 12 chaînes dont 2 par shard, et écrit un fichier dont les évaluations portent
 `total = 341` — le corpus à sept sessions. Pour référence, les deux tirages
 initiaux (aléatoires, avant tout recuit) donnaient déjà `nullRatio3` à 317/341
 pour 44 faux positifs, là où la production est à 312/341 pour 20.
 
-**Mémoire : ~680 Mo par processus** (une chaîne garde les timelines des sept
-sessions, 42,4 M cellules × 2 tableaux), donc ~4 Go pour la campagne.
+**Mémoire :** les timelines des sept sessions et du bruit pèsent désormais
+**24 Mo** au total (timeline creuse du 2026-09-13 ; c'était ~660 Mo, soit
+l'essentiel des ~680 Mo par processus mesurés ici auparavant). Ce qui reste lourd
+est transitoire : chaque décodage écrit sa table DP dense, ~350 Mo pour Audio F.
+La mémoire par processus n'a pas été remesurée, mais elle ne limite plus le
+nombre de processus sur une machine à 32 Go.
 
 ---
 

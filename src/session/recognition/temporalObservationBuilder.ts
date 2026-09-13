@@ -3,11 +3,12 @@ import type { DetectionTemporalConfig } from './detectionTemporalConfig';
 
 // ── Temporal observation builder ────────────────────────────────────────────
 // RecognitionResult (WindowResult[]) -> TemporalTimeline. Pure, no DP here —
-// just reshapes "N windows, each with up to N candidates" into "one dense
-// probability array per candidate tuneId, 0 where absent that window", which
-// is what viterbiDetector.ts's Viterbi sweep needs. See the 2026-08-13 spec's
-// section 2 ("un morceau absent du top 100 doit être considéré comme ayant
-// une probabilité de 0" — NOT simply ignored).
+// just reshapes "N windows, each with up to N candidates" into "one row per
+// candidate tuneId", which is what viterbiDetector.ts's Viterbi sweep needs. A
+// tune absent from a window reads as probability 0 there — see the 2026-08-13
+// spec's section 2 ("un morceau absent du top 100 doit être considéré comme
+// ayant une probabilité de 0" — NOT simply ignored). Stored SPARSE since
+// 2026-09-13: see SparseRow.
 
 export const UNKNOWN_STATE = '__UNKNOWN__';
 
@@ -18,6 +19,28 @@ export interface TuneMeta {
   meter: string;
 }
 
+/** One admitted tune's history: the windows it was a candidate in, ascending,
+ *  as parallel arrays — `t[k]` is a window index, `score[k]` its probability
+ *  there, `rank[k]` its 1-based position in that window's candidate list.
+ *
+ *  Sparse since 2026-09-13. The dense form held one probability AND one rank
+ *  per (window × admitted tune): 42,4 M cells over the ranking-study corpus,
+ *  662 MB retained, to record about ten candidates per window — 0,27% of the
+ *  cells. The measured throughput ceiling of the study (6 processes on 20
+ *  cores, saturated on memory bandwidth) came from exactly that. Readers go
+ *  through `observationAt` and `rowStartAt`, which give the dense reading
+ *  back: 0 wherever the tune was not a candidate, and no rank there.
+ *
+ *  At most one entry per window. Should a window ever list the same tune twice
+ *  — FolkFriend's output is deduplicated by tuneId, and three real fixtures
+ *  show no duplicate — the LATER entry replaces the earlier one, which is what
+ *  the dense writer did by overwriting its cell. */
+export interface SparseRow {
+  t: number[];
+  score: number[];
+  rank: number[];
+}
+
 export interface TemporalTimeline {
   windows: WindowResult[];
   /** The filtered global candidate set — every real tuneId Viterbi will
@@ -26,13 +49,39 @@ export interface TemporalTimeline {
   /** Best-scoring incarnation's metadata seen for each tuneId (settingId can
    *  drift between settings of the same tune window to window). */
   meta: Map<string, TuneMeta>;
-  /** observations.get(tuneId)![windowIndex] = probability, 0 if that tuneId
-   *  wasn't in this window's candidates. */
-  observations: Map<string, number[]>;
-  /** ranks.get(tuneId)![windowIndex] = 1-based rank that window, null if
-   *  absent. Not used by the V1 scoring — kept for a V2 that wants it
-   *  (see DetectionTemporalConfig.observationScoreFn). */
-  ranks: Map<string, (number | null)[]>;
+  /** One row per admitted tune — exactly the tuneIds, no more. `rows.has` is
+   *  therefore the "was this tune ever admitted" test the dense maps' `has`
+   *  used to be. */
+  rows: Map<string, SparseRow>;
+}
+
+/** Index of the first entry at or after window `t` (`row.t.length` if none). */
+export function rowStartAt(row: SparseRow, t: number): number {
+  let lo = 0, hi = row.t.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (row.t[mid]! < t) lo = mid + 1; else hi = mid;
+  }
+  return lo;
+}
+
+/** Probability of `tuneId` at window `t`: 0 where it was not a candidate, as
+ *  the dense array read. An unadmitted tune also reads 0; a caller that must
+ *  tell "never admitted" from "absent this window" checks `rows.has` first. */
+export function observationAt(tl: TemporalTimeline, tuneId: string, t: number): number {
+  const row = tl.rows.get(tuneId);
+  if (!row) return 0;
+  const k = rowStartAt(row, t);
+  return k < row.t.length && row.t[k] === t ? row.score[k]! : 0;
+}
+
+/** Appends window `t`'s entry — or replaces it, if the row already ends at `t`
+ *  (the duplicate-in-window case described on SparseRow). Rows are only ever
+ *  written in ascending window order, which keeps them sorted. */
+function pushRowEntry(row: SparseRow, t: number, score: number, rank: number): void {
+  const n = row.t.length;
+  if (n > 0 && row.t[n - 1] === t) { row.score[n - 1] = score; row.rank[n - 1] = rank; return; }
+  row.t.push(t); row.score.push(score); row.rank.push(rank);
 }
 
 // ── Pre-Viterbi flat-window filter (2026-08-17, wired into production 2026-08-18) ──
@@ -124,18 +173,21 @@ export function filterByTempoSpread(windows: WindowResult[], threshold: number):
 //     firstSeenOrder ∩ cleared, in firstSeenOrder's order.
 //  3. maxProbSeen only ever increases (best-ever, not "current"), so a tuneId
 //     that scores weak early and strong later must NOT be dropped, and its
-//     dense observations/ranks arrays must contain its REAL pre-crossing
-//     history (buildTemporalTimeline reconstructs this for free by scanning
-//     the whole recording at once; the incremental builder must reconstruct
-//     it explicitly, since by the time a tuneId crosses, its earlier
-//     appearances already happened and can't be "replayed" from the current
-//     window alone). `appearances` (a sparse, append-only, per-tuneId log of
-//     every window it was ever a candidate in) exists exactly for this: when
-//     a tuneId crosses at window t, its dense arrays are materialized in one
-//     O(t) pass from this log, not by rescanning `filteredWindows`. Each
-//     tuneId is backfilled at most once (the moment it crosses), so the
-//     total backfill cost across a whole session is bounded by O(T·S), not
-//     quadratic.
+//     row must contain its REAL pre-crossing history (buildTemporalTimeline
+//     reconstructs this for free by scanning the whole recording at once; the
+//     incremental builder must reconstruct it explicitly, since by the time a
+//     tuneId crosses, its earlier appearances already happened and can't be
+//     "replayed" from the current window alone). `appearances` (a sparse,
+//     append-only, per-tuneId log of every window it was ever a candidate in)
+//     exists exactly for this: when a tuneId crosses at window t, its row is
+//     built from this log, not by rescanning `filteredWindows`. Each tuneId is
+//     backfilled at most once (the moment it crosses), so the total backfill
+//     cost across a session is bounded by the number of appearances.
+//
+// Since 2026-09-13 both builders are sparse (see SparseRow): a from-scratch
+// build costs O(total candidates), a push O(candidates in that window). The
+// O(T·S) figures above describe the dense form this replaced, and stay as the
+// record of why this class exists.
 export class IncrementalTimelineBuilder {
   private readonly cfg: DetectionTemporalConfig;
   private readonly filteredWindows: WindowResult[] = [];
@@ -145,8 +197,8 @@ export class IncrementalTimelineBuilder {
   private readonly firstSeenSet = new Set<string>();
   private readonly cleared = new Set<string>();
   private readonly appearances = new Map<string, { t: number; score: number; rank: number }[]>();
-  private readonly observations = new Map<string, number[]>();
-  private readonly ranks = new Map<string, (number | null)[]>();
+  /** Rows of the CLEARED tunes only, one per entry of tuneIds — see SparseRow. */
+  private readonly rows = new Map<string, SparseRow>();
   private tuneIds: string[] = [];
 
   constructor(cfg: DetectionTemporalConfig) {
@@ -163,7 +215,7 @@ export class IncrementalTimelineBuilder {
   /** The current TemporalTimeline view, without processing anything new —
    *  same object identity as the last push()'s return value. */
   current(): TemporalTimeline {
-    return { windows: this.filteredWindows, tuneIds: this.tuneIds, meta: this.meta, observations: this.observations, ranks: this.ranks };
+    return { windows: this.filteredWindows, tuneIds: this.tuneIds, meta: this.meta, rows: this.rows };
   }
 
   /** Feeds ONE new raw window (must be the NEXT one after every window fed so
@@ -175,15 +227,10 @@ export class IncrementalTimelineBuilder {
     const t = this.filteredWindows.length;
     this.filteredWindows.push(fw!);
 
-    // Every tuneId cleared BEFORE this window grows by exactly one
-    // zero/null slot by default — mirrors buildTemporalTimeline's Pass 2,
-    // which zero-fills every cleared tuneId's array for every window, then
-    // overwrites only where a candidate is actually present. O(|cleared|)
-    // per push, O(T·S) total over a session.
-    for (const id of this.cleared) {
-      this.observations.get(id)!.push(0);
-      this.ranks.get(id)!.push(null);
-    }
+    // No per-window growth any more: a row records only the windows its tune
+    // was a candidate in, so a cleared tune absent from this window costs
+    // nothing here. (The dense form appended a 0 and a null to every cleared
+    // tune on every push — O(|cleared|) per window, O(T·S) over a session.)
 
     const newlyCleared: string[] = [];
     fw!.candidates.forEach((c, idx) => {
@@ -203,10 +250,8 @@ export class IncrementalTimelineBuilder {
       }
 
       if (this.cleared.has(c.tuneId)) {
-        // Already cleared before this window — write into the slot the
-        // growth loop above just appended.
-        this.observations.get(c.tuneId)![t] = c.score;
-        this.ranks.get(c.tuneId)![t] = rank;
+        // Already cleared before this window — this window joins its row.
+        pushRowEntry(this.rows.get(c.tuneId)!, t, c.score, rank);
       } else if (this.maxProbSeen.get(c.tuneId)! >= this.cfg.minCandidateProbability) {
         // Crosses the threshold for the first time THIS window — maxProbSeen
         // only ever increases, so this is the only place a crossing can ever
@@ -215,15 +260,14 @@ export class IncrementalTimelineBuilder {
       }
     });
 
-    // Materialize each newly-cleared tuneId's dense history in one O(t) pass
-    // from its sparse appearance log — includes THIS window (already logged
-    // above), so it does not also go through the growth loop.
+    // Build each newly-cleared tuneId's row from its appearance log — which
+    // includes THIS window, logged above. Replayed through pushRowEntry, so a
+    // window logged twice keeps its later entry, exactly as the dense
+    // backfill's `obsArr[a.t] = a.score` overwrite did.
     for (const id of newlyCleared) {
-      const obsArr = new Array<number>(t + 1).fill(0);
-      const rankArr: (number | null)[] = new Array(t + 1).fill(null);
-      for (const a of this.appearances.get(id)!) { obsArr[a.t] = a.score; rankArr[a.t] = a.rank; }
-      this.observations.set(id, obsArr);
-      this.ranks.set(id, rankArr);
+      const row: SparseRow = { t: [], score: [], rank: [] };
+      for (const a of this.appearances.get(id)!) pushRowEntry(row, a.t, a.score, a.rank);
+      this.rows.set(id, row);
       this.cleared.add(id);
     }
 
@@ -236,11 +280,16 @@ export class IncrementalTimelineBuilder {
 /** Dev/test-only helper (not used on any hot path): first mismatch between
  *  two TemporalTimelines built over the SAME windows, or null if they agree
  *  — tuneIds (values AND order — see IncrementalTimelineBuilder's doc on why
- *  order matters), meta, and every tuneId's observations/ranks arrays (length
- *  and content). Used by temporalTimelineStreamingEquivalence.test.ts, the
+ *  order matters), meta, the window count, and every tuneId's sparse row (all
+ *  three arrays). Used by temporalTimelineStreamingEquivalence.test.ts, the
  *  same role describeViterbiDivergence plays for the streaming Viterbi
  *  decoder. */
 export function describeTimelineDivergence(a: TemporalTimeline, b: TemporalTimeline): string | null {
+  // The dense rows carried T in their length, so comparing them compared the
+  // window count too. A sparse row does not, so it is checked on its own.
+  if (a.windows.length !== b.windows.length) {
+    return `windows: a=${a.windows.length} b=${b.windows.length}`;
+  }
   if (a.tuneIds.length !== b.tuneIds.length || a.tuneIds.some((id, i) => id !== b.tuneIds[i])) {
     return `tuneIds: a=${JSON.stringify(a.tuneIds)} b=${JSON.stringify(b.tuneIds)}`;
   }
@@ -249,20 +298,22 @@ export function describeTimelineDivergence(a: TemporalTimeline, b: TemporalTimel
     if (JSON.stringify(am) !== JSON.stringify(bm)) {
       return `meta[${id}]: a=${JSON.stringify(am)} b=${JSON.stringify(bm)}`;
     }
-    const ao = a.observations.get(id), bo = b.observations.get(id);
-    if (!ao || !bo || ao.length !== bo.length || ao.some((v, i) => v !== bo[i])) {
-      return `observations[${id}]: a=${JSON.stringify(ao)} b=${JSON.stringify(bo)}`;
-    }
-    const ar = a.ranks.get(id), br = b.ranks.get(id);
-    if (!ar || !br || ar.length !== br.length || ar.some((v, i) => v !== br[i])) {
-      return `ranks[${id}]: a=${JSON.stringify(ar)} b=${JSON.stringify(br)}`;
+    // Equal sparse rows <=> equal dense arrays: an absent window is 0/null on
+    // both sides, and a present window always carries a rank — so a candidate
+    // scoring exactly 0 is still told apart from an absent one.
+    const ar = a.rows.get(id), br = b.rows.get(id);
+    if (!ar || !br || !sameNumbers(ar.t, br.t) || !sameNumbers(ar.score, br.score) || !sameNumbers(ar.rank, br.rank)) {
+      return `rows[${id}]: a=${JSON.stringify(ar)} b=${JSON.stringify(br)}`;
     }
   }
   return null;
 }
 
+function sameNumbers(x: number[], y: number[]): boolean {
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
 export function buildTemporalTimeline(windows: WindowResult[], cfg: DetectionTemporalConfig): TemporalTimeline {
-  const T = windows.length;
 
   // Pass 1: global candidate set = every tuneId whose best-ever probability
   // in this recording clears minCandidateProbability. A tune that's
@@ -282,21 +333,16 @@ export function buildTemporalTimeline(windows: WindowResult[], cfg: DetectionTem
     .filter(([, p]) => p >= cfg.minCandidateProbability)
     .map(([id]) => id);
 
-  // Pass 2: dense per-tune arrays, zero-filled, populated only where present.
-  const observations = new Map<string, number[]>();
-  const ranks = new Map<string, (number | null)[]>();
-  for (const id of tuneIds) {
-    observations.set(id, new Array(T).fill(0));
-    ranks.set(id, new Array(T).fill(null));
-  }
+  // Pass 2: one sparse row per admitted tune, written in window order.
+  const rows = new Map<string, SparseRow>();
+  for (const id of tuneIds) rows.set(id, { t: [], score: [], rank: [] });
   windows.forEach((w, t) => {
     w.candidates.forEach((c, idx) => {
-      const obsArr = observations.get(c.tuneId);
-      if (!obsArr) return; // filtered out of the global candidate set
-      obsArr[t] = c.score;
-      ranks.get(c.tuneId)![t] = idx + 1;
+      const row = rows.get(c.tuneId);
+      if (!row) return; // filtered out of the global candidate set
+      pushRowEntry(row, t, c.score, idx + 1);
     });
   });
 
-  return { windows, tuneIds, meta, observations, ranks };
+  return { windows, tuneIds, meta, rows };
 }

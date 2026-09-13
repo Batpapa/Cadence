@@ -35,32 +35,66 @@ function winWithTempo(i: number, candidates: WindowCandidate[], tempoScores: num
   };
 }
 
+type Timeline = ReturnType<typeof buildTemporalTimeline>;
+
+/** Expands a sparse row back into the dense reading these tests were written
+ *  against — one value per window, 0 where the tune was not a candidate — so
+ *  they keep asserting the same observable values the timeline always gave. */
+function denseObs(tl: Timeline, id: string): number[] | undefined {
+  const row = tl.rows.get(id);
+  if (!row) return undefined;
+  const out = new Array<number>(tl.windows.length).fill(0);
+  row.t.forEach((t, k) => { out[t] = row.score[k]!; });
+  return out;
+}
+
+/** Same, for ranks: null where the tune was not a candidate. */
+function denseRanks(tl: Timeline, id: string): (number | null)[] | undefined {
+  const row = tl.rows.get(id);
+  if (!row) return undefined;
+  const out: (number | null)[] = new Array<number | null>(tl.windows.length).fill(null);
+  row.t.forEach((t, k) => { out[t] = row.rank[k]!; });
+  return out;
+}
+
 describe('buildTemporalTimeline', () => {
   it('zero-fills a tuneId absent from a window rather than skipping it', () => {
     const windows = [win(0, [cand('A', 0.9)]), win(1, []), win(2, [cand('A', 0.8)])];
     const t = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
-    expect(t.observations.get('A')).toEqual([0.9, 0, 0.8]);
+    expect(denseObs(t, 'A')).toEqual([0.9, 0, 0.8]);
+  });
+
+  it('stores only the windows a tune was a candidate in — the memory the dense form wasted', () => {
+    const windows = [win(0, [cand('A', 0.9)]), win(1, []), win(2, [cand('A', 0.8)])];
+    const t = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
+    expect(t.rows.get('A')).toEqual({ t: [0, 2], score: [0.9, 0.8], rank: [1, 1] });
   });
 
   it('keeps a tune whose best score is only reached in a later window', () => {
     const windows = [win(0, [cand('A', 0.1)]), win(1, [cand('A', 0.15)]), win(2, [cand('A', 0.9)])];
     const t = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
     expect(t.tuneIds).toContain('A');
-    expect(t.observations.get('A')).toEqual([0.1, 0.15, 0.9]);
+    expect(denseObs(t, 'A')).toEqual([0.1, 0.15, 0.9]);
   });
 
   it('drops a tune whose best-ever score never clears minCandidateProbability', () => {
     const windows = [win(0, [cand('A', 0.05)]), win(1, [cand('A', 0.1)])];
     const t = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
     expect(t.tuneIds).not.toContain('A');
-    expect(t.observations.has('A')).toBe(false);
+    expect(t.rows.has('A')).toBe(false);
   });
 
   it('records the 1-based rank per window, null where absent', () => {
     const windows = [win(0, [cand('A', 0.9), cand('B', 0.8)]), win(1, [cand('B', 0.7)])];
     const t = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
-    expect(t.ranks.get('A')).toEqual([1, null]);
-    expect(t.ranks.get('B')).toEqual([2, 1]);
+    expect(denseRanks(t, 'A')).toEqual([1, null]);
+    expect(denseRanks(t, 'B')).toEqual([2, 1]);
+  });
+
+  it('a tune listed twice in one window keeps its LATER entry, as the dense cell overwrite did', () => {
+    const windows = [win(0, [cand('A', 0.9), cand('A', 0.5)])];
+    const t = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
+    expect(t.rows.get('A')).toEqual({ t: [0], score: [0.5], rank: [2] });
   });
 });
 
@@ -179,7 +213,7 @@ describe('IncrementalTimelineBuilder', () => {
     const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
     let timeline;
     for (const w of windows) timeline = builder.push(w);
-    expect(timeline!.observations.get('X')).toEqual([0.05, 0.06, 0.9]);
+    expect(denseObs(timeline!, 'X')).toEqual([0.05, 0.06, 0.9]);
     const reference = buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG);
     expect(describeTimelineDivergence(timeline!, reference)).toBeNull();
   });
@@ -197,8 +231,17 @@ describe('IncrementalTimelineBuilder', () => {
     const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
     let timeline;
     for (const w of windows) timeline = builder.push(w);
-    expect(timeline!.observations.get('A')).toEqual([0.9, 0, 0.8]);
-    expect(timeline!.ranks.get('A')).toEqual([1, null, 1]);
+    expect(denseObs(timeline!, 'A')).toEqual([0.9, 0, 0.8]);
+    expect(denseRanks(timeline!, 'A')).toEqual([1, null, 1]);
+  });
+
+  it('a tune listed twice in one window keeps its LATER entry, same as buildTemporalTimeline', () => {
+    const windows = [win(0, [cand('A', 0.9), cand('A', 0.5)]), win(1, [cand('A', 0.7), cand('A', 0.8)])];
+    const builder = new IncrementalTimelineBuilder(DETECTION_TEMPORAL_CONFIG);
+    let timeline;
+    for (const w of windows) timeline = builder.push(w);
+    expect(timeline!.rows.get('A')).toEqual({ t: [0, 1], score: [0.5, 0.8], rank: [2, 2] });
+    expect(describeTimelineDivergence(timeline!, buildTemporalTimeline(windows, DETECTION_TEMPORAL_CONFIG))).toBeNull();
   });
 
   it('drops a tuneId whose best-ever score never clears minCandidateProbability, same as buildTemporalTimeline', () => {
@@ -207,6 +250,6 @@ describe('IncrementalTimelineBuilder', () => {
     let timeline;
     for (const w of windows) timeline = builder.push(w);
     expect(timeline!.tuneIds).not.toContain('A');
-    expect(timeline!.observations.has('A')).toBe(false);
+    expect(timeline!.rows.has('A')).toBe(false);
   });
 });

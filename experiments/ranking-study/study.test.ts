@@ -1,6 +1,6 @@
 import { it, expect } from 'vitest';
 import { DETECTION_TEMPORAL_CONFIG as CFG } from '../../src/session/recognition/detectionTemporalConfig';
-import { SESSIONS, NOISE, DIR, loadWindows, buildTimeline, decode, type DetectedSeg, type TransitionWeights, type ConfirmRule } from './pipeline';
+import { SESSIONS, NOISE, DIR, loadWindows, buildTimeline, decode, windowTops, type DetectedSeg, type TransitionWeights, type ConfirmRule } from './pipeline';
 import { loadTruth, scoreSession, type TruthEntry } from './truth';
 import { ALL_TRANSFORMS, identity, type ObservationTransform } from './transforms';
 
@@ -140,18 +140,7 @@ function evaluate(
 const QUANTILES = [0.0005, 0.002, 0.005, 0.01, 0.02, 0.035, 0.05, 0.08, 0.12, 0.20, 0.35, 0.55, 0.80];
 
 function floorGrid(timelines: { tl: ReturnType<typeof buildTimeline> }[], n: number): number[] {
-  const tops: number[] = [];
-  for (const { tl } of timelines) {
-    const T = tl.windows.length;
-    for (let t = 0; t < T; t++) {
-      let best = 0;
-      for (const id of tl.tuneIds) {
-        const v = tl.observations.get(id)![t]!;
-        if (v > best) best = v;
-      }
-      if (best > 0) tops.push(best);
-    }
-  }
+  const tops = windowTops(timelines.map(x => x.tl));
   tops.sort((a, b) => a - b);
   if (!tops.length) return [0];
 

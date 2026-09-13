@@ -1,5 +1,5 @@
 import type { DetectionTemporalConfig } from './detectionTemporalConfig';
-import { UNKNOWN_STATE, type TemporalTimeline } from './temporalObservationBuilder';
+import { UNKNOWN_STATE, observationAt, rowStartAt, type TemporalTimeline } from './temporalObservationBuilder';
 
 // ── Viterbi detector ────────────────────────────────────────────────────────
 // TemporalTimeline -> DetectedTuneSegment[]. Global dynamic-programming
@@ -46,7 +46,7 @@ export interface DetectedTuneSegment {
   endTime: number;
   /** Index into TemporalTimeline.windows of this segment's first window —
    *  the exact, unambiguous way to map back to per-window data (e.g.
-   *  TemporalTimeline.ranks) for this segment's range. ALWAYS use this rather
+   *  its row in TemporalTimeline.rows) for this segment's range. ALWAYS use this rather
    *  than re-deriving membership by comparing window timestamps against
    *  startTime/endTime: those are now estimated boundaries that sit INSIDE the
    *  first and last windows, so a time comparison silently drops them. */
@@ -152,9 +152,14 @@ function extractSegments(
     const lastIdx = t - 1;
     const { start, end } = windowRangeToTime(runStart, lastIdx, timeline);
 
-    const probs: number[] = [];
-    for (let i = runStart; i <= lastIdx; i++) {
-      probs.push(state === UNKNOWN_STATE ? 0 : timeline.observations.get(state)![i]!);
+    // One walk along the tune's sparse row rather than a lookup per window —
+    // same array as before, 0 wherever the tune was not a candidate.
+    const probs: number[] = new Array<number>(lastIdx - runStart + 1).fill(0);
+    if (state !== UNKNOWN_STATE) {
+      const row = timeline.rows.get(state)!;
+      for (let k = rowStartAt(row, runStart); k < row.t.length && row.t[k]! <= lastIdx; k++) {
+        probs[row.t[k]! - runStart] = row.score[k]!;
+      }
     }
     const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
     const meta = state === UNKNOWN_STATE ? null : timeline.meta.get(state)!;
@@ -194,7 +199,7 @@ function asUnknown(s: DetectedTuneSegment): DetectedTuneSegment {
 }
 
 /** How many windows in [firstIdx, firstIdx+windowCount) had `tuneId` as their
- *  own #1-ranked raw candidate (TemporalTimeline.ranks, 1-based, set by
+ *  own #1-ranked raw candidate (the rank in TemporalTimeline.rows, 1-based, set by
  *  buildTemporalTimeline straight off each window's own sorted candidate
  *  list — untouched by Viterbi). 2026-08-15: deliberately NOT the same thing
  *  as `windowCount` (how many windows Viterbi's global optimization
@@ -203,11 +208,14 @@ function asUnknown(s: DetectedTuneSegment): DetectedTuneSegment {
  *  there) — the user specifically wants confirmation tied to the engine's
  *  own top pick, a stricter and more stable signal. */
 export function countTop1Windows(tuneId: string, firstIdx: number, windowCount: number, timeline: TemporalTimeline): number {
-  const ranks = timeline.ranks.get(tuneId);
-  if (!ranks) return 0;
+  const row = timeline.rows.get(tuneId);
+  if (!row) return 0;
+  // Only a window the tune was a candidate in can have it at rank 1 — an absent
+  // window read null in the dense form, never 1.
+  const end = firstIdx + windowCount;
   let count = 0;
-  for (let i = firstIdx; i < firstIdx + windowCount; i++) {
-    if (ranks[i] === 1) count++;
+  for (let k = rowStartAt(row, firstIdx); k < row.t.length && row.t[k]! < end; k++) {
+    if (row.rank[k] === 1) count++;
   }
   return count;
 }
@@ -281,9 +289,14 @@ function lastRealIndex(segments: DetectedTuneSegment[]): number {
 function mergeTwoSameTune(a: DetectedTuneSegment, b: DetectedTuneSegment, timeline: TemporalTimeline): DetectedTuneSegment {
   const firstWindowIndex = a.firstWindowIndex;
   const windowCount = (b.firstWindowIndex + b.windowCount) - a.firstWindowIndex;
-  const obs = timeline.observations.get(a.tuneId);
-  const probs: number[] = [];
-  for (let i = firstWindowIndex; i < firstWindowIndex + windowCount; i++) probs.push(obs?.[i] ?? 0);
+  const probs: number[] = new Array<number>(Math.max(0, windowCount)).fill(0);
+  const row = timeline.rows.get(a.tuneId);
+  if (row) {
+    const end = firstWindowIndex + windowCount;
+    for (let k = rowStartAt(row, firstWindowIndex); k < row.t.length && row.t[k]! < end; k++) {
+      probs[row.t[k]! - firstWindowIndex] = row.score[k]!;
+    }
+  }
   const avg = probs.reduce((x, y) => x + y, 0) / probs.length;
   return {
     ...a,
@@ -316,7 +329,7 @@ function mergeTwoSameTune(a: DetectedTuneSegment, b: DetectedTuneSegment, timeli
  *
  *  Probability stats (confidence/average/min/max) are recomputed over the
  *  WHOLE bridged window range (gap windows included, using the same
- *  zero-if-absent TemporalTimeline.observations extractSegments itself
+ *  zero-if-absent TemporalTimeline row reading extractSegments itself
  *  reads) — not a weighted average of the two original segments' stats —
  *  so a merged segment's numbers mean the same thing as any other
  *  segment's: "the tune's own observed scores across its actual window
@@ -383,50 +396,6 @@ function findConvergencePoint(T: number, states: string[], previousState: Map<st
   return -1;
 }
 
-/** Bounded, monotone variant of findConvergencePoint, for the streaming
- *  decoder: by invariant 4 (convergence only ever advances as more windows
- *  arrive — see StreamingViterbiDecoder's doc), a window range already proven
- *  converged through `oldFrozenThrough` by a PREVIOUS call never needs
- *  re-checking — the backward scan can stop the instant it reaches that
- *  point and simply trust it. This bounds each call's scan to
- *  `T - 1 - oldFrozenThrough` steps (small once convergence is keeping pace
- *  with T) instead of the full T, which is what turns the O(T²×S) repeated
- *  full rescans into O(T×S) amortized over a whole session.
- *
- *  `previousState[t].get(state)` can be `undefined` for a `state` that
- *  hadn't been discovered yet when column `t` was originally cached (an
- *  older column computed before that tuneId's first appearance — see
- *  StreamingViterbiDecoder.extend()'s seeding step, which only patches the
- *  ONE boundary column each call, not the whole history). Per the
- *  correctness theorem (module header), the actual traced backtrack chain
- *  never visits such a cell — an unseeded/undiscovered state is never
- *  anyone's chosen predecessor — so this should be unreachable in practice;
- *  treated defensively as "this pointer hasn't resolved here" (held in
- *  place) rather than trusted to be non-null, so a violated assumption fails
- *  safe (never falsely reports convergence) instead of corrupting the walk. */
-function advanceConvergence(
-  previousState: Map<string, string | null>[],
-  states: string[],
-  oldFrozenThrough: number,
-  T: number,
-): number {
-  if (T === 0) return -1;
-  if (states.length <= 1) return T - 1;
-
-  let pointer = new Map<string, string>(states.map(s => [s, s]));
-  for (let t = T - 1; t >= 1; t--) {
-    const next = new Map<string, string>();
-    for (const s of states) {
-      const cur = pointer.get(s)!;
-      const prevOfCur = previousState[t]!.get(cur);
-      next.set(s, prevOfCur !== undefined ? prevOfCur! : cur);
-    }
-    pointer = next;
-    if (new Set(pointer.values()).size === 1) return t - 1;
-    if (t - 1 <= oldFrozenThrough) return oldFrozenThrough;
-  }
-  return -1;
-}
 
 /** Shared by both from-scratch implementations AND the streaming decoder:
  *  turns a completed (score, prevState) DP table into the final ViterbiResult
@@ -476,7 +445,7 @@ function buildResult(
         t,
         time: timeline.windows[t]!.tWindowStart,
         state,
-        probability: state === UNKNOWN_STATE ? cfg.unknownObservationProbability : timeline.observations.get(state)![t]!,
+        probability: state === UNKNOWN_STATE ? cfg.unknownObservationProbability : observationAt(timeline, state, t),
         cumulativeScore: bestScore[t]!.get(state)!,
       })),
     };
@@ -538,7 +507,7 @@ export function runViterbiDetectionReference(
     const debugRow: StepDebugEntry[] = [];
 
     for (const s of states) {
-      const p = s === UNKNOWN_STATE ? cfg.unknownObservationProbability : timeline.observations.get(s)![t]!;
+      const p = s === UNKNOWN_STATE ? cfg.unknownObservationProbability : observationAt(timeline, s, t);
       const obsScore = observationScore(p, cfg);
 
       if (t === 0) {
@@ -593,20 +562,178 @@ export function runViterbiDetectionReference(
 // score-identical — verified empirically in viterbiDetectorEquivalence.test.ts.
 // ═══════════════════════════════════════════════════════════════════════════
 
-interface ScoreEntry { state: string; score: number }
+// ── Slots: the stable address of a state ─────────────────────────────────────
+// The DP columns are typed arrays, so every state needs an integer address —
+// and that address must never move, because the streaming decoder keeps
+// columns from previous calls and a moved address would silently reinterpret
+// all of them.
+//
+// `tuneIds` positions cannot serve: they are NOT stable (see the invariant
+// correction in StreamingViterbiDecoder's header — a tune admitted late is
+// inserted at its first-appearance position and shifts everything after it).
+// So two notions, deliberately separate:
+//
+//   slot — handed out by the decoder the first time it sees a state, never
+//          reused, never moved. Addresses the arrays. Append-only by
+//          construction, so a column created earlier is simply SHORTER than
+//          one created later; a state with no cell in an old column is one
+//          that did not exist yet, which is exactly the `-Infinity` case the
+//          correctness theorem in the streaming header already covers.
+//   rank — position in `[...tuneIds, UNKNOWN]`, the canonical order. Used for
+//          ONE thing: breaking ties exactly as the reference's linear scan
+//          does. Recomputed whenever tuneIds changes; never addresses anything.
+interface SlotSpace {
+  slotOf: Map<string, number>;
+  /** slot -> state name, for reporting results. */
+  names: string[];
+  /** slot -> canonical tie-break rank. */
+  rank: Int32Array;
+  /** canonical tune position -> slot, for iterating tunes in canonical order. */
+  tuneSlots: Int32Array;
+  unknownSlot: number;
+}
 
-/** Top-2 by score among a sequence, ties keeping whichever was seen FIRST —
- *  replicates the reference's "scan in canonical order, strict >" semantics
- *  as long as the caller iterates in canonical order (tuneIds is already in
- *  that order; this file never reorders it). */
-function updateTop2(top1: ScoreEntry | null, top2: ScoreEntry | null, entry: ScoreEntry): [ScoreEntry | null, ScoreEntry | null] {
-  if (top1 === null || entry.score > top1.score) return [entry, top1];
-  if (top2 === null || entry.score > top2.score) return [top1, entry];
-  return [top1, top2];
+/** Creates or extends the space to cover `tuneIds` + UNKNOWN, and refreshes
+ *  the tie-break ranks. Slots already handed out keep their value. */
+function syncSlotSpace(space: SlotSpace | null, tuneIds: string[]): SlotSpace {
+  const s: SlotSpace = space ?? {
+    slotOf: new Map(), names: [], rank: new Int32Array(0),
+    tuneSlots: new Int32Array(0), unknownSlot: -1,
+  };
+  for (const id of tuneIds) {
+    if (!s.slotOf.has(id)) { s.slotOf.set(id, s.names.length); s.names.push(id); }
+  }
+  if (s.unknownSlot === -1) {
+    s.unknownSlot = s.names.length;
+    s.slotOf.set(UNKNOWN_STATE, s.unknownSlot);
+    s.names.push(UNKNOWN_STATE);
+  }
+  // Refreshed every time, not just on growth: tuneIds may have REORDERED
+  // without changing size.
+  if (s.rank.length !== s.names.length) s.rank = new Int32Array(s.names.length);
+  if (s.tuneSlots.length !== tuneIds.length) s.tuneSlots = new Int32Array(tuneIds.length);
+  for (let i = 0; i < tuneIds.length; i++) {
+    const slot = s.slotOf.get(tuneIds[i]!)!;
+    s.tuneSlots[i] = slot;
+    s.rank[slot] = i;
+  }
+  s.rank[s.unknownSlot] = tuneIds.length;   // UNKNOWN is last in canonical order
+  return s;
+}
+
+/** One column of the DP table. Indexed by SLOT; `prev` holds the predecessor's
+ *  slot, or -1 for "none" (the t=0 column, and unreachable cells). A column is
+ *  sized to the slot count at the moment it was computed, so an older column
+ *  is shorter than a newer one — see the slot doc above. */
+interface Column {
+  score: Float64Array;
+  prev: Int32Array;
+  debugRow?: StepDebugEntry[];
+}
+
+/** Reads a possibly-too-short cached column: a slot beyond its end belongs to
+ *  a state that did not exist when it was computed. */
+function scoreAt(col: Float64Array, slot: number): number {
+  return slot < col.length ? col[slot]! : -Infinity;
+}
+function prevAt(col: Int32Array, slot: number): number {
+  return slot < col.length ? col[slot]! : -1;
+}
+
+/** Scratch buffers for one decode's per-column index, sized to the state set
+ *  and reused for every column instead of reallocated.
+ *
+ *  Everything here used to be objects and a string-keyed Map rebuilt per
+ *  window: a `{state, score}` per tune for the top-2 pass, another for the
+ *  "to UNKNOWN" pass, and a `Map<string, [entry, entry]>` of per-tag groups
+ *  with its own pair array — several million allocations per decode, plus S
+ *  string hashes per window for the group Map alone. The values are identical;
+ *  only where they live changed.
+ *
+ *  Indexed by STATE INDEX (a tune's index in tuneIds; UNKNOWN last), which is
+ *  the same integer `stateIndex` hands out — so a tag is looked up once and
+ *  then addressed arithmetically. `-1` means "no entry". */
+interface IndexScratch {
+  /** Column number a slot was last written on. A slot counts as filled only
+   *  when it matches the current generation, which is what lets a column start
+   *  clean without clearing anything.
+   *
+   *  Clearing WAS the first attempt (two `fill(-1)` per column) and it was
+   *  measurably slower than the Map it replaced — of course: the Map only ever
+   *  held the handful of distinct tags a column actually produced, while a fill
+   *  touches all S slots whether used or not. Measured 2026-09-13: 424 → 524 ms
+   *  on one session before this counter, back to 424 with it. */
+  groupGen: Int32Array;
+  gen: number;
+  groupSlot1: Int32Array;
+  groupValue1: Float64Array;
+  groupSlot2: Int32Array;
+  groupValue2: Float64Array;
+  /** Where the two "best predecessor" lookups leave their value, so neither
+   *  has to allocate a result. Separate fields, not one, because the "unpen"
+   *  value is still in play when the "pen" lookup runs. */
+  unpenValue: number;
+  penValue: number;
+  /** This window's non-floor observations, scattered into slot-addressed
+   *  scratch by the same generation trick as the groups above: a slot whose
+   *  generation does not match simply has the floor.
+   *
+   *  Why it is worth scattering them at all: 0,27% of (window, state) cells
+   *  carry an observation, so the other 99,73% were calling `Math.log` on a
+   *  zero and getting the same constant back — 23,4% of the decode by the
+   *  2026-09-13 profile, once the Maps were gone. */
+  obsGen: Int32Array;
+  obsGenCounter: number;
+  obsP: Float64Array;
+  obsScore: Float64Array;
+}
+
+function makeIndexScratch(slotCount: number): IndexScratch {
+  return {
+    // Zero-filled, and the first column runs at generation 1 — so nothing reads
+    // as filled before it is written.
+    groupGen: new Int32Array(slotCount),
+    gen: 0,
+    groupSlot1: new Int32Array(slotCount),
+    groupValue1: new Float64Array(slotCount),
+    groupSlot2: new Int32Array(slotCount),
+    groupValue2: new Float64Array(slotCount),
+    unpenValue: 0,
+    penValue: 0,
+    obsGen: new Int32Array(slotCount),
+    obsGenCounter: 0,
+    obsP: new Float64Array(slotCount),
+    obsScore: new Float64Array(slotCount),
+  };
+}
+
+/** One window's non-floor observations, flattened as [slot, p, score, …].
+ *
+ *  Read straight off the window's own candidate list — about ten entries — and
+ *  mapped to slots, instead of probing every admitted tune (thousands) for the
+ *  few that are present. A candidate with no slot was never admitted, so it has
+ *  no observation. A value of exactly 0 is left out: `observationScore(0)` IS
+ *  the floor, so listing it would change nothing. A tune listed twice in one
+ *  window is listed twice here, and the scatter in computeColumn lets the later
+ *  entry win — the same rule its sparse row applies (see SparseRow).
+ *
+ *  One function for both decoders now: with sparse rows there is no dense row
+ *  left to walk, and the candidate list is the cheapest source there is. It is
+ *  also exactly the list the rows were built from, in every builder. */
+function obsEntriesForWindow(space: SlotSpace, timeline: TemporalTimeline, t: number, cfg: DetectionTemporalConfig): number[] {
+  const out: number[] = [];
+  for (const c of timeline.windows[t]!.candidates) {
+    const slot = space.slotOf.get(c.tuneId);
+    if (slot === undefined || slot === space.unknownSlot) continue;
+    const p = c.score;
+    if (p !== 0) out.push(slot, p, observationScore(p, cfg));
+  }
+  return out;
 }
 
 interface PrevRowIndex {
-  prevState: Map<string, string | null>;
+  /** The previous column's backpointers, by slot. */
+  prevSlot: Int32Array;
   /** Global top-2 among TUNE states (excludes UNKNOWN), ranked by the
    *  ALREADY-cost-adjusted "unpen" value (score − tuneChangePenalty) — not
    *  the raw score. This matters: subtracting the same constant from two
@@ -618,50 +745,70 @@ interface PrevRowIndex {
    *  already-subtracted values. Ranking on the pre-adjusted value instead
    *  reproduces the reference's rounding behaviour exactly, not just its
    *  real-number behaviour. */
-  top1: ScoreEntry | null;
-  top2: ScoreEntry | null;
+  top1Slot: number; top1Value: number;
+  top2Slot: number; top2Value: number;
   /** Per-tag (= state's own predecessor) top-2, ranked by the "pen" value
-   *  (score − tuneChangePenalty − rapidChangePenalty) for the same reason. */
-  groupTop: Map<string, [ScoreEntry, ScoreEntry | null]>;
+   *  (score − tuneChangePenalty − rapidChangePenalty) for the same reason.
+   *  Lives in the scratch arrays, addressed by the tag's state index. */
+  scratch: IndexScratch;
   /** Best tune under a THIRD, INDEPENDENT adjustment (score − tuneToUnknownPenalty)
    *  — used only for "any tune -> UNKNOWN". Must NOT reuse `top1` (adjusted by
    *  the different constant tuneChangePenalty): a rounding collision at one
    *  constant doesn't imply one at another, so each adjustment needs its own
    *  ranking pass. No "excluding s" complexity needed here — UNKNOWN can never
    *  equal a tune state, so a single top-1 (no top-2 fallback) suffices. */
-  bestToUnknown: ScoreEntry | null;
+  bestToUnknownSlot: number; bestToUnknownValue: number;
 }
 
 function indexPrevRow(
-  tuneIds: string[],
-  score: Map<string, number>,
-  prevState: Map<string, string | null>,
+  tuneSlots: Int32Array,
+  score: Float64Array,
+  prevSlot: Int32Array,
   cfg: DetectionTemporalConfig,
+  scratch: IndexScratch,
 ): PrevRowIndex {
-  let top1: ScoreEntry | null = null;
-  let top2: ScoreEntry | null = null;
-  let bestToUnknown: ScoreEntry | null = null;
-  const groupTop = new Map<string, [ScoreEntry, ScoreEntry | null]>();
+  let top1Slot = -1, top1Value = 0;
+  let top2Slot = -1, top2Value = 0;
+  let bestToUnknownSlot = -1, bestToUnknownValue = 0;
 
-  for (const p of tuneIds) {
-    const raw = score.get(p)!;
+  const gen = ++scratch.gen;
+  const { groupGen, groupSlot1, groupValue1, groupSlot2, groupValue2 } = scratch;
+
+  // Ties keep whichever tune was seen FIRST, which is what the strict `>`
+  // gives as long as this loop runs in canonical order — the tuneSlots array
+  // is in that order by construction, and nothing here reorders it.
+  for (let i = 0; i < tuneSlots.length; i++) {
+    const slot = tuneSlots[i]!;
+    const raw = scoreAt(score, slot);
     const unpenValue = raw - cfg.tuneChangePenalty;
-    [top1, top2] = updateTop2(top1, top2, { state: p, score: unpenValue });
+    if (top1Slot === -1 || unpenValue > top1Value) { top2Slot = top1Slot; top2Value = top1Value; top1Slot = slot; top1Value = unpenValue; }
+    else if (top2Slot === -1 || unpenValue > top2Value) { top2Slot = slot; top2Value = unpenValue; }
 
     const toUnknownValue = raw - cfg.tuneToUnknownPenalty;
-    if (bestToUnknown === null || toUnknownValue > bestToUnknown.score) bestToUnknown = { state: p, score: toUnknownValue };
+    if (bestToUnknownSlot === -1 || toUnknownValue > bestToUnknownValue) { bestToUnknownSlot = slot; bestToUnknownValue = toUnknownValue; }
 
-    const tag = prevState.get(p) ?? null;
-    if (tag === null) continue; // t==1: no predecessor history yet, contributes to no group
+    // The tag is already a slot — no name, no lookup.
+    const g = prevAt(prevSlot, slot);
+    if (g === -1) continue; // t==1: no predecessor history yet, contributes to no group
     const penValue = raw - cfg.tuneChangePenalty - cfg.rapidChangePenalty;
-    const existing = groupTop.get(tag);
-    if (!existing) { groupTop.set(tag, [{ state: p, score: penValue }, null]); continue; }
-    const [g1, g2] = existing;
-    if (penValue > g1.score) groupTop.set(tag, [{ state: p, score: penValue }, g1]);
-    else if (g2 === null || penValue > g2.score) groupTop.set(tag, [g1, { state: p, score: penValue }]);
+    if (groupGen[g] !== gen) {
+      // First tune to land on this tag in this column.
+      groupGen[g] = gen;
+      groupSlot1[g] = slot;
+      groupValue1[g] = penValue;
+      groupSlot2[g] = -1;
+    } else if (penValue > groupValue1[g]!) {
+      groupSlot2[g] = groupSlot1[g]!;
+      groupValue2[g] = groupValue1[g]!;
+      groupSlot1[g] = slot;
+      groupValue1[g] = penValue;
+    } else if (groupSlot2[g] === -1 || penValue > groupValue2[g]!) {
+      groupSlot2[g] = slot;
+      groupValue2[g] = penValue;
+    }
   }
 
-  return { prevState, top1, top2, groupTop, bestToUnknown };
+  return { prevSlot, top1Slot, top1Value, top2Slot, top2Value, scratch, bestToUnknownSlot, bestToUnknownValue };
 }
 
 /** Best tune p ≠ cur with p's own predecessor ≠ cur (the "unpen" category).
@@ -672,114 +819,154 @@ function indexPrevRow(
  *  fallback is provably rare, not just usually rare. The fallback itself is
  *  an exact, unconditionally-correct scan, so correctness never depends on
  *  the bound being tight. */
-function bestUnpenalizedExcluding(cur: string, idx: PrevRowIndex, tuneIds: string[], score: Map<string, number>, cfg: DetectionTemporalConfig): ScoreEntry | null {
-  for (const cand of [idx.top1, idx.top2]) {
-    if (cand && cand.state !== cur && (idx.prevState.get(cand.state) ?? null) !== cur) return cand;
+function bestUnpenalizedExcluding(
+  curSlot: number, idx: PrevRowIndex, tuneSlots: Int32Array, score: Float64Array, cfg: DetectionTemporalConfig,
+): number {
+  const { top1Slot, top2Slot, prevSlot } = idx;
+  if (top1Slot !== -1 && top1Slot !== curSlot && prevAt(prevSlot, top1Slot) !== curSlot) {
+    idx.scratch.unpenValue = idx.top1Value; return top1Slot;
   }
-  let best: ScoreEntry | null = null;
-  for (const p of tuneIds) {
-    if (p === cur) continue;
-    if ((idx.prevState.get(p) ?? null) === cur) continue;
-    const v = score.get(p)! - cfg.tuneChangePenalty;
-    if (best === null || v > best.score) best = { state: p, score: v };
+  if (top2Slot !== -1 && top2Slot !== curSlot && prevAt(prevSlot, top2Slot) !== curSlot) {
+    idx.scratch.unpenValue = idx.top2Value; return top2Slot;
   }
-  return best;
+  // The provably-rare exact fallback.
+  let bestSlot = -1;
+  let bestValue = 0;
+  for (let i = 0; i < tuneSlots.length; i++) {
+    const p = tuneSlots[i]!;
+    if (p === curSlot) continue;
+    if (prevAt(prevSlot, p) === curSlot) continue;
+    const v = scoreAt(score, p) - cfg.tuneChangePenalty;
+    if (bestSlot === -1 || v > bestValue) { bestSlot = p; bestValue = v; }
+  }
+  idx.scratch.unpenValue = bestValue;
+  return bestSlot;
 }
 
 /** Best tune p ≠ cur with p's own predecessor == cur (the "pen" / rebound
- *  category). Returns the FINAL adjusted value, same reasoning as above. */
-function bestPenalizedFor(cur: string, idx: PrevRowIndex): ScoreEntry | null {
-  const group = idx.groupTop.get(cur);
-  if (!group) return null;
-  for (const cand of group) {
-    if (cand && cand.state !== cur) return cand;
-  }
-  return null;
-}
-
-interface Candidate { state: string; cost: number; value: number }
-
-/** Picks the candidate with the highest value; ties broken by canonical
- *  state order (stateIndex), replicating the reference's linear-scan
- *  first-found-wins-ties semantics exactly. */
-function pickBest(candidates: Candidate[], stateIndex: Map<string, number>): Candidate {
-  let best = candidates[0]!;
-  let bestIdx = stateIndex.get(best.state)!;
-  for (let i = 1; i < candidates.length; i++) {
-    const c = candidates[i]!;
-    const cIdx = stateIndex.get(c.state)!;
-    if (c.value > best.value || (c.value === best.value && cIdx < bestIdx)) { best = c; bestIdx = cIdx; }
-  }
-  return best;
-}
-
-interface Column {
-  score: Map<string, number>;
-  prev: Map<string, string | null>;
-  debugRow?: StepDebugEntry[];
+ *  category). Returns its slot and leaves the FINAL adjusted value in
+ *  `scratch.penValue`, same reasoning as above. The group arrays are addressed
+ *  by the tag's slot, and here the tag IS cur. */
+function bestPenalizedFor(curSlot: number, idx: PrevRowIndex): number {
+  const { scratch } = idx;
+  if (scratch.groupGen[curSlot] !== scratch.gen) return -1;  // no group this column
+  const s1 = scratch.groupSlot1[curSlot]!;
+  if (s1 === -1) return -1;
+  // Same two-step as the array scan it replaces: take the group's best unless
+  // that IS cur, in which case the runner-up, and give up if there is none.
+  if (s1 !== curSlot) { scratch.penValue = scratch.groupValue1[curSlot]!; return s1; }
+  const s2 = scratch.groupSlot2[curSlot]!;
+  if (s2 === -1 || s2 === curSlot) return -1;
+  scratch.penValue = scratch.groupValue2[curSlot]!;
+  return s2;
 }
 
 /** Computes ONE column (window t) of the O(T×S) DP table from the previous
  *  column alone — the single piece of per-window logic shared by the
  *  from-scratch optimized decode below AND StreamingViterbiDecoder, so
  *  there is exactly one implementation of "how a column is filled" to keep
- *  correct (acceptance criterion #6). `prevScore`/`prevPrevState` are the
- *  PREVIOUS column's (score, prevState) — `null` for t===0. Pass `states`/
- *  `tuneIds` freshly each call (the streaming decoder's grow over time; the
- *  from-scratch decode's are fixed for the whole run) — see
- *  StreamingViterbiDecoder.extend()'s doc for why a state missing from
- *  `prevScore` (present in `tuneIds` today, but not yet discovered when the
- *  cached previous column was computed) must be seeded to -Infinity by the
- *  CALLER before invoking this for t>0 — this function itself just reads
- *  `prevScore.get(p)!`, trusting every current tuneId already has an entry. */
+ *  correct (acceptance criterion #6). `prevScore`/`prevPrevSlot` are the
+ *  PREVIOUS column's two arrays — `null` for t===0.
+ *
+ *  A previous column SHORTER than the current slot count needs no patching by
+ *  the caller any more: `scoreAt`/`prevAt` answer -Infinity / -1 past its end,
+ *  which is precisely the seeding the streaming decoder used to write by hand
+ *  into the boundary column, and what its correctness theorem assumes. */
 function computeColumn(
-  states: string[],
-  tuneIds: string[],
-  prevScore: Map<string, number> | null,
-  prevPrevState: Map<string, string | null> | null,
-  timeline: TemporalTimeline,
-  t: number,
+  space: SlotSpace,
+  scratch: IndexScratch,
+  /** This window's non-floor observations as [slot, p, score, …]. */
+  obsEntries: number[],
+  /** What every state NOT in that list scores — `observationScore(0)`. */
+  floorScore: number,
+  prevScore: Float64Array | null,
+  prevPrevSlot: Int32Array | null,
   cfg: DetectionTemporalConfig,
   debug: boolean,
 ): Column {
-  const scoreRow = new Map<string, number>();
-  const prevRow = new Map<string, string | null>();
+  const { tuneSlots, rank, names, unknownSlot } = space;
+  const slotCount = names.length;
+
+  // Scatter this window's handful of real observations; everything else reads
+  // the floor without touching memory twice or calling a logarithm.
+  const og = ++scratch.obsGenCounter;
+  const { obsGen, obsP, obsScore } = scratch;
+  for (let k = 0; k < obsEntries.length; k += 3) {
+    const slot = obsEntries[k]!;
+    obsGen[slot] = og;
+    obsP[slot] = obsEntries[k + 1]!;
+    obsScore[slot] = obsEntries[k + 2]!;
+  }
+  const score = new Float64Array(slotCount);
+  const prev = new Int32Array(slotCount);
   const debugRow: StepDebugEntry[] = [];
-  const pushEntry = (state: string, p: number, obsScore: number, bestPrevious: string | null, cost: number, total: number) => {
-    scoreRow.set(state, total);
-    prevRow.set(state, bestPrevious);
-    if (debug) debugRow.push({ state, observation: p, observationScore: obsScore, bestPrevious, transitionCost: cost, totalScore: total });
+  const pushDebug = (slot: number, p: number, obsScore: number, bestSlot: number, cost: number, total: number) => {
+    debugRow.push({
+      state: names[slot]!, observation: p, observationScore: obsScore,
+      bestPrevious: bestSlot === -1 ? null : names[bestSlot]!, transitionCost: cost, totalScore: total,
+    });
   };
 
   if (prevScore === null) {
-    for (const s of states) {
-      const p = s === UNKNOWN_STATE ? cfg.unknownObservationProbability : timeline.observations.get(s)![t]!;
-      const obsScore = observationScore(p, cfg);
-      pushEntry(s, p, obsScore, null, 0, obsScore);
+    // Canonical order, so a debug row reads the same as the reference's.
+    for (let ci = 0; ci < tuneSlots.length; ci++) {
+      const slot = tuneSlots[ci]!;
+      const hit = obsGen[slot] === og;
+      const p = hit ? obsP[slot]! : 0;
+      const s = hit ? obsScore[slot]! : floorScore;
+      score[slot] = s; prev[slot] = -1;
+      if (debug) pushDebug(slot, p, s, -1, 0, s);
     }
-    return { score: scoreRow, prev: prevRow, debugRow: debug ? debugRow : undefined };
+    const pu = cfg.unknownObservationProbability;
+    const su = observationScore(pu, cfg);
+    score[unknownSlot] = su; prev[unknownSlot] = -1;
+    if (debug) pushDebug(unknownSlot, pu, su, -1, 0, su);
+    return { score, prev, debugRow: debug ? debugRow : undefined };
   }
 
-  const stateIndex = new Map<string, number>(states.map((s, i) => [s, i]));
-  const idx = indexPrevRow(tuneIds, prevScore, prevPrevState!, cfg);
-  const unknownScorePrev = prevScore.get(UNKNOWN_STATE)!;
+  const idx = indexPrevRow(tuneSlots, prevScore, prevPrevSlot!, cfg, scratch);
+  const unknownScorePrev = scoreAt(prevScore, unknownSlot);
+  const unknownRank = rank[unknownSlot]!;
 
-  for (const cur of tuneIds) {
-    const candidates: Candidate[] = [
-      { state: cur, cost: cfg.sameTuneTransitionCost, value: prevScore.get(cur)! - cfg.sameTuneTransitionCost },
-      { state: UNKNOWN_STATE, cost: cfg.unknownToTunePenalty, value: unknownScorePrev - cfg.unknownToTunePenalty },
-    ];
-    // unpen.score / pen.score already have their cost baked in (see
-    // indexPrevRow's doc) — do NOT subtract cfg.tuneChangePenalty again here.
-    const unpen = bestUnpenalizedExcluding(cur, idx, tuneIds, prevScore, cfg);
-    if (unpen) candidates.push({ state: unpen.state, cost: cfg.tuneChangePenalty, value: unpen.score });
-    const pen = bestPenalizedFor(cur, idx);
-    if (pen) candidates.push({ state: pen.state, cost: cfg.tuneChangePenalty + cfg.rapidChangePenalty, value: pen.score });
+  // The four categories are compared in place rather than gathered into a
+  // Candidate[] and handed to a pickBest. Same winner, by the same rule — the
+  // four candidate states are provably distinct (same/unknown/unpen/pen are
+  // disjoint by construction), so `(value, rank)` is a strict total order over
+  // them and a running maximum cannot disagree with a scan.
+  for (let ci = 0; ci < tuneSlots.length; ci++) {
+    const curSlot = tuneSlots[ci]!;
+    let bestValue = scoreAt(prevScore, curSlot) - cfg.sameTuneTransitionCost;
+    let bestSlot = curSlot;
+    let bestCost = cfg.sameTuneTransitionCost;
+    let bestRank = ci;   // a tune's canonical rank IS its position in tuneSlots
 
-    const winner = pickBest(candidates, stateIndex);
-    const p = timeline.observations.get(cur)![t]!;
-    const obsScore = observationScore(p, cfg);
-    pushEntry(cur, p, obsScore, winner.state, winner.cost, obsScore + winner.value);
+    const unknownValue = unknownScorePrev - cfg.unknownToTunePenalty;
+    if (unknownValue > bestValue || (unknownValue === bestValue && unknownRank < bestRank)) {
+      bestValue = unknownValue; bestSlot = unknownSlot; bestCost = cfg.unknownToTunePenalty; bestRank = unknownRank;
+    }
+
+    // The unpen/pen values already have their cost baked in (see indexPrevRow's
+    // doc) — do NOT subtract cfg.tuneChangePenalty again here.
+    const unpenSlot = bestUnpenalizedExcluding(curSlot, idx, tuneSlots, prevScore, cfg);
+    if (unpenSlot !== -1) {
+      const v = scratch.unpenValue, r = rank[unpenSlot]!;
+      if (v > bestValue || (v === bestValue && r < bestRank)) {
+        bestValue = v; bestSlot = unpenSlot; bestCost = cfg.tuneChangePenalty; bestRank = r;
+      }
+    }
+    const penSlot = bestPenalizedFor(curSlot, idx);
+    if (penSlot !== -1) {
+      const v = scratch.penValue, r = rank[penSlot]!;
+      if (v > bestValue || (v === bestValue && r < bestRank)) {
+        bestValue = v; bestSlot = penSlot; bestCost = cfg.tuneChangePenalty + cfg.rapidChangePenalty; bestRank = r;
+      }
+    }
+
+    const hit = obsGen[curSlot] === og;
+    const s = hit ? obsScore[curSlot]! : floorScore;
+    score[curSlot] = s + bestValue;
+    prev[curSlot] = bestSlot;
+    if (debug) pushDebug(curSlot, hit ? obsP[curSlot]! : 0, s, bestSlot, bestCost, s + bestValue);
   }
 
   // UNKNOWN as the current state: same (stay in UNKNOWN) vs the single
@@ -788,17 +975,115 @@ function computeColumn(
   // independent ranking, NOT idx.top1, which is adjusted by a different
   // constant and can disagree at a rounding boundary).
   {
-    const candidates: Candidate[] = [
-      { state: UNKNOWN_STATE, cost: cfg.unknownStayPenalty, value: unknownScorePrev - cfg.unknownStayPenalty },
-    ];
-    if (idx.bestToUnknown) candidates.push({ state: idx.bestToUnknown.state, cost: cfg.tuneToUnknownPenalty, value: idx.bestToUnknown.score });
-    const winner = pickBest(candidates, stateIndex);
+    let bestValue = unknownScorePrev - cfg.unknownStayPenalty;
+    let bestSlot = unknownSlot;
+    let bestCost = cfg.unknownStayPenalty;
+    let bestRank = unknownRank;
+    if (idx.bestToUnknownSlot !== -1) {
+      const v = idx.bestToUnknownValue, r = rank[idx.bestToUnknownSlot]!;
+      if (v > bestValue || (v === bestValue && r < bestRank)) {
+        bestValue = v; bestSlot = idx.bestToUnknownSlot; bestCost = cfg.tuneToUnknownPenalty; bestRank = r;
+      }
+    }
     const p = cfg.unknownObservationProbability;
     const obsScore = observationScore(p, cfg);
-    pushEntry(UNKNOWN_STATE, p, obsScore, winner.state, winner.cost, obsScore + winner.value);
+    score[unknownSlot] = obsScore + bestValue;
+    prev[unknownSlot] = bestSlot;
+    if (debug) pushDebug(unknownSlot, p, obsScore, bestSlot, bestCost, obsScore + bestValue);
   }
 
-  return { score: scoreRow, prev: prevRow, debugRow: debug ? debugRow : undefined };
+  return { score, prev, debugRow: debug ? debugRow : undefined };
+}
+
+/** Slot-indexed twin of findConvergencePoint/advanceConvergence. `bound` is the
+ *  streaming decoder's already-proven frozen point (invariant 4: convergence
+ *  only ever advances), which lets the backward scan stop instead of redoing
+ *  history; -1 for the unbounded from-scratch case.
+ *
+ *  A pointer landing on a slot the column predates is HELD IN PLACE rather than
+ *  trusted — same defensive choice the Map version documents: per the
+ *  correctness theorem this is unreachable, and if it ever were reached, failing
+ *  to converge is safe where a corrupted walk is not. */
+function convergenceFromSlots(columns: Column[], slotCount: number, T: number, bound: number): number {
+  if (T === 0) return -1;
+  if (slotCount <= 1) return T - 1;
+
+  let pointer = new Int32Array(slotCount);
+  let next = new Int32Array(slotCount);
+  for (let s = 0; s < slotCount; s++) pointer[s] = s;
+
+  for (let t = T - 1; t >= 1; t--) {
+    const prevCol = columns[t]!.prev;
+    const first = pointer[0]!;
+    let p0 = prevAt(prevCol, first);
+    if (p0 === -1) p0 = first;
+    next[0] = p0;
+    let allSame = true;
+    for (let s = 1; s < slotCount; s++) {
+      const cur = pointer[s]!;
+      let p = prevAt(prevCol, cur);
+      if (p === -1) p = cur;
+      next[s] = p;
+      if (p !== p0) allSame = false;
+    }
+    const swap = pointer; pointer = next; next = swap;
+    if (allSame) return t - 1;
+    if (bound >= 0 && t - 1 <= bound) return bound;
+  }
+  return -1;
+}
+
+/** Slot-indexed twin of buildResult. Scans in CANONICAL order with a strict
+ *  `>`, exactly as the reference does, so a tie on the final score picks the
+ *  same state. */
+function buildResultFromSlots(
+  T: number,
+  space: SlotSpace,
+  columns: Column[],
+  debugSteps: StepDebugEntry[][],
+  timeline: TemporalTimeline,
+  cfg: DetectionTemporalConfig,
+  convergedThroughIndex: number,
+  debug: boolean,
+): ViterbiResult {
+  const lastScore = columns[T - 1]!.score;
+  let bestSlot = -1;
+  let bestFinalScore = -Infinity;
+  for (let ci = 0; ci < space.tuneSlots.length; ci++) {
+    const slot = space.tuneSlots[ci]!;
+    const sc = scoreAt(lastScore, slot);
+    if (sc > bestFinalScore) { bestFinalScore = sc; bestSlot = slot; }
+  }
+  const su = scoreAt(lastScore, space.unknownSlot);
+  if (su > bestFinalScore) { bestFinalScore = su; bestSlot = space.unknownSlot; }
+
+  const slotPath = new Int32Array(T);
+  slotPath[T - 1] = bestSlot;
+  for (let t = T - 1; t > 0; t--) slotPath[t - 1] = columns[t]!.prev[slotPath[t]!]!;
+
+  const path: string[] = new Array(T);
+  for (let t = 0; t < T; t++) path[t] = space.names[slotPath[t]!]!;
+
+  const segments = extractSegments(path, timeline);
+  const result: ViterbiResult = {
+    segments,
+    stats: { numberOfTransitions: segments.length > 0 ? segments.length - 1 : 0, numberOfWindows: T },
+    convergedThroughIndex,
+  };
+
+  if (debug) {
+    result.debug = {
+      steps: debugSteps,
+      selectedPath: path.map((state, t) => ({
+        t,
+        time: timeline.windows[t]!.tWindowStart,
+        state,
+        probability: state === UNKNOWN_STATE ? cfg.unknownObservationProbability : observationAt(timeline, state, t),
+        cumulativeScore: columns[t]!.score[slotPath[t]!]!,
+      })),
+    };
+  }
+  return result;
 }
 
 export function runViterbiDetectionOptimized(
@@ -809,27 +1094,24 @@ export function runViterbiDetectionOptimized(
   const T = timeline.windows.length;
   if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
 
-  const tuneIds = timeline.tuneIds;
-  const states = [...tuneIds, UNKNOWN_STATE];
   const debug = !!options.debug;
-
-  const bestScore: Map<string, number>[] = [];
-  const previousState: Map<string, string | null>[] = [];
+  const space = syncSlotSpace(null, timeline.tuneIds);
+  const scratch = makeIndexScratch(space.names.length);
+  const columns: Column[] = [];
   const debugSteps: StepDebugEntry[][] = [];
+  const floorScore = observationScore(0, cfg);
 
   for (let t = 0; t < T; t++) {
-    const col = computeColumn(
-      states, tuneIds,
-      t === 0 ? null : bestScore[t - 1]!,
-      t === 0 ? null : previousState[t - 1]!,
-      timeline, t, cfg, debug,
-    );
-    bestScore.push(col.score);
-    previousState.push(col.prev);
+    const prevCol = t === 0 ? null : columns[t - 1]!;
+    const col = computeColumn(space, scratch, obsEntriesForWindow(space, timeline, t, cfg), floorScore, prevCol && prevCol.score, prevCol && prevCol.prev, cfg, debug);
+    columns.push(col);
     if (debug) debugSteps.push(col.debugRow!);
   }
 
-  return finalize(T, states, bestScore, previousState, debugSteps, timeline, cfg, debug);
+  return buildResultFromSlots(
+    T, space, columns, debugSteps, timeline, cfg,
+    convergenceFromSlots(columns, space.names.length, T, -1), debug,
+  );
 }
 
 export const runViterbiDetection = runViterbiDetectionOptimized;
@@ -849,10 +1131,19 @@ export const runViterbiDetection = runViterbiDetectionOptimized;
 //  1. filterFlatWindows/filterByTempoSpread are pure per-window — window i's
 //     filtered form never depends on any other window, so it's fixed the
 //     instant it's produced.
-//  2. TemporalTimeline.tuneIds only grows (a tuneId's best-ever score is
-//     monotone), and buildTemporalTimeline appends newly-discovered tuneIds
-//     in first-appearance order (append-only, never reordered) — this order
-//     is the canonical tie-break pickBest/stateIndex depend on.
+//  2. TemporalTimeline.tuneIds only grows as a SET (a tuneId's best-ever score
+//     is monotone, so an admitted tune is never dropped) — this order is the
+//     canonical tie-break pickBest/stateIndex depend on.
+//     ⚠️ CORRECTED 2026-09-13: this used to read "append-only, never
+//     reordered". That is FALSE, and measured so. buildTemporalTimeline orders
+//     tuneIds by first appearance as a CANDIDATE and applies
+//     minCandidateProbability afterwards, so a tune seen early but only
+//     admitted later is inserted at its early position and shifts every tune
+//     after it. Prefixes of one recording gave [] → [Y] → [Y] → [X, Y]: Y moved
+//     from index 0 to index 1. Anything here that caches a position across
+//     extend() calls must rebuild when the set changes — see this class's
+//     stateIndex, where assuming append-only made the tie-prone equivalence
+//     oracle fail immediately.
 //  3. bestScore[t] is a pure function of bestScore[t-1] and window t alone —
 //     never the future — so a cached column, once computed, never needs
 //     revising.
@@ -921,9 +1212,12 @@ export function describeViterbiDivergence(streaming: ViterbiResult, reference: V
 }
 
 export class StreamingViterbiDecoder {
-  private score: Map<string, number>[] = [];
-  private prev: Map<string, string | null>[] = [];
+  private columns: Column[] = [];
   private debugSteps: StepDebugEntry[][] = [];
+  /** Slots are what make caching columns safe across calls — see the slot doc
+   *  near SlotSpace. Extended, never renumbered. */
+  private space: SlotSpace | null = null;
+  private scratch = makeIndexScratch(0);
   private frozenThrough = -1;
   private readonly debug: boolean;
 
@@ -940,40 +1234,33 @@ export class StreamingViterbiDecoder {
     const T = timeline.windows.length;
     if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
 
-    const tuneIds = timeline.tuneIds;
-    const states = [...tuneIds, UNKNOWN_STATE];
-
-    // Seed the ONE boundary column (the last one already cached) with
-    // -Infinity/null for any state that's new since it was computed — see
-    // this class's header doc. No-op (and unneeded) the first time through
-    // (this.score.length === 0, t===0 columns always cover every current
-    // state directly) or when nothing new has been discovered.
-    if (this.score.length > 0) {
-      const boundary = this.score.length - 1;
-      const boundaryScore = this.score[boundary]!;
-      const boundaryPrev = this.prev[boundary]!;
-      for (const s of states) {
-        if (!boundaryScore.has(s)) {
-          boundaryScore.set(s, -Infinity);
-          boundaryPrev.set(s, null);
-        }
-      }
+    // Extends the slot space and refreshes the tie-break ranks. No
+    // boundary column to patch any more: a cached column simply has no cell for
+    // a slot that did not exist when it was computed, and scoreAt/prevAt answer
+    // -Infinity / -1 there — which is the seeding this used to write by hand,
+    // and exactly what the correctness theorem above assumes.
+    this.space = syncSlotSpace(this.space, timeline.tuneIds);
+    const space = this.space;
+    if (this.scratch.groupGen.length !== space.names.length) {
+      this.scratch = makeIndexScratch(space.names.length);
     }
 
-    for (let t = this.score.length; t < T; t++) {
+    // Built per NEW window only — the ones already decoded are never read
+    // again — from that window's ~10 candidates, not from every admitted tune.
+    const floorScore = observationScore(0, cfg);
+
+    for (let t = this.columns.length; t < T; t++) {
+      const prevCol = t === 0 ? null : this.columns[t - 1]!;
       const col = computeColumn(
-        states, tuneIds,
-        t === 0 ? null : this.score[t - 1]!,
-        t === 0 ? null : this.prev[t - 1]!,
-        timeline, t, cfg, this.debug,
+        space, this.scratch, obsEntriesForWindow(space, timeline, t, cfg), floorScore,
+        prevCol && prevCol.score, prevCol && prevCol.prev, cfg, this.debug,
       );
-      this.score.push(col.score);
-      this.prev.push(col.prev);
+      this.columns.push(col);
       if (this.debug) this.debugSteps.push(col.debugRow!);
     }
 
-    this.frozenThrough = advanceConvergence(this.prev, states, this.frozenThrough, T);
+    this.frozenThrough = convergenceFromSlots(this.columns, space.names.length, T, this.frozenThrough);
 
-    return buildResult(T, states, this.score, this.prev, this.debugSteps, timeline, cfg, this.frozenThrough, this.debug);
+    return buildResultFromSlots(T, space, this.columns, this.debugSteps, timeline, cfg, this.frozenThrough, this.debug);
   }
 }
