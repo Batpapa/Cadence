@@ -18,10 +18,26 @@ function mapCandidates(raw) {
   }));
 }
 
+/** Reads a numeric `export const NAME = value` straight out of the app's
+ *  sessionConfig.ts (this is CommonJS, the config is TypeScript) — the same
+ *  approach regenerate-fixtures.js uses for the window geometry, so the
+ *  fixtures can never run with engine parameters the app does not. */
+function engineConst(name) {
+  const fs = require('node:fs');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../../src/session/sessionConfig.ts'), 'utf8');
+  const m = new RegExp(`export const ${name}\\s*=\\s*([0-9.]+)`).exec(src);
+  if (!m) throw new Error(`${name} not found in sessionConfig.ts`);
+  return Number(m[1]);
+}
+
 class WasmClient {
   constructor() {
     this.ff = new FolkFriendWASM();
     this.ff.set_sample_rate(48000);
+    // Same calls, same values as ffWorker.ts's handleInit.
+    this.ff.set_tempo_range(engineConst('FF_TEMPO_MIN_BPM'), engineConst('FF_TEMPO_MAX_BPM'));
+    this.ff.set_num_repass(engineConst('FF_QUERY_REPASS_SIZE'));
+    this.ff.set_min_query_length(engineConst('FF_MIN_QUERY_LENGTH'));
     this.pcmPtr = this.ff.alloc_single_pcm_window();
   }
 

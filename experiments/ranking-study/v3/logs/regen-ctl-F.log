@@ -1,0 +1,23 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-tempo | tempo 60..240 | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-ctl
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [20240721_tocane_2_chapit] 200/3914 (177s)
+  [20240721_tocane_2_chapit] 400/3914 (231s)
+  [20240721_tocane_2_chapit] 600/3914 (292s)
+  [20240721_tocane_2_chapit] 800/3914 (349s)
+  [20240721_tocane_2_chapit] 1000/3914 (431s)
+  [20240721_tocane_2_chapit] 1200/3914 (508s)
+  [20240721_tocane_2_chapit] 1400/3914 (581s)
+  [20240721_tocane_2_chapit] 1600/3914 (659s)
+  [20240721_tocane_2_chapit] 1800/3914 (724s)
+  [20240721_tocane_2_chapit] 2000/3914 (779s)
+  [20240721_tocane_2_chapit] 2200/3914 (832s)
+  [20240721_tocane_2_chapit] 2400/3914 (882s)
+  [20240721_tocane_2_chapit] 2600/3914 (945s)
+  [20240721_tocane_2_chapit] 2800/3914 (1014s)
+  [20240721_tocane_2_chapit] 3000/3914 (1081s)
+  [20240721_tocane_2_chapit] 3200/3914 (1147s)
+  [20240721_tocane_2_chapit] 3400/3914 (1222s)
+  [20240721_tocane_2_chapit] 3600/3914 (1293s)
+  [20240721_tocane_2_chapit] 3800/3914 (1365s)
+  [20240721_tocane_2_chapit] 3914/3914 (1405s)
+  wrote 20240721_tocane_2_chapiteau in 1407s

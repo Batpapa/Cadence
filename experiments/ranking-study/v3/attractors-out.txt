@@ -1,0 +1,64 @@
+bruit : 338 fenetres, 338 avec un rang 1, 323 morceaux distincts
+blancs : 1480 fenetres avec un rang 1, 785 morceaux distincts
+musique, mauvais meneur : 2185 fenetres, 1538 morceaux distincts
+
+-- top 25 attracteurs du bruit pur (rang 1) : bruit | blancs | musique-faux-meneur | sessions ou il sallume dans les blancs
+      74    4 |    1 |    1 | 20240721_t  mason's apron, the
+   17233    4 |    0 |    0 |   parrez lok malo
+   22480    2 |    0 |    0 |   cool as a cucumber
+    3868    2 |    0 |    0 |   sproggies
+   21684    2 |    0 |    0 |   sidra de pera
+   21870    2 |    0 |    0 |   broken chanter, the
+    2031    2 |    1 |    0 | 20260523_5  champion, the
+    4810    2 |    0 |    0 |   gavotte
+   14433    2 |    0 |    0 |   48 bardes
+    1894    2 |    0 |    0 |   hanley's tweed
+    7184    2 |    0 |    0 |   house of little lights, the
+   17647    1 |    0 |    0 |   lúna in the sky
+    7421    1 |    0 |    0 |   armstrong's
+   24994    1 |    0 |    0 |   dance of the dee
+    9865    1 |    0 |    2 |   my lily
+    3893    1 |    0 |    0 |   woods of old limerick, the
+   23610    1 |    0 |    0 |   admiral's
+   13858    1 |    0 |    0 |   kiwi
+   15298    1 |    0 |    5 |   fretless flute song, the
+   19140    1 |    1 |    0 | 20260523_2  mozart's favourite
+   19076    1 |    0 |    0 |   toria's 50th
+   18365    1 |    0 |    0 |   indeedin you needn't bother
+    6361    1 |    0 |    0 |   a glint of silver
+    1088    1 |    0 |    0 |   dancing the baby
+     418    1 |    0 |    2 |   ievan polkka
+
+-- top 25 des blancs : blancs | bruit | musique-faux-meneur | sessions
+   19481  121 |    0 |   20 | 20260523_1,20260523_2,20260523_5,13th_Moon_,20240721_t  michael's lament
+    2265  111 |    0 |    1 | 20260523_1,20260523_2,20260523_5,20240721_t  out the door and over the wall
+    6058  105 |    0 |   14 | 20260523_1,20260523_2,20260523_5,20240721_t  romanian fantasy
+    9236   32 |    0 |    0 | 20260523_1,20260523_2,20260523_5,20240721_t  from kerry we did sail
+   13978   27 |    0 |    2 | 20260523_1,20260523_2,20260523_5,20240721_t  port chití rua
+    6219   17 |    0 |    1 | 20260523_1,20260523_5,20240721_t  valerie pringle's
+   17410   15 |    0 |    2 | 20260523_1,20260523_2,20260523_5,20240721_t  summer salsa
+   16411   13 |    0 |    3 | 20260523_1,20260523_2,20260523_5,20240721_t  fúnicúlí, fúnicúla
+    5961   13 |    0 |    4 | 20260523_1,20260523_2,20260523_5,20240721_t  battle of killiecrankie, the
+   15221   11 |    0 |    5 | 20260523_1,20260523_2,20260523_5,20240721_t  prayer of long resolve
+   23415   10 |    0 |    4 | 20260523_1,20260523_5,20240721_t  fis terra
+   25723    9 |    0 |    8 | 20260523_1,20260523_2,20240721_t  black stag, the
+   17994    8 |    0 |    0 | 20260523_1,20260523_2,20240721_t  doherty's quare
+    4883    8 |    0 |    2 | 20260523_1,20260523_2,20260523_5,20240721_t  jenny lind
+    7033    8 |    1 |    8 | 20260523_2,20260523_5,20240721_t  reel of tulloch, the
+    9980    7 |    0 |    0 | 20260523_1,20260523_2,20260523_5,20240721_t  libby bird song
+   23160    7 |    0 |    0 | 20260523_1,20260523_2,20260523_5,20240721_t  caniad y gwyn bibydd
+    7317    7 |    0 |    2 | 20260523_1,20260523_2,20260523_5,20240721_t  killavil postman, the
+   16297    6 |    0 |    9 | 1Hour_Trad,20260523_2,20260523_5,13th_Moon_,20240721_t  darklight
+   14408    6 |    0 |    3 | 20260523_1,20260523_2,20260523_5,20240721_t  kettledrum
+    8547    6 |    0 |    3 | 20260523_1,20260523_2,20260523_5,20240721_t  may morning dew, the
+   11384    6 |    0 |   10 | 20260523_1,20260523_2,20240721_t  celia connellan
+    6129    6 |    0 |    2 | 20260523_2,20240721_t  graham and jilly's wedding
+     370    6 |    0 |    5 | 20260523_2,20240721_t  jenny's welcome to charlie
+   12017    6 |    0 |    1 | 20260523_5,13th_Moon_,20240721_t  halloween
+
+-- couverture : attracteurs = rang 1 >= T fois sur le bruit pur
+  T=1 : 323 attracteurs ; 4.6% des rangs 1 des blancs ; 5.5% des faux meneurs en musique ; 174 rangs 1 CORRECTS en musique leur appartiennent ; 10 sont des morceaux de la verite terrain
+  T=2 : 11 attracteurs ; 0.1% des rangs 1 des blancs ; 0.0% des faux meneurs en musique ; 0 rangs 1 CORRECTS en musique leur appartiennent ; 0 sont des morceaux de la verite terrain
+  T=3 : 2 attracteurs ; 0.1% des rangs 1 des blancs ; 0.0% des faux meneurs en musique ; 0 rangs 1 CORRECTS en musique leur appartiennent ; 0 sont des morceaux de la verite terrain
+  T=5 : 0 attracteurs ; 0.0% des rangs 1 des blancs ; 0.0% des faux meneurs en musique ; 0 rangs 1 CORRECTS en musique leur appartiennent ; 0 sont des morceaux de la verite terrain
+  T=8 : 0 attracteurs ; 0.0% des rangs 1 des blancs ; 0.0% des faux meneurs en musique ; 0 rangs 1 CORRECTS en musique leur appartiennent ; 0 sont des morceaux de la verite terrain

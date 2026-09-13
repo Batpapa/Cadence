@@ -89,7 +89,45 @@ export interface ViterbiResult {
   debug?: ViterbiDebug;
 }
 
+/** What a state scores in a window BEFORE its admission (see admissionIndex):
+ *  the plain epsilon floor, whatever absentObservationRatio says. */
+function preAdmissionScore(cfg: DetectionTemporalConfig): number {
+  return cfg.observationScoreFn ? cfg.observationScoreFn(0, cfg.epsilon) : Math.log(cfg.epsilon);
+}
+
+/** Window at which `tuneId` entered the state space: its first candidate score
+ *  at or above minCandidateProbability (or `timeline.admittedAt` when given).
+ *
+ *  Why the decoder needs it (2026-09-13): the streaming decoder only learns of a
+ *  tune when it is admitted, and its exactness theorem (see the STREAMING header)
+ *  rests on the tune's earlier history being worthless. With a cheap absence
+ *  floor (absentObservationRatio) that history is no longer worthless, and the
+ *  streaming result drifted from a from-scratch decode — the equivalence oracle
+ *  caught it. So every decoder treats a state BEFORE its admission window as
+ *  pure epsilon: its observations there are ignored and it scores
+ *  preAdmissionScore. After admission, absence costs absentObservationRatio as
+ *  designed. Musically: a tune cannot be "waiting" before it has ever been
+ *  heard with conviction. Stable across prefixes, since the first qualifying
+ *  window never moves once it exists. */
+function admissionIndex(timeline: TemporalTimeline, tuneId: string, cfg: DetectionTemporalConfig): number {
+  const given = timeline.admittedAt?.get(tuneId);
+  if (given !== undefined) return given;
+  const row = timeline.rows.get(tuneId);
+  if (!row || row.t.length === 0) return 0;
+  for (let k = 0; k < row.t.length; k++) {
+    if (row.score[k]! >= cfg.minCandidateProbability) return row.t[k]!;
+  }
+  return row.t[0]!;
+}
+
 function observationScore(p: number, cfg: DetectionTemporalConfig): number {
+  // A tune absent from a window's candidates observes 0. With a ratio set, it
+  // scores a fixed fraction of UNKNOWN's floor instead of log(epsilon) — see
+  // absentObservationRatio. Every present candidate scores > 0, so only absence
+  // moves; both decoders (reference and streaming) go through this one function.
+  if (p <= 0 && cfg.absentObservationRatio !== undefined) {
+    return Math.log(Math.max(cfg.absentObservationRatio * cfg.unknownObservationProbability, cfg.epsilon));
+  }
   return cfg.observationScoreFn
     ? cfg.observationScoreFn(p, cfg.epsilon)
     : Math.log(Math.max(p, cfg.epsilon));
@@ -496,6 +534,9 @@ export function runViterbiDetectionReference(
   if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
 
   const states = [...timeline.tuneIds, UNKNOWN_STATE];
+  const admitAt = new Map<string, number>();
+  for (const id of timeline.tuneIds) admitAt.set(id, admissionIndex(timeline, id, cfg));
+  const epsScore = preAdmissionScore(cfg);
 
   const bestScore: Map<string, number>[] = [];
   const previousState: Map<string, string | null>[] = [];
@@ -507,8 +548,11 @@ export function runViterbiDetectionReference(
     const debugRow: StepDebugEntry[] = [];
 
     for (const s of states) {
-      const p = s === UNKNOWN_STATE ? cfg.unknownObservationProbability : observationAt(timeline, s, t);
-      const obsScore = observationScore(p, cfg);
+      // Before its admission a tune observes nothing and scores the plain
+      // epsilon floor — see admissionIndex.
+      const admitted = s === UNKNOWN_STATE || t >= admitAt.get(s)!;
+      const p = s === UNKNOWN_STATE ? cfg.unknownObservationProbability : (admitted ? observationAt(timeline, s, t) : 0);
+      const obsScore = admitted ? observationScore(p, cfg) : epsScore;
 
       if (t === 0) {
         scoreRow.set(s, obsScore);
@@ -591,14 +635,17 @@ interface SlotSpace {
   /** canonical tune position -> slot, for iterating tunes in canonical order. */
   tuneSlots: Int32Array;
   unknownSlot: number;
+  /** slot -> admission window (admissionIndex); 0 for UNKNOWN. Fixed once set. */
+  admitAt: Int32Array;
 }
 
 /** Creates or extends the space to cover `tuneIds` + UNKNOWN, and refreshes
  *  the tie-break ranks. Slots already handed out keep their value. */
-function syncSlotSpace(space: SlotSpace | null, tuneIds: string[]): SlotSpace {
+function syncSlotSpace(space: SlotSpace | null, timeline: TemporalTimeline, cfg: DetectionTemporalConfig): SlotSpace {
+  const tuneIds = timeline.tuneIds;
   const s: SlotSpace = space ?? {
     slotOf: new Map(), names: [], rank: new Int32Array(0),
-    tuneSlots: new Int32Array(0), unknownSlot: -1,
+    tuneSlots: new Int32Array(0), unknownSlot: -1, admitAt: new Int32Array(0),
   };
   for (const id of tuneIds) {
     if (!s.slotOf.has(id)) { s.slotOf.set(id, s.names.length); s.names.push(id); }
@@ -607,6 +654,16 @@ function syncSlotSpace(space: SlotSpace | null, tuneIds: string[]): SlotSpace {
     s.unknownSlot = s.names.length;
     s.slotOf.set(UNKNOWN_STATE, s.unknownSlot);
     s.names.push(UNKNOWN_STATE);
+  }
+  // Admission windows for the slots handed out just now; existing slots keep
+  // theirs (an admission window never moves).
+  if (s.admitAt.length !== s.names.length) {
+    const grown = new Int32Array(s.names.length);
+    grown.set(s.admitAt);
+    for (let slot = s.admitAt.length; slot < s.names.length; slot++) {
+      grown[slot] = slot === s.unknownSlot ? 0 : admissionIndex(timeline, s.names[slot]!, cfg);
+    }
+    s.admitAt = grown;
   }
   // Refreshed every time, not just on growth: tuneIds may have REORDERED
   // without changing size.
@@ -877,14 +934,19 @@ function computeColumn(
   scratch: IndexScratch,
   /** This window's non-floor observations as [slot, p, score, …]. */
   obsEntries: number[],
-  /** What every state NOT in that list scores — `observationScore(0)`. */
+  /** What every ADMITTED state not in that list scores — `observationScore(0)`. */
   floorScore: number,
+  /** Window index of this column — compared with each state's admission window. */
+  t: number,
+  /** What a state not yet admitted at `t` scores, observation or not — see
+   *  admissionIndex. */
+  epsScore: number,
   prevScore: Float64Array | null,
   prevPrevSlot: Int32Array | null,
   cfg: DetectionTemporalConfig,
   debug: boolean,
 ): Column {
-  const { tuneSlots, rank, names, unknownSlot } = space;
+  const { tuneSlots, rank, names, unknownSlot, admitAt } = space;
   const slotCount = names.length;
 
   // Scatter this window's handful of real observations; everything else reads
@@ -911,9 +973,10 @@ function computeColumn(
     // Canonical order, so a debug row reads the same as the reference's.
     for (let ci = 0; ci < tuneSlots.length; ci++) {
       const slot = tuneSlots[ci]!;
-      const hit = obsGen[slot] === og;
+      const admitted = admitAt[slot]! <= t;
+      const hit = admitted && obsGen[slot] === og;
       const p = hit ? obsP[slot]! : 0;
-      const s = hit ? obsScore[slot]! : floorScore;
+      const s = hit ? obsScore[slot]! : (admitted ? floorScore : epsScore);
       score[slot] = s; prev[slot] = -1;
       if (debug) pushDebug(slot, p, s, -1, 0, s);
     }
@@ -962,8 +1025,9 @@ function computeColumn(
       }
     }
 
-    const hit = obsGen[curSlot] === og;
-    const s = hit ? obsScore[curSlot]! : floorScore;
+    const admitted = admitAt[curSlot]! <= t;
+    const hit = admitted && obsGen[curSlot] === og;
+    const s = hit ? obsScore[curSlot]! : (admitted ? floorScore : epsScore);
     score[curSlot] = s + bestValue;
     prev[curSlot] = bestSlot;
     if (debug) pushDebug(curSlot, hit ? obsP[curSlot]! : 0, s, bestSlot, bestCost, s + bestValue);
@@ -1095,15 +1159,16 @@ export function runViterbiDetectionOptimized(
   if (T === 0) return { segments: [], stats: { numberOfTransitions: 0, numberOfWindows: 0 }, convergedThroughIndex: -1 };
 
   const debug = !!options.debug;
-  const space = syncSlotSpace(null, timeline.tuneIds);
+  const space = syncSlotSpace(null, timeline, cfg);
   const scratch = makeIndexScratch(space.names.length);
   const columns: Column[] = [];
   const debugSteps: StepDebugEntry[][] = [];
   const floorScore = observationScore(0, cfg);
+  const epsScore = preAdmissionScore(cfg);
 
   for (let t = 0; t < T; t++) {
     const prevCol = t === 0 ? null : columns[t - 1]!;
-    const col = computeColumn(space, scratch, obsEntriesForWindow(space, timeline, t, cfg), floorScore, prevCol && prevCol.score, prevCol && prevCol.prev, cfg, debug);
+    const col = computeColumn(space, scratch, obsEntriesForWindow(space, timeline, t, cfg), floorScore, t, epsScore, prevCol && prevCol.score, prevCol && prevCol.prev, cfg, debug);
     columns.push(col);
     if (debug) debugSteps.push(col.debugRow!);
   }
@@ -1174,6 +1239,16 @@ export const runViterbiDetection = runViterbiDetectionOptimized;
 // birth. This holds ONLY for a state joining at t0>0 (epsilon history to
 // seed away) — a state present since window 0 has real observations from
 // the start, nothing to seed.
+//
+// ⚠️ 2026-09-13 — with absentObservationRatio the "massively negative history"
+// premise stopped being true (absence costs log(0.16), not log(1e-6)) and the
+// equivalence oracle failed. Restored by construction rather than by recomputing
+// on admission (which would bring the O(T²×S) cost back): EVERY decoder now scores
+// a state before its admission window as pure epsilon, observations ignored (see
+// admissionIndex). A pre-admission history is then again a chain of log(epsilon)
+// per window, entering the tune from UNKNOWN beats it by more than ten nats, and
+// the argument above holds exactly as written — with or without the absence
+// floor, and for batched extends as well as window-by-window ones.
 
 /** First mismatch description between two ViterbiResults over the SAME
  *  timeline, or null if they agree — path (segments) AND scores
@@ -1239,7 +1314,7 @@ export class StreamingViterbiDecoder {
     // a slot that did not exist when it was computed, and scoreAt/prevAt answer
     // -Infinity / -1 there — which is the seeding this used to write by hand,
     // and exactly what the correctness theorem above assumes.
-    this.space = syncSlotSpace(this.space, timeline.tuneIds);
+    this.space = syncSlotSpace(this.space, timeline, cfg);
     const space = this.space;
     if (this.scratch.groupGen.length !== space.names.length) {
       this.scratch = makeIndexScratch(space.names.length);
@@ -1248,11 +1323,14 @@ export class StreamingViterbiDecoder {
     // Built per NEW window only — the ones already decoded are never read
     // again — from that window's ~10 candidates, not from every admitted tune.
     const floorScore = observationScore(0, cfg);
+    // Needed even here: a batch (feedAll) computes many columns at once, with
+    // slots for tunes admitted AFTER some of those columns.
+    const epsScore = preAdmissionScore(cfg);
 
     for (let t = this.columns.length; t < T; t++) {
       const prevCol = t === 0 ? null : this.columns[t - 1]!;
       const col = computeColumn(
-        space, this.scratch, obsEntriesForWindow(space, timeline, t, cfg), floorScore,
+        space, this.scratch, obsEntriesForWindow(space, timeline, t, cfg), floorScore, t, epsScore,
         prevCol && prevCol.score, prevCol && prevCol.prev, cfg, this.debug,
       );
       this.columns.push(col);

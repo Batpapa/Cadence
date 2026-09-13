@@ -1,0 +1,13 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-knobs2 | tempo 60..240 | stride 2 | octave 0.4 | calls [{"m":"set_tempo_model","args":[3,1]}] | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\screen-slope10
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [20240721_tocane_2_chapit] 200/1957 (237s)
+  [20240721_tocane_2_chapit] 400/1957 (280s)
+  [20240721_tocane_2_chapit] 600/1957 (316s)
+  [20240721_tocane_2_chapit] 800/1957 (352s)
+  [20240721_tocane_2_chapit] 1000/1957 (386s)
+  [20240721_tocane_2_chapit] 1200/1957 (424s)
+  [20240721_tocane_2_chapit] 1400/1957 (461s)
+  [20240721_tocane_2_chapit] 1600/1957 (497s)
+  [20240721_tocane_2_chapit] 1800/1957 (554s)
+  [20240721_tocane_2_chapit] 1957/1957 (606s)
+  wrote 20240721_tocane_2_chapiteau in 607s

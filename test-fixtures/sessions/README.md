@@ -62,6 +62,28 @@ Two files per session:
   be re-run before they mean anything. Where the bad setlist came from is not
   known; it arrived from the annotating group under the right name.
 
+## Engine that produced the windows — read this before comparing with older figures
+
+**Regenerated 2026-09-13 with the production engine and Cadence's detector
+parameters**: tempo search 60-180, shortlist 4000, minimum query length 20 (see
+`src/session/sessionConfig.ts` and `vendor/folkfriend/README.md`). The generator
+(`experiments/noise-study/regenerate-fixtures.js` → `lib/wasmClient.js`) reads
+those constants from sessionConfig.ts, exactly like the window geometry below, so
+the windows here are what the app itself would produce.
+
+Every figure measured on these files BEFORE that date came from the previous
+engine run with upstream defaults (tempo 60-240, shortlist 2000, no length gate).
+Detection results on the new windows, with `absentObservationRatio` 0.8: 318 / 341
+tunes, 12 false positives, mean IoU 88.0 % — the old windows gave 311, 20, 79.5 %
+under the previous detector configuration. Do not compare a number across that
+boundary without re-running the older measurement.
+
+The previous files are not lost: git history holds them, and the ranking study
+kept a copy (`experiments/ranking-study/v3/install-backup/test-fixtures-sessions/`,
+untracked). Before replacing the committed files, the regeneration was checked
+against an independent one made by the study's own harness with the same engine
+build and calls (`experiments/ranking-study/v3/fixtures-prod/`).
+
 ## Window geometry — read this before running any backtest
 
 The dumps carry their own `tWindowStart`/`tWindowEnd`, so the geometry is

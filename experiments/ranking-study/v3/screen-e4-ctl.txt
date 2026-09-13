@@ -1,0 +1,23 @@
+
+-- rangs 1 / top 10 dans les plages annotees (fenetres communes) --
+  dossier                             TOUS              reel               jig             polka          hornpipe          slip jig             slide
+  fixtures-ctl           73.3%/78.7% n7414 76.8%/81.5% n4085 70.1%/74.8% n1873  40.1%/52.3% n367  69.4%/75.3% n389  86.5%/91.5% n414  73.2%/89.3% n112
+  gate-ctl-L20           73.3%/78.7% n7414 76.8%/81.5% n4085 70.1%/74.8% n1873  40.1%/52.3% n367  69.4%/75.3% n389  86.5%/91.5% n414  73.2%/89.3% n112
+  gate-ctl-L30           73.1%/78.3% n7414 76.8%/81.5% n4085 70.1%/74.7% n1873  40.1%/52.3% n367  69.4%/75.3% n389  86.5%/91.5% n414  73.2%/89.3% n112
+
+-- comparaison appariee contre fixtures-ctl (memes fenetres annotees) --
+  dossier                 rang1 gagnes/perdus    net    p (signe)   top10 gagnes/perdus    net    p (signe)
+  gate-ctl-L20                            0/0     +0       1.0e+0                   0/0     +0       1.0e+0
+  gate-ctl-L30                           0/20    -20       1.9e-6                  0/27    -27       1.5e-8
+
+-- qualite temporelle de la preuve, par morceau annote --
+  dossier                sans rang1    retard debut p50/p75/p90 (s)    avance fin p50/p75/p90 (s)    fraction rang1 p25/p50   bruit top1 moyen
+  fixtures-ctl               12/341                         5/10/21                        4/7/17                 0.60/0.86             0.1151
+  gate-ctl-L20               12/341                         5/10/21                        4/7/17                 0.60/0.86             0.1095
+  gate-ctl-L30               12/341                         5/10/21                        4/7/17                 0.59/0.85             0.0953
+
+-- longueur du contour (symboles = croches) --
+  dossier                  musique annotee p25/p50/p75     bruit p25/p50/p75
+  fixtures-ctl                                58/65/70              36/44/49
+  gate-ctl-L20                                58/65/70              36/44/49
+  gate-ctl-L30                                58/65/70              36/44/49

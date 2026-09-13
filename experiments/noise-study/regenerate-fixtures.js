@@ -30,7 +30,12 @@ const ANALYSIS_WINDOW_S = constFromConfig('ANALYSIS_WINDOW_S');
 const ANALYSIS_HOP_S = constFromConfig('ANALYSIS_HOP_S');
 
 const AUDIO_DIR = path.resolve(__dirname, '../../test-fixtures/audio');
-const OUT_DIR = path.resolve(__dirname, '../../test-fixtures/sessions');
+// FIXTURES_OUT_DIR stages a regeneration elsewhere (e.g. to verify it before it
+// replaces the committed fixtures, or while tests are reading them). Default: the
+// committed location.
+const OUT_DIR = process.env.FIXTURES_OUT_DIR
+  ? path.resolve(process.env.FIXTURES_OUT_DIR)
+  : path.resolve(__dirname, '../../test-fixtures/sessions');
 
 const FIXTURES = [
   { name: '20260523_1_matin_Anglade', audio: '20260523_1_matin_Anglade.m4a' },

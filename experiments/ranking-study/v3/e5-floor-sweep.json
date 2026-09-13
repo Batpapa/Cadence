@@ -1,0 +1,11 @@
+[
+ {"label":"identity plat=on N2 floor 0.16","transform":"identity","flat":true,"floor":0.16,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.18","transform":"identity","flat":true,"floor":0.18,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.20","transform":"identity","flat":true,"floor":0.20,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.22","transform":"identity","flat":true,"floor":0.22,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.24","transform":"identity","flat":true,"floor":0.24,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.26","transform":"identity","flat":true,"floor":0.26,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.28","transform":"identity","flat":true,"floor":0.28,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.30","transform":"identity","flat":true,"floor":0.30,"confirm":"none","weights":{}},
+ {"label":"identity plat=on N2 floor 0.32","transform":"identity","flat":true,"floor":0.32,"confirm":"none","weights":{}}
+]

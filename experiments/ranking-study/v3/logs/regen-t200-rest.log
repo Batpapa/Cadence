@@ -1,0 +1,40 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-tempo | tempo 60..200 | stride 1 | octave 0.4 | calls [] | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-t200
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [20260523_1_matin_Anglade] 200/1060 (56s)
+  [20260523_1_matin_Anglade] 400/1060 (95s)
+  [20260523_1_matin_Anglade] 600/1060 (139s)
+  [20260523_1_matin_Anglade] 800/1060 (189s)
+  [20260523_1_matin_Anglade] 1000/1060 (236s)
+  [20260523_1_matin_Anglade] 1060/1060 (248s)
+  wrote 20260523_1_matin_Anglade in 248s
+  [20260523_2_aprem_tabac] 200/1017 (57s)
+  [20260523_2_aprem_tabac] 400/1017 (98s)
+  [20260523_2_aprem_tabac] 600/1017 (141s)
+  [20260523_2_aprem_tabac] 800/1017 (180s)
+  [20260523_2_aprem_tabac] 1000/1017 (213s)
+  [20260523_2_aprem_tabac] 1017/1017 (216s)
+  wrote 20260523_2_aprem_tabac in 217s
+  [20260523_5_auberge_fleur] 200/983 (50s)
+  [20260523_5_auberge_fleur] 400/983 (88s)
+  [20260523_5_auberge_fleur] 600/983 (125s)
+  [20260523_5_auberge_fleur] 800/983 (160s)
+  [20260523_5_auberge_fleur] 983/983 (190s)
+  wrote 20260523_5_auberge_fleurie in 191s
+  [One_of_the_Best_Traditio] 200/435 (39s)
+  [One_of_the_Best_Traditio] 400/435 (69s)
+  [One_of_the_Best_Traditio] 435/435 (75s)
+  wrote One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video in 75s
+  [732984_11910076-lq] 200/338 (33s)
+  [732984_11910076-lq] 338/338 (54s)
+  wrote 732984_11910076-lq in 54s
+  [13th_Moon_Gravity_Well_-] 200/956 (54s)
+  [13th_Moon_Gravity_Well_-] 400/956 (85s)
+  [13th_Moon_Gravity_Well_-] 600/956 (113s)
+  [13th_Moon_Gravity_Well_-] 800/956 (142s)
+  [13th_Moon_Gravity_Well_-] 956/956 (166s)
+  wrote 13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24 in 166s
+  [1Hour_Trad_Irish_Music_S] 200/779 (33s)
+  [1Hour_Trad_Irish_Music_S] 400/779 (59s)
+  [1Hour_Trad_Irish_Music_S] 600/779 (83s)
+  [1Hour_Trad_Irish_Music_S] 779/779 (103s)
+  wrote 1Hour_Trad_Irish_Music_Session_in_Korea in 104s

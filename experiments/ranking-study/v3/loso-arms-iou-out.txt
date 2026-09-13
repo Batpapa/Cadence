@@ -1,0 +1,11 @@
+220 candidats, 10 bras
+production : 311/20, IoU 79.5 %
+kappa=0 lambda=0.5 : hors echantillon 317.3/13.8, IoU 86.8 %  (production 311/20, 79.5 %)  | t200L20:production a=0.8 ; t200L20:production a=0.8 ; t200L20:production a=0.8 ; t200L20:production a=0.8 ; t200L20:production a=0.8 ; t200L20:production a=0.75 ; 4 ex-aequo
+kappa=0 lambda=1 : hors echantillon 311.9/12.9, IoU 87.3 %  (production 311/20, 79.5 %)  | 2 ex-aequo ; 4 ex-aequo ; 2 ex-aequo ; 2 ex-aequo ; 2 ex-aequo ; 2 ex-aequo ; 8 ex-aequo
+kappa=0 lambda=2 : hors echantillon 309.8/12.2, IoU 88.7 %  (production 311/20, 79.5 %)  | 2 ex-aequo ; 9 ex-aequo ; t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; 2 ex-aequo ; 2 ex-aequo ; 6 ex-aequo
+kappa=0.5 lambda=0.5 : hors echantillon 318.0/12.5, IoU 88.2 %  (production 311/20, 79.5 %)  | t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8
+kappa=0.5 lambda=1 : hors echantillon 310.0/12.5, IoU 89.7 %  (production 311/20, 79.5 %)  | t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; 2 ex-aequo
+kappa=0.5 lambda=2 : hors echantillon 310.0/11.0, IoU 89.6 %  (production 311/20, 79.5 %)  | 2 ex-aequo ; 2 ex-aequo ; t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; 2 ex-aequo ; 2 ex-aequo ; 2 ex-aequo
+kappa=1 lambda=0.5 : hors echantillon 313.0/12.5, IoU 88.9 %  (production 311/20, 79.5 %)  | t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; t180-rep4000L20:production a=0.8
+kappa=1 lambda=1 : hors echantillon 310.0/12.5, IoU 89.7 %  (production 311/20, 79.5 %)  | t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; 2 ex-aequo
+kappa=1 lambda=2 : hors echantillon 310.0/11.0, IoU 89.7 %  (production 311/20, 79.5 %)  | 2 ex-aequo ; 2 ex-aequo ; t180-rep4000L20:production a=0.8 ; 2 ex-aequo ; 2 ex-aequo ; 2 ex-aequo ; 2 ex-aequo

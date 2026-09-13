@@ -1,0 +1,8 @@
+[
+ {"label":"production a=0.6","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.6},
+ {"label":"production a=0.65","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.65},
+ {"label":"production a=0.7","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.7},
+ {"label":"production a=0.75","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.75},
+ {"label":"production a=0.8","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.8},
+ {"label":"production a=0.85","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.85}
+]

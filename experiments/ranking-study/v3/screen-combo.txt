@@ -1,0 +1,31 @@
+
+-- rangs 1 / top 10 dans les plages annotees (fenetres communes) --
+  dossier                             TOUS              reel               jig             polka          hornpipe          slip jig             slide
+  fixtures-ctl           73.3%/78.6% n3692 77.3%/82.3% n2035  70.5%/74.4% n932  36.4%/47.8% n184  70.5%/75.6% n193  84.0%/89.8% n206   69.6%/91.1% n56
+  screen-t180            75.2%/80.3% n3692 78.8%/83.1% n2035  72.6%/77.0% n932  40.8%/54.3% n184  74.6%/77.2% n193  86.9%/91.7% n206   67.9%/89.3% n56
+  screen-rep4000         74.9%/80.6% n3692 78.4%/83.6% n2035  72.1%/76.1% n932  41.8%/56.5% n184  72.5%/78.2% n193  86.9%/92.7% n206   69.6%/91.1% n56
+  screen-t180-rep4000    76.2%/81.6% n3692 79.6%/84.2% n2035  73.3%/77.4% n932  45.7%/60.3% n184  75.6%/79.3% n193  86.9%/92.7% n206   67.9%/89.3% n56
+  gate-t180-rep4000-L20  76.2%/81.6% n3692 79.6%/84.2% n2035  73.3%/77.4% n932  45.7%/60.3% n184  75.6%/79.3% n193  86.9%/92.7% n206   67.9%/89.3% n56
+
+-- comparaison appariee contre fixtures-ctl (memes fenetres annotees) --
+  dossier                 rang1 gagnes/perdus    net    p (signe)   top10 gagnes/perdus    net    p (signe)
+  screen-t180                          120/50    +70       8.0e-8                108/45    +63       3.7e-7
+  screen-rep4000                         65/7    +58      7.0e-13                 89/15    +74      5.6e-14
+  screen-t180-rep4000                  153/48   +105      5.7e-14                153/43   +110      1.2e-15
+  gate-t180-rep4000-L20                153/48   +105      5.7e-14                153/43   +110      1.2e-15
+
+-- qualite temporelle de la preuve, par morceau annote --
+  dossier                sans rang1    retard debut p50/p75/p90 (s)    avance fin p50/p75/p90 (s)    fraction rang1 p25/p50   bruit top1 moyen
+  fixtures-ctl               18/341                         8/13/26                       7/11/24                 0.60/0.86             0.1151
+  screen-t180                14/341                         8/12/25                       7/10/24                 0.64/0.86             0.1905
+  screen-rep4000             16/341                         8/12/25                       7/10/25                 0.64/0.88             0.1168
+  screen-t180-rep4000        13/341                         8/12/25                       7/10/24                 0.64/0.88             0.1934
+  gate-t180-rep4000-L20      13/341                         8/12/25                       7/10/24                 0.64/0.88             0.0706
+
+-- longueur du contour (symboles = croches) --
+  dossier                  musique annotee p25/p50/p75     bruit p25/p50/p75
+  fixtures-ctl                                58/65/70              37/45/49
+  screen-t180                                 57/62/66              12/35/47
+  screen-rep4000                              58/65/70              36/45/49
+  screen-t180-rep4000                         57/62/66              12/35/46
+  gate-t180-rep4000-L20                       57/62/66              12/35/46

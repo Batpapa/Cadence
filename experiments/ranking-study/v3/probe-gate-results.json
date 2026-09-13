@@ -1,0 +1,466 @@
+[
+ {
+  "label": "prod",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "found": 312,
+  "total": 341,
+  "fp": 20,
+  "noise": 0,
+  "coverage": 0.8021567013337119,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    4
+   ],
+   [
+    21,
+    27,
+    5
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    1
+   ],
+   [
+    135,
+    149,
+    10
+   ]
+  ]
+ },
+ {
+  "label": "prod topFrac=1e-9 (doit etre identique)",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "topFrac": 1e-9,
+  "found": 312,
+  "total": 341,
+  "fp": 20,
+  "noise": 0,
+  "coverage": 0.8021567013337119,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    4
+   ],
+   [
+    21,
+    27,
+    5
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    1
+   ],
+   [
+    135,
+    149,
+    10
+   ]
+  ]
+ },
+ {
+  "label": "prod N=3",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 3,
+  "confirm": "none",
+  "weights": {},
+  "found": 287,
+  "total": 341,
+  "fp": 6,
+  "noise": 0,
+  "coverage": 0.7872719437388943,
+  "per": [
+   [
+    30,
+    31,
+    0
+   ],
+   [
+    34,
+    36,
+    0
+   ],
+   [
+    18,
+    27,
+    0
+   ],
+   [
+    27,
+    30,
+    0
+   ],
+   [
+    24,
+    26,
+    0
+   ],
+   [
+    30,
+    42,
+    0
+   ],
+   [
+    124,
+    149,
+    6
+   ]
+  ]
+ },
+ {
+  "label": "prod N=1 p=0.1",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 1,
+  "confirm": "none",
+  "weights": {},
+  "topFrac": 0.1,
+  "found": 317,
+  "total": 341,
+  "fp": 118,
+  "noise": 1,
+  "coverage": 0.8043549601372415,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    17
+   ],
+   [
+    22,
+    27,
+    24
+   ],
+   [
+    29,
+    30,
+    9
+   ],
+   [
+    25,
+    26,
+    2
+   ],
+   [
+    38,
+    42,
+    19
+   ],
+   [
+    137,
+    149,
+    47
+   ]
+  ]
+ },
+ {
+  "label": "prod N=1 p=0.2",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 1,
+  "confirm": "none",
+  "weights": {},
+  "topFrac": 0.2,
+  "found": 317,
+  "total": 341,
+  "fp": 118,
+  "noise": 1,
+  "coverage": 0.8043549601372415,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    17
+   ],
+   [
+    22,
+    27,
+    24
+   ],
+   [
+    29,
+    30,
+    9
+   ],
+   [
+    25,
+    26,
+    2
+   ],
+   [
+    38,
+    42,
+    19
+   ],
+   [
+    137,
+    149,
+    47
+   ]
+  ]
+ },
+ {
+  "label": "prod N=1 p=0.3",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 1,
+  "confirm": "none",
+  "weights": {},
+  "topFrac": 0.3,
+  "found": 317,
+  "total": 341,
+  "fp": 118,
+  "noise": 1,
+  "coverage": 0.8043549601372415,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    17
+   ],
+   [
+    22,
+    27,
+    24
+   ],
+   [
+    29,
+    30,
+    9
+   ],
+   [
+    25,
+    26,
+    2
+   ],
+   [
+    38,
+    42,
+    19
+   ],
+   [
+    137,
+    149,
+    47
+   ]
+  ]
+ },
+ {
+  "label": "prod N=2 p=0.2",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {},
+  "topFrac": 0.2,
+  "found": 312,
+  "total": 341,
+  "fp": 20,
+  "noise": 0,
+  "coverage": 0.8021567013337119,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    4
+   ],
+   [
+    21,
+    27,
+    5
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    1
+   ],
+   [
+    135,
+    149,
+    10
+   ]
+  ]
+ },
+ {
+  "label": "prod N=2 p=0.3",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {},
+  "topFrac": 0.3,
+  "found": 312,
+  "total": 341,
+  "fp": 20,
+  "noise": 0,
+  "coverage": 0.8021567013337119,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    4
+   ],
+   [
+    21,
+    27,
+    5
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    1
+   ],
+   [
+    135,
+    149,
+    10
+   ]
+  ]
+ },
+ {
+  "label": "prod N=2 p=0.5",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {},
+  "topFrac": 0.5,
+  "found": 312,
+  "total": 341,
+  "fp": 19,
+  "noise": 0,
+  "coverage": 0.8021567013337119,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    4
+   ],
+   [
+    21,
+    27,
+    5
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    1
+   ],
+   [
+    135,
+    149,
+    9
+   ]
+  ]
+ }
+]

@@ -1,0 +1,41 @@
+Loading tune index...
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+WASM ready, version: 1.3.0
+
+[One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video] decoding One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video.mp3 ...
+  decoded 36.4 min of audio in 4.5s
+  435 windows to analyze
+  100/435 windows analyzed (19s elapsed)
+  200/435 windows analyzed (42s elapsed)
+  300/435 windows analyzed (64s elapsed)
+  400/435 windows analyzed (86s elapsed)
+  435/435 windows analyzed (94s elapsed)
+  wrote C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-regen-official\One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video-windows.json (7.6 MB)
+
+[13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24] decoding 13th Moon Gravity Well - Irish Trad Session 2024.01.24.mp3 ...
+  decoded 79.8 min of audio in 10.1s
+  956 windows to analyze
+  100/956 windows analyzed (25s elapsed)
+  200/956 windows analyzed (49s elapsed)
+  300/956 windows analyzed (70s elapsed)
+  400/956 windows analyzed (92s elapsed)
+  500/956 windows analyzed (115s elapsed)
+  600/956 windows analyzed (137s elapsed)
+  700/956 windows analyzed (162s elapsed)
+  800/956 windows analyzed (185s elapsed)
+  900/956 windows analyzed (211s elapsed)
+  956/956 windows analyzed (222s elapsed)
+  wrote C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-regen-official\13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24-windows.json (16.6 MB)
+
+[1Hour_Trad_Irish_Music_Session_in_Korea] decoding 1Hour Trad Irish Music Session in Korea.mp3 ...
+  decoded 65.1 min of audio in 7.8s
+  779 windows to analyze
+  100/779 windows analyzed (18s elapsed)
+  200/779 windows analyzed (38s elapsed)
+  300/779 windows analyzed (58s elapsed)
+  400/779 windows analyzed (77s elapsed)
+  500/779 windows analyzed (97s elapsed)
+  600/779 windows analyzed (117s elapsed)
+  700/779 windows analyzed (138s elapsed)
+  779/779 windows analyzed (151s elapsed)
+  wrote C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-regen-official\1Hour_Trad_Irish_Music_Session_in_Korea-windows.json (13.5 MB)

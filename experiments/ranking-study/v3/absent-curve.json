@@ -1,0 +1,8 @@
+[
+ {"label":"production a=0","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{}},
+ {"label":"production a=0.5","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.5},
+ {"label":"production a=0.75","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.75},
+ {"label":"production a=0.9","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.9},
+ {"label":"production a=0.95","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.95},
+ {"label":"production a=0.98","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.98}
+]

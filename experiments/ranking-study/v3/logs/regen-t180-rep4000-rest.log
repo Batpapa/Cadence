@@ -1,0 +1,40 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-knobs2 | tempo 60..180 | stride 1 | octave 0.4 | calls [{"m":"set_num_repass","args":[4000]}] | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-t180-rep4000
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [20260523_1_matin_Anglade] 200/1060 (58s)
+  [20260523_1_matin_Anglade] 400/1060 (101s)
+  [20260523_1_matin_Anglade] 600/1060 (146s)
+  [20260523_1_matin_Anglade] 800/1060 (191s)
+  [20260523_1_matin_Anglade] 1000/1060 (235s)
+  [20260523_1_matin_Anglade] 1060/1060 (248s)
+  wrote 20260523_1_matin_Anglade in 248s
+  [20260523_2_aprem_tabac] 200/1017 (56s)
+  [20260523_2_aprem_tabac] 400/1017 (94s)
+  [20260523_2_aprem_tabac] 600/1017 (137s)
+  [20260523_2_aprem_tabac] 800/1017 (180s)
+  [20260523_2_aprem_tabac] 1000/1017 (214s)
+  [20260523_2_aprem_tabac] 1017/1017 (217s)
+  wrote 20260523_2_aprem_tabac in 217s
+  [20260523_5_auberge_fleur] 200/983 (41s)
+  [20260523_5_auberge_fleur] 400/983 (77s)
+  [20260523_5_auberge_fleur] 600/983 (111s)
+  [20260523_5_auberge_fleur] 800/983 (145s)
+  [20260523_5_auberge_fleur] 983/983 (175s)
+  wrote 20260523_5_auberge_fleurie in 175s
+  [One_of_the_Best_Traditio] 200/435 (35s)
+  [One_of_the_Best_Traditio] 400/435 (65s)
+  [One_of_the_Best_Traditio] 435/435 (70s)
+  wrote One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video in 70s
+  [732984_11910076-lq] 200/338 (26s)
+  [732984_11910076-lq] 338/338 (43s)
+  wrote 732984_11910076-lq in 43s
+  [13th_Moon_Gravity_Well_-] 200/956 (39s)
+  [13th_Moon_Gravity_Well_-] 400/956 (65s)
+  [13th_Moon_Gravity_Well_-] 600/956 (92s)
+  [13th_Moon_Gravity_Well_-] 800/956 (120s)
+  [13th_Moon_Gravity_Well_-] 956/956 (142s)
+  wrote 13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24 in 142s
+  [1Hour_Trad_Irish_Music_S] 200/779 (29s)
+  [1Hour_Trad_Irish_Music_S] 400/779 (52s)
+  [1Hour_Trad_Irish_Music_S] 600/779 (76s)
+  [1Hour_Trad_Irish_Music_S] 779/779 (96s)
+  wrote 1Hour_Trad_Irish_Music_Session_in_Korea in 96s

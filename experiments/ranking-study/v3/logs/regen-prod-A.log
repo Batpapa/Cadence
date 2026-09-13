@@ -1,0 +1,25 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-prod | tempo 60..180 | stride 1 | octave 0.4 | calls [{"m":"set_num_repass","args":[4000]},{"m":"set_min_query_length","args":[20]}] | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-prod
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [20260523_1_matin_Anglade] 200/1060 (51s)
+  [20260523_1_matin_Anglade] 400/1060 (95s)
+  [20260523_1_matin_Anglade] 600/1060 (142s)
+  [20260523_1_matin_Anglade] 800/1060 (186s)
+  [20260523_1_matin_Anglade] 1000/1060 (217s)
+  [20260523_1_matin_Anglade] 1060/1060 (226s)
+  wrote 20260523_1_matin_Anglade in 227s
+  [20260523_2_aprem_tabac] 200/1017 (41s)
+  [20260523_2_aprem_tabac] 400/1017 (73s)
+  [20260523_2_aprem_tabac] 600/1017 (111s)
+  [20260523_2_aprem_tabac] 800/1017 (158s)
+  [20260523_2_aprem_tabac] 1000/1017 (198s)
+  [20260523_2_aprem_tabac] 1017/1017 (201s)
+  wrote 20260523_2_aprem_tabac in 201s
+  [20260523_5_auberge_fleur] 200/983 (53s)
+  [20260523_5_auberge_fleur] 400/983 (100s)
+  [20260523_5_auberge_fleur] 600/983 (141s)
+  [20260523_5_auberge_fleur] 800/983 (185s)
+  [20260523_5_auberge_fleur] 983/983 (224s)
+  wrote 20260523_5_auberge_fleurie in 224s
+  [732984_11910076-lq] 200/338 (30s)
+  [732984_11910076-lq] 338/338 (49s)
+  wrote 732984_11910076-lq in 49s

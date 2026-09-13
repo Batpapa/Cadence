@@ -1,0 +1,21 @@
+==== regeneration officielle contre fixtures-prod ====
+  1Hour_Trad_Irish_Music_Session_in_Korea : windows differing: 0 / 779 (candidates 0, best_bpm 0) IDENTICAL 
+  20260523_1_matin_Anglade : windows differing: 0 / 1060 (candidates 0, best_bpm 0) IDENTICAL 
+  20260523_2_aprem_tabac : windows differing: 0 / 1017 (candidates 0, best_bpm 0) IDENTICAL 
+  20260523_5_auberge_fleurie : windows differing: 0 / 983 (candidates 0, best_bpm 0) IDENTICAL 
+  One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video : windows differing: 0 / 435 (candidates 0, best_bpm 0) IDENTICAL 
+  13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24 : windows differing: 0 / 956 (candidates 0, best_bpm 0) IDENTICAL 
+  20240721_tocane_2_chapiteau : windows differing: 0 / 3914 (candidates 0, best_bpm 0) IDENTICAL 
+  732984_11910076-lq : windows differing: 0 / 338 (candidates 0, best_bpm 0) IDENTICAL 
+==== copie dans test-fixtures/sessions ====
+be504c575c51592d *test-fixtures/sessions/13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24-windows.json
+792e419f6c6b7aea *test-fixtures/sessions/1Hour_Trad_Irish_Music_Session_in_Korea-windows.json
+f3c420defb90b4c1 *test-fixtures/sessions/20240721_tocane_2_chapiteau-windows.json
+243edd77614acc0f *test-fixtures/sessions/20260523_1_matin_Anglade-windows.json
+77815ebb6ad513df *test-fixtures/sessions/20260523_2_aprem_tabac-windows.json
+cf9cba579b4fc6a8 *test-fixtures/sessions/20260523_5_auberge_fleurie-windows.json
+084269690607746a *test-fixtures/sessions/732984_11910076-lq-windows.json
+bd5dda6eff06e006 *test-fixtures/sessions/One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video-windows.json
+==== suite de tests complete ====
+ Test Files  49 passed (49)
+      Tests  689 passed | 15 skipped (704)

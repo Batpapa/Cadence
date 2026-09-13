@@ -1,0 +1,36 @@
+Cadence fork: debug exports, 3.5x faster engine, caller-set detector parameters
+
+Three batches of local work on top of upstream d1faa84, kept together because
+they touch the same files. Every change below is either byte-identical to the
+previous engine or, for the detector parameters, identical at their defaults.
+
+Debug instrumentation (2026-08-18)
+- New exports transcribe_pcm_buffer_debug / run_transcription_query_debug:
+  note, tempo and quantisation features plus the untruncated candidate list.
+  Existing exports unchanged.
+
+Speed (2026-09-01) — one 15 s window 363 ms -> 84 ms
+- query/nw.rs: Needleman-Wunsch on bytes, bounds checks out of the inner loop,
+  accumulator kept in a register (exactness proof in the file).
+- query/nw_simd.rs (new): four alignments per v128 lane, batched by setting
+  length, scores written back at their original index.
+- query/heuristic.rs: n-grams packed into u32, Bloom-style filter + exact
+  multiplicity map, no per-setting allocation, select_nth_unstable.
+- feature/autocorrelate.rs: fixed buffers, in-place sort; sixth root as
+  cbrt(sqrt(x)) (not bit-identical, full backtest identical).
+- Cargo.toml: LTO, codegen-units = 1, wasm-opt -O3; wasm-bindgen 0.2.92.
+
+Detector parameters (2026-09-13) — defaults = upstream behaviour
+- FolkFriendWASM::set_tempo_range(low, high)       default 60, 240
+- FolkFriendWASM::set_num_repass(n)                default 2000
+- FolkFriendWASM::set_min_query_length(n)          default 0
+- FolkFriendWASM::set_note_filter(power, frames)   default 0.10, 3
+- FolkFriendWASM::set_tempo_model(intercept, slope) default 3.0, 0.5
+  With no call, window dumps regenerated from real sessions are byte-identical
+  to the previous engine. Cadence sets 60-180 / 4000 / 20 (see its
+  src/session/sessionConfig.ts and experiments/ranking-study/CAMPAIGN_V3.md).
+
+Repository
+- .gitattributes: *.wav binary. The catch-all "* text eol=lf" made git treat
+  wavs/soup_dragon.wav as text, show it modified and rewrite two CRLF byte
+  pairs on commit.

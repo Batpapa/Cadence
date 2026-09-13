@@ -1,0 +1,8 @@
+1Hour_Trad_Irish_Music_Session_i n= 31 top10=31 top3=31 top1=31 top1x2=31 top1n2=31 top1n3=31
+20260523_1_matin_Anglade         n= 36 top10=36 top3=36 top1=35 top1x2=35 top1n2=35 top1n3=35
+20260523_2_aprem_tabac           n= 27 top10=24 top3=24 top1=24 top1x2=24 top1n2=24 top1n3=24
+20260523_5_auberge_fleurie       n= 30 top10=30 top3=30 top1=30 top1x2=30 top1n2=30 top1n3=30
+One_of_the_Best_Traditional_Iris n= 26 top10=25 top3=25 top1=25 top1x2=25 top1n2=25 top1n3=25
+13th_Moon_Gravity_Well_-_Irish_T n= 42 top10=39 top3=39 top1=39 top1x2=37 top1n2=39 top1n3=37
+20240721_tocane_2_chapiteau      n=149 top10=146 top3=146 top1=144 top1x2=137 top1n2=138 top1n3=136
+TOTAL                            n=341 top10=331 top3=331 top1=328 top1x2=319 top1n2=322 top1n3=318

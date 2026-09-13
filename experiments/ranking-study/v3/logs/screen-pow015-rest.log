@@ -1,0 +1,26 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-knobs2 | tempo 60..240 | stride 2 | octave 0.4 | calls [{"m":"set_note_filter","args":[0.15,3]}] | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\screen-pow015
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [20260523_1_matin_Anglade] 200/530 (60s)
+  [20260523_1_matin_Anglade] 400/530 (110s)
+  [20260523_1_matin_Anglade] 530/530 (137s)
+  wrote 20260523_1_matin_Anglade in 137s
+  [20260523_2_aprem_tabac] 200/509 (53s)
+  [20260523_2_aprem_tabac] 400/509 (97s)
+  [20260523_2_aprem_tabac] 509/509 (116s)
+  wrote 20260523_2_aprem_tabac in 117s
+  [20260523_5_auberge_fleur] 200/492 (51s)
+  [20260523_5_auberge_fleur] 400/492 (86s)
+  [20260523_5_auberge_fleur] 492/492 (104s)
+  wrote 20260523_5_auberge_fleurie in 104s
+  [One_of_the_Best_Traditio] 200/218 (42s)
+  [One_of_the_Best_Traditio] 218/218 (45s)
+  wrote One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video in 45s
+  [732984_11910076-lq] 169/169 (31s)
+  wrote 732984_11910076-lq in 31s
+  [13th_Moon_Gravity_Well_-] 200/478 (49s)
+  [13th_Moon_Gravity_Well_-] 400/478 (81s)
+  [13th_Moon_Gravity_Well_-] 478/478 (94s)
+  wrote 13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24 in 94s
+  [1Hour_Trad_Irish_Music_S] 200/390 (42s)
+  [1Hour_Trad_Irish_Music_S] 390/390 (68s)
+  wrote 1Hour_Trad_Irish_Music_Session_in_Korea in 68s

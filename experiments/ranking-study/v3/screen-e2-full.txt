@@ -1,0 +1,27 @@
+
+-- rangs 1 / top 10 dans les plages annotees (fenetres communes) --
+  dossier                             TOUS              reel               jig             polka          hornpipe          slip jig             slide
+  fixtures-ctl           73.3%/78.6% n3692 77.3%/82.3% n2035  70.5%/74.4% n932  36.4%/47.8% n184  70.5%/75.6% n193  84.0%/89.8% n206   69.6%/91.1% n56
+  screen-t180            75.2%/80.3% n3692 78.8%/83.1% n2035  72.6%/77.0% n932  40.8%/54.3% n184  74.6%/77.2% n193  86.9%/91.7% n206   67.9%/89.3% n56
+  screen-t200            74.9%/80.1% n3692 78.5%/83.1% n2035  72.7%/76.9% n932  40.2%/52.7% n184  73.1%/77.2% n193  85.9%/91.3% n206   67.9%/89.3% n56
+  screen-t220            74.2%/79.6% n3692 78.0%/83.1% n2035  71.6%/75.3% n932  37.5%/50.0% n184  71.5%/77.2% n193  85.4%/91.3% n206   69.6%/91.1% n56
+
+-- comparaison appariee contre fixtures-ctl (memes fenetres annotees) --
+  dossier                 rang1 gagnes/perdus    net    p (signe)   top10 gagnes/perdus    net    p (signe)
+  screen-t180                          120/50    +70       8.0e-8                108/45    +63       3.7e-7
+  screen-t200                           86/27    +59       2.3e-8                 76/20    +56       7.3e-9
+  screen-t220                            41/9    +32       5.6e-6                  42/5    +37       2.5e-8
+
+-- qualite temporelle de la preuve, par morceau annote --
+  dossier                sans rang1    retard debut p50/p75/p90 (s)    avance fin p50/p75/p90 (s)    fraction rang1 p25/p50   bruit top1 moyen
+  fixtures-ctl               18/341                         8/13/26                       7/11/24                 0.60/0.86             0.1151
+  screen-t180                14/341                         8/12/25                       7/10/24                 0.64/0.86             0.1905
+  screen-t200                14/341                         8/13/22                       7/11/24                 0.63/0.87             0.1434
+  screen-t220                16/341                         8/13/26                       7/11/24                 0.62/0.86             0.1256
+
+-- longueur du contour (symboles = croches) --
+  dossier                  musique annotee p25/p50/p75     bruit p25/p50/p75
+  fixtures-ctl                                58/65/70              37/45/49
+  screen-t180                                 57/62/66              12/35/47
+  screen-t200                                 57/63/68              29/43/49
+  screen-t220                                 58/65/69              34/45/50

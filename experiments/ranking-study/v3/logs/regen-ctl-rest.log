@@ -1,0 +1,33 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-tempo | tempo 60..240 | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-ctl
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [20260523_1_matin_Anglade] 200/1060 (69s)
+  [20260523_1_matin_Anglade] 400/1060 (122s)
+  [20260523_1_matin_Anglade] 600/1060 (178s)
+  [20260523_1_matin_Anglade] 800/1060 (231s)
+  [20260523_1_matin_Anglade] 1000/1060 (283s)
+  [20260523_1_matin_Anglade] 1060/1060 (299s)
+  wrote 20260523_1_matin_Anglade in 299s
+  [20260523_2_aprem_tabac] 200/1017 (81s)
+  [20260523_2_aprem_tabac] 400/1017 (154s)
+  [20260523_2_aprem_tabac] 600/1017 (232s)
+  [20260523_2_aprem_tabac] 800/1017 (308s)
+  [20260523_2_aprem_tabac] 1000/1017 (373s)
+  [20260523_2_aprem_tabac] 1017/1017 (379s)
+  wrote 20260523_2_aprem_tabac in 379s
+  [20260523_5_auberge_fleur] 200/983 (73s)
+  [20260523_5_auberge_fleur] 400/983 (127s)
+  [20260523_5_auberge_fleur] 600/983 (183s)
+  [20260523_5_auberge_fleur] 800/983 (255s)
+  [20260523_5_auberge_fleur] 983/983 (319s)
+  wrote 20260523_5_auberge_fleurie in 319s
+  [13th_Moon_Gravity_Well_-] 200/956 (93s)
+  [13th_Moon_Gravity_Well_-] 400/956 (159s)
+  [13th_Moon_Gravity_Well_-] 600/956 (226s)
+  [13th_Moon_Gravity_Well_-] 800/956 (298s)
+  [13th_Moon_Gravity_Well_-] 956/956 (353s)
+  wrote 13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24 in 353s
+  [1Hour_Trad_Irish_Music_S] 200/779 (73s)
+  [1Hour_Trad_Irish_Music_S] 400/779 (129s)
+  [1Hour_Trad_Irish_Music_S] 600/779 (182s)
+  [1Hour_Trad_Irish_Music_S] 779/779 (231s)
+  wrote 1Hour_Trad_Irish_Music_Session_in_Korea in 231s

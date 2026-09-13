@@ -1,0 +1,17 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-knobs2 | tempo 60..200 | stride 1 | octave 0.4 | calls [{"m":"set_num_repass","args":[8000]}] | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-t200-rep8000
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [One_of_the_Best_Traditio] 200/435 (53s)
+  [One_of_the_Best_Traditio] 400/435 (113s)
+  [One_of_the_Best_Traditio] 435/435 (123s)
+  wrote One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video in 123s
+  [13th_Moon_Gravity_Well_-] 200/956 (77s)
+  [13th_Moon_Gravity_Well_-] 400/956 (139s)
+  [13th_Moon_Gravity_Well_-] 600/956 (208s)
+  [13th_Moon_Gravity_Well_-] 800/956 (281s)
+  [13th_Moon_Gravity_Well_-] 956/956 (338s)
+  wrote 13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24 in 338s
+  [1Hour_Trad_Irish_Music_S] 200/779 (72s)
+  [1Hour_Trad_Irish_Music_S] 400/779 (136s)
+  [1Hour_Trad_Irish_Music_S] 600/779 (198s)
+  [1Hour_Trad_Irish_Music_S] 779/779 (252s)
+  wrote 1Hour_Trad_Irish_Music_Session_in_Korea in 252s

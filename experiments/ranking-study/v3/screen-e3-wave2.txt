@@ -1,0 +1,23 @@
+
+-- rangs 1 / top 10 dans les plages annotees (fenetres communes) --
+  dossier                             TOUS              reel               jig             polka          hornpipe          slip jig             slide
+  fixtures-ctl           73.3%/78.6% n3692 77.3%/82.3% n2035  70.5%/74.4% n932  36.4%/47.8% n184  70.5%/75.6% n193  84.0%/89.8% n206   69.6%/91.1% n56
+  screen-dur4            71.7%/78.6% n3692 75.0%/81.1% n2035  68.6%/74.7% n932  42.9%/54.9% n184  70.5%/78.8% n193  83.0%/90.3% n206   62.5%/83.9% n56
+  screen-pow015          71.6%/77.3% n3692 75.1%/80.6% n2035  69.5%/73.2% n932  35.3%/50.5% n184  68.9%/73.6% n193  83.5%/88.3% n206   62.5%/83.9% n56
+
+-- comparaison appariee contre fixtures-ctl (memes fenetres annotees) --
+  dossier                 rang1 gagnes/perdus    net    p (signe)   top10 gagnes/perdus    net    p (signe)
+  screen-dur4                         105/163    -58       4.8e-4               113/115     -2       9.5e-1
+  screen-pow015                        55/119    -64       1.4e-6                50/100    -50       5.4e-5
+
+-- qualite temporelle de la preuve, par morceau annote --
+  dossier                sans rang1    retard debut p50/p75/p90 (s)    avance fin p50/p75/p90 (s)    fraction rang1 p25/p50   bruit top1 moyen
+  fixtures-ctl               18/341                         8/13/26                       7/11/24                 0.60/0.86             0.1151
+  screen-dur4                21/341                         8/12/25                       7/12/24                 0.60/0.86             0.1864
+  screen-pow015              17/341                         8/13/26                       7/13/31                 0.56/0.83             0.1528
+
+-- longueur du contour (symboles = croches) --
+  dossier                  musique annotee p25/p50/p75     bruit p25/p50/p75
+  fixtures-ctl                                58/65/70              37/45/49
+  screen-dur4                                 49/56/61              18/23/28
+  screen-pow015                               53/61/68              27/33/38

@@ -1,0 +1,59 @@
+Loading tune index...
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+WASM ready, version: 1.3.0
+
+[20260523_1_matin_Anglade] decoding 20260523_1_matin_Anglade.m4a ...
+  decoded 88.5 min of audio in 8.5s
+  1060 windows to analyze
+  100/1060 windows analyzed (19s elapsed)
+  200/1060 windows analyzed (43s elapsed)
+  300/1060 windows analyzed (66s elapsed)
+  400/1060 windows analyzed (87s elapsed)
+  500/1060 windows analyzed (112s elapsed)
+  600/1060 windows analyzed (135s elapsed)
+  700/1060 windows analyzed (161s elapsed)
+  800/1060 windows analyzed (180s elapsed)
+  900/1060 windows analyzed (205s elapsed)
+  1000/1060 windows analyzed (226s elapsed)
+  1060/1060 windows analyzed (241s elapsed)
+  wrote C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-regen-official\20260523_1_matin_Anglade-windows.json (18.4 MB)
+
+[20260523_2_aprem_tabac] decoding 20260523_2_aprem_tabac.m4a ...
+  decoded 84.8 min of audio in 7.6s
+  1017 windows to analyze
+  100/1017 windows analyzed (28s elapsed)
+  200/1017 windows analyzed (52s elapsed)
+  300/1017 windows analyzed (73s elapsed)
+  400/1017 windows analyzed (97s elapsed)
+  500/1017 windows analyzed (119s elapsed)
+  600/1017 windows analyzed (146s elapsed)
+  700/1017 windows analyzed (170s elapsed)
+  800/1017 windows analyzed (193s elapsed)
+  900/1017 windows analyzed (211s elapsed)
+  1000/1017 windows analyzed (233s elapsed)
+  1017/1017 windows analyzed (237s elapsed)
+  wrote C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-regen-official\20260523_2_aprem_tabac-windows.json (17.6 MB)
+
+[20260523_5_auberge_fleurie] decoding 20260523_5_auberge_fleurie.m4a ...
+  decoded 82.0 min of audio in 7.0s
+  983 windows to analyze
+  100/983 windows analyzed (21s elapsed)
+  200/983 windows analyzed (42s elapsed)
+  300/983 windows analyzed (66s elapsed)
+  400/983 windows analyzed (85s elapsed)
+  500/983 windows analyzed (107s elapsed)
+  600/983 windows analyzed (126s elapsed)
+  700/983 windows analyzed (143s elapsed)
+  800/983 windows analyzed (158s elapsed)
+  900/983 windows analyzed (173s elapsed)
+  983/983 windows analyzed (188s elapsed)
+  wrote C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-regen-official\20260523_5_auberge_fleurie-windows.json (17.0 MB)
+
+[732984_11910076-lq] decoding 732984_11910076-lq.mp3 ...
+  decoded 28.3 min of audio in 2.5s
+  338 windows to analyze
+  100/338 windows analyzed (17s elapsed)
+  200/338 windows analyzed (30s elapsed)
+  300/338 windows analyzed (46s elapsed)
+  338/338 windows analyzed (53s elapsed)
+  wrote C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\fixtures-regen-official\732984_11910076-lq-windows.json (4.2 MB)

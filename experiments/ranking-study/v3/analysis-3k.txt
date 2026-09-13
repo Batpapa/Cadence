@@ -1,0 +1,91 @@
+3180 evaluations
+
+== front global (25 niveaux) ==
+  264 fp=  0 bruit=0 couv=77% x3 | relLeader on fq=0.5046 fl=1.0000 mS=2 none a=0.00 chg=1.53 stay=0.18 out=0.02 in=0.82 | 30/0 33/0 17/0 26/0 23/0 26/0 109/0
+  284 fp=  2 bruit=0 couv=81% x1 | relLeaderXMargin off fq=0.3208 fl=0.1842 mS=0 none a=0.00 chg=1.49 stay=0.11 out=1.10 in=1.20 | 30/0 34/0 17/0 28/0 24/0 30/0 121/2
+  297 fp=  3 bruit=0 couv=82% x2 | share off fq=0.0059 fl=0.0968 mS=1 none a=0.00 chg=1.36 stay=0.00 out=0.94 in=0.41 | 31/0 35/0 19/0 28/0 24/0 33/0 127/3
+  300 fp=  5 bruit=0 couv=77% x1 | relLeaderXMargin on fq=0.1660 fl=0.2727 mS=1 peakx1.00 a=0.00 chg=2.18 stay=0.34 out=1.21 in=0.32 | 30/0 35/1 20/1 28/1 25/0 33/0 129/2
+  305 fp=  6 bruit=0 couv=78% x1 | relLeaderXMargin on fq=0.0723 fl=0.2059 mS=2 none a=0.00 chg=0.64 stay=0.06 out=0.08 in=1.05 | 31/0 35/2 20/1 29/0 25/0 34/0 131/3
+  306 fp=  7 bruit=0 couv=80% x1 | nullRatio5 on fq=0.1570 fl=1.4853 mS=2 peakx1.15 a=0.00 chg=0.89 stay=0.61 out=0.12 in=1.70 | 31/0 35/2 20/1 29/0 25/0 33/0 133/4
+  307 fp=  8 bruit=0 couv=81% x1 | nullRatio5 on fq=0.1207 fl=1.4324 mS=2 peakx1.15 a=0.00 chg=0.89 stay=0.61 out=0.12 in=1.70 | 31/0 35/2 20/2 29/0 25/0 34/0 133/4
+  308 fp= 10 bruit=0 couv=78% x2 | relLeaderXMargin on fq=0.1731 fl=0.2750 mS=1 none a=0.00 chg=1.07 stay=0.41 out=1.21 in=0.32 | 31/0 35/3 20/2 29/1 25/0 36/0 132/4
+  309 fp= 11 bruit=0 couv=80% x1 | nullRatioTailMean on fq=0.1360 fl=1.4586 mS=2 none a=0.00 chg=0.77 stay=0.30 out=0.82 in=0.13 | 31/0 35/3 20/2 29/0 25/0 35/0 134/6
+  310 fp= 14 bruit=0 couv=85% x2 | relLeaderXMargin off fq=0.1462 fl=0.0833 mS=2 peakx3.81 a=0.00 chg=0.95 stay=0.34 out=0.61 in=0.20 | 31/0 35/4 21/2 30/0 24/0 35/1 134/7
+  311 fp= 16 bruit=0 couv=79% x3 | nullRatioTailMean on fq=0.0014 fl=1.0279 mS=0 none a=0.00 chg=1.37 stay=0.00 out=0.76 in=0.00 | 31/0 35/6 20/2 29/1 25/0 37/0 134/7
+  312 fp= 18 bruit=0 couv=83% x3 | share off fq=0.0059 fl=0.0968 mS=1 none a=0.00 chg=1.11 stay=0.10 out=0.94 in=0.41 | 31/0 35/2 22/2 29/1 24/0 36/2 135/11
+  313 fp= 22 bruit=0 couv=82% x1 | nullRatio5 off fq=0.1077 fl=1.1087 mS=2 none a=0.00 chg=1.16 stay=0.34 out=1.19 in=0.86 | 31/0 35/0 22/4 29/3 24/0 36/3 136/12
+  314 fp= 25 bruit=0 couv=81% x1 | nullRatio5 off fq=0.1077 fl=1.1087 mS=2 none a=0.00 chg=1.08 stay=0.34 out=1.19 in=0.86 | 31/0 35/1 22/5 29/3 24/0 36/3 137/13
+  317 fp= 31 bruit=0 couv=83% x1 | nullRatio5 off fq=0.0812 fl=1.0833 mS=2 none a=0.00 chg=1.32 stay=0.34 out=1.19 in=0.39 | 31/1 35/7 24/4 30/1 25/0 36/3 136/15
+  318 fp= 39 bruit=0 couv=82% x1 | shareXMargin off fq=0.1777 fl=0.0115 mS=2 none a=0.00 chg=1.67 stay=0.31 out=0.07 in=0.24 | 31/1 35/10 24/7 30/0 25/0 37/4 136/17
+  319 fp= 53 bruit=1 couv=84% x1 | share off fq=0.0831 fl=0.1087 mS=0 none a=0.00 chg=1.23 stay=0.34 out=1.21 in=0.17 | 31/1 35/10 24/9 30/4 25/2 36/6 138/21
+  320 fp= 54 bruit=1 couv=84% x3 | share off fq=0.0692 fl=0.1075 mS=0 none a=0.00 chg=1.23 stay=0.34 out=1.21 in=0.17 | 31/1 35/11 24/9 30/4 25/2 37/6 138/21
+  321 fp= 66 bruit=1 couv=85% x1 | share off fq=0.0831 fl=0.1087 mS=0 none a=0.00 chg=1.23 stay=0.34 out=1.21 in=0.01 | 31/1 35/13 24/11 30/6 25/2 38/7 138/26
+  322 fp=188 bruit=3 couv=76% x1 | relLeaderXMargin off fq=0.0682 fl=0.0455 mS=1 peakx4.56 a=0.00 chg=1.74 stay=0.45 out=0.59 in=0.06 | 31/1 35/27 24/29 30/18 25/2 37/31 140/80
+  323 fp=224 bruit=3 couv=81% x1 | relLeaderXMargin off fq=0.0921 fl=0.0588 mS=1 peakx1.92 a=0.00 chg=1.70 stay=0.33 out=1.18 in=0.87 | 31/1 35/31 24/34 30/27 25/2 37/36 141/93
+  324 fp=235 bruit=4 couv=83% x1 | share off fq=0.0831 fl=0.1087 mS=0 none a=0.00 chg=1.23 stay=0.55 out=1.21 in=0.17 | 31/1 35/32 24/44 30/19 25/3 39/34 140/102
+  326 fp=388 bruit=5 couv=77% x1 | nullRatioTailMean off fq=0.0652 fl=1.0827 mS=0 none a=0.00 chg=0.71 stay=0.46 out=0.91 in=0.28 | 31/1 36/45 24/65 30/41 25/5 39/62 141/169
+  327 fp=1022 bruit=25 couv=73% x1 | nullRatio3 off fq=0.0000 fl=0.7143 mS=0 none a=0.00 chg=1.24 stay=0.97 out=0.56 in=1.40 | 31/11 36/126 24/154 30/115 25/10 39/137 142/469
+  328 fp=1564 bruit=0 couv=63% x1 | rankDecay0.5 off fq=0.0746 fl=1.0000 mS=0 peakx1.00 a=0.00 chg=0.21 stay=0.68 out=1.27 in=0.83 | 31/24 35/184 24/201 30/138 25/22 40/210 143/785
+
+  dominent (>=) la production : 5, strictement : 5
+  strict par groupe : nullRatio5|off:4  share|off:1
+
+  quasi-front (a 2 morceaux du front, fp<=40) : 343 evaluations
+   groupe  : nullRatioTailMean|on:53  nullRatio5|on:43  rankDecay0.5|on:39  identity|off:36  relLeaderXMargin|on:26  share|off:26  shareXMargin|on:21  identity|on:19  nullRatio5|off:18  share|on:17  relLeader|on:10  shareXMargin|off:10  nullRatio3|on:9  nullRatioTailMean|off:7  sqrtHybrid|on:5  relLeaderXMargin|off:4
+   minSeg  : 2:241  0:52  1:50
+   confirm : none:258  peak:78  mean:7
+
+== meilleur rappel a budget de fp, par groupe (evals) ==
+  groupe                   n      fp<=0  fp<=1  fp<=2  fp<=3  fp<=5  fp<=7 fp<=10 fp<=15 fp<=20 fp<=30
+  relLeaderXMargin|on       120      52    261    261    290    300    305    308    310    310    312
+  nullRatio5|on             180     238    241    274    274    296    306    307    308    311    311
+  shareXMargin|off          120       0      0      0    218    218    298    307    307    307    307
+  share|off                 180      66    141    177    297    297    297    306    309    312    313
+  nullRatio3|on             180      32     32    261    261    261    295    304    309    309    312
+  relLeaderXMargin|off      120       0    230    284    284    284    284    304    310    310    311
+  share|on                  180      91    198    275    275    288    298    304    308    308    313
+  nullRatioTailMean|on      180      27     27    276    279    296    301    303    309    311    314
+  rankDecay0.5|off          150       0      0      0    280    280    280    301    301    301    301
+  nullRatio5|off            180      47    184    270    293    293    293    293    309    312    314
+  identity|on               180      31    122    207    207    232    232    292    303    309    312
+  relLeader|off             180       0      0      0      0      0      0    291    296    308    309
+  relLeader|on              180     264    264    264    268    289    289    289    289    289    311
+  rankDecay0.5|on           150     260    260    260    260    286    286    286    286    286    312
+  shareXMargin|on           120       0      0    197    221    246    246    283    306    310    311
+  nullRatio3|off            180      47     47    196    274    274    274    274    278    278    278
+  sqrtHybrid|on             120     196    222    247    247    269    269    269    294    309    311
+  sqrtHybrid|off            120       0      0      0     20     20     20    257    282    287    310
+  nullRatioTailMean|off     180      42    148    153    153    154    154    231    231    301    314
+  identity|off              180      25     25     25     25     36     77    124    286    286    313
+
+== validation croisee une-session-dehors ==
+  selection : max rappel(train) sous fp(train) <= alpha * fp_prod(train) ; ex-aequo moyennes
+  production hors echantillon : 312 / fp 20
+  sous-ensemble                     a=0.1         a=0.25          a=0.5         a=0.75            a=1          a=1.5
+  tous                            285/6.3       301/10.0       305/14.0       308/21.0       309/25.0       310/29.0
+  identity|off                     25/0.0         36/4.0       200/13.0       286/11.0       286/11.0       311/28.5
+  identity|on                     219/7.0        259/7.0        298/9.0       302/12.0       306/19.1       309/22.0
+  nullRatio3|off                  198/3.0        274/3.0        274/8.0       278/11.0       278/11.0       278/11.0
+  nullRatio3|on                   200/3.0        277/6.0       302/11.0       308/13.0       308/13.0       312/23.0
+  nullRatio5|off                  263/4.0        293/3.0        299/8.0       310/18.5       312/24.5       313/28.0
+  nullRatio5|on                   274/4.0        290/5.0        304/8.0       304/14.7       309/20.2       309/20.2
+  nullRatioTailMean|off           153/2.0        153/4.3        231/8.0       235/12.0       255/16.0       311/26.7
+  nullRatioTailMean|on            227/5.4        292/6.5       306/11.0       308/17.0       310/20.0       310/25.0
+  rankDecay0.5|off                117/3.0        280/3.0        298/9.0       301/10.0       301/10.0       301/10.0
+  rankDecay0.5|on                 276/5.0        279/5.0        286/5.0        286/5.0        289/7.0       310/25.0
+  relLeaderXMargin|off            269/2.0        284/2.0       301/11.0       310/14.0       310/14.0       309/21.0
+  relLeaderXMargin|on             277/2.0        295/6.0        305/8.0       308/13.7       309/16.0       309/19.0
+  relLeader|off                     0/0.0          0/0.0       259/12.0       299/14.0       308/17.0       307/24.7
+  relLeader|on                    281/5.4        283/5.4        288/6.1        288/6.1        288/6.1       309/27.0
+  shareXMargin|off                      -        218/3.0       304/10.0       307/10.0       307/10.0       307/16.0
+  shareXMargin|on                       -        235/5.0       280/10.0       309/17.0       302/15.3       302/17.3
+  share|off                       226/4.0        301/7.0       306/11.0       309/18.0       311/17.0       312/26.0
+  share|on                        265/6.3        295/7.0       304/10.0       307/13.0       307/16.5       311/28.0
+  sqrtHybrid|off                    1/1.0         20/3.0       214/10.0       279/15.0       287/17.0       299/26.0
+  sqrtHybrid|on                   257/4.0       279/10.0       282/10.0       299/13.0       308/20.0       311/22.0
+  (tous, dans echantillon)          284/2          300/5         308/10         310/14         312/18         314/25
+
+== diagnostic du recuit ==
+  pas 0-19 : 2400 evals, acceptation 84%, T~6.00, sur le front 19
+  pas 20-39 : 780 evals, acceptation 77%, T~4.14, sur le front 6
+  chaines dont le meilleur score arrive en 2e moitie : 0/0

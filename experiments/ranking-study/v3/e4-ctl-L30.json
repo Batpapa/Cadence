@@ -1,0 +1,428 @@
+[
+ {
+  "label": "production",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "found": 311,
+  "total": 341,
+  "fp": 17,
+  "noise": 0,
+  "coverage": 0.8010549627741337,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    2,
+    2
+   ],
+   [
+    21,
+    27,
+    4,
+    4
+   ],
+   [
+    29,
+    30,
+    0,
+    0
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    35,
+    42,
+    1,
+    1
+   ],
+   [
+    135,
+    149,
+    10,
+    14
+   ]
+  ]
+ },
+ {
+  "label": "production a=0.95",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.95,
+  "found": 312,
+  "total": 341,
+  "fp": 13,
+  "noise": 0,
+  "coverage": 0.9303608882547914,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    1,
+    1
+   ],
+   [
+    23,
+    27,
+    5,
+    5
+   ],
+   [
+    28,
+    30,
+    1,
+    1
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    36,
+    42,
+    1,
+    1
+   ],
+   [
+    134,
+    149,
+    5,
+    7
+   ]
+  ]
+ },
+ {
+  "label": "production N=3",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "minSeg": 3,
+  "confirm": "none",
+  "weights": {},
+  "found": 287,
+  "total": 341,
+  "fp": 6,
+  "noise": 0,
+  "coverage": 0.7834699772584989,
+  "per": [
+   [
+    30,
+    31,
+    0,
+    0
+   ],
+   [
+    34,
+    36,
+    0,
+    0
+   ],
+   [
+    18,
+    27,
+    0,
+    0
+   ],
+   [
+    27,
+    30,
+    0,
+    0
+   ],
+   [
+    24,
+    26,
+    0,
+    0
+   ],
+   [
+    30,
+    42,
+    0,
+    0
+   ],
+   [
+    124,
+    149,
+    6,
+    9
+   ]
+  ]
+ },
+ {
+  "label": "share 0.1101 N2",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.1101,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.62,
+   "unknownStay": 0.05,
+   "tuneToUnknown": 0.72,
+   "unknownToTune": 0
+  },
+  "found": 312,
+  "total": 341,
+  "fp": 16,
+  "noise": 0,
+  "coverage": 0.8140939392851,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    4,
+    4
+   ],
+   [
+    22,
+    27,
+    2,
+    2
+   ],
+   [
+    29,
+    30,
+    0,
+    0
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    36,
+    42,
+    0,
+    0
+   ],
+   [
+    134,
+    149,
+    10,
+    19
+   ]
+  ]
+ },
+ {
+  "label": "nRTM 1.0197 N0",
+  "transform": "nullRatioTailMean",
+  "flat": false,
+  "floor": 1.0197,
+  "minSeg": 0,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.58,
+   "unknownStay": 0.21,
+   "tuneToUnknown": 0.77,
+   "unknownToTune": 1.28
+  },
+  "found": 304,
+  "total": 341,
+  "fp": 8,
+  "noise": 0,
+  "coverage": 0.819668692974792,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    0,
+    0
+   ],
+   [
+    20,
+    27,
+    0,
+    0
+   ],
+   [
+    29,
+    30,
+    0,
+    0
+   ],
+   [
+    24,
+    26,
+    0,
+    0
+   ],
+   [
+    32,
+    42,
+    0,
+    0
+   ],
+   [
+    133,
+    149,
+    8,
+    13
+   ]
+  ]
+ },
+ {
+  "label": "share 0.0959 N2",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.0959,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.39,
+   "unknownStay": 0,
+   "tuneToUnknown": 0.52,
+   "unknownToTune": 0.96
+  },
+  "found": 293,
+  "total": 341,
+  "fp": 4,
+  "noise": 0,
+  "coverage": 0.821894671778508,
+  "per": [
+   [
+    30,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    0,
+    0
+   ],
+   [
+    18,
+    27,
+    0,
+    0
+   ],
+   [
+    28,
+    30,
+    0,
+    0
+   ],
+   [
+    24,
+    26,
+    0,
+    0
+   ],
+   [
+    33,
+    42,
+    0,
+    0
+   ],
+   [
+    125,
+    149,
+    4,
+    7
+   ]
+  ]
+ },
+ {
+  "label": "share 0.0959 N2 a=0.9",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.0959,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.39,
+   "unknownStay": 0,
+   "tuneToUnknown": 0.52,
+   "unknownToTune": 0.96
+  },
+  "absentRatio": 0.9,
+  "found": 304,
+  "total": 341,
+  "fp": 6,
+  "noise": 0,
+  "coverage": 0.9075455923910875,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    0,
+    0
+   ],
+   [
+    20,
+    27,
+    0,
+    0
+   ],
+   [
+    29,
+    30,
+    0,
+    0
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    34,
+    42,
+    1,
+    1
+   ],
+   [
+    130,
+    149,
+    5,
+    9
+   ]
+  ]
+ }
+]

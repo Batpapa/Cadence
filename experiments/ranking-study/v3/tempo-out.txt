@@ -1,0 +1,23 @@
+Fisher, manques polka 7/22 contre autres 22/319 : p = 1.08e-3
+Fisher, jamais-top10 polka 4/22 contre autres 5/319 : p = 1.34e-3
+
+plage des tempo_candidates dans les fenetres : 60 -> 235 bpm
+
+-- best_bpm sur les plages annotees : type | fenetres | rang1 % | top10 % | bpm p10/p50/p90 | bpm quand rang 1 (p50) | bpm quand absent du top10 (p50)
+  reel        4085 |  77% |  82% | 190/215/230 | 210 | 230
+  jig         1873 |  70% |  75% | 175/205/230 | 200 | 210
+  slip jig     414 |  86% |  92% | 160/185/210 | 180 | 210
+  hornpipe     389 |  69% |  75% | 160/205/230 | 190 | 210
+  polka        367 |  40% |  52% | 140/185/230 | 175 | 210
+  slide        112 |  73% |  89% | 150/190/210 | 185 | 195
+  waltz         84 |  83% |  88% | 70/150/210 | 145 | 190
+  mazurka       40 |  90% |  95% | 140/155/190 | 155 | 210
+
+  histogramme best_bpm polka (bin: fenetres / dont rang 1)
+   70:2/0  90:3/2  110:1/0  120:7/1  130:15/6  140:26/12  150:29/20  160:30/16  170:68/43  180:8/3  190:38/15  200:20/8  210:45/12  220:1/0  230:74/9
+
+  histogramme best_bpm reel (bin: fenetres / dont rang 1)
+   70:1/0  90:7/5  100:1/1  110:3/3  120:2/1  130:3/3  140:12/11  150:24/20  160:39/29  170:228/195  180:87/73  190:288/229  200:644/568  210:728/579  220:86/72  230:1932/1351
+
+  histogramme best_bpm jig (bin: fenetres / dont rang 1)
+   70:6/0  90:3/1  100:1/1  120:1/0  130:10/9  140:32/30  150:35/29  160:55/52  170:207/171  180:108/91  190:312/256  200:323/250  210:287/161  220:22/17  230:471/245

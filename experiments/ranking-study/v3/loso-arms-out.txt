@@ -1,0 +1,29 @@
+220 candidats (bras x configuration), 10 bras
+production (ctl, production) : 311/20
+
+lambda=0.5 : hors echantillon 317.3/13.8  (production 311/20)  score - production = +9.4
+   pli 0 : t200L20:production a=0.8
+   pli 1 : t200L20:production a=0.8
+   pli 2 : t200L20:production a=0.8
+   pli 3 : t200L20:production a=0.8
+   pli 4 : t200L20:production a=0.8
+   pli 5 : t200L20:production a=0.75
+   pli 6 : 4 ex-aequo (t180,t180L20,t200L20,t180-rep4000L20)
+
+lambda=1 : hors echantillon 311.9/12.9  (production 311/20)  score - production = +8.0
+   pli 0 : 2 ex-aequo (t200L20,t180-rep4000L20)
+   pli 1 : 4 ex-aequo (t180,t200L20,t180-rep4000,t180-rep4000L20)
+   pli 2 : 2 ex-aequo (t200L20,t180-rep4000L20)
+   pli 3 : 2 ex-aequo (t200L20,t180-rep4000L20)
+   pli 4 : 2 ex-aequo (t200L20,t180-rep4000L20)
+   pli 5 : 2 ex-aequo (t200,t200L20)
+   pli 6 : 8 ex-aequo (t180,t180L20,t200L20,rep4000,rep4000L20,t180-rep4000L20)
+
+lambda=2 : hors echantillon 309.8/12.2  (production 311/20)  score - production = +14.3
+   pli 0 : 2 ex-aequo (t200,t200L20)
+   pli 1 : 9 ex-aequo (t180,t180-rep4000,t180-rep4000L20)
+   pli 2 : t180-rep4000L20:production a=0.8
+   pli 3 : 2 ex-aequo (t200,t200L20)
+   pli 4 : 2 ex-aequo (t200,t200L20)
+   pli 5 : 2 ex-aequo (t200,t200L20)
+   pli 6 : 6 ex-aequo (t200,t200L20,rep4000,rep4000L20,t180-rep4000,t180-rep4000L20)

@@ -1,0 +1,20 @@
+
+-- rangs 1 / top 10 dans les plages annotees (fenetres communes) --
+  dossier                             TOUS              reel               jig             polka          hornpipe          slip jig             slide
+  fixtures-ctl           78.8%/83.6% n1266  80.3%/85.6% n879  76.8%/81.1% n328   37.0%/37.0% n27   84.6%/92.3% n13 100.0%/100.0% n14                 -
+  screen-t180            80.9%/85.5% n1266  82.0%/86.5% n879  79.6%/85.1% n328   44.4%/48.1% n27   92.3%/92.3% n13 100.0%/100.0% n14                 -
+  screen-t200            80.0%/84.7% n1266  81.0%/86.0% n879  79.9%/84.5% n328   37.0%/37.0% n27   84.6%/84.6% n13 100.0%/100.0% n14                 -
+  screen-t220            79.8%/84.4% n1266  81.0%/86.1% n879  78.7%/82.6% n328   37.0%/37.0% n27   84.6%/92.3% n13 100.0%/100.0% n14                 -
+
+-- comparaison appariee contre fixtures-ctl (memes fenetres annotees) --
+  dossier                 rang1 gagnes/perdus    net    p (signe)   top10 gagnes/perdus    net    p (signe)
+  screen-t180                           41/15    +26       6.9e-4                 34/11    +23       8.2e-4
+  screen-t200                           26/11    +15       2.0e-2                  20/7    +13       1.9e-2
+  screen-t220                            15/3    +12       7.5e-3                  12/2    +10       1.3e-2
+
+-- qualite temporelle de la preuve, par morceau annote --
+  dossier                sans rang1    retard debut p50/p75/p90 (s)    avance fin p50/p75/p90 (s)    fraction rang1 p25/p50   bruit top1 moyen
+  fixtures-ctl                5/119                         8/10/19                        6/9/22                 0.71/0.91             0.1151
+  screen-t180                 5/119                         8/10/19                        6/9/20                 0.77/0.91             0.1905
+  screen-t200                 5/119                         8/10/18                        6/9/22                 0.73/0.91             0.1434
+  screen-t220                 5/119                         8/10/19                        6/9/22                 0.73/0.91             0.1256

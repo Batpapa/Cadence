@@ -1,0 +1,4 @@
+60 fenetres (tabac, 1 sur 7), requete(s) seulement, en contention
+  num_repass 2000 : mediane 168.2 ms  (x1.00)  moyenne 166.8 ms
+  num_repass 4000 : mediane 251.8 ms  (x1.50)  moyenne 259.3 ms
+  num_repass 8000 : mediane 403.7 ms  (x2.40)  moyenne 448.4 ms

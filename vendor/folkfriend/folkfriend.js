@@ -261,12 +261,47 @@ export class FolkFriendWASM {
         }
     }
     /**
+    * Settings re-aligned by Needleman-Wunsch after the n-gram pass.
+    * Default ff_config::QUERY_REPASS_SIZE (2000).
+    * @param {number} num_repass
+    */
+    set_num_repass(num_repass) {
+        wasm.folkfriendwasm_set_num_repass(this.__wbg_ptr, num_repass);
+    }
+    /**
+    * Notes weaker than `min_power` or shorter than `min_duration_frames`
+    * frames are dropped before quantisation. Default 0.10 / 3.
+    * @param {number} min_power
+    * @param {number} min_duration_frames
+    */
+    set_note_filter(min_power, min_duration_frames) {
+        wasm.folkfriendwasm_set_note_filter(this.__wbg_ptr, min_power, min_duration_frames);
+    }
+    /**
     * @param {number} sample_rate
     * @returns {boolean}
     */
     set_sample_rate(sample_rate) {
         const ret = wasm.folkfriendwasm_set_sample_rate(this.__wbg_ptr, sample_rate);
         return ret !== 0;
+    }
+    /**
+    * Tempo selection model: per-note score `intercept - slope * quavers`.
+    * Default 3.0 / 0.5.
+    * @param {number} intercept
+    * @param {number} slope
+    */
+    set_tempo_model(intercept, slope) {
+        wasm.folkfriendwasm_set_tempo_model(this.__wbg_ptr, intercept, slope);
+    }
+    /**
+    * Tempo search range, crotchets per minute, upper bound exclusive, step 5.
+    * Default 60 / 240.
+    * @param {number} low_bpm
+    * @param {number} high_bpm
+    */
+    set_tempo_range(low_bpm, high_bpm) {
+        wasm.folkfriendwasm_set_tempo_range(this.__wbg_ptr, low_bpm, high_bpm);
     }
     /**
     */
@@ -294,6 +329,14 @@ export class FolkFriendWASM {
             wasm.__wbindgen_add_to_stack_pointer(16);
             wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
         }
+    }
+    /**
+    * Queries shorter than this many contour symbols return no candidates.
+    * Default 0.
+    * @param {number} min_query_length
+    */
+    set_min_query_length(min_query_length) {
+        wasm.folkfriendwasm_set_min_query_length(this.__wbg_ptr, min_query_length);
     }
     /**
     * @param {string} tune_id

@@ -1,0 +1,14 @@
+
+-- rangs 1 / top 10 dans les plages annotees (fenetres communes) --
+  dossier                             TOUS              reel               jig             polka          hornpipe          slip jig             slide
+  fixtures-ctl            75.6%/80.2% n681  78.9%/83.9% n460  69.9%/74.2% n186   18.8%/18.8% n16                 - 100.0%/100.0% n14                 -
+  screen-t180             77.8%/81.2% n681  81.1%/84.1% n460  72.6%/77.4% n186   25.0%/25.0% n16                 - 100.0%/100.0% n14                 -
+  screen-t200             76.7%/81.1% n681  79.6%/84.3% n460  72.6%/76.9% n186   18.8%/18.8% n16                 - 100.0%/100.0% n14                 -
+  screen-t220             77.1%/80.9% n681  80.2%/84.3% n460  72.0%/75.8% n186   18.8%/18.8% n16                 - 100.0%/100.0% n14                 -
+
+-- qualite temporelle de la preuve, par morceau annote --
+  dossier                sans rang1    retard debut p50/p75/p90 (s)    avance fin p50/p75/p90 (s)    fraction rang1 p25/p50   bruit top1 moyen
+  fixtures-ctl                 4/63                         8/10/18                       7/12/31                 0.62/0.92                  -
+  screen-t180                  4/63                         8/10/18                       7/12/22                 0.70/0.93                  -
+  screen-t200                  4/63                         8/10/18                       7/12/31                 0.67/0.92                  -
+  screen-t220                  4/63                         8/10/18                       7/11/31                 0.70/0.93                  -

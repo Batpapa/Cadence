@@ -1,0 +1,6 @@
+wasm C:\Perso\IrishMusicExperiments\folkfriend-src\rust\pkg-node-knobs | tempo 60..240 | stride 1 | octave 0.4 | calls [] | out C:\Perso\IrishMusicExperiments\Cadence\experiments\ranking-study\v3\knobs-default
+[tuneIndex] using cached copy at C:\Perso\IrishMusicExperiments\Cadence\experiments\noise-study\.cache\tune-index.json
+  [One_of_the_Best_Traditio] 200/435 (55s)
+  [One_of_the_Best_Traditio] 400/435 (115s)
+  [One_of_the_Best_Traditio] 435/435 (126s)
+  wrote One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video in 126s

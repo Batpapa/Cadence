@@ -1,0 +1,9 @@
+[
+ {"label":"production","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{}},
+ {"label":"production a=0.95","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"absentRatio":0.95},
+ {"label":"production N=3","transform":"identity","flat":true,"floor":0.2,"minSeg":3,"confirm":"none","weights":{}},
+ {"label":"share 0.1101 N2","transform":"share","flat":false,"floor":0.1101,"minSeg":2,"confirm":"none","weights":{"tuneChange":1.62,"unknownStay":0.05,"tuneToUnknown":0.72,"unknownToTune":0.0}},
+ {"label":"nRTM 1.0197 N0","transform":"nullRatioTailMean","flat":false,"floor":1.0197,"minSeg":0,"confirm":"none","weights":{"tuneChange":1.58,"unknownStay":0.21,"tuneToUnknown":0.77,"unknownToTune":1.28}},
+ {"label":"share 0.0959 N2","transform":"share","flat":false,"floor":0.0959,"minSeg":2,"confirm":"none","weights":{"tuneChange":1.39,"unknownStay":0.0,"tuneToUnknown":0.52,"unknownToTune":0.96}},
+ {"label":"share 0.0959 N2 a=0.9","transform":"share","flat":false,"floor":0.0959,"minSeg":2,"confirm":"none","weights":{"tuneChange":1.39,"unknownStay":0.0,"tuneToUnknown":0.52,"unknownToTune":0.96},"absentRatio":0.9}
+]

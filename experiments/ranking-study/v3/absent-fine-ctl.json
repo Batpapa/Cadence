@@ -1,0 +1,392 @@
+[
+ {
+  "label": "production a=0.6",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.6,
+  "found": 312,
+  "total": 341,
+  "fp": 18,
+  "noise": 0,
+  "coverage": 0.8299222480935998,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    4,
+    4
+   ],
+   [
+    22,
+    27,
+    4,
+    4
+   ],
+   [
+    29,
+    30,
+    1,
+    1
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    36,
+    42,
+    1,
+    1
+   ],
+   [
+    134,
+    149,
+    8,
+    12
+   ]
+  ],
+  "temporal": {
+   "iouMean": 0.8201307973646904,
+   "startErrP50": 3.5,
+   "startErrP90": 23.5,
+   "endErrP50": 2.5,
+   "endErrP90": 35.5
+  }
+ },
+ {
+  "label": "production a=0.65",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.65,
+  "found": 313,
+  "total": 341,
+  "fp": 18,
+  "noise": 0,
+  "coverage": 0.8346192318793396,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    4,
+    5
+   ],
+   [
+    23,
+    27,
+    4,
+    4
+   ],
+   [
+    29,
+    30,
+    1,
+    1
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    36,
+    42,
+    1,
+    1
+   ],
+   [
+    134,
+    149,
+    8,
+    12
+   ]
+  ],
+  "temporal": {
+   "iouMean": 0.8248536209692553,
+   "startErrP50": 3.5,
+   "startErrP90": 20.5,
+   "endErrP50": 2.5,
+   "endErrP90": 31.5
+  }
+ },
+ {
+  "label": "production a=0.7",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.7,
+  "found": 313,
+  "total": 341,
+  "fp": 17,
+  "noise": 0,
+  "coverage": 0.8526933039107432,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    4,
+    5
+   ],
+   [
+    23,
+    27,
+    4,
+    4
+   ],
+   [
+    29,
+    30,
+    1,
+    1
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    36,
+    42,
+    1,
+    1
+   ],
+   [
+    134,
+    149,
+    7,
+    11
+   ]
+  ],
+  "temporal": {
+   "iouMean": 0.8428761613732962,
+   "startErrP50": 2.5,
+   "startErrP90": 18.5,
+   "endErrP50": 2.5,
+   "endErrP90": 19.5
+  }
+ },
+ {
+  "label": "production a=0.75",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.75,
+  "found": 314,
+  "total": 341,
+  "fp": 18,
+  "noise": 0,
+  "coverage": 0.8605569790103064,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    4,
+    5
+   ],
+   [
+    23,
+    27,
+    5,
+    5
+   ],
+   [
+    30,
+    30,
+    1,
+    1
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    36,
+    42,
+    1,
+    1
+   ],
+   [
+    134,
+    149,
+    7,
+    12
+   ]
+  ],
+  "temporal": {
+   "iouMean": 0.8495462114980888,
+   "startErrP50": 2.5,
+   "startErrP90": 18.5,
+   "endErrP50": 2.5,
+   "endErrP90": 17.5
+  }
+ },
+ {
+  "label": "production a=0.8",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.8,
+  "found": 315,
+  "total": 341,
+  "fp": 19,
+  "noise": 0,
+  "coverage": 0.8766972564514001,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    4,
+    5
+   ],
+   [
+    23,
+    27,
+    6,
+    6
+   ],
+   [
+    30,
+    30,
+    1,
+    1
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    37,
+    42,
+    1,
+    1
+   ],
+   [
+    134,
+    149,
+    7,
+    12
+   ]
+  ],
+  "temporal": {
+   "iouMean": 0.8654598689737039,
+   "startErrP50": 2.5,
+   "startErrP90": 17.5,
+   "endErrP50": 2.5,
+   "endErrP90": 16.5
+  }
+ },
+ {
+  "label": "production a=0.85",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.85,
+  "found": 315,
+  "total": 341,
+  "fp": 19,
+  "noise": 0,
+  "coverage": 0.9206491577699699,
+  "per": [
+   [
+    31,
+    31,
+    0,
+    0
+   ],
+   [
+    35,
+    36,
+    4,
+    5
+   ],
+   [
+    23,
+    27,
+    6,
+    6
+   ],
+   [
+    30,
+    30,
+    1,
+    1
+   ],
+   [
+    25,
+    26,
+    0,
+    0
+   ],
+   [
+    37,
+    42,
+    1,
+    1
+   ],
+   [
+    134,
+    149,
+    7,
+    10
+   ]
+  ],
+  "temporal": {
+   "iouMean": 0.8192877567344338,
+   "startErrP50": 4.5,
+   "startErrP90": 64.5,
+   "endErrP50": 2.5,
+   "endErrP90": 16.5
+  }
+ }
+]

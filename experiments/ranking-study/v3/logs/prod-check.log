@@ -1,0 +1,78 @@
+==== fenetres : production (porte cote requete) contre etude (porte hors ligne) ====
+-- 1Hour_Trad_Irish_Music_Session_in_Korea
+windows differing: 0 / 779 (candidates 0, best_bpm 0)
+IDENTICAL
+-- 20260523_1_matin_Anglade
+windows differing: 70 / 1060 (candidates 70, best_bpm 0)
+DIFFERENT
+-- 20260523_2_aprem_tabac
+windows differing: 121 / 1017 (candidates 121, best_bpm 0)
+DIFFERENT
+-- 20260523_5_auberge_fleurie
+windows differing: 76 / 983 (candidates 71, best_bpm 0)
+DIFFERENT
+-- One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video
+windows differing: 2 / 435 (candidates 2, best_bpm 0)
+DIFFERENT
+-- 13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24
+windows differing: 22 / 956 (candidates 19, best_bpm 0)
+DIFFERENT
+-- 20240721_tocane_2_chapiteau
+windows differing: 168 / 3914 (candidates 165, best_bpm 0)
+DIFFERENT
+-- 732984_11910076-lq
+windows differing: 54 / 338 (candidates 4, best_bpm 0)
+DIFFERENT
+==== chaine complete sur fixtures-prod ====
+7 configurations rejouees en 15s
+7 configurations rejouees en 12s
+==== configurations temporelles : etude (regle d'admission) contre production ====
+
+==== production ====
+  bras                      rappel    fp  bruit    couv    delta ref (rappel/fp/couv)   par session trouves/fp
+  admit-temporal-t180-rep4000L20     313    14      0   83.1%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 20/4 auberge 30/0 OneBest 25/0 13thMoon 37/1 AudioF 135/7
+                             IoU moyenne 82.0% (0pt) | erreur debut p50/p90 4/24 s | erreur fin p50/p90 3/31 s
+  prod-temporal                313    14      0   83.1%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 20/4 auberge 30/0 OneBest 25/0 13thMoon 37/1 AudioF 135/7
+                             IoU moyenne 82.0% (0pt) | erreur debut p50/p90 4/24 s | erreur fin p50/p90 3/31 s
+
+==== production a=0.75 ====
+  bras                      rappel    fp  bruit    couv    delta ref (rappel/fp/couv)   par session trouves/fp
+  admit-temporal-t180-rep4000L20     315    12      0   88.2%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 21/5 auberge 30/0 OneBest 25/0 13thMoon 38/1 AudioF 135/4
+                             IoU moyenne 87.0% (0pt) | erreur debut p50/p90 3/17 s | erreur fin p50/p90 3/16 s
+  prod-temporal                315    12      0   88.3%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 21/5 auberge 30/0 OneBest 25/0 13thMoon 38/1 AudioF 135/4
+                             IoU moyenne 87.0% (0pt) | erreur debut p50/p90 3/17 s | erreur fin p50/p90 3/16 s
+
+==== production a=0.8 ====
+  bras                      rappel    fp  bruit    couv    delta ref (rappel/fp/couv)   par session trouves/fp
+  admit-temporal-t180-rep4000L20     318    12      0   89.4%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 22/5 auberge 30/0 OneBest 25/0 13thMoon 39/1 AudioF 136/4
+                             IoU moyenne 88.0% (0pt) | erreur debut p50/p90 3/16 s | erreur fin p50/p90 3/15 s
+  prod-temporal                318    12      0   89.4%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 22/5 auberge 30/0 OneBest 25/0 13thMoon 39/1 AudioF 136/4
+                             IoU moyenne 88.0% (0pt) | erreur debut p50/p90 3/16 s | erreur fin p50/p90 3/15 s
+
+==== production N=3 a=0.75 ====
+  bras                      rappel    fp  bruit    couv    delta ref (rappel/fp/couv)   par session trouves/fp
+  admit-temporal-t180-rep4000L20     307     7      0   90.0%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/1 tabac 19/2 auberge 30/0 OneBest 25/0 13thMoon 34/1 AudioF 133/3
+                             IoU moyenne 88.7% (0pt) | erreur debut p50/p90 3/14 s | erreur fin p50/p90 3/13 s
+  prod-temporal                307     7      0   90.0%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/1 tabac 19/2 auberge 30/0 OneBest 25/0 13thMoon 34/1 AudioF 133/3
+                             IoU moyenne 88.7% (0pt) | erreur debut p50/p90 3/14 s | erreur fin p50/p90 3/13 s
+
+==== production floor0.22 a=0.75 ====
+  bras                      rappel    fp  bruit    couv    delta ref (rappel/fp/couv)   par session trouves/fp
+  admit-temporal-t180-rep4000L20     314    12      0   87.9%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 21/5 auberge 29/0 OneBest 25/0 13thMoon 38/1 AudioF 135/4
+                             IoU moyenne 86.7% (0pt) | erreur debut p50/p90 3/17 s | erreur fin p50/p90 3/16 s
+  prod-temporal                314    12      0   87.9%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 21/5 auberge 29/0 OneBest 25/0 13thMoon 38/1 AudioF 135/4
+                             IoU moyenne 86.7% (0pt) | erreur debut p50/p90 3/17 s | erreur fin p50/p90 3/16 s
+
+==== production floor0.24 a=0.75 ====
+  bras                      rappel    fp  bruit    couv    delta ref (rappel/fp/couv)   par session trouves/fp
+  admit-temporal-t180-rep4000L20     312    12      0   88.0%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 21/5 auberge 29/0 OneBest 25/0 13thMoon 36/1 AudioF 135/4
+                             IoU moyenne 86.9% (0pt) | erreur debut p50/p90 3/17 s | erreur fin p50/p90 3/15 s
+  prod-temporal                312    12      0   88.0%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 21/5 auberge 29/0 OneBest 25/0 13thMoon 36/1 AudioF 135/4
+                             IoU moyenne 86.9% (0pt) | erreur debut p50/p90 3/17 s | erreur fin p50/p90 3/15 s
+
+==== production floor0.26 a=0.75 ====
+  bras                      rappel    fp  bruit    couv    delta ref (rappel/fp/couv)   par session trouves/fp
+  admit-temporal-t180-rep4000L20     310    11      0   87.6%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 20/4 auberge 29/0 OneBest 25/0 13thMoon 35/1 AudioF 135/4
+                             IoU moyenne 86.4% (0pt) | erreur debut p50/p90 3/18 s | erreur fin p50/p90 3/17 s
+  prod-temporal                310    11      0   87.6%                   0 / 0 / 0pt   Korea 31/0 Anglade 35/2 tabac 20/4 auberge 29/0 OneBest 25/0 13thMoon 35/1 AudioF 135/4
+                             IoU moyenne 86.4% (0pt) | erreur debut p50/p90 3/18 s | erreur fin p50/p90 3/17 s

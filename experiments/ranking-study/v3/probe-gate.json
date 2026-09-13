@@ -1,0 +1,11 @@
+[
+ {"label":"prod","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{}},
+ {"label":"prod topFrac=1e-9 (doit etre identique)","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{},"topFrac":1e-9},
+ {"label":"prod N=3","transform":"identity","flat":true,"floor":0.2,"minSeg":3,"confirm":"none","weights":{}},
+ {"label":"prod N=1 p=0.1","transform":"identity","flat":true,"floor":0.2,"minSeg":1,"confirm":"none","weights":{},"topFrac":0.1},
+ {"label":"prod N=1 p=0.2","transform":"identity","flat":true,"floor":0.2,"minSeg":1,"confirm":"none","weights":{},"topFrac":0.2},
+ {"label":"prod N=1 p=0.3","transform":"identity","flat":true,"floor":0.2,"minSeg":1,"confirm":"none","weights":{},"topFrac":0.3},
+ {"label":"prod N=2 p=0.2","transform":"identity","flat":true,"floor":0.2,"minSeg":2,"confirm":"none","weights":{},"topFrac":0.2},
+ {"label":"prod N=2 p=0.3","transform":"identity","flat":true,"floor":0.2,"minSeg":2,"confirm":"none","weights":{},"topFrac":0.3},
+ {"label":"prod N=2 p=0.5","transform":"identity","flat":true,"floor":0.2,"minSeg":2,"confirm":"none","weights":{},"topFrac":0.5}
+]

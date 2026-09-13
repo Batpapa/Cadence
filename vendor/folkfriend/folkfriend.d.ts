@@ -15,10 +15,37 @@ export class FolkFriendWASM {
 */
   run_name_query(query: string): string;
 /**
+* Settings re-aligned by Needleman-Wunsch after the n-gram pass.
+* Default ff_config::QUERY_REPASS_SIZE (2000).
+* @param {number} num_repass
+*/
+  set_num_repass(num_repass: number): void;
+/**
+* Notes weaker than `min_power` or shorter than `min_duration_frames`
+* frames are dropped before quantisation. Default 0.10 / 3.
+* @param {number} min_power
+* @param {number} min_duration_frames
+*/
+  set_note_filter(min_power: number, min_duration_frames: number): void;
+/**
 * @param {number} sample_rate
 * @returns {boolean}
 */
   set_sample_rate(sample_rate: number): boolean;
+/**
+* Tempo selection model: per-note score `intercept - slope * quavers`.
+* Default 3.0 / 0.5.
+* @param {number} intercept
+* @param {number} slope
+*/
+  set_tempo_model(intercept: number, slope: number): void;
+/**
+* Tempo search range, crotchets per minute, upper bound exclusive, step 5.
+* Default 60 / 240.
+* @param {number} low_bpm
+* @param {number} high_bpm
+*/
+  set_tempo_range(low_bpm: number, high_bpm: number): void;
 /**
 */
   flush_pcm_buffer(): void;
@@ -27,6 +54,12 @@ export class FolkFriendWASM {
 * @returns {string}
 */
   aliases_from_tune_id(tune_id: string): string;
+/**
+* Queries shorter than this many contour symbols return no candidates.
+* Default 0.
+* @param {number} min_query_length
+*/
+  set_min_query_length(min_query_length: number): void;
 /**
 * @param {string} tune_id
 * @returns {string}
@@ -96,7 +129,12 @@ export interface InitOutput {
   readonly folkfriendwasm_run_name_query: (a: number, b: number, c: number, d: number) => void;
   readonly folkfriendwasm_run_transcription_query: (a: number, b: number, c: number, d: number) => void;
   readonly folkfriendwasm_run_transcription_query_debug: (a: number, b: number, c: number, d: number) => void;
+  readonly folkfriendwasm_set_min_query_length: (a: number, b: number) => void;
+  readonly folkfriendwasm_set_note_filter: (a: number, b: number, c: number) => void;
+  readonly folkfriendwasm_set_num_repass: (a: number, b: number) => void;
   readonly folkfriendwasm_set_sample_rate: (a: number, b: number) => number;
+  readonly folkfriendwasm_set_tempo_model: (a: number, b: number, c: number) => void;
+  readonly folkfriendwasm_set_tempo_range: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_settings_from_tune_id: (a: number, b: number, c: number, d: number) => void;
   readonly folkfriendwasm_transcribe_pcm_buffer: (a: number, b: number) => void;
   readonly folkfriendwasm_transcribe_pcm_buffer_debug: (a: number, b: number) => void;

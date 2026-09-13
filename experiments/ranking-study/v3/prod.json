@@ -1,0 +1,3 @@
+[
+ {"label":"production","transform":"identity","flat":true,"floor":0.2,"confirm":"none","weights":{}}
+]

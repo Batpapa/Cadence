@@ -1,0 +1,728 @@
+[
+ {
+  "label": "share 0.1101 a=0",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.1101,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.62,
+   "unknownStay": 0.05,
+   "tuneToUnknown": 0.72,
+   "unknownToTune": 0
+  },
+  "found": 312,
+  "total": 341,
+  "fp": 17,
+  "noise": 0,
+  "coverage": 0.8186574660818283,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    5
+   ],
+   [
+    22,
+    27,
+    3
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    0
+   ],
+   [
+    134,
+    149,
+    9
+   ]
+  ]
+ },
+ {
+  "label": "share 0.1101 a=0.5",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.1101,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.62,
+   "unknownStay": 0.05,
+   "tuneToUnknown": 0.72,
+   "unknownToTune": 0
+  },
+  "absentRatio": 0.5,
+  "found": 312,
+  "total": 341,
+  "fp": 17,
+  "noise": 0,
+  "coverage": 0.8215152192636839,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    5
+   ],
+   [
+    22,
+    27,
+    3
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    0
+   ],
+   [
+    134,
+    149,
+    9
+   ]
+  ]
+ },
+ {
+  "label": "share 0.1101 a=0.75",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.1101,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.62,
+   "unknownStay": 0.05,
+   "tuneToUnknown": 0.72,
+   "unknownToTune": 0
+  },
+  "absentRatio": 0.75,
+  "found": 313,
+  "total": 341,
+  "fp": 17,
+  "noise": 0,
+  "coverage": 0.8352905116723169,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    5
+   ],
+   [
+    22,
+    27,
+    3
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    1
+   ],
+   [
+    135,
+    149,
+    8
+   ]
+  ]
+ },
+ {
+  "label": "share 0.1101 a=0.9",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.1101,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.62,
+   "unknownStay": 0.05,
+   "tuneToUnknown": 0.72,
+   "unknownToTune": 0
+  },
+  "absentRatio": 0.9,
+  "found": 313,
+  "total": 341,
+  "fp": 18,
+  "noise": 0,
+  "coverage": 0.8748135837160238,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    5
+   ],
+   [
+    22,
+    27,
+    4
+   ],
+   [
+    30,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    35,
+    42,
+    1
+   ],
+   [
+    135,
+    149,
+    8
+   ]
+  ]
+ },
+ {
+  "label": "nRTM 1.0197 a=0",
+  "transform": "nullRatioTailMean",
+  "flat": false,
+  "floor": 1.0197,
+  "minSeg": 0,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.58,
+   "unknownStay": 0.21,
+   "tuneToUnknown": 0.77,
+   "unknownToTune": 1.28
+  },
+  "found": 305,
+  "total": 341,
+  "fp": 10,
+  "noise": 0,
+  "coverage": 0.8211003731457207,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    0
+   ],
+   [
+    20,
+    27,
+    1
+   ],
+   [
+    29,
+    30,
+    0
+   ],
+   [
+    24,
+    26,
+    0
+   ],
+   [
+    33,
+    42,
+    1
+   ],
+   [
+    133,
+    149,
+    8
+   ]
+  ]
+ },
+ {
+  "label": "nRTM 1.0197 a=0.5",
+  "transform": "nullRatioTailMean",
+  "flat": false,
+  "floor": 1.0197,
+  "minSeg": 0,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.58,
+   "unknownStay": 0.21,
+   "tuneToUnknown": 0.77,
+   "unknownToTune": 1.28
+  },
+  "absentRatio": 0.5,
+  "found": 306,
+  "total": 341,
+  "fp": 10,
+  "noise": 0,
+  "coverage": 0.8662984321980108,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    0
+   ],
+   [
+    20,
+    27,
+    1
+   ],
+   [
+    29,
+    30,
+    1
+   ],
+   [
+    24,
+    26,
+    0
+   ],
+   [
+    33,
+    42,
+    2
+   ],
+   [
+    134,
+    149,
+    6
+   ]
+  ]
+ },
+ {
+  "label": "nRTM 1.0197 a=0.75",
+  "transform": "nullRatioTailMean",
+  "flat": false,
+  "floor": 1.0197,
+  "minSeg": 0,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.58,
+   "unknownStay": 0.21,
+   "tuneToUnknown": 0.77,
+   "unknownToTune": 1.28
+  },
+  "absentRatio": 0.75,
+  "found": 311,
+  "total": 341,
+  "fp": 15,
+  "noise": 0,
+  "coverage": 0.9268603136841974,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    3
+   ],
+   [
+    22,
+    27,
+    3
+   ],
+   [
+    30,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    33,
+    42,
+    2
+   ],
+   [
+    135,
+    149,
+    7
+   ]
+  ]
+ },
+ {
+  "label": "nRTM 1.0197 a=0.9",
+  "transform": "nullRatioTailMean",
+  "flat": false,
+  "floor": 1.0197,
+  "minSeg": 0,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.58,
+   "unknownStay": 0.21,
+   "tuneToUnknown": 0.77,
+   "unknownToTune": 1.28
+  },
+  "absentRatio": 0.9,
+  "found": 314,
+  "total": 341,
+  "fp": 15,
+  "noise": 1,
+  "coverage": 0.9448563434836114,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    3
+   ],
+   [
+    23,
+    27,
+    5
+   ],
+   [
+    30,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    34,
+    42,
+    2
+   ],
+   [
+    136,
+    149,
+    5
+   ]
+  ]
+ },
+ {
+  "label": "share 0.0959 a=0",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.0959,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.39,
+   "unknownStay": 0,
+   "tuneToUnknown": 0.52,
+   "unknownToTune": 0.96
+  },
+  "found": 294,
+  "total": 341,
+  "fp": 3,
+  "noise": 0,
+  "coverage": 0.8236420026843039,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    0
+   ],
+   [
+    18,
+    27,
+    0
+   ],
+   [
+    28,
+    30,
+    0
+   ],
+   [
+    24,
+    26,
+    0
+   ],
+   [
+    33,
+    42,
+    0
+   ],
+   [
+    125,
+    149,
+    3
+   ]
+  ]
+ },
+ {
+  "label": "share 0.0959 a=0.75",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.0959,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.39,
+   "unknownStay": 0,
+   "tuneToUnknown": 0.52,
+   "unknownToTune": 0.96
+  },
+  "absentRatio": 0.75,
+  "found": 302,
+  "total": 341,
+  "fp": 4,
+  "noise": 0,
+  "coverage": 0.8762927935959032,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    0
+   ],
+   [
+    20,
+    27,
+    0
+   ],
+   [
+    28,
+    30,
+    0
+   ],
+   [
+    24,
+    26,
+    0
+   ],
+   [
+    34,
+    42,
+    0
+   ],
+   [
+    130,
+    149,
+    4
+   ]
+  ]
+ },
+ {
+  "label": "share 0.0959 a=0.9",
+  "transform": "share",
+  "flat": false,
+  "floor": 0.0959,
+  "minSeg": 2,
+  "confirm": "none",
+  "weights": {
+   "tuneChange": 1.39,
+   "unknownStay": 0,
+   "tuneToUnknown": 0.52,
+   "unknownToTune": 0.96
+  },
+  "absentRatio": 0.9,
+  "found": 305,
+  "total": 341,
+  "fp": 7,
+  "noise": 0,
+  "coverage": 0.9077328627522663,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    0
+   ],
+   [
+    20,
+    27,
+    1
+   ],
+   [
+    30,
+    30,
+    0
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    34,
+    42,
+    1
+   ],
+   [
+    130,
+    149,
+    5
+   ]
+  ]
+ },
+ {
+  "label": "prod a=0.9",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.9,
+  "found": 314,
+  "total": 341,
+  "fp": 17,
+  "noise": 0,
+  "coverage": 0.9239669913646295,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    3
+   ],
+   [
+    23,
+    27,
+    6
+   ],
+   [
+    29,
+    30,
+    1
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    37,
+    42,
+    1
+   ],
+   [
+    134,
+    149,
+    6
+   ]
+  ]
+ },
+ {
+  "label": "prod a=0.95",
+  "transform": "identity",
+  "flat": true,
+  "floor": 0.2,
+  "confirm": "none",
+  "weights": {},
+  "absentRatio": 0.95,
+  "found": 312,
+  "total": 341,
+  "fp": 15,
+  "noise": 0,
+  "coverage": 0.9284616457913396,
+  "per": [
+   [
+    31,
+    31,
+    0
+   ],
+   [
+    35,
+    36,
+    2
+   ],
+   [
+    23,
+    27,
+    6
+   ],
+   [
+    28,
+    30,
+    1
+   ],
+   [
+    25,
+    26,
+    0
+   ],
+   [
+    36,
+    42,
+    1
+   ],
+   [
+    134,
+    149,
+    5
+   ]
+  ]
+ }
+]

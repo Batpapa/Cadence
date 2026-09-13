@@ -18,3 +18,14 @@ experiments/ranking-study/.out-*/
 # of the windows, the detector sources and the config. Derived data — but the
 # thing that makes adding a recording cost one recording instead of eight.
 experiments/threshold-sweep/.cache/
+
+# Ranking study v3 (2026-09-13): regenerated window dumps, screens, gated copies and
+# backups — several GB of derived data, reproducible from the scripts next to them
+# (see experiments/ranking-study/CAMPAIGN_V3.md). Scripts, result JSONs and logs stay tracked.
+experiments/ranking-study/v3/fixtures-*/
+experiments/ranking-study/v3/gate-*/
+experiments/ranking-study/v3/screen-*/
+experiments/ranking-study/v3/knobs*/
+experiments/ranking-study/v3/prod-default-check/
+experiments/ranking-study/v3/install-backup/
+experiments/ranking-study/v3/e5-backup-before-perT/
