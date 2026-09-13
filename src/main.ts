@@ -1,6 +1,6 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
-import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, deleteUser, touchUserOrder, removeUserFromOrder } from './db';
+import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
 import { emptyState, formatBytes } from './utils';
 import { appState, commitState, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
@@ -8,9 +8,9 @@ import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { ensurePersistentStorage } from './services/storageService';
-import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, clearDriveStateForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
-import { clearSnapshotsForUser, listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
-import { initSessionDbForUser, collectUserSessionAudio, userDbName, deleteLocalSessionData, localSessionAudioStats } from './session/db';
+import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
+import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
+import { initSessionDbForUser, collectUserSessionAudio, userDbName, localSessionAudioStats } from './session/db';
 import { buildZip, audioExtension } from './services/zip';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser } from './services/migration';
@@ -73,24 +73,11 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
   applyTheme();
   applyZoom();
   const users = await loadAllUsers();
+  // Selecting or creating, and nothing else: removing a user moved to
+  // Settings → User on 2026-09-13 (see settingsModal's removeUserFromDevice).
   mountUserSelector(root, users,
     (id)   => openUser(id, root),
     (name) => createAndOpenUser(name, root),
-    // deleteLocalSessionData is what "remove from this device" was missing
-    // (2026-09-08): deleteUser only drops the AppState blob, so every past
-    // recording's audio, the interrupted drafts and their chunks stayed behind
-    // in `cadence-tune-analyser-local-user-{id}` — a database no screen can
-    // reach any more once its owner is gone, quietly holding the largest thing
-    // this app stores. Ordered before deleteUser so a failure here leaves the
-    // user present and the data reachable, rather than the reverse.
-    async (id) => {
-      clearDriveStateForUser(id);
-      await clearSnapshotsForUser(id);
-      await deleteLocalSessionData(id);
-      removeUserFromOrder(id);
-      await deleteUser(id);
-      await showUserSelector(root);
-    },
   );
 }
 

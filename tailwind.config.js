@@ -35,13 +35,15 @@ module.exports = {
       // (reported 2026-09-12). Use this wherever hover carries MEANING, i.e.
       // where a stuck hover would say something false about the state.
       //
-      // ⚠️ Not switched on globally (tailwind's `future.hoverOnlyWhenSupported`)
-      // on purpose: two controls in this app are REVEALED by hover and nothing
-      // else — the delete-user ✕ (appRoot.tsx) and the remove-tag ✕
-      // (views/card.tsx), both `opacity-0/hidden group-hover:`. Today a touch
-      // user reaches them precisely BECAUSE hover sticks. Turning the flag on
-      // would make them unreachable on a phone, so they need their own way in
-      // first.
+      // Tailwind's `future.hoverOnlyWhenSupported` would do this globally, and
+      // as of 2026-09-13 NOTHING BLOCKS IT ANY MORE — it is simply a decision
+      // nobody has taken yet, and one worth verifying in a browser when it is.
+      // What used to block it: two controls revealed by hover and by nothing
+      // else, so a finger reached them only BECAUSE hover sticks to the last
+      // thing tapped — the delete-user ✕ (now a button in Settings → User) and
+      // the remove-tag ✕ (now a button on the card's tag heading). What is left
+      // on `group-hover:` is decorative: the ⠿ drag handles, whose row is the
+      // drag target, and two checkboxes that sit at 40% rather than 0.
       // `pointer: fine` as well as `hover: hover`: a few Android browsers (and
       // device emulators) claim to hover when they cannot, and the pair is the
       // combination that actually means "there is a mouse here".
