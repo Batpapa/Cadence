@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getContext } from '../store';
+import { getContext, appState } from '../store';
 import { t } from '../services/i18nService';
 import type { AppContext, Route } from '../types';
 import { loadSessionMeta } from '../session/db';
@@ -9,7 +9,9 @@ import { SessionLibrary } from '../session/ui/SessionLibrary';
 import { LiveSessionScreen } from '../session/ui/LiveSession';
 import { ImportAnalysis } from '../session/ui/ImportAnalysis';
 import { SessionSummary } from '../session/ui/SessionSummary';
-import { startLiveSession, startImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive } from '../session/ui/sessionModule';
+import { startLiveSession, startImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive, setPitchShiftSetting } from '../session/ui/sessionModule';
+import { PitchShiftControl } from '../session/ui/PitchShiftControl';
+import { pitchShiftSetting } from '../session/detections';
 import { GearIcon } from '../components/icons';
 
 // ── Sessions page (the tune analyzer) ───────────────────────────────────────────
@@ -78,14 +80,22 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
       <>
         <div class="flex items-center justify-between mb-4">
           <h1 class="text-xl font-semibold text-primary">{t('sessions.moduleTitle')}</h1>
-          <button
-            type="button"
-            class="w-8 h-8 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
-            title={t('sessions.settings.title')}
-            onClick={showSessionSettingsModal}
-          >
-            <GearIcon size={14} />
-          </button>
+          <div class="flex items-center gap-2">
+            {/* The instruments' pitch, set here before anything starts — an
+                import runs too fast to catch with a control on its own screen.
+                Beside the gear rather than inside its settings: it shows its
+                value once set, and a shift left on by mistake would otherwise
+                analyse every session after it wrong without a word. */}
+            <PitchShiftControl value={pitchShiftSetting(appState.value)} onChange={setPitchShiftSetting} />
+            <button
+              type="button"
+              class="w-8 h-8 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+              title={t('sessions.settings.title')}
+              onClick={showSessionSettingsModal}
+            >
+              <GearIcon size={14} />
+            </button>
+          </div>
         </div>
         <SessionLibrary
           ctx={ctx}
