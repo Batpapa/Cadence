@@ -1,6 +1,7 @@
-// ── When an imported recording started ───────────────────────────────────────
-// A file carries no start time a browser will give out — no creation date,
-// only `File.lastModified`. For a recorder's own file that is when the
+// ── When an imported recording started, when the file itself does not say ─────
+// The fallback behind audio/recordingDate.ts, which reads the recording's own
+// time from inside the file where its format keeps one. Beyond that, a browser
+// gives out no start time — no creation date, only `File.lastModified`. For a recorder's own file that is when the
 // recording was WRITTEN, which is when it stopped: start = end − duration
 // (user request, 2026-09-13). It used to start dateless instead, on the ground
 // that a modification time survives transfers erratically — which is still

@@ -12,6 +12,7 @@ import type { StreamProbe } from '../audio/streamingFileSource';
 import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
 import { importWarnMinutes, wholeFileDecodeBytes, IMPORT_MIN_S } from '../sessionConfig';
 import { fileStartDate } from '../fileStartDate';
+import { readRecordingStart } from '../audio/recordingDate';
 import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
@@ -319,9 +320,12 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
 
   const imp = new ImportSession(file, {});
   // A first guess at when it was recorded, in the date field from the start of
-  // the analysis so it can be corrected there — see fileStartDate. Only here,
-  // for a new import: re-analysing keeps the date the analysis already has.
-  imp.dateOverride = fileStartDate(file.lastModified, duration, Date.now());
+  // the analysis so it can be corrected there. The file's own record of it
+  // first (recordingDate.ts — it survives being sent), its modification time
+  // otherwise (fileStartDate). Only here, for a new import: re-analysing keeps
+  // the date the analysis already has.
+  imp.dateOverride = await readRecordingStart(file, duration)
+    ?? fileStartDate(file.lastModified, duration, Date.now());
   fileNewAnalysis(ctx, imp.sessionId, folderId);
   setActiveImport(imp);
   await finishImportRun(ctx, imp, undefined, wholeFileWarning);
