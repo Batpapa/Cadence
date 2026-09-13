@@ -125,7 +125,9 @@ export interface Analysis {
   id: string;
   name: string;
   /** ISO timestamp of the session's t=0. Live recordings set it to the
-   *  recording start; file imports start with null (file mtime is unreliable).
+   *  recording start; file imports start on a guess from the file's
+   *  modification time minus its duration, or null when there is nothing to
+   *  guess from (see fileStartDate — file mtime is unreliable, hence a guess).
    *  Editable and erasable in the summary screen — review logging requires it. */
   date: string | null;
   duration: number;    // seconds

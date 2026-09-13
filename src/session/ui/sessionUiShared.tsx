@@ -220,8 +220,9 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare 
 }
 
 /** Editable + erasable session-start date row — shared by a finished session
- *  and an import in progress (both can be genuinely dateless: no trustworthy
- *  t=0 for a file). A live recording always has one and shows it read-only
+ *  and an import in progress (both can be genuinely dateless, and an import's
+ *  date is only ever a guess from its file: no trustworthy t=0 for a file —
+ *  which is what this row is for). A live recording always has one and shows it read-only
  *  instead — editing it mid-recording isn't offered here. */
 export function DateRow({ getDate, setDate, onChange }: {
   getDate: () => string | null;
