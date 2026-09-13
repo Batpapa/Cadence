@@ -4,7 +4,10 @@ import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
 import { normalizeDisplayName } from '../../utils';
 import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, DetectionEvent } from '../model';
-import { ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO } from '../sessionConfig';
+import {
+  ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO,
+  FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM, FF_QUERY_REPASS_SIZE, FF_MIN_QUERY_LENGTH,
+} from '../sessionConfig';
 
 // ── FolkFriend recognition worker ─────────────────────────────────────────────
 // Owns the WASM instance, the tune index, the PCM ring buffer and the
@@ -158,6 +161,11 @@ async function handleInit(sr: number, hop?: number): Promise<void> {
   console.info(`[folkfriend] moteur ${usingSimd ? 'SIMD (rapide)' : 'scalaire (repli — navigateur sans SIMD)'}`);
   ff = new FolkFriendWASM();
   ff.set_sample_rate(sampleRate);
+  // The engine ships upstream defaults; Cadence's tuned values live in
+  // sessionConfig.ts, with the measurements behind them.
+  ff.set_tempo_range(FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM);
+  ff.set_num_repass(FF_QUERY_REPASS_SIZE);
+  ff.set_min_query_length(FF_MIN_QUERY_LENGTH);
   pcmPtr = ff.alloc_single_pcm_window();
 
   const index = await loadTuneIndex(progress => post({ type: 'init-progress', progress }));

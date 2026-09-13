@@ -53,6 +53,14 @@ export interface TemporalTimeline {
    *  therefore the "was this tune ever admitted" test the dense maps' `has`
    *  used to be. */
   rows: Map<string, SparseRow>;
+  /** Window index at which each tune entered the state space — its first
+   *  candidate score at or above minCandidateProbability. OPTIONAL: when absent,
+   *  the decoder derives it from `rows` with the config's own threshold, which
+   *  is exactly what both builders here admit on. Only a caller whose rows no
+   *  longer hold raw scores (the ranking-study harness rewrites them) needs to
+   *  pass it explicitly. See viterbiDetector.ts's admissionIndex for why the
+   *  decoder needs it at all. */
+  admittedAt?: Map<string, number>;
 }
 
 /** Index of the first entry at or after window `t` (`row.t.length` if none). */

@@ -13,7 +13,11 @@ import type { WindowResult } from '../../src/session/model';
 import type { ObservationTransform } from './transforms';
 import type { Seg } from './truth';
 
-export const DIR = nodePath.resolve(__dirname, '../../test-fixtures/sessions');
+/** Overridable since 2026-09-13 (experiment E1): windows regenerated with a
+ *  modified engine live in their own directory, next to a copy of the CSVs,
+ *  and the committed fixtures are never overwritten. */
+export const DIR = process.env['RANKING_FIXTURES_DIR']
+  ?? nodePath.resolve(__dirname, '../../test-fixtures/sessions');
 
 /** Every annotated session. Complete since 2026-09-09, when Audio F's CSV
  *  finally arrived — it is the largest of the corpus at 5 h 26 and 149 scorable
@@ -48,6 +52,8 @@ export interface TimelineOptions {
    *  themselves, which makes a hard cliff redundant — and the cliff is what
    *  discarded windows where the missed tune was ranked first. */
   flatFilter: boolean;
+  /** Temporal hold, see buildTimeline. Absent or k=0 = production. */
+  hold?: { k: number; decay: number };
 }
 
 /**
@@ -96,8 +102,51 @@ export function buildTimeline(
     return { ...w, candidates, empty: candidates.length === 0 };
   });
 
+  // Temporal hold (campaign v3, hypothesis H1): each tune's observation becomes
+  // the max of its own and its neighbours' within ±k windows, attenuated by
+  // decay^distance. A tune absent from a window but present next door gets a
+  // candidate appended AFTER the real ten, so its rank is > 10 and the rank-1
+  // gate (countTop1Windows) still only counts what FolkFriend actually ranked
+  // first. Runs after the transform, on its scale. `empty` is read by no decoder.
+  let held = transformed;
+  if (opts.hold && opts.hold.k > 0) {
+    const { k, decay } = opts.hold;
+    held = transformed.map((w, t) => {
+      const best = new Map<string, WindowResult['candidates'][number]>();
+      for (let d = 1; d <= k; d++) {
+        const f = Math.pow(decay, d);
+        for (const u of [t - d, t + d]) {
+          const src = transformed[u];
+          if (!src) continue;
+          for (const c of src.candidates) {
+            const v = c.score * f;
+            const cur = best.get(c.tuneId);
+            if (!cur || cur.score < v) best.set(c.tuneId, { ...c, score: v });
+          }
+        }
+      }
+      if (!best.size) return w;
+      const own = w.candidates.map(c => {
+        const b = best.get(c.tuneId);
+        best.delete(c.tuneId);
+        return b && b.score > c.score ? { ...c, score: b.score } : c;
+      });
+      const extra = [...best.values()].sort((a, b) => b.score - a.score);
+      return { ...w, candidates: [...own, ...extra], empty: false };
+    });
+  }
+
+  // Admission WINDOW on raw scores too, for the decoder (admissionIndex): the rows
+  // below hold transformed values, against which the 0.20 threshold means nothing.
+  const admittedAt = new Map<string, number>();
+  ws.forEach((w, t) => {
+    for (const c of w.candidates) {
+      if (c.score >= cfg.minCandidateProbability && !admittedAt.has(c.tuneId)) admittedAt.set(c.tuneId, t);
+    }
+  });
+
   // -Infinity, because admission has already been decided above on raw scores.
-  return buildTemporalTimeline(transformed, { ...cfg, minCandidateProbability: -Infinity });
+  return { ...buildTemporalTimeline(held, { ...cfg, minCandidateProbability: -Infinity }), admittedAt };
 }
 
 export interface DetectedSeg extends Seg {
@@ -156,10 +205,28 @@ export function decode(
   minSegmentWindows?: number,
   weights: TransitionWeights = {},
   confirm: ConfirmRule = { kind: 'none' },
+  /** Rank-1 gate as a PROPORTION (added 2026-09-13, campaign v3): a segment
+   *  needs max(minSegmentWindows, ceil(topFrac x its window count)) rank-1
+   *  windows, counted anywhere in it exactly as production counts them. 0 is
+   *  production's absolute-count gate, through production's own code path. */
+  topFrac = 0,
+  /** What an ABSENT tune observes, as a fraction of the UNKNOWN floor (added
+   *  2026-09-13, campaign v3, hypothesis H1). 0 is production: absence reads
+   *  log(epsilon) = -13.8, so one missing window outweighs ~30 rank-1 windows
+   *  at 0.30 against a 0.20 floor, and intermittent evidence cannot hold a
+   *  segment together. Plugged through production's own observationScoreFn hook;
+   *  every present value is > 0 (transforms clamp at 1e-4), so only absence moves. */
+  absentRatio = 0,
 ): DetectedSeg[] {
   const k = weights.scale ?? 1;
   const runCfg = {
     ...cfg,
+    // Explicit, never inherited: production now sets absentObservationRatio, and
+    // this harness must keep meaning what it meant when every figure in
+    // CAMPAIGN_V3.md was measured — absentRatio 0 = the plain epsilon floor.
+    // (It used to be emulated through observationScoreFn; the detector now has
+    // the field itself, with the identical formula.)
+    absentObservationRatio: absentRatio > 0 ? absentRatio : undefined,
     unknownObservationProbability: unknownFloor,
     minSegmentWindows: minSegmentWindows ?? cfg.minSegmentWindows,
     sameTuneTransitionCost: cfg.sameTuneTransitionCost * k,
@@ -169,8 +236,19 @@ export function decode(
     unknownToTunePenalty: (weights.unknownToTune ?? cfg.unknownToTunePenalty) * k,
   };
   const result = runViterbiDetection(timeline, runCfg);
+  // The proportional gate reuses production's own relabelling twice rather than
+  // copying it: once per segment with that segment's own requirement (so a
+  // failing segment becomes exactly production's UNKNOWN), then once over the
+  // whole list with a requirement of 0, which relabels nothing and only merges
+  // the UNKNOWN neighbours — mergeNearbySameTune depends on that merge.
+  const gated = topFrac > 0
+    ? filterShortSegments(
+      result.segments.map(s => filterShortSegments(
+        [s], timeline, Math.max(runCfg.minSegmentWindows, Math.ceil(topFrac * s.windowCount)), false)[0]!),
+      timeline, 0, false)
+    : filterShortSegments(result.segments, timeline, runCfg.minSegmentWindows, false);
   const segments = mergeNearbySameTune(
-    filterShortSegments(result.segments, timeline, runCfg.minSegmentWindows, false),
+    gated,
     timeline,
     runCfg.sameTuneMergeGapWindows,
   ).filter(s => s.tuneId !== UNKNOWN_STATE);
