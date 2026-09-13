@@ -717,6 +717,8 @@
   "fileViewer.cardRef.missing.import": "Import",
   "fileViewer.cardRef.missing.create": "Create the card",
   "fileViewer.download": "Download",
+  "fileViewer.pdf.noInline": "This browser cannot display PDFs directly. The file can be opened in the device's own viewer.",
+  "fileViewer.pdf.open": "Open",
   "audioPlayer.loading": "Loading audio…",
   "audioPlayer.error": "Error: {msg}",
   "audioPlayer.stop": "Stop",
