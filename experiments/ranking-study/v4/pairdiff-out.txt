@@ -1,0 +1,12 @@
+A = production 318/12+0 IoU 88.0 ; B = Cstar 324/10+0 IoU 88.8
+1Hour_Trad_Irish_Music_Sessi morceaux +0 -0 [|]  fp +0 -0 [|]  IoU mieux 5 pire 6
+20260523_1_matin_Anglade     morceaux +0 -0 [|]  fp +0 -0 [|]  IoU mieux 6 pire 4
+20260523_2_aprem_tabac       morceaux +2 -1 [11,20|25]  fp +0 -2 [|3206,1839]  IoU mieux 5 pire 4
+20260523_5_auberge_fleurie   morceaux +0 -0 [|]  fp +0 -0 [|]  IoU mieux 8 pire 4
+One_of_the_Best_Traditional_ morceaux +0 -0 [|]  fp +0 -0 [|]  IoU mieux 3 pire 3
+13th_Moon_Gravity_Well_-_Iri morceaux +1 -0 [42|]  fp +1 -0 [9856|]  IoU mieux 14 pire 2
+20240721_tocane_2_chapiteau  morceaux +4 -0 [56,58,107,132|]  fp +1 -2 [13978|249,2044]  IoU mieux 44 pire 15
+
+morceaux : B gagne 7, perd 1 -> test du signe p = 0.0703
+faux positifs (ids) : B en ajoute 2, en retire 4 -> p = 0.688
+IoU sur les 317 morceaux communs : B mieux 85, pire 38, egal 194 -> p = 0.0000272 ; ecart moyen 1.22 point

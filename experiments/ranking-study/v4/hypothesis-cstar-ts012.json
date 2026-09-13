@@ -1,0 +1,22 @@
+[
+ {
+  "label": "hypothesis Cstar tempoSpread 0.12 (post hoc, non validee)",
+  "transform": "nullRatio3",
+  "floorQ": 0.051800300671546846,
+  "floor": 1,
+  "minSeg": 2,
+  "confirm": "peakx1.23",
+  "weights": {
+   "tuneChange": 0.7853,
+   "unknownStay": 0,
+   "tuneToUnknown": 0.8003,
+   "unknownToTune": 0
+  },
+  "absent": 0.9754664770129913,
+  "rapid": 0.25202063100515265,
+  "mergeGap": 11,
+  "flat": null,
+  "tempoSpread": 0.12,
+  "minCand": 0.23732876064946654
+ }
+]

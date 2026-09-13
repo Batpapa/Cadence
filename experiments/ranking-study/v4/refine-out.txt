@@ -1,0 +1,127 @@
+2430 evaluations ; production 318/12+0 IoU 88.0 b90 15.5/14.5
+
+== depart identity 318/12+0 ==
+  L=0.25 K=0.5 : depart score 356.0 -> meilleur 357.9 (pas 34) 320/13+0 IoU 87.8 b90 16.5/14.5 | dominent la prod : 0/45
+     a=0.784 stay=0.200 in=0.500 out=0.500 chg=0.810 rap=1.92 gap=18 ts=0.064 mc=0.204 flat=0.050 mS=2 peakx1.00 fl=0.1860
+  L=0.5 K=0 : depart score 312.0 -> meilleur 312.5 (pas 5) 318/11+0 IoU 88.1 b90 15.5/14.5 | dominent la prod : 2/45
+     a=0.800 stay=0.199 in=0.500 out=0.518 chg=1.000 rap=2.00 gap=10 ts=0.120 mc=0.200 flat=0.050 mS=2 none fl=0.1875
+  L=0.5 K=0.5 : depart score 353.0 -> meilleur 354.2 (pas 38) 320/14+0 IoU 87.8 b90 16.5/14.5 | dominent la prod : 6/45
+     a=0.800 stay=0.200 in=0.574 out=0.389 chg=0.779 rap=1.93 gap=11 ts=0.076 mc=0.165 flat=0.050 mS=2 none fl=0.2037
+  L=0.5 K=2 : depart score 476.1 -> meilleur 479.4 (pas 16) 320/14+0 IoU 88.7 b90 12.5/13.5 | dominent la prod : 2/45
+     a=0.800 stay=0.200 in=0.678 out=0.666 chg=1.148 rap=2.48 gap=6 ts=0.120 mc=0.200 flat=0.029 mS=2 none fl=0.1889
+  L=1 K=0.5 : depart score 347.0 -> meilleur 349.1 (pas 18) 319/11+0 IoU 87.8 b90 15.5/16.5 | dominent la prod : 9/45
+     a=0.805 stay=0.200 in=0.370 out=0.500 chg=1.000 rap=2.50 gap=11 ts=0.112 mc=0.200 flat=0.051 mS=2 none fl=0.1984
+  L=2 K=0.5 : depart score 335.0 -> meilleur 335.8 (pas 21) 317/11+0 IoU 87.7 b90 16.5/16.5 | dominent la prod : 1/45
+     a=0.800 stay=0.200 in=0.500 out=0.452 chg=0.992 rap=2.00 gap=8 ts=0.120 mc=0.225 flat=0.060 mS=2 peakx1.00 fl=0.1837
+
+== depart nullRatio3 324/12+0 ==
+  L=0.25 K=0.5 : depart score 363.1 -> meilleur 363.7 (pas 21) 324/10+0 IoU 88.8 b90 15.5/11.5 | dominent la prod : 33/45
+     a=0.975 stay=0.000 in=0.000 out=0.800 chg=0.785 rap=0.25 gap=11 ts=0.000 mc=0.237 flat=off mS=2 peakx1.23 fl=1.0000
+  L=0.5 K=0 : depart score 318.0 -> meilleur 318.0 (pas 0) 324/12+0 IoU 88.7 b90 13.5/12.5 | dominent la prod : 32/45
+     a=0.990 stay=0.000 in=0.007 out=0.800 chg=0.785 rap=0.26 gap=7 ts=0.008 mc=0.238 flat=off mS=2 none fl=1.0000
+  L=0.5 K=0.5 : depart score 360.1 -> meilleur 360.1 (pas 0) 324/12+0 IoU 88.7 b90 13.5/12.5 | dominent la prod : 7/45
+     a=0.990 stay=0.000 in=0.007 out=0.800 chg=0.785 rap=0.26 gap=7 ts=0.008 mc=0.238 flat=off mS=2 none fl=1.0000
+  L=0.5 K=2 : depart score 486.5 -> meilleur 486.5 (pas 0) 324/12+0 IoU 88.7 b90 13.5/12.5 | dominent la prod : 4/45
+     a=0.990 stay=0.000 in=0.007 out=0.800 chg=0.785 rap=0.26 gap=7 ts=0.008 mc=0.238 flat=off mS=2 none fl=1.0000
+  L=1 K=0.5 : depart score 354.1 -> meilleur 354.1 (pas 0) 324/12+0 IoU 88.7 b90 13.5/12.5 | dominent la prod : 41/45
+     a=0.990 stay=0.000 in=0.007 out=0.800 chg=0.785 rap=0.26 gap=7 ts=0.008 mc=0.238 flat=off mS=2 none fl=1.0000
+  L=2 K=0.5 : depart score 342.1 -> meilleur 346.1 (pas 24) 322/9+0 IoU 89.1 b90 13.5/11.5 | dominent la prod : 27/45
+     a=0.990 stay=0.000 in=0.031 out=0.800 chg=1.036 rap=0.00 gap=8 ts=0.000 mc=0.238 flat=off mS=2 none fl=1.0000
+
+== depart shareXMargin 317/5+0 ==
+  L=0.25 K=0.5 : depart score 355.2 -> meilleur 357.7 (pas 40) 319/6+0 IoU 86.0 b90 17.5/24 | dominent la prod : 0/45
+     a=0.653 stay=0.397 in=1.112 out=0.988 chg=1.712 rap=1.41 gap=2 ts=0.143 mc=0.226 flat=off mS=2 peakx1.00 fl=0.0213
+  L=0.5 K=0 : depart score 314.5 -> meilleur 314.5 (pas 0) 317/5+0 IoU 84.9 b90 17.5/24 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=1.054 chg=1.664 rap=0.80 gap=7 ts=0.172 mc=0.192 flat=off mS=2 none fl=0.0217
+  L=0.5 K=0.5 : depart score 353.9 -> meilleur 354.0 (pas 1) 317/5+0 IoU 85.0 b90 17.5/24 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=0.904 chg=1.664 rap=0.80 gap=7 ts=0.172 mc=0.192 flat=off mS=2 none fl=0.0217
+  L=0.5 K=2 : depart score 472.3 -> meilleur 478.5 (pas 32) 320/10+0 IoU 87.1 b90 17.5/16.5 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=0.941 chg=1.643 rap=0.23 gap=8 ts=0.123 mc=0.212 flat=off mS=2 peakx1.00 fl=0.0202
+  L=1 K=0.5 : depart score 351.4 -> meilleur 351.4 (pas 0) 317/5+0 IoU 84.9 b90 17.5/24 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=1.054 chg=1.664 rap=0.80 gap=7 ts=0.172 mc=0.192 flat=off mS=2 none fl=0.0217
+  L=2 K=0.5 : depart score 346.4 -> meilleur 346.6 (pas 37) 317/5+0 IoU 85.2 b90 17.5/23.5 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=0.903 out=1.054 chg=1.664 rap=0.26 gap=12 ts=0.172 mc=0.192 flat=off mS=2 none fl=0.0217
+
+== depart nullRatio3 319/8+0 ==
+  L=0.25 K=0.5 : depart score 357.6 -> meilleur 360.0 (pas 44) 322/10+1 IoU 86.4 b90 16.5/17.5 | dominent la prod : 0/45
+     a=0.863 stay=0.104 in=0.574 out=0.151 chg=0.642 rap=3.91 gap=15 ts=0.167 mc=0.181 flat=off mS=0 peakx1.00 fl=1.0500
+  L=0.5 K=0 : depart score 315.0 -> meilleur 317.0 (pas 33) 321/8+0 IoU 79.2 b90 23.5/96 | dominent la prod : 0/45
+     a=0.990 stay=0.104 in=0.646 out=0.880 chg=0.744 rap=3.00 gap=17 ts=0.110 mc=0.216 flat=0.024 mS=2 none fl=1.0286
+  L=0.5 K=0.5 : depart score 355.6 -> meilleur 358.0 (pas 44) 322/12+0 IoU 89.0 b90 13.5/11.5 | dominent la prod : 2/45
+     a=0.855 stay=0.104 in=0.455 out=0.404 chg=0.744 rap=3.86 gap=19 ts=0.116 mc=0.199 flat=off mS=1 none fl=1.0526
+  L=0.5 K=2 : depart score 477.4 -> meilleur 478.5 (pas 21) 320/8+0 IoU 86.6 b90 16.5/17.5 | dominent la prod : 0/45
+     a=0.855 stay=0.104 in=0.588 out=0.387 chg=0.744 rap=3.33 gap=19 ts=0.167 mc=0.216 flat=off mS=0 none fl=1.0500
+  L=1 K=0.5 : depart score 351.6 -> meilleur 352.7 (pas 44) 320/8+0 IoU 86.9 b90 16.5/16.5 | dominent la prod : 1/45
+     a=0.855 stay=0.104 in=0.702 out=0.188 chg=0.773 rap=4.00 gap=21 ts=0.167 mc=0.194 flat=off mS=0 none fl=1.0556
+  L=2 K=0.5 : depart score 343.6 -> meilleur 346.1 (pas 36) 319/7+0 IoU 87.9 b90 14.5/14.5 | dominent la prod : 0/45
+     a=0.855 stay=0.104 in=0.406 out=0.571 chg=0.744 rap=4.00 gap=16 ts=0.146 mc=0.234 flat=off mS=2 none fl=1.0278
+
+== depart share 320/11+0 ==
+  L=0.25 K=0.5 : depart score 358.4 -> meilleur 358.4 (pas 0) 320/11+0 IoU 87.7 b90 15.5/13.5 | dominent la prod : 2/45
+     a=0.629 stay=0.414 in=0.000 out=1.366 chg=2.203 rap=0.00 gap=7 ts=0.143 mc=0.220 flat=0.000 mS=0 peakx1.00 fl=0.1327
+  L=0.5 K=0 : depart score 314.5 -> meilleur 315.5 (pas 43) 319/7+0 IoU 79.2 b90 27.5/89.5 | dominent la prod : 0/45
+     a=0.704 stay=0.489 in=0.000 out=1.366 chg=2.338 rap=0.53 gap=6 ts=0.143 mc=0.213 flat=0.000 mS=1 peakx1.00 fl=0.1327
+  L=0.5 K=0.5 : depart score 355.7 -> meilleur 356.0 (pas 36) 320/10+0 IoU 87.4 b90 15.5/13.5 | dominent la prod : 2/45
+     a=0.629 stay=0.390 in=0.000 out=1.366 chg=2.393 rap=0.00 gap=10 ts=0.143 mc=0.215 flat=0.000 mS=1 peakx1.00 fl=0.1287
+  L=0.5 K=2 : depart score 479.1 -> meilleur 479.9 (pas 41) 320/11+0 IoU 88.1 b90 15.5/12.5 | dominent la prod : 3/45
+     a=0.642 stay=0.414 in=0.070 out=1.366 chg=1.795 rap=0.00 gap=9 ts=0.143 mc=0.227 flat=0.000 mS=0 peakx1.00 fl=0.1304
+  L=1 K=0.5 : depart score 350.2 -> meilleur 350.3 (pas 25) 320/11+0 IoU 88.0 b90 15.5/13.5 | dominent la prod : 0/45
+     a=0.652 stay=0.414 in=0.000 out=1.366 chg=2.124 rap=0.00 gap=7 ts=0.143 mc=0.220 flat=0.000 mS=0 peakx1.00 fl=0.1332
+  L=2 K=0.5 : depart score 339.2 -> meilleur 339.9 (pas 19) 319/10+0 IoU 87.4 b90 16.5/13.5 | dominent la prod : 0/45
+     a=0.629 stay=0.414 in=0.000 out=1.366 chg=2.815 rap=0.18 gap=6 ts=0.148 mc=0.228 flat=0.000 mS=0 peakx1.00 fl=0.1319
+
+== depart identity 320/19+0 ==
+  L=0.25 K=0.5 : depart score 356.3 -> meilleur 359.3 (pas 43) 322/17+0 IoU 88.0 b90 13.5/13.5 | dominent la prod : 0/45
+     a=0.837 stay=0.161 in=0.556 out=0.443 chg=1.182 rap=0.99 gap=6 ts=0.108 mc=0.253 flat=0.035 mS=2 none fl=0.1721
+  L=0.5 K=0 : depart score 310.5 -> meilleur 313.5 (pas 38) 321/15+0 IoU 83.3 b90 19.5/52.5 | dominent la prod : 0/45
+     a=0.792 stay=0.260 in=0.689 out=0.402 chg=1.272 rap=0.00 gap=4 ts=0.108 mc=0.240 flat=0.035 mS=2 none fl=0.1774
+  L=0.5 K=0.5 : depart score 351.6 -> meilleur 354.4 (pas 44) 322/18+0 IoU 87.6 b90 15.5/14.5 | dominent la prod : 0/45
+     a=0.840 stay=0.172 in=0.490 out=0.378 chg=1.308 rap=0.83 gap=1 ts=0.106 mc=0.249 flat=0.035 mS=2 none fl=0.1833
+  L=0.5 K=2 : depart score 474.7 -> meilleur 479.4 (pas 36) 321/15+0 IoU 88.1 b90 13.5/13.5 | dominent la prod : 0/45
+     a=0.834 stay=0.161 in=0.490 out=0.378 chg=1.137 rap=0.00 gap=10 ts=0.108 mc=0.199 flat=0.035 mS=2 none fl=0.1864
+  L=1 K=0.5 : depart score 342.1 -> meilleur 346.8 (pas 41) 319/13+0 IoU 87.3 b90 17.5/14.5 | dominent la prod : 0/45
+     a=0.850 stay=0.161 in=0.490 out=0.576 chg=1.182 rap=0.28 gap=11 ts=0.114 mc=0.301 flat=0.035 mS=2 peakx1.06 fl=0.1905
+  L=2 K=0.5 : depart score 323.1 -> meilleur 333.9 (pas 23) 315/9+0 IoU 79.8 b90 26.5/82.5 | dominent la prod : 0/45
+     a=0.974 stay=0.161 in=0.490 out=0.474 chg=1.010 rap=0.00 gap=9 ts=0.108 mc=0.286 flat=0.060 mS=2 peakx1.51 fl=0.1667
+
+== depart nullRatio5 321/19+0 ==
+  L=0.25 K=0.5 : depart score 358.0 -> meilleur 358.2 (pas 9) 321/18+0 IoU 88.6 b90 17.5/10.5 | dominent la prod : 0/45
+     a=0.439 stay=0.659 in=1.094 out=0.932 chg=1.473 rap=0.77 gap=18 ts=0.024 mc=0.250 flat=off mS=0 none fl=1.5472
+  L=0.5 K=0 : depart score 311.5 -> meilleur 312.0 (pas 26) 321/18+0 IoU 88.6 b90 17.5/10.5 | dominent la prod : 0/45
+     a=0.439 stay=0.659 in=1.085 out=0.932 chg=1.466 rap=0.42 gap=21 ts=0.034 mc=0.251 flat=off mS=0 none fl=1.5472
+  L=0.5 K=0.5 : depart score 353.3 -> meilleur 353.3 (pas 14) 321/19+0 IoU 88.9 b90 16.5/10.5 | dominent la prod : 0/45
+     a=0.439 stay=0.659 in=1.094 out=0.932 chg=1.473 rap=0.77 gap=18 ts=0.024 mc=0.205 flat=off mS=1 none fl=1.5472
+  L=0.5 K=2 : depart score 478.6 -> meilleur 478.9 (pas 19) 323/23+0 IoU 88.3 b90 17.5/11.5 | dominent la prod : 0/45
+     a=0.439 stay=0.659 in=0.991 out=0.927 chg=1.473 rap=0.90 gap=19 ts=0.052 mc=0.205 flat=off mS=0 none fl=1.5472
+  L=1 K=0.5 : depart score 343.8 -> meilleur 344.8 (pas 12) 317/13+0 IoU 87.7 b90 17.5/11.5 | dominent la prod : 0/45
+     a=0.439 stay=0.548 in=1.050 out=0.932 chg=1.473 rap=0.94 gap=20 ts=0.024 mc=0.210 flat=off mS=0 none fl=1.5472
+  L=2 K=0.5 : depart score 324.8 -> meilleur 339.9 (pas 38) 312/6+0 IoU 87.3 b90 17.5/13.5 | dominent la prod : 0/45
+     a=0.439 stay=0.659 in=1.180 out=1.296 chg=1.426 rap=0.38 gap=10 ts=0.021 mc=0.205 flat=0.058 mS=0 none fl=1.4074
+
+== depart nullRatioTailMean 318/13+0 ==
+  L=0.25 K=0.5 : depart score 356.6 -> meilleur 359.8 (pas 32) 321/14+0 IoU 89.8 b90 12.5/9.5 | dominent la prod : 1/45
+     a=0.721 stay=0.265 in=0.275 out=1.196 chg=1.242 rap=0.83 gap=4 ts=0.000 mc=0.202 flat=0.000 mS=0 none fl=1.2062
+  L=0.5 K=0 : depart score 311.5 -> meilleur 314.0 (pas 6) 319/9+1 IoU 79.5 b90 23.5/94.5 | dominent la prod : 0/45
+     a=0.770 stay=0.265 in=0.275 out=1.298 chg=1.280 rap=0.83 gap=7 ts=0.134 mc=0.233 flat=0.000 mS=1 none fl=1.2077
+  L=0.5 K=0.5 : depart score 353.4 -> meilleur 355.2 (pas 11) 317/7+0 IoU 89.7 b90 13.5/11.5 | dominent la prod : 2/45
+     a=0.721 stay=0.265 in=0.273 out=1.304 chg=1.511 rap=0.24 gap=3 ts=0.129 mc=0.233 flat=0.000 mS=2 none fl=1.2077
+  L=0.5 K=2 : depart score 479.0 -> meilleur 484.4 (pas 34) 321/11+0 IoU 89.7 b90 15.5/9.5 | dominent la prod : 16/45
+     a=0.721 stay=0.265 in=0.334 out=1.298 chg=1.489 rap=0.19 gap=4 ts=0.042 mc=0.245 flat=0.000 mS=0 none fl=1.1901
+  L=1 K=0.5 : depart score 346.9 -> meilleur 350.2 (pas 42) 321/13+0 IoU 89.7 b90 15.5/9.5 | dominent la prod : 6/45
+     a=0.721 stay=0.265 in=0.275 out=1.298 chg=1.455 rap=1.30 gap=4 ts=0.035 mc=0.239 flat=off mS=2 none fl=1.1958
+  L=2 K=0.5 : depart score 333.9 -> meilleur 340.5 (pas 13) 315/8+0 IoU 89.8 b90 12.5/12.5 | dominent la prod : 1/45
+     a=0.735 stay=0.265 in=0.275 out=1.390 chg=1.269 rap=0.98 gap=7 ts=0.094 mc=0.233 flat=0.000 mS=1 none fl=1.2491
+
+== depart shareXMargin 319/9+0 ==
+  L=0.25 K=0.5 : depart score 356.8 -> meilleur 360.1 (pas 36) 322/12+0 IoU 87.1 b90 16.5/17.5 | dominent la prod : 0/45
+     a=0.649 stay=0.388 in=1.068 out=0.887 chg=1.686 rap=0.80 gap=10 ts=0.085 mc=0.236 flat=off mS=2 peakx1.00 fl=0.0217
+  L=0.5 K=0 : depart score 314.5 -> meilleur 315.0 (pas 3) 319/8+0 IoU 86.3 b90 16.5/18.5 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=0.999 chg=1.542 rap=0.80 gap=7 ts=0.139 mc=0.209 flat=off mS=2 none fl=0.0217
+  L=0.5 K=0.5 : depart score 354.6 -> meilleur 355.3 (pas 17) 320/9+0 IoU 84.9 b90 17.5/32.5 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=0.864 chg=1.413 rap=0.80 gap=2 ts=0.134 mc=0.196 flat=off mS=2 none fl=0.0227
+  L=0.5 K=2 : depart score 474.9 -> meilleur 480.5 (pas 38) 322/11+0 IoU 86.8 b90 16.5/17.5 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=0.864 out=1.256 chg=1.868 rap=0.80 gap=4 ts=0.111 mc=0.186 flat=off mS=2 none fl=0.0208
+  L=1 K=0.5 : depart score 350.1 -> meilleur 353.6 (pas 42) 320/7+0 IoU 86.6 b90 17.5/19.5 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=1.117 chg=1.743 rap=0.80 gap=7 ts=0.119 mc=0.252 flat=off mS=2 none fl=0.0217
+  L=2 K=0.5 : depart score 341.1 -> meilleur 343.7 (pas 34) 318/7+0 IoU 85.2 b90 18.5/24 | dominent la prod : 0/45
+     a=0.649 stay=0.397 in=1.068 out=1.073 chg=1.453 rap=1.05 gap=8 ts=0.151 mc=0.183 flat=off mS=2 peakx1.17 fl=0.0217

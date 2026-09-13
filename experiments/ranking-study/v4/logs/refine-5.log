@@ -1,0 +1,21 @@
+
+ RUN  v4.1.10 C:/Perso/IrishMusicExperiments/Cadence
+
+recuit v4 6/6 : 9 chaines x 45 pas = 405 evaluations
+  ronde 1 : 45 evaluations, 145s
+  ronde 2 : 90 evaluations, 308s
+  ronde 3 : 135 evaluations, 485s
+  ronde 4 : 180 evaluations, 662s
+  ronde 5 : 225 evaluations, 843s
+  ronde 6 : 270 evaluations, 1016s
+  ronde 7 : 315 evaluations, 1202s
+  ronde 8 : 360 evaluations, 1377s
+  ronde 9 : 405 evaluations, 1513s
+
+405 evaluations ecrites dans v4-seed22-anneal05.json (1513s)
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  16:10:06
+   Duration  1514.70s (transform 135ms, setup 0ms, import 297ms, tests 1514.10s, environment 0ms)
+

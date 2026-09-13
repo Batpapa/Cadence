@@ -1,0 +1,49 @@
+
+ RUN  v4.1.10 C:/Perso/IrishMusicExperiments/Cadence
+
+  production|curve|minCand|0.2 318/341 fp=12+0 IoU=88.0% | 31/0 35/2 22/5 30/0 25/0 39/1 136/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|neigh|0 325/341 fp=16+0 IoU=86.7% | 31/0 35/3 24/4 30/2 25/0 40/2 140/5
+  production|curve|tempoSpread|0.15 316/341 fp=11+0 IoU=87.2% | 31/0 35/2 21/4 30/0 25/0 38/1 136/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|gap|5 324/341 fp=12+0 IoU=88.7% | 31/0 35/3 24/3 30/1 25/0 39/2 140/3
+  production|curve|minCand|0.18 318/341 fp=12+0 IoU=88.0% | 31/0 35/2 22/5 30/0 25/0 39/1 136/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|neigh|40 325/341 fp=17+0 IoU=81.3% | 31/0 35/4 24/4 30/2 25/0 40/2 140/5
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|neigh|24 321/341 fp=12+0 IoU=81.9% | 31/0 35/3 24/3 30/2 25/0 38/1 138/3
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|tempoSpread|0.02 324/341 fp=12+0 IoU=88.7% | 31/0 35/3 24/3 30/1 25/0 39/2 140/3
+  production|neigh|6 315/341 fp=15+0 IoU=87.4% | 31/0 35/3 21/5 30/1 25/0 38/2 135/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|stay|0.05 324/341 fp=16+0 IoU=80.9% | 31/0 35/3 24/4 30/2 25/0 39/2 140/5
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|flat|0.1 308/341 fp=7+0 IoU=84.8% | 31/0 35/2 21/2 27/0 25/0 36/1 133/2
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|tempoSpread|0 324/341 fp=12+0 IoU=88.7% | 31/0 35/3 24/3 30/1 25/0 39/2 140/3
+  production|neigh|34 309/341 fp=11+0 IoU=85.9% | 31/0 35/2 20/4 28/0 25/0 35/1 135/4
+  production|neigh|27 309/341 fp=13+0 IoU=82.5% | 31/0 35/2 21/5 28/0 25/0 35/1 134/5
+  production|curve|floor|0.16 317/341 fp=14+0 IoU=88.2% | 31/0 35/2 21/6 30/0 25/0 39/1 136/5
+  production|neigh|44 313/341 fp=14+0 IoU=86.2% | 31/0 35/2 21/5 29/0 25/0 37/2 135/5
+  production|curve|minCand|0.28 315/341 fp=13+0 IoU=87.6% | 31/0 35/2 22/5 30/0 25/0 36/2 136/4
+  production|neigh|38 315/341 fp=13+0 IoU=86.9% | 31/0 35/2 21/5 30/0 25/0 38/2 135/4
+  production|neigh|36 317/341 fp=11+0 IoU=79.9% | 31/0 35/2 23/3 30/0 25/0 38/2 135/4
+  production|curve|tempoSpread|0.12 318/341 fp=12+0 IoU=88.0% | 31/0 35/2 22/5 30/0 25/0 39/1 136/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|rapid|4 324/341 fp=12+0 IoU=88.7% | 31/0 35/3 24/3 30/1 25/0 39/2 140/3
+  production|neigh|4 311/341 fp=10+0 IoU=88.9% | 31/0 35/2 20/3 29/0 25/0 36/1 135/4
+  production|curve|out|0.5 318/341 fp=12+0 IoU=88.0% | 31/0 35/2 22/5 30/0 25/0 39/1 136/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|chg|1.5 323/341 fp=11+0 IoU=88.3% | 31/0 35/3 24/3 30/1 25/0 39/1 139/3
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|absent|0.7 318/341 fp=10+0 IoU=84.9% | 31/0 35/2 20/2 30/0 25/0 38/1 139/5
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|in|0.25 324/341 fp=14+0 IoU=84.4% | 31/0 35/3 24/4 30/1 25/0 39/2 140/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|minCand|0.14 323/341 fp=15+2 IoU=89.1% | 31/0 35/4 24/4 30/1 25/0 39/2 139/4
+  production|neigh|29 316/341 fp=12+0 IoU=78.3% | 31/0 35/2 22/5 30/0 25/0 38/1 135/4
+  production|curve|rapid|1 318/341 fp=12+0 IoU=88.0% | 31/0 35/2 22/5 30/0 25/0 39/1 136/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|stay|0.2 324/341 fp=16+0 IoU=80.9% | 31/0 35/3 24/4 30/2 25/0 39/2 140/5
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|neigh|28 323/341 fp=13+0 IoU=89.3% | 31/0 35/4 24/3 30/1 25/0 39/2 139/3
+  production|neigh|35 316/341 fp=11+0 IoU=79.3% | 31/0 35/2 22/4 30/0 25/0 38/1 135/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|curve|rapid|2 324/341 fp=12+0 IoU=88.7% | 31/0 35/3 24/3 30/1 25/0 39/2 140/3
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|neigh|45 324/341 fp=16+0 IoU=81.0% | 31/0 35/3 24/4 30/2 25/0 39/2 140/5
+  production|curve|in|0.25 316/341 fp=14+0 IoU=88.1% | 31/0 35/2 21/6 30/0 25/0 38/1 136/5
+  production|curve|chg|2 316/341 fp=12+0 IoU=87.5% | 31/0 35/2 22/5 30/0 25/0 38/1 135/4
+  loso L0.5K0.5 (2.5 plis) + loso L0.25K0.5 (2.0 plis) + loso L0.5K1 (2.5 plis) + loso L1K0.5 (1.5 plis)|neigh|47 324/341 fp=13+0 IoU=88.9% | 31/0 35/4 24/3 30/1 25/0 39/2 140/3
+  production|curve|out|0.2 316/341 fp=14+0 IoU=88.1% | 31/0 35/2 21/6 30/0 25/0 38/1 136/5
+  production|curve|floor|0.18 318/341 fp=11+0 IoU=88.1% | 31/0 35/2 22/5 30/0 25/0 39/1 136/3
+39 configurations en 117s
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  16:35:34
+   Duration  119.39s (transform 153ms, setup 0ms, import 202ms, tests 118.63s, environment 0ms)
+

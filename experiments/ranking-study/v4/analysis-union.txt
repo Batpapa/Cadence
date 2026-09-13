@@ -1,0 +1,322 @@
+12390 evaluations ; production 318/341 fp=12+0 IoU=88.0% pts=82.1
+
+== front rappel / (fp+bruit) (17 niveaux) ==
+  277 fp= 0+0 IoU=85.4% pts=69.3 b90=20.5/20.5s | nullRatio3 fq=0.2103 fl=1.1176 mS=1 none a=0.67 rap=2.57 gap=20 flat=0.036 ts=0.167 mc=0.239 chg=1.33 stay=0.09 out=1.16 in=0.39 | 30/0 34/0 17/0 28/0 24/0 27/0 117/0
+  294 fp= 1+0 IoU=84.2% pts=72.6 b90=20.5/23.5s | nullRatio3 fq=0.1436 fl=1.0769 mS=0 none a=0.67 rap=3.14 gap=18 flat=0.036 ts=0.167 mc=0.286 chg=1.44 stay=0.15 out=1.12 in=0.40 | 30/0 34/1 18/0 27/0 24/0 32/0 129/0
+  306 fp= 2+0 IoU=87.9% pts=78.9 b90=16.5/12.5s | share fq=0.3805 fl=0.1327 mS=1 peakx1.00 a=0.72 rap=0.00 gap=6 flat=0.000 ts=0.143 mc=0.220 chg=2.23 stay=0.23 out=1.37 in=0.00 | 31/0 34/1 19/0 29/0 24/0 34/0 135/1
+  308 fp= 3+0 IoU=88.9% pts=80.3 b90=15.5/11.5s | share fq=0.3805 fl=0.1327 mS=1 peakx1.00 a=0.72 rap=0.00 gap=6 flat=0.000 ts=0.143 mc=0.213 chg=2.23 stay=0.26 out=1.37 in=0.00 | 31/0 35/1 19/0 30/0 24/0 34/1 135/1
+  313 fp= 4+0 IoU=78.8% pts=72.4 b90=27.5/95.5s | share fq=0.3805 fl=0.1327 mS=1 peakx1.00 a=0.72 rap=0.56 gap=6 flat=0.000 ts=0.143 mc=0.213 chg=2.23 stay=0.49 out=1.53 in=0.00 | 31/0 35/1 21/1 30/0 24/0 35/1 137/1
+  317 fp= 5+0 IoU=85.2% pts=79.2 b90=17.5/23.5s | shareXMargin fq=0.3250 fl=0.0217 mS=2 none a=0.65 rap=0.26 gap=12 flat=off ts=0.172 mc=0.192 chg=1.66 stay=0.40 out=1.05 in=0.90 | 31/0 35/2 22/2 30/0 25/0 37/0 137/1
+  319 fp= 6+0 IoU=86.0% pts=80.4 b90=17.5/24s | shareXMargin fq=0.3212 fl=0.0213 mS=2 peakx1.00 a=0.65 rap=1.41 gap=2 flat=off ts=0.143 mc=0.226 chg=1.71 stay=0.40 out=0.99 in=1.11 | 31/0 35/2 23/2 30/0 25/0 37/0 138/2
+  320 fp= 7+0 IoU=86.6% pts=81.3 b90=17.5/19.5s | shareXMargin fq=0.3250 fl=0.0217 mS=2 none a=0.65 rap=0.80 gap=7 flat=off ts=0.119 mc=0.252 chg=1.74 stay=0.40 out=1.12 in=1.07 | 31/0 35/2 23/2 30/0 25/0 38/1 138/2
+  321 fp= 8+0 IoU=87.0% pts=81.9 b90=17.5/17.5s | shareXMargin fq=0.3246 fl=0.0217 mS=2 peakx1.00 a=0.65 rap=0.80 gap=10 flat=off ts=0.115 mc=0.236 chg=1.69 stay=0.39 out=0.89 in=1.07 | 31/0 35/3 23/2 30/0 25/0 38/0 139/3
+  322 fp= 9+0 IoU=89.1% pts=84.1 b90=13.5/11.5s | nullRatio3 fq=0.0176 fl=1.0000 mS=2 none a=0.99 rap=0.00 gap=8 flat=off ts=0.000 mc=0.238 chg=1.04 stay=0.00 out=0.80 in=0.03 | 31/0 35/2 24/3 30/0 25/0 39/1 138/3
+  324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+  325 fp=16+0 IoU=85.5% pts=81.5 b90=18.5/34.5s | nullRatio3 fq=0.0522 fl=1.0000 mS=2 none a=0.99 rap=0.26 gap=7 flat=off ts=0.024 mc=0.248 chg=0.67 stay=0.00 out=0.80 in=0.05 | 31/0 35/3 24/4 30/2 25/0 40/2 140/5
+
+== front iouPts / (fp+bruit) ==
+  277 fp= 0+0 IoU=85.4% pts=69.3 b90=20.5/20.5s | nullRatio3 fq=0.2103 fl=1.1176 mS=1 none a=0.67 rap=2.57 gap=20 flat=0.036 ts=0.167 mc=0.239 chg=1.33 stay=0.09 out=1.16 in=0.39 | 30/0 34/0 17/0 28/0 24/0 27/0 117/0
+  287 fp= 1+0 IoU=89.2% pts=75.1 b90=12.5/14.5s | nullRatio3 fq=0.2846 fl=1.1707 mS=1 none a=0.99 rap=0.48 gap=0 flat=off ts=0.000 mc=0.197 chg=1.51 stay=0.01 out=1.29 in=0.05 | 31/0 34/0 17/0 28/0 22/0 33/0 122/1
+  306 fp= 2+0 IoU=87.9% pts=78.9 b90=16.5/12.5s | share fq=0.3805 fl=0.1327 mS=1 peakx1.00 a=0.72 rap=0.00 gap=6 flat=0.000 ts=0.143 mc=0.220 chg=2.23 stay=0.23 out=1.37 in=0.00 | 31/0 34/1 19/0 29/0 24/0 34/0 135/1
+  308 fp= 3+0 IoU=88.9% pts=80.3 b90=15.5/11.5s | share fq=0.3805 fl=0.1327 mS=1 peakx1.00 a=0.72 rap=0.00 gap=6 flat=0.000 ts=0.143 mc=0.213 chg=2.23 stay=0.26 out=1.37 in=0.00 | 31/0 35/1 19/0 30/0 24/0 34/1 135/1
+  308 fp= 5+0 IoU=90.4% pts=81.6 b90=12.5/11.5s | nullRatio3 fq=0.0610 fl=1.0250 mS=0 none a=0.99 rap=0.00 gap=6 flat=off ts=0.008 mc=0.210 chg=1.41 stay=0.00 out=1.30 in=0.00 | 31/0 35/2 19/0 28/0 24/0 36/0 135/3
+  315 fp= 6+0 IoU=89.9% pts=83.0 b90=13.5/12s | nullRatio3 fq=0.0332 fl=1.0000 mS=2 none a=0.80 rap=1.85 gap=0 flat=off ts=0.143 mc=0.120 chg=1.52 stay=0.16 out=0.84 in=0.61 | 31/0 35/1 22/2 30/0 25/0 36/1 136/2
+  317 fp= 7+0 IoU=89.7% pts=83.4 b90=13.5/11.5s | nullRatioTailMean fq=0.2236 fl=1.2077 mS=2 none a=0.72 rap=0.24 gap=3 flat=0.000 ts=0.129 mc=0.233 chg=1.51 stay=0.26 out=1.30 in=0.27 | 31/0 35/2 22/2 30/0 25/0 37/1 137/2
+  319 fp= 8+0 IoU=89.4% pts=83.7 b90=12.5/11.5s | nullRatio3 fq=0.0210 fl=1.0000 mS=2 peakx1.00 a=0.99 rap=0.29 gap=7 flat=off ts=0.000 mc=0.238 chg=1.08 stay=0.00 out=0.93 in=0.00 | 31/0 35/2 22/2 30/0 25/0 38/1 138/3
+  322 fp= 9+0 IoU=89.1% pts=84.1 b90=13.5/11.5s | nullRatio3 fq=0.0176 fl=1.0000 mS=2 none a=0.99 rap=0.00 gap=8 flat=off ts=0.000 mc=0.238 chg=1.04 stay=0.00 out=0.80 in=0.03 | 31/0 35/2 24/3 30/0 25/0 39/1 138/3
+  324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+  321 fp=11+0 IoU=89.7% pts=84.4 b90=15.5/9.5s | nullRatioTailMean fq=0.2003 fl=1.1901 mS=0 none a=0.72 rap=0.19 gap=4 flat=0.000 ts=0.042 mc=0.245 chg=1.49 stay=0.26 out=1.30 in=0.33 | 31/0 35/2 23/3 30/1 25/0 39/1 138/4
+  323 fp=12+0 IoU=89.3% pts=84.6 b90=13.5/11.5s | nullRatio3 fq=0.0288 fl=1.0000 mS=2 none a=0.99 rap=0.26 gap=7 flat=off ts=0.008 mc=0.238 chg=0.82 stay=0.00 out=0.81 in=0.01 | 31/0 35/3 24/3 30/1 25/0 39/2 139/3
+  321 fp=16+0 IoU=90.0% pts=84.8 b90=14.5/8.5s | nullRatioTailMean fq=0.2081 fl=1.1947 mS=0 peakx1.00 a=0.76 rap=0.19 gap=3 flat=0.000 ts=0.042 mc=0.245 chg=1.49 stay=0.26 out=1.30 in=0.33 | 31/0 35/3 23/3 30/2 25/0 39/2 138/6
+
+  dominent la production sur les 3 criteres : 378 (strict)
+   par transformation : nullRatio3:238  share:80  identity:30  nullRatioTailMean:26  shareXMargin:4
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0518 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0518 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=1.20 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0310 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=1.20 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0310 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=1.51 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0310 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=1.51 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0318 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=1.51 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0247 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=1.51 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0279 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=1.51 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+   324 fp=11+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=0 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/4 30/0 25/0 40/2 140/3
+   324 fp=11+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0518 fl=1.0000 mS=2 none a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/1 25/0 40/2 140/3
+
+== meilleur rappel sous budget fp+bruit, par transformation (IoU du point retenu) ==
+  transformation      n          <=0        <=3        <=5        <=8       <=10       <=12       <=15       <=20       <=30
+  identity           1536    211·81.8   292·72.8   303·84.1   311·78.3   317·87.6   319·87.8   321·88.1   322·88.0   322·88.0
+  nullRatio3         1536    277·85.4   306·85.2   317·76.4   321·79.2   324·88.8   324·88.9   324·88.9   325·88.9   325·88.9
+  nullRatio5         1266    250·82.5   305·89.5   311·87.0   314·87.4   315·87.9   319·79.3   320·80.1   324·81.6   325·83.1
+  nullRatioTailMean  1266    235·77.4   304·74.4   314·75.4   318·77.9   319·80.4   321·89.7   322·88.8   322·88.8   322·88.8
+  rankDecay0.5        996       0·0.0   293·72.4   293·72.4   301·79.7   310·86.9   313·83.4   320·85.9   320·86.3   320·86.3
+  relLeader           996    175·61.3   302·73.7   303·78.3   311·83.4   315·81.1   317·84.0   317·84.0   318·80.0   319·84.2
+  relLeaderXMargin    996    148·87.9   299·74.9   305·82.4   313·82.8   313·83.4   313·83.4   313·83.4   323·85.3   324·82.4
+  share              1266    255·87.2   308·88.9   316·78.8   319·79.2   320·87.4   320·88.1   320·88.2   321·88.2   324·88.0
+  shareXMargin       1536    235·86.1   299·75.9   317·85.2   321·87.0   322·86.5   323·85.7   323·85.7   323·86.7   323·86.7
+  sqrtHybrid          996    110·93.9   287·78.1   297·76.8   313·77.6   317·79.0   318·81.3   318·81.3   318·81.3   318·89.0
+
+== une-session-dehors : selection max(rappel - L(fp+bruit) + K iouPts) sur 6 sessions ==
+  production : 318 / 12+0, IoU 88.0 %
+  -- tous (12390 evals)
+     L=0.25 K=0   319.2 / 12.3+0.0  IoU 85.8 %  (delta score ~ +1.2)  {"nullRatio3":6,"rankDecay0.5":1}
+     L=0.5  K=0   319.6 / 11.0+0.0  IoU 84.3 %  (delta score ~ +2.1)  {"nullRatio3":7}
+     L=1    K=0   318.8 / 11.5+0.0  IoU 84.2 %  (delta score ~ +1.3)  {"nullRatio3":7}
+     L=2    K=0   313.0 / 9.9+0.0  IoU 82.1 %  (delta score ~ -0.7)  {"shareXMargin":3,"nullRatio3":3,"share":1}
+     L=0.25 K=0.5 322.0 / 15.1+0.0  IoU 89.0 %  (delta score ~ +4.2)  {"nullRatio3":7}
+     L=0.5  K=0.5 321.0 / 10.2+0.0  IoU 89.1 %  (delta score ~ +4.8)  {"nullRatio3":7}
+     L=1    K=0.5 322.0 / 10.2+0.0  IoU 89.2 %  (delta score ~ +6.9)  {"nullRatio3":7}
+     L=2    K=0.5 315.0 / 13.0+0.0  IoU 88.2 %  (delta score ~ -5.3)  {"shareXMargin":3,"nullRatio3":4}
+     L=0.25 K=1   323.0 / 15.1+0.0  IoU 89.1 %  (delta score ~ +6.5)  {"nullRatio3":7}
+     L=0.5  K=1   321.0 / 10.2+0.0  IoU 89.4 %  (delta score ~ +6.0)  {"nullRatio3":7}
+     L=1    K=1   322.0 / 10.2+0.0  IoU 89.2 %  (delta score ~ +8.0)  {"nullRatio3":7}
+     L=2    K=1   315.0 / 13.0+0.0  IoU 88.3 %  (delta score ~ -5.5)  {"nullRatio3":6,"shareXMargin":1}
+  -- identity (1536 evals)
+     L=0.25 K=0   318.7 / 17.0+0.0  IoU 84.7 %  (delta score ~ -0.6)  
+     L=0.5  K=0   317.9 / 16.7+0.0  IoU 84.1 %  (delta score ~ -2.4)  
+     L=1    K=0   314.0 / 14.1+0.0  IoU 84.0 %  (delta score ~ -6.2)  
+     L=2    K=0   314.2 / 12.6+0.0  IoU 80.6 %  (delta score ~ -5.0)  
+     L=0.25 K=0.5 317.0 / 18.0+0.0  IoU 88.8 %  (delta score ~ -2.3)  
+     L=0.5  K=0.5 318.0 / 17.0+0.0  IoU 88.6 %  (delta score ~ -2.2)  
+     L=1    K=0.5 316.0 / 15.0+0.0  IoU 87.8 %  (delta score ~ -5.3)  
+     L=2    K=0.5 316.0 / 14.0+0.0  IoU 87.8 %  (delta score ~ -6.3)  
+     L=0.25 K=1   317.0 / 18.0+0.0  IoU 88.8 %  (delta score ~ -2.0)  
+     L=0.5  K=1   318.0 / 17.0+0.0  IoU 88.6 %  (delta score ~ -2.0)  
+     L=1    K=1   316.0 / 16.0+0.0  IoU 88.8 %  (delta score ~ -5.8)  
+     L=2    K=1   316.0 / 14.0+0.0  IoU 87.8 %  (delta score ~ -6.7)  
+  -- nullRatio3 (1536 evals)
+     L=0.25 K=0   320.1 / 11.4+0.0  IoU 84.9 %  (delta score ~ +2.2)  
+     L=0.5  K=0   319.6 / 11.0+0.0  IoU 84.3 %  (delta score ~ +2.1)  
+     L=1    K=0   318.8 / 11.4+0.0  IoU 84.2 %  (delta score ~ +1.4)  
+     L=2    K=0   315.5 / 10.3+0.0  IoU 80.1 %  (delta score ~ +0.8)  
+     L=0.25 K=0.5 322.0 / 15.1+0.0  IoU 89.0 %  (delta score ~ +4.2)  
+     L=0.5  K=0.5 321.0 / 10.2+0.0  IoU 89.1 %  (delta score ~ +4.8)  
+     L=1    K=0.5 322.0 / 10.2+0.0  IoU 89.2 %  (delta score ~ +6.9)  
+     L=2    K=0.5 315.0 / 12.0+0.0  IoU 88.3 %  (delta score ~ -3.2)  
+     L=0.25 K=1   323.0 / 15.1+0.0  IoU 89.1 %  (delta score ~ +6.5)  
+     L=0.5  K=1   321.0 / 10.2+0.0  IoU 89.4 %  (delta score ~ +6.0)  
+     L=1    K=1   322.0 / 10.2+0.0  IoU 89.2 %  (delta score ~ +8.0)  
+     L=2    K=1   315.0 / 12.0+0.0  IoU 88.3 %  (delta score ~ -3.5)  
+  -- nullRatio5 (1266 evals)
+     L=0.25 K=0   322.7 / 23.5+0.0  IoU 83.0 %  (delta score ~ +1.9)  
+     L=0.5  K=0   318.0 / 15.5+0.0  IoU 80.2 %  (delta score ~ -1.7)  
+     L=1    K=0   313.1 / 15.2+0.2  IoU 78.6 %  (delta score ~ -8.2)  
+     L=2    K=0   309.7 / 8.9+0.0  IoU 82.7 %  (delta score ~ -2.1)  
+     L=0.25 K=0.5 320.0 / 22.0+0.0  IoU 88.7 %  (delta score ~ +0.1)  
+     L=0.5  K=0.5 318.0 / 21.0+0.1  IoU 88.7 %  (delta score ~ -4.2)  
+     L=1    K=0.5 317.0 / 17.0+0.0  IoU 88.1 %  (delta score ~ -6.1)  
+     L=2    K=0.5 306.0 / 5.0+0.0  IoU 88.5 %  (delta score ~ +0.7)  
+     L=0.25 K=1   320.0 / 22.0+0.0  IoU 88.7 %  (delta score ~ +0.7)  
+     L=0.5  K=1   319.0 / 22.0+0.0  IoU 88.7 %  (delta score ~ -3.1)  
+     L=1    K=1   316.0 / 17.0+0.0  IoU 88.8 %  (delta score ~ -6.8)  
+     L=2    K=1   306.0 / 7.0+0.0  IoU 88.1 %  (delta score ~ -5.0)  
+  -- nullRatioTailMean (1266 evals)
+     L=0.25 K=0   316.9 / 15.1+0.1  IoU 83.6 %  (delta score ~ -1.9)  
+     L=0.5  K=0   317.0 / 12.8+0.1  IoU 83.6 %  (delta score ~ -1.4)  
+     L=1    K=0   316.9 / 9.1+0.0  IoU 80.5 %  (delta score ~ +1.7)  
+     L=2    K=0   313.5 / 8.0+0.0  IoU 80.9 %  (delta score ~ +3.5)  
+     L=0.25 K=0.5 321.0 / 12.0+0.0  IoU 89.1 %  (delta score ~ +3.9)  
+     L=0.5  K=0.5 321.0 / 11.0+0.0  IoU 89.7 %  (delta score ~ +4.7)  
+     L=1    K=0.5 319.0 / 11.0+0.0  IoU 89.8 %  (delta score ~ +3.0)  
+     L=2    K=0.5 315.0 / 7.0+0.0  IoU 89.8 %  (delta score ~ +7.5)  
+     L=0.25 K=1   321.0 / 12.0+0.0  IoU 89.1 %  (delta score ~ +4.8)  
+     L=0.5  K=1   321.0 / 11.0+0.0  IoU 89.7 %  (delta score ~ +5.9)  
+     L=1    K=1   319.0 / 11.0+0.0  IoU 89.8 %  (delta score ~ +3.9)  
+     L=2    K=1   316.0 / 9.0+0.0  IoU 90.1 %  (delta score ~ +5.4)  
+  -- rankDecay0.5 (996 evals)
+     L=0.25 K=0   319.0 / 16.5+0.0  IoU 86.0 %  (delta score ~ -0.1)  
+     L=0.5  K=0   320.0 / 15.0+0.0  IoU 85.8 %  (delta score ~ +0.5)  
+     L=1    K=0   315.0 / 15.0+0.0  IoU 86.5 %  (delta score ~ -6.0)  
+     L=2    K=0   309.8 / 13.5+0.0  IoU 84.6 %  (delta score ~ -11.2)  
+     L=0.25 K=0.5 319.0 / 17.0+0.0  IoU 86.0 %  (delta score ~ -1.1)  
+     L=0.5  K=0.5 320.0 / 15.0+0.0  IoU 85.8 %  (delta score ~ -0.2)  
+     L=1    K=0.5 315.0 / 15.0+0.0  IoU 86.5 %  (delta score ~ -7.1)  
+     L=2    K=0.5 310.0 / 12.0+0.0  IoU 87.2 %  (delta score ~ -9.4)  
+     L=0.25 K=1   319.0 / 17.0+0.0  IoU 86.0 %  (delta score ~ -1.9)  
+     L=0.5  K=1   319.0 / 17.0+0.0  IoU 86.0 %  (delta score ~ -3.1)  
+     L=1    K=1   320.0 / 15.0+0.0  IoU 85.8 %  (delta score ~ -2.5)  
+     L=2    K=1   315.0 / 15.0+0.0  IoU 86.5 %  (delta score ~ -11.2)  
+  -- relLeader (996 evals)
+     L=0.25 K=0   312.0 / 12.0+0.1  IoU 82.6 %  (delta score ~ -6.0)  
+     L=0.5  K=0   312.0 / 12.6+0.0  IoU 82.7 %  (delta score ~ -6.3)  
+     L=1    K=0   311.6 / 12.8+0.0  IoU 82.5 %  (delta score ~ -7.2)  
+     L=2    K=0   305.4 / 8.6+0.0  IoU 75.8 %  (delta score ~ -5.8)  
+     L=0.25 K=0.5 314.0 / 12.0+0.1  IoU 83.8 %  (delta score ~ -6.5)  
+     L=0.5  K=0.5 316.0 / 11.0+0.0  IoU 84.1 %  (delta score ~ -3.6)  
+     L=1    K=0.5 314.0 / 13.0+0.0  IoU 84.0 %  (delta score ~ -7.4)  
+     L=2    K=0.5 309.0 / 13.0+0.0  IoU 83.8 %  (delta score ~ -14.0)  
+     L=0.25 K=1   316.0 / 11.0+0.0  IoU 84.1 %  (delta score ~ -5.9)  
+     L=0.5  K=1   316.0 / 11.0+0.0  IoU 84.1 %  (delta score ~ -5.6)  
+     L=1    K=1   315.0 / 11.0+0.0  IoU 84.2 %  (delta score ~ -6.2)  
+     L=2    K=1   312.0 / 11.0+0.0  IoU 85.7 %  (delta score ~ -7.7)  
+  -- relLeaderXMargin (996 evals)
+     L=0.25 K=0   320.9 / 24.0+0.0  IoU 84.6 %  (delta score ~ -0.1)  
+     L=0.5  K=0   314.9 / 16.0+0.0  IoU 85.0 %  (delta score ~ -5.1)  
+     L=1    K=0   310.9 / 14.7+0.0  IoU 84.3 %  (delta score ~ -9.8)  
+     L=2    K=0   304.9 / 9.0+0.0  IoU 83.5 %  (delta score ~ -7.0)  
+     L=0.25 K=0.5 320.0 / 19.0+0.0  IoU 85.6 %  (delta score ~ -0.6)  
+     L=0.5  K=0.5 320.0 / 19.0+0.0  IoU 85.6 %  (delta score ~ -2.4)  
+     L=1    K=0.5 314.0 / 16.0+0.0  IoU 84.5 %  (delta score ~ -10.1)  
+     L=2    K=0.5 311.0 / 10.0+0.0  IoU 83.0 %  (delta score ~ -6.2)  
+     L=0.25 K=1   320.0 / 20.0+0.0  IoU 85.6 %  (delta score ~ -1.7)  
+     L=0.5  K=1   320.0 / 19.0+0.0  IoU 85.6 %  (delta score ~ -3.2)  
+     L=1    K=1   314.0 / 16.0+0.0  IoU 84.9 %  (delta score ~ -11.9)  
+     L=2    K=1   309.0 / 9.0+0.0  IoU 83.7 %  (delta score ~ -9.2)  
+  -- share (1266 evals)
+     L=0.25 K=0   315.7 / 22.8+0.0  IoU 85.6 %  (delta score ~ -5.0)  
+     L=0.5  K=0   314.5 / 9.7+0.0  IoU 80.2 %  (delta score ~ -2.4)  
+     L=1    K=0   315.0 / 7.6+0.0  IoU 79.8 %  (delta score ~ +1.4)  
+     L=2    K=0   313.2 / 7.0+0.0  IoU 79.4 %  (delta score ~ +5.2)  
+     L=0.25 K=0.5 319.0 / 28.0+0.0  IoU 88.3 %  (delta score ~ -2.7)  
+     L=0.5  K=0.5 316.0 / 13.0+0.0  IoU 87.9 %  (delta score ~ -2.8)  
+     L=1    K=0.5 316.0 / 13.0+0.0  IoU 87.9 %  (delta score ~ -3.3)  
+     L=2    K=0.5 309.0 / 11.0+0.0  IoU 83.2 %  (delta score ~ -10.3)  
+     L=0.25 K=1   319.0 / 28.0+0.0  IoU 88.3 %  (delta score ~ -2.5)  
+     L=0.5  K=1   316.0 / 13.0+0.0  IoU 87.7 %  (delta score ~ -3.3)  
+     L=1    K=1   316.0 / 13.0+0.0  IoU 87.9 %  (delta score ~ -3.6)  
+     L=2    K=1   316.0 / 13.0+0.0  IoU 87.9 %  (delta score ~ -4.6)  
+  -- shareXMargin (1536 evals)
+     L=0.25 K=0   322.1 / 10.9+0.0  IoU 85.9 %  (delta score ~ +4.3)  
+     L=0.5  K=0   321.0 / 10.8+0.0  IoU 86.1 %  (delta score ~ +3.6)  
+     L=1    K=0   319.3 / 11.5+0.0  IoU 86.3 %  (delta score ~ +1.8)  
+     L=2    K=0   313.0 / 9.1+0.0  IoU 82.1 %  (delta score ~ +0.8)  
+     L=0.25 K=0.5 321.0 / 12.0+0.0  IoU 86.2 %  (delta score ~ +2.5)  
+     L=0.5  K=0.5 321.0 / 12.0+0.0  IoU 86.2 %  (delta score ~ +2.5)  
+     L=1    K=0.5 321.0 / 11.0+0.0  IoU 86.7 %  (delta score ~ +3.8)  
+     L=2    K=0.5 320.0 / 12.0+0.0  IoU 86.4 %  (delta score ~ +1.5)  
+     L=0.25 K=1   321.0 / 17.0+0.0  IoU 86.6 %  (delta score ~ +1.2)  
+     L=0.5  K=1   321.0 / 12.0+0.0  IoU 86.6 %  (delta score ~ +2.4)  
+     L=1    K=1   321.0 / 11.0+0.0  IoU 86.7 %  (delta score ~ +3.6)  
+     L=2    K=1   321.0 / 11.0+0.0  IoU 86.3 %  (delta score ~ +4.2)  
+  -- sqrtHybrid (996 evals)
+     L=0.25 K=0   317.0 / 11.0+0.0  IoU 80.1 %  (delta score ~ -0.8)  
+     L=0.5  K=0   317.0 / 11.0+0.0  IoU 80.1 %  (delta score ~ -0.5)  
+     L=1    K=0   316.5 / 11.0+0.0  IoU 79.7 %  (delta score ~ -0.5)  
+     L=2    K=0   312.4 / 11.1+0.0  IoU 79.0 %  (delta score ~ -3.8)  
+     L=0.25 K=0.5 315.0 / 18.0+0.0  IoU 85.9 %  (delta score ~ -5.8)  
+     L=0.5  K=0.5 315.0 / 11.0+0.0  IoU 83.3 %  (delta score ~ -5.0)  
+     L=1    K=0.5 315.0 / 11.0+0.0  IoU 83.3 %  (delta score ~ -4.5)  
+     L=2    K=0.5 313.0 / 11.0+0.0  IoU 80.4 %  (delta score ~ -7.1)  
+     L=0.25 K=1   315.0 / 26.0+0.0  IoU 89.6 %  (delta score ~ -5.8)  
+     L=0.5  K=1   310.0 / 15.5+0.0  IoU 87.4 %  (delta score ~ -12.4)  
+     L=1    K=1   314.0 / 12.0+0.0  IoU 83.8 %  (delta score ~ -8.9)  
+     L=2    K=1   314.0 / 12.0+0.0  IoU 83.8 %  (delta score ~ -8.9)  
+
+== marges, top 247 pour L=0.5 K=0.5 : score 361.2 .. 357.7 (production 353.0) ==
+   transform nullRatio3:239  shareXMargin:5  nullRatioTailMean:3 | confirm none:171  peak:76 | minSeg 2:182  0:36  1:29 | flat off:244  on:3
+   floor        p10    1.000  p25    1.000  p50    1.000  p75    1.000  p90    1.000
+   floorQ       p10    0.017  p25    0.021  p50    0.029  p75    0.040  p90    0.052
+   minSeg       p10    0.000  p25    1.000  p50    2.000  p75    2.000  p90    2.000
+   absent       p10    0.975  p25    0.990  p50    0.990  p75    0.990  p90    0.990
+   rapid        p10    0.000  p25    0.252  p50    0.256  p75    0.677  p90    0.976
+   mergeGap     p10    7.000  p25    7.000  p50    7.000  p75   10.000  p90   11.000
+   flat         p10   -1.000  p25   -1.000  p50   -1.000  p75   -1.000  p90   -1.000
+   tempoSpread  p10    0.000  p25    0.000  p50    0.008  p75    0.016  p90    0.037
+   minCand      p10    0.216  p25    0.237  p50    0.238  p75    0.238  p90    0.248
+   chg          p10    0.785  p25    0.785  p50    0.785  p75    1.049  p90    1.341
+   stay         p10    0.000  p25    0.000  p50    0.000  p75    0.000  p90    0.000
+   out          p10    0.800  p25    0.800  p50    0.800  p75    0.800  p90    0.806
+   in           p10    0.000  p25    0.000  p50    0.007  p75    0.031  p90    0.049
+   margin       p10    0.010  p25    0.010  p50    0.010  p75    0.010  p90    0.025
+   meilleur : 324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+
+== marges, top 247 pour L=1 K=0.5 : score 356.2 .. 352.7 (production 347.0) ==
+   transform nullRatio3:236  shareXMargin:11 | confirm none:174  peak:73 | minSeg 2:187  0:36  1:24 | flat off:247
+   floor        p10    1.000  p25    1.000  p50    1.000  p75    1.000  p90    1.028
+   floorQ       p10    0.018  p25    0.021  p50    0.030  p75    0.042  p90    0.090
+   minSeg       p10    0.000  p25    2.000  p50    2.000  p75    2.000  p90    2.000
+   absent       p10    0.855  p25    0.990  p50    0.990  p75    0.990  p90    0.990
+   rapid        p10    0.000  p25    0.256  p50    0.256  p75    0.795  p90    3.913
+   mergeGap     p10    7.000  p25    7.000  p50    7.000  p75   11.000  p90   16.000
+   flat         p10   -1.000  p25   -1.000  p50   -1.000  p75   -1.000  p90   -1.000
+   tempoSpread  p10    0.000  p25    0.000  p50    0.008  p75    0.020  p90    0.146
+   minCand      p10    0.216  p25    0.235  p50    0.238  p75    0.238  p90    0.248
+   chg          p10    0.744  p25    0.785  p50    0.785  p75    1.049  p90    1.341
+   stay         p10    0.000  p25    0.000  p50    0.000  p75    0.000  p90    0.104
+   out          p10    0.491  p25    0.800  p50    0.800  p75    0.800  p90    0.806
+   in           p10    0.000  p25    0.000  p50    0.007  p75    0.031  p90    0.611
+   margin       p10    0.010  p25    0.010  p50    0.010  p75    0.010  p90    0.052
+   meilleur : 324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+
+== marges, top 247 pour L=0.25 K=0.5 : score 363.7 .. 360.5 (production 356.0) ==
+   transform nullRatio3:246  shareXMargin:1 | confirm none:170  peak:77 | minSeg 2:180  1:39  0:28 | flat off:247
+   floor        p10    1.000  p25    1.000  p50    1.000  p75    1.000  p90    1.000
+   floorQ       p10    0.017  p25    0.021  p50    0.029  p75    0.038  p90    0.052
+   minSeg       p10    0.000  p25    1.000  p50    2.000  p75    2.000  p90    2.000
+   absent       p10    0.975  p25    0.990  p50    0.990  p75    0.990  p90    0.990
+   rapid        p10    0.000  p25    0.252  p50    0.256  p75    0.677  p90    0.976
+   mergeGap     p10    7.000  p25    7.000  p50    7.000  p75   10.000  p90   11.000
+   flat         p10   -1.000  p25   -1.000  p50   -1.000  p75   -1.000  p90   -1.000
+   tempoSpread  p10    0.000  p25    0.000  p50    0.008  p75    0.016  p90    0.037
+   minCand      p10    0.202  p25    0.237  p50    0.238  p75    0.238  p90    0.248
+   chg          p10    0.785  p25    0.785  p50    0.785  p75    1.049  p90    1.112
+   stay         p10    0.000  p25    0.000  p50    0.000  p75    0.000  p90    0.000
+   out          p10    0.800  p25    0.800  p50    0.800  p75    0.800  p90    0.806
+   in           p10    0.000  p25    0.000  p50    0.007  p75    0.031  p90    0.049
+   margin       p10    0.010  p25    0.010  p50    0.010  p75    0.010  p90    0.025
+   meilleur : 324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+
+== marges, top 247 pour L=2 K=0.5 : score 347.2 .. 343.9 (production 335.0) ==
+   transform nullRatio3:124  shareXMargin:106  nullRatioTailMean:17 | confirm none:220  peak:27 | minSeg 2:177  0:46  1:24 | flat off:204  on:43
+   floor        p10    0.022  p25    0.022  p50    1.000  p75    1.056  p90    1.130
+   floorQ       p10    0.033  p25    0.090  p50    0.224  p75    0.325  p90    0.325
+   minSeg       p10    0.000  p25    1.000  p50    2.000  p75    2.000  p90    2.000
+   absent       p10    0.649  p25    0.649  p50    0.671  p75    0.855  p90    0.990
+   rapid        p10    0.000  p25    0.795  p50    0.795  p75    2.570  p90    3.913
+   mergeGap     p10    3.000  p25    6.000  p50    8.000  p75   17.000  p90   19.000
+   flat         p10   -1.000  p25   -1.000  p50   -1.000  p75   -1.000  p90    0.024
+   tempoSpread  p10    0.000  p25    0.130  p50    0.167  p75    0.172  p90    0.172
+   minCand      p10    0.184  p25    0.192  p50    0.205  p75    0.234  p90    0.237
+   chg          p10    0.744  p25    0.785  p50    1.430  p75    1.664  p90    1.664
+   stay         p10    0.000  p25    0.104  p50    0.354  p75    0.397  p90    0.397
+   out          p10    0.387  p25    0.800  p50    0.996  p75    1.116  p90    1.157
+   in           p10    0.031  p25    0.372  p50    0.611  p75    1.068  p90    1.068
+   margin       p10    0.010  p25    0.034  p50    0.035  p75    0.052  p90    0.052
+   meilleur : 319 fp= 6+0 IoU=86.0% pts=80.4 b90=17.5/24s | shareXMargin fq=0.3212 fl=0.0213 mS=2 peakx1.00 a=0.65 rap=1.41 gap=2 flat=off ts=0.143 mc=0.226 chg=1.71 stay=0.40 out=0.99 in=1.11 | 31/0 35/2 23/2 30/0 25/0 37/0 138/2
+
+== marges, top 247 pour L=0.5 K=0 : score 319.0 .. 316.5 (production 312.0) ==
+   transform nullRatio3:240  shareXMargin:7 | confirm none:175  peak:72 | minSeg 2:183  0:37  1:27 | flat off:241  on:6
+   floor        p10    1.000  p25    1.000  p50    1.000  p75    1.000  p90    1.000
+   floorQ       p10    0.017  p25    0.021  p50    0.030  p75    0.040  p90    0.090
+   minSeg       p10    0.000  p25    1.000  p50    2.000  p75    2.000  p90    2.000
+   absent       p10    0.863  p25    0.990  p50    0.990  p75    0.990  p90    0.990
+   rapid        p10    0.000  p25    0.252  p50    0.256  p75    0.680  p90    1.512
+   mergeGap     p10    7.000  p25    7.000  p50    7.000  p75   10.000  p90   15.000
+   flat         p10   -1.000  p25   -1.000  p50   -1.000  p75   -1.000  p90   -1.000
+   tempoSpread  p10    0.000  p25    0.000  p50    0.008  p75    0.016  p90    0.111
+   minCand      p10    0.205  p25    0.237  p50    0.238  p75    0.238  p90    0.248
+   chg          p10    0.744  p25    0.785  p50    0.785  p75    1.049  p90    1.341
+   stay         p10    0.000  p25    0.000  p50    0.000  p75    0.000  p90    0.104
+   out          p10    0.800  p25    0.800  p50    0.800  p75    0.800  p90    0.806
+   in           p10    0.000  p25    0.000  p50    0.007  p75    0.031  p90    0.611
+   margin       p10    0.010  p25    0.010  p50    0.010  p75    0.010  p90    0.035
+   meilleur : 324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+
+== marges, top 247 pour L=0.5 K=1 : score 403.4 .. 399.0 (production 394.1) ==
+   transform nullRatio3:240  nullRatioTailMean:7 | confirm none:166  peak:81 | minSeg 2:172  1:39  0:36 | flat off:240  on:7
+   floor        p10    1.000  p25    1.000  p50    1.000  p75    1.000  p90    1.000
+   floorQ       p10    0.017  p25    0.021  p50    0.029  p75    0.040  p90    0.058
+   minSeg       p10    0.000  p25    1.000  p50    2.000  p75    2.000  p90    2.000
+   absent       p10    0.972  p25    0.990  p50    0.990  p75    0.990  p90    0.990
+   rapid        p10    0.000  p25    0.244  p50    0.256  p75    0.677  p90    1.197
+   mergeGap     p10    6.000  p25    7.000  p50    7.000  p75   10.000  p90   11.000
+   flat         p10   -1.000  p25   -1.000  p50   -1.000  p75   -1.000  p90   -1.000
+   tempoSpread  p10    0.000  p25    0.000  p50    0.008  p75    0.016  p90    0.037
+   minCand      p10    0.205  p25    0.237  p50    0.238  p75    0.238  p90    0.248
+   chg          p10    0.785  p25    0.785  p50    0.785  p75    1.049  p90    1.341
+   stay         p10    0.000  p25    0.000  p50    0.000  p75    0.000  p90    0.000
+   out          p10    0.800  p25    0.800  p50    0.800  p75    0.800  p90    0.806
+   in           p10    0.000  p25    0.000  p50    0.007  p75    0.031  p90    0.049
+   margin       p10    0.010  p25    0.010  p50    0.010  p75    0.010  p90    0.028
+   meilleur : 324 fp=10+0 IoU=88.8% pts=84.4 b90=15.5/11.5s | nullRatio3 fq=0.0384 fl=1.0000 mS=2 peakx1.23 a=0.98 rap=0.25 gap=11 flat=off ts=0.000 mc=0.237 chg=0.79 stay=0.00 out=0.80 in=0.00 | 31/0 35/2 23/3 30/0 25/0 40/2 140/3
+
+== diagnostic du recuit ==
+  pas 0-27 : 3192 evals, acceptation 68.8 %, T~6.00, ms median 3287
+  pas 28-55 : 2598 evals, acceptation 65.5 %, T~3.21, ms median 3329
+  pas 56-83 : 1680 evals, acceptation 74.8 %, T~1.72, ms median 2717
+  pas 84-111 : 1680 evals, acceptation 65.3 %, T~0.92, ms median 2595
+  pas 112-139 : 1680 evals, acceptation 59.2 %, T~0.49, ms median 2591
+  pas 140-167 : 1560 evals, acceptation 55.1 %, T~0.26, ms median 2542
+  chaines dont le meilleur score arrive en 2e moitie : 6/60
+  chaines depassant la production a leur propre objectif : identity 6/6  nullRatio3 6/6  nullRatio5 6/6  nullRatioTailMean 6/6  share 6/6  relLeader 4/6  rankDecay0.5 4/6  relLeaderXMargin 6/6  sqrtHybrid 6/6  shareXMargin 2/6

@@ -8,6 +8,7 @@ import { LiveSession } from '../liveSession';
 import { editSessionTree, placeSession } from '../sessionTree';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
+import type { StreamProbe } from '../audio/streamingFileSource';
 import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/capture';
 import { importWarnMinutes, wholeFileDecodeBytes, IMPORT_MIN_S } from '../sessionConfig';
 import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio } from '../db';
@@ -206,6 +207,46 @@ export async function startImport(ctx: AppContext, file: File, folderId: string 
   }
 }
 
+/** What the "too long for this browser" warning told the user, kept so that
+ *  the failure it predicted can be named when it happens. Without it the
+ *  import's catch only sees the decoder's own words — and Chrome reports a
+ *  whole-file decode that ran out of room as an EncodingError, which read as
+ *  "Format non décodable. Formats supportés : … M4A" on an M4A the browser had
+ *  just opened (field report, 192 min, 2026-09-13). */
+interface WholeFileWarning {
+  min: number;
+  need: string;
+  limit: number;
+  /** The probe's reason line, as the warning showed it. */
+  why: string;
+}
+
+/** Why chunked decoding is unavailable: the sentence for the user, then the
+ *  library's own words. Left in English on purpose — it is what we need read
+ *  back to us from a phone we will never hold. */
+function streamFailureLine(probe: StreamProbe): string {
+  return t(`sessions.longFile.reason.${probe.reason ?? 'unknown'}`)
+    + (probe.detail ? ` (${probe.detail})` : '');
+}
+
+/** The failure the long-file warning predicted: the arithmetic again, what to
+ *  do about it, and the same reason line, so a screenshot of this one window
+ *  still carries everything the warning did. */
+function showWholeFileFailure(w: WholeFileWarning): void {
+  const p = document.createElement('p');
+  p.className = 'text-sm text-muted leading-relaxed';
+  p.textContent = t('sessions.wholeFileFailed.message', { min: w.min, need: w.need, limit: w.limit });
+  const hint = document.createElement('p');
+  hint.className = 'text-sm text-muted leading-relaxed mt-2';
+  hint.textContent = t('sessions.wholeFileFailed.hint', { limit: w.limit });
+  const why = document.createElement('p');
+  why.className = 'text-xs text-dim leading-relaxed mt-2';
+  why.textContent = w.why;
+  const body = document.createElement('div');
+  body.append(p, hint, why);
+  showModal(t('sessions.wholeFileFailed.title'), body, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
+}
+
 async function preflightImport(ctx: AppContext, file: File, folderId: string | null = null): Promise<void> {
   const duration = await probeAudioDuration(file);
   if (duration !== null && duration < IMPORT_MIN_S) {
@@ -235,7 +276,14 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
   // machine that needed it — see sessionConfig's derivation.
   const warnMinutes = importWarnMinutes(isMobileDevice());
 
+  let wholeFileWarning: WholeFileWarning | undefined;
   if (!canStream && duration !== null && duration > warnMinutes * 60) {
+    const warning: WholeFileWarning = {
+      min: Math.round(duration / 60),
+      need: formatBytes(wholeFileDecodeBytes(duration)),
+      limit: warnMinutes,
+      why: streamFailureLine(probe),
+    };
     // Non-dismissable two-button modal: the promise always settles, so the
     // importStarting guard can never get stuck.
     const proceed = await new Promise<boolean>(resolve => {
@@ -245,20 +293,14 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
       // will cost, and where the limit is on this device. "Too long" alone is
       // a verdict; a verdict with its arithmetic is something to act on —
       // shorten the file, or move to a machine with room.
-      p.textContent = t('sessions.longFile.message', {
-        min: Math.round(duration / 60),
-        need: formatBytes(wholeFileDecodeBytes(duration)),
-        limit: warnMinutes,
-      });
+      p.textContent = t('sessions.longFile.message', { min: warning.min, need: warning.need, limit: warning.limit });
       // The precise reason, under the arithmetic. Two audiences in one line:
       // the sentence tells this user whether the fault is their file or their
       // browser (only one of those is worth acting on), and the technical
-      // detail beside it is what we need read back to us from a phone we will
-      // never hold. Left in English on purpose — it is the library's own word.
+      // detail beside it is what we need read back to us.
       const why = document.createElement('p');
       why.className = 'text-xs text-dim leading-relaxed mt-2';
-      why.textContent = t(`sessions.longFile.reason.${probe.reason ?? 'unknown'}`)
-        + (probe.detail ? ` (${probe.detail})` : '');
+      why.textContent = warning.why;
 
       const body = document.createElement('div');
       body.append(p, why);
@@ -269,6 +311,7 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
       ], { dismissable: false });
     });
     if (!proceed) return;
+    wholeFileWarning = warning;
   }
 
   importPlaybackWarn.value = !canPlayFile(file);
@@ -276,7 +319,7 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
   const imp = new ImportSession(file, {});
   fileNewAnalysis(ctx, imp.sessionId, folderId);
   setActiveImport(imp);
-  await finishImportRun(ctx, imp);
+  await finishImportRun(ctx, imp, undefined, wholeFileWarning);
 }
 
 /** Runs an already-constructed ImportSession to completion and handles every
@@ -287,11 +330,15 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
  *  import has nowhere else to go (the reactive tree falls back to the
  *  library on its own once activeImport goes null); re-analyzing an existing
  *  session overrides this to fall back to that session's own (untouched)
- *  summary instead, which DOES need an explicit navigate(). */
+ *  summary instead, which DOES need an explicit navigate().
+ *  `wholeFileWarning` is set only when the user was warned this file would
+ *  have to be decoded whole and went ahead anyway — then a decode failure is
+ *  the one that warning predicted, not a bad format. */
 async function finishImportRun(
   ctx: AppContext,
   imp: ImportSession,
   onCancelledOrError: () => void = () => {},
+  wholeFileWarning?: WholeFileWarning,
 ): Promise<void> {
   try {
     const session = await imp.start();
@@ -346,7 +393,8 @@ async function finishImportRun(
     if (msg.includes('too-short')) {
       alertModal(t('sessions.import'), t('sessions.tooShort', { n: IMPORT_MIN_S }));
     } else if (msg.includes('decod') || msg.includes('Decod') || msg.includes('EncodingError')) {
-      alertModal(t('sessions.import'), t('sessions.cantDecode'));
+      if (wholeFileWarning) showWholeFileFailure(wholeFileWarning);
+      else alertModal(t('sessions.import'), t('sessions.cantDecode'));
     } else {
       alertModal(t('sessions.import'), msg);
     }

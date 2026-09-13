@@ -53,11 +53,21 @@ function inlineScriptHashes(html) {
  * 'wasm-unsafe-eval' is required by the FolkFriend and web-demuxer WASM
  * modules; without it the Sessions feature stops working entirely.
  *
- * Dev adds 'unsafe-eval' because devtool: 'eval-source-map' evaluates every
- * module. The policy is otherwise identical in dev on purpose: a CSP that only
- * exists in production would first be tested by users.
+ * 'unsafe-eval' is required too, and in production, not only for dev's
+ * eval-source-map. web-demuxer runs its demuxer in a worker built from a blob
+ * (base64 inside its bundle), and a blob worker inherits THIS policy; its
+ * emscripten/embind glue builds its invokers with `new Function`. Without it
+ * the demuxer dies on load, every file import silently falls back to decoding
+ * the whole recording in one go, and a long one then fails for lack of memory.
+ * That shipped for a week (2026-09-06 → 13) unnoticed: a grep of the bundles
+ * for eval cannot see into the base64, short files still decode whole, and dev
+ * — which always had 'unsafe-eval' — never showed it. What this gives up is
+ * string-to-code sinks for code that is already running; the vector the policy
+ * exists for, inline handlers, stays blocked. And dev is now genuinely the
+ * same policy as production, which is the point: a CSP that only exists in
+ * production is first tested by users.
  */
-function contentSecurityPolicy(html, isDev) {
+function contentSecurityPolicy(html) {
   const script = [
     "'self'",
     "'wasm-unsafe-eval'",
@@ -69,7 +79,7 @@ function contentSecurityPolicy(html, isDev) {
     'https://accounts.google.com',
     'https://apis.google.com',
     'https://www.gstatic.com',
-    ...(isDev ? ["'unsafe-eval'"] : []),
+    "'unsafe-eval'",
   ].join(' ');
   return [`script-src ${script}`, "object-src 'none'", "base-uri 'self'"].join('; ');
 }
@@ -80,7 +90,6 @@ function contentSecurityPolicy(html, isDev) {
  *  rather than shipping the placeholder: a page whose CSP never got filled in
  *  is a page with no policy at all, and that should fail the build loudly. */
 class CspPlugin {
-  constructor(isDev) { this.isDev = isDev; }
   apply(compiler) {
     compiler.hooks.compilation.tap('CspPlugin', (compilation) => {
       HtmlWebpackPlugin.getHooks(compilation).beforeEmit.tapAsync('CspPlugin', (data, cb) => {
@@ -88,7 +97,7 @@ class CspPlugin {
           cb(new Error(`index.html: ${CSP_PLACEHOLDER} not found — the Content-Security-Policy meta would ship empty`));
           return;
         }
-        data.html = data.html.replace(CSP_PLACEHOLDER, contentSecurityPolicy(data.html, this.isDev));
+        data.html = data.html.replace(CSP_PLACEHOLDER, contentSecurityPolicy(data.html));
         cb(null, data);
       });
     });
@@ -152,7 +161,7 @@ module.exports = (env, argv) => {
     },
     plugins: [
       new HtmlWebpackPlugin({ template: TEMPLATE }),
-      new CspPlugin(isDev),
+      new CspPlugin(),
       ...(!isDev ? [new TsPrunePlugin()] : []),
       ...(!isDev ? [new MiniCssExtractPlugin({ filename: 'styles.[contenthash].css' })] : []),
       ...(!isDev ? [new CopyPlugin({
