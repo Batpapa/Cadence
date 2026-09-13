@@ -41,7 +41,12 @@ function inlineScriptHashes(html) {
  * injected payload:
  *   - script-src without 'unsafe-inline' kills inline event handlers
  *     (`<img src=x onerror=…>`, the realistic vector through imported notes);
- *   - object-src 'none' kills <object>/<embed> payloads;
+ *   - object-src 'self' blob: kills <object>/<embed> payloads from anywhere
+ *     else. Not 'none', which it was from 2026-09-06 to 14: the file viewer
+ *     shows a PDF attachment in an <embed> fed by a blob: URL, and 'none'
+ *     blocked every one of them — an empty frame, for every user, on every
+ *     browser (confirmed in Chrome with this exact policy; field report from
+ *     a user whose PDFs "mostly" stopped opening);
  *   - base-uri 'self' stops an injected <base> from redirecting every
  *     relative URL, including the bundle.
  *
@@ -81,7 +86,7 @@ function contentSecurityPolicy(html) {
     'https://www.gstatic.com',
     "'unsafe-eval'",
   ].join(' ');
-  return [`script-src ${script}`, "object-src 'none'", "base-uri 'self'"].join('; ');
+  return [`script-src ${script}`, "object-src 'self' blob:", "base-uri 'self'"].join('; ');
 }
 
 /** Substitutes the real policy into index.html once the document is final —
