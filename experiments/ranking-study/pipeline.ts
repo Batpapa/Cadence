@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
 import {
   buildTemporalTimeline, filterFlatWindows, filterByTempoSpread, UNKNOWN_STATE,
+  observationAt, rowStartAt,
   type TemporalTimeline,
 } from '../../src/session/recognition/temporalObservationBuilder';
 import {
@@ -217,14 +218,56 @@ function confirms(
   rule: ConfirmRule,
 ): boolean {
   if (rule.kind === 'none') return true;
-  const obs = timeline.observations.get(seg.tuneId);
-  if (!obs) return false;
-  let sum = 0, peak = 0, n = 0;
-  for (let i = seg.firstWindowIndex; i < seg.firstWindowIndex + seg.windowCount; i++) {
-    const v = obs[i] ?? 0;
-    sum += v; n++;
+  const row = timeline.rows.get(seg.tuneId);
+  if (!row) return false;
+  // Only the windows the tune was a candidate in are visited. The others are 0:
+  // adding 0 leaves a float sum bit-for-bit unchanged, and a peak that starts
+  // at 0 is never raised by one — so this is the dense loop's answer exactly.
+  const end = seg.firstWindowIndex + seg.windowCount;
+  let sum = 0, peak = 0;
+  for (let k = rowStartAt(row, seg.firstWindowIndex); k < row.t.length && row.t[k]! < end; k++) {
+    const v = row.score[k]!;
+    sum += v;
     if (v > peak) peak = v;
   }
+  const n = seg.windowCount;
   if (!n) return false;
   return rule.kind === 'peak' ? peak >= rule.ratio : sum / n >= rule.ratio;
+}
+
+/** Every window's best observation above 0, across the given timelines — the
+ *  pool the floor grids are drawn from (unsorted; callers sort).
+ *
+ *  Reads each window's own candidates instead of every admitted tune. A tune
+ *  that is not a candidate in a window reads 0 there, which a strict `> best`
+ *  starting from 0 skips anyway, and a candidate that was never admitted has no
+ *  row and reads 0 too — so the maximum is the one the dense sweep found, at
+ *  ten lookups per window instead of thousands. The values come through
+ *  `observationAt`, i.e. the timeline's own transformed numbers, not the raw
+ *  candidate scores. */
+export function windowTops(tls: TemporalTimeline[]): number[] {
+  const tops: number[] = [];
+  for (const tl of tls) {
+    for (let t = 0; t < tl.windows.length; t++) {
+      let best = 0;
+      for (const c of tl.windows[t]!.candidates) {
+        const v = observationAt(tl, c.tuneId, t);
+        if (v > best) best = v;
+      }
+      if (best > 0) tops.push(best);
+    }
+  }
+  return tops;
+}
+
+/** 1-based rank of `tuneId` at window `t`, or null where it was not a candidate
+ *  — the dense `ranks[t]` reading, for the inspection output. Kept here rather
+ *  than in the timeline module: nothing in the app reads a single rank cell,
+ *  only ranges (see countTop1Windows), and an export with no caller there is
+ *  exactly what ts-prune exists to catch. */
+export function rankAt(tl: TemporalTimeline, tuneId: string, t: number): number | null {
+  const row = tl.rows.get(tuneId);
+  if (!row) return null;
+  const k = rowStartAt(row, t);
+  return k < row.t.length && row.t[k] === t ? row.rank[k]! : null;
 }

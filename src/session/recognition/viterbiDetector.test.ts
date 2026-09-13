@@ -370,21 +370,43 @@ function seg(tuneId: string, windowCount: number, startTime: number, endTime: nu
   };
 }
 
-/** Builds a minimal TemporalTimeline whose `ranks` says every window in each
+/** These fixtures write ranks as DENSE arrays, because that is how a reader
+ *  checks "window 6 is rank 1" at a glance. The timeline has held sparse rows
+ *  since 2026-09-13, so this converts: a null is a window the tune was not a
+ *  candidate in, and the probability is 0 — the dense fixtures' observations
+ *  map was simply empty, which read 0 everywhere. */
+function rowsFromRanks(ranks: Map<string, (number | null)[]>): TemporalTimeline['rows'] {
+  const rows: TemporalTimeline['rows'] = new Map();
+  for (const [id, arr] of ranks) {
+    const t: number[] = [], rank: number[] = [];
+    arr.forEach((r, i) => { if (r !== null) { t.push(i); rank.push(r); } });
+    rows.set(id, { t, score: t.map(() => 0), rank });
+  }
+  return rows;
+}
+
+/** Builds a minimal TemporalTimeline whose rows say every window in each
  *  given segment's range was that segment's tuneId at rank 1 — i.e. "the
  *  Viterbi-assigned windows and the rank-1 windows are the same set", which
  *  is what most of these tests want to hold constant so they can focus on
  *  the relabel/merge/exemption logic instead of the rank distinction
  *  (covered separately below). */
 function allRank1Timeline(...segs: DetectedTuneSegment[]): TemporalTimeline {
-  const ranks = new Map<string, (number | null)[]>();
+  const windowsOf = new Map<string, Set<number>>();
   for (const s of segs) {
     if (s.tuneId === UNKNOWN_STATE) continue;
-    const arr: (number | null)[] = ranks.get(s.tuneId) ?? [];
-    for (let i = 0; i < s.windowCount; i++) arr[s.firstWindowIndex + i] = 1;
-    ranks.set(s.tuneId, arr);
+    const set = windowsOf.get(s.tuneId) ?? new Set<number>();
+    for (let i = 0; i < s.windowCount; i++) set.add(s.firstWindowIndex + i);
+    windowsOf.set(s.tuneId, set);
   }
-  return { windows: [], tuneIds: [...ranks.keys()], meta: new Map(), observations: new Map(), ranks };
+  // Rank 1 on every window of each segment, probability 0 — exactly what the
+  // dense fixture read before, whose observations map was simply empty.
+  const rows: TemporalTimeline['rows'] = new Map();
+  for (const [id, set] of windowsOf) {
+    const t = [...set].sort((a, b) => a - b);
+    rows.set(id, { t, score: t.map(() => 0), rank: t.map(() => 1) });
+  }
+  return { windows: [], tuneIds: [...windowsOf.keys()], meta: new Map(), rows };
 }
 
 function summarize(segments: DetectedTuneSegment[]) {
@@ -469,7 +491,7 @@ describe('filterShortSegments', () => {
       ['A', [1, 1, 1, 1, 1]],
       ['B', [null, null, null, null, null, 2, 1, 2]], // indices 5,6,7 -> rank 2, 1, 2
     ]);
-    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A', 'B'], meta: new Map(), observations: new Map(), ranks };
+    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A', 'B'], meta: new Map(), rows: rowsFromRanks(ranks) };
     const result = filterShortSegments([a, b], timeline, 2, false);
     expect(summarize(result)).toEqual([
       { tuneId: 'A', windowCount: 5, startTime: 0, endTime: 25 },
@@ -486,7 +508,7 @@ describe('filterShortSegments', () => {
       ['A', [1, 1, 1, 1, 1]],
       ['B', [null, null, null, null, null, 1, 1]],
     ]);
-    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A', 'B'], meta: new Map(), observations: new Map(), ranks };
+    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A', 'B'], meta: new Map(), rows: rowsFromRanks(ranks) };
     const result = filterShortSegments([a, b], timeline, 2, false);
     expect(summarize(result)).toEqual([
       { tuneId: 'A', windowCount: 5, startTime: 0, endTime: 25 },
@@ -498,18 +520,18 @@ describe('filterShortSegments', () => {
 describe('countTop1Windows', () => {
   it('counts only windows where the tune is ranked exactly 1, ignoring other ranks and absences (null)', () => {
     const ranks = new Map<string, (number | null)[]>([['A', [1, 2, null, 1, 3, 1]]]);
-    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A'], meta: new Map(), observations: new Map(), ranks };
+    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A'], meta: new Map(), rows: rowsFromRanks(ranks) };
     expect(countTop1Windows('A', 0, 6, timeline)).toBe(3);
   });
 
   it('returns 0 for a tuneId with no rank data at all', () => {
-    const timeline: TemporalTimeline = { windows: [], tuneIds: [], meta: new Map(), observations: new Map(), ranks: new Map() };
+    const timeline: TemporalTimeline = { windows: [], tuneIds: [], meta: new Map(), rows: new Map() };
     expect(countTop1Windows('GHOST', 0, 5, timeline)).toBe(0);
   });
 
   it('only scans the given [firstIdx, firstIdx+windowCount) range', () => {
     const ranks = new Map<string, (number | null)[]>([['A', [1, 1, 1, 2, 2]]]);
-    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A'], meta: new Map(), observations: new Map(), ranks };
+    const timeline: TemporalTimeline = { windows: [], tuneIds: ['A'], meta: new Map(), rows: rowsFromRanks(ranks) };
     expect(countTop1Windows('A', 3, 2, timeline)).toBe(0); // indices 3,4 are both rank 2
     expect(countTop1Windows('A', 0, 3, timeline)).toBe(3);
   });

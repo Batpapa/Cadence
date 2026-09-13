@@ -1,6 +1,7 @@
 import { it } from 'vitest';
 import { DETECTION_TEMPORAL_CONFIG as CFG } from '../../src/session/recognition/detectionTemporalConfig';
-import { SESSIONS, DIR, loadWindows, buildTimeline, decode } from './pipeline';
+import { observationAt } from '../../src/session/recognition/temporalObservationBuilder';
+import { SESSIONS, DIR, loadWindows, buildTimeline, decode, rankAt } from './pipeline';
 import { loadTruth, overlaps, type TruthEntry } from './truth';
 import { ALL_TRANSFORMS, identity } from './transforms';
 
@@ -67,18 +68,16 @@ it('inspects one stretch window by window', () => {
   //  2. `filterShortSegments` then requires `countTop1Windows >= minSegmentWindows`
   //     within that segment — the number of windows where the tune was
   //     FolkFriend's own RANK 1. NOT consecutive: they may sit anywhere in the
-  //     segment. (Which also means `timeline.ranks` is already load-bearing in
-  //     production, contrary to its "kept for a V2" comment — that applies to
-  //     the scoring only.)
+  //     segment. (Which also means the ranks carried by `timeline.rows` are
+  //     load-bearing in production — the dense field they replaced was labelled
+  //     "kept for a V2", which only ever applied to the scoring.)
   //
   // So `leads` below is the quantity gate 2 reads; whether a segment exists at
   // all is shown by the ground-truth block above.
   console.log('\n-- preuve par morceau vise --');
   const T = tl.windows.length;
   for (const tune of targets) {
-    const obs = tl.observations.get(tune);
-    const ranks = tl.ranks.get(tune);
-    if (!obs || !ranks) { console.log(`  tune ${tune} : ABSENT de l espace d etats (jamais admis)`); continue; }
+    if (!tl.rows.has(tune)) { console.log(`  tune ${tune} : ABSENT de l espace d etats (jamais admis)`); continue; }
 
     let present = 0, leads = 0, clears = 0, inRange = 0;
     const leadTimes: string[] = [];
@@ -86,13 +85,14 @@ it('inspects one stretch window by window', () => {
       const w = tl.windows[t]!;
       if (w.tWindowStart < from || w.tWindowEnd > to) continue;
       inRange++;
-      const r = ranks[t];
+      const r = rankAt(tl, tune, t);
       if (r === null) continue;
       present++;
       if (r !== 1) continue;
       leads++;
-      leadTimes.push(mmss(w.tWindowStart) + (obs[t]! > floor ? '*' : ''));
-      if (obs[t]! > floor) clears++;
+      const v = observationAt(tl, tune, t);
+      leadTimes.push(mmss(w.tWindowStart) + (v > floor ? '*' : ''));
+      if (v > floor) clears++;
     }
     const gate2 = leads >= CFG.minSegmentWindows;
     console.log(`  tune ${tune} : ${inRange} fenetres | present ${present} | rang 1 : ${leads}`

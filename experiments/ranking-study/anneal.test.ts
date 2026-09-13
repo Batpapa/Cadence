@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
 import { DETECTION_TEMPORAL_CONFIG as CFG } from '../../src/session/recognition/detectionTemporalConfig';
 import {
-  SESSIONS, NOISE, DIR, loadWindows, buildTimeline, decode,
+  SESSIONS, NOISE, DIR, loadWindows, buildTimeline, decode, windowTops,
   type TransitionWeights, type ConfirmRule,
 } from './pipeline';
 import { loadTruth, scoreSession, type TruthEntry } from './truth';
@@ -121,14 +121,7 @@ it('anneals around the promising regions', () => {
     const tls = sessions.map(s => ({ s, tl: buildTimeline(s.windows, tr, CFG, { flatFilter: chain.flat }) }));
     const noiseTl = buildTimeline(noiseWindows, tr, CFG, { flatFilter: chain.flat });
 
-    const tops: number[] = [];
-    for (const { tl } of tls) {
-      for (let t = 0; t < tl.windows.length; t++) {
-        let best = 0;
-        for (const id of tl.tuneIds) { const v = tl.observations.get(id)![t]!; if (v > best) best = v; }
-        if (best > 0) tops.push(best);
-      }
-    }
+    const tops = windowTops(tls.map(x => x.tl));
     tops.sort((a, b) => a - b);
 
     // Seeded per chain, so any chain can be replayed on its own.
