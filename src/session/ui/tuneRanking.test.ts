@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { rankDetectedTunes, occurrencesOf, sortTuneRows, TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
+import { rankDetectedTunes, occurrencesOf, sortTuneRows, TUNE_SORT_DEFAULT_ASC, filterByFacets, passesChips, type PassFacet } from './tuneRanking';
+import type { FilterState } from '../../types';
 import type { Analysis, Detection } from '../model';
 
 function det(o: Partial<Detection> & { tuneId: string }): Detection {
@@ -249,5 +250,119 @@ describe('occurrencesOf', () => {
 
   it('says nothing for a tune nobody played', () => {
     expect(occurrencesOf(sessions, 'absent')).toEqual([]);
+  });
+});
+
+describe('passesChips', () => {
+  const chips = (...e: [string, FilterState][]) => new Map(e);
+
+  it('lets everything through when nothing is pinned', () => {
+    expect(passesChips('reel', chips())).toBe(true);
+    expect(passesChips(undefined, chips())).toBe(true);
+  });
+
+  // One value per pass: two included chips can only mean "either".
+  it('reads several included chips as any of them', () => {
+    const c = chips(['reel', 'include'], ['jig', 'include']);
+    expect(passesChips('reel', c)).toBe(true);
+    expect(passesChips('jig', c)).toBe(true);
+    expect(passesChips('polka', c)).toBe(false);
+  });
+
+  it('removes what an excluded chip names, and only that', () => {
+    const c = chips(['reel', 'exclude']);
+    expect(passesChips('reel', c)).toBe(false);
+    expect(passesChips('jig', c)).toBe(true);
+  });
+
+  // A key nobody knows (no recognition index on this device) is neither what
+  // was asked for nor what was ruled out.
+  it('fails an inclusion but survives an exclusion when the value is unknown', () => {
+    expect(passesChips(undefined, chips(['Dmajor', 'include']))).toBe(false);
+    expect(passesChips(undefined, chips(['Dmajor', 'exclude']))).toBe(true);
+  });
+});
+
+describe('filterByFacets', () => {
+  // In these fixtures the setting id stands in for the key, since the real key
+  // comes from the recognition index.
+  const keys = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valueOf: d => d.settingId });
+  const types = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valueOf: d => d.dance });
+  const analyses = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valueOf: (_d, s) => s.id });
+
+  // The user's rule: a key belongs to a pass, so filtering on it has to change
+  // the count, not merely hide or show the tune.
+  it('recounts a tune from the passes that are left', () => {
+    const sessions = [
+      session('s1', '2026-01-01T20:00:00Z', [
+        det({ tuneId: '1', start: 10, settingId: 'inD' }),
+        det({ tuneId: '1', start: 200, settingId: 'inG' }),
+      ]),
+      session('s2', '2026-01-02T20:00:00Z', [det({ tuneId: '1', start: 10, settingId: 'inD' })]),
+    ];
+    const [row] = rankDetectedTunes(filterByFacets(sessions, [keys(true, ['inD', 'include'])]));
+    expect(row!.count).toBe(2);
+    expect(row!.sessions).toBe(2);
+    expect(rankDetectedTunes(filterByFacets(sessions, [keys(true, ['inG', 'include'])]))[0]!.sessions).toBe(1);
+  });
+
+  // Same rule for the analyses: pinning one evening counts that evening only.
+  it('recounts from the analyses pinned, not from every analysis the tune is in', () => {
+    const sessions = [
+      session('s1', null, [det({ tuneId: '1', start: 10 }), det({ tuneId: '1', start: 200 })]),
+      session('s2', null, [det({ tuneId: '1', start: 10 })]),
+    ];
+    const [row] = rankDetectedTunes(filterByFacets(sessions, [analyses(true, ['s2', 'include'])]));
+    expect(row!.count).toBe(1);
+    expect(rankDetectedTunes(filterByFacets(sessions, [analyses(true, ['s2', 'exclude'])]))[0]!.count).toBe(2);
+  });
+
+  it('drops a tune none of whose passes are left', () => {
+    const sessions = [session('s1', null, [det({ tuneId: '1', dance: 'reel' }), det({ tuneId: '2', start: 90, dance: 'jig' })])];
+    expect(rankDetectedTunes(filterByFacets(sessions, [types(true, ['jig', 'include'])])).map(r => r.tuneId)).toEqual(['2']);
+  });
+
+  // "All of" cannot be asked of a pass, which has one key: it is asked of the
+  // tune, over the passes that carry one of the keys.
+  it('reads "all of" as a tune heard in every key included, counted over those passes', () => {
+    const sessions = [session('s1', null, [
+      det({ tuneId: 'both', start: 10, settingId: 'inD' }),
+      det({ tuneId: 'both', start: 90, settingId: 'inG' }),
+      det({ tuneId: 'both', start: 300, settingId: 'inA' }),
+      det({ tuneId: 'onlyD', start: 500, settingId: 'inD' }),
+    ])];
+    const all = rankDetectedTunes(filterByFacets(sessions, [keys(false, ['inD', 'include'], ['inG', 'include'])]));
+    expect(all.map(r => r.tuneId)).toEqual(['both']);
+    expect(all[0]!.count).toBe(2);
+    const any = rankDetectedTunes(filterByFacets(sessions, [keys(true, ['inD', 'include'], ['inG', 'include'])]));
+    expect(any.map(r => r.tuneId).sort()).toEqual(['both', 'onlyD']);
+  });
+
+  it('asks "all of" after every section has removed its passes', () => {
+    // Heard in D in s1 and in G in s2 only: with s2 excluded it is no longer
+    // heard in both keys.
+    const sessions = [
+      session('s1', null, [det({ tuneId: '1', start: 10, settingId: 'inD' })]),
+      session('s2', null, [det({ tuneId: '1', start: 10, settingId: 'inG' })]),
+    ];
+    const both = keys(false, ['inD', 'include'], ['inG', 'include']);
+    expect(rankDetectedTunes(filterByFacets(sessions, [both]))).toHaveLength(1);
+    expect(rankDetectedTunes(filterByFacets(sessions, [both, analyses(true, ['s2', 'exclude'])]))).toHaveLength(0);
+  });
+
+  // The heart follows the passes too: a tune hearted in G only is not a
+  // hearted tune among the passes in D.
+  it('takes the heart from the passes that are left', () => {
+    const sessions = [session('s1', null, [
+      det({ tuneId: '1', start: 10, settingId: 'inD' }),
+      det({ tuneId: '1', start: 90, settingId: 'inG', liked: true }),
+    ])];
+    expect(rankDetectedTunes(filterByFacets(sessions, [keys(true, ['inD', 'include'])]))[0]!.liked).toBe(false);
+  });
+
+  it('never touches the analysis it reads from', () => {
+    const s = session('s1', null, [det({ tuneId: '1', dance: 'reel' }), det({ tuneId: '2', start: 90, dance: 'jig' })]);
+    filterByFacets([s], [types(false, ['jig', 'include'], ['reel', 'include'])]);
+    expect(s.annotations).toHaveLength(2);
   });
 });

@@ -10,32 +10,19 @@ import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection, type TuneAnaly
 // what makes this the module's contribution to a card rather than the card
 // view's business.
 
-/** One detection, and where to find it again. */
-export interface CardDetection {
-  annotationId: string;
-  /** Seconds from the session's start — what the row shows and what the deep
-   *  link seeks to when there is audio to seek. */
-  start: number;
-  confirmed: boolean;
-  bucket: Detection['bucket'];
-  confidence: number;
-}
-
 /** A session that recognised this card's tune, with every detection of it.
  *  Two passes through the same tune in one evening are two detections here:
- *  each is its own place in the recording, so each is its own destination. */
+ *  each is its own place in the recording, so each is its own destination.
+ *
+ *  Whole objects rather than a summary of them (2026-09-13): a pass is played,
+ *  previewed and cut into a clip from the card page now, exactly as from the
+ *  analyser's tunes tab, and those controls need the detection's end and
+ *  setting and the analysis's duration — a summary would only have grown back
+ *  into the originals one field at a time. */
 export interface CardDetectionGroup {
-  sessionId: string;
-  name: string;
-  /** ISO timestamp of the session's t=0, null for an import nobody has dated
-   *  yet — the summary screen lets it be set and erased. */
-  date: string | null;
-  detections: CardDetection[];
-  /** Whether ANY of this card's passes in that session was hearted. Per group
-   *  and not per pass, because this line names a session: it answers "did I
-   *  like this tune that evening", which is the question the heart was ticked
-   *  to answer. Same rule as the tune ranking's own heart. */
-  liked: boolean;
+  session: Analysis;
+  /** In playing order. */
+  detections: Detection[];
 }
 
 /** TheSession's numeric tune id for a card, or null when there is nothing to
@@ -68,25 +55,16 @@ export function findCardDetections(card: Card, sessions: Record<string, Analysis
 
   const groups: CardDetectionGroup[] = [];
   for (const session of Object.values(sessions)) {
+    // filter() copies, so the sort never reorders the analysis's own list.
     const detections = (session.annotations ?? [])
       .filter(a => a.tuneId === tuneId)
-      .map(a => ({
-        annotationId: a.id,
-        start: a.start,
-        confirmed: a.userConfirmed,
-        bucket: a.bucket,
-        confidence: a.confidence,
-      }))
       .sort((a, b) => a.start - b.start);
-    if (detections.length > 0) {
-      const liked = (session.annotations ?? []).some(a => a.tuneId === tuneId && a.liked);
-      groups.push({ sessionId: session.id, name: session.name, date: session.date, detections, liked });
-    }
+    if (detections.length > 0) groups.push({ session, detections });
   }
   // Newest first, and an undated import last rather than first: an unknown date
   // is not a very old one, and sorting it to the top would push real sessions
   // down under something that says nothing.
-  const at = (g: CardDetectionGroup) => { const ms = g.date ? Date.parse(g.date) : NaN; return Number.isNaN(ms) ? -Infinity : ms; };
+  const at = (g: CardDetectionGroup) => { const ms = g.session.date ? Date.parse(g.session.date) : NaN; return Number.isNaN(ms) ? -Infinity : ms; };
   return groups.sort((a, b) => at(b) - at(a));
 }
 

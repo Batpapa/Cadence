@@ -50,7 +50,7 @@ describe('findCardDetections', () => {
       session('s2', '2026-09-03T20:00:00Z', [ann('b', '9', 10)]),
       session('s3', '2026-09-02T20:00:00Z', [ann('c', '7', 30)]),
     ));
-    expect(groups.map(g => g.sessionId)).toEqual(['s3', 's1']); // newest first
+    expect(groups.map(g => g.session.id)).toEqual(['s3', 's1']); // newest first
   });
 
   // The user's rule: two passes through the same tune in one evening are two
@@ -59,8 +59,15 @@ describe('findCardDetections', () => {
     const groups = findCardDetections(card('thesession:7'), lib(
       session('s1', '2026-09-01T20:00:00Z', [ann('late', '7', 900), ann('early', '7', 120)]),
     ));
-    expect(groups[0]!.detections.map(d => d.annotationId)).toEqual(['early', 'late']);
+    expect(groups[0]!.detections.map(d => d.id)).toEqual(['early', 'late']);
     expect(groups[0]!.detections.map(d => d.start)).toEqual([120, 900]);
+  });
+
+  // The analysis's own list is what its summary screen shows, in its own order.
+  it('never reorders the analysis it reads from', () => {
+    const s = session('s1', '2026-09-01T20:00:00Z', [ann('late', '7', 900), ann('early', '7', 120)]);
+    findCardDetections(card('thesession:7'), lib(s));
+    expect(s.annotations.map(a => a.id)).toEqual(['late', 'early']);
   });
 
   // Matching on the detection's own tuneId means a correction is followed:
@@ -73,7 +80,7 @@ describe('findCardDetections', () => {
     });
     const sessions = lib(session('s1', '2026-09-01T20:00:00Z', [corrected]));
     expect(findCardDetections(card('thesession:7'), sessions)).toEqual([]);
-    expect(findCardDetections(card('thesession:9'), sessions)[0]!.detections[0]!.confirmed).toBe(true);
+    expect(findCardDetections(card('thesession:9'), sessions)[0]!.detections[0]!.userConfirmed).toBe(true);
   });
 
   it('says nothing for a card no session ever recognised', () => {
@@ -90,7 +97,7 @@ describe('findCardDetections', () => {
       session('undated', null, [ann('a', '7', 10)]),
       session('dated', '2020-01-01T20:00:00Z', [ann('b', '7', 10)]),
     ));
-    expect(groups.map(g => g.sessionId)).toEqual(['dated', 'undated']);
+    expect(groups.map(g => g.session.id)).toEqual(['dated', 'undated']);
   });
 });
 

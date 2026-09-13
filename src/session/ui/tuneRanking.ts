@@ -1,4 +1,4 @@
-import type { TuneSort } from '../../types';
+import type { TuneSort, FilterState } from '../../types';
 import type { Analysis, Detection } from '../model';
 
 // ── What this scene actually plays ───────────────────────────────────────────
@@ -197,4 +197,77 @@ export function occurrencesOf(sessions: Analysis[], tuneId: string): TuneOccurre
   return out
     .sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity) || a.detection.start - b.detection.start)
     .map(({ at: _at, ...rest }) => rest);
+}
+
+/** One section of chips that reads a value off each PASS: the analysis it is
+ *  in, its tune type, its key. */
+export interface PassFacet {
+  chips: ReadonlyMap<string, FilterState>;
+  /** Several included chips: any of them (true), or all of them (false). */
+  or: boolean;
+  valueOf: (d: Detection, session: Analysis) => string | undefined;
+}
+
+/** The same analyses holding only the passes the chips let through — new
+ *  objects, so an analysis's own list, the one its summary screen shows, is
+ *  never touched.
+ *
+ *  Filtering PASSES rather than tunes is what keeps the numbers honest
+ *  (decided with the user, 2026-09-13). A key belongs to a pass, not to a tune:
+ *  two passes through one reel can match settings in two different keys. So
+ *  "heard in D major" has to count only what was heard in D major — and the
+ *  ranking, the last-heard date and the heart all follow from what is left,
+ *  with nothing of their own to adjust. The analyses section follows the same
+ *  rule, for the same reason: a tune pinned to one evening counts that evening.
+ *
+ *  A pass has one value per section, so "all of" cannot be asked of a pass
+ *  (no pass is in D major AND G major). It is asked of the TUNE: the passes
+ *  kept are the same as for "any of", and a tune stays only if, between them,
+ *  its passes carry every value included. "D major and G major" is then the
+ *  tunes heard in both, counted over those passes. */
+export function filterByFacets(sessions: Analysis[], facets: readonly PassFacet[]): Analysis[] {
+  const kept = sessions.map(s => ({
+    ...s,
+    annotations: (s.annotations ?? []).filter(d => facets.every(f => passesChips(f.valueOf(d, s), f.chips))),
+  }));
+
+  // One included chip reads the same either way; only two or more can differ.
+  const strict = facets
+    .map(facet => ({ facet, needed: [...facet.chips].filter(([, st]) => st === 'include').map(([k]) => k) }))
+    .filter(({ facet, needed }) => !facet.or && needed.length > 1);
+  if (strict.length === 0) return kept;
+
+  const carried = new Map<string, Set<string>[]>();
+  for (const s of kept) {
+    for (const d of s.annotations) {
+      let sets = carried.get(d.tuneId);
+      if (!sets) { sets = strict.map(() => new Set<string>()); carried.set(d.tuneId, sets); }
+      strict.forEach(({ facet }, i) => {
+        const v = facet.valueOf(d, s);
+        if (v !== undefined) sets[i]!.add(v);
+      });
+    }
+  }
+  const hasAll = (tuneId: string) => {
+    const sets = carried.get(tuneId);
+    return !!sets && strict.every(({ needed }, i) => needed.every(k => sets[i]!.has(k)));
+  };
+  return kept.map(s => ({ ...s, annotations: s.annotations.filter(d => hasAll(d.tuneId)) }));
+}
+
+/** Whether one pass's value gets through a section of chips, on its own.
+ *
+ *  An excluded chip removes what it names; once any chip is included, only
+ *  what those name gets through — "all of" is the tune's business, see
+ *  filterByFacets. A value nobody knows — the key of a pass on a device without
+ *  the recognition index — matches no chip at all: it survives an exclusion
+ *  and fails an inclusion, since nothing says it is, or is not, what was asked
+ *  for. */
+export function passesChips(value: string | undefined, chips: ReadonlyMap<string, FilterState>): boolean {
+  let anyInclude = false;
+  for (const [key, state] of chips) {
+    if (state === 'include') anyInclude = true;
+    else if (value === key) return false;
+  }
+  return !anyInclude || (value !== undefined && chips.get(value) === 'include');
 }
