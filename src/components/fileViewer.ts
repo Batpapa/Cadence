@@ -335,13 +335,38 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     body.appendChild(img);
 
   } else if (m === 'application/pdf') {
-    // An <embed> loading a blob: URL is governed by the page's object-src —
-    // which must keep allowing blob: (webpack.config.js's CSP). With 'none'
-    // this rendered an empty frame and said nothing (2026-09-06 to 14).
-    const embed = document.createElement('embed'); embed.src = entryToObjectUrl(entry);
-    embed.type = 'application/pdf'; embed.className = 'w-full rounded';
-    embed.style.height = mediaMaxH;
-    body.appendChild(embed);
+    const url = entryToObjectUrl(entry);
+    // `!== false`, not truthy: a browser too old to have the property at all
+    // is a desktop one with its viewer, and keeps getting the frame it had.
+    if (navigator.pdfViewerEnabled !== false) {
+      // An <embed> loading a blob: URL is governed by the page's object-src —
+      // which must keep allowing blob: (webpack.config.js's CSP). With 'none'
+      // this rendered an empty frame and said nothing (2026-09-06 to 14).
+      const embed = document.createElement('embed'); embed.src = url;
+      embed.type = 'application/pdf'; embed.className = 'w-full rounded';
+      embed.style.height = mediaMaxH;
+      body.appendChild(embed);
+    } else {
+      // No inline PDF viewer here — Chrome on Android, first of all — so the
+      // frame above would stay empty whatever the page did. Say so, and hand
+      // the file to the device's own viewer, which zooms and searches better
+      // than anything drawn here would (pdf.js was measured and set aside for
+      // this, 2026-09-14). The modal still opens, so a tap on a PDF means the
+      // same thing everywhere. A download link, like the attachment row's own:
+      // it is what already worked on these phones.
+      const box = document.createElement('div');
+      box.className = 'flex flex-col items-center gap-4 py-6 text-center';
+      const msg = document.createElement('p');
+      msg.className = 'text-sm text-muted leading-relaxed max-w-sm';
+      msg.textContent = t('fileViewer.pdf.noInline');
+      const open = document.createElement('a');
+      open.href = url;
+      open.download = entry.name;
+      open.className = 'btn-primary';
+      open.textContent = t('fileViewer.pdf.open');
+      box.append(msg, open);
+      body.appendChild(box);
+    }
 
   } else if (isAbcFile(entry)) {
     body.classList.replace('items-center', 'items-start');
