@@ -3,10 +3,9 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
-import { localSessionAudioStats } from './session/db';
 import { Sidebar } from './components/sidebar';
 import { AppHeader, BottomNav } from './components/header';
-import { confirmModal, ModalHost } from './components/modal';
+import { ModalHost } from './components/modal';
 import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
@@ -247,11 +246,10 @@ const IRISH_FEATURES = [
   { key: 'welcome.irish.4', Icon: TrendIcon },
 ] as const;
 
-function UserSelector({ users, onSelect, onCreate, onDelete }: {
+function UserSelector({ users, onSelect, onCreate }: {
   users: User[];
   onSelect: (id: string) => Promise<void>;
   onCreate: (name: string) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
 }) {
   const [loading,  setLoading]  = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -271,24 +269,11 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
     await onCreate(name);
   };
 
-  // Async because the warning has to know what it is warning about: session
-  // audio is the one thing that does NOT live on the user's other devices, so
-  // the generic "your data stays available elsewhere" is a promise this action
-  // cannot keep whenever there are recordings on this one. Unknown (null —
-  // Safari, or an unreadable database) falls back to the generic wording
-  // rather than guessing; see localSessionAudioStats.
-  const confirmDelete = async (u: User) => {
-    const stats = await localSessionAudioStats(u.id);
-    confirmModal(
-      t('userSelector.delete.title'),
-      stats
-        ? t('userSelector.delete.messageWithAudio', { name: u.name })
-        : t('userSelector.delete.message', { name: u.name }),
-      t('userSelector.delete.confirm'),
-      () => void onDelete(u.id),
-    );
-  };
-
+  // No way to REMOVE a user from here any more (2026-09-13). The ✕ it used to
+  // carry was revealed by hover and by nothing else, so on a touch screen it
+  // was reachable only because :hover sticks to whatever was tapped last —
+  // an interaction nobody chose, holding a destructive action. Removing a user
+  // now lives in Settings → User, where it is a button that is simply visible.
   return (
     <div class="fixed inset-0 bg-bg flex items-center justify-center overflow-y-auto py-10">
       <div class="w-full max-w-[352px] mx-4 flex flex-col items-center">
@@ -317,30 +302,18 @@ function UserSelector({ users, onSelect, onCreate, onDelete }: {
 
           <div class="flex flex-col gap-2">
             {users.map((u, i) => (
-              <div
+              <button
                 key={u.id}
-                class={`rise-in group w-full flex items-center gap-3 px-3.5 py-[11px] rounded-xl border border-border bg-elevated hover:border-muted hover:bg-surface transition-colors ${loading === u.id ? 'opacity-60' : ''}`}
+                disabled={!!loading}
+                onClick={() => void select(u.id)}
+                class={`rise-in w-full flex items-center gap-3 px-3.5 py-[11px] rounded-xl border border-border bg-elevated hover:border-muted hover:bg-surface transition-colors cursor-pointer text-left ${loading === u.id ? 'opacity-60' : ''}`}
                 style={`animation-delay:${1.1 + i * 0.07}s`}
               >
-                <button
-                  disabled={!!loading}
-                  onClick={() => void select(u.id)}
-                  class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer text-left"
-                >
-                  <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background:rgb(var(--color-accent-ch)/0.18)">
-                    <span class="text-xs font-mono font-bold text-accent">{initialsOf(u.name)}</span>
-                  </div>
-                  <span class="text-sm font-medium text-primary truncate flex-1">{u.name}</span>
-                </button>
-                <button
-                  disabled={!!loading}
-                  onClick={() => void confirmDelete(u)}
-                  class="opacity-0 group-hover:opacity-100 shrink-0 text-dim hover:text-danger transition-all cursor-pointer"
-                  title={t('userSelector.delete.title')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background:rgb(var(--color-accent-ch)/0.18)">
+                  <span class="text-xs font-mono font-bold text-accent">{initialsOf(u.name)}</span>
+                </div>
+                <span class="text-sm font-medium text-primary truncate flex-1">{u.name}</span>
+              </button>
             ))}
 
             {creating ? (
@@ -442,7 +415,6 @@ export function mountUserSelector(
   users: User[],
   onSelect: (id: string) => Promise<void>,
   onCreate: (name: string) => Promise<void>,
-  onDelete: (id: string) => Promise<void>,
 ): void {
-  render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} onDelete={onDelete} />, root);
+  render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} />, root);
 }

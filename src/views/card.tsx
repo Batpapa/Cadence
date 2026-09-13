@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'preact/hooks';
+import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'preact/hooks';
 import { Fragment } from 'preact';
 import { appState, navigate, mutate } from '../store';
-import { pct, focusIfDesktop, externalSourceLink } from '../utils';
+import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
 import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
@@ -16,6 +16,7 @@ import { IncipitRow } from '../components/incipit';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
+import { showCardTagModal } from '../components/tagModal';
 import { removeCards } from '../services/cardService';
 import { cardPanels } from '../services/cardPanels';
 import { lookupItiMapping } from '../services/itiMappingService';
@@ -282,6 +283,111 @@ async function migrateCardToTheSession(cardId: string, sessionId: number): Promi
   }
 }
 
+// ── Tag pills, and dragging them into order ──────────────────────────────────
+// The same drag-to-reorder every list in this app carries, turned sideways: the
+// pills wrap along a row, so the drop indicator is a left or right edge and the
+// midpoint test reads clientX where the others read clientY. The indicator is
+// toggled straight on the DOM rather than through state — dragover fires many
+// times a second, and a re-render storm for every one of them is what going
+// through Preact would cost here.
+//
+// `addTouchDragSupport` is what makes this work under a finger: a 250 ms press
+// then a drag, synthesised into the same DragEvents. Wired once per element,
+// separately from the handlers, because it has no way to unsubscribe.
+//
+// Module scope, not nested in the view: a component declared inside a render is
+// a NEW type on every pass, so Preact throws the subtree away and rebuilds it —
+// and a button that is rebuilt under the pointer never sees its own click.
+interface TagDragScratch { fromIdx: number | null; markedEl: HTMLElement | null }
+
+function clearTagIndicator(scratch: TagDragScratch): void {
+  scratch.markedEl?.classList.remove('drop-left', 'drop-right');
+  scratch.markedEl = null;
+}
+
+function TagPill({ tag, index, selected, scratch, onSelect, onReorder }: {
+  tag: string;
+  index: number;
+  selected: boolean;
+  scratch: TagDragScratch;
+  onSelect: () => void;
+  onReorder: (from: number, insertBefore: number) => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { if (ref.current) addTouchDragSupport(ref.current); }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.draggable = true;
+
+    const zoneOf = (e: DragEvent) => {
+      const rect = el.getBoundingClientRect();
+      return (e.clientX - rect.left) / rect.width < 0.5 ? 'drop-left' : 'drop-right';
+    };
+    const onDragStart = (e: DragEvent) => {
+      scratch.fromIdx = index;
+      e.dataTransfer?.setData('text/plain', String(index));
+      setTimeout(() => el.classList.add('opacity-40'), 0);
+    };
+    const onDragEnd = () => { el.classList.remove('opacity-40'); clearTagIndicator(scratch); };
+    const onDragOver = (e: DragEvent) => {
+      if (scratch.fromIdx === null || scratch.fromIdx === index) return;
+      e.preventDefault();
+      const zone = zoneOf(e);
+      if (scratch.markedEl !== el || !el.classList.contains(zone)) {
+        clearTagIndicator(scratch);
+        el.classList.add(zone);
+        scratch.markedEl = el;
+      }
+    };
+    const onDragLeave = (e: DragEvent) => { if (!el.contains(e.relatedTarget as Node)) clearTagIndicator(scratch); };
+    const onDrop = (e: DragEvent) => {
+      if (scratch.fromIdx === null || scratch.fromIdx === index) return;
+      e.preventDefault();
+      const before = zoneOf(e) === 'drop-left';
+      clearTagIndicator(scratch);
+      const from = scratch.fromIdx;
+      scratch.fromIdx = null;
+      onReorder(from, before ? index : index + 1);
+    };
+
+    el.addEventListener('dragstart', onDragStart);
+    el.addEventListener('dragend', onDragEnd);
+    el.addEventListener('dragover', onDragOver);
+    el.addEventListener('dragleave', onDragLeave);
+    el.addEventListener('drop', onDrop);
+    // Removed again on every index change: the handlers close over `index`, and
+    // stacking a second set on the same element would fire the stale one too.
+    return () => {
+      el.removeEventListener('dragstart', onDragStart);
+      el.removeEventListener('dragend', onDragEnd);
+      el.removeEventListener('dragover', onDragOver);
+      el.removeEventListener('dragleave', onDragLeave);
+      el.removeEventListener('drop', onDrop);
+    };
+  }, [index, tag, scratch, onReorder]);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-pressed={selected}
+      // The same pin the tag filters and the tag dialog use, so a selected tag
+      // looks selected everywhere in the app.
+      class={`text-xs px-2 py-0.5 rounded-full border transition-colors cursor-grab active:cursor-grabbing select-none ${
+        selected
+          ? 'bg-accent text-white border-accent'
+          : 'bg-elevated border-border text-muted hoverable:border-accent hoverable:text-accent'
+      }`}
+      onClick={onSelect}
+    >
+      {tag}
+    </button>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function CardView({ cardId, contextDeckId }: { cardId: string; contextDeckId?: string }) {
@@ -292,9 +398,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   // All hooks before conditional returns
   const [isEditingName,  setIsEditingName]  = useState(false);
   const [editName,       setEditName]       = useState('');
-  const [editingTag,     setEditingTag]     = useState<string | null>(null);
-  const [tagEditValue,   setTagEditValue]   = useState('');
-  const [newTag,         setNewTag]         = useState('');
+  const [pickedTag,      setPickedTag]      = useState<string | null>(null);
   const [isEditingImportance, setIsEditingImportance] = useState(false);
   const [importanceDraft,     setImportanceDraft]     = useState('');
   const [importanceCtx,       setImportanceCtx]       = useState(contextDeckId ?? ''); // '' = Défaut
@@ -302,6 +406,27 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesDraft,     setNotesDraft]     = useState(card?.content.notes ?? '');
   const notesRef = useRef<HTMLTextAreaElement>(null);
+
+  // A selection only means something while the tag is still on the card. A tag
+  // removed here, or one that vanished with a state arriving from another
+  // device, must not leave the rename and remove buttons aimed at a name that
+  // no longer exists.
+  const selectedTag = pickedTag !== null && (card?.tags ?? []).includes(pickedTag) ? pickedTag : null;
+
+  // One scratchpad for the whole row: which pill is being dragged, and which
+  // one currently wears the drop indicator. A ref, not module state — two cards
+  // could in principle be mounted at once.
+  const tagDrag = useRef<TagDragScratch>({ fromIdx: null, markedEl: null }).current;
+  // Stable, because each pill subscribes its drag handlers to it: rebuilt every
+  // render, it would tear down and re-add five listeners per pill per pass.
+  const reorderTags = useCallback((from: number, insertBefore: number) => {
+    void mutate(s => {
+      const list = s.cards[cardId]?.tags;
+      if (!list) return;
+      const [moved] = list.splice(from, 1);
+      list.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
+    });
+  }, [cardId]);
 
   useEffect(() => {
     if (isEditingNotes && notesRef.current) focusIfDesktop(notesRef.current);
@@ -658,64 +783,67 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       </div>
 
       {/* ── Tags ── */}
+      {/* Nothing here is revealed by hover any more (2026-09-13). The ✕ that
+          used to sit on each pill appeared on hover and on nothing else, so a
+          finger reached it only because :hover sticks to the last thing
+          tapped; and a plain tap on a pill dropped it into an edit field,
+          which put a rename one mis-tap away. A tap now selects, and selecting
+          is all it does — the actions live on the title line, as targets. */}
       <div class="space-y-2">
-        <span class="section-title">{t('card.section.tags')}</span>
-        <div class="flex flex-wrap items-center gap-1.5">
-          {(card.tags ?? []).map(tag => (
-            <span key={tag} class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-elevated border border-border text-muted group">
-              {editingTag === tag ? (
-                <input
-                  type="text"
-                  value={tagEditValue}
-                  autoFocus
-                  class="text-xs bg-transparent border-none outline-none text-primary w-16"
-                  onInput={(e) => setTagEditValue((e.target as HTMLInputElement).value)}
-                  onBlur={() => {
-                    const val = tagEditValue.trim().replace(/,/g, '');
-                    if (val && val !== tag && !(card.tags ?? []).includes(val))
-                      mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.map(tg => tg === tag ? val : tg); });
-                    setEditingTag(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter')  (e.target as HTMLInputElement).blur();
-                    if (e.key === 'Escape') setEditingTag(null);
-                  }}
-                />
-              ) : (
-                <span
-                  class="cursor-text hover:text-primary transition-colors"
-                  title={t('common.clickToRename')}
-                  onClick={() => { setEditingTag(tag); setTagEditValue(tag); }}
+        {/* Actions hard right, where every other section in this view keeps
+            them (the review history's "+", the metrics row above). */}
+        <div class="flex items-center justify-between">
+          <span class="section-title">{t('card.section.tags')}</span>
+          <div class="flex items-center gap-0.5 shrink-0">
+            {/* Rename and remove show with a selection rather than sitting
+                greyed out without one (the user's call, 2026-09-13): someone
+                who wants to fix a tag reaches for the tag itself first, and
+                finds the two buttons by doing exactly that. */}
+            {selectedTag !== null && (
+              <>
+                <button
+                  class="tap-btn text-dim hoverable:text-accent hoverable:bg-elevated cursor-pointer"
+                  title={t('card.tags.rename')}
+                  onClick={() => showCardTagModal(cardId, selectedTag, setPickedTag)}
                 >
-                  {tag}
-                </span>
-              )}
-              <button
-                class="hidden group-hover:inline-flex items-center text-dim hover:text-danger cursor-pointer leading-none"
-                onClick={() => mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.filter(tg => tg !== tag); })}
-              >
-                ✕
-              </button>
-            </span>
-          ))}
-          <input
-            type="text"
-            placeholder="+"
-            value={newTag}
-            class="text-xs bg-transparent border-none outline-none text-dim placeholder-dim w-6 focus:w-24 transition-all"
-            onInput={(e) => setNewTag((e.target as HTMLInputElement).value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ',') {
-                e.preventDefault();
-                const val = newTag.trim().replace(/,/g, '');
-                if (val && !(card.tags ?? []).includes(val))
-                  mutate(s => { const c = s.cards[cardId]; if (c) { if (!c.tags) c.tags = []; c.tags.push(val); } });
-                setNewTag('');
-              }
-              if (e.key === 'Escape') setNewTag('');
-            }}
-          />
+                  <PencilIcon size={13} />
+                </button>
+                <button
+                  class="tap-btn text-dim hoverable:text-danger hoverable:bg-elevated cursor-pointer"
+                  title={t('card.tags.remove')}
+                  onClick={() => {
+                    void mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.filter(tg => tg !== selectedTag); });
+                    setPickedTag(null);
+                  }}
+                >
+                  <TrashIcon size={13} />
+                </button>
+              </>
+            )}
+            <button
+              class="tap-btn text-dim hoverable:text-accent hoverable:bg-elevated cursor-pointer"
+              title={t('card.tags.add')}
+              onClick={() => showCardTagModal(cardId, null)}
+            >
+              <PlusIcon size={13} />
+            </button>
+          </div>
         </div>
+        {(card.tags ?? []).length > 0 && (
+          <div class="flex flex-wrap items-center gap-1.5">
+            {(card.tags ?? []).map((tag, i) => (
+              <TagPill
+                key={tag}
+                tag={tag}
+                index={i}
+                selected={tag === selectedTag}
+                scratch={tagDrag}
+                onSelect={() => setPickedTag(tag === selectedTag ? null : tag)}
+                onReorder={reorderTags}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Notes ── */}

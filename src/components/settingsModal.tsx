@@ -4,7 +4,7 @@ import { render } from 'preact';
 import type { ComponentChildren } from 'preact';
 import type { AppContext, IncipitDisplay } from '../types';
 import { generateId, emptyState } from '../utils';
-import { deleteLocalSessionData } from '../session/db';
+import { deleteLocalSessionData, localSessionAudioStats } from '../session/db';
 import { TrashIcon, ResetIcon, HelpIcon } from './icons';
 import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
@@ -13,14 +13,14 @@ import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services
 import { applyExternalData } from '../services/migration';
 import { exportBackup, exportSnapshotBackup, parseImport } from '../services/importExport';
 import { exportFullBackup, fullBackupSize, parseFullBackup, restoreFullBackupAudio, BackupTooLarge, MAX_FULL_BACKUP_BYTES } from '../services/fullBackup';
-import { listSnapshots, getSnapshotState, type SnapshotMeta } from '../services/snapshotService';
+import { listSnapshots, getSnapshotState, clearSnapshotsForUser, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
-import { isDriveFeatureEnabled, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
+import { isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
 import { appState, getContext } from '../store';
 import { CustomSelect } from './customSelect';
-import { clearLastUserId } from '../db';
+import { clearLastUserId, deleteUser, removeUserFromOrder } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
 import { formatBytes } from '../utils';
@@ -495,6 +495,33 @@ async function runReset(): Promise<void> {
   ctx.navigate({ view: 'folder', folderId: null });
 }
 
+/** Removes the whole local copy of a user: their state blob, their recordings,
+ *  their safety-net snapshots and the Drive bookkeeping that points at them.
+ *
+ *  `deleteLocalSessionData` is what this was missing until 2026-09-08:
+ *  `deleteUser` only drops the AppState blob, so every past recording's audio,
+ *  the interrupted drafts and their chunks stayed behind in
+ *  `cadence-tune-analyser-local-user-{id}` — a database no screen can reach any
+ *  more once its owner is gone, quietly holding the largest thing this app
+ *  stores. Ordered before `deleteUser` so a failure here leaves the user present
+ *  and the data reachable, rather than the reverse.
+ *
+ *  Reloads instead of returning to the selector in-page, which is what the
+ *  welcome screen used to do: here the user being erased is the one this tab has
+ *  OPEN — the state signal, the debounced Drive flush and the route persistence
+ *  all still hold them — and a reload is the only way to be certain that nothing
+ *  writes the blob back after it has been deleted. */
+async function removeUserFromDevice(userId: string): Promise<void> {
+  closeAllModals(); closeSettingsModal?.();
+  clearDriveStateForUser(userId);
+  await clearSnapshotsForUser(userId);
+  await deleteLocalSessionData(userId);
+  removeUserFromOrder(userId);
+  await deleteUser(userId);
+  clearLastUserId();
+  location.reload();
+}
+
 /** Export, import, reset — as icons, because the row they sit on already names
  *  what they act on and three labelled buttons would not fit beside a figure.
  *  Each keeps its title attribute; none is destructive without a confirmation.
@@ -748,6 +775,35 @@ function UserSection({ ctx }: { ctx: AppContext }) {
     else setNameDraft(user.name ?? '');
   };
 
+  // The question is assembled from what is true at the moment it is asked,
+  // rather than picked from two fixed wordings:
+  //   · synced    — the copy on Drive outlives this, so it really is a local
+  //                 removal and nothing more;
+  //   · notSynced — Drive was never connected for this user, so the local copy
+  //                 IS the data. The ✕ this button replaces promised "stays
+  //                 available on your other devices" unconditionally, which was
+  //                 simply false for everyone syncing nowhere;
+  //   · unsynced  — connected, but the last edits have not landed yet (the
+  //                 status the header's cloud is showing);
+  //   · audio     — recordings live in a local-only database and never leave
+  //                 this device even with Drive on. Unknown (null — Safari, or
+  //                 an unreadable database) says nothing rather than guessing;
+  //                 see localSessionAudioStats.
+  const confirmRemoval = async () => {
+    const onDrive = isDriveFeatureEnabled() && isDriveConnected();
+    const parts = [t('settings.removeUser.question', { name: user.name ?? '' })];
+    if (!onDrive) parts.push(t('settings.removeUser.notSynced'));
+    else {
+      parts.push(t('settings.removeUser.synced'));
+      if (getDriveStatus() !== 'connected') parts.push(t('settings.removeUser.unsynced'));
+      if (await localSessionAudioStats(user.id)) parts.push(t('settings.removeUser.audio'));
+    }
+    confirmModal(
+      t('settings.removeUser'), parts.join(' '), t('settings.removeUser.confirm'),
+      () => { void removeUserFromDevice(user.id); },
+    );
+  };
+
   return (
     <>
       <Row label={t('settings.username')}>
@@ -771,6 +827,20 @@ function UserSection({ ctx }: { ctx: AppContext }) {
       <SnapshotsRow userId={user.id} />
 
       <Sep />
+
+      {/* Last in the section, full width, and plainly visible: nothing follows
+          the removal of the user whose settings these are, and a destructive
+          action should not be something one has to hover to find — which is
+          exactly what the welcome screen's ✕ was. */}
+      <div class="py-2">
+        <button
+          class="btn-danger w-full flex items-center justify-center gap-2"
+          onClick={() => void confirmRemoval()}
+        >
+          <TrashIcon size={13} />
+          {t('settings.removeUser')}
+        </button>
+      </div>
     </>
   );
 }

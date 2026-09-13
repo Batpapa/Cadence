@@ -3,6 +3,7 @@ import { signal, type Signal } from '@preact/signals';
 import type { ComponentChild } from 'preact';
 import { appState, mutate } from '../store';
 import { showModal, closeModal, renderModalBody } from './modal';
+import { TagPicker } from './tagModal';
 import { CustomSelect } from './customSelect';
 import { cardTypeIcon } from './cardTypeIcon';
 import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, applyCardType, isTuneset } from '../services/cardTypeService';
@@ -86,24 +87,20 @@ export function showDeckPickerModal(
 
 // ── Tags ─────────────────────────────────────────────────────────────────────
 
+/** The field itself is TagPicker (components/tagModal.tsx), shared with the
+ *  single-card dialog since 2026-09-13 — including the suggestion pins, which
+ *  are what keeps a batch from minting a near-duplicate of a tag that already
+ *  exists. All this adds is the count: how many of the selected cards the tag
+ *  would actually land on.
+ *
+ *  Nothing is excluded from the pins here. A tag some of the selection already
+ *  carries is still a legal pick — it lands on the rest — which is precisely
+ *  what the count is there to say. */
 function AddTagBody({ cardIds, draft }: { cardIds: string[]; draft: Draft & { tag: string } }) {
   const user = appState.value;
   const [value, setValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (inputRef.current) focusIfDesktop(inputRef.current); }, []);
 
   const clean = value.trim().replace(/,/g, '');
-  // Suggest tags already in use so the selection joins an existing tag rather
-  // than silently creating a near-duplicate ("jig" vs "Jig"). The exact match
-  // stays in the list, shown as selected, rather than being filtered out —
-  // otherwise the pin vanishes under the cursor that just clicked it.
-  const known = [...new Set(Object.values(user.cards).flatMap(c => c.tags ?? []))].sort();
-  // Typing narrows the list, but once the text *is* one of the tags — which is
-  // what picking a pin does — narrowing would collapse the list to that single
-  // pin. Show the whole set again then, so the pins behave like the library's
-  // tag filters: a stable row you toggle, not one that empties under you.
-  const filter = known.includes(clean) ? '' : clean.toLowerCase();
-  const suggestions = known.filter(tg => tg.toLowerCase().includes(filter)).slice(0, 12);
   const missing = clean ? cardIds.filter(id => !(user.cards[id]?.tags ?? []).includes(clean)).length : 0;
 
   const set = (v: string) => { setValue(v); draft.tag = v.trim().replace(/,/g, ''); };
@@ -114,43 +111,11 @@ function AddTagBody({ cardIds, draft }: { cardIds: string[]; draft: Draft & { ta
   useEffect(() => { draft.noop.value = !clean || missing === 0; });
 
   return (
-    <div class="space-y-3">
-      {/* The count sits inside the field, right-aligned — it answers "what will
-          this actually do?" at the point of typing. Hidden while empty, and the
-          input's right padding reserves its room so text never runs under it. */}
-      <div class="relative">
-        <input
-          ref={inputRef}
-          type="text"
-          class="input w-full pr-24"
-          placeholder={t('library.batch.addTag.placeholder')}
-          value={value}
-          onInput={(e) => set((e.target as HTMLInputElement).value)}
-        />
-        {clean && (
-          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-dim pointer-events-none">
-            {t('library.batch.addTag.toAdd', { n: missing })}
-          </span>
-        )}
-      </div>
-      {suggestions.length > 0 && (
-        <div class="flex flex-wrap items-center gap-1.5">
-          {suggestions.map(tg => (
-            <button
-              key={tg}
-              type="button"
-              // Same pin as the library's tag filters, selected state included.
-              class={`text-xs px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
-                tg === clean
-                  ? 'bg-accent text-white border-accent'
-                  : 'border-border text-muted hover:border-accent hover:text-accent'
-              }`}
-              onClick={() => set(tg === clean ? '' : tg)}
-            >{tg}</button>
-          ))}
-        </div>
-      )}
-    </div>
+    <TagPicker
+      value={value}
+      onChange={set}
+      readout={clean ? t('library.batch.addTag.toAdd', { n: missing }) : null}
+    />
   );
 }
 

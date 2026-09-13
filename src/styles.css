@@ -338,6 +338,11 @@
 .drop-before { box-shadow: inset 0 2px 0 0 var(--color-accent); }
 .drop-after  { box-shadow: inset 0 -2px 0 0 var(--color-accent); }
 .drop-into   { background-color: var(--color-accent-dim) !important; }
+/* The same pair for a row that runs sideways instead of down — the card's tag
+   pills, which wrap. "Before" is the left edge there, so the edge moves but
+   the meaning does not. */
+.drop-left   { box-shadow: inset 2px 0 0 0 var(--color-accent); }
+.drop-right  { box-shadow: inset -2px 0 0 0 var(--color-accent); }
 
 /* Legal footer — static in raw HTML so it stays crawlable without JS (Google OAuth review) */
 #legal-footer {
