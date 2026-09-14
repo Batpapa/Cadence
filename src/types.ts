@@ -262,6 +262,10 @@ export type Route =
   // Local days, resolved to [00:00, 23:59:59.999] where they are read.
   // `types` has no OR flag of its own: a card holds ONE type, so several
   // included types can only ever mean "any of these" — see LibraryView.
+  // `decks` also carries deck FOLDERS, keyed `folder:<id>` (components/
+  // filterChips.ts) — one map, so one AND/OR toggle covers both. The sessions
+  // route's `analyses` does the same for analysis folders. A key naming
+  // something deleted since is ignored where it is read, not rejected here.
   // `cards` limits the library to those card ids; absent = every card. Generic
   // on purpose — any screen can hand over a set of cards (the analyser's tunes
   // tab is the first), and the library does not know or say where it came from.

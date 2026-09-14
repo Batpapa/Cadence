@@ -17,6 +17,8 @@ import { showBatchProgress, type BatchStep, type StepOutcome } from './batchRunn
 import { deckGain } from './tuneBatch';
 import { PassRow, useSlicePlayer } from './PassRow';
 import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, type PassFacet } from './tuneRanking';
+import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../../components/filterChips';
+import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf } from '../sessionTree';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
 // The analyses read the other way round: by tune instead of by evening. It is
@@ -90,7 +92,44 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
   onView: (patch: Partial<TuneViewState>) => void;
 }) {
   const ctx = getContext();
-  const { sort: sortMode, sortAsc, analyses: activeAnalyses, analysesOr, others, othersOr, dances, modes } = view;
+  const { sort: sortMode, sortAsc, analyses: pinnedAnalyses, analysesOr, others, othersOr, dances, modes } = view;
+
+  // ── The analyses section: the evenings, and the folders they are filed in ──
+  // One section, not two: a folder chip is a group of evening chips, and only
+  // in the same section can "this folder OR that evening" be asked at all —
+  // two sections always combine as AND (decided with the user, 2026-09-15).
+  const tree = sessionTreeOf(ctx.user);
+  const sessionIds = new Set(sessions.map(s => s.id));
+  /** The folder chips above each analysis, however deep — empty for one filed
+   *  nowhere. Built once per render, never looked up per pass. */
+  const foldersAboveSession = new Map(sessions.map(s => [
+    s.id,
+    folderChain(tree, parentFolderOf(tree, { type: 'session', id: s.id })).map(f => folderChipKey(f.id)),
+  ]));
+  /** A chip naming an analysis or a folder deleted since is ignored rather than
+   *  left filtering the list from nowhere (see knownChips). */
+  const activeAnalyses = knownChips(pinnedAnalyses, key => {
+    const folderId = folderIdOfChip(key);
+    return folderId === null ? sessionIds.has(key) : !!tree.folders[folderId];
+  });
+  // Every folder holding an analysis, at any depth, plus any folder pinned — a
+  // pinned chip always shows. By path, so a sub-folder follows its parent.
+  const offeredFolders = new Set<string>();
+  for (const keys of foldersAboveSession.values()) for (const k of keys) offeredFolders.add(folderIdOfChip(k)!);
+  for (const k of activeAnalyses.keys()) { const id = folderIdOfChip(k); if (id !== null) offeredFolders.add(id); }
+  const folderIds = [...offeredFolders].sort((a, b) => folderPathOf(tree, a).localeCompare(folderPathOf(tree, b)));
+  const folderLabels = folderChipLabels(folderIds, id => tree.folders[id]?.name ?? id, id => folderPathOf(tree, id));
+  const folderItems = folderIds.map(folderChipKey);
+  const coveredAnalyses = coveredByFolders(
+    [...sessionIds, ...folderItems],
+    key => {
+      const id = folderIdOfChip(key);
+      return id === null
+        ? foldersAboveSession.get(key) ?? []
+        : folderChain(tree, id).slice(0, -1).map(f => folderChipKey(f.id));
+    },
+    activeAnalyses,
+  );
   const [openTuneId, setOpenTuneId] = useState<string | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -137,9 +176,9 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
 
   /** The three sections that read a value off each pass — which analysis it is
    *  in, its tune type, its key — and so filter passes rather than tunes. */
-  const facetAnalyses: PassFacet = { chips: activeAnalyses, or: analysesOr, valueOf: (_d, s) => s.id };
-  const facetDances: PassFacet = { chips: dances, or: true, valueOf: d => d.dance || undefined };
-  const facetModes: PassFacet = { chips: modes, or: true, valueOf: d => modeOf(d) };
+  const facetAnalyses: PassFacet = { chips: activeAnalyses, or: analysesOr, valuesOf: (_d, s) => [s.id, ...(foldersAboveSession.get(s.id) ?? [])] };
+  const facetDances: PassFacet = { chips: dances, or: true, valuesOf: d => (d.dance ? [d.dance] : []) };
+  const facetModes: PassFacet = { chips: modes, or: true, valuesOf: d => { const m = modeOf(d); return m ? [m] : []; } };
   const facets = [facetAnalyses, facetDances, facetModes];
   /** What the list is built from: only the passes those chips let through, so
    *  every count, date and heart below is one of THOSE. */
@@ -216,8 +255,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
     for (const s of rest) {
       for (const d of s.annotations) {
         if (!listed.has(d.tuneId)) continue;
-        const v = facet.valueOf(d, s);
-        if (v) out.add(v);
+        for (const v of facet.valuesOf(d, s)) out.add(v);
       }
     }
     return out;
@@ -403,9 +441,17 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
         <FilterSection
           labelKey="sessions.ranking.filterAnalyses"
           items={sessions.map(s => s.id)}
+          folderItems={folderItems}
+          covered={coveredAnalyses}
           activeMap={activeAnalyses}
-          labelOf={id => sessions.find(s => s.id === id)?.name ?? id}
-          titleOf={() => ''}
+          labelOf={id => {
+            const folderId = folderIdOfChip(id);
+            return folderId !== null ? folderLabels.get(folderId) ?? folderId : sessions.find(s => s.id === id)?.name ?? id;
+          }}
+          titleOf={id => {
+            const folderId = folderIdOfChip(id);
+            return folderId !== null ? folderPathOf(tree, folderId) : '';
+          }}
           available={availAnalyses}
           onToggle={(id, back) => onView({ analyses: cycleFilter(activeAnalyses, id, back) })}
           highlight={query}

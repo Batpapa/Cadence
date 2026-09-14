@@ -199,13 +199,16 @@ export function occurrencesOf(sessions: Analysis[], tuneId: string): TuneOccurre
     .map(({ at: _at, ...rest }) => rest);
 }
 
-/** One section of chips that reads a value off each PASS: the analysis it is
+/** One section of chips that reads values off each PASS: the analysis it is
  *  in, its tune type, its key. */
 export interface PassFacet {
   chips: ReadonlyMap<string, FilterState>;
   /** Several included chips: any of them (true), or all of them (false). */
   or: boolean;
-  valueOf: (d: Detection, session: Analysis) => string | undefined;
+  /** Every chip key the pass answers to. Usually one — a type, a key — but a
+   *  pass is in its analysis AND in every folder above that analysis, so the
+   *  analyses section hands back all of them. Empty when nothing is known. */
+  valuesOf: (d: Detection, session: Analysis) => readonly string[];
 }
 
 /** The same analyses holding only the passes the chips let through — new
@@ -220,15 +223,15 @@ export interface PassFacet {
  *  with nothing of their own to adjust. The analyses section follows the same
  *  rule, for the same reason: a tune pinned to one evening counts that evening.
  *
- *  A pass has one value per section, so "all of" cannot be asked of a pass
- *  (no pass is in D major AND G major). It is asked of the TUNE: the passes
- *  kept are the same as for "any of", and a tune stays only if, between them,
- *  its passes carry every value included. "D major and G major" is then the
- *  tunes heard in both, counted over those passes. */
+ *  "All of" is not asked of a pass: no pass is in D major AND G major. It is
+ *  asked of the TUNE. The passes kept are the same as for "any of", and a tune
+ *  stays only if, between them, its passes carry every value included. "D major
+ *  and G major" is then the tunes heard in both, counted over those passes —
+ *  and "Winter and Summer", two folders, the tunes heard in both seasons. */
 export function filterByFacets(sessions: Analysis[], facets: readonly PassFacet[]): Analysis[] {
   const kept = sessions.map(s => ({
     ...s,
-    annotations: (s.annotations ?? []).filter(d => facets.every(f => passesChips(f.valueOf(d, s), f.chips))),
+    annotations: (s.annotations ?? []).filter(d => facets.every(f => passesChips(f.valuesOf(d, s), f.chips))),
   }));
 
   // One included chip reads the same either way; only two or more can differ.
@@ -243,8 +246,7 @@ export function filterByFacets(sessions: Analysis[], facets: readonly PassFacet[
       let sets = carried.get(d.tuneId);
       if (!sets) { sets = strict.map(() => new Set<string>()); carried.set(d.tuneId, sets); }
       strict.forEach(({ facet }, i) => {
-        const v = facet.valueOf(d, s);
-        if (v !== undefined) sets[i]!.add(v);
+        for (const v of facet.valuesOf(d, s)) sets[i]!.add(v);
       });
     }
   }
@@ -255,19 +257,22 @@ export function filterByFacets(sessions: Analysis[], facets: readonly PassFacet[
   return kept.map(s => ({ ...s, annotations: s.annotations.filter(d => hasAll(d.tuneId)) }));
 }
 
-/** Whether one pass's value gets through a section of chips, on its own.
+/** Whether one pass gets through a section of chips, on its own.
  *
- *  An excluded chip removes what it names; once any chip is included, only
- *  what those name gets through — "all of" is the tune's business, see
- *  filterByFacets. A value nobody knows — the key of a pass on a device without
- *  the recognition index — matches no chip at all: it survives an exclusion
- *  and fails an inclusion, since nothing says it is, or is not, what was asked
- *  for. */
-export function passesChips(value: string | undefined, chips: ReadonlyMap<string, FilterState>): boolean {
+ *  An excluded chip removes every pass that answers to it — whatever else that
+ *  pass also answers to, so a folder included with one evening in it excluded
+ *  is that folder without that evening. Once any chip is included, a pass has
+ *  to answer to at least one of them; "all of" is the tune's business, see
+ *  filterByFacets. A pass with no value — its key, on a device without the
+ *  recognition index — matches no chip at all: it survives an exclusion and
+ *  fails an inclusion, since nothing says it is, or is not, what was asked for. */
+export function passesChips(values: readonly string[], chips: ReadonlyMap<string, FilterState>): boolean {
   let anyInclude = false;
+  let included = false;
   for (const [key, state] of chips) {
-    if (state === 'include') anyInclude = true;
-    else if (value === key) return false;
+    const carried = values.includes(key);
+    if (state === 'include') { anyInclude = true; included ||= carried; }
+    else if (carried) return false;
   }
-  return !anyInclude || (value !== undefined && chips.get(value) === 'include');
+  return !anyInclude || included;
 }

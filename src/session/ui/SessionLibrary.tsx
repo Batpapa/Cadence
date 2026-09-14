@@ -68,6 +68,11 @@ interface SessionLibraryProps {
 
 export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes }: SessionLibraryProps) {
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
+  /** Whether `allSessions` has been read at least once. The tunes tab waits for
+   *  it: its chips ignore any analysis they cannot find, and before the first
+   *  read that is every one of them — the sections would open collapsed, as if
+   *  the route had carried no filter at all. */
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [query, setQuery] = useState(initialSearch ?? '');
   const [dragOver, setDragOver] = useState(false);
   /** Which way the same material is being read: by evening, or by tune. */
@@ -109,7 +114,10 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
   const reloadSessions = () => { void listSessions().then(setAllSessions); };
 
   useEffect(() => {
-    void recoverOrphanedSessions(activeLive.value?.sessionId).then(() => listSessions()).then(setAllSessions);
+    void recoverOrphanedSessions(activeLive.value?.sessionId).then(() => listSessions()).then(list => {
+      setAllSessions(list);
+      setSessionsLoaded(true);
+    });
     // eslint-disable-next-line
   }, []);
 
@@ -275,7 +283,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
         onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
       />
 
-      {tab === 'tunes' && <div class="mt-3"><TuneRankingPanel sessions={allSessions} query={q} view={tuneView} onView={(patch) => setTuneView(v => ({ ...v, ...patch }))} /></div>}
+      {tab === 'tunes' && sessionsLoaded && <div class="mt-3"><TuneRankingPanel sessions={allSessions} query={q} view={tuneView} onView={(patch) => setTuneView(v => ({ ...v, ...patch }))} /></div>}
 
       {tab === 'sessions' && (
         <AnalysisBrowser
