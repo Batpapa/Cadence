@@ -16,7 +16,8 @@ import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields 
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { showShareSessionModal } from './ShareSessionModal';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
-import { exportSessionMp3 } from '../audio/clipExtract';
+import { detectAudioFile } from '../audio/clipExtract';
+import { audioExtension } from '../../services/zip';
 import {
   fmtLongTime, TitleRow, DateRow,
   BoundControls, ClipControls,
@@ -177,8 +178,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  modal explaining it is dismissed in a second, and without this the button
    *  would go back to looking like nothing had been attempted. */
   const [syncFailed, setSyncFailed] = useState(false);
-  /** Conversion progress 0-1 while a download is being prepared, null when idle. */
-  const [exporting, setExporting] = useState<number | null>(null);
+  /** True while the recording is being read out of the local database. */
+  const [downloading, setDownloading] = useState(false);
   // Read once per render, not stored: connecting or disconnecting Drive
   // re-renders this screen through the state it changes.
   const driveOn = isDriveConnected();
@@ -632,26 +633,26 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // recording is what the downloaded file is called.
   const safeName = session.name.replace(/[^\w-]+/g, '_');
 
-  /** Hands the recording over as MP3, converting on the way out.
+  /** Hands the stored recording over exactly as it is (2026-09-14).
    *
-   *  Falls back to the stored file on any failure — an unsupported browser, an
-   *  exotic container, a decode error. Someone who asked for their recording
-   *  should get their recording; the format is the nicety. */
+   *  It used to be converted to MP3 on the way out, for players that cannot open
+   *  a webm. Measured, that conversion ran at about 5× realtime in the browser —
+   *  a quarter of an hour for an hour of session, and a phone that froze on a
+   *  long one — while the file itself is ready at once. The original won.
+   *
+   *  The extension comes from the recorded type. Only a file that type says
+   *  nothing about (an import the browser could not type) is identified from its
+   *  content. It used to be the type's subtype verbatim, which named an MP3
+   *  `.mpeg` and an untyped import `.octet-stream`. */
   const downloadAudio = () => {
-    if (exporting !== null) return;
-    setExporting(0);
+    if (downloading) return;
+    setDownloading(true);
     void loadSessionAudio(session.id)
       .then(async blob => {
         if (!blob) return;
-        let out = blob;
-        let ext = (session.mimeType.split('/')[1] || 'webm').split(';')[0]!;
-        try {
-          out = await exportSessionMp3(blob, session.duration, r => setExporting(r));
-          ext = 'mp3';
-        } catch (e) {
-          console.warn('[sessions] MP3 conversion unavailable — handing over the original recording:', e);
-        }
-        const url = URL.createObjectURL(out);
+        let ext = audioExtension(blob.type || session.mimeType);
+        if (ext === 'bin') ext = (await detectAudioFile(blob))?.extension ?? ext;
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `${safeName}.${ext}`;
@@ -660,7 +661,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         // away can cancel the download on some of them.
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       })
-      .finally(() => setExporting(null));
+      .finally(() => setDownloading(false));
   };
 
   return (
@@ -698,20 +699,16 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       <div class="relative">
         {audioUrl && (
           <div class="absolute top-3 right-0 z-20 h-7 flex items-center gap-3">
-            {/* A button, not a link to the stored blob: the recording is
-                webm/opus and a downloaded webm plays in far fewer places than an
-                MP3 (see exportSessionMp3). The percentage replaces the icon
-                while converting — two hours takes a while, and a control that
-                looked idle would be pressed again. */}
+            {/* A button, not a link to the stored blob: the file is only read
+                out of the local database on demand, which is also where its
+                extension gets settled (see downloadAudio). */}
             <button
-              class={`text-dim hover:text-accent transition-colors shrink-0 flex items-center tabular-nums text-[11px] ${exporting === null ? 'cursor-pointer' : ''}`}
+              class={`text-dim hover:text-accent transition-colors shrink-0 flex items-center ${downloading ? '' : 'cursor-pointer'}`}
               title={t('sessions.downloadAudio')}
-              disabled={exporting !== null}
+              disabled={downloading}
               onClick={downloadAudio}
             >
-              {exporting === null
-                ? <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />
-                : `${Math.round(exporting * 100)}%`}
+              <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />
             </button>
             {driveOn && <AudioSyncBtn state={audioSyncState} onClick={toggleSync} />}
             <button

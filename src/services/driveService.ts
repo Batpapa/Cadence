@@ -20,7 +20,9 @@ export type ConnectResult =
   | { action: 'wrong_account'; existingEmail: string; newEmail: string }
   // Another local user on this device already syncs with this same Google
   // account — both would bind to the same Drive file and overwrite each other.
-  | { action: 'shared_account'; email: string };
+  // `userId` is that other local user: the welcome screen's Drive recovery
+  // opens it rather than creating a second user bound to the same file.
+  | { action: 'shared_account'; email: string; userId: string };
 
 const FILE_NAME     = 'cadence-data.json';
 const SCOPE         = 'https://www.googleapis.com/auth/drive.file';
@@ -246,6 +248,9 @@ export function isDriveFeatureEnabled(): boolean { return Boolean(GOOGLE_CLIENT_
 export function isDriveConnected(): boolean      { return !!localStorage.getItem(lsFileId()); }
 export function getDriveStatus(): DriveStatus    { return _state.status; }
 export function getLocalTimestamp(): number      { return parseInt(localStorage.getItem(lsLocalTs()) ?? '0'); }
+/** The Google account the current user is connected with, as recorded at
+ *  connect time — empty when unknown (the userinfo call is best-effort). */
+export function getDriveAccountEmail(): string   { return localStorage.getItem(lsHint()) ?? ''; }
 
 /** Chat apps' built-in browsers (WhatsApp, Instagram, Messenger, Line…) are
  *  known to block Google's OAuth consent screen — it shows as a blank/white
@@ -544,8 +549,11 @@ export async function connectDrive(allowSharedAccount = false): Promise<ConnectR
         const uid = key.slice(ownerPrefix.length);
         if (uid === _state.userId) continue;
         if (localStorage.getItem(key) === googleId && localStorage.getItem(lsConnected(uid)) === '1') {
+          // The token just obtained does belong to that account; saying so keeps
+          // initDriveForUser from discarding it if that other user is opened next.
+          localStorage.setItem(LS_TOKEN_OWNER, googleId);
           setStatus('disconnected');
-          return { action: 'shared_account', email };
+          return { action: 'shared_account', email, userId: uid };
         }
       }
     }

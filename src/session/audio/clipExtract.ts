@@ -1,192 +1,18 @@
-import { Mp3Encoder } from '@breezystack/lamejs';
+import type { InputFormat, OutputFormat } from 'mediabunny';
 
-// ── Clip extraction: session audio slice → standalone MP3 ────────────────────
-// Decodes ONLY the [start, end] slice of the session audio, and encodes it to
-// MP3 (mono, 128 kbps). MP3 keeps card attachments small enough for the Drive
-// sync, which re-uploads the whole user state on every change (~1 MB per
-// minute of clip vs ~16 MB in WAV).
+// ── Clip extraction: a slice of the session audio, copied packet for packet ──
+// Nothing is decoded and nothing is re-encoded (2026-09-14). The encoded packets
+// of the slice are copied into a new file of the SAME container as the recording
+// — a webm stays a webm, an m4a stays an m4a — by mediabunny's Conversion with
+// copying forced.
+//
+// It replaced a decode followed by an MP3 encode in JavaScript (lamejs), which
+// was the whole cost: on 300 s of a real recording, reading and decoding took
+// 1.8 s and encoding 44 s. Copying is near-instant, keeps the original quality,
+// and a clip weighs no more than the stretch of recording it came from — which
+// matters, since attachments travel inside the synced state.
 
-const CLIP_SAMPLE_RATE = 44100;
-const CLIP_KBPS = 128;
-/** lamejs wants multiples of 576 samples; 1152 frames × 32 ≈ 0.8 s per batch. */
-const ENCODE_BATCH = 1152 * 32;
-
-/** Room before `start` so a codec needing a few priming frames (AAC/Opus
- *  decoder delay) has real preceding audio to warm up from — trimmed back
- *  out to the exact requested range afterward using each decoded AudioData's
- *  own timestamp, so it never leaks into the extracted clip. */
-const PRE_ROLL_S = 1;
-
-/** Reported progress is split into a decode phase [0, DECODE_PHASE_RATIO)
- *  and an encode phase [DECODE_PHASE_RATIO, 1] — see extractClipMp3. */
-const DECODE_PHASE_RATIO = 0.5;
-
-type RangeDecodeResult = { pcm: Float32Array; sampleRate: number } | null;
-
-async function decodeRangeWork(
-  demuxer: InstanceType<typeof import('web-demuxer').WebDemuxer>,
-  file: File, start: number, end: number,
-  onProgress?: (ratio: number) => void,
-): Promise<RangeDecodeResult> {
-  await demuxer.load(file);
-
-  const config = await demuxer.getDecoderConfig('audio');
-  const support = await AudioDecoder.isConfigSupported(config);
-  if (!support.supported) return null;
-
-  const chunks: { timestampS: number; mono: Float32Array }[] = [];
-  let nativeSampleRate = config.sampleRate;
-  let decodeError: unknown = null;
-
-  const decoder = new AudioDecoder({
-    output: (audioData) => {
-      nativeSampleRate = audioData.sampleRate;
-      const frames = audioData.numberOfFrames;
-      const channels = audioData.numberOfChannels;
-      const mono = new Float32Array(frames);
-      const tmp = new Float32Array(frames);
-      for (let ch = 0; ch < channels; ch++) {
-        audioData.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
-        for (let i = 0; i < frames; i++) mono[i]! += tmp[i]! / channels;
-      }
-      chunks.push({ timestampS: audioData.timestamp / 1e6, mono });
-      audioData.close();
-    },
-    error: (e) => { decodeError = e; },
-  });
-  decoder.configure(config);
-
-  const readStart = Math.max(0, start - PRE_ROLL_S);
-  const totalSpanS = Math.max(end - readStart, 1e-6);
-  // Reading + decoding each packet is the slow part in practice (confirmed
-  // on mobile: real time, not instant even for the streamed path) — report
-  // progress off each packet's own container timestamp as it's read, rather
-  // than only once the whole range has been pulled in. Throttled by time,
-  // not by packet count, since packet duration/count varies a lot by codec.
-  let lastTickAt = 0;
-  const stream = demuxer.read('audio', readStart, end);
-  const reader = stream.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (decodeError) throw decodeError;
-      if (done) break;
-      decoder.decode(value);
-      if (onProgress) {
-        const now = Date.now();
-        if (now - lastTickAt >= 100) {
-          lastTickAt = now;
-          const packetTsS = value.timestamp / 1e6;
-          onProgress(Math.max(0, Math.min(1, (packetTsS - readStart) / totalSpanS)));
-        }
-      }
-    }
-    await decoder.flush();
-    if (decodeError) throw decodeError;
-  } finally {
-    reader.releaseLock();
-  }
-  decoder.close();
-
-  if (chunks.length === 0) return null;
-  chunks.sort((a, b) => a.timestampS - b.timestampS);
-
-  const firstTs = chunks[0]!.timestampS;
-  const totalFrames = chunks.reduce((sum, c) => sum + c.mono.length, 0);
-  const merged = new Float32Array(totalFrames);
-  let off = 0;
-  for (const c of chunks) { merged.set(c.mono, off); off += c.mono.length; }
-
-  const trimStart = Math.max(0, Math.round((start - firstTs) * nativeSampleRate));
-  const trimEnd = Math.min(merged.length, Math.round((end - firstTs) * nativeSampleRate));
-  if (trimEnd <= trimStart) return null;
-
-  return { pcm: merged.slice(trimStart, trimEnd), sampleRate: nativeSampleRate };
-}
-
-/** Attempts to decode ONLY the [start, end] slice of `file` via web-demuxer +
- *  WebCodecs AudioDecoder — memory and decode time scale with the CLIP
- *  length, not the whole session's duration. Decoding the full session
- *  (previously done via a single decodeAudioData(wholeFile) call) could
- *  visibly freeze the UI for a long recording, just to pull a few seconds
- *  out of it — same reasoning streamingFileSource.ts already applies to the
- *  live/import analysis path. Returns null on any unsupported browser/codec/
- *  failure (confirmed real-world case: web-demuxer's WASM demuxer rejecting
- *  outright with "get_av_stream failed" on a re-muxed YouTube-sourced MP3 —
- *  a clean rejection, not a hang, so plain try/catch is enough here) so the
- *  caller falls back to the old whole-file decode unconditionally — never a
- *  regression for a case that worked before. */
-async function tryDecodeRangeViaWebCodecs(
-  file: File, start: number, end: number, onProgress?: (ratio: number) => void,
-): Promise<RangeDecodeResult> {
-  if (typeof AudioDecoder === 'undefined') return null;
-
-  // Lazy — web-demuxer must never sit in the main bundle for everyone who
-  // never opens a session (same reason streamingFileSource.ts is always
-  // dynamically imported everywhere else it's used).
-  let webDemuxerMod;
-  try {
-    webDemuxerMod = await import('web-demuxer');
-  } catch {
-    return null;
-  }
-  const { WEB_DEMUXER_WASM_URL } = await import('./streamingFileSource');
-  const demuxer = new webDemuxerMod.WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
-
-  try {
-    return await decodeRangeWork(demuxer, file, start, end, onProgress);
-  } catch {
-    return null;
-  } finally {
-    demuxer.destroy();
-  }
-}
-
-/** decodeAudioData() has no native progress API — ticks a fake, asymptotically
- *  slowing progress toward `ceiling` while it's in flight, so the fallback
- *  decode below (the one case that can genuinely take a while — see
- *  decodeRangeViaFullDecode) shows the user something moving instead of a
- *  stuck percentage that looks frozen. Snaps to `ceiling` the moment the real
- *  work resolves; never claims to be exact since there's nothing to measure
- *  it against. */
-async function withCreepingProgress<T>(work: Promise<T>, onTick: (ratio: number) => void, ceiling: number): Promise<T> {
-  let ratio = 0;
-  onTick(ratio);
-  const timer = setInterval(() => {
-    ratio += (ceiling - ratio) * 0.1;
-    onTick(ratio);
-  }, 250);
-  try {
-    return await work;
-  } finally {
-    clearInterval(timer);
-  }
-}
-
-/** Fallback: decode the WHOLE session file, then slice out [start, end] —
- *  slow for a long recording, but always correct. Only reached when
- *  tryDecodeRangeViaWebCodecs() can't (older browser, unsupported codec, or
- *  any decode failure). */
-async function decodeRangeViaFullDecode(
-  sessionAudio: Blob, start: number, end: number, onProgress?: (ratio: number) => void,
-): Promise<Float32Array> {
-  const arrayBuf = await sessionAudio.arrayBuffer();
-  const ctx = new OfflineAudioContext(1, 1, CLIP_SAMPLE_RATE);
-  const decoded = onProgress
-    ? await withCreepingProgress(ctx.decodeAudioData(arrayBuf), onProgress, 0.95)
-    : await ctx.decodeAudioData(arrayBuf);
-
-  const from = Math.max(0, Math.floor(start * CLIP_SAMPLE_RATE));
-  const to = Math.min(decoded.length, Math.ceil(end * CLIP_SAMPLE_RATE));
-  if (to <= from) throw new Error('empty clip range');
-
-  const mono = new Float32Array(to - from);
-  for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
-    const data = decoded.getChannelData(ch);
-    for (let i = 0; i < mono.length; i++) mono[i]! += data[from + i]! / decoded.numberOfChannels;
-  }
-  return mono;
-}
+type Mediabunny = typeof import('mediabunny');
 
 /** Seconds of slack added on each side of a detection before cutting.
  *
@@ -197,195 +23,116 @@ async function decodeRangeViaFullDecode(
  *  detection want but leaves a clip starting exactly on the first note — and
  *  the estimate is unbiased, so it is late as often as early. This restores
  *  deliberately what the old imprecision gave by accident. Clamped to the
- *  recording by the range checks below, so the edges of a session are safe. */
+ *  recording below, so the edges of a session are safe. */
 const CLIP_PAD_S = 3;
 
-export async function extractClipMp3(
+/** How an audio file of a given container is labelled and written back out. */
+interface Container {
+  /** Always an audio/* type, never the container's generic one: attachments are
+   *  routed by mime type, and a clip labelled video/webm would open as a video. */
+  mimeType: string;
+  extension: string;
+  makeFormat: () => OutputFormat;
+}
+
+function containerOf(mb: Mediabunny, format: InputFormat): Container | null {
+  if (format === mb.WEBM)     return { mimeType: 'audio/webm', extension: 'webm', makeFormat: () => new mb.WebMOutputFormat() };
+  if (format === mb.MATROSKA) return { mimeType: 'audio/x-matroska', extension: 'mka', makeFormat: () => new mb.MkvOutputFormat() };
+  // An audio-only MP4 is what everyone calls an .m4a. A QuickTime file's
+  // packets go into the same container, the one every player knows.
+  if (format === mb.MP4 || format === mb.QTFF) return { mimeType: 'audio/mp4', extension: 'm4a', makeFormat: () => new mb.Mp4OutputFormat() };
+  if (format === mb.MP3)  return { mimeType: 'audio/mpeg', extension: 'mp3', makeFormat: () => new mb.Mp3OutputFormat() };
+  if (format === mb.OGG)  return { mimeType: 'audio/ogg', extension: 'ogg', makeFormat: () => new mb.OggOutputFormat() };
+  if (format === mb.WAVE) return { mimeType: 'audio/wav', extension: 'wav', makeFormat: () => new mb.WavOutputFormat() };
+  if (format === mb.FLAC) return { mimeType: 'audio/flac', extension: 'flac', makeFormat: () => new mb.FlacOutputFormat() };
+  if (format === mb.ADTS) return { mimeType: 'audio/aac', extension: 'aac', makeFormat: () => new mb.AdtsOutputFormat() };
+  return null;
+}
+
+async function openInput(audio: Blob) {
+  // Lazy: mediabunny has no business in the main bundle for everyone who never
+  // cuts a clip.
+  const mb = await import('mediabunny');
+  const input = new mb.Input({
+    source: new mb.BlobSource(audio),
+    // Named rather than ALL_FORMATS, so the bundle only carries the demuxers of
+    // formats a clip can also be written back out to (see containerOf).
+    formats: [mb.WEBM, mb.MATROSKA, mb.MP4, mb.QTFF, mb.MP3, mb.OGG, mb.WAVE, mb.FLAC, mb.ADTS],
+  });
+  return { mb, input };
+}
+
+/** What an audio file really is, read from its content — for when its declared
+ *  type says nothing (an import the browser could not type). Null when the
+ *  content is not a format read here. */
+export async function detectAudioFile(audio: Blob): Promise<{ mimeType: string; extension: string } | null> {
+  try {
+    const { mb, input } = await openInput(audio);
+    try {
+      const container = containerOf(mb, await input.getFormat());
+      return container && { mimeType: container.mimeType, extension: container.extension };
+    } finally {
+      input.dispose();
+    }
+  } catch {
+    return null;
+  }
+}
+
+export interface ExtractedClip {
+  blob: Blob;
+  /** Without the dot — the container's, so the file name tells the truth. */
+  extension: string;
+}
+
+/** Cuts [start, end] (plus CLIP_PAD_S on each side) out of the session audio.
+ *
+ *  Throws when the recording's format is not one read here, or when its audio
+ *  cannot be copied as-is: there is deliberately no encoder to fall back on. */
+export async function extractClip(
   sessionAudio: Blob,
   start: number,
   end: number,
   onProgress?: (ratio: number) => void,
-): Promise<Blob> {
-  start = Math.max(0, start - CLIP_PAD_S);
-  end = end + CLIP_PAD_S;
-  const file = new File([sessionAudio], 'session-audio', { type: sessionAudio.type });
-  const streamed = await tryDecodeRangeViaWebCodecs(
-    file, start, end,
-    onProgress && (ratio => onProgress(ratio * DECODE_PHASE_RATIO)),
-  );
-
-  let mono: Float32Array;
-  if (streamed) {
-    onProgress?.(DECODE_PHASE_RATIO); // in case the loop's last throttled tick landed short of it
-    if (streamed.sampleRate === CLIP_SAMPLE_RATE) {
-      mono = streamed.pcm;
-    } else {
-      const { resamplePcm } = await import('./streamingFileSource');
-      mono = await resamplePcm(streamed.pcm as Float32Array<ArrayBuffer>, streamed.sampleRate, CLIP_SAMPLE_RATE);
-    }
-  } else {
-    mono = await decodeRangeViaFullDecode(
-      sessionAudio, start, end,
-      onProgress && (ratio => onProgress(ratio * DECODE_PHASE_RATIO)),
-    );
-  }
-
-  if (mono.length === 0) throw new Error('empty clip range');
-
-  // Float32 → Int16, then encode in batches, yielding to keep the UI alive
-  // (lamejs is pure JS, ~5-15× realtime).
-  const encoder = new Mp3Encoder(1, CLIP_SAMPLE_RATE, CLIP_KBPS);
-  const parts: Uint8Array[] = [];
-  const int16 = new Int16Array(ENCODE_BATCH);
-
-  for (let off = 0; off < mono.length; off += ENCODE_BATCH) {
-    const n = Math.min(ENCODE_BATCH, mono.length - off);
-    for (let i = 0; i < n; i++) {
-      const v = Math.max(-1, Math.min(1, mono[off + i]!));
-      int16[i] = v < 0 ? v * 32768 : v * 32767;
-    }
-    const chunk = encoder.encodeBuffer(n === ENCODE_BATCH ? int16 : int16.subarray(0, n));
-    if (chunk.length > 0) parts.push(new Uint8Array(chunk));
-    const encodeRatio = Math.min(1, (off + n) / mono.length);
-    onProgress?.(DECODE_PHASE_RATIO + encodeRatio * (1 - DECODE_PHASE_RATIO));
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-  const tail = encoder.flush();
-  if (tail.length > 0) parts.push(new Uint8Array(tail));
-
-  return new Blob(parts as BlobPart[], { type: 'audio/mpeg' });
-}
-
-// ── Whole-session export: recording → MP3 ────────────────────────────────────
-// The session file itself is webm/opus (audio/recorder.ts), which is the right
-// thing to STORE — Opus beats MP3 at equal bitrate, and re-encoding to MP3 would
-// make it bigger, not smaller. What MP3 buys is playing anywhere: a downloaded
-// webm does not open in Windows Media Player, in a car, or on an older phone,
-// and someone exporting thirty recordings will meet all three. So the conversion
-// happens on the way OUT and nowhere else.
-//
-// Streamed packet by packet, never assembled. extractClipMp3 above can hold a
-// whole clip's PCM because a clip is a couple of minutes; two hours of mono
-// Float32 is 1.3 GB, so here each decoded packet is down-mixed, encoded, and
-// dropped. Peak memory is the MP3 being built, ~115 MB for two hours.
-
-/** Encoded at the recording's own sample rate rather than resampled to 44.1 kHz:
- *  MP3 supports 48 kHz natively, and resampling two hours would cost time and a
- *  generation of quality for nothing. */
-const EXPORT_KBPS = 128;
-
-/** Converts a whole session recording to MP3.
- *
- *  `durationS` only drives the progress ratio — the container's own duration is
- *  unreliable for a MediaRecorder webm (that is why recorder.ts repairs it), so
- *  the caller passes the duration the session itself records.
- *
- *  Throws if WebCodecs cannot handle this file. Callers should fall back to
- *  handing over the original recording: an unconverted download is a far better
- *  outcome than no download. */
-export async function exportSessionMp3(
-  sessionAudio: Blob,
-  durationS: number,
-  onProgress?: (ratio: number) => void,
-): Promise<Blob> {
-  if (typeof AudioDecoder === 'undefined') throw new Error('webcodecs_unavailable');
-
-  const file = new File([sessionAudio], 'session-audio', { type: sessionAudio.type });
-  // Lazy for the same reason as tryDecodeRangeViaWebCodecs: web-demuxer must
-  // not sit in the main bundle for everyone who never exports a recording.
-  const webDemuxerMod = await import('web-demuxer');
-  const { WEB_DEMUXER_WASM_URL } = await import('./streamingFileSource');
-  const demuxer = new webDemuxerMod.WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
-
+): Promise<ExtractedClip> {
+  const { mb, input } = await openInput(sessionAudio);
   try {
-    await demuxer.load(file);
-    const config = await demuxer.getDecoderConfig('audio');
-    if (!(await AudioDecoder.isConfigSupported(config)).supported) throw new Error('codec_unsupported');
+    const container = containerOf(mb, await input.getFormat());
+    if (!container) throw new Error('clip_format_unsupported');
 
-    // Built from the container's declared rate, before anything is decoded, so
-    // there is exactly one encoder for the whole file. MP3 handles 48 kHz
-    // natively, which is what a MediaRecorder webm carries.
-    const encoder = new Mp3Encoder(1, config.sampleRate, EXPORT_KBPS);
-    const parts: Uint8Array[] = [];
-    const pending: Float32Array[] = [];
-    let decodeError: unknown = null;
-    let decodedAnything = false;
+    const from = Math.max(0, start - CLIP_PAD_S);
+    const to = Math.min(end + CLIP_PAD_S, await input.computeDuration());
+    if (to <= from) throw new Error('empty clip range');
 
-    const decoder = new AudioDecoder({
-      output: (audioData) => {
-        // The declared rate and the decoded rate disagreeing would make the MP3
-        // play at the wrong speed — a silent, total corruption. Bail instead,
-        // and let the caller hand over the original recording untouched.
-        if (audioData.sampleRate !== config.sampleRate) {
-          decodeError ??= new Error('sample_rate_mismatch');
-          audioData.close();
-          return;
-        }
-        decodedAnything = true;
-        const frames = audioData.numberOfFrames;
-        const channels = audioData.numberOfChannels;
-        const mono = new Float32Array(frames);
-        const tmp = new Float32Array(frames);
-        for (let ch = 0; ch < channels; ch++) {
-          audioData.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
-          for (let i = 0; i < frames; i++) mono[i]! += tmp[i]! / channels;
-        }
-        pending.push(mono);
-        audioData.close();
+    const target = new mb.BufferTarget();
+    const output = new mb.Output({ format: container.makeFormat(), target });
+    const conversion = await mb.Conversion.init({
+      input,
+      output,
+      // An imported video carries a picture track; a clip is for listening.
+      video: { discard: true },
+      trim: { start: from, end: to },
+      copy: {
+        // Never re-encode: a track that cannot be copied fails the clip rather
+        // than being silently transcoded.
+        mode: 'forced',
+        // Whole packets around each bound instead of a cut inside one — a few
+        // tens of milliseconds, next to the seconds of padding.
+        boundaryPolicy: 'expand',
+        // Timestamps may be shifted as copying requires: a clip is a file of its
+        // own, nothing expects its timeline to line up with the recording's.
+        shiftTolerance: Infinity,
       },
-      error: (e) => { decodeError = e; },
+      showWarnings: false,
     });
-    decoder.configure(config);
-
-    /** Encodes and releases everything decoded so far. Called from the read
-     *  loop rather than from the decoder callback so the encoding — pure JS,
-     *  the slow half — happens where it can be interleaved with yields. */
-    const drain = () => {
-      while (pending.length) {
-        const mono = pending.shift()!;
-        const int16 = new Int16Array(mono.length);
-        for (let i = 0; i < mono.length; i++) {
-          const v = Math.max(-1, Math.min(1, mono[i]!));
-          int16[i] = v < 0 ? v * 32768 : v * 32767;
-        }
-        const chunk = encoder.encodeBuffer(int16);
-        if (chunk.length > 0) parts.push(new Uint8Array(chunk));
-      }
-    };
-
-    const stream = demuxer.read('audio', 0, Math.max(durationS, 1) + 1);
-    const reader = stream.getReader();
-    let lastTickAt = 0;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (decodeError) throw decodeError;
-        if (done) break;
-        decoder.decode(value);
-        drain();
-        // Throttled by time, not packet count: packet duration varies a lot by
-        // codec, and this is also where the main thread gets to breathe.
-        const now = Date.now();
-        if (now - lastTickAt >= 100) {
-          lastTickAt = now;
-          onProgress?.(Math.max(0, Math.min(1, (value.timestamp / 1e6) / Math.max(durationS, 1e-6))));
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
-      }
-      await decoder.flush();
-      if (decodeError) throw decodeError;
-      drain();
-    } finally {
-      reader.releaseLock();
+    if (!conversion.isValid) {
+      throw new Error('clip_cannot_copy: ' + conversion.discardedTracks.map(d => d.reason).join(', '));
     }
-    decoder.close();
-
-    if (!decodedAnything) throw new Error('no_audio_decoded');
-    const tail = encoder.flush();
-    if (tail.length > 0) parts.push(new Uint8Array(tail));
-    onProgress?.(1);
-    return new Blob(parts as BlobPart[], { type: 'audio/mpeg' });
+    if (onProgress) conversion.onProgress = ratio => onProgress(ratio);
+    await conversion.execute();
+    if (!target.buffer) throw new Error('clip_empty');
+    return { blob: new Blob([target.buffer], { type: container.mimeType }), extension: container.extension };
   } finally {
-    demuxer.destroy();
+    input.dispose();
   }
 }

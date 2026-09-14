@@ -9,8 +9,9 @@ import { ModalHost } from './components/modal';
 import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
-import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon } from './components/icons';
+import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon, CloudDownIcon } from './components/icons';
 import { t } from './services/i18nService';
+import { initDriveClient } from './services/driveService';
 import type { User } from './types';
 import { FolderView } from './views/folder';
 import { DeckView } from './views/deck';
@@ -246,14 +247,30 @@ const IRISH_FEATURES = [
   { key: 'welcome.irish.4', Icon: TrendIcon },
 ] as const;
 
-function UserSelector({ users, onSelect, onCreate }: {
+/** How the welcome screen's Drive recovery ended (see main.ts). Only 'empty'
+ *  hands control back: a Google account with no Cadence data on it, where the
+ *  connection is kept only if a name is given for a new user. */
+export type DriveRecovery =
+  | { kind: 'opened' }
+  | { kind: 'cancelled' }
+  | { kind: 'failed'; inAppBrowser: boolean }
+  | { kind: 'empty'; email: string; finish: (name: string) => Promise<void>; cancel: () => void };
+
+type EmptyDrive = Extract<DriveRecovery, { kind: 'empty' }>;
+
+function UserSelector({ users, onSelect, onCreate, onRecover }: {
   users: User[];
   onSelect: (id: string) => Promise<void>;
   onCreate: (name: string) => Promise<void>;
+  /** null when Drive sync is not configured in this build. */
+  onRecover: (() => Promise<DriveRecovery>) | null;
 }) {
   const [loading,  setLoading]  = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState('');
+  // Set while the name being typed is for a user bound to an empty Drive.
+  const [emptyDrive, setEmptyDrive] = useState<EmptyDrive | null>(null);
+  const [recoverError, setRecoverError] = useState<'failed' | 'inAppBrowser' | null>(null);
   // Deliberately not persisted: it reopens closed on every visit.
   const [irishOpen, setIrishOpen] = useState(false);
 
@@ -266,7 +283,29 @@ function UserSelector({ users, onSelect, onCreate }: {
     const name = newName.trim();
     if (!name) return;
     setLoading('new');
-    await onCreate(name);
+    if (emptyDrive) await emptyDrive.finish(name);
+    else await onCreate(name);
+  };
+
+  const cancelCreate = () => {
+    emptyDrive?.cancel();
+    setEmptyDrive(null);
+    setCreating(false);
+    setNewName('');
+  };
+
+  const recover = async () => {
+    if (!onRecover) return;
+    setRecoverError(null);
+    setLoading('drive');
+    const outcome = await onRecover();
+    if (outcome.kind === 'opened') return;
+    setLoading(null);
+    if (outcome.kind === 'failed') setRecoverError(outcome.inAppBrowser ? 'inAppBrowser' : 'failed');
+    if (outcome.kind === 'empty') {
+      setEmptyDrive(outcome);
+      setCreating(true);
+    }
   };
 
   // No way to REMOVE a user from here any more (2026-09-13). The ✕ it used to
@@ -317,37 +356,78 @@ function UserSelector({ users, onSelect, onCreate }: {
             ))}
 
             {creating ? (
-              <div class="flex gap-2 pt-1">
-                <input
-                  autoFocus
-                  type="text"
-                  value={newName}
-                  placeholder={t('userSelector.namePlaceholder')}
-                  class="input flex-1 text-sm"
-                  onInput={(e) => setNewName((e.target as HTMLInputElement).value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter')  void create();
-                    if (e.key === 'Escape') { setCreating(false); setNewName(''); }
-                  }}
-                />
-                <button
-                  class="btn-primary text-sm px-3"
-                  disabled={!!loading || !newName.trim()}
-                  onClick={() => void create()}
-                >
-                  {t('common.confirm')}
-                </button>
+              <div class="flex flex-col gap-2 pt-1">
+                {emptyDrive && (
+                  <p class="text-xs text-muted leading-relaxed text-pretty">
+                    {t('userSelector.recover.empty', { account: emptyDrive.email || t('userSelector.recover.thisAccount') })}
+                  </p>
+                )}
+                <div class="flex gap-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={newName}
+                    placeholder={t('userSelector.namePlaceholder')}
+                    class="input flex-1 text-sm"
+                    onInput={(e) => setNewName((e.target as HTMLInputElement).value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter')  void create();
+                      if (e.key === 'Escape') cancelCreate();
+                    }}
+                  />
+                  <button
+                    class="btn-primary text-sm px-3"
+                    disabled={!!loading || !newName.trim()}
+                    onClick={() => void create()}
+                  >
+                    {t('common.confirm')}
+                  </button>
+                </div>
+                {/* Escape alone was enough for a plain new user; here the
+                    Drive connection made a moment ago has to be undone
+                    deliberately, and a phone has no Escape key. */}
+                {emptyDrive && (
+                  <button class="btn-ghost text-xs self-center" disabled={!!loading} onClick={cancelCreate}>
+                    {t('common.cancel')}
+                  </button>
+                )}
               </div>
             ) : (
-              <button
-                class="rise-in w-full flex items-center justify-center gap-2 px-3.5 py-[11px] rounded-xl border border-dashed border-border text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer text-[13.5px]"
-                style={`animation-delay:${1.1 + users.length * 0.07}s`}
-                onClick={() => setCreating(true)}
-              >
-                + {t('userSelector.new')}
-              </button>
+              <>
+                <button
+                  class="rise-in w-full flex items-center justify-center gap-2 px-3.5 py-[11px] rounded-xl border border-dashed border-border text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer text-[13.5px]"
+                  style={`animation-delay:${1.1 + users.length * 0.07}s`}
+                  disabled={!!loading}
+                  onClick={() => setCreating(true)}
+                >
+                  + {t('userSelector.new')}
+                </button>
+                {onRecover && (
+                  <button
+                    class={`rise-in w-full flex items-center justify-center gap-2 px-3.5 py-[11px] rounded-xl border border-dashed border-border text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer text-[13.5px] ${loading === 'drive' ? 'opacity-60' : ''}`}
+                    style={`animation-delay:${1.1 + (users.length + 1) * 0.07}s`}
+                    disabled={!!loading}
+                    // Google's script is only fetched on first use. Starting it
+                    // on approach keeps the consent window close to the click
+                    // that opens it, which is what browsers let through.
+                    onPointerEnter={preloadDrive}
+                    onFocus={preloadDrive}
+                    onPointerDown={preloadDrive}
+                    onClick={() => void recover()}
+                  >
+                    <CloudDownIcon size={14} />
+                    {loading === 'drive' ? t('settings.sync.connecting') : t('userSelector.recover')}
+                  </button>
+                )}
+              </>
             )}
           </div>
+
+          {recoverError && (
+            <p class="text-xs text-muted leading-relaxed text-center text-pretty mt-2.5">
+              {t(recoverError === 'inAppBrowser' ? 'settings.sync.inAppBrowserError' : 'userSelector.recover.failed')}
+            </p>
+          )}
 
           {/* See IRISH_FEATURES. Stays inside the selection block's `rise-in`
               so the entrance cascade above keeps its hard-coded delays. */}
@@ -415,6 +495,9 @@ export function mountUserSelector(
   users: User[],
   onSelect: (id: string) => Promise<void>,
   onCreate: (name: string) => Promise<void>,
+  onRecover: (() => Promise<DriveRecovery>) | null,
 ): void {
-  render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} />, root);
+  render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} onRecover={onRecover} />, root);
 }
+
+const preloadDrive = () => { void initDriveClient().catch(() => { /* retried by the click itself */ }); };
