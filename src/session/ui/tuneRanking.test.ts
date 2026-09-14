@@ -257,38 +257,52 @@ describe('passesChips', () => {
   const chips = (...e: [string, FilterState][]) => new Map(e);
 
   it('lets everything through when nothing is pinned', () => {
-    expect(passesChips('reel', chips())).toBe(true);
-    expect(passesChips(undefined, chips())).toBe(true);
+    expect(passesChips(['reel'], chips())).toBe(true);
+    expect(passesChips([], chips())).toBe(true);
   });
 
-  // One value per pass: two included chips can only mean "either".
+  // Two included chips can only mean "either" for a pass.
   it('reads several included chips as any of them', () => {
     const c = chips(['reel', 'include'], ['jig', 'include']);
-    expect(passesChips('reel', c)).toBe(true);
-    expect(passesChips('jig', c)).toBe(true);
-    expect(passesChips('polka', c)).toBe(false);
+    expect(passesChips(['reel'], c)).toBe(true);
+    expect(passesChips(['jig'], c)).toBe(true);
+    expect(passesChips(['polka'], c)).toBe(false);
   });
 
   it('removes what an excluded chip names, and only that', () => {
     const c = chips(['reel', 'exclude']);
-    expect(passesChips('reel', c)).toBe(false);
-    expect(passesChips('jig', c)).toBe(true);
+    expect(passesChips(['reel'], c)).toBe(false);
+    expect(passesChips(['jig'], c)).toBe(true);
   });
 
   // A key nobody knows (no recognition index on this device) is neither what
   // was asked for nor what was ruled out.
   it('fails an inclusion but survives an exclusion when the value is unknown', () => {
-    expect(passesChips(undefined, chips(['Dmajor', 'include']))).toBe(false);
-    expect(passesChips(undefined, chips(['Dmajor', 'exclude']))).toBe(true);
+    expect(passesChips([], chips(['Dmajor', 'include']))).toBe(false);
+    expect(passesChips([], chips(['Dmajor', 'exclude']))).toBe(true);
+  });
+
+  // A pass in an analysis inside a folder answers to both.
+  it('lets a pass in through any of its values, and out through any of them', () => {
+    const inFolder = ['s1', 'folder:winter'];
+    expect(passesChips(inFolder, chips(['folder:winter', 'include']))).toBe(true);
+    expect(passesChips(inFolder, chips(['folder:winter', 'include'], ['s1', 'exclude']))).toBe(false);
+    expect(passesChips(['s2', 'folder:winter'], chips(['folder:winter', 'include'], ['s1', 'exclude']))).toBe(true);
+    expect(passesChips(inFolder, chips(['s1', 'include'], ['folder:winter', 'exclude']))).toBe(false);
   });
 });
 
 describe('filterByFacets', () => {
   // In these fixtures the setting id stands in for the key, since the real key
   // comes from the recognition index.
-  const keys = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valueOf: d => d.settingId });
-  const types = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valueOf: d => d.dance });
-  const analyses = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valueOf: (_d, s) => s.id });
+  const keys = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valuesOf: d => [d.settingId] });
+  const types = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valuesOf: d => [d.dance] });
+  const analyses = (or: boolean, ...e: [string, FilterState][]): PassFacet => ({ chips: new Map(e), or, valuesOf: (_d, s) => [s.id] });
+  /** The analyses section as the panel builds it: s1 and s2 filed in winter,
+   *  s3 in summer, s4 nowhere. */
+  const FOLDERS: Record<string, string[]> = { s1: ['folder:winter'], s2: ['folder:winter'], s3: ['folder:summer'] };
+  const filed = (or: boolean, ...e: [string, FilterState][]): PassFacet =>
+    ({ chips: new Map(e), or, valuesOf: (_d, s) => [s.id, ...(FOLDERS[s.id] ?? [])] });
 
   // The user's rule: a key belongs to a pass, so filtering on it has to change
   // the count, not merely hide or show the tune.
@@ -358,6 +372,36 @@ describe('filterByFacets', () => {
       det({ tuneId: '1', start: 90, settingId: 'inG', liked: true }),
     ])];
     expect(rankDetectedTunes(filterByFacets(sessions, [keys(true, ['inD', 'include'])]))[0]!.liked).toBe(false);
+  });
+
+  describe('with folders', () => {
+    const sessions = [
+      session('s1', null, [det({ tuneId: 'kesh', start: 10 }), det({ tuneId: 'kesh', start: 90 })]),
+      session('s2', null, [det({ tuneId: 'kesh', start: 10 }), det({ tuneId: 'cooley', start: 90 })]),
+      session('s3', null, [det({ tuneId: 'kesh', start: 10 }), det({ tuneId: 'banshee', start: 90 })]),
+      session('s4', null, [det({ tuneId: 'cooley', start: 10 })]),
+    ];
+    const ids = (facets: PassFacet[]) => rankDetectedTunes(filterByFacets(sessions, facets)).map(r => `${r.tuneId}×${r.count}`).sort();
+
+    it('counts every analysis in an included folder, and nothing outside it', () => {
+      expect(ids([filed(true, ['folder:winter', 'include'])])).toEqual(['cooley×1', 'kesh×3']);
+    });
+
+    it('takes an excluded evening out of an included folder', () => {
+      expect(ids([filed(true, ['folder:winter', 'include'], ['s1', 'exclude'])])).toEqual(['cooley×1', 'kesh×1']);
+    });
+
+    it('adds an evening from elsewhere to a folder under "any of"', () => {
+      expect(ids([filed(true, ['folder:winter', 'include'], ['s4', 'include'])])).toEqual(['cooley×2', 'kesh×3']);
+    });
+
+    it('reads two folders under "all of" as the tunes heard in both', () => {
+      expect(ids([filed(false, ['folder:winter', 'include'], ['folder:summer', 'include'])])).toEqual(['kesh×4']);
+    });
+
+    it('removes a whole folder when it is excluded', () => {
+      expect(ids([filed(true, ['folder:winter', 'exclude'])])).toEqual(['banshee×1', 'cooley×1', 'kesh×1']);
+    });
   });
 
   it('never touches the analysis it reads from', () => {

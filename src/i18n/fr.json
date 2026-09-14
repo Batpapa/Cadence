@@ -827,7 +827,7 @@
   "help.library.browse.heading": "Qu'est-ce que la bibliothèque ?",
   "help.library.browse.1": "La bibliothèque est la liste complète de toutes vos cartes, tous paquets confondus. Une carte peut appartenir à plusieurs paquets simultanément.",
   "help.library.browse.2": "Chaque carte affiche deux points : le score de rappel (rouge/jaune/vert) et l'aisance. Ils reflètent votre historique de révisions.",
-  "help.library.browse.3": "Utilisez la bibliothèque pour rechercher, filtrer par étiquette ou paquet, et gérer les cartes indépendamment d'un paquet particulier.",
+  "help.library.browse.3": "Utilisez la bibliothèque pour rechercher, filtrer par étiquette, par paquet ou par dossier de paquets, et gérer les cartes indépendamment d'un paquet particulier.",
   "help.library.browse.4": "Les cartes supprimées ici sont définitivement retirées de tous les paquets. Retirer une carte d'un paquet (depuis la vue paquet) ne fait que la délier.",
   "help.library.tools.heading": "Trier, sélectionner et ajouter des cartes",
   "help.library.tools.1": "Triez par nom, dernière révision, date d'ajout, importance, rappel ou aisance — cliquez à nouveau sur le tri pour inverser l'ordre.",

@@ -19,7 +19,8 @@ import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
-import { decksContainingCard, deckPath } from '../services/deckService';
+import { decksContainingCard, deckPath, folderPath, findParentFolder, folderChainIds } from '../services/deckService';
+import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../components/filterChips';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
@@ -315,15 +316,59 @@ export function LibraryView() {
   // its label already puts it. "No type" leads, as NO_DECK does below and as
   // "Aucun" does in the card view's own type selector.
   const typeItems  = [NO_TYPE, ...CARD_TYPES];
-  const allTags    = [...new Set(pool.flatMap(c => c.tags ?? []))].sort();
+
+  // A pinned chip naming a deck or a folder deleted since, a tag no card
+  // carries any more, or a type this build does not know, is IGNORED rather
+  // than left filtering the list with no chip on screen to explain it (a back
+  // navigation after a deletion on another device used to give an empty
+  // library, cause unseen). Read through these, never written back: the stored
+  // maps keep whatever the route carried. A pinned chip that does name
+  // something is always offered, even with nothing in the pool behind it.
+  const deckKnown = (key: string) => {
+    if (key === NO_DECK) return true;
+    const folderId = folderIdOfChip(key);
+    return folderId === null ? !!user.decks[key] : !!user.folders[folderId];
+  };
+  const tagKnown  = (tag: string) => allCards.some(c => (c.tags ?? []).includes(tag));
+  const typeKnown = (type: string) => typeItems.includes(type);
+  const liveDecks = knownChips(activeDecks, deckKnown);
+  const liveTags  = knownChips(activeTags, tagKnown);
+  const liveTypes = knownChips(activeTypes, typeKnown);
+
+  const allTags    = [...new Set([...pool.flatMap(c => c.tags ?? []), ...liveTags.keys()])].sort();
   const hasOrphans = pool.some(c => decksContainingCard(c.id, user).length === 0);
   const deckItems  = [
-    ...(hasOrphans ? [NO_DECK] : []),
+    ...(hasOrphans || liveDecks.has(NO_DECK) ? [NO_DECK] : []),
     ...Object.values(user.decks)
-      .filter(d => d.entries.some(e => inPool(e.cardId)))
+      .filter(d => d.entries.some(e => inPool(e.cardId)) || liveDecks.has(d.id))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(d => d.id),
   ];
+
+  // ── Deck folders, as chips in the decks section ──
+  // A folder chip stands for every deck below it, however deep: a card is "in"
+  // the folder when it is in one of those decks. Same section as the decks, so
+  // "this folder OR that deck" can be asked (decided with the user, 2026-09-15).
+  /** The folder chips above each deck. Built once per render, not per card. */
+  const foldersAboveDeck = new Map(Object.keys(user.decks).map(id =>
+    [id, folderChainIds(findParentFolder(id, 'deck', user), user).map(folderChipKey)]));
+  const offeredFolders = new Set<string>();
+  for (const id of deckItems) for (const k of foldersAboveDeck.get(id) ?? []) offeredFolders.add(folderIdOfChip(k)!);
+  for (const k of liveDecks.keys()) { const id = folderIdOfChip(k); if (id !== null) offeredFolders.add(id); }
+  // By path, so a sub-folder follows its parent.
+  const deckFolderIds    = [...offeredFolders].sort((a, b) => folderPath(a, user).localeCompare(folderPath(b, user)));
+  const deckFolderLabels = folderChipLabels(deckFolderIds, id => user.folders[id]?.name ?? id, id => folderPath(id, user));
+  const deckFolderItems  = deckFolderIds.map(folderChipKey);
+  const coveredDecks = coveredByFolders(
+    [...deckItems, ...deckFolderItems],
+    key => {
+      const folderId = folderIdOfChip(key);
+      return folderId === null
+        ? foldersAboveDeck.get(key) ?? []
+        : folderChainIds(folderId, user).slice(0, -1).map(folderChipKey);
+    },
+    liveDecks,
+  );
 
   // ── Which sections are worth a line ───────────────────────────────────────────
   // A section earns its place only if clicking in it could actually split the
@@ -342,10 +387,10 @@ export function LibraryView() {
   // library looks like: a route can arrive carrying one (a back navigation, a
   // shared link), and a filter narrowing the list from a section nobody can see
   // would be unexplainable.
-  const hasDeckMix = deckItems.length > 1 || activeDecks.size > 0;
-  const hasTagMix  = activeTags.size > 0 || allTags.length > 1
+  const hasDeckMix = deckItems.length > 1 || liveDecks.size > 0;
+  const hasTagMix  = liveTags.size > 0 || allTags.length > 1
     || (allTags.length === 1 && pool.some(c => !(c.tags ?? []).includes(allTags[0]!)));
-  const hasTypeMix = activeTypes.size > 0
+  const hasTypeMix = liveTypes.size > 0
     || new Set(pool.map(c => knownCardType(c) ?? NO_TYPE)).size > 1;
   // The rule above stops at the chip sections. The review dates stay whatever
   // the library holds: with no review anywhere they still answer two different
@@ -366,19 +411,25 @@ export function LibraryView() {
     const matchText = !q || c.name.toLowerCase().includes(q) || matchExternalId;
     const cardDecks = decksContainingCard(c.id, user);
 
-    const tagEntries  = [...activeTags];
+    const tagEntries  = [...liveTags];
     const inclTags    = tagEntries.filter(([, fs]) => fs === 'include').map(([t]) => t);
     const exclTags    = tagEntries.filter(([, fs]) => fs === 'exclude').map(([t]) => t);
-    const matchTags   = activeTags.size === 0 || (
+    const matchTags   = liveTags.size === 0 || (
       (inclTags.length === 0 || (tagFilterOr ? inclTags.some(t => tags.includes(t)) : inclTags.every(t => tags.includes(t)))) &&
       exclTags.every(t => !tags.includes(t))
     );
 
-    const deckEntries = [...activeDecks];
+    const deckEntries = [...liveDecks];
     const inclDecks   = deckEntries.filter(([, fs]) => fs === 'include').map(([id]) => id);
     const exclDecks   = deckEntries.filter(([, fs]) => fs === 'exclude').map(([id]) => id);
-    const hasDeck     = (id: string) => id === NO_DECK ? cardDecks.length === 0 : cardDecks.includes(id);
-    const matchDecks  = activeDecks.size === 0 || (
+    // A folder chip: in any deck below that folder. Excluding it therefore
+    // removes a card that is in one of those decks, whatever else holds it —
+    // the excludes are a hard AND, as everywhere.
+    const hasDeck     = (id: string) =>
+      id === NO_DECK ? cardDecks.length === 0
+      : folderIdOfChip(id) === null ? cardDecks.includes(id)
+      : cardDecks.some(d => foldersAboveDeck.get(d)?.includes(id));
+    const matchDecks  = liveDecks.size === 0 || (
       (inclDecks.length === 0 || (deckFilterOr ? inclDecks.some(hasDeck) : inclDecks.every(hasDeck))) &&
       exclDecks.every(id => !hasDeck(id))
     );
@@ -389,10 +440,10 @@ export function LibraryView() {
     // gesture that earns this filter its place: a set repeats its tunes' names
     // in the list, and hiding them de-clutters it.
     const typeKey     = knownCardType(c) ?? NO_TYPE;
-    const typeEntries = [...activeTypes];
+    const typeEntries = [...liveTypes];
     const inclTypes   = typeEntries.filter(([, fs]) => fs === 'include').map(([id]) => id);
     const exclTypes   = typeEntries.filter(([, fs]) => fs === 'exclude').map(([id]) => id);
-    const matchTypes  = activeTypes.size === 0 || (
+    const matchTypes  = liveTypes.size === 0 || (
       (inclTypes.length === 0 || inclTypes.includes(typeKey)) && !exclTypes.includes(typeKey)
     );
 
@@ -436,14 +487,23 @@ export function LibraryView() {
 
   // ── Available chips (derived from filtered) ───────────────────────────────────
   const availTags  = new Set(filtered.flatMap(c => c.tags ?? []));
-  const availDecks = new Set<string>(filtered.flatMap(c => decksContainingCard(c.id, user)));
-  if (filtered.some(c => decksContainingCard(c.id, user).length === 0)) availDecks.add(NO_DECK);
+  const availDecks = new Set<string>();
+  for (const c of filtered) {
+    const decks = decksContainingCard(c.id, user);
+    if (decks.length === 0) availDecks.add(NO_DECK);
+    for (const d of decks) {
+      availDecks.add(d);
+      for (const k of foldersAboveDeck.get(d) ?? []) availDecks.add(k);
+    }
+  }
   const availTypes = new Set(filtered.map(c => knownCardType(c) ?? NO_TYPE));
 
   // ── Toggle handlers ───────────────────────────────────────────────────────────
-  const toggleTag  = (tag: string, back?: boolean) => setActiveTags(prev  => cycleFilter(prev, tag, back));
-  const toggleDeck = (id: string,  back?: boolean) => setActiveDecks(prev => cycleFilter(prev, id, back));
-  const toggleType = (id: string,  back?: boolean) => setActiveTypes(prev => cycleFilter(prev, id, back));
+  // Cycled from the known chips, so the first click after a deletion also drops
+  // the dead key from the stored map — and from the route with it.
+  const toggleTag  = (tag: string, back?: boolean) => setActiveTags(prev  => cycleFilter(knownChips(prev, tagKnown), tag, back));
+  const toggleDeck = (id: string,  back?: boolean) => setActiveDecks(prev => cycleFilter(knownChips(prev, deckKnown), id, back));
+  const toggleType = (id: string,  back?: boolean) => setActiveTypes(prev => cycleFilter(knownChips(prev, typeKnown), id, back));
 
   // ── Selection toolbar data ────────────────────────────────────────────────────
   const selectedArr   = [...selected];
@@ -741,9 +801,19 @@ export function LibraryView() {
           <FilterSection
             labelKey="library.filterDecks"
             items={deckItems}
-            activeMap={activeDecks}
-            labelOf={id => id === NO_DECK ? t('library.filterNoDecks') : (user.decks[id]?.name ?? id)}
-            titleOf={id => id === NO_DECK ? '' : deckPath(id, user)}
+            folderItems={deckFolderItems}
+            covered={coveredDecks}
+            activeMap={liveDecks}
+            labelOf={id => {
+              if (id === NO_DECK) return t('library.filterNoDecks');
+              const folderId = folderIdOfChip(id);
+              return folderId !== null ? deckFolderLabels.get(folderId) ?? folderId : (user.decks[id]?.name ?? id);
+            }}
+            titleOf={id => {
+              if (id === NO_DECK) return '';
+              const folderId = folderIdOfChip(id);
+              return folderId !== null ? folderPath(folderId, user) : deckPath(id, user);
+            }}
             available={availDecks}
             onToggle={toggleDeck}
             highlight={q}
@@ -758,7 +828,7 @@ export function LibraryView() {
           <FilterSection
             labelKey="library.filterTypes"
             items={typeItems}
-            activeMap={activeTypes}
+            activeMap={liveTypes}
             labelOf={id => t(cardTypeLabelKey(id === NO_TYPE ? undefined : id))}
             titleOf={id => t(cardTypeLabelKey(id === NO_TYPE ? undefined : id))}
             available={availTypes}
@@ -769,7 +839,7 @@ export function LibraryView() {
           <FilterSection
             labelKey="library.filterTags"
             items={allTags}
-            activeMap={activeTags}
+            activeMap={liveTags}
             labelOf={tag => tag}
             titleOf={tag => tag}
             available={availTags}
@@ -892,7 +962,7 @@ export function LibraryView() {
       <div class="px-6 pb-6">
         {filtered.length === 0 ? (
           <p class="text-sm text-dim italic">
-            {(q || activeTags.size > 0 || activeDecks.size > 0) ? t('library.noMatch') : t('library.empty')}
+            {(q || liveTags.size > 0 || liveDecks.size > 0) ? t('library.noMatch') : t('library.empty')}
           </p>
         ) : (
           <div class="lib-list space-y-1">

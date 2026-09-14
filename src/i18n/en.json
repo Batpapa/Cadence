@@ -827,7 +827,7 @@
   "help.library.browse.heading": "What is the library?",
   "help.library.browse.1": "The library is the master list of all your cards, across all decks. A card can belong to multiple decks simultaneously.",
   "help.library.browse.2": "Each card shows two dots: recall score (red/yellow/green) and ease. These reflect your review history.",
-  "help.library.browse.3": "Use the library to search, filter by tag or deck, and manage cards independently of any particular deck.",
+  "help.library.browse.3": "Use the library to search, filter by tag, deck or deck folder, and manage cards independently of any particular deck.",
   "help.library.browse.4": "Cards deleted here are permanently removed from all decks. Removing a card from a deck (via the deck view) only unlinks it.",
   "help.library.tools.heading": "Sorting, selecting & adding cards",
   "help.library.tools.1": "Sort by name, last studied, date added, importance, recall or ease — click the sort button again to reverse the order.",

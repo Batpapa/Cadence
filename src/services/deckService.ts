@@ -167,6 +167,22 @@ export function folderPath(folderId: string, user: AppState): string {
   return parts.join(' / ');
 }
 
+/** A folder and every folder above it, outermost first. Empty for `null` (the
+ *  root) and for an id whose record is gone. Stops on a cycle rather than
+ *  trusting there is none: this walks user data that has been through a Drive
+ *  merge, and it runs on every render of the library. */
+export function folderChainIds(folderId: string | null, user: AppState): string[] {
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let current = folderId;
+  while (current && !seen.has(current) && user.folders[current]) {
+    seen.add(current);
+    chain.unshift(current);
+    current = findParentFolder(current, 'folder', user);
+  }
+  return chain;
+}
+
 export function isFolderDescendant(user: AppState, ancestorId: string, targetId: string): boolean {
   const folder = user.folders[ancestorId];
   if (!folder) return false;

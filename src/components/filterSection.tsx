@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
-import { ChevronDownIcon, VennAndIcon, VennOrIcon } from './icons';
+import { ChevronDownIcon, FolderIcon, VennAndIcon, VennOrIcon } from './icons';
 
 export type FilterMap = Map<string, FilterState>;
 
@@ -27,9 +27,17 @@ export function cycleFilter(prev: FilterMap, key: string, back = false): FilterM
   return n;
 }
 
-export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, available, onToggle, highlight, orMode, onToggleOr }: {
+export function FilterSection({ labelKey, items, folderItems = [], covered, activeMap, labelOf, titleOf, available, onToggle, highlight, orMode, onToggleOr }: {
   labelKey: string;
   items: string[];
+  /** Folder chips (keys from `folderChipKey`), shown first with a folder glyph
+   *  and set apart from `items` by a thin rule. A folder chip stands for
+   *  everything below it; the caller's predicate decides what that means. */
+  folderItems?: string[];
+  /** Chips an included folder already covers (see `coveredByFolders`): drawn
+   *  with a light accent outline, so the reader sees what the folder took in
+   *  and can exclude one of them from it. */
+  covered?: ReadonlySet<string>;
   activeMap: FilterMap;
   labelOf: (id: string) => string;
   titleOf: (id: string) => string;
@@ -42,6 +50,40 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
 }) {
   const [open, setOpen] = useState(() => activeMap.size > 0);
   const showOrToggle = !!onToggleOr;
+
+  const chip = (id: string, isFolder: boolean) => {
+    const state        = activeMap.get(id);
+    const isAvail      = state !== undefined || available.has(id);
+    const label        = labelOf(id);
+    const isHighlighted = !!highlight && state === undefined &&
+      label.toLowerCase().includes(highlight.toLowerCase());
+    const isCovered    = state === undefined && !!covered?.has(id);
+    return (
+      <button
+        key={id}
+        disabled={!isAvail && !orMode}
+        class={`text-xs px-2 py-0.5 rounded-full border transition-colors ${isFolder ? 'inline-flex items-center gap-1' : ''} ${
+          state === 'include' ? 'bg-accent text-white border-accent cursor-pointer' :
+          state === 'exclude' ? 'bg-danger/10 text-danger border-danger/50 line-through cursor-pointer' :
+          isHighlighted       ? `bg-warn/10 text-warn border-warn/40 ${isAvail || orMode ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}` :
+          isCovered           ? 'border-accent/50 text-primary hoverable:border-accent hoverable:text-accent cursor-pointer' :
+          isAvail             ? 'border-border text-muted hoverable:border-accent hoverable:text-accent cursor-pointer' :
+          orMode              ? 'border-border text-muted opacity-50 hoverable:border-accent hoverable:text-accent cursor-pointer' :
+                                'border-border text-muted opacity-30 cursor-not-allowed'
+        }`}
+        title={titleOf(id)}
+        onClick={() => onToggle(id)}
+        // Right click walks the ring backwards. preventDefault because
+        // a chip has no browser menu worth showing, and `disabled`
+        // buttons never fire this anyway.
+        onContextMenu={(e) => { e.preventDefault(); onToggle(id, true); }}
+      >
+        {isFolder && <span class="flex items-center shrink-0"><FolderIcon size={10} /></span>}
+        {label}
+      </button>
+    );
+  };
+
   return (
     <div>
       <div class="flex items-center">
@@ -65,36 +107,10 @@ export function FilterSection({ labelKey, items, activeMap, labelOf, titleOf, av
         )}
       </div>
       {open && (
-        <div class="flex flex-wrap gap-1.5 pt-1">
-          {items.map(id => {
-            const state        = activeMap.get(id);
-            const isAvail      = state !== undefined || available.has(id);
-            const label        = labelOf(id);
-            const isHighlighted = !!highlight && state === undefined &&
-              label.toLowerCase().includes(highlight.toLowerCase());
-            return (
-              <button
-                key={id}
-                disabled={!isAvail && !orMode}
-                class={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                  state === 'include' ? 'bg-accent text-white border-accent cursor-pointer' :
-                  state === 'exclude' ? 'bg-danger/10 text-danger border-danger/50 line-through cursor-pointer' :
-                  isHighlighted       ? `bg-warn/10 text-warn border-warn/40 ${isAvail || orMode ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}` :
-                  isAvail             ? 'border-border text-muted hoverable:border-accent hoverable:text-accent cursor-pointer' :
-                  orMode              ? 'border-border text-muted opacity-50 hoverable:border-accent hoverable:text-accent cursor-pointer' :
-                                        'border-border text-muted opacity-30 cursor-not-allowed'
-                }`}
-                title={titleOf(id)}
-                onClick={() => onToggle(id)}
-                // Right click walks the ring backwards. preventDefault because
-                // a chip has no browser menu worth showing, and `disabled`
-                // buttons never fire this anyway.
-                onContextMenu={(e) => { e.preventDefault(); onToggle(id, true); }}
-              >
-                {label}
-              </button>
-            );
-          })}
+        <div class="flex flex-wrap items-center gap-1.5 pt-1">
+          {folderItems.map(id => chip(id, true))}
+          {folderItems.length > 0 && items.length > 0 && <span class="w-px h-4 bg-border mx-0.5" aria-hidden="true" />}
+          {items.map(id => chip(id, false))}
         </div>
       )}
     </div>
