@@ -7,7 +7,8 @@ import { starIconElement, iconElement, ExternalLinkIcon, GearIcon } from './icon
 import { t } from '../services/i18nService';
 import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, abcOpenMode } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
-import { showModal } from './modal';
+import { showModal, updateTopModal } from './modal';
+import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { appState, mutate } from '../store';
 import { registerOverlay } from './overlayStack';
 
@@ -259,9 +260,23 @@ export interface PreviewModalOpts {
    *
    *  Called on every preference re-apply. Return null to keep what is shown. */
   reloadEntry?: () => FileEntry | null;
+  /** Makes the title renamable (the extension stays as it is). Gets the full
+   *  new name; the viewer shows it itself. */
+  onRename?: (name: string) => void;
 }
 
-export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => void, opts?: PreviewModalOpts): void {
+/** What a save did. `false`: nothing was saved — the user backed out of a
+ *  question the save had to ask — and the edit stays pending on screen. A
+ *  string: saved, under that file name, which the viewer's title then shows. */
+export type PreviewSaveResult = void | false | string;
+
+export function showPreviewModal(
+  entry: FileEntry,
+  onSave?: (data: string) => PreviewSaveResult | Promise<PreviewSaveResult>,
+  opts?: PreviewModalOpts,
+): void {
+  // What the title shows, as renames and a save-as-copy change it.
+  let shownName = entry.name;
   // Overlay/dialog/header/close-button/outside-click/Escape are the shared
   // Preact modal shell (modal.tsx, 2026-08-26) now — only this format-specific
   // body is still hand-built here. `stopAudio`/`closed` (assigned deeper in
@@ -603,14 +618,27 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
         saveBtn.disabled = textarea.value === currentBody();
         saveStatus.textContent = '';
       });
-      saveBtn.onclick = () => {
+      saveBtn.onclick = async () => {
         const { xLine } = splitXLine(tunes[currentIndex] ?? '');
-        tunes[currentIndex] = xLine ? `${xLine}\n${textarea.value}` : textarea.value;
+        const nextTunes = [...tunes];
+        nextTunes[currentIndex] = xLine ? `${xLine}\n${textarea.value}` : textarea.value;
         // Tunes already carry their trailing separator from splitAbcTunes —
         // plain '\n' join reconstructs the file without doubling blank lines.
-        abcText = tunes.join('\n');
-        onSave(arrayBufferToBase64(new TextEncoder().encode(abcText).buffer));
+        const nextText = nextTunes.join('\n');
         saveBtn.disabled = true;
+        // Awaited, and only then applied: a save may ask first (a TheSession
+        // score is saved as a copy) and the answer may be no.
+        const result = await onSave(arrayBufferToBase64(new TextEncoder().encode(nextText).buffer));
+        if (result === false) {
+          saveBtn.disabled = textarea.value === currentBody();
+          return;
+        }
+        tunes = nextTunes;
+        abcText = nextText;
+        if (typeof result === 'string') {
+          shownName = result;
+          updateTopModal({ title: result });
+        }
         saveStatus.textContent = t('fileViewer.abc.saved');
         sheetNeedsRerender = true; // re-render lazily once Sheet is reopened — see setAbcMode
         abcToolsLink.href = abcToolsShareUrl(tunes[currentIndex] ?? '');
@@ -898,10 +926,23 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
   // frame genuinely re-renders — abcjs lays out to the container, so the extra
   // width buys fewer line breaks rather than a bigger picture.
   const isScore = isAbcFile(entry);
+  const onRename = opts?.onRename;
   showModal(entry.name, body, [], {
     maxWidth: modalWidth(entry),
     onDismiss,
     expandable: isScore,
+    titleEdit: onRename
+      ? {
+          suffix: splitFileName(entry.name).ext,
+          onCommit: (value) => {
+            const next = renamedFileName(shownName, value);
+            if (!next) return;
+            onRename(next);
+            shownName = next;
+            updateTopModal({ title: next });
+          },
+        }
+      : undefined,
     headerActions: isScore
       ? [{
           icon: iconElement(GearIcon, 15),

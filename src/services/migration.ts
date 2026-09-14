@@ -1,8 +1,9 @@
 import type { AppState, User } from '../types';
 import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
+import { migrateClipTags } from './attachmentNames';
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /** V6 → V7's rule, shared with importExport.ts's `migrateRawCards` so a card
  *  arriving through a .cdc package is stamped exactly like one already in the
@@ -129,6 +130,12 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
   (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) stampTuneType(card);
+  },
+  // V7 → V8: a clip's "already attached" tag moves out of its file name into
+  //          `clipOf`, so names can be renamed freely and read cleanly.
+  (s) => {
+    const cards = s['cards'] as Record<string, Record<string, unknown>>;
+    for (const card of Object.values(cards ?? {})) migrateClipTags(card);
   },
 ];
 

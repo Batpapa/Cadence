@@ -1,6 +1,7 @@
 import type { AppState, Card } from '../types';
 import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile } from '../utils';
 import { SCHEMA_VERSION, stampTuneType } from './migration';
+import { migrateClipTags } from './attachmentNames';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -87,6 +88,11 @@ function migrateRawCards(cards: unknown[], from: number): void {
   // invisible to the tuneset editor on the receiving device.
   if (from < 7) {
     for (const raw of cards) stampTuneType(raw as Record<string, unknown>);
+  }
+  // Same function as migration.ts's V7 → V8, for the same reason: a package
+  // exported before it must not bring clip tags back into attachment names.
+  if (from < 8) {
+    for (const raw of cards) migrateClipTags(raw as Record<string, unknown>);
   }
 }
 

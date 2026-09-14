@@ -9,6 +9,7 @@ import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, de
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName } from '../../utils';
 import { extractClip } from '../audio/clipExtract';
+import { legacyClipTag } from '../../services/attachmentNames';
 import { getContext } from '../../store';
 import type { IndexProgress } from '../recognition/indexStore';
 import type { Detection } from '../model';
@@ -267,10 +268,12 @@ export interface ClipSessionRef {
   duration: number;
 }
 
-/** Stable identity of a clip, embedded in the filename: survives session
- *  renames and detection relabels (session id fragment + start second). */
-export function clipTag(session: ClipSessionRef, ann: Detection): string {
-  return `[${session.id.slice(0, 8)}·${Math.round(ann.start)}]`;
+/** Stable identity of a clip — session id fragment + start second, so it
+ *  survives session renames and detection relabels. What an attached clip
+ *  stores in `clipOf` (see the Attachment type); it lived in the file name
+ *  until schema V8. */
+function clipKey(session: ClipSessionRef, ann: Detection): string {
+  return `${session.id.slice(0, 8)}·${Math.round(ann.start)}`;
 }
 
 /** `extension` is the clip's own (see ExtractedClip): a clip keeps the
@@ -281,22 +284,22 @@ export function clipTag(session: ClipSessionRef, ann: Detection): string {
  *  used to put "the silver spear" in the file next to "The Silver Spear" on the
  *  card.
  *
- *  `attachment`: only an attached clip carries clipTag, the one thing
- *  isClipAttached recognises it by. A downloaded file has no such use for it,
- *  and there it was only noise at the end of the name. */
-export function clipFileName(session: ClipSessionRef, ann: Detection, extension: string, attachment: boolean): string {
+ *  No identifying tag in it any more: an attached clip is recognised by its
+ *  `clipOf` field (2026-09-15), so the name is only what a person reads. */
+export function clipFileName(session: ClipSessionRef, ann: Detection, extension: string): string {
   const sessionName = session.name;
   const range = `${fmtTime(ann.start)}–${fmtTime(ann.end ?? session.duration)}`.replace(/:/g, 'm');
-  const tag = attachment ? ` ${clipTag(session, ann)}` : '';
-  return `${tuneName(ann).text} — ${sessionName} (${range})${tag}.${extension}`;
+  return `${tuneName(ann).text} — ${sessionName} (${range}).${extension}`;
 }
 
-/** True when this exact clip is already attached, whatever it was renamed to look like. */
+/** True when this exact clip is already attached, whatever it was renamed to.
+ *  The name is still read as a fallback: a device on an older build keeps
+ *  writing the tag there, and a card synced from it has no `clipOf`. */
 export function isClipAttached(session: ClipSessionRef, ann: Detection): boolean {
   const card = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
   if (!card) return false;
-  const tag = clipTag(session, ann);
-  return card.content.attachments.some(a => a.type === 'file' && a.name.includes(tag));
+  const key = clipKey(session, ann);
+  return card.content.attachments.some(a => a.type === 'file' && (a.clipOf === key || legacyClipTag(a.name)?.key === key));
 }
 
 /** Extracts the detection's audio slice as a standalone file, in the
@@ -318,10 +321,10 @@ export async function attachClip(
   if (isClipAttached(session, ann)) return true;
 
   const clip = await extractClip(audio, ann.start, ann.end ?? session.duration, onProgress);
-  const entry = await fileToEntry(new File([clip.blob], clipFileName(session, ann, clip.extension, true), { type: clip.blob.type }));
+  const entry = await fileToEntry(new File([clip.blob], clipFileName(session, ann, clip.extension), { type: clip.blob.type }));
   await ctx.mutate(s => {
     const card = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
-    if (card) card.content.attachments.push({ type: 'file', ...entry });
+    if (card) card.content.attachments.push({ type: 'file', ...entry, clipOf: clipKey(session, ann) });
   });
   return true;
 }
@@ -409,7 +412,7 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
       const url = URL.createObjectURL(clip.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = clipFileName(session, ann, clip.extension, false);
+      a.download = clipFileName(session, ann, clip.extension);
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

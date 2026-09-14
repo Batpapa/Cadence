@@ -75,6 +75,12 @@ export interface ModalOptions {
    *  Set it after opening with `updateTopModal`, which is how a body that owns
    *  the navigation state drives its own header. */
   onBack?: () => void;
+  /** Makes the title renamable in place: a click turns it into a field holding
+   *  the title minus `suffix`, which stays fixed after the field — a file's
+   *  extension, say, that must not change. `onCommit` receives what was typed;
+   *  the caller decides whether it is a new name, persists it, and shows it with
+   *  `updateTopModal`. */
+  titleEdit?: { suffix: string; onCommit: (value: string) => void };
 }
 
 interface ModalEntry {
@@ -88,6 +94,7 @@ interface ModalEntry {
   headerActions: ModalHeaderAction[];
   expandable: boolean;
   onBack?: () => void;
+  titleEdit?: ModalOptions['titleEdit'];
 }
 
 let nextId = 0;
@@ -164,6 +171,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     actions,
     dismissable: opts.dismissable ?? true,
     maxWidth: opts.maxWidth ?? '28rem',
+    titleEdit: opts.titleEdit,
     onDismiss: opts.onDismiss,
     headerActions: opts.headerActions ?? [],
     expandable: opts.expandable ?? false,
@@ -277,6 +285,63 @@ function IconMount({ el }: { el: Element }) {
   return <span ref={ref} class="inline-flex items-center" />;
 }
 
+const TITLE_CLASS = 'text-xs font-semibold text-muted uppercase tracking-widest truncate';
+
+/** The header title, renamable in place when the modal asked for it (see
+ *  ModalOptions.titleEdit). Module scope, not declared inside ModalDialog: a
+ *  component defined during a render is a new type on every render, and its
+ *  field would be torn down mid-typing. */
+function ModalTitle({ title, titleEdit }: { title: string; titleEdit?: ModalOptions['titleEdit'] }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Enter commits and unmounts the field, and the unmount blurs it: without
+  // this, the blur would commit the same name a second time.
+  const settled = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const editing = draft !== null;
+  // Focused and selected on opening — `autoFocus` only works at page load.
+  useLayoutEffect(() => {
+    if (!editing) return;
+    inputRef.current?.focus({ preventScroll: true });
+    inputRef.current?.select();
+  }, [editing]);
+  if (!titleEdit) return <h2 class={TITLE_CLASS}>{title}</h2>;
+
+  const { suffix, onCommit } = titleEdit;
+  const base = suffix && title.endsWith(suffix) ? title.slice(0, -suffix.length) : title;
+  if (draft === null) {
+    return (
+      <h2
+        class={`${TITLE_CLASS} cursor-pointer hover:text-primary transition-colors`}
+        title={t('common.clickToRename')}
+        onClick={() => { settled.current = false; setDraft(base); }}
+      >{title}</h2>
+    );
+  }
+  const finish = (commit: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    setDraft(null);
+    if (commit) onCommit(draft);
+  };
+  return (
+    <div class="flex items-center gap-1 min-w-0 flex-1">
+      <input
+        ref={inputRef}
+        class="input text-sm py-0.5 min-w-0 flex-1"
+        value={draft}
+        onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') finish(true);
+          // Marked handled, so the shell's Escape (main.ts) leaves the modal open.
+          if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        }}
+        onBlur={() => finish(true)}
+      />
+      {suffix && <span class="text-sm text-dim shrink-0">{suffix}</span>}
+    </div>
+  );
+}
+
 function ModalDialog({ entry }: { entry: ModalEntry }) {
   const mouseDownOnOverlay = useRef(false);
   // Local, so it dies with the dialog — see ModalOptions.expandable on why
@@ -316,7 +381,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
                 onClick={entry.onBack}
               >←</button>
             )}
-            <h2 class="text-xs font-semibold text-muted uppercase tracking-widest truncate">{entry.title}</h2>
+            <ModalTitle title={entry.title} titleEdit={entry.titleEdit} />
           </div>
           <div class="flex items-center gap-3 shrink-0">
             {entry.headerActions.map((action, i) => (

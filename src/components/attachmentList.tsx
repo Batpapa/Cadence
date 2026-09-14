@@ -1,10 +1,11 @@
-import { useEffect, useRef, useMemo } from 'preact/hooks';
+import { useEffect, useRef, useMemo, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
 import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance } from '../utils';
-import { TrashIcon, PlusIcon, GearIcon, WrenchIcon } from './icons';
+import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon } from './icons';
 import { useContextMenu } from './contextMenu';
-import { showPreviewModal } from './fileViewer';
+import { showPreviewModal, type PreviewSaveResult } from './fileViewer';
+import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
 import { resolveCardRef } from '../services/cardRefService';
@@ -139,11 +140,13 @@ function confirmRemove(name: string, isRef: boolean, remove: () => void): void {
 
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex, reloadEntry, glyph, downloadName }: {
+function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, reloadEntry, glyph, downloadName }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
-  onSave?: (data: string) => void;
+  onSave?: (data: string) => PreviewSaveResult | Promise<PreviewSaveResult>;
+  /** The full new name, extension kept. Absent where a file cannot be renamed. */
+  onRename?: (name: string) => void;
   onSetPreferredIndex?: (index: number | undefined) => void;
   /** For a DERIVED file only — see PreviewModalOpts.reloadEntry. */
   reloadEntry?: () => FileEntry | null;
@@ -156,16 +159,81 @@ function FileRowContent({ entry, onRemove, editable, onSave, onSetPreferredIndex
   glyph?: ComponentChild;
 }) {
   const previewable = isPreviewable(entry);
+  // Renaming in place, on the row itself: the viewer's title offers the same,
+  // but not every file has a viewer (an archive, a document), and those must be
+  // renamable too. The extension is shown, never edited.
+  const [draft, setDraft] = useState<string | null>(null);
+  // Enter commits and unmounts the field, whose blur would commit again.
+  const settled = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const editing = draft !== null;
+  // Focused and selected on opening, phone included: the user asked to rename,
+  // so the keyboard is wanted (focusIfDesktop is for fields nobody asked for).
+  // `autoFocus` did nothing — browsers only honour it at page load.
+  //
+  // The row stops being draggable meanwhile: a mouse drag to select text in the
+  // field started the ROW's native drag, the row being the draggable element.
+  useEffect(() => {
+    if (!editing) return;
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.select();
+    const row = input.closest<HTMLElement>('[draggable="true"]');
+    if (row) row.draggable = false;
+    return () => { if (row) row.draggable = true; };
+  }, [editing]);
+  const { base, ext } = splitFileName(entry.name);
+  const finishRename = (commit: boolean) => {
+    if (settled.current || draft === null) return;
+    settled.current = true;
+    const next = commit ? renamedFileName(entry.name, draft) : null;
+    setDraft(null);
+    if (next) onRename?.(next);
+  };
   return (
     <>
       <span class="text-[11px] text-dim shrink-0 w-4 flex items-center justify-center font-mono">{glyph ?? mimeIcon(entry)}</span>
-      <span
-        class={`text-xs font-mono truncate flex-1 ${previewable ? 'text-muted hover:text-primary cursor-pointer transition-colors' : 'text-dim'}`}
-        // Favoriting a version isn't "editing" the card — available regardless of `editable`.
-        onClick={previewable ? () => showPreviewModal(entry, editable ? onSave : undefined, { initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex, reloadEntry }) : undefined}
-      >
-        {entry.name}
-      </span>
+      {draft !== null ? (
+        <span class="flex items-center gap-1 flex-1 min-w-0">
+          <input
+            ref={inputRef}
+            class="input text-xs font-mono py-0.5 min-w-0 flex-1"
+            value={draft}
+            onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') finishRename(true);
+              if (e.key === 'Escape') { e.preventDefault(); finishRename(false); }
+            }}
+            onBlur={() => finishRename(true)}
+            // The row is draggable, and on a touch screen a long press anywhere
+            // in it starts the drag (addTouchDragSupport listens on the row). A
+            // finger held in this field to place the caret must not move the row.
+            onTouchStart={(e) => e.stopPropagation()}
+          />
+          {ext && <span class="text-xs font-mono text-dim shrink-0">{ext}</span>}
+        </span>
+      ) : (
+        <span
+          class={`text-xs font-mono truncate flex-1 ${previewable ? 'text-muted hover:text-primary cursor-pointer transition-colors' : 'text-dim'}`}
+          // Favoriting a version isn't "editing" the card — available regardless of `editable`.
+          onClick={previewable ? () => showPreviewModal(entry, editable ? onSave : undefined, {
+            initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex, reloadEntry,
+            onRename: editable ? onRename : undefined,
+          }) : undefined}
+        >
+          {entry.name}
+        </span>
+      )}
+      {editable && onRename && draft === null && (
+        <button
+          class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center"
+          title={t('fileViewer.rename')}
+          onClick={() => { settled.current = false; setDraft(base); }}
+        >
+          <PencilIcon size={11} />
+        </button>
+      )}
       {/* The same glyph the session module downloads with — this was the one
           place still using a bare arrow character, which read as a smaller,
           lighter control than the identical action everywhere else. */}
@@ -564,6 +632,43 @@ function addFiles(onAdd: (a: Attachment) => void): void {
   inp.click();
 }
 
+/** The save of a TheSession score's editor (2026-09-15). "Refresh ABC" replaces
+ *  that file wholesale, so an edit made in it would be lost at the next refresh:
+ *  the first save of an opened viewer asks, then writes the edit to a COPY
+ *  inserted just before the original, which stays untouched.
+ *
+ *  The copy takes the original's index and the original moves down one, so
+ *  every handler of this row bound to `i` — the next saves, the star, a rename —
+ *  then addresses the copy, which is the file the viewer now shows. That is also
+ *  why later saves from the same viewer go straight to it without asking again.
+ *  One saver per row per render; an open viewer keeps the one it was given. */
+function theSessionScoreSaver(
+  i: number,
+  update: (i: number, data: string) => void,
+  copy: (i: number, data: string) => string,
+): (data: string) => PreviewSaveResult | Promise<PreviewSaveResult> {
+  let copied = false;
+  return (data) => {
+    if (copied) { update(i, data); return; }
+    return new Promise<PreviewSaveResult>(resolve => {
+      const body = document.createElement('p');
+      body.className = 'text-sm text-muted leading-relaxed';
+      body.textContent = t('fileViewer.abc.copy.message');
+      showModal(t('fileViewer.abc.copy.title'), body, [
+        { label: t('common.cancel'), onClick: () => { closeModal(); resolve(false); } },
+        {
+          label: t('fileViewer.abc.copy.confirm'), primary: true, onClick: () => {
+            closeModal();
+            const name = copy(i, data);
+            copied = !!name;
+            resolve(name || false);
+          },
+        },
+      ], { onDismiss: () => resolve(false) });
+    });
+  };
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export interface AttachmentListOptions {
@@ -579,6 +684,11 @@ export interface AttachmentListOptions {
    *  even where `editable` is false (study), since it's a viewing preference,
    *  not a content edit. */
   onSetPreferredIndex?: (i: number, index: number | undefined) => void;
+  /** Renames a file attachment — the full new name, extension already kept. */
+  onRenameFile?: (i: number, name: string) => void;
+  /** Saves an edit to a TheSession score as a copy inserted just before it,
+   *  and answers the copy's name. See theSessionScoreSaver. */
+  onCopyFile?: (i: number, data: string) => string;
   /** The card these attachments belong to. Only needed to resolve a set's
    *  generated score, whose stored `data` is empty by design — everything else
    *  here works from the attachments alone. */
@@ -591,6 +701,8 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
   const onRemove  = options.onRemove  ?? (() => {});
   const onReorder = options.onReorder ?? (() => {});
   const onUpdateFile = options.onUpdateFile;
+  const onRenameFile = options.onRenameFile;
+  const onCopyFile = options.onCopyFile;
   const onSetPreferredIndex = options.onSetPreferredIndex;
   const card = options.card;
 
@@ -664,7 +776,13 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   // A derived score has nowhere to save an edit back to, and a
                   // fused set is a single page — so neither editing its text
                   // nor starring a version applies to it.
-                  onSave={onUpdateFile && att.generatedBy !== 'tuneset' ? (data) => onUpdateFile(i, data) : undefined}
+                  onSave={onUpdateFile && att.generatedBy !== 'tuneset'
+                    ? att.generatedBy === 'thesession' && onCopyFile
+                      ? theSessionScoreSaver(i, onUpdateFile, onCopyFile)
+                      : (data) => onUpdateFile(i, data)
+                    : undefined}
+                  // Its name is derived from the set's, so it has none of its own to change.
+                  onRename={onRenameFile && att.generatedBy !== 'tuneset' ? (name) => onRenameFile(i, name) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
                   reloadEntry={att.generatedBy === 'tuneset' && card
                     ? () => tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats })
