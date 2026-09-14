@@ -78,7 +78,7 @@ const response = (status: number, body: unknown) => ({
 function installFetch(drive: FakeDrive): void {
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = String(url);
-    if (u.includes('oauth2/v3/userinfo')) return response(200, { sub: 'google-1', email: 'anne@example.com' });
+    if (u.includes('/drive/v3/about')) return response(200, { user: { permissionId: 'google-1', emailAddress: 'anne@example.com' } });
     if (u.startsWith('https://www.googleapis.com/upload/')) {
       const outcome = drive.nextUpload;
       drive.nextUpload = 'ok';

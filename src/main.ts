@@ -8,7 +8,7 @@ import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { ensurePersistentStorage } from './services/storageService';
-import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, type ConnectResult } from './services/driveService';
+import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, localUsersOnSameDrive, adoptDriveConnection, type ConnectResult } from './services/driveService';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName, localSessionAudioStats } from './session/db';
 import { buildZip, audioExtension } from './services/zip';
@@ -101,6 +101,21 @@ async function recoverUserFromDrive(root: HTMLElement): Promise<DriveRecovery> {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg.includes('popup_closed') || msg.includes('access_denied')) return { kind: 'cancelled' };
     return { kind: 'failed', inAppBrowser: isLikelyInAppBrowser() };
+  }
+
+  // Once the file is found, it identifies the data beyond doubt. A user of this
+  // device already bound to it (or to this account) IS the data being looked for,
+  // however old its bookkeeping — see localUsersOnSameDrive. Opened even when it
+  // had disconnected Drive, and reconnected on the way (adoptDriveConnection).
+  if (result.action === 'apply' || result.action === 'conflict' || result.action === 'none') {
+    const existing = new Set(await getAllUserIds());
+    const known = localUsersOnSameDrive(user.id).find(id => existing.has(id));
+    if (known) {
+      adoptDriveConnection(user.id, known);
+      discard();
+      await openUser(known, root);
+      return { kind: 'opened' };
+    }
   }
 
   switch (result.action) {

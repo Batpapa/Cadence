@@ -221,6 +221,57 @@ export function initDriveForUser(userId: string): void {
   };
 }
 
+/** Other users of this device bound to the same Drive data as `userId`, best
+ *  match first: the same Drive file, then the same Google account.
+ *
+ *  For the welcome screen's recovery, which must open the user already here
+ *  rather than create a second one. connectDrive's shared-account check is not
+ *  enough for that (2026-09-14, a duplicate in real use): it needs the owner AND
+ *  the connected flag, and neither existed before 2026-06-01 — a user connected
+ *  earlier carries only its file id. The file id is also the stronger proof:
+ *  one Google account, one Cadence file. The account alone still finds a user
+ *  that has since disconnected Drive, which keeps its owner.
+ *
+ *  Ids only: whether each is still a real user is the caller's to check, since
+ *  keys can outlive a user removed before clearDriveStateForUser existed. */
+export function localUsersOnSameDrive(userId: string): string[] {
+  const matches = (keyOf: (uid: string) => string, value: string | null): string[] => {
+    if (!value) return [];
+    const prefix = keyOf('');
+    const found: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)!;
+      if (!key.startsWith(prefix) || localStorage.getItem(key) !== value) continue;
+      const uid = key.slice(prefix.length);
+      if (uid !== userId) found.push(uid);
+    }
+    return found;
+  };
+  const byFile  = matches(lsFileId, localStorage.getItem(lsFileId(userId)));
+  const byOwner = matches(lsOwner, localStorage.getItem(lsOwner(userId)));
+  return [...byFile, ...byOwner.filter(uid => !byFile.includes(uid))];
+}
+
+/** Hands the Drive connection just made for `fromUid` to `toUid`, an existing
+ *  user of the same account who is not connected any more — the welcome
+ *  screen's recovery found them, and opening them disconnected would show data
+ *  Drive may have long moved past.
+ *
+ *  Exactly a reconnect from Settings as far as `toUid` is concerned: no merge
+ *  base survives, so their boot reconciliation applies Drive if they never
+ *  changed anything locally and asks otherwise. A no-op when `toUid` is still
+ *  bound to a file: their own bookkeeping is then the one to trust. */
+export function adoptDriveConnection(fromUid: string, toUid: string): void {
+  if (localStorage.getItem(lsFileId(toUid))) return;
+  for (const keyOf of [lsFileId, lsConnected, lsOwner, lsHint]) {
+    const value = localStorage.getItem(keyOf(fromUid));
+    if (value !== null) localStorage.setItem(keyOf(toUid), value);
+  }
+  localStorage.removeItem(lsSyncedTs(toUid));
+  localStorage.removeItem(lsSyncedVersion(toUid));
+  localStorage.removeItem(lsFailed(toUid));
+}
+
 export function clearDriveOwner(): void {
   localStorage.removeItem(lsOwner());
 }
@@ -249,7 +300,7 @@ export function isDriveConnected(): boolean      { return !!localStorage.getItem
 export function getDriveStatus(): DriveStatus    { return _state.status; }
 export function getLocalTimestamp(): number      { return parseInt(localStorage.getItem(lsLocalTs()) ?? '0'); }
 /** The Google account the current user is connected with, as recorded at
- *  connect time — empty when unknown (the userinfo call is best-effort). */
+ *  connect time — empty when unknown (the about.get call is best-effort). */
 export function getDriveAccountEmail(): string   { return localStorage.getItem(lsHint()) ?? ''; }
 
 /** Chat apps' built-in browsers (WhatsApp, Instagram, Messenger, Line…) are
@@ -520,15 +571,26 @@ export async function connectDrive(allowSharedAccount = false): Promise<ConnectR
   localStorage.removeItem(lsFailed());
   try {
     const token = await requestToken('consent');
+    // Who the account is, from Drive's own about.get — which the drive.file
+    // scope authorises. It used to come from oauth2/v3/userinfo, which needs an
+    // openid/email/profile scope this app never requests: the call answered 401,
+    // its error body parsed fine, and `sub` came back undefined. So until
+    // 2026-09-14 no owner and no email was ever recorded, for anyone — which
+    // silently disabled the wrong-account and shared-account guards below, the
+    // token's cross-account check, and let the welcome screen's recovery create
+    // a second copy of a user already on the device.
     let googleId = '';
     let email    = '';
     try {
-      const info = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      const resp = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)', {
         headers: { Authorization: `Bearer ${token}` },
-      }).then(r => r.json()) as Gis;
-      googleId = (info.sub   as string) ?? '';
-      email    = (info.email as string) ?? '';
-    } catch { /* non-fatal */ }
+      });
+      if (resp.ok) {
+        const user = ((await resp.json()) as { user?: { permissionId?: string; emailAddress?: string } }).user;
+        googleId = user?.permissionId ?? '';
+        email    = user?.emailAddress ?? '';
+      }
+    } catch { /* non-fatal: the guards below simply cannot run */ }
 
     const existingOwner = localStorage.getItem(lsOwner());
     if (existingOwner && googleId && existingOwner !== googleId) {
