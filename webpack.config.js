@@ -179,6 +179,12 @@ module.exports = (env, argv) => {
           { from: 'src/robots.txt',    to: 'robots.txt' },
           { from: 'src/sitemap.xml',   to: 'sitemap.xml' },
           { from: 'src/googleadb03431aeef178b.html', to: 'googleadb03431aeef178b.html' },
+          // pdf.js's data for the PDF fallback (src/components/pdfCanvas.ts),
+          // fetched only by a PDF that needs it on a browser with no viewer of
+          // its own. Not the PDF-scripting engine (quickjs): nothing here runs
+          // a PDF's scripts. The licences travel with the binaries.
+          { from: 'node_modules/pdfjs-dist/standard_fonts', to: 'pdfjs/standard_fonts' },
+          { from: 'node_modules/pdfjs-dist/wasm', to: 'pdfjs/wasm', globOptions: { ignore: ['**/quickjs-eval.*'] } },
         ],
       })] : []),
     ],
@@ -187,7 +193,12 @@ module.exports = (env, argv) => {
       hot: true,
       // Mirrors the CopyPlugin patterns above (which only run in production) —
       // without this, static files like privacy.html/terms.html 404 in dev.
-      static: { directory: path.resolve(__dirname, 'src') },
+      // pdf.js's fonts and decoders are served from the package itself, at the
+      // same /pdfjs/ paths the CopyPlugin gives them in production.
+      static: [
+        { directory: path.resolve(__dirname, 'src') },
+        { directory: path.resolve(__dirname, 'node_modules/pdfjs-dist'), publicPath: '/pdfjs' },
+      ],
     },
     devtool: isDev ? 'eval-source-map' : false,
   };

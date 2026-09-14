@@ -124,12 +124,17 @@ export function fileToEntry(file: File): Promise<FileEntry> {
   });
 }
 
-export function entryToObjectUrl(entry: FileEntry): string {
+/** A stored file's bytes — kept as base64 in the user blob. A fresh array on
+ *  every call, which matters to pdf.js: it takes the buffer over. */
+export function entryToBytes(entry: FileEntry): Uint8Array<ArrayBuffer> {
   const bytes = atob(entry.data);
   const arr = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-  const blob = new Blob([arr], { type: entry.mimeType });
-  return URL.createObjectURL(blob);
+  return arr;
+}
+
+export function entryToObjectUrl(entry: FileEntry): string {
+  return URL.createObjectURL(new Blob([entryToBytes(entry)], { type: entry.mimeType }));
 }
 
 /** Chunked to avoid "Maximum call stack size exceeded" on large buffers (spread args limit). */

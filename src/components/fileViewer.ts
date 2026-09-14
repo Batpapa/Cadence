@@ -1,6 +1,6 @@
 import LZString from 'lz-string';
 import type { AbcOpenMode, FileEntry } from '../types';
-import { entryToObjectUrl, arrayBufferToBase64, focusIfDesktop } from '../utils';
+import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop } from '../utils';
 import { renderMarkdown } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon } from './icons';
@@ -273,7 +273,10 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
   // take down. A document-level listener outliving its modal would keep
   // swallowing the space bar for the rest of the session.
   let releaseKeys: () => void = () => {};
-  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); };
+  // Set by the PDF branch when pdf.js draws the pages: its worker and canvases
+  // go with the modal.
+  let releasePdf: () => void = () => {};
+  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); };
 
   const body = document.createElement('div');
   body.className = 'w-full flex items-center justify-center';
@@ -335,37 +338,50 @@ export function showPreviewModal(entry: FileEntry, onSave?: (data: string) => vo
     body.appendChild(img);
 
   } else if (m === 'application/pdf') {
-    const url = entryToObjectUrl(entry);
     // `!== false`, not truthy: a browser too old to have the property at all
     // is a desktop one with its viewer, and keeps getting the frame it had.
     if (navigator.pdfViewerEnabled !== false) {
       // An <embed> loading a blob: URL is governed by the page's object-src —
       // which must keep allowing blob: (webpack.config.js's CSP). With 'none'
       // this rendered an empty frame and said nothing (2026-09-06 to 14).
-      const embed = document.createElement('embed'); embed.src = url;
+      const embed = document.createElement('embed'); embed.src = entryToObjectUrl(entry);
       embed.type = 'application/pdf'; embed.className = 'w-full rounded';
       embed.style.height = mediaMaxH;
       body.appendChild(embed);
     } else {
-      // No inline PDF viewer here — Chrome on Android, first of all — so the
-      // frame above would stay empty whatever the page did. Say so, and hand
-      // the file to the device's own viewer, which zooms and searches better
-      // than anything drawn here would (pdf.js was measured and set aside for
-      // this, 2026-09-14). The modal still opens, so a tap on a PDF means the
-      // same thing everywhere. A download link, like the attachment row's own:
-      // it is what already worked on these phones.
-      const box = document.createElement('div');
-      box.className = 'flex flex-col items-center gap-4 py-6 text-center';
-      const msg = document.createElement('p');
-      msg.className = 'text-sm text-muted leading-relaxed max-w-sm';
-      msg.textContent = t('fileViewer.pdf.noInline');
-      const open = document.createElement('a');
-      open.href = url;
-      open.download = entry.name;
-      open.className = 'btn-primary';
-      open.textContent = t('fileViewer.pdf.open');
-      box.append(msg, open);
-      body.appendChild(box);
+      // No inline PDF viewer here — Chrome on Android, first of all — so an
+      // <embed> would stay an empty frame. The pages are drawn with pdf.js
+      // instead, loaded only now (see pdfCanvas.ts). Handing the file to the
+      // device was tried first and turned down: on the phone it downloaded.
+      const frame = document.createElement('div');
+      frame.className = 'w-full overflow-y-auto';
+      frame.style.maxHeight = mediaMaxH;
+      const loading = document.createElement('p');
+      loading.className = 'text-sm text-muted text-center py-6';
+      loading.textContent = t('fileViewer.pdf.loading');
+      frame.appendChild(loading);
+      body.appendChild(frame);
+
+      import('./pdfCanvas')
+        .then(({ renderPdfPages }) => renderPdfPages(frame, entryToBytes(entry), () => closed))
+        .then(release => { if (closed) release(); else releasePdf = release; })
+        .catch(() => {
+          if (closed) return;
+          // Last resort — a PDF pdf.js cannot read, or its code not loadable
+          // (offline before it was ever fetched): the device may still open it.
+          const box = document.createElement('div');
+          box.className = 'flex flex-col items-center gap-4 py-6 text-center';
+          const msg = document.createElement('p');
+          msg.className = 'text-sm text-muted leading-relaxed max-w-sm';
+          msg.textContent = t('fileViewer.pdf.failed');
+          const open = document.createElement('a');
+          open.href = entryToObjectUrl(entry);
+          open.download = entry.name;
+          open.className = 'btn-primary';
+          open.textContent = t('fileViewer.pdf.open');
+          box.append(msg, open);
+          frame.replaceChildren(box);
+        });
     }
 
   } else if (isAbcFile(entry)) {
