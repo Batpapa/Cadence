@@ -8,7 +8,7 @@ import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../service
 import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName } from '../../utils';
-import { extractClipMp3 } from '../audio/clipExtract';
+import { extractClip } from '../audio/clipExtract';
 import { getContext } from '../../store';
 import type { IndexProgress } from '../recognition/indexStore';
 import type { Detection } from '../model';
@@ -273,10 +273,22 @@ export function clipTag(session: ClipSessionRef, ann: Detection): string {
   return `[${session.id.slice(0, 8)}·${Math.round(ann.start)}]`;
 }
 
-export function clipFileName(session: ClipSessionRef, ann: Detection): string {
+/** `extension` is the clip's own (see ExtractedClip): a clip keeps the
+ *  recording's container, so the name cannot assume one.
+ *
+ *  The tune is named as the screen names it (tuneName), never by the raw
+ *  `displayName`: that one comes from the recognition index, lowercased, and
+ *  used to put "the silver spear" in the file next to "The Silver Spear" on the
+ *  card.
+ *
+ *  `attachment`: only an attached clip carries clipTag, the one thing
+ *  isClipAttached recognises it by. A downloaded file has no such use for it,
+ *  and there it was only noise at the end of the name. */
+export function clipFileName(session: ClipSessionRef, ann: Detection, extension: string, attachment: boolean): string {
   const sessionName = session.name;
   const range = `${fmtTime(ann.start)}–${fmtTime(ann.end ?? session.duration)}`.replace(/:/g, 'm');
-  return `${ann.displayName} — ${sessionName} (${range}) ${clipTag(session, ann)}.mp3`;
+  const tag = attachment ? ` ${clipTag(session, ann)}` : '';
+  return `${tuneName(ann).text} — ${sessionName} (${range})${tag}.${extension}`;
 }
 
 /** True when this exact clip is already attached, whatever it was renamed to look like. */
@@ -287,8 +299,9 @@ export function isClipAttached(session: ClipSessionRef, ann: Detection): boolean
   return card.content.attachments.some(a => a.type === 'file' && a.name.includes(tag));
 }
 
-/** Extracts the detection's audio slice as a standalone MP3 file and attaches
- *  it to the card — independent from the session file. `audio` is already
+/** Extracts the detection's audio slice as a standalone file, in the
+ *  recording's own format, and attaches it to the card — independent from the
+ *  session file. `audio` is already
  *  resolved by the caller (loadSessionAudio for a saved session, or a
  *  lazily-assembled Blob for a still-in-progress live/import one — see
  *  ClipControls below). */
@@ -304,8 +317,8 @@ export async function attachClip(
   if (!findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards)) return false;
   if (isClipAttached(session, ann)) return true;
 
-  const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? session.duration, onProgress);
-  const entry = await fileToEntry(new File([mp3], clipFileName(session, ann), { type: 'audio/mpeg' }));
+  const clip = await extractClip(audio, ann.start, ann.end ?? session.duration, onProgress);
+  const entry = await fileToEntry(new File([clip.blob], clipFileName(session, ann, clip.extension, true), { type: clip.blob.type }));
   await ctx.mutate(s => {
     const card = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
     if (card) card.content.attachments.push({ type: 'file', ...entry });
@@ -390,13 +403,13 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
     try {
       const audio = await getAudio();
       if (!audio) throw new Error(t('sessions.clip.unavailable'));
-      const mp3 = await extractClipMp3(audio, ann.start, ann.end ?? session.duration, ratio => {
+      const clip = await extractClip(audio, ann.start, ann.end ?? session.duration, ratio => {
         setDownloadTitle(t('sessions.extracting', { pct: Math.round(ratio * 100) }));
       });
-      const url = URL.createObjectURL(mp3);
+      const url = URL.createObjectURL(clip.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = clipFileName(session, ann);
+      a.download = clipFileName(session, ann, clip.extension, false);
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

@@ -2,21 +2,21 @@ import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
 import { emptyState, formatBytes } from './utils';
-import { appState, commitState, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
+import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { ensurePersistentStorage } from './services/storageService';
-import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed } from './services/driveService';
+import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, type ConnectResult } from './services/driveService';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName, localSessionAudioStats } from './session/db';
 import { buildZip, audioExtension } from './services/zip';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
-import { migrateState, migrateLegacyToUser } from './services/migration';
+import { migrateState, migrateLegacyToUser, applyExternalData } from './services/migration';
 import { applyZoom } from './services/zoomService';
 import { applyTheme } from './services/themeService';
-import { mountApp, mountUserSelector } from './appRoot';
+import { mountApp, mountUserSelector, type DriveRecovery } from './appRoot';
 import { showHelpModal } from './components/help';
 import { getContext } from './store';
 import { closeTopOverlay } from './components/overlayStack';
@@ -47,13 +47,23 @@ void ensurePersistentStorage();
 
 screen.orientation?.unlock?.();
 
-export async function createAndOpenUser(name: string, root: HTMLElement): Promise<void> {
+function blankUser(): User {
   const user = emptyState();
-  user.name = name;
   user.language = detectLanguage();
   ensureCurrentUser(user);
   ensureCurrentProfile(user);
+  return user;
+}
+
+export async function createAndOpenUser(name: string, root: HTMLElement): Promise<void> {
+  const user = blankUser();
+  user.name = name;
   initDriveForUser(user.id);
+  await openBrandNewUser(user, root);
+}
+
+/** Everything after the Drive bookkeeping has been initialised for `user`. */
+async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
   commitState(user);
   await saveUser(user);
   setLastUserId(user.id);
@@ -68,16 +78,91 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
   setTimeout(() => showHelpModal(getContext()), 0);
 }
 
+/** The welcome screen's "restore my data" (2026-09-14). Getting one's data
+ *  onto a new device used to take knowing the trick: create a throwaway user,
+ *  then connect Drive from Settings BEFORE touching anything — one edit first
+ *  and the connect raised a conflict screen instead of simply applying Drive.
+ *
+ *  The user is built in memory and bound to Drive before anything reaches
+ *  IndexedDB, so abandoning the flow at any step leaves no stray user behind.
+ *  Its edit counter is zero by construction, so a found Drive file is applied
+ *  outright — there is nothing local to arbitrate, and nothing to snapshot. */
+async function recoverUserFromDrive(root: HTMLElement): Promise<DriveRecovery> {
+  const user = blankUser();
+  initDriveForUser(user.id);
+  // Only localStorage bookkeeping exists for this id until it is kept.
+  const discard = () => clearDriveStateForUser(user.id);
+
+  let result: ConnectResult;
+  try {
+    result = await connectDrive();
+  } catch (e) {
+    discard();
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('popup_closed') || msg.includes('access_denied')) return { kind: 'cancelled' };
+    return { kind: 'failed', inAppBrowser: isLikelyInAppBrowser() };
+  }
+
+  switch (result.action) {
+    case 'shared_account':
+      // This Google account already syncs a user of this device: that user IS
+      // the data being looked for. Its own boot reconciles it with Drive.
+      discard();
+      await openUser(result.userId, root);
+      return { kind: 'opened' };
+
+    case 'wrong_account':
+      // Needs a recorded owner, which a user created a moment ago cannot have.
+      discard();
+      return { kind: 'failed', inAppBrowser: false };
+
+    case 'apply':
+    case 'conflict': {
+      // 'conflict' cannot come from a zero edit counter either; if it ever
+      // did, local still holds nothing, so Drive wins all the same.
+      const data = applyExternalData(result.state as unknown as Record<string, unknown>, user.id);
+      if (!data.name?.trim()) data.name = getDriveAccountEmail().split('@')[0] || 'Cadence';
+      commitState(user);
+      await applyFromDrive(s => { Object.assign(s, data); });
+      markSyncedAfterApply(result.driveTs, result.version);
+      setLastUserId(user.id);
+      touchUserOrder(user.id);
+      setLanguage(appState.value.language);
+      await initSessionDbForUser(user.id);
+      initRoutePersistence(user.id);
+      finishBoot(root);
+      return { kind: 'opened' };
+    }
+
+    case 'none':
+      // Nothing on this account yet. The connection is made and kept only if a
+      // name is given: this becomes an ordinary new user, already synced.
+      return {
+        kind: 'empty',
+        email: getDriveAccountEmail(),
+        finish: async (name) => {
+          user.name = name;
+          await openBrandNewUser(user, root);
+          // Same as Settings' connect on an empty Drive: push the first copy.
+          syncToCloud(appState.value);
+          void manualSync();
+        },
+        cancel: discard,
+      };
+  }
+}
+
 async function showUserSelector(root: HTMLElement): Promise<void> {
   setLanguage(detectLanguage());
   applyTheme();
   applyZoom();
   const users = await loadAllUsers();
-  // Selecting or creating, and nothing else: removing a user moved to
-  // Settings → User on 2026-09-13 (see settingsModal's removeUserFromDevice).
+  // Selecting, creating or restoring, and nothing else: removing a user moved
+  // to Settings → User on 2026-09-13 (see settingsModal's removeUserFromDevice).
   mountUserSelector(root, users,
     (id)   => openUser(id, root),
     (name) => createAndOpenUser(name, root),
+    isDriveFeatureEnabled() ? () => recoverUserFromDrive(root) : null,
   );
 }
 
