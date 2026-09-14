@@ -51,9 +51,9 @@ function showAbcPreview(displayName: string, settingId: string, meta: SettingAbc
  *
  *  Null whenever there is nothing better to show than the stand-in: the tune
  *  is not in the library, or its card holds no ABC carrying this setting.
- *  Asking the FILE, never the `generatedBy: 'thesession'` marker, which is
- *  younger than the data — real libraries hold TheSession scores predating it,
- *  and their owners should not be sent to a lesser preview over a label. */
+ *  Which of the card's scores is findSettingInScore's call: the TheSession
+ *  score first, then any ABC carrying the setting — asking the FILE, so a score
+ *  predating the `generatedBy` marker is never passed over for a label. */
 function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined) {
   if (!cardId || !ctx) return null;
   const card = getContext().user.cards[cardId];

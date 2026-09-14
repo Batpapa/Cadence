@@ -91,6 +91,19 @@ describe('migrateState V6 → V7', () => {
   });
 });
 
+describe('migrateState V7 → V8', () => {
+  it('moves clip tags out of attachment names', () => {
+    const s = stateWith(card({
+      id: 'a',
+      content: { notes: '', attachments: [{ type: 'file', name: 'Reel — S (0m00–1m00) [abcd1234·12].mp3', mimeType: 'audio/mpeg', data: '' }] },
+    }));
+    s.schemaVersion = 7;
+    migrateState(s);
+    expect(s.cards['a']!.content.attachments[0]).toMatchObject({ name: 'Reel — S (0m00–1m00).mp3', clipOf: 'abcd1234·12' });
+    expect(s.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+});
+
 describe('the .cdc path stamps identically', () => {
   // The trap this guards: importExport.ts carries its OWN partial migration
   // mirror, so a package exported before V7 would arrive untyped — and its

@@ -54,6 +54,11 @@ export type Attachment =
        *
        *  Absent on manually-added or pre-existing attachments. */
       generatedBy?: 'thesession' | 'tuneset';
+      /** Set on a clip cut from an analysis: which detection it is, as
+       *  `{first 8 characters of the session id}·{start in whole seconds}`. How
+       *  the analysis tells the clip is already attached, whatever the file has
+       *  since been renamed to. It was a tag inside the name until schema V8. */
+      clipOf?: string;
     })
   | ({ type: 'embed' } & EmbedEntry)
   | CardReferenceAttachment;

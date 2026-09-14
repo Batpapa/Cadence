@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { settingIndexInScore, findSettingInScore } from './theSessionService';
+import { settingIndexInScore, findSettingInScore, applyTheSessionAbc, type TuneResult } from './theSessionService';
 import { encodeAbc } from './abcService';
 import type { Card, FileEntry } from '../types';
 
@@ -93,5 +93,52 @@ describe('findSettingInScore', () => {
       { type: 'file', ...s },
     ]);
     expect(findSettingInScore(c, 200)).toEqual({ attachmentIndex: 1, blockIndex: 1, preferredIndex: undefined });
+  });
+
+  // A user's copy of a TheSession score keeps every S: line and sits before
+  // the original — but the original is what was played.
+  it('prefers the TheSession score over an earlier copy of it', () => {
+    const s = score(block(1, 7, 100), block(2, 7, 200));
+    const c = card([
+      { type: 'file', ...s, name: 'A Tune (1).abc' },
+      { type: 'file', ...s, generatedBy: 'thesession' },
+    ]);
+    expect(findSettingInScore(c, 200)?.attachmentIndex).toBe(1);
+  });
+});
+
+describe('applyTheSessionAbc', () => {
+  const tune: TuneResult = {
+    id: 7, name: 'A Tune', type: 'reel', url: 'https://thesession.org/tunes/7', tunebooks: 1, topKey: null,
+    settings: [
+      { id: 100, url: 'https://thesession.org/tunes/7#setting100', key: 'Edorian', abc: 'EBBA B2 EB|', member: { id: 1, name: 'Someone', url: '' }, date: '' },
+      { id: 200, url: 'https://thesession.org/tunes/7#setting200', key: 'Edorian', abc: 'B2EB B2EB|', member: { id: 1, name: 'Someone', url: '' }, date: '' },
+    ],
+  };
+  const pdf = { type: 'file' as const, name: 'notes.pdf', mimeType: 'application/pdf', data: '' };
+  const mine = { type: 'file' as const, name: 'A Tune (1).abc', mimeType: 'text/plain', data: '' };
+  const old = (over: object = {}) => ({ type: 'file' as const, name: 'A Tune.abc', mimeType: 'text/plain', data: '', generatedBy: 'thesession' as const, ...over });
+
+  it('replaces the old score in its own place, keeping the star', () => {
+    const c = card([pdf, mine, old({ preferredIndex: 1 })]);
+    applyTheSessionAbc(c, tune);
+    expect(c.content.attachments.map(a => (a.type === 'file' ? a.name : a.type))).toEqual(['notes.pdf', 'A Tune (1).abc', 'A Tune.abc']);
+    const fresh = c.content.attachments[2]!;
+    expect(fresh.type === 'file' && fresh.generatedBy).toBe('thesession');
+    expect(fresh.type === 'file' && fresh.preferredIndex).toBe(1);
+    expect(fresh.type === 'file' && settingIndexInScore(fresh, 200)).toBe(1);
+  });
+
+  it('appends when the card has no TheSession score', () => {
+    const c = card([pdf]);
+    applyTheSessionAbc(c, tune);
+    expect(c.content.attachments).toHaveLength(2);
+    expect(c.content.attachments[1]!.type === 'file' && (c.content.attachments[1] as { generatedBy?: string }).generatedBy).toBe('thesession');
+  });
+
+  it('merges one-file-per-setting scores into the first one’s place', () => {
+    const c = card([old({ name: 'A Tune - Setting 100.abc' }), pdf, old({ name: 'A Tune - Setting 200.abc' })]);
+    applyTheSessionAbc(c, tune);
+    expect(c.content.attachments.map(a => (a.type === 'file' ? a.name : a.type))).toEqual(['A Tune.abc', 'notes.pdf']);
   });
 });

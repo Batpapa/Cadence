@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } fr
 import { Fragment } from 'preact';
 import { appState, navigate, mutate } from '../store';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
+import { copyFileName } from '../services/attachmentNames';
 import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
@@ -983,6 +984,27 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
             if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
           }
         }),
+        onRenameFile: (i, name) => mutate(s => {
+          const att = s.cards[cardId]!.content.attachments[i];
+          if (att && att.type === 'file') att.name = name;
+        }),
+        // Answers synchronously, so the viewer can show the copy's name at once:
+        // mutate() runs its function before its first await, which is also what
+        // lets the number be chosen against the live list rather than a render's.
+        onCopyFile: (i, data) => {
+          let name = '';
+          void mutate(s => {
+            const atts = s.cards[cardId]!.content.attachments;
+            const original = atts[i];
+            if (!original || original.type !== 'file') return;
+            name = copyFileName(original.name, atts.flatMap(a => (a.type === 'file' ? [a.name] : [])));
+            // Everything but the marker: the copy is the user's, so no refresh
+            // may ever replace it. The star comes along.
+            const { generatedBy: _generatedBy, ...rest } = original;
+            atts.splice(i, 0, { ...rest, name, data });
+          });
+          return name;
+        },
         onReorder: (from, insertBefore) => mutate(s => {
           const atts = s.cards[cardId]!.content.attachments;
           const [moved] = atts.splice(from, 1);

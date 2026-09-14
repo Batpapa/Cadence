@@ -354,21 +354,36 @@ export function applyTheSessionImportance(card: Card, tune: TuneResult): void {
 }
 
 /** Replaces only the ABC attachment(s) this card got from a previous
- *  TheSession fetch (found via `generatedBy`). If none are tagged (a card
- *  imported before that field existed, or whose ABC was removed manually), the
- *  fresh one is appended instead — never blocked on finding an original. */
+ *  TheSession fetch (found via `generatedBy`), IN THE PLACE the first of them
+ *  held. It used to go to the end of the list, which quietly changed which
+ *  score the incipit reads (the first ABC) and pulled the original away from
+ *  the user's copies of it, inserted just before it (2026-09-15).
+ *
+ *  If none are tagged (a card imported before that field existed, or whose ABC
+ *  was removed manually), the fresh one is appended instead — never blocked on
+ *  finding an original. */
 export function applyTheSessionAbc(card: Card, tune: TuneResult): void {
   const fresh = settingsToMergedAbcFile(tune.settings, tune);
-  const old = card.content.attachments.find(a => a.type === 'file' && a.generatedBy === 'thesession');
+  const attachments = card.content.attachments;
+  const at = attachments.findIndex(a => a.type === 'file' && a.generatedBy === 'thesession');
+  const old = attachments[at];
   const oldPreferredIndex = old?.type === 'file' ? old.preferredIndex : undefined;
   // Only carried over if it's still a valid tune index in the freshly fetched
   // ABC (settingsToMergedAbcFile emits one tune per setting) — a setting
   // removed on TheSession since shouldn't leave the card pointing at a version
   // that no longer exists.
   const preferredIndex = oldPreferredIndex !== undefined && oldPreferredIndex < tune.settings.length ? oldPreferredIndex : undefined;
-  const kept = card.content.attachments.filter(a => !(a.type === 'file' && a.generatedBy === 'thesession'));
-  kept.push({ type: 'file', ...fresh, generatedBy: 'thesession', ...(preferredIndex !== undefined ? { preferredIndex } : {}) });
-  card.content.attachments = kept;
+  const replacement: Attachment = { type: 'file', ...fresh, generatedBy: 'thesession', ...(preferredIndex !== undefined ? { preferredIndex } : {}) };
+  if (at === -1) {
+    card.content.attachments = [...attachments, replacement];
+    return;
+  }
+  // A card imported one file per setting, before merging became the rule,
+  // carries several tagged files: the merged score takes the first one's place
+  // and the others go.
+  card.content.attachments = attachments.flatMap((a, i) =>
+    i === at ? [replacement] : a.type === 'file' && a.generatedBy === 'thesession' ? [] : [a],
+  );
 }
 
 /** Turns an already-imported card into the TheSession version of the same
@@ -513,19 +528,23 @@ export function setExternalId(memberId: number, setId: number): string {
  *  second copy of a comparison the caller can make in one line.
  *
  *  Null means there is nothing to open: no score on the card, a score that is
- *  not ABC, or an ABC that simply does not carry this setting. Note that it
- *  does NOT test `generatedBy: 'thesession'` — that marker is younger than the
- *  data, and plenty of real libraries hold TheSession scores predating it
- *  (365 of them on one measured backup). Asking the file whether it contains
- *  the setting answers the same question without punishing early users.
+ *  not ABC, or an ABC that simply does not carry this setting — the caller then
+ *  shows the index's own rendition, which is exactly what was played.
  *
- *  The first ABC attachment that carries the setting wins, which is the rule
- *  the score reader itself uses (abcService's blockForTune). */
+ *  Which score, when several carry the setting: the TheSession score itself
+ *  first (`generatedBy: 'thesession'`). A user's copy of it carries every `S:`
+ *  line too and sits just BEFORE it (2026-09-15), but its music may no longer be
+ *  what was played. Otherwise the first ABC attachment that carries the
+ *  setting, as the score reader does (abcService's blockForTune) — the marker
+ *  only breaks ties, never excludes: it is younger than the data, and plenty of
+ *  real libraries hold TheSession scores predating it (365 of them on one
+ *  measured backup). */
 export function findSettingInScore(
   card: Card,
   settingId: number,
 ): { attachmentIndex: number; blockIndex: number; preferredIndex: number | undefined } | null {
   const attachments = card.content?.attachments ?? [];
+  let firstFound: { attachmentIndex: number; blockIndex: number; preferredIndex: number | undefined } | null = null;
   for (let i = 0; i < attachments.length; i++) {
     const a = attachments[i];
     if (!a || a.type !== 'file' || !isAbcFile(a)) continue;
@@ -534,9 +553,11 @@ export function findSettingInScore(
     // Forwarded raw: absent is not the same as an explicit 0 to the control
     // that offers to clear it, even though every READER of the field treats
     // the two alike.
-    return { attachmentIndex: i, blockIndex, preferredIndex: a.preferredIndex };
+    const found = { attachmentIndex: i, blockIndex, preferredIndex: a.preferredIndex };
+    if (a.generatedBy === 'thesession') return found;
+    firstFound ??= found;
   }
-  return null;
+  return firstFound;
 }
 
 function applyPreferredSetting(card: Card, tune: TuneResult, settingId: number): void {
