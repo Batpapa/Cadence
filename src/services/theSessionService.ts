@@ -3,6 +3,7 @@ import { generateId } from '../utils';
 import { TuneUnavailableError, withTuneIdentity, type SkippedTune } from './tuneFetchError';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET } from './cardTypeService';
 import { tunesetAbcPlaceholder, isAbcFile, decodeAbc, splitAbcTunes } from './abcService';
+import { sourceAliases, refreshedAliases, setCardAliases } from './aliasService';
 
 const BASE = 'https://thesession.org';
 
@@ -14,6 +15,9 @@ export interface TuneSearchResult {
   name: string;
   type: string;
   url: string;
+  /** The alias the query matched, when it was not the name — TheSession's
+   *  search looks through aliases and says which one it used. */
+  alias?: string;
 }
 
 export interface TuneSetting {
@@ -34,6 +38,8 @@ export interface TuneResult {
   tunebooks: number;
   topKey: string | null; // most represented key across settings
   settings: TuneSetting[];
+  /** Normalised (sourceAliases), duplicates kept. */
+  aliases: string[];
 }
 
 interface RawSearchResponse {
@@ -47,6 +53,7 @@ interface RawTuneResponse {
   url: string;
   tunebooks: number;
   settings?: TuneSetting[];
+  aliases?: string[];
 }
 
 interface MemberTunesResponse {
@@ -87,6 +94,7 @@ export async function fetchTuneById(id: number): Promise<TuneResult> {
     tunebooks: data.tunebooks,
     topKey: mostCommonKey(data.settings ?? []),
     settings: data.settings ?? [],
+    aliases: sourceAliases(data.aliases ?? []),
   };
 }
 
@@ -321,6 +329,8 @@ export function tuneResultToCard(tune: TuneResult): Card {
     // page's migrate action — agrees without each having to remember.
     type: CARD_TYPE_TUNE,
     externalId: `thesession:${tune.id}`,
+    // Absent rather than empty when the tune has none — the two mean the same.
+    ...(tune.aliases.length > 0 ? { aliases: [...tune.aliases] } : {}),
     content: {
       // No source link here: the card page shows a clickable pin from `externalId` (see utils.ts externalSourceLink).
       notes: '',
@@ -345,6 +355,15 @@ export function theSessionImportance(tune: TuneResult): number {
 /** Replaces only `name` — tags/notes/attachments untouched. */
 export function applyTheSessionName(card: Card, tune: TuneResult): void {
   card.name = tune.name;
+}
+
+/** Replaces the aliases with TheSession's — the user's own included, as every
+ *  refreshed field overwrites what was edited. Keeps TheSession's name among
+ *  them when the card goes by another (see refreshedAliases). Listed AFTER the
+ *  name wherever both can be ticked together: the name written first is what
+ *  tells this one there is nothing to keep. */
+export function applyTheSessionAliases(card: Card, tune: TuneResult): void {
+  setCardAliases(card, refreshedAliases(card, tune.name, tune.aliases));
 }
 
 /** Replaces only `defaultImportance`. Per-deck overrides are left alone: those
@@ -636,6 +655,9 @@ export async function buildSetCards(
     tags: [...new Set(['TheSession', ...set.tags, ...(previous?.tags ?? [])])],
     type: CARD_TYPE_TUNESET,
     computedName: previous ? previous.computedName : true,
+    // TheSession gives a set no aliases, so any a set has are the user's own —
+    // kept, since importing an owned set again writes this card over it.
+    ...(previous?.aliases?.length ? { aliases: [...previous.aliases] } : {}),
     tunes,
     externalId,
     // A refresh keeps whatever the user has attached or written; only the tune

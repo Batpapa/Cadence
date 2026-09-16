@@ -2,6 +2,7 @@ import type { AppState, Card } from '../types';
 import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile } from '../utils';
 import { SCHEMA_VERSION, stampTuneType } from './migration';
 import { migrateClipTags } from './attachmentNames';
+import { cardAliases } from './aliasService';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -200,6 +201,14 @@ function sanitizeCard(raw: unknown): Card {
   // truthy string or number from a hand-written package cannot start rewriting
   // a card's name.
   if ('computedName' in card && card['computedName'] !== true) delete card['computedName'];
+  // Aliases: strings only, blanks dropped, and an empty list written as no
+  // list — the shape aliasService.ts keeps everywhere else.
+  if ('aliases' in card) {
+    const aliases = Array.isArray(card['aliases'])
+      ? card['aliases'].filter((a): a is string => typeof a === 'string').map(a => a.trim()).filter(a => a !== '')
+      : [];
+    if (aliases.length > 0) card['aliases'] = aliases; else delete card['aliases'];
+  }
   // A tuneset's tunes get the same defensive pass as its attachments — a
   // hand-written or AI-crafted package can put anything in here.
   if ('tunes' in card) {
@@ -299,6 +308,7 @@ export async function parseImport(file: File): Promise<Record<string, unknown>> 
 
 interface CardFacts {
   name: string;
+  aliases: string;
   type: string;
   tags: string;
   decks: string;
@@ -314,6 +324,7 @@ function cardFacts(card: Card, user: AppState): CardFacts {
   const history = user.cardWorks[`${user.currentProfileId}:${card.id}`]?.history ?? [];
   return {
     name: card.name,
+    aliases: cardAliases(card).join('; '),
     type: card.type ?? '',
     tags: (card.tags ?? []).join('; '),
     decks: cardDecks.map(d => d.name).join('; '),
@@ -342,11 +353,11 @@ function csvEscape(v: string): string {
 /** CSV export — read-only, no reimport intended. */
 export function exportCardsCSV(cards: Card[], user: AppState): void {
   const rows: string[][] = [
-    ['Name', 'Type', 'Tags', 'Decks', 'Importance per deck', 'Tunes', 'Notes', 'Review count', 'Reviews'],
+    ['Name', 'Aliases', 'Type', 'Tags', 'Decks', 'Importance per deck', 'Tunes', 'Notes', 'Review count', 'Reviews'],
   ];
   for (const card of cards) {
     const f = cardFacts(card, user);
-    rows.push([f.name, f.type, f.tags, f.decks, f.importances, f.tunes, f.notes, f.reviewCount, f.reviews]);
+    rows.push([f.name, f.aliases, f.type, f.tags, f.decks, f.importances, f.tunes, f.notes, f.reviewCount, f.reviews]);
   }
   const csv = rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
   // BOM: without it Excel reads the file as the system codepage and mangles
@@ -370,6 +381,7 @@ export function cardsTextReport(cards: Card[], user: AppState): string {
     // Only lines that carry something: a file full of empty "Tags:" rows is
     // harder to skim than one that simply omits them.
     const field = (label: string, value: string) => { if (value) out.push(`  ${(label + ':').padEnd(10)}${value}`); };
+    field('Aliases', f.aliases);
     field('Type', f.type);
     field('Tags', f.tags);
     // The CSV keeps decks and their importances in two columns because a

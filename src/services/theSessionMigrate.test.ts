@@ -17,6 +17,7 @@ const tune: TuneResult = {
     member: { id: 1, name: 'Jeremy', url: 'https://thesession.org/members/1' },
     date: '2004-01-01',
   }],
+  aliases: ['Eitil Im', 'Kick The Peeler'],
 };
 
 /** An IrishTuneInfo card as it exists before migration, carrying the things a
@@ -61,5 +62,11 @@ describe('migrating a card to TheSession', () => {
     applyTheSessionMigration(card, tune);
     expect(card.itiOnlyField).toBeUndefined();
     expect(card.tags).not.toContain('IrishTuneInfo');
+  });
+
+  it("replaces the card's aliases with TheSession's, as it does every other field", () => {
+    const card = { ...itiCard(), aliases: ['my own name for it'] };
+    applyTheSessionMigration(card, tune);
+    expect(card.aliases).toEqual(['Eitil Im', 'Kick The Peeler']);
   });
 });

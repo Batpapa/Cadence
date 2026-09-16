@@ -3,7 +3,7 @@ import { t } from '../../services/i18nService';
 import { focusIfDesktop, sortByRelevance } from '../../utils';
 import { fetchTuneById, searchTunes, tuneTypeToMeter, type TuneResult } from '../../services/theSessionService';
 import { TuneUnavailableError } from '../../services/tuneFetchError';
-import { ensureTuneNameIndex, searchLocalTuneIndex } from '../../services/tuneNameIndexService';
+import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../../services/tuneNameIndexService';
 import { PlusIcon } from '../../components/icons';
 import type { DetectionAlternate } from '../model';
 
@@ -28,7 +28,7 @@ import type { DetectionAlternate } from '../model';
 // already is a modal, and a portal over it is one more layer to get wrong on a
 // phone for no gain.
 
-interface Suggestion { id: number; name: string; type: string }
+interface Suggestion { id: number; name: string; type: string; via?: string }
 
 export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) => void }) {
   const [open, setOpen] = useState(false);
@@ -94,9 +94,9 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
         try {
           // Local first, remote only when there is no local index at all —
           // the new-card modal's settled rule, for the same reasons.
-          tunes = searchLocalTuneIndex(await ensureTuneNameIndex(), q);
+          tunes = searchLocalTuneIndex(await ensureTuneSearchIndex(), q);
         } catch {
-          tunes = sortByRelevance(await searchTunes(q), q);
+          tunes = sortByRelevance(await searchTunes(q), q).map(r => ({ ...r, via: r.alias }));
         }
         if (!fresh()) return;
         setSuggestions(tunes);
@@ -176,7 +176,10 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
               class="w-full flex items-baseline gap-2 px-3 py-1.5 text-left hover:bg-bg cursor-pointer"
               onClick={() => pickSuggestion(tune)}
             >
-              <span class="text-sm text-primary truncate flex-1 min-w-0">{tune.name}</span>
+              <span class="flex-1 min-w-0">
+                <span class="text-sm text-primary truncate block">{tune.name}</span>
+                {tune.via !== undefined && <span class="text-xs text-dim truncate block">{t('search.viaAlias', { alias: tune.via })}</span>}
+              </span>
               <span class="text-xs text-dim shrink-0">{tune.type}</span>
             </button>
           ))}

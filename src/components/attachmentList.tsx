@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
-import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance, matchesSearch } from '../utils';
+import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance } from '../utils';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon } from './icons';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult } from './fileViewer';
@@ -482,14 +482,23 @@ export function showCardPicker(
     listEl.innerHTML = '';
     const q = query.trim().toLowerCase();
     const cards = Object.values(appState.value.cards).filter(opts.eligible ?? (() => true));
-    const filtered = q ? cards.filter(c => matchesSearch(c.name, q)) : cards;
+    // Aliases searched with the name; one that found a card is shown under it.
     const sorted = q
-      ? sortByRelevance(filtered, q)
-      : [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-    for (const card of sorted) {
+      ? rankByRelevance(cards, q)
+      : [...cards].sort((a, b) => a.name.localeCompare(b.name)).map(item => ({ item, via: undefined }));
+    for (const { item: card, via } of sorted) {
       const item = document.createElement('button');
       item.className = 'w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent/10 transition-colors cursor-pointer';
-      item.textContent = card.name;
+      const name = document.createElement('span');
+      name.className = 'block truncate';
+      name.textContent = card.name;
+      item.appendChild(name);
+      if (via !== undefined) {
+        const alias = document.createElement('span');
+        alias.className = 'block truncate text-xs text-dim';
+        alias.textContent = t('search.viaAlias', { alias: via });
+        item.appendChild(alias);
+      }
       item.onclick = () => {
         onPick(card);
         closeModal();

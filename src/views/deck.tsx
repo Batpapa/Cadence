@@ -1,6 +1,6 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
-import { pct, timeAgo, availabilityColor, addTouchDragSupport, matchesSearch } from '../utils';
+import { pct, timeAgo, availabilityColor, addTouchDragSupport, rankByRelevance } from '../utils';
 import { TrashIcon, StarIcon, PlusIcon, LibraryIcon } from '../components/icons';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
@@ -76,11 +76,10 @@ export function DeckView({ deckId }: { deckId: string }) {
 
   // ── Quick-link matches ────────────────────────────────────────────────────────
   const alreadyInDeck = new Set(deck.entries.map(e => e.cardId));
+  // Names and aliases, best match first — a name heard in a session finds the
+  // card however the library happens to title it.
   const linkMatches   = linkQuery
-    ? Object.values(user.cards)
-        .filter(c => !alreadyInDeck.has(c.id) && matchesSearch(c.name, linkQuery))
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .slice(0, 12)
+    ? rankByRelevance(Object.values(user.cards).filter(c => !alreadyInDeck.has(c.id)), linkQuery).slice(0, 12)
     : [];
 
   // ── Drag handlers ─────────────────────────────────────────────────────────────
@@ -300,17 +299,18 @@ export function DeckView({ deckId }: { deckId: string }) {
             <div class="absolute z-10 left-0 right-0 top-full mt-1 bg-surface border border-border rounded shadow-lg max-h-52 overflow-y-auto">
               {linkMatches.length === 0 ? (
                 <p class="text-sm text-dim italic px-3 py-2">{t('deck.quickLink.noMatch')}</p>
-              ) : linkMatches.map(card => (
+              ) : linkMatches.map(({ item: card, via }) => (
                 <div
                   key={card.id}
-                  class="px-3 py-2 text-sm text-primary hover:bg-elevated cursor-pointer transition-colors truncate"
+                  class="px-3 py-2 text-sm text-primary hover:bg-elevated cursor-pointer transition-colors"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); });
                     setLinkQuery('');
                   }}
                 >
-                  {card.name}
+                  <span class="block truncate">{card.name}</span>
+                  {via !== undefined && <span class="block truncate text-xs text-dim">{t('search.viaAlias', { alias: via })}</span>}
                 </div>
               ))}
             </div>

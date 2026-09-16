@@ -15,7 +15,7 @@ import {
 } from '../services/theSessionService';
 import { defaultTuneRepeat } from '../services/abcService';
 import { describeTune, tuneFetchStatus, TuneUnavailableError, withTuneIdentity, type SkippedTune } from '../services/tuneFetchError';
-import { ensureTuneNameIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
+import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
@@ -451,7 +451,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   // touched by the single-tune path.
   const [busy, setBusy] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
-  const [suggestions, setSuggestions] = useState<Array<{ id: number; name: string; type: string }>>([]);
+  const [suggestions, setSuggestions] = useState<Array<{ id: number; name: string; type: string; via?: string }>>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
 
@@ -465,7 +465,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
   // already resolved. Cheap on every call after the first (see
   // tuneNameIndexService.ts): a single commit-SHA check unless
   // TheSession's tunes.json dump actually changed upstream.
-  useEffect(() => { void ensureTuneNameIndex().catch(() => { /* handled per-search below */ }); }, []);
+  useEffect(() => { void ensureTuneSearchIndex().catch(() => { /* handled per-search below */ }); }, []);
 
   // Resets `busy` too — typing invalidates whatever the last import's outcome
   // was, and this is called at the top of every keystroke, so a stale "busy"
@@ -523,7 +523,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
       timerRef.current = setTimeout(async () => {
         timerRef.current = null; setStatus(t('theSession.status.searching'));
         try {
-          let tunes: Array<{ id: number; name: string; type: string }>;
+          let tunes: Array<{ id: number; name: string; type: string; via?: string }>;
           try {
             // Local-first: TheSession's own /tunes/search has proven
             // unreliable in practice. Falls back to it below only if the
@@ -536,11 +536,12 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
             // but querying the unreliable remote search on every empty result
             // is a worse trade than missing those few. Settled call, don't
             // re-add it.
-            const index = await ensureTuneNameIndex();
+            const index = await ensureTuneSearchIndex();
             tunes = searchLocalTuneIndex(index, trimmed);
           } catch {
             const remote = await searchTunes(trimmed);
-            tunes = sortByRelevance(remote, trimmed);
+            // TheSession names the alias it matched on; shown the same way.
+            tunes = sortByRelevance(remote, trimmed).map(r => ({ ...r, via: r.alias }));
           }
           setSuggestions(tunes);
           setDropdownOpen(tunes.length > 0);
@@ -609,7 +610,9 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           <>
             <div class="flex-1 min-w-0">
               <span class="text-sm text-primary truncate block">{tune.name}</span>
-              <span class="text-xs text-dim">{tune.type}</span>
+              <span class="text-xs text-dim truncate block">
+                {tune.via !== undefined ? `${tune.type} · ${t('search.viaAlias', { alias: tune.via })}` : tune.type}
+              </span>
             </div>
             {knownIds().has(tune.id) && (
               <span class="text-success shrink-0" title={t('common.alreadyInLibrary')}><CheckIcon size={12} /></span>
