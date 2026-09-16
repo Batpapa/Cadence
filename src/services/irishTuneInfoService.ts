@@ -1,5 +1,6 @@
 import type { Attachment, Card, FileEntry } from '../types';
-import { arrayBufferToBase64, generateId } from '../utils';
+import { arrayBufferToBase64, generateId, normalizeDisplayName } from '../utils';
+import { sourceAliases } from './aliasService';
 import { withTuneIdentity } from './tuneFetchError';
 import { SCRAPER_BASE as BASE, markScraperServerWarm } from './scraperServerStatus';
 import { CARD_TYPE_TUNE } from './cardTypeService';
@@ -29,6 +30,9 @@ export interface TuneDetail {
   structure: string;
   mode: string;
   titles: string[];
+  /** Every title but the main one, normalised (sourceAliases), duplicates kept.
+   *  Empty when the scraper is too old to separate titles from notes. */
+  aliases: string[];
   featuredAudioUrl: string | null;
   discography: DiscographyEntry[];
   sourceUrl: string;
@@ -44,6 +48,8 @@ interface RawSearchResponse { count: number; results: RawSearchResult[] }
 interface RawTuneResponse {
   id: number; title: string; rhythm: string; bars: number; structure: string; mode: string;
   titles: string[]; featuredAudioUrl: string | null; discography: DiscographyEntry[]; sourceUrl: string;
+  /** Sent only by a scraper that separates the editorial notes from the titles. */
+  titleNotes?: string[];
 }
 interface RawPlaylistTune { id: number; title: string }
 interface RawPlaylistResponse { username: string; tunes: RawPlaylistTune[] }
@@ -67,19 +73,44 @@ export async function searchTunes(term: string): Promise<TuneSearchResult[]> {
   return (data.results ?? []).map(r => ({ id: r.id, name: r.title, rhythm: r.rhythm, key: r.key }));
 }
 
+/** A tune's name and aliases, from its list of titles.
+ *
+ *  The list is only read when the scraper sends `titleNotes`: that field is how
+ *  a scraper says it has separated the site's editorial remarks from the
+ *  titles. An older deployment splits the block on "/" and leaves "(composed
+ *  by …) (compare … #1022)" glued to the last title — which would land in the
+ *  card as an alias. So until the scraper is redeployed this falls back to what
+ *  import always did: the page heading as name, and no aliases.
+ *
+ *  The first title is the main one as the site catalogues it ("Kesh Jig, The")
+ *  and makes a better name than the page heading, which drops the article
+ *  ("Kesh Jig") and can carry a bracketed correction ("O' Sullivan's John
+ *  [O'Sullivan's John]") — measured on 70 pages, 2026-09-17. The other titles
+ *  are the aliases, kept as listed, duplicates included (user's call). */
+function namesOf(data: RawTuneResponse): { name: string; aliases: string[] } {
+  const titles = Array.isArray(data.titleNotes) ? (data.titles ?? []) : [];
+  const main = titles[0]?.trim();
+  return {
+    name: main ? normalizeDisplayName(main) : data.title,
+    aliases: sourceAliases(titles.slice(1)),
+  };
+}
+
 export async function fetchTuneById(id: number): Promise<TuneDetail> {
   const res = await fetch(`${BASE}/tune/${id}`);
   if (!res.ok) throw new Error(await errorMessage(res, 'IrishTuneInfo fetch failed'));
   markScraperServerWarm();
   const data = (await res.json()) as RawTuneResponse;
+  const { name, aliases } = namesOf(data);
   return {
     id: data.id,
-    name: data.title,
+    name,
     rhythm: data.rhythm,
     bars: data.bars,
     structure: data.structure,
     mode: data.mode,
     titles: data.titles ?? [],
+    aliases,
     featuredAudioUrl: data.featuredAudioUrl,
     discography: data.discography ?? [],
     sourceUrl: data.sourceUrl,
@@ -195,6 +226,8 @@ export function tuneToCard(tune: TuneDetail, audioFile?: FileEntry | null): Card
     // a tune, decided here rather than at each call site.
     type: CARD_TYPE_TUNE,
     externalId: `irishtuneinfo:${tune.id}`,
+    // Absent rather than empty when there are none — the two mean the same.
+    ...(tune.aliases.length > 0 ? { aliases: [...tune.aliases] } : {}),
     content: {
       // No source link here: the card page shows a clickable pin from `externalId` (see utils.ts externalSourceLink).
       notes: '',
