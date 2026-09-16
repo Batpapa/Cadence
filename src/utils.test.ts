@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDisplayName, scoreMatch, sortByRelevance, formatBytes, titleCaseTuneName } from './utils';
+import { normalizeDisplayName, scoreMatch, sortByRelevance, foldForSearch, matchesSearch, formatBytes, titleCaseTuneName } from './utils';
 
 describe('normalizeDisplayName', () => {
   it('moves a trailing ", The" to the front', () => {
@@ -81,6 +81,48 @@ describe('scoreMatch', () => {
   it('does not crash on regex-special characters in the query', () => {
     expect(() => scoreMatch("O'Carolan's Draught", "o'carolan's")).not.toThrow();
     expect(scoreMatch("O'Carolan's Draught", "o'carolan's")).toBe(1);
+  });
+
+  it('ignores accents on both sides', () => {
+    expect(scoreMatch('Sliabh Bána', 'sliabh bana')).toBe(0);
+    expect(scoreMatch('Sliabh Bana', 'sliabh bána')).toBe(0);
+  });
+
+  it('sees an accented letter as part of its word', () => {
+    // Unfolded, \b does not count "í" as a letter: "tula" read as a whole word
+    // inside "Tulaí", outranking a name where it really is one.
+    expect(scoreMatch('Ríl na Tulaí', 'tula')).toBe(4);
+    expect(scoreMatch('Ríl na Tulaí', 'tulai')).toBe(3);
+  });
+});
+
+describe('foldForSearch', () => {
+  it('drops accents and case', () => {
+    expect(foldForSearch('Ríl Na Tulaí')).toBe('ril na tulai');
+    expect(foldForSearch('Éire')).toBe('eire');
+  });
+
+  it('drops the dot of old Irish script letters', () => {
+    expect(foldForSearch('Amaċ San Ḟarraige')).toBe('amac san farraige');
+  });
+
+  it('maps the letters NFD cannot split, in either case', () => {
+    expect(foldForSearch('Cœur Ærø Łódź Ǥ ı Straße')).toBe('coeur aero lodz g i strasse');
+  });
+});
+
+describe('matchesSearch', () => {
+  it('finds an accented name from an unaccented query, and the reverse', () => {
+    expect(matchesSearch('Ríl na Tulaí', 'tulai')).toBe(true);
+    expect(matchesSearch('Ril na Tulai', 'TULAÍ')).toBe(true);
+  });
+
+  it('matches everything on an empty query, like includes', () => {
+    expect(matchesSearch('Cooley\'s', '')).toBe(true);
+  });
+
+  it('still rejects a real mismatch', () => {
+    expect(matchesSearch('Drowsy Maggie', 'molly')).toBe(false);
   });
 });
 

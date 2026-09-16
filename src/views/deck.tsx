@@ -1,6 +1,6 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
-import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
+import { pct, timeAgo, availabilityColor, addTouchDragSupport, matchesSearch } from '../utils';
 import { TrashIcon, StarIcon, PlusIcon, LibraryIcon } from '../components/icons';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
@@ -78,7 +78,7 @@ export function DeckView({ deckId }: { deckId: string }) {
   const alreadyInDeck = new Set(deck.entries.map(e => e.cardId));
   const linkMatches   = linkQuery
     ? Object.values(user.cards)
-        .filter(c => !alreadyInDeck.has(c.id) && c.name.toLowerCase().includes(linkQuery.toLowerCase()))
+        .filter(c => !alreadyInDeck.has(c.id) && matchesSearch(c.name, linkQuery))
         .sort((a, b) => a.name.localeCompare(b.name))
         .slice(0, 12)
     : [];

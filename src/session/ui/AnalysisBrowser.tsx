@@ -2,7 +2,7 @@ import type { JSX, RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import { generateId, addTouchDragSupport } from '../../utils';
+import { generateId, addTouchDragSupport, matchesSearch } from '../../utils';
 import { promptModal, confirmModal } from '../../components/modal';
 import { MicIcon, FileAudioIcon, DeviceAudioIcon, PencilIcon, TrashIcon } from '../../components/icons';
 import { fmtLongTime } from './sessionUiShared';
@@ -345,7 +345,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
   // nothing is dragged either, for the same reason: a list that is not a place
   // has no order to rearrange.
   if (query) {
-    const found = sessions.filter(s => s.name.toLowerCase().includes(query));
+    const found = sessions.filter(s => matchesSearch(s.name, query));
     return (
       <div class="mt-4 space-y-2">
         {found.length === 0

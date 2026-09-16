@@ -75,7 +75,7 @@ async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
   await initSessionDbForUser(user.id);
   initRoutePersistence(user.id);
   finishBoot(root);
-  setTimeout(() => showHelpModal(getContext()), 0);
+  setTimeout(() => showHelpModal(getContext(), { tab: 'guide' }), 0);
 }
 
 /** The welcome screen's "restore my data" (2026-09-14). Getting one's data

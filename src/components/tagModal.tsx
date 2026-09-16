@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import { appState, mutate } from '../store';
 import { showModal, closeModal, renderModalBody } from './modal';
-import { focusIfDesktop } from '../utils';
+import { focusIfDesktop, matchesSearch } from '../utils';
 import { t } from '../services/i18nService';
 
 /** Every tag the library has ever been given, sorted — the suggestion pool
@@ -57,8 +57,9 @@ export function TagPicker({ value, onChange, exclude, readout, note, onSubmit }:
   // list narrows to it, and clearing the field is what brings the others back.
   // Cheap, next to twelve tags picked alphabetically out of a vocabulary of
   // dozens, which was never browsing to begin with.
-  const filter = clean.toLowerCase();
-  const suggestions = known.filter(tg => tg.toLowerCase().includes(filter)).slice(0, 12);
+  // Accents ignored like every name search: typing "reel" offers an existing
+  // "Réel" instead of letting a second, near-identical tag be created.
+  const suggestions = known.filter(tg => matchesSearch(tg, clean)).slice(0, 12);
 
   return (
     <div class="space-y-3">

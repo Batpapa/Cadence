@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
-import { pct, availabilityColor, sortByRelevance, timeAgo, copyText } from '../utils';
+import { pct, availabilityColor, sortByRelevance, matchesSearch, timeAgo, copyText } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType } from '../services/cardTypeService';
 import { CardMap } from '../components/cardMap';
@@ -408,7 +408,7 @@ export function LibraryView() {
     const extId      = c.externalId?.toLowerCase();
     const extIdOnly  = extId?.slice(extId.indexOf(':') + 1);
     const matchExternalId = q !== '' && (extId === q || extIdOnly === q);
-    const matchText = !q || c.name.toLowerCase().includes(q) || matchExternalId;
+    const matchText = !q || matchesSearch(c.name, q) || matchExternalId;
     const cardDecks = decksContainingCard(c.id, user);
 
     const tagEntries  = [...liveTags];

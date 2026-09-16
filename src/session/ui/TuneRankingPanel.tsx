@@ -9,6 +9,7 @@ import { navigate, getContext } from '../../store';
 import { showDeckPickerModal } from '../../components/batchEdit';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import type { TuneSort } from '../../types';
+import { matchesSearch } from '../../utils';
 import type { Analysis, Detection } from '../model';
 import { getSettingAbcMeta, getSettingAbcMetaSync } from '../recognition/indexStore';
 import { loadSessionAudio } from '../db';
@@ -226,7 +227,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
     rankDetectedTunes(from)
       .map(row => ({ row, name: tuneName(row).text, cardId: cards.get(row.tuneId) }))
       .filter(r => passesOthers(r.row.liked, !!r.cardId))
-      .filter(r => !query || r.name.toLowerCase().includes(query) || r.row.tuneId === query);
+      .filter(r => !query || matchesSearch(r.name, query) || r.row.tuneId === query);
 
   const shown = listFrom(heard);
   const rows = sortTuneRows(shown, sortMode, sortAsc);
