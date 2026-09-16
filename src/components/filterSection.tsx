@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
 import { ChevronDownIcon, FolderIcon, VennAndIcon, VennOrIcon } from './icons';
+import { matchesSearch } from '../utils';
 
 export type FilterMap = Map<string, FilterState>;
 
@@ -56,7 +57,7 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
     const isAvail      = state !== undefined || available.has(id);
     const label        = labelOf(id);
     const isHighlighted = !!highlight && state === undefined &&
-      label.toLowerCase().includes(highlight.toLowerCase());
+      matchesSearch(label, highlight);
     const isCovered    = state === undefined && !!covered?.has(id);
     return (
       <button

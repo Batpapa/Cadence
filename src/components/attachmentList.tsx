@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
-import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance } from '../utils';
+import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, sortByRelevance, matchesSearch } from '../utils';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon } from './icons';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult } from './fileViewer';
@@ -482,7 +482,7 @@ export function showCardPicker(
     listEl.innerHTML = '';
     const q = query.trim().toLowerCase();
     const cards = Object.values(appState.value.cards).filter(opts.eligible ?? (() => true));
-    const filtered = q ? cards.filter(c => c.name.toLowerCase().includes(q)) : cards;
+    const filtered = q ? cards.filter(c => matchesSearch(c.name, q)) : cards;
     const sorted = q
       ? sortByRelevance(filtered, q)
       : [...filtered].sort((a, b) => a.name.localeCompare(b.name));

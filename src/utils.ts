@@ -328,6 +328,31 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// ── Searching by name ignores accents ────────────────────────────────────────
+// Irish titles carry fadas ("Ríl na Tulaí", "Sliabh Bána") that nobody types
+// on a phone keyboard, and French names carry their own. NFD splits a letter
+// from its accent, and the accent (a combining mark) is then dropped.
+//
+// A few letters are whole letters rather than letter + mark, so NFD leaves
+// them as they are. Measured over every TheSession name and alias (41 247
+// strings, 2026-09-17), the ones that occur are ø æ ł ǥ ı — mapped by hand
+// below, along with œ and ß for French and German names. The rest of what
+// that measure found is upside-down joke text (ǝ ʇ ᴉ ʍ), deliberately left.
+//
+// Only ever used to COMPARE: the folded string can be longer than the original
+// (æ → ae), so no position found in it may be used to cut the original.
+const UNDECOMPOSABLE: Record<string, string> = { æ: 'ae', œ: 'oe', ø: 'o', ł: 'l', ǥ: 'g', ı: 'i', ß: 'ss' };
+
+export function foldForSearch(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[æœøłǥıß]/g, c => UNDECOMPOSABLE[c]!);
+}
+
+/** Substring search that ignores case and accents — "tulai" finds "Ríl na
+ *  Tulaí". An empty query matches everything, as `includes('')` does. */
+export function matchesSearch(text: string, query: string): boolean {
+  return foldForSearch(text).includes(foldForSearch(query));
+}
+
 /** 0 (best) to 6 (no match), used by sortByRelevance to rank search results.
  *  Ranks are anchored on WHERE/HOW the query sits relative to word
  *  boundaries in `name` — a match at the very start beats one merely aligned
@@ -338,9 +363,10 @@ function escapeRegExp(s: string): string {
  *  query). \b is JS's built-in word-boundary regex anchor (transition
  *  between a \w character — letter/digit/underscore — and a non-\w one, or
  *  string start/end) — cheap and good enough here; it doesn't know about
- *  apostrophes/accents as "part of a word" the way a linguist would, but
- *  that's an acceptable rough edge for tune-name search, not something this
- *  needs to get perfectly right. */
+ *  apostrophes as "part of a word" the way a linguist would, but that's an
+ *  acceptable rough edge for tune-name search. Accents are no longer one:
+ *  both sides are folded first, and \w does not count "í" as a letter, so
+ *  without folding "Tulaí" held a word boundary in its middle. */
 /** scoreMatch's fallback return value — no callsite should hardcode this
  *  number to test "did it match at all" (`< NO_SCORE_MATCH`); a past bug
  *  (commandPalette.ts hardcoding the OLD fallback value of 4 as its
@@ -351,8 +377,8 @@ function escapeRegExp(s: string): string {
 export const NO_SCORE_MATCH = 6;
 
 export function scoreMatch(name: string, query: string): number {
-  const n = name.toLowerCase();
-  const q = query.toLowerCase().trim();
+  const n = foldForSearch(name);
+  const q = foldForSearch(query).trim();
   if (n === q)               return 0;
   if (n.startsWith(q + ' ')) return 1; // starts with the query as its own whole first word
   if (n.startsWith(q))       return 2; // starts with the query, mid-word (e.g. "inchindown" vs "inch")

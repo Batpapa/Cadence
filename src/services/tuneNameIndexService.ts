@@ -1,5 +1,5 @@
 import { loadTuneNameIndexDb, saveTuneNameIndexDb, type LocalTune } from './tuneIndexDb';
-import { sortByRelevance, normalizeDisplayName } from '../utils';
+import { sortByRelevance, normalizeDisplayName, matchesSearch } from '../utils';
 
 // ── Local TheSession tune-name search ─────────────────────────────────────────
 // Same adactio/TheSession-data repo as trendingSyncService.ts (both
@@ -205,8 +205,10 @@ export function cachedTuneName(tuneId: string | number): string | undefined {
  *  TheSession's own /tunes/search API, whose ranking/matching quality the
  *  user found unreliable in practice. */
 export function searchLocalTuneIndex(tunes: LocalTune[], query: string, limit = 30): LocalTune[] {
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
   if (!q) return [];
-  const matches = tunes.filter(t => t.name.toLowerCase().includes(q));
+  // Folding every name on each search, rather than once when the index is
+  // loaded: measured at ~5 ms over 25 000 names, behind a 300 ms debounce.
+  const matches = tunes.filter(t => matchesSearch(t.name, q));
   return sortByRelevance(matches, q).slice(0, limit);
 }
