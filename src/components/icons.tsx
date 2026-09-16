@@ -685,6 +685,18 @@ export function PencilIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** Arrow rising to a bar — "put this at the top": an alias taking the name's
+ *  place, the name dropping to where the alias was. */
+export function PromoteIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 4h14"/>
+      <path d="M12 20V9"/>
+      <path d="m7 13 5-5 5 5"/>
+    </svg>
+  );
+}
+
 /** Eye — "show me the rendered result". The other half of the notes toggle. */
 export function EyeIcon({ size = 14 }: { size?: number }) {
   return (

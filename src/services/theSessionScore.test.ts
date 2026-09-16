@@ -109,7 +109,7 @@ describe('findSettingInScore', () => {
 
 describe('applyTheSessionAbc', () => {
   const tune: TuneResult = {
-    id: 7, name: 'A Tune', type: 'reel', url: 'https://thesession.org/tunes/7', tunebooks: 1, topKey: null,
+    id: 7, name: 'A Tune', type: 'reel', url: 'https://thesession.org/tunes/7', tunebooks: 1, topKey: null, aliases: [],
     settings: [
       { id: 100, url: 'https://thesession.org/tunes/7#setting100', key: 'Edorian', abc: 'EBBA B2 EB|', member: { id: 1, name: 'Someone', url: '' }, date: '' },
       { id: 200, url: 'https://thesession.org/tunes/7#setting200', key: 'Edorian', abc: 'B2EB B2EB|', member: { id: 1, name: 'Someone', url: '' }, date: '' },

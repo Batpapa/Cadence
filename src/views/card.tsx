@@ -15,9 +15,11 @@ import { tunesetAutoName } from '../services/stateNormalise';
 import { defaultTuneRepeat, addTunesetAbcOnBecomingSet } from '../services/abcService';
 import { IncipitRow } from '../components/incipit';
 import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/knowledgeService';
-import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
+import { fetchTuneById, applyTheSessionName, applyTheSessionAliases, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { showCardTagModal } from '../components/tagModal';
+import { showAliasModal } from '../components/aliasModal';
+import { cardAliases } from '../services/aliasService';
 import { removeCards } from '../services/cardService';
 import { cardPanels } from '../services/cardPanels';
 import { lookupItiMapping } from '../services/itiMappingService';
@@ -38,6 +40,36 @@ function VanillaEl({ el }: { el: HTMLElement }) {
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** How many aliases the line under the title names before counting the rest.
+ *  Popular tunes carry a dozen or more (Out on the Ocean: 21); the line is a
+ *  reminder and a way in, the dialog is where the list is read. */
+const ALIASES_SHOWN = 3;
+
+/** Under the title: the first aliases, or an offer to add one. Either way a
+ *  button, opening the dialog where they are managed. Module-level, not
+ *  defined inside the view: a component declared during a render is a new type
+ *  on every pass, remounted, and its click never lands. */
+function AliasLine({ aliases, onOpen }: { aliases: readonly string[]; onOpen: () => void }) {
+  const rest = aliases.length - ALIASES_SHOWN;
+  return (
+    <button
+      type="button"
+      class="flex items-baseline gap-1 max-w-full text-left text-xs text-dim hover:text-accent transition-colors cursor-pointer mt-0.5"
+      title={t('card.aliases.manage')}
+      onClick={onOpen}
+    >
+      {aliases.length === 0 ? t('card.aliases.add') : (
+        <>
+          <span class="truncate min-w-0">{t('card.aliases.line', { list: aliases.slice(0, ALIASES_SHOWN).join(' · ') })}</span>
+          {/* Its own span, outside the truncation: on a phone the list is cut,
+              and the count is what says there is more behind it. */}
+          {rest > 0 && <span class="shrink-0">{t('card.aliases.more', { n: rest })}</span>}
+        </>
+      )}
+    </button>
+  );
+}
 
 function CardMetric({ label, value, colorClass = 'text-primary' }: {
   label: string;
@@ -256,7 +288,7 @@ async function refreshFromTheSession(
   cardId: string,
   sessionId: number,
   apply: (card: Card, tune: TuneResult) => void,
-  errorKey: 'card.contextMenu.refreshError' | 'card.contextMenu.refreshNameError' | 'card.contextMenu.refreshImportanceError',
+  errorKey: 'card.contextMenu.refreshError' | 'card.contextMenu.refreshNameError' | 'card.contextMenu.refreshAliasesError' | 'card.contextMenu.refreshImportanceError',
 ): Promise<void> {
   try {
     const tune = await fetchTuneById(sessionId);
@@ -473,6 +505,10 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
           if (!isNaN(sessionId)) void refreshFromTheSession(cardId, sessionId, applyTheSessionName, 'card.contextMenu.refreshNameError');
         } },
+        { label: t('card.contextMenu.refreshAliases'), onClick: () => {
+          const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
+          if (!isNaN(sessionId)) void refreshFromTheSession(cardId, sessionId, applyTheSessionAliases, 'card.contextMenu.refreshAliasesError');
+        } },
         { label: t('card.contextMenu.refreshImportance'), onClick: () => {
           const sessionId = parseInt(card?.externalId?.slice('thesession:'.length) ?? '', 10);
           if (!isNaN(sessionId)) void refreshFromTheSession(cardId, sessionId, applyTheSessionImportance, 'card.contextMenu.refreshImportanceError');
@@ -596,6 +632,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               {card.name}
             </h1>
           )}
+          <AliasLine aliases={cardAliases(card)} onOpen={() => showAliasModal(cardId)} />
         </div>
 
         <div class="flex items-center gap-2 shrink-0">

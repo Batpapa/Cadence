@@ -377,16 +377,22 @@ export function matchesSearch(text: string, query: string): boolean {
 export const NO_SCORE_MATCH = 6;
 
 export function scoreMatch(name: string, query: string): number {
-  const n = foldForSearch(name);
-  const q = foldForSearch(query).trim();
+  return scoreFolded(foldForSearch(name), foldForSearch(query).trim());
+}
+
+/** scoreMatch on strings already folded — for a caller scoring one query
+ *  against many names, which folds the query once. */
+function scoreFolded(n: string, q: string): number {
+  // Every tier below is a substring match, so a name without the query in it
+  // is out before any regex is built — which is most names, most of the time.
+  if (!n.includes(q))        return NO_SCORE_MATCH;
   if (n === q)               return 0;
   if (n.startsWith(q + ' ')) return 1; // starts with the query as its own whole first word
   if (n.startsWith(q))       return 2; // starts with the query, mid-word (e.g. "inchindown" vs "inch")
   const qEsc = escapeRegExp(q);
   if (new RegExp(`\\b${qEsc}\\b`).test(n)) return 3; // query is a whole word somewhere else in the name
   if (new RegExp(`\\b${qEsc}`).test(n))    return 4; // query starts some other word in the name, without completing it
-  if (n.includes(q))         return 5; // query is buried inside a word, no boundary alignment at all
-  return NO_SCORE_MATCH;
+  return 5; // query is buried inside a word, no boundary alignment at all
 }
 
 export function sortByRelevance<T extends { name: string }>(items: T[], query: string): T[] {
@@ -394,6 +400,58 @@ export function sortByRelevance<T extends { name: string }>(items: T[], query: s
     const sd = scoreMatch(a.name, query) - scoreMatch(b.name, query);
     return sd !== 0 ? sd : a.name.localeCompare(b.name);
   });
+}
+
+// ── Searching a name and its aliases ─────────────────────────────────────────
+// A tune has many names (Cooley's is also "Reaping the Rye", "The Tulla"…), and
+// the one someone types is the one they heard. An alias is searched exactly
+// like the name, and ranked with it: the best tier wins, and on a tie the name
+// wins — a card found under its own name is the more obvious answer.
+//
+// `via` says which alias found it, so the result can show it. A name ALSO
+// carried by another tune ("Castle" is an alias of The Kesh and a tune of its
+// own) looks like a wrong answer unless the list says why it is there.
+
+export interface AliasMatch {
+  /** 0 (best) to NO_SCORE_MATCH (none), scoreMatch's scale. */
+  score: number;
+  /** The alias that matched, when it beat the name; absent when the name did. */
+  via?: string;
+}
+
+function matchFolded(name: string, aliases: readonly string[] | undefined, q: string): AliasMatch {
+  let best: AliasMatch = { score: scoreFolded(foldForSearch(name), q) };
+  // Strictly better only: a tie leaves the name as the reason.
+  for (const alias of aliases ?? []) {
+    if (best.score === 0) break;
+    const score = scoreFolded(foldForSearch(alias), q);
+    if (score < best.score) best = { score, via: alias };
+  }
+  return best;
+}
+
+export function scoreWithAliases(name: string, aliases: readonly string[] | undefined, query: string): AliasMatch {
+  return matchFolded(name, aliases, foldForSearch(query).trim());
+}
+
+/** The items whose name or an alias matches, best first, each with the alias
+ *  that found it. Ties go to a name match, then alphabetically — the same
+ *  order sortByRelevance gives when nothing has aliases. */
+export function rankByRelevance<T extends { name: string; aliases?: readonly string[] }>(
+  items: readonly T[],
+  query: string,
+): Array<{ item: T; via?: string }> {
+  const q = foldForSearch(query).trim();
+  const hits: Array<{ item: T; score: number; via?: string }> = [];
+  for (const item of items) {
+    const m = matchFolded(item.name, item.aliases, q);
+    if (m.score < NO_SCORE_MATCH) hits.push({ item, ...m });
+  }
+  hits.sort((a, b) =>
+    a.score - b.score
+    || Number(a.via !== undefined) - Number(b.via !== undefined)
+    || a.item.name.localeCompare(b.item.name));
+  return hits.map(({ item, via }) => (via === undefined ? { item } : { item, via }));
 }
 
 // ── Touch drag & drop support ─────────────────────────────────────────────────

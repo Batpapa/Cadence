@@ -52,3 +52,25 @@ export async function loadTuneNameIndexDb(): Promise<TuneNameIndexDb> {
 export async function saveTuneNameIndexDb(value: TuneNameIndexDb): Promise<void> {
   await (await db()).put(KV_STORE, value, DB_KEY);
 }
+
+// ── Aliases ──────────────────────────────────────────────────────────────────
+// Same database and store, its own key: json/aliases.json is a separate file
+// upstream with its own commits, so it carries its own SHA and is re-fetched
+// only when IT changes.
+
+const ALIAS_KEY = 'tuneAliasIndex';
+
+export interface TuneAliasIndexDb {
+  commitSha: string | null;
+  /** tune id → its aliases, as fetched (catalogue order, "Tulla, The"). */
+  aliases: Record<string, string[]>;
+}
+
+export async function loadTuneAliasIndexDb(): Promise<TuneAliasIndexDb> {
+  const stored = await (await db()).get(KV_STORE, ALIAS_KEY) as TuneAliasIndexDb | undefined;
+  return stored ?? { commitSha: null, aliases: {} };
+}
+
+export async function saveTuneAliasIndexDb(value: TuneAliasIndexDb): Promise<void> {
+  await (await db()).put(KV_STORE, value, ALIAS_KEY);
+}

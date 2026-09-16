@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
-import { pct, availabilityColor, sortByRelevance, matchesSearch, timeAgo, copyText } from '../utils';
+import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, type AliasMatch } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType } from '../services/cardTypeService';
 import { CardMap } from '../components/cardMap';
@@ -12,7 +12,7 @@ import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { removeCards } from '../services/cardService';
 import { localDayRange, hasReviewInRange } from '../services/reviewRange';
 import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showCardTypeModal, showRefreshModal } from '../components/batchEdit';
-import { fetchTuneById, applyTheSessionName, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId } from '../services/theSessionService';
+import { fetchTuneById, applyTheSessionName, applyTheSessionAliases, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId } from '../services/theSessionService';
 import { ensureItiMapping } from '../services/itiMappingService';
 import { defaultTuneRepeat } from '../services/abcService';
 import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
@@ -401,6 +401,9 @@ export function LibraryView() {
   // ── Filtered list (recomputed every render) ───────────────────────────────────
   const q = searchQuery.toLowerCase();
   const revRange = localDayRange(revFrom, revTo);
+  // Name AND aliases, scored once per card: the filter, the relevance order and
+  // the "Alias: …" line under a row found by one all read this.
+  const textMatch = new Map<string, AliasMatch>();
   const filteredUnsorted = pool.filter(c => {
     const tags       = c.tags ?? [];
     // externalId match is EXACT (whole "source:id", or just the id part),
@@ -408,7 +411,9 @@ export function LibraryView() {
     const extId      = c.externalId?.toLowerCase();
     const extIdOnly  = extId?.slice(extId.indexOf(':') + 1);
     const matchExternalId = q !== '' && (extId === q || extIdOnly === q);
-    const matchText = !q || matchesSearch(c.name, q) || matchExternalId;
+    const nameMatch  = q ? scoreWithAliases(c.name, c.aliases, q) : null;
+    if (nameMatch) textMatch.set(c.id, nameMatch);
+    const matchText = !nameMatch || nameMatch.score < NO_SCORE_MATCH || matchExternalId;
     const cardDecks = decksContainingCard(c.id, user);
 
     const tagEntries  = [...liveTags];
@@ -479,8 +484,12 @@ export function LibraryView() {
     }));
     filtered = [...filteredUnsorted].sort((a, b) => numCmp(dOf.get(a.id)!, dOf.get(b.id)!) || byName(a, b));
   } else {
+    // Relevance as rankByRelevance orders it: best tier, then a name match
+    // before an alias match, then alphabetical.
+    const scoreOf = (c: Card) => textMatch.get(c.id)?.score ?? NO_SCORE_MATCH;
+    const viaOf   = (c: Card) => Number(textMatch.get(c.id)?.via !== undefined);
     filtered = q
-      ? sortByRelevance(filteredUnsorted, searchQuery)
+      ? [...filteredUnsorted].sort((a, b) => scoreOf(a) - scoreOf(b) || viaOf(a) - viaOf(b) || byName(a, b))
       : [...filteredUnsorted].sort((a, b) => a.name.localeCompare(b.name));
   }
   if (sortAsc) filtered = filtered.slice().reverse();
@@ -631,9 +640,11 @@ export function LibraryView() {
         confirmKey: 'library.batch.refresh.confirm',
         fetch: (card) => fetchTuneById(sourceIdOf(card, 'thesession:')),
         // Ticked together, written from a single fetch per card — the whole
-        // reason this is one entry rather than three.
+        // reason this is one entry rather than several. Applied in this order:
+        // aliases after the name, which they read (applyTheSessionAliases).
         fields: [
           { key: 'name',       labelKey: 'card.contextMenu.refreshName',       apply: applyTheSessionName },
+          { key: 'aliases',    labelKey: 'card.contextMenu.refreshAliases',    apply: applyTheSessionAliases },
           { key: 'abc',        labelKey: 'card.contextMenu.refreshAbc',        apply: applyTheSessionAbc },
           { key: 'importance', labelKey: 'card.contextMenu.refreshImportance', apply: applyTheSessionImportance },
         ],
@@ -1060,8 +1071,16 @@ export function LibraryView() {
                     />
                   </span>
 
-                  <span class={`text-sm text-primary flex-1 truncate ${selected.size === 0 ? 'hover:text-accent transition-colors' : ''}`}>
-                    {card.name}
+                  <span class="flex-1 min-w-0">
+                    <span class={`text-sm text-primary block truncate ${selected.size === 0 ? 'hover:text-accent transition-colors' : ''}`}>
+                      {card.name}
+                    </span>
+                    {/* Why a row whose name does not contain the search is here. */}
+                    {q && textMatch.get(card.id)?.via !== undefined && (
+                      <span class="text-xs text-dim block truncate">
+                        {t('search.viaAlias', { alias: textMatch.get(card.id)!.via! })}
+                      </span>
+                    )}
                   </span>
 
                   {/* Flush against the row's right edge, so the figures line up

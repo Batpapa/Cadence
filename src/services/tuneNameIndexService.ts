@@ -1,5 +1,5 @@
-import { loadTuneNameIndexDb, saveTuneNameIndexDb, type LocalTune } from './tuneIndexDb';
-import { sortByRelevance, normalizeDisplayName, matchesSearch } from '../utils';
+import { loadTuneNameIndexDb, saveTuneNameIndexDb, loadTuneAliasIndexDb, saveTuneAliasIndexDb, type LocalTune } from './tuneIndexDb';
+import { rankByRelevance, normalizeDisplayName } from '../utils';
 
 // ── Local TheSession tune-name search ─────────────────────────────────────────
 // Same adactio/TheSession-data repo as trendingSyncService.ts (both
@@ -34,8 +34,8 @@ interface RawSettingEntry {
   mode: string;
 }
 
-async function fetchLatestCommitSha(): Promise<string | null> {
-  const url = `${API_BASE}/repos/${OWNER}/${REPO}/commits?path=${encodeURIComponent(FILE_PATH)}&per_page=1`;
+async function fetchLatestCommitSha(path: string = FILE_PATH): Promise<string | null> {
+  const url = `${API_BASE}/repos/${OWNER}/${REPO}/commits?path=${encodeURIComponent(path)}&per_page=1`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`GitHub commit check failed: ${res.status}`);
   const data = (await res.json()) as Array<{ sha: string }>;
@@ -48,10 +48,10 @@ export interface IndexSyncProgress {
   totalBytes?: number;
 }
 
-async function downloadTunesJson(onProgress?: (p: IndexSyncProgress) => void): Promise<RawSettingEntry[]> {
-  const url = `${RAW_BASE}/${OWNER}/${REPO}/main/${FILE_PATH}`;
+async function downloadJson<T>(path: string, onProgress?: (p: IndexSyncProgress) => void): Promise<T> {
+  const url = `${RAW_BASE}/${OWNER}/${REPO}/main/${path}`;
   const res = await fetch(url);
-  if (!res.ok || !res.body) throw new Error(`tunes.json fetch failed: ${res.status}`);
+  if (!res.ok || !res.body) throw new Error(`${path} fetch failed: ${res.status}`);
 
   const totalBytes = parseInt(res.headers.get('content-length') ?? '', 10) || undefined;
   const reader = res.body.getReader();
@@ -69,7 +69,7 @@ async function downloadTunesJson(onProgress?: (p: IndexSyncProgress) => void): P
   for (const c of chunks) { merged.set(c, off); off += c.length; }
 
   onProgress?.({ phase: 'processing' });
-  return JSON.parse(new TextDecoder().decode(merged)) as RawSettingEntry[];
+  return JSON.parse(new TextDecoder().decode(merged)) as T;
 }
 
 /** One row per tune_id — first setting encountered wins (name/type/meter
@@ -119,7 +119,7 @@ async function syncTuneNameIndex(onProgress?: (p: IndexSyncProgress) => void): P
     return _memoryIndex;
   }
 
-  const raw = await downloadTunesJson(onProgress);
+  const raw = await downloadJson<RawSettingEntry[]>(FILE_PATH, onProgress);
   const tunes = dedupeToTunes(raw);
   // Stored as fetched (raw catalog-order names) — a faithful mirror of
   // upstream, normalized only at the in-memory presentation boundary above.
@@ -201,14 +201,101 @@ export function cachedTuneName(tuneId: string | number): string | undefined {
   return _nameById?.get(id);
 }
 
-/** Local, offline-capable substring + relevance search — replaces hitting
- *  TheSession's own /tunes/search API, whose ranking/matching quality the
- *  user found unreliable in practice. */
-export function searchLocalTuneIndex(tunes: LocalTune[], query: string, limit = 30): LocalTune[] {
-  const q = query.trim();
-  if (!q) return [];
-  // Folding every name on each search, rather than once when the index is
-  // loaded: measured at ~5 ms over 25 000 names, behind a 300 ms debounce.
-  const matches = tunes.filter(t => matchesSearch(t.name, q));
-  return sortByRelevance(matches, q).slice(0, limit);
+// ── Aliases, for searching ───────────────────────────────────────────────────
+// TheSession's own /tunes/search matches aliases — "put the cake in the
+// dresser" finds Cooley's. The local index that replaced it knew only main
+// names, so that search had quietly stopped working here. Measured on the dump
+// (2026-09-16): 94 % of the aliases of the 500 most popular tunes do not
+// contain the tune's name, so no name search can reach them.
+//
+// json/aliases.json (~2 MB, one row per alias) is synced exactly like
+// tunes.json, under its own SHA. It is kept apart from ensureTuneNameIndex,
+// which the session analyser also calls just to show names: that screen has
+// no use for aliases, and should not download them.
+//
+// An alias sync that fails is not an error the search reports: names alone
+// still search, and the next call tries again.
+
+const ALIAS_FILE_PATH = 'json/aliases.json';
+
+interface RawAliasEntry { tune_id: string; alias: string }
+
+let _aliasMemory: Map<number, string[]> | null = null;
+let _aliasInFlight: Promise<Map<number, string[]>> | null = null;
+
+function aliasMap(raw: Record<string, string[]>): Map<number, string[]> {
+  const map = new Map<number, string[]>();
+  for (const [id, list] of Object.entries(raw)) map.set(parseInt(id, 10), list.map(normalizeDisplayName));
+  return map;
+}
+
+async function syncTuneAliasIndex(): Promise<Map<number, string[]>> {
+  const stored = await loadTuneAliasIndexDb();
+  let latestSha: string | null = null;
+  try {
+    latestSha = await fetchLatestCommitSha(ALIAS_FILE_PATH);
+  } catch {
+    // Offline or a GitHub API hiccup — whatever is cached will do.
+  }
+  const hasStored = Object.keys(stored.aliases).length > 0;
+  if (hasStored && (latestSha === null || latestSha === stored.commitSha)) return aliasMap(stored.aliases);
+
+  const rows = await downloadJson<RawAliasEntry[]>(ALIAS_FILE_PATH);
+  // Every row kept, in upstream order: duplicates and spelling variants are
+  // what a misspelled query lands on.
+  const aliases: Record<string, string[]> = {};
+  for (const r of rows) {
+    if (!r.tune_id || !r.alias) continue;
+    (aliases[r.tune_id] ??= []).push(r.alias);
+  }
+  await saveTuneAliasIndexDb({ commitSha: latestSha, aliases });
+  return aliasMap(aliases);
+}
+
+function ensureTuneAliasIndex(): Promise<Map<number, string[]>> {
+  if (_aliasMemory) return Promise.resolve(_aliasMemory);
+  if (!_aliasInFlight) {
+    _aliasInFlight = syncTuneAliasIndex()
+      .then(map => { _aliasMemory = map; return map; })
+      .finally(() => { _aliasInFlight = null; });
+  }
+  return _aliasInFlight;
+}
+
+export interface SearchableTune extends LocalTune {
+  aliases?: string[];
+}
+
+let _searchable: { tunes: LocalTune[]; aliases: Map<number, string[]>; list: SearchableTune[] } | null = null;
+
+/** The name index with each tune's aliases attached — what the tune search
+ *  fields use. Resolves with names alone when the aliases cannot be had. */
+export async function ensureTuneSearchIndex(): Promise<SearchableTune[]> {
+  const [tunes, aliases] = await Promise.all([
+    ensureTuneNameIndex(),
+    ensureTuneAliasIndex().catch(() => null),
+  ]);
+  if (!aliases) return tunes;
+  if (_searchable?.tunes !== tunes || _searchable.aliases !== aliases) {
+    const list = tunes.map(t => {
+      const a = aliases.get(t.id);
+      return a ? { ...t, aliases: a } : t;
+    });
+    _searchable = { tunes, aliases, list };
+  }
+  return _searchable.list;
+}
+
+/** Local, offline-capable substring + relevance search over names and
+ *  aliases — replaces hitting TheSession's own /tunes/search API, whose
+ *  ranking/matching quality the user found unreliable in practice. `via` is
+ *  the alias that found a tune, when its name did not.
+ *
+ *  Folds every name and alias on each search rather than once at load:
+ *  measured at ~5 ms over 25 000 strings, behind a 300 ms debounce. */
+export function searchLocalTuneIndex(tunes: SearchableTune[], query: string, limit = 30): Array<SearchableTune & { via?: string }> {
+  if (!query.trim()) return [];
+  return rankByRelevance(tunes, query)
+    .slice(0, limit)
+    .map(({ item, via }) => (via === undefined ? item : { ...item, via }));
 }

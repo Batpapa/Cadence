@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { createPortal } from 'preact/compat';
 import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
-import { focusIfDesktop, scoreMatch, NO_SCORE_MATCH } from '../utils';
+import { focusIfDesktop, scoreMatch, scoreWithAliases, NO_SCORE_MATCH } from '../utils';
 import { registerOverlay } from './overlayStack';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -12,6 +12,10 @@ type PaletteItem = {
   label: string;
   sublabel?: string;
   kind: 'card' | 'deck' | 'folder';
+  /** scoreMatch's scale — a card's counts its aliases too. */
+  score: number;
+  /** Set when an alias, not the label, is what matched. */
+  viaAlias?: boolean;
   onSelect: (ctx: AppContext) => void;
 };
 
@@ -24,17 +28,23 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   const items: PaletteItem[] = [];
 
   for (const card of Object.values(ctx.user.cards)) {
-    if (scoreMatch(card.name, q) < NO_SCORE_MATCH) items.push({
+    const m = scoreWithAliases(card.name, card.aliases, q);
+    if (m.score < NO_SCORE_MATCH) items.push({
       label: card.name,
-      sublabel: card.tags?.join(', ') || undefined,
+      // The alias that found it says more than the tags, when there is one.
+      sublabel: m.via !== undefined ? t('search.viaAlias', { alias: m.via }) : card.tags?.join(', ') || undefined,
       kind: 'card',
+      score: m.score,
+      viaAlias: m.via !== undefined,
       onSelect: (c) => c.navigate({ view: 'card', cardId: card.id }),
     });
   }
 
   for (const deck of Object.values(ctx.user.decks)) {
-    if (scoreMatch(deck.name, q) < NO_SCORE_MATCH) items.push({
+    const deckScore = scoreMatch(deck.name, q);
+    if (deckScore < NO_SCORE_MATCH) items.push({
       label: deck.name,
+      score: deckScore,
       sublabel: t(deck.entries.length !== 1 ? 'commandPalette.deckCountPlural' : 'commandPalette.deckCount', { count: deck.entries.length }),
       kind: 'deck',
       onSelect: (c) => c.navigate({ view: 'deck', deckId: deck.id }),
@@ -42,15 +52,17 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
   }
 
   for (const folder of Object.values(ctx.user.folders)) {
-    if (scoreMatch(folder.name, q) < NO_SCORE_MATCH) items.push({
+    const folderScore = scoreMatch(folder.name, q);
+    if (folderScore < NO_SCORE_MATCH) items.push({
       label: folder.name,
+      score: folderScore,
       kind: 'folder',
       onSelect: (c) => c.navigate({ view: 'folder', folderId: folder.id }),
     });
   }
 
   items.sort((a, b) =>
-    scoreMatch(a.label, q) - scoreMatch(b.label, q) || a.label.localeCompare(b.label)
+    a.score - b.score || Number(!!a.viaAlias) - Number(!!b.viaAlias) || a.label.localeCompare(b.label)
   );
 
   return items;

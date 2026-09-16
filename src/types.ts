@@ -95,6 +95,11 @@ export interface Card {
    *  name by hand clears this flag — otherwise the rename would be silently
    *  undone by the next normalisation. */
   computedName?: boolean;
+  /** Other names the card is known by — "Reaping the Rye" for Cooley's. Filled
+   *  from the source on import and on "Refresh aliases", then the user's to
+   *  edit. Searched like `name`. Absent and empty mean the same; read and write
+   *  through aliasService.ts, which holds the rules. */
+  aliases?: string[];
   content: {
     notes: string;
     attachments: Attachment[];
