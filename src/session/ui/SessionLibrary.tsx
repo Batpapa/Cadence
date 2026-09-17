@@ -4,6 +4,7 @@ import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIco
 import { CustomSelect } from '../../components/customSelect';
 import { listSessions } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
+import { showRecoveryFailures } from './RecoveryFailureModal';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { activeLive } from './sessionStore';
 import { useTuneNames } from './sessionUiShared';
@@ -114,10 +115,20 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
   const reloadSessions = () => { void listSessions().then(setAllSessions); };
 
   useEffect(() => {
-    void recoverOrphanedSessions(activeLive.value?.sessionId).then(() => listSessions()).then(list => {
-      setAllSessions(list);
-      setSessionsLoaded(true);
-    });
+    // The list loads whatever recovery did. It used to wait on recovery
+    // succeeding outright, so a single orphan that threw left the library empty
+    // on every visit, silently (2026-09-17). Recordings that could not be
+    // recovered are put in front of the user instead, once the list is up.
+    void recoverOrphanedSessions(activeLive.value?.sessionId)
+      .catch((err: unknown) => {
+        console.error('[sessions] recovery pass failed', err);
+        return [];
+      })
+      .then(async failures => {
+        setAllSessions(await listSessions());
+        setSessionsLoaded(true);
+        showRecoveryFailures(failures, reloadSessions);
+      });
     // eslint-disable-next-line
   }, []);
 
