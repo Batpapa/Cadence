@@ -425,7 +425,22 @@ export function initDriveClient(): Promise<void> {
         tokenClient = g.accounts.oauth2.initTokenClient({
           client_id: GOOGLE_CLIENT_ID,
           scope: SCOPE,
-          callback: '',
+          // Permanent, not reinstalled per request — see `onTokenResponse`.
+          callback: onTokenResponse,
+          // Undocumented, and inert as things stand — set deliberately anyway.
+          // Reading the shipped GIS client (2026-09-17) shows a silent renewal
+          // path guarded by ALL of: this option, `prompt: 'none'`, a live IDP
+          // iframe, and Google's own `enable_authz_token_refresh` experiment —
+          // which the served bundle turns on for nobody today. So every request
+          // still takes the popup flow, whatever `prompt` says; switching to
+          // 'none' would only trade Google's screens for an error, same window.
+          // This flag is the half we control, and costs nothing: the day Google
+          // enables theirs, the client starts pushing renewed tokens into the
+          // callback above by itself, with no release on our side.
+          // Not something to rely on: it renews through a hidden iframe on
+          // accounts.google.com, so third-party cookie policy — iOS above all —
+          // decides whether it ever works there.
+          enable_token_refresh: true,
         });
         resolve();
       } else {
@@ -444,34 +459,55 @@ export function initDriveClient(): Promise<void> {
   return driveReady;
 }
 
+/** Banks a token response, whatever produced it. */
+function adoptTokenResponse(resp: Gis): void {
+  accessToken    = resp.access_token as string;
+  tokenExpiresAt = Date.now() + ((resp.expires_in as number ?? 3600) * 1000) - 60_000;
+  localStorage.setItem(LS_TOKEN, accessToken);
+  localStorage.setItem(LS_EXPIRES_AT, String(tokenExpiresAt));
+  const owner = localStorage.getItem(lsOwner());
+  if (owner) localStorage.setItem(LS_TOKEN_OWNER, owner);
+}
+
+/** Settles the request in flight, when there is one. */
+let pendingToken: { resolve: (t: string) => void; reject: (e: Error) => void } | null = null;
+
+/** The token client's one and only callback, installed at init rather than
+ *  rebuilt on every request. Two reasons, and neither is cosmetic. A response
+ *  that arrives after its caller gave up (the OAuth timeout) is still a
+ *  perfectly good token, and is now kept rather than thrown away. And a token
+ *  the client mints without being asked — the background renewal described at
+ *  `enable_token_refresh` — has somewhere to land the day it starts arriving. */
+function onTokenResponse(resp: Gis): void {
+  const waiting = pendingToken;
+  pendingToken = null;
+  if (resp.error) {
+    waiting?.reject(new Error(resp.error_description ?? resp.error));
+    return;
+  }
+  adoptTokenResponse(resp);
+  waiting?.resolve(accessToken!);
+}
+
 function requestToken(prompt = ''): Promise<string> {
   const attempt = new Promise<string>((resolve, reject) => {
-    const cleanup = () => { tokenClient.error_callback = null; };
-    tokenClient.callback = (resp: Gis) => {
-      cleanup();
-      if (resp.error) { reject(new Error(resp.error_description ?? resp.error)); return; }
-      accessToken    = resp.access_token as string;
-      tokenExpiresAt = Date.now() + ((resp.expires_in as number ?? 3600) * 1000) - 60_000;
-      localStorage.setItem(LS_TOKEN, accessToken);
-      localStorage.setItem(LS_EXPIRES_AT, String(tokenExpiresAt));
-      const owner = localStorage.getItem(lsOwner());
-      if (owner) localStorage.setItem(LS_TOKEN_OWNER, owner);
-      resolve(accessToken);
-    };
+    pendingToken = { resolve, reject };
     tokenClient.error_callback = (err: Gis) => {
-      cleanup();
+      pendingToken = null;
       reject(new Error(err.type ?? 'popup_closed'));
     };
     // `login_hint`, not the older `hint` (deprecated in TokenClientConfig):
     // this is the parameter Google documents as skipping account selection,
-    // and the app was passing the superseded spelling.
+    // and the app was passing the superseded spelling. Without it the window is
+    // not a flash that closes itself — it is the full account chooser, and
+    // somebody has to answer it. See `backfillLoginHint`.
     const loginHint = localStorage.getItem(lsHint()) ?? undefined;
     tokenClient.requestAccessToken({ prompt, ...(loginHint ? { login_hint: loginHint } : {}) });
   });
   return withTimeout(attempt, OAUTH_TIMEOUT_MS, 'oauth_timeout').catch((e: Error) => {
-    // Neither callback will ever fire now — drop them so a very late,
-    // unexpected resolution from the abandoned popup can't resurface.
-    tokenClient.callback = null;
+    // Stop waiting, but leave the callback in place: a late response from the
+    // abandoned popup can no longer resolve anyone, and is banked instead.
+    pendingToken = null;
     tokenClient.error_callback = null;
     throw e;
   });
@@ -557,6 +593,47 @@ async function findOrCreateFile(): Promise<{ id: string; created: boolean }> {
   return { id: ((await create.json()) as { id: string }).id, created: true };
 }
 
+/** Who the connected account is, from Drive's own about.get. Best-effort: on
+ *  any failure the callers simply carry on without an identity, exactly as they
+ *  did when this information was never available at all. */
+async function fetchDriveIdentity(token: string): Promise<{ googleId: string; email: string }> {
+  try {
+    const resp = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return { googleId: '', email: '' };
+    const user = ((await resp.json()) as { user?: { permissionId?: string; emailAddress?: string } }).user;
+    return { googleId: user?.permissionId ?? '', email: user?.emailAddress ?? '' };
+  } catch { return { googleId: '', email: '' }; }
+}
+
+/** Records the account for connections that never got one.
+ *
+ *  The email is what `login_hint` carries, and without it a renewal is not the
+ *  window that closes by itself — it is the account chooser, answered by hand,
+ *  once an hour. connectDrive has always meant to record it, but until
+ *  2026-09-14 it asked oauth2/v3/userinfo, which this app's scopes never
+ *  authorised: the call failed for everyone, silently. So every connection made
+ *  before that date carries an empty hint and pays for it on every renewal,
+ *  and reconnecting — the one thing that would fix it — is precisely what the
+ *  user is trying to avoid.
+ *
+ *  Runs off a token already in hand and never asks for one, so it cannot itself
+ *  raise a window. The owner is backfilled in the same pass, since it went
+ *  missing for the same reason and the account guards are dark without it. */
+async function backfillLoginHint(): Promise<void> {
+  if (!isDriveConnected() || !hasValidToken()) return;
+  if (localStorage.getItem(lsHint()) && localStorage.getItem(lsOwner())) return;
+  const { googleId, email } = await fetchDriveIdentity(accessToken!);
+  if (email && !localStorage.getItem(lsHint())) localStorage.setItem(lsHint(), email);
+  if (googleId && !localStorage.getItem(lsOwner())) {
+    localStorage.setItem(lsOwner(), googleId);
+    // Stamped together: initDriveForUser compares the two and would discard a
+    // perfectly good token if only one of them appeared.
+    localStorage.setItem(LS_TOKEN_OWNER, googleId);
+  }
+}
+
 export async function connectDrive(allowSharedAccount = false): Promise<ConnectResult> {
   await initDriveClient();
   if (!tokenClient) throw new Error('Drive client not ready');
@@ -579,18 +656,7 @@ export async function connectDrive(allowSharedAccount = false): Promise<ConnectR
     // silently disabled the wrong-account and shared-account guards below, the
     // token's cross-account check, and let the welcome screen's recovery create
     // a second copy of a user already on the device.
-    let googleId = '';
-    let email    = '';
-    try {
-      const resp = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (resp.ok) {
-        const user = ((await resp.json()) as { user?: { permissionId?: string; emailAddress?: string } }).user;
-        googleId = user?.permissionId ?? '';
-        email    = user?.emailAddress ?? '';
-      }
-    } catch { /* non-fatal: the guards below simply cannot run */ }
+    const { googleId, email } = await fetchDriveIdentity(token);
 
     const existingOwner = localStorage.getItem(lsOwner());
     if (existingOwner && googleId && existingOwner !== googleId) {
@@ -842,6 +908,12 @@ export function initDriveTokenRenewal(): void {
     // easily outlive the activation this whole mechanism depends on.
     if (!tokenClient) return;
     if (accessToken && Date.now() < tokenExpiresAt - RENEW_AHEAD_MS) return;
+    // Nothing waiting to go up: a token nobody is going to spend is not worth a
+    // window. This is the bulk of the complaint — someone who opens Cadence to
+    // PLAY, editing nothing for three hours, was still being asked once an hour
+    // for a token that would have gone unused. Reading is not affected: boot
+    // asks for its own token, once, on a path the user just started.
+    if (!_state.pendingState && !hasUnsyncedChanges()) return;
 
     void requestTokenOnce().then(
       () => {
@@ -903,6 +975,12 @@ export async function readDriveFile(interactive = false): Promise<DriveFileRead>
   // A truncated/corrupt body is 'empty' (looked, nothing usable), never
   // silently conflated with a FAILED read — those throw above, before the
   // parse, and keep their "never got to look" meaning.
+  // Boot has a live token right here, which is the whole requirement — and this
+  // is the one path every connected user takes on every launch, so the accounts
+  // that predate the identity fix heal on their next start rather than on a
+  // reconnection nobody is going to perform. Fire-and-forget: a read must not
+  // wait on, or fail because of, a best-effort identity lookup.
+  void backfillLoginHint();
   try { data = await resp.json(); } catch { /* husk or corrupt — 'empty' below */ }
   if (!data || typeof data !== 'object') return { status: 'empty', version };
   return { status: 'ok', data: data as AppState & { _lastModified?: number; _deviceId?: string }, version };

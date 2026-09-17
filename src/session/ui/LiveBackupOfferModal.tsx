@@ -69,8 +69,8 @@ function OfferBody({ offer, onClose }: { offer: LiveBackupOffer; onClose: (failu
           {fmtSessionDateTime(meta.date)} · {t('sessions.liveBackup.offer.saved', { duration: fmtLongTime(meta.durationS) })}
         </p>
       </div>
-      {offer.match === 'model' && (
-        <p class="text-xs text-dim leading-relaxed">{t('sessions.liveBackup.offer.sameModel')}</p>
+      {offer.match === 'likely' && (
+        <p class="text-xs text-dim leading-relaxed">{t('sessions.liveBackup.offer.sameDevice')}</p>
       )}
       {progressText && <p class="text-accent">{progressText}</p>}
       {error && <p class="text-xs font-mono text-danger break-words">{t('sessions.liveBackup.offer.failed', { error })}</p>}

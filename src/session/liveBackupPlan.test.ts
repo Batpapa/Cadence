@@ -93,13 +93,38 @@ describe('mergeWindowParts', () => {
 });
 
 describe('matchDevice', () => {
-  it('same id wins, then a non-empty model, never an empty one', () => {
-    expect(matchDevice({ deviceId: 'a', deviceModel: 'V2023' }, 'a', '')).toBe('same');
-    expect(matchDevice({ deviceId: 'a', deviceModel: 'V2023' }, 'b', 'V2023')).toBe('model');
-    // Desktops and non-Chromium browsers report no model: two of them must not
-    // pass for the same device.
-    expect(matchDevice({ deviceId: 'a', deviceModel: '' }, 'b', '')).toBe('other');
-    expect(matchDevice({ deviceId: 'a', deviceModel: 'V2023' }, 'b', 'Pixel 7')).toBe('other');
+  const phone = { model: 'V2023', platform: 'Android', platformVersion: '14', renderer: 'ANGLE (Mali-G57)', cores: 8 };
+  const laptop = { model: '', platform: 'Windows', platformVersion: '19', renderer: 'ANGLE (NVIDIA, RTX 4070 Laptop GPU)', cores: 20 };
+
+  it('recognises this very browser by its id', () => {
+    expect(matchDevice({ deviceId: 'a', deviceModel: '', device: laptop }, 'a', laptop)).toBe('same');
+  });
+
+  it('recognises a phone by its model once the id is gone', () => {
+    expect(matchDevice({ deviceId: 'a', deviceModel: 'V2023', device: phone }, 'b', phone)).toBe('likely');
+  });
+
+  it('recognises a wiped desktop by its GPU, platform and cores', () => {
+    // The case measured on 2026-09-17: same laptop, local data cleared, a new
+    // device id and no phone model — it used to read as someone else's.
+    expect(matchDevice({ deviceId: 'a', deviceModel: '', device: laptop }, 'b', laptop)).toBe('likely');
+  });
+
+  it('does not take one machine for another', () => {
+    const other = { ...laptop, renderer: 'ANGLE (Intel, UHD Graphics 620)' };
+    expect(matchDevice({ deviceId: 'a', deviceModel: '', device: laptop }, 'b', other)).toBe('other');
+    expect(matchDevice({ deviceId: 'a', deviceModel: '', device: laptop }, 'b', { ...laptop, cores: 8 })).toBe('other');
+    expect(matchDevice({ deviceId: 'a', deviceModel: '', device: laptop }, 'b', { ...laptop, platform: 'Linux' })).toBe('other');
+  });
+
+  it('says nothing when the browser says nothing', () => {
+    const blind = { model: '', platform: '', platformVersion: '', renderer: '', cores: 0 };
+    expect(matchDevice({ deviceId: 'a', deviceModel: '', device: blind }, 'b', blind)).toBe('other');
+  });
+
+  it('still reads a backup written before signatures existed', () => {
+    expect(matchDevice({ deviceId: 'a', deviceModel: 'V2023' }, 'b', phone)).toBe('likely');
+    expect(matchDevice({ deviceId: 'a', deviceModel: '' }, 'b', laptop)).toBe('other');
   });
 });
 
@@ -111,7 +136,7 @@ describe('decideBackup', () => {
 
   it('offers a lost recording on the device that made it, and only there', () => {
     expect(decideBackup(base)).toBe('offer');
-    expect(decideBackup({ ...base, match: 'model' })).toBe('offer');
+    expect(decideBackup({ ...base, match: 'likely' })).toBe('offer');
     expect(decideBackup({ ...base, match: 'other' })).toBe('keep');
     expect(decideBackup({ ...base, match: null })).toBe('keep');
   });
@@ -135,7 +160,7 @@ describe('decideBackup', () => {
   it('never deletes the only sound of a finished recording on another device', () => {
     const noSound = { ...base, finalized: true };
     expect(decideBackup({ ...noSound, match: 'same' })).toBe('delete');
-    expect(decideBackup({ ...noSound, match: 'model' })).toBe('keep');
+    expect(decideBackup({ ...noSound, match: 'likely' })).toBe('keep');
     expect(decideBackup({ ...noSound, match: 'other' })).toBe('keep');
   });
 });

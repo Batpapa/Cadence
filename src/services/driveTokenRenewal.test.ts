@@ -11,6 +11,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // concurrent asks used to open two windows (the second usually blocked) and
 // clobber each other's GIS callback.
 //
+// And renewal is now conditional on there being something to push. Renewing on
+// a timer alone meant someone who opened Cadence to PLAY, changing nothing, was
+// asked once an hour for a token that was then never spent — which is what made
+// the window feel gratuitous rather than occasional.
+//
 // Faked here: localStorage, the OAuth client, the DOM events. Not faked: the
 // renewal's own conditions, which are what these tests are about.
 
@@ -61,7 +66,18 @@ function installBrowser(): void {
   pointerHandlers = [];
   vi.stubGlobal('localStorage', storage);
   vi.stubGlobal('google', {
-    accounts: { oauth2: { initTokenClient: () => oauth.client, revoke: () => {} } },
+    accounts: {
+      oauth2: {
+        // The real client keeps the callback handed to it at construction —
+        // which is where the app now installs its permanent one, so a fake that
+        // dropped the config would never deliver a single token.
+        initTokenClient: (cfg: { callback?: (r: unknown) => void }) => {
+          oauth.client.callback = cfg.callback ?? null;
+          return oauth.client;
+        },
+        revoke: () => {},
+      },
+    },
   });
   vi.stubGlobal('window', globalThis);
   vi.stubGlobal('document', {
@@ -76,11 +92,17 @@ function installBrowser(): void {
   vi.stubGlobal('crypto', { randomUUID: () => 'device-1' });
 }
 
-/** A connected install whose token expires in `minutes`. */
-async function openApp(minutes: number | null): Promise<typeof import('./driveService')> {
+/** A connected install whose token expires in `minutes`.
+ *
+ *  `unsynced` is the default because it is the case renewal exists for: edits
+ *  made locally that still have to reach Drive. Pass false for the user who is
+ *  only reading — whose clicks must not buy a token nothing will spend. */
+async function openApp(minutes: number | null, unsynced = true): Promise<typeof import('./driveService')> {
   storage.setItem(`cadence_drive_connected_${USER}`, '1');
   storage.setItem(`cadence_drive_file_id_${USER}`, 'file-1');
   storage.setItem(`cadence_drive_owner_${USER}`, 'google-1');
+  storage.setItem(`cadence_edit_seq_${USER}`, unsynced ? '1' : '0');
+  storage.setItem(`cadence_synced_seq_${USER}`, '0');
   if (minutes !== null) {
     storage.setItem('cadence_access_token', 'tok-0');
     storage.setItem('cadence_token_expires_at', String(Date.now() + minutes * 60_000));
@@ -121,6 +143,26 @@ describe('renewing from a gesture', () => {
     await openApp(null);
     click();
     await settle();
+    expect(oauth.calls).toBe(1);
+  });
+
+  it('asks nothing when there is nothing to synchronise', async () => {
+    // The three-hour practice session: connected, token long expired, and not a
+    // single edit to push. Every click used to open a window here.
+    await openApp(5, false);
+    click(); await settle();
+    click(); await settle();
+    expect(oauth.calls).toBe(0);
+  });
+
+  it('asks as soon as an edit is actually waiting', async () => {
+    const mod = await openApp(5, false);
+    click(); await settle();
+    expect(oauth.calls).toBe(0);
+
+    // An edit lands — now the token has a purpose, and the next gesture buys it.
+    mod.syncToCloud({ version: 1 } as unknown as Parameters<typeof mod.syncToCloud>[0]);
+    click(); await settle();
     expect(oauth.calls).toBe(1);
   });
 

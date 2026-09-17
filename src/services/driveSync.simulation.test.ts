@@ -106,9 +106,12 @@ function installOAuth(): void {
   const google = {
     accounts: {
       oauth2: {
-        initTokenClient: () => {
+        // Keeps the callback given at construction, as the real client does —
+        // that is where the app installs its permanent one, so a fake that
+        // dropped the config would simply never deliver a token.
+        initTokenClient: (cfg: { callback?: (r: unknown) => void }) => {
           const client = {
-            callback: null as ((r: unknown) => void) | null,
+            callback: cfg.callback ?? null as ((r: unknown) => void) | null,
             error_callback: null,
             requestAccessToken: () => client.callback?.({ access_token: 'tok', expires_in: 3600 }),
           };
