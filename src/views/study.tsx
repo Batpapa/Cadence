@@ -1,5 +1,5 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
-import { appState, navigate, mutate, goBack } from '../store';
+import { appState, navigate, mutate, leaveStudy } from '../store';
 import { pickRandom, pickOptimal, pickStochastic, pickSequential, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -142,6 +142,15 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     }).then(goNext);
   };
 
+  /** Back to the page the session was started from — see leaveStudy. When the
+   *  app was reopened straight onto the session there is no such page in this
+   *  run, so a deck session goes to its deck and anything else to Home. */
+  const leave = () => {
+    if (!leaveStudy()) navigate(deckId ? { view: 'deck', deckId } : { view: 'folder', folderId: null });
+  };
+  // "Back to deck" names a deck, and only a deck session has one to name.
+  const leaveLabel = deckId ? t('study.complete.back') : t('study.leave');
+
   // No dep array → always fresh closures; listener torn down on each re-render.
   useEffect(() => {
     if (!card) return;
@@ -151,7 +160,9 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
       else if (e.key === '2')      { e.preventDefault(); logRating('hard');  }
       else if (e.key === '3')      { e.preventDefault(); logRating('good');  }
       else if (e.key === '4')      { e.preventDefault(); logRating('easy');  }
-      else if (e.key === 'Escape') { e.preventDefault(); goBack(); }
+      // Escape leaves the session, as the help says — it used to step back one
+      // card, which the back button already does.
+      else if (e.key === 'Escape') { e.preventDefault(); leave(); }
       else if (e.key === 'Tab')    { e.preventDefault(); if (canSkip) skipCard(); }
     };
     document.addEventListener('keydown', onKey);
@@ -203,7 +214,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
             <div class="text-5xl">✓</div>
             <h2 class="text-xl font-semibold text-success">{t('study.complete.title')}</h2>
-            <button class="btn-primary mt-2" onClick={() => goBack()}>{t('study.complete.back')}</button>
+            <button class="btn-primary mt-2" onClick={leave}>{leaveLabel}</button>
           </div>
         </div>
       </div>
@@ -218,7 +229,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
             <div class="text-5xl">★</div>
             <h2 class="text-xl font-semibold text-success">{t('study.mastered.title')}</h2>
-            <button class="btn-primary mt-2" onClick={() => goBack()}>{t('study.mastered.back')}</button>
+            <button class="btn-primary mt-2" onClick={leave}>{deckId ? t('study.mastered.back') : t('study.leave')}</button>
           </div>
         </div>
       </div>
