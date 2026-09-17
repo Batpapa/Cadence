@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { focusIfDesktop, formatBytes, isMobileDevice } from '../../utils';
-import { showModal, closeModal, renderModalBody, alertModal } from '../../components/modal';
+import { showModal, closeModal, closeAllModals, renderModalBody, alertModal, confirmModal } from '../../components/modal';
 import { LiveSession } from '../liveSession';
 import { editSessionTree, placeSession } from '../sessionTree';
 import { ImportSession } from '../importSession';
@@ -18,7 +18,11 @@ import { importSharedSession, importSessionFile } from '../../services/sessionSh
 import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
 import { detectionsOnCards, pitchShiftSetting } from '../detections';
-import { appState, mutate } from '../../store';
+import { appState, mutate, getContext } from '../../store';
+import { listLiveBackups, restoreLiveBackup, discardLiveBackup, type LiveBackupEntry } from '../liveBackup';
+import { showRecoveryFailures } from './RecoveryFailureModal';
+import { fmtSessionDateTime } from '../sessionNaming';
+import { fmtLongTime } from './sessionUiShared';
 import {
   activeLive, activeImport, setActiveLive, setActiveImport,
   lastImportDump, importStarting, importPlaybackWarn,
@@ -582,6 +586,114 @@ function BackfillRow() {
   );
 }
 
+/** The live backups sitting on Drive, and what to do with each.
+ *
+ *  The automatic offer only ever appears on the device that recorded (see
+ *  matchDevice), and that recognition can fail: a desktop browser whose data
+ *  was cleared regenerates its id, and has no phone model to fall back on. This
+ *  is the way in that never fails — someone who knows a backup exists comes
+ *  looking for it here.
+ *
+ *  Opened on demand, never on the settings opening: listing costs Drive
+ *  requests and may want a sign-in window, and most people have no backup at
+ *  all. */
+function DriveBackupsRow() {
+  const [entries, setEntries] = useState<LiveBackupEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    listLiveBackups(true)
+      .then(setEntries)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  };
+
+  const recover = (entry: LiveBackupEntry) => {
+    if (!entry.meta) return;
+    setBusyId(entry.sessionId);
+    setError(null);
+    restoreLiveBackup({ sessionId: entry.sessionId, folderId: entry.folderId, meta: entry.meta }, (done, total) => setProgress({ done, total }))
+      .then(failure => {
+        setBusyId(null);
+        setProgress(null);
+        if (failure) { showRecoveryFailures([failure], () => {}); return; }
+        // Straight to what was just recovered: the library behind this dialog
+        // read its list before any of this happened.
+        closeAllModals();
+        getContext().navigate({ view: 'sessions', sessionId: entry.sessionId });
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+        setBusyId(null);
+        setProgress(null);
+      });
+  };
+
+  const remove = (entry: LiveBackupEntry) => {
+    confirmModal(
+      t('sessions.liveBackup.offer.abandonTitle'),
+      t('sessions.liveBackup.offer.abandonMessage'),
+      t('sessions.liveBackup.offer.abandon'),
+      () => {
+        setBusyId(entry.sessionId);
+        void discardLiveBackup(entry.sessionId, true).finally(() => {
+          setBusyId(null);
+          setEntries(list => (list ?? []).filter(e => e.sessionId !== entry.sessionId));
+        });
+      },
+    );
+  };
+
+  return (
+    <div class="pt-3 border-t border-border space-y-2">
+      {entries === null ? (
+        <button class="btn-ghost border border-border w-full text-sm" disabled={loading} onClick={load}>
+          {loading ? t('sessions.liveBackup.list.loading') : t('sessions.liveBackup.list.show')}
+        </button>
+      ) : entries.length === 0 ? (
+        <p class="text-xs text-muted">{t('sessions.liveBackup.list.empty')}</p>
+      ) : (
+        <div class="space-y-2">
+          <p class="text-xs text-muted leading-relaxed">{t('sessions.liveBackup.list.hint')}</p>
+          {entries.map(entry => (
+            <div key={entry.sessionId} class="flex items-center gap-2 p-2 rounded border border-border">
+              <div class="min-w-0 flex-1">
+                <p class="text-sm text-primary truncate">
+                  {entry.meta ? (entry.meta.name || t('sessions.liveBackup.offer.unnamed')) : t('sessions.liveBackup.list.unreadable')}
+                </p>
+                <p class="text-[11px] text-dim truncate">
+                  {entry.meta ? `${fmtSessionDateTime(entry.meta.date)} · ${fmtLongTime(entry.meta.durationS)} · ` : ''}
+                  {formatBytes(entry.bytes)}
+                </p>
+              </div>
+              {entry.meta && (
+                <button
+                  class="btn-primary text-xs shrink-0"
+                  disabled={busyId !== null}
+                  onClick={() => recover(entry)}
+                >
+                  {busyId === entry.sessionId && progress
+                    ? t('sessions.liveBackup.offer.downloading', { done: progress.done, total: progress.total })
+                    : t('sessions.liveBackup.offer.recover')}
+                </button>
+              )}
+              <button class="btn-danger text-xs shrink-0" disabled={busyId !== null} onClick={() => remove(entry)}>
+                {t('sessions.liveBackup.list.delete')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <p class="text-xs text-danger break-words">{t('sessions.liveBackup.list.failed', { error })}</p>}
+    </div>
+  );
+}
+
 function SessionSettingsBody() {
   // Read straight off appState rather than through db.ts's async accessors:
   // this component already re-renders on every state change, so the figures
@@ -634,6 +746,7 @@ function SessionSettingsBody() {
       )}
 
       {driveOn && <BackfillRow />}
+      {driveOn && <DriveBackupsRow />}
     </div>
   );
 }

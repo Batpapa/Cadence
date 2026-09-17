@@ -17,7 +17,7 @@ import { retryRecovery, type RecoveryFailure } from './recovery';
 import {
   BACKUP_META_NAME, planAudioParts, audioPartName, windowsPartName, parseBackupFileName, parseBackupMeta,
   selectAudioParts, mergeWindowParts, matchDevice, decideBackup,
-  type LiveBackupMeta, type DeviceMatch,
+  type LiveBackupMeta, type DeviceMatch, type DeviceSignature,
 } from './liveBackupPlan';
 
 // ── Live backup to Drive: the transfers (2026-09-17) ────────────────────────────
@@ -67,20 +67,53 @@ const _known = new Set<string>();
 // ── Which device this is ───────────────────────────────────────────────────────
 
 type UADataNavigator = Navigator & {
-  userAgentData?: { getHighEntropyValues(hints: string[]): Promise<{ model?: string }> };
+  userAgentData?: {
+    getHighEntropyValues(hints: string[]): Promise<{ model?: string; platform?: string; platformVersion?: string }>;
+  };
 };
 
-let _model: Promise<string> | null = null;
+/** The GPU as WebGL names it — "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop
+ *  GPU (0x00002820) Direct3D11 vs_5_0 ps_5_0, D3D11)" on a real machine. Empty
+ *  where the browser declines to say. */
+function webglRenderer(): string {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (!gl) return '';
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info') as { UNMASKED_RENDERER_WEBGL: number } | null;
+    const value = dbg ? (gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) as unknown) : null;
+    // Handed back rather than left to the collector: a page may only hold so
+    // many live contexts, and this one is needed for a single string.
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return typeof value === 'string' ? value : '';
+  } catch { return ''; }
+}
 
-/** The phone model as Chromium reports it ("" on desktop, and on browsers that
- *  do not implement it). Asked once: it cannot change under a running page. */
-function deviceModel(): Promise<string> {
-  _model ??= (async () => {
+let _signature: Promise<DeviceSignature> | null = null;
+
+/** What this machine looks like. Asked once: none of it changes under a
+ *  running page. */
+function deviceSignature(): Promise<DeviceSignature> {
+  _signature ??= (async () => {
     const uad = (navigator as UADataNavigator).userAgentData;
-    if (!uad?.getHighEntropyValues) return '';
-    try { return (await uad.getHighEntropyValues(['model'])).model ?? ''; } catch { return ''; }
+    let model = '', platform = '', platformVersion = '';
+    if (uad?.getHighEntropyValues) {
+      try {
+        const hints = await uad.getHighEntropyValues(['model', 'platform', 'platformVersion']);
+        model = hints.model ?? '';
+        platform = hints.platform ?? '';
+        // Major only — see DeviceSignature.
+        platformVersion = (hints.platformVersion ?? '').split('.')[0] ?? '';
+      } catch { /* leaves the fields empty, which matchDevice reads as "unknown" */ }
+    }
+    return {
+      model,
+      platform: platform || navigator.platform || '',
+      platformVersion,
+      renderer: webglRenderer(),
+      cores: navigator.hardwareConcurrency || 0,
+    };
   })();
-  return _model;
+  return _signature;
 }
 
 // ── Sending ──────────────────────────────────────────────────────────────────
@@ -136,7 +169,8 @@ async function runBackup(live: LiveSession, interactive: boolean): Promise<void>
       source: live.sourceKind === 'device' ? 'device' : 'live',
       durationS: live.getElapsedMs() / 1000,
       deviceId: getDeviceId(),
-      deviceModel: await deviceModel(),
+      deviceModel: (await deviceSignature()).model,
+      device: await deviceSignature(),
       updatedAt: Date.now(),
     };
     const metaBlob = new Blob([JSON.stringify(meta)], { type: 'application/json' });
@@ -206,6 +240,40 @@ export interface LiveBackupOffer {
   files: DriveChild[];
 }
 
+/** Every backup on Drive, whichever device made it, with nothing deleted and
+ *  nothing offered. For the module's settings, where someone goes LOOKING —
+ *  the only way in on a device that cannot recognise itself any more, which is
+ *  every desktop browser once its local data has been cleared (the device id
+ *  is regenerated and there is no phone model to fall back on). Measured on a
+ *  real backup, 2026-09-17: same machine, wiped, `matchDevice` said 'other'
+ *  and nothing was ever proposed. */
+export interface LiveBackupEntry {
+  sessionId: string;
+  folderId: string;
+  /** Null when meta.json is missing or unreadable: it can still be deleted. */
+  meta: LiveBackupMeta | null;
+  bytes: number;
+}
+
+export async function listLiveBackups(interactive = true): Promise<LiveBackupEntry[]> {
+  if (!isDriveConnected()) return [];
+  const root = await findCompanionPath([BACKUPS_DIR], interactive);
+  if (!root) return [];
+  const folders = (await listCompanionChildren(root, interactive)).filter(f => f.mimeType === FOLDER_MIME);
+  const entries: LiveBackupEntry[] = [];
+  for (const f of folders) {
+    const files = await listCompanionChildren(f.id, interactive);
+    entries.push({
+      sessionId: f.name,
+      folderId: f.id,
+      meta: await readMeta(files, interactive),
+      bytes: files.reduce((sum, x) => sum + Number(x.size ?? 0), 0),
+    });
+  }
+  // Most recent first, like the analyses library.
+  return entries.sort((a, b) => (b.meta?.date ?? '').localeCompare(a.meta?.date ?? ''));
+}
+
 /** Recordings the user put off deciding about, for this page's life. */
 const _postponed = new Set<string>();
 
@@ -238,7 +306,7 @@ async function settleFolder(
   const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
   const drafts = await listDraftSessions();
   const audio = await loadSessionAudio(sessionId);
-  const match = meta ? matchDevice(meta, getDeviceId(), await deviceModel()) : null;
+  const match = meta ? matchDevice(meta, getDeviceId(), await deviceSignature()) : null;
 
   const decision = decideBackup({
     match,
@@ -330,7 +398,8 @@ async function runSettle(sessionId: string): Promise<void> {
  *  any; throws when the download itself fails. The backup is left on Drive
  *  until the recording is safe elsewhere. */
 export async function restoreLiveBackup(
-  offer: LiveBackupOffer, onProgress?: (done: number, total: number) => void,
+  offer: { sessionId: string; folderId: string; meta: LiveBackupMeta },
+  onProgress?: (done: number, total: number) => void,
 ): Promise<RecoveryFailure | null> {
   const id = offer.sessionId;
   const files = await listCompanionChildren(offer.folderId, true);
