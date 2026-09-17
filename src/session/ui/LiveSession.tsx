@@ -16,6 +16,7 @@ import {
   BoundControls, ClipControls, type ClipSessionRef,
 } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
+import { LiveBackupIndicator } from './LiveBackupIndicator';
 import { generatedSessionName } from '../sessionNaming';
 import { setActiveLive, lastLiveDump } from './sessionStore';
 import { setPitchShiftSetting } from './sessionModule';
@@ -223,31 +224,41 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
           (sessionTree.ts), and the entry comes to life the moment this one is
           finalized. */}
       <AnalysisFolderPicker ctx={ctx} sessionId={live.sessionId} />
-      <p class="text-sm text-primary mt-2 mb-3">{dateText}</p>
+      <p class="text-sm text-primary mt-2">{dateText}</p>
 
-      <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg sticky top-0">
-        <span class={`w-2.5 h-2.5 rounded-full shrink-0 ${paused ? 'bg-dim' : 'bg-danger animate-pulse'}`} />
-        <span class="text-xs font-mono font-bold text-danger">{paused ? t('sessions.paused') : 'REC'}</span>
-        <span ref={chronoRef} class="text-sm font-mono text-primary tabular-nums">0:00</span>
-        <div class="flex-1 h-1.5 rounded-full bg-elevated overflow-hidden">
-          <div ref={vuFillRef} class="h-full bg-accent transition-[width] duration-75" style={{ width: '0%' }} />
+      {/* Pinned the way the finished analysis pins its transport: full-bleed
+          backdrop over the page's own padding, above the cards (`z-10`), and
+          the same air above and below whether pinned or at rest (`pt-3`/`pb-3`).
+          The bordered row alone used to carry `sticky`, with nothing to keep
+          the feed from drawing over it. */}
+      <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3">
+        <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg">
+          <span class={`w-2.5 h-2.5 rounded-full shrink-0 ${paused ? 'bg-dim' : 'bg-danger animate-pulse'}`} />
+          <span class="text-xs font-mono font-bold text-danger">{paused ? t('sessions.paused') : 'REC'}</span>
+          <span ref={chronoRef} class="text-sm font-mono text-primary tabular-nums">0:00</span>
+          <div class="flex-1 h-1.5 rounded-full bg-elevated overflow-hidden">
+            <div ref={vuFillRef} class="h-full bg-accent transition-[width] duration-75" style={{ width: '0%' }} />
+          </div>
+          <button
+            class="btn-ghost border border-border w-8 h-8 p-0 rounded-full flex items-center justify-center shrink-0"
+            title={paused ? t('sessions.resume') : t('sessions.pause')}
+            onClick={onPauseClick}
+            dangerouslySetInnerHTML={{ __html: paused ? playIcon(12) : pauseIcon(12) }}
+          />
+          {/* The same fork as on the module's screen, and the same value: it
+              starts from the setting, and changing it mid-recording — from the
+              next window on — is also the setting from now on. */}
+          <PitchShiftControl value={live.pitchShift} onChange={(s) => { live.setPitchShift(s); setPitchShiftSetting(s); }} />
+          <button class="btn-danger px-3 shrink-0" disabled={stopping} onClick={() => { void onStopClick(); }}>
+            {t('sessions.stop')}
+          </button>
         </div>
-        <button
-          class="btn-ghost border border-border w-8 h-8 p-0 rounded-full flex items-center justify-center shrink-0"
-          title={paused ? t('sessions.resume') : t('sessions.pause')}
-          onClick={onPauseClick}
-          dangerouslySetInnerHTML={{ __html: paused ? playIcon(12) : pauseIcon(12) }}
-        />
-        {/* The same fork as on the module's screen, and the same value: it
-            starts from the setting, and changing it mid-recording — from the
-            next window on — is also the setting from now on. */}
-        <PitchShiftControl value={live.pitchShift} onChange={(s) => { live.setPitchShift(s); setPitchShiftSetting(s); }} />
-        <button class="btn-danger px-3 shrink-0" disabled={stopping} onClick={() => { void onStopClick(); }}>
-          {t('sessions.stop')}
-        </button>
+        {/* Only once something is being recorded: before that there is nothing
+            to send, and no session to name in meta.json. */}
+        {(phase === 'recording' || phase === 'paused') && <LiveBackupIndicator live={live} />}
       </div>
 
-      <p class="text-xs text-dim mt-2 text-center">{initStatus}</p>
+      <p class="text-xs text-dim text-center">{initStatus}</p>
 
       {isTouchPrimary && <p class="text-[11px] text-dim mt-2 text-center">{t('sessions.foregroundReminder')}</p>}
       {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}

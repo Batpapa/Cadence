@@ -683,6 +683,9 @@ export async function uploadSessionAudio(sessionId: string, interactive = true):
   const fileId = await (await driveModule())
     .uploadCompanionFile(companionName(sessionId, mimeType), audio, interactive);
   await recordSyncedAudio(sessionId, { fileId, mimeType, bytes: audio.size });
+  // The recording is now safe off this device, which is what its live backup
+  // was waiting for (liveBackup.ts). Lazy for the same reason as storeModule.
+  void import('./liveBackup').then(m => m.settleLiveBackup(sessionId));
 }
 
 /** The recordings this device holds that are NOT on Drive.
@@ -823,6 +826,15 @@ export async function appendSessionWindow(sessionId: string, index: number, resu
   await (await localDb()).put(WINDOWS_STORE, result, sessionWindowKey(sessionId, index));
 }
 
+/** Every window of a recording at once, in one transaction, from index 0 —
+ *  for putting a recording back from its Drive backup (liveBackup.ts), where
+ *  thousands of single-row transactions would only be slower. */
+export async function putSessionWindows(sessionId: string, windows: WindowResult[]): Promise<void> {
+  const tx = (await localDb()).transaction(WINDOWS_STORE, 'readwrite');
+  windows.forEach((w, i) => { void tx.store.put(w, sessionWindowKey(sessionId, i)); });
+  await tx.done;
+}
+
 export async function loadSessionWindows(sessionId: string): Promise<WindowResult[] | undefined> {
   const d = await localDb();
   const rows = await d.getAll(WINDOWS_STORE, sessionWindowRange(sessionId)) as WindowResult[];
@@ -851,12 +863,21 @@ export async function appendChunk(recordingId: string, seq: number, blob: Blob):
 }
 
 export async function collectChunks(recordingId: string): Promise<Blob[]> {
+  return (await collectChunkRecords(recordingId)).map(c => c.blob);
+}
+
+/** The recording's chunks WITH their sequence numbers, in order, optionally
+ *  only those after `afterSeq`. The numbers are what an incremental copy
+ *  (liveBackup.ts) needs to know what it has already sent. They may have gaps:
+ *  the recorder numbers a chunk before writing it, and a write refused for want
+ *  of space is dropped. */
+export async function collectChunkRecords(recordingId: string, afterSeq = -1): Promise<Array<{ seq: number; blob: Blob }>> {
   const d = await localDb();
   const all = await d.getAll(CHUNKS_STORE) as { recordingId: string; seq: number; blob: Blob }[];
   return all
-    .filter(c => c.recordingId === recordingId)
+    .filter(c => c.recordingId === recordingId && c.seq > afterSeq)
     .sort((a, b) => a.seq - b.seq)
-    .map(c => c.blob);
+    .map(({ seq, blob }) => ({ seq, blob }));
 }
 
 export async function clearChunks(recordingId: string): Promise<void> {

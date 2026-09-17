@@ -174,21 +174,26 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         setDate={(date) => { imp.dateOverride = date; }}
       />
 
-      <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg sticky top-0">
-        <span class="text-xs font-mono text-muted shrink-0 tabular-nums">{fmtLongTime(progress.analyzedS)} / {fmtLongTime(progress.totalS)}</span>
-        <div class="flex-1 h-1.5 rounded-full bg-elevated overflow-hidden">
-          <div class="h-full bg-accent transition-[width] duration-200" style={{ width: `${pct}%` }} />
+      {/* Pinned like the live screen's bar and the finished analysis's
+          transport — see LiveSession.tsx for the three classes that make it
+          hold. */}
+      <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3">
+        <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg">
+          <span class="text-xs font-mono text-muted shrink-0 tabular-nums">{fmtLongTime(progress.analyzedS)} / {fmtLongTime(progress.totalS)}</span>
+          <div class="flex-1 h-1.5 rounded-full bg-elevated overflow-hidden">
+            <div class="h-full bg-accent transition-[width] duration-200" style={{ width: `${pct}%` }} />
+          </div>
+          <button
+            class="btn-danger px-3 shrink-0 disabled:opacity-50"
+            disabled={cancelling}
+            onClick={() => { setCancelling(true); imp.cancel(); }}
+          >
+            {t('common.cancel')}
+          </button>
         </div>
-        <button
-          class="btn-danger px-3 shrink-0 disabled:opacity-50"
-          disabled={cancelling}
-          onClick={() => { setCancelling(true); imp.cancel(); }}
-        >
-          {t('common.cancel')}
-        </button>
       </div>
 
-      <p class="text-[11px] text-dim mt-2 text-center">{progress.etaS !== null ? t('sessions.etaRemaining', { eta: fmtEta(progress.etaS) }) : ''}</p>
+      <p class="text-[11px] text-dim text-center">{progress.etaS !== null ? t('sessions.etaRemaining', { eta: fmtEta(progress.etaS) }) : ''}</p>
       <p class="text-xs text-dim mt-2 text-center">{statusText}</p>
       {importPlaybackWarn.value && <p class="text-xs text-amber-500 mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
 

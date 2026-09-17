@@ -62,8 +62,12 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
   const mimeType = session.mimeType || 'audio/webm';
   let blob = new Blob(chunks, { type: mimeType });
   // Chunk count × timeslice is a better duration estimate than wall-clock
-  // deltas here — it isn't thrown off by a backgrounded/suspended tab.
-  const durationMs = chunks.length * RECORDER_TIMESLICE_MS;
+  // deltas here — it isn't thrown off by a backgrounded/suspended tab. But it
+  // only holds while one chunk is one timeslice: a recording put back from its
+  // Drive backup (liveBackup.ts) arrives as a few parts of many chunks each,
+  // and would be stamped a few minutes long. Its draft carries the elapsed time
+  // instead, so the larger of the two stands.
+  const durationMs = Math.max(chunks.length * RECORDER_TIMESLICE_MS, session.duration * 1000);
 
   if (mimeType.includes('webm') && blob.size > 0) {
     try {
@@ -215,8 +219,12 @@ export function recoverOrphanedSessions(excludeId?: string): Promise<RecoveryFai
 
 /** The user asked to try again. Ignores the crash marker — that is the point
  *  of asking. Null on success. */
-export function retryRecovery(session: Analysis): Promise<RecoveryFailure | null> {
-  return recoverOrphan(session, true);
+export async function retryRecovery(session: Analysis): Promise<RecoveryFailure | null> {
+  const failure = await recoverOrphan(session, true);
+  // In front of the user from here on, whoever called: the failure dialog, or
+  // the Drive backup offer handing over to it. Settled when that dialog closes.
+  if (failure) awaitingDecision.add(session.id);
+  return failure;
 }
 
 /** The dialog for this orphan is closed, whatever was decided. */
@@ -248,6 +256,9 @@ export async function abandonRecovery(sessionId: string): Promise<void> {
     if (!stillDraft) return;
     await clearChunks(sessionId);
     await deleteSession(sessionId);
+    // And its Drive backup, if any: abandoning is the end of the recording, and
+    // a copy left there would be offered back at the next visit.
+    void import('./liveBackup').then(m => m.discardLiveBackup(sessionId));
   } finally {
     release();
     markAttempt(sessionId, false);

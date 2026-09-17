@@ -947,7 +947,9 @@ export const DRIVE_NOT_CONNECTED = 'drive_not_connected';
 /** The recordings folder, created on first use. Memoised in localStorage per
  *  user, and re-created transparently if the user deleted it in Drive — an
  *  empty search result is not an error, it just means making it again. */
-async function companionFolderId(interactive: boolean): Promise<string> {
+async function companionFolderId(interactive: boolean): Promise<string>;
+async function companionFolderId(interactive: boolean, create: false): Promise<string | null>;
+async function companionFolderId(interactive: boolean, create = true): Promise<string | null> {
   const cached = localStorage.getItem(lsFolderId());
   if (cached) {
     // Confirm it still exists: a folder the user trashed would otherwise make
@@ -975,14 +977,19 @@ async function companionFolderId(interactive: boolean): Promise<string> {
       return found[0]!.id;
     }
   }
+  if (!create) {
+    // Looking only: a search that failed is not "absent", and must not read so.
+    if (!search.ok) throw new Error(`companion_folder_failed: ${search.status}`);
+    return null;
+  }
 
-  const create = await driveRequest('https://www.googleapis.com/drive/v3/files', {
+  const created = await driveRequest('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: COMPANION_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
   }, interactive);
-  if (!create.ok) throw new Error(`companion_folder_failed: ${create.status}`);
-  const id = ((await create.json()) as { id: string }).id;
+  if (!created.ok) throw new Error(`companion_folder_failed: ${created.status}`);
+  const id = ((await created.json()) as { id: string }).id;
   localStorage.setItem(lsFolderId(), id);
   return id;
 }
@@ -998,7 +1005,10 @@ export async function uploadCompanionFile(
   name: string, blob: Blob, interactive = false,
 ): Promise<string> {
   if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
-  const parent = await companionFolderId(interactive);
+  return uploadIntoFolder(await companionFolderId(interactive), name, blob, interactive);
+}
+
+async function uploadIntoFolder(parent: string, name: string, blob: Blob, interactive: boolean): Promise<string> {
   const boundary = `cadence${Math.random().toString(36).slice(2)}`;
   const metadata = JSON.stringify({ name, parents: [parent] });
   const body = new Blob([
@@ -1035,14 +1045,124 @@ export async function downloadCompanionFile(
  *  no token) must not stop the session it belonged to from being deleted
  *  locally. It becomes an orphan in the user's Drive, visible and deletable
  *  by them, which is a far better failure than a session that refuses to go. */
-export async function deleteCompanionFile(fileId: string): Promise<boolean> {
+export async function deleteCompanionFile(fileId: string, interactive = false): Promise<boolean> {
   if (!_state.fileId) return false;
   try {
+    // Deleting a FOLDER takes everything in it along (files.delete: "all
+    // descendants owned by the user are also deleted"), in one request.
     const resp = await driveRequest(
-      `https://www.googleapis.com/drive/v3/files/${fileId}`, { method: 'DELETE' },
+      `https://www.googleapis.com/drive/v3/files/${fileId}`, { method: 'DELETE' }, interactive,
     );
     return resp.ok || resp.status === 404;
   } catch {
     return false;
   }
+}
+
+// ── Nested companion folders (2026-09-17) ──────────────────────────────────────
+// For a companion made of several files that belong together — a live
+// recording's incremental backup (session/liveBackup.ts) — as opposed to one
+// file per recording. Generic on purpose: nothing below knows what goes in them.
+
+/** Whether a token is in hand right now. Callers running without a gesture
+ *  check this first rather than provoke a NEEDS_AUTH they would only swallow. */
+export function hasDriveToken(): boolean { return hasValidToken(); }
+
+export interface DriveChild { id: string; name: string; mimeType: string; size?: string }
+
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+/** Escaped for a `q` literal. The names here are ours (ids, fixed words), but a
+ *  query built from a string should not rely on that. */
+const qLiteral = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+/** Folder ids by path, for this page's life: a backup looks its folder up on
+ *  every press otherwise. A folder the user trashed meanwhile turns the next
+ *  write into a failure, and the caller drops the entry (forgetCompanionPath). */
+const _folderIds = new Map<string, string>();
+
+/** The folder at `path` below the companion folder, created as needed. */
+export async function companionPathId(path: string[], interactive = false): Promise<string> {
+  return (await resolveCompanionPath(path, interactive, true))!;
+}
+
+/** The folder at `path` below the companion folder, or null if any part of it
+ *  does not exist. For callers that only LOOK — a sweep must not leave empty
+ *  folders in the Drive of everyone who never used the feature. */
+export async function findCompanionPath(path: string[], interactive = false): Promise<string | null> {
+  return resolveCompanionPath(path, interactive, false);
+}
+
+async function resolveCompanionPath(path: string[], interactive: boolean, create: boolean): Promise<string | null> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  let parent = create ? await companionFolderId(interactive) : await companionFolderId(interactive, false);
+  if (parent === null) return null;
+  for (let i = 0; i < path.length; i++) {
+    const key = `${_state.userId}/${path.slice(0, i + 1).join('/')}`;
+    const cached = _folderIds.get(key);
+    if (cached) { parent = cached; continue; }
+    const name = path[i]!;
+    const q = encodeURIComponent(`name='${qLiteral(name)}' and '${qLiteral(parent)}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`);
+    const search = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`, {}, interactive);
+    if (!search.ok) throw new Error(`companion_folder_failed: ${search.status}`);
+    let id = ((await search.json()) as { files?: Array<{ id: string }> }).files?.[0]?.id;
+    if (!id) {
+      if (!create) return null;
+      const created = await driveRequest('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parent] }),
+      }, interactive);
+      if (!created.ok) throw new Error(`companion_folder_failed: ${created.status}`);
+      id = ((await created.json()) as { id: string }).id;
+    }
+    _folderIds.set(key, id);
+    parent = id;
+  }
+  return parent;
+}
+
+/** Forgets cached folder ids under `path` — after deleting one, or when a write
+ *  into it came back 404 because the user removed it from their Drive. */
+export function forgetCompanionPath(path: string[]): void {
+  const prefix = `${_state.userId}/${path.join('/')}`;
+  for (const key of [..._folderIds.keys()]) {
+    if (key === prefix || key.startsWith(prefix + '/')) _folderIds.delete(key);
+  }
+}
+
+/** Everything directly inside `folderId`, all pages. */
+export async function listCompanionChildren(folderId: string, interactive = false): Promise<DriveChild[]> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  const out: DriveChild[] = [];
+  let pageToken: string | undefined;
+  do {
+    const q = encodeURIComponent(`'${qLiteral(folderId)}' in parents and trashed=false`);
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,size)&pageSize=1000&spaces=drive`
+      + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+    const resp = await driveRequest(url, {}, interactive);
+    if (!resp.ok) throw new Error(`companion_list_failed: ${resp.status}`);
+    const page = await resp.json() as { files?: DriveChild[]; nextPageToken?: string };
+    out.push(...(page.files ?? []));
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+  return out;
+}
+
+/** Uploads `blob` as a new file inside `folderId`. */
+export async function uploadCompanionFileInto(
+  folderId: string, name: string, blob: Blob, interactive = false,
+): Promise<string> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  return uploadIntoFolder(folderId, name, blob, interactive);
+}
+
+/** Replaces an existing file's content, keeping its id and name. */
+export async function replaceCompanionFileContent(fileId: string, blob: Blob, interactive = false): Promise<void> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  const resp = await driveRequest(
+    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id`,
+    { method: 'PATCH', body: blob, headers: { 'Content-Type': blob.type || 'application/octet-stream' } },
+    interactive,
+  );
+  if (!resp.ok) throw new Error(`companion_update_failed: ${resp.status}`);
 }
