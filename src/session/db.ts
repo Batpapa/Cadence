@@ -103,7 +103,7 @@ const KV_STORE = 'kv'; // tune index + metadata
 const LOCAL_DB_VERSION = 1;
 const DRAFT_STORE   = 'draft';   // session id → Analysis (status:'recording' only — see saveSessionMeta)
 const AUDIO_STORE   = 'audio';   // session id → Blob
-const WINDOWS_STORE = 'windows'; // session id → WindowResult[] (in-progress live recordings only)
+const WINDOWS_STORE = 'windows'; // `<session id>#<index>` → WindowResult (in-progress live recordings only — see appendSessionWindow)
 const CHUNKS_STORE  = 'chunks';  // in-flight recording chunks (crash recovery)
 
 // Object store names used by the two now-obsolete legacy shapes this module
@@ -510,7 +510,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
   const d = await localDb();
   await d.delete(DRAFT_STORE, sessionId);
   await d.delete(AUDIO_STORE, sessionId);
-  await d.delete(WINDOWS_STORE, sessionId);
+  await deleteSessionWindows(sessionId);
 }
 
 /** Finalized sessions only (what the library shows) — see saveSessionMeta's
@@ -791,23 +791,57 @@ export async function forgetSessionAudio(sessionId: string): Promise<void> {
  *  IncrementalViterbiSegmenter instead of trusting a persisted detection
  *  snapshot, so a crash mid-session can never resurrect a short-lived,
  *  never-confirmed guess (which the live snapshot could contain at any given
- *  instant) as a "real" finalized detection. Overwritten wholesale on every
- *  persistDraft() call, same as the audio blob and the metadata row —
- *  simplest correct thing, not bounded, per the same "recompute is cheap
- *  enough" call made throughout this feature. Local-only, never synced — a
- *  crash can only be recovered on the device it happened on. */
-export async function saveSessionWindows(sessionId: string, windows: WindowResult[]): Promise<void> {
-  await (await localDb()).put(WINDOWS_STORE, windows, sessionId);
+ *  instant) as a "real" finalized detection. Local-only, never synced — a
+ *  crash can only be recovered on the device it happened on.
+ *
+ *  ONE ROW PER WINDOW since 2026-09-17, keyed `<sessionId>#<index>`. Until
+ *  then the whole array was rewritten under `<sessionId>` at every window, and
+ *  that is quadratic: measured with V8's serializer (the one IndexedDB uses in
+ *  Chrome) on a real 5 h 26 session, a single write weighed 2.5 MB at 3 h and
+ *  the recording had written 2.7 GB to the phone's storage by then, 7.5 GB by
+ *  5 h — with nothing waiting for the previous write to land. Reported the same
+ *  day by a user whose phone died past 3 h of recording.
+ *
+ *  Same store, new key shape, deliberately: a new store would mean bumping the
+ *  database version, and a tab still open on the previous bundle holds a
+ *  connection that blocks the upgrade — the analyser would hang on load. */
+const WINDOW_INDEX_DIGITS = 8; // 10^8 windows × 5 s ≈ 15 years of recording
+
+/** Exported for its test: the zero padding is what makes string order equal
+ *  window order, and the range below relies on it. */
+export function sessionWindowKey(sessionId: string, index: number): string {
+  return `${sessionId}#${String(index).padStart(WINDOW_INDEX_DIGITS, '0')}`;
+}
+
+/** Every row of one session, and nothing of another: ids are UUIDs of fixed
+ *  length, so no id is a prefix of another followed by `#`. */
+function sessionWindowRange(sessionId: string): IDBKeyRange {
+  return IDBKeyRange.bound(`${sessionId}#`, `${sessionId}#\uffff`);
+}
+
+export async function appendSessionWindow(sessionId: string, index: number, result: WindowResult): Promise<void> {
+  await (await localDb()).put(WINDOWS_STORE, result, sessionWindowKey(sessionId, index));
 }
 
 export async function loadSessionWindows(sessionId: string): Promise<WindowResult[] | undefined> {
-  return (await localDb()).get(WINDOWS_STORE, sessionId);
+  const d = await localDb();
+  const rows = await d.getAll(WINDOWS_STORE, sessionWindowRange(sessionId)) as WindowResult[];
+  if (rows.length > 0) return rows;
+  // TRANSITIONAL — remove around 2026-10-17 (decided 2026-09-17: one month).
+  // A draft interrupted before the per-window rows shipped still holds the
+  // whole array under the bare id. Past that date no such draft can reasonably
+  // be waiting for recovery any more; drop this read, and the bare-key delete
+  // in deleteSessionWindows with it.
+  return d.get(WINDOWS_STORE, sessionId);
 }
 
 /** Dead weight once a live recording is done (normally or via recovery) —
  *  only ever needed for crash-recovery replay of a still-in-progress session. */
 export async function deleteSessionWindows(sessionId: string): Promise<void> {
-  await (await localDb()).delete(WINDOWS_STORE, sessionId);
+  const tx = (await localDb()).transaction(WINDOWS_STORE, 'readwrite');
+  void tx.store.delete(sessionWindowRange(sessionId));
+  void tx.store.delete(sessionId); // TRANSITIONAL — see loadSessionWindows
+  await tx.done;
 }
 
 // ── Recording chunks (crash recovery, local-only) ───────────────────────────────

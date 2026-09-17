@@ -2,7 +2,8 @@ import { WakeLockManager } from './audio/capture';
 import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
-import { saveSessionMeta, saveSessionAudio, saveSessionWindows, deleteSessionWindows, deleteSession } from './db';
+import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession } from './db';
+import { holdAnalysisLock } from './recovery';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from './model';
 import { generatedSessionName } from './sessionNaming';
@@ -46,6 +47,9 @@ export class LiveSession {
   private recognition: RecognitionClient | null = null;
   private recorder: SessionFileRecorder | null = null;
   private wakeLock = new WakeLockManager();
+  /** Lets go of this recording's analysis lock — see start(). A no-op until
+   *  the lock is granted, and safe to call more than once. */
+  private releaseLock: () => void = () => {};
   private annotations = new Map<string, Detection>();
   private pauseStartedAt = 0;
   private pausedAccumMs = 0;
@@ -170,11 +174,14 @@ export class LiveSession {
         onWindow: (result, abc) => {
           // A window firing implies phase === 'recording' (analysis is fed by
           // the worklet, which pause() suspends) — no "currently paused" branch needed.
-          this.windows.push({ ...result, wallMs: Date.now() - this.startedAt - this.pausedAccumMs });
+          const row = { ...result, wallMs: Date.now() - this.startedAt - this.pausedAccumMs };
+          this.windows.push(row);
           // Crash-recovery source of truth — kept in step with every window,
           // not just detection-changing ones, so a crash loses at most the
-          // very last window's worth of signal (~stepSeconds).
-          void saveSessionWindows(this.sessionId, this.windows).catch(() => { /* best-effort */ });
+          // very last window's worth of signal (~stepSeconds). Only the new
+          // window is written: see appendSessionWindow's doc for what
+          // rewriting the whole array cost.
+          void appendSessionWindow(this.sessionId, this.windows.length - 1, row).catch(() => { /* best-effort */ });
           this.cb.onWindow?.(result, abc);
         },
         onDetections: events => this.applyEvents(events),
@@ -183,6 +190,15 @@ export class LiveSession {
       });
       if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       await this.recognition.ready;
+
+      // Held from before the first draft write until the recording is saved or
+      // discarded. Without it, another tab opening the analyser saw this
+      // draft as a crash orphan: it finalized it and cleared the chunks this
+      // recorder was still appending to — and since 2026-09-17 it could offer
+      // to delete it. Awaited because a request is not yet a grant — and HERE,
+      // not next to the recorder: nothing may be awaited between the worklet
+      // going live and the recorder starting.
+      this.releaseLock = await holdAnalysisLock(this.sessionId);
 
       // Hot path: worklet → worker via dedicated MessageChannel.
       await this.source.start(this.recognition);
@@ -198,6 +214,7 @@ export class LiveSession {
       this.setPhase('recording');
     } catch (err) {
       this.cleanup();
+      this.releaseLock();
       this.setPhase('error');
       this.cb.onError?.(String(err));
       throw err;
@@ -371,6 +388,7 @@ export class LiveSession {
       return session;
     } finally {
       this.cleanup();
+      this.releaseLock();
     }
   }
 
@@ -384,7 +402,13 @@ export class LiveSession {
     } finally {
       this.cleanup();
     }
-    await deleteSession(this.sessionId); // remove the progressively-persisted draft
+    try {
+      await deleteSession(this.sessionId); // remove the progressively-persisted draft
+    } finally {
+      // After the delete, not with cleanup(): released earlier, another tab
+      // could take the half-deleted draft for a crash orphan.
+      this.releaseLock();
+    }
     this.setPhase('idle');
   }
 
