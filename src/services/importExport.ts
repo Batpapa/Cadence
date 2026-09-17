@@ -2,6 +2,7 @@ import type { AppState, Card } from '../types';
 import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile } from '../utils';
 import { SCHEMA_VERSION, stampTuneType } from './migration';
 import { migrateClipTags } from './attachmentNames';
+import { migrateAudioMimeTypes } from './audioSniff';
 import { cardAliases } from './aliasService';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -94,6 +95,12 @@ function migrateRawCards(cards: unknown[], from: number): void {
   // exported before it must not bring clip tags back into attachment names.
   if (from < 8) {
     for (const raw of cards) migrateClipTags(raw as Record<string, unknown>);
+  }
+  // Same function as migration.ts's V8 → V9, for the same reason: a package
+  // exported before it carries attachments typed from their extension, and its
+  // audio would open in a <video> element on the receiving device too.
+  if (from < 9) {
+    for (const raw of cards) migrateAudioMimeTypes(raw as Record<string, unknown>);
   }
 }
 

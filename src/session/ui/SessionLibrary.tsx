@@ -14,6 +14,7 @@ import { AnalysisBrowser } from './AnalysisBrowser';
 import { TuneRankingPanel, type TuneViewState } from './TuneRankingPanel';
 import { TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
 import { replaceRoute } from '../../store';
+import { mayHoldAudio } from '../../services/audioSniff';
 import type { AppContext, FilterState, TuneSort } from '../../types';
 import type { Analysis } from '../model';
 
@@ -185,7 +186,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
         e.preventDefault();
         setDragOver(false);
         const file = e.dataTransfer?.files[0];
-        if (file && (file.type.startsWith('audio/') || !file.type)) onImportFile(file, destinationFolder);
+        if (file && mayHoldAudio(file.type)) onImportFile(file, destinationFolder);
       }}
     >
       {/* Split button: pressing it starts a session on the source shown by its

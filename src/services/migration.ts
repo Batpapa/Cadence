@@ -2,8 +2,9 @@ import type { AppState, User } from '../types';
 import { generateId } from '../utils';
 import { ensureCurrentUser, ensureCurrentProfile } from './userService';
 import { migrateClipTags } from './attachmentNames';
+import { migrateAudioMimeTypes } from './audioSniff';
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /** V6 → V7's rule, shared with importExport.ts's `migrateRawCards` so a card
  *  arriving through a .cdc package is stamped exactly like one already in the
@@ -136,6 +137,15 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
   (s) => {
     const cards = s['cards'] as Record<string, Record<string, unknown>>;
     for (const card of Object.values(cards ?? {})) migrateClipTags(card);
+  },
+  // V8 → V9: attachments the browser typed from their extension get the type
+  //          their CONTENT proves — a hand-attached `.webm` recording was
+  //          stored as video/webm and so opened in a bare <video> element
+  //          rather than the custom player. Reads a head per candidate file,
+  //          rewrites one string, and touches nothing it cannot prove.
+  (s) => {
+    const cards = s['cards'] as Record<string, Record<string, unknown>>;
+    for (const card of Object.values(cards ?? {})) migrateAudioMimeTypes(card);
   },
 ];
 

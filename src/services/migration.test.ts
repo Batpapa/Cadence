@@ -104,6 +104,46 @@ describe('migrateState V7 → V8', () => {
   });
 });
 
+describe('migrateState V8 → V9', () => {
+  // A minimal audio-only WebM head — the shape of what audioSniff.ts reads is
+  // covered by its own suite; this only checks the migration reaches it.
+  const AUDIO_WEBM = btoa(String.fromCharCode(
+    0x1a, 0x45, 0xdf, 0xa3, 0x87, 0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d,
+    0x18, 0x53, 0x80, 0x67, 0xff,
+    0x16, 0x54, 0xae, 0x6b, 0x85, 0xae, 0x83, 0x83, 0x81, 0x02,
+  ));
+
+  it('relabels an attachment the browser typed from its extension', () => {
+    const s = stateWith(card({
+      id: 'a',
+      content: { notes: '', attachments: [{ type: 'file', name: 'session.webm', mimeType: 'video/webm', data: AUDIO_WEBM }] },
+    }));
+    s.schemaVersion = 8;
+    migrateState(s);
+    expect(s.cards['a']!.content.attachments[0]).toMatchObject({ mimeType: 'audio/webm' });
+    expect(s.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('runs from an old version too, through every step before it', () => {
+    const s = stateWith(card({
+      id: 'a', externalId: 'thesession:1',
+      content: { notes: '', attachments: [{ type: 'file', name: 'rec.webm', mimeType: '', data: AUDIO_WEBM }] },
+    }));
+    s.schemaVersion = 5;
+    migrateState(s);
+    expect(s.cards['a']!.type).toBe('tune');
+    expect(s.cards['a']!.content.attachments[0]).toMatchObject({ mimeType: 'audio/webm' });
+  });
+
+  it('relabels a pre-V9 package on import, like the state path', () => {
+    const text = JSON.stringify({
+      schemaVersion: 8,
+      cards: [card({ id: 'a', content: { notes: '', attachments: [{ type: 'file', name: 'r.webm', mimeType: 'video/webm', data: AUDIO_WEBM }] } })],
+    });
+    expect(parseCardPackageFromText(text)[0]!.content.attachments[0]).toMatchObject({ mimeType: 'audio/webm' });
+  });
+});
+
 describe('the .cdc path stamps identically', () => {
   // The trap this guards: importExport.ts carries its OWN partial migration
   // mirror, so a package exported before V7 would arrive untyped — and its
