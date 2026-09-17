@@ -899,6 +899,30 @@ let gestureRenewalRefused = false;
  * Deliberately pointerdown only, not keydown: typing is not a decision, and a
  * window opening mid-sentence would be worse than the problem it fixes.
  */
+/** Work that needs Drive but does not live in this module: a live recording's
+ *  backup, a recording's audio whose upload found no token (session/liveBackup.ts,
+ *  session/db.ts).
+ *
+ *  Registered rather than imported, because the renewal below has to know
+ *  whether ANY of it is waiting without this module learning what a recording
+ *  is. `pending` must be synchronous and cheap: it is asked inside a pointerdown
+ *  handler. */
+export interface DrivePendingWork {
+  pending: () => boolean;
+  /** A token is in hand again — send what was waiting. Never raises a window. */
+  resume: () => void;
+}
+
+const _pendingWork: DrivePendingWork[] = [];
+
+export function registerDrivePendingWork(work: DrivePendingWork): void {
+  _pendingWork.push(work);
+}
+
+function anyWorkPending(): boolean {
+  return _pendingWork.some(w => { try { return w.pending(); } catch { return false; } });
+}
+
 export function initDriveTokenRenewal(): void {
   document.addEventListener('pointerdown', () => {
     if (gestureRenewalRefused || tokenRequest) return;
@@ -913,7 +937,11 @@ export function initDriveTokenRenewal(): void {
     // PLAY, editing nothing for three hours, was still being asked once an hour
     // for a token that would have gone unused. Reading is not affected: boot
     // asks for its own token, once, on a path the user just started.
-    if (!_state.pendingState && !hasUnsyncedChanges()) return;
+    // …and neither is anything outside this module. A live recording being
+    // copied to Drive spends a token every ten minutes while editing nothing at
+    // all (2026-09-17): without this it would go an hour and then stop, silently,
+    // in the very session the copy exists for.
+    if (!_state.pendingState && !hasUnsyncedChanges() && !anyWorkPending()) return;
 
     void requestTokenOnce().then(
       () => {
@@ -922,6 +950,7 @@ export function initDriveTokenRenewal(): void {
         // A flush that gave up for want of a token parked its state and left no
         // timer behind it, so nothing would push until the next edit. Send it.
         if (_state.pendingState && !_state.flushInProgress) void flushSync(true);
+        for (const w of _pendingWork) { try { if (w.pending()) w.resume(); } catch { /* best-effort */ } }
       },
       () => { gestureRenewalRefused = true; },
     );

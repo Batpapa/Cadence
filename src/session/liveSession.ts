@@ -211,6 +211,10 @@ export class LiveSession {
       this.persistDraft();
 
       await this.wakeLock.start();
+      // The automatic copy to Drive, from here until stop/cancel. It lives with
+      // the session rather than with its screen: a recording keeps running while
+      // the user is off looking at a card, and so must its backup.
+      void import('./liveBackup').then(m => m.startAutoBackup(this));
       this.setPhase('recording');
     } catch (err) {
       this.cleanup();
@@ -419,6 +423,7 @@ export class LiveSession {
   }
 
   private cleanup(): void {
+    void import('./liveBackup').then(m => m.stopAutoBackup(this.sessionId));
     this.wakeLock.stop();
     this.recognition?.dispose();
     this.recognition = null;

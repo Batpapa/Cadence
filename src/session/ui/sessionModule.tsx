@@ -13,7 +13,10 @@ import { NoCapturedAudioError, DisplayCaptureUnsupportedError } from '../audio/c
 import { importWarnMinutes, wholeFileDecodeBytes, IMPORT_MIN_S } from '../sessionConfig';
 import { fileStartDate } from '../fileStartDate';
 import { readRecordingStart } from '../audio/recordingDate';
-import { loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio } from '../db';
+import {
+  loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio,
+  setAutoLiveBackup, AUTO_LIVE_BACKUP_BY_DEFAULT,
+} from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
@@ -743,6 +746,18 @@ function SessionSettingsBody() {
             </p>
           )}
         </SettingRow>
+      )}
+
+      {/* Beside the "copy when saved" setting, because it answers the other half
+          of the same worry: that one protects a finished recording, this one
+          protects the recording being made. */}
+      {driveOn && (
+        <SettingRow
+          checked={mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT}
+          label={t('sessions.autoLiveBackup')}
+          hint={t('sessions.autoLiveBackup.hint')}
+          onToggle={(next) => { void setAutoLiveBackup(next); }}
+        />
       )}
 
       {driveOn && <BackfillRow />}
