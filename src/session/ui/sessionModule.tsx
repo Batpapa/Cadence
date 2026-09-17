@@ -586,8 +586,10 @@ function BackfillRow() {
       .then(r => { setResult(r); setProgress(null); refresh(); });
   };
 
+  // No rule of its own: it belongs to the setting above it, and the panel draws
+  // its separators between BLOCKS (see SessionSettingsBody).
   return (
-    <div class="pt-3 border-t border-border space-y-2">
+    <div class="space-y-2">
       <button class="btn-primary w-full text-sm" disabled={nothingToDo || progress !== null} onClick={run}>
         {progress
           ? t('sessions.syncAudio.backfill.running', { done: String(progress.done), total: String(progress.total) })
@@ -672,8 +674,9 @@ function DriveBackupsRow() {
     );
   };
 
+  // Same as BackfillRow: no separator here, it is part of the block above.
   return (
-    <div class="pt-3 border-t border-border space-y-2">
+    <div class="space-y-2">
       {entries === null ? (
         <button class="btn-ghost border border-border w-full text-sm" disabled={loading} onClick={load}>
           {loading ? t('sessions.liveBackup.list.loading') : t('sessions.liveBackup.list.show')}
@@ -747,43 +750,49 @@ function SessionSettingsBody() {
 
       {/* Absent entirely without Drive rather than shown disabled: there is no
           Drive to copy to, so the setting has nothing to mean. */}
-      {/* The recording being made comes before the recording already saved:
-          it is the one that can be lost outright. Each setting keeps what
-          belongs to it right underneath — the backups on Drive here, the
-          upload backlog under the copy-when-saved setting. */}
-      {driveOn && (
-        <SettingRow
-          checked={mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT}
-          label={t('sessions.autoLiveBackup')}
-          hint={t('sessions.autoLiveBackup.hint')}
-          onToggle={(next) => { void setAutoLiveBackup(next); }}
-        />
-      )}
-
-      {driveOn && <DriveBackupsRow />}
+      {/* One block per subject, a rule between blocks and never inside one: a
+          setting and the button that acts on the same thing belong together.
+          The recording being made comes before the recording already saved —
+          it is the one that can be lost outright. */}
+      {driveOn && <hr class="border-border" />}
 
       {driveOn && (
-        <SettingRow
-          checked={mod?.syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT}
-          label={t('sessions.syncAudio')}
-          hint={t('sessions.syncAudio.hint')}
-          onToggle={(next) => { void setSyncAudioByDefault(next); }}
-        >
-          {/* Only once there is something to weigh: a zero here is noise. And no
-              budget line — the limit is the user's own Drive quota, so this is
-              information, not a gauge. */}
-          {synced.length > 0 && (
-            <p class="text-xs text-muted mt-2 ml-[27px]">
-              {t(synced.length === 1 ? 'sessions.syncAudio.total' : 'sessions.syncAudio.totalPlural', {
-                count: synced.length,
-                size: formatBytes(syncedBytes),
-              })}
-            </p>
-          )}
-        </SettingRow>
+        <div class="space-y-2">
+          <SettingRow
+            checked={mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT}
+            label={t('sessions.autoLiveBackup')}
+            hint={t('sessions.autoLiveBackup.hint')}
+            onToggle={(next) => { void setAutoLiveBackup(next); }}
+          />
+          <DriveBackupsRow />
+        </div>
       )}
 
-      {driveOn && <BackfillRow />}
+      {driveOn && <hr class="border-border" />}
+
+      {driveOn && (
+        <div class="space-y-2">
+          <SettingRow
+            checked={mod?.syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT}
+            label={t('sessions.syncAudio')}
+            hint={t('sessions.syncAudio.hint')}
+            onToggle={(next) => { void setSyncAudioByDefault(next); }}
+          >
+            {/* Only once there is something to weigh: a zero here is noise. And
+                no budget line — the limit is the user's own Drive quota, so this
+                is information, not a gauge. */}
+            {synced.length > 0 && (
+              <p class="text-xs text-muted mt-2 ml-[27px]">
+                {t(synced.length === 1 ? 'sessions.syncAudio.total' : 'sessions.syncAudio.totalPlural', {
+                  count: synced.length,
+                  size: formatBytes(syncedBytes),
+                })}
+              </p>
+            )}
+          </SettingRow>
+          <BackfillRow />
+        </div>
+      )}
     </div>
   );
 }
