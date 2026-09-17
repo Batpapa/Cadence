@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // The store reaches driveService, which reads localStorage at module evaluation
 // — in a bare node environment the import throws before a single test runs.
-import { describe, expect, it, beforeEach } from 'vitest';
-import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence } from './store';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy } from './store';
 import type { Route } from './types';
 
 // ── The browser history bridge ───────────────────────────────────────────────
@@ -50,6 +50,44 @@ describe('replaceRoute', () => {
     replaceRoute({ view: 'library', search: 'kesh' });
     expect(history.length).toBe(before);
     expect(routeSignal.value).toEqual({ view: 'library', search: 'kesh' });
+  });
+});
+
+describe('leaveStudy', () => {
+  // Every card of a session is its own entry, so "Back to deck" used to reopen
+  // the last card rated (2026-09-15). What it must do is jump over the whole
+  // run of study entries at once.
+  const DECK: Route = { view: 'deck', deckId: 'd1' };
+  const card = (id: string | null): Route => ({ view: 'study', deckId: 'd1', strategy: 'optimal', currentCardId: id });
+
+  it('jumps back over every card of the session to the page it started from', () => {
+    const go = vi.spyOn(history, 'go').mockImplementation(() => {});
+    navigate(DECK);
+    navigate(card('a'));
+    navigate(card('b'));
+    navigate(card(null));   // the end screen
+    expect(leaveStudy()).toBe(true);
+    expect(go).toHaveBeenCalledWith(-3);
+    go.mockRestore();
+  });
+
+  it('stops at the page just before the session, not at an older one', () => {
+    const go = vi.spyOn(history, 'go').mockImplementation(() => {});
+    navigate(DECK);
+    navigate(LIB);
+    navigate(card('a'));
+    expect(leaveStudy()).toBe(true);
+    expect(go).toHaveBeenCalledWith(-1);
+    go.mockRestore();
+  });
+
+  it('reports false when the app was reopened straight onto the session', () => {
+    routeSignal.value = card('a');
+    initRoutePersistence('u1');
+    const go = vi.spyOn(history, 'go').mockImplementation(() => {});
+    expect(leaveStudy()).toBe(false);
+    expect(go).not.toHaveBeenCalled();
+    go.mockRestore();
   });
 });
 

@@ -149,9 +149,18 @@ export function recallScroll(navId: number): number {
 const stateFor = (route: Route): NavState =>
   ({ cadence: true, idx: _idx, nav: _currentNav, route, userId: _userId });
 
+/** The route at each position of this run, as it was pushed or last replaced.
+ *  The platform only ever hands back the CURRENT entry's state, so anything
+ *  that needs to know what lies further back has to have kept it — which is
+ *  what `leaveStudy` needs. Entries below the cursor are exactly the ones the
+ *  browser still holds: a navigation overwrites the position it pushes and
+ *  truncates everything above it, so nothing stale can be read going down. */
+const _routeByIdx = new Map<number, Route>();
+
 export function navigate(route: Route): void {
   _idx = _maxIdx = _idx + 1;
   _currentNav = ++_navSeq;
+  _routeByIdx.set(_idx, route);
   routeSignal.value  = route;
   canGoBack.value    = true;
   canGoForward.value = false;
@@ -172,6 +181,7 @@ let _replaceTimer: ReturnType<typeof setTimeout> | null = null;
  *  button walk backwards through someone typing. */
 export function replaceRoute(route: Route): void {
   routeSignal.value = route;
+  _routeByIdx.set(_idx, route);
   if (_replaceTimer) return;   // a trailing write is already scheduled
   _replaceTimer = setTimeout(() => {
     _replaceTimer = null;
@@ -188,6 +198,28 @@ export function replaceRoute(route: Route): void {
 export function goBack(): void { history.back(); }
 export function goForward(): void { history.forward(); }
 
+/** Leaves the study session on screen for the page it was started from.
+ *
+ *  A plain back cannot do it: every card of a session is its own entry, so
+ *  that back is from one card to the one before, which is right for the back
+ *  button and wrong for "Back to deck" — that button used to reopen the last
+ *  card rated, where a second rating is one tap away (seen 2026-09-15).
+ *
+ *  Goes back over the whole run of study entries in one jump rather than
+ *  navigating forward to the deck, so the history stays what the user walked:
+ *  the page they left, then forward to the session if they want it again.
+ *
+ *  Returns false when this run holds no page before the session — the app was
+ *  reopened straight onto it — for the caller to choose where to go. */
+export function leaveStudy(): boolean {
+  for (let i = _idx - 1; i >= 0; i--) {
+    const route = _routeByIdx.get(i);
+    if (!route) return false;
+    if (route.view !== 'study') { history.go(i - _idx); return true; }
+  }
+  return false;
+}
+
 /** Installs the bridge for this user, and makes the current route the baseline.
  *
  *  Called on every user open, which is also what re-baselines after a switch:
@@ -197,6 +229,8 @@ export function goForward(): void { history.forward(); }
 function initHistory(userId: string): void {
   _userId = userId;
   _idx = _maxIdx = 0;
+  _routeByIdx.clear();
+  _routeByIdx.set(0, routeSignal.value);
   _currentNav = ++_navSeq;
   navEntry.value = _currentNav;
   canGoBack.value = false;

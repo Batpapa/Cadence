@@ -1,5 +1,5 @@
 import type { User } from '../types';
-import type { Lang } from './i18nService';
+import { tIn, type Lang } from './i18nService';
 import { generateId } from '../utils';
 
 const SUPPORTED_LANGS: Lang[] = ['en', 'fr'];
@@ -34,7 +34,12 @@ export function ensureCurrentProfile(user: User): void {
 
   if (user.profileIds.length === 0) {
     const profileId = `${user.id}-default`;
-    user.profiles[profileId] = { id: profileId, name: 'Default' };
+    // In the user's language, and only here, at creation (2026-09-17): a French
+    // user used to see "Default" in the header from day one. A name is data —
+    // it syncs and it can be edited — so profiles created before stay as they
+    // are; renaming every "Default" found would also rename the ones a user
+    // chose to call that.
+    user.profiles[profileId] = { id: profileId, name: tIn(user.language ?? detectLanguage(), 'settings.profiles.defaultName') };
     user.profileIds          = [profileId];
     user.currentProfileId    = profileId;
   } else if (!user.currentProfileId || !user.profiles[user.currentProfileId]) {
