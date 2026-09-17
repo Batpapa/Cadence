@@ -1,7 +1,8 @@
 import { signal } from '@preact/signals';
 import { appState } from '../store';
+import { LIVE_BACKUP_INTERVAL_MS } from './sessionConfig';
 import {
-  isDriveConnected, hasDriveToken, getDeviceId,
+  isDriveConnected, hasDriveToken, getDeviceId, registerDrivePendingWork,
   companionPathId, findCompanionPath, forgetCompanionPath, listCompanionChildren,
   uploadCompanionFileInto, replaceCompanionFileContent, downloadCompanionFile, deleteCompanionFile,
   type DriveChild,
@@ -9,7 +10,7 @@ import {
 import { audioExtension } from '../services/zip';
 import {
   collectChunkRecords, appendChunk, clearChunks, putSessionWindows, deleteSessionWindows,
-  listDraftSessions, saveSessionMeta, loadSessionAudio, syncAudioByDefault,
+  listDraftSessions, saveSessionMeta, loadSessionAudio, syncAudioByDefault, autoLiveBackupEnabled,
 } from './db';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData, type WindowResult } from './model';
 import type { LiveSession } from './liveSession';
@@ -190,6 +191,94 @@ async function runBackup(live: LiveSession, interactive: boolean): Promise<void>
     setStatus(id, { busy: false, error: message });
     throw e;
   }
+}
+
+// ── Doing it on its own (phase 2, 2026-09-17) ────────────────────────────────
+// The press stays; this only adds a timer beside it. Nothing here ever raises a
+// sign-in window: an automatic backup asks for no token, and a recording that
+// runs past the token's hour simply waits for the next tap anywhere in the app
+// — which the renewal now knows to honour, since a backup counts as work
+// waiting to go up (registerDrivePendingWork, driveService.ts).
+
+/** How often the scheduler looks; the interval itself is LIVE_BACKUP_INTERVAL_MS. */
+const TICK_MS = 15_000;
+
+interface Schedule {
+  live: LiveSession;
+  /** Recording time since the last backup went through. A pause freezes it —
+   *  the user's call (2026-09-17): a paused recording produces nothing, so
+   *  counting through it would only fire an empty round on resume. */
+  activeMs: number;
+  timer: ReturnType<typeof setInterval>;
+}
+
+const _schedules = new Map<string, Schedule>();
+
+/** True when this recording holds anything no backup has confirmed yet.
+ *  Synchronous by necessity (the renewal asks it inside a pointerdown), so it
+ *  reads what is in memory: the windows counter, and "a recording that has run
+ *  for a while with no backup at all". Audio chunks live in IndexedDB and are
+ *  not consulted — the windows advance with them. */
+function hasUnsentWork(s: Schedule): boolean {
+  const progress = _progress.get(s.live.sessionId);
+  if (!progress) return s.activeMs > 0;      // nothing sent yet at all
+  return s.live.windows.length > progress.windowCount || s.activeMs >= TICK_MS;
+}
+
+let _workRegistered = false;
+
+function registerWorkOnce(): void {
+  if (_workRegistered) return;
+  _workRegistered = true;
+  registerDrivePendingWork({
+    pending: () => [..._schedules.values()].some(s => autoBackupOn() && hasUnsentWork(s)),
+    // A token just arrived: send the backlog now rather than wait out the rest
+    // of the ten minutes.
+    resume: () => { for (const s of _schedules.values()) if (autoBackupOn()) void runScheduled(s); },
+  });
+}
+
+function autoBackupOn(): boolean {
+  return autoLiveBackupEnabled(appState.value);
+}
+
+/** Starts the automatic copy for a recording. Called by LiveSession.start; safe
+ *  to call twice. The setting is read at every tick rather than here, so turning
+ *  it off mid-recording takes effect immediately. */
+export function startAutoBackup(live: LiveSession): void {
+  if (_schedules.has(live.sessionId)) return;
+  registerWorkOnce();
+  const schedule: Schedule = {
+    live,
+    activeMs: 0,
+    timer: setInterval(() => {
+      const s = _schedules.get(live.sessionId);
+      if (!s) return;
+      if (s.live.getPhase() !== 'recording') return;   // paused: frozen, see Schedule
+      s.activeMs += TICK_MS;
+      if (s.activeMs < LIVE_BACKUP_INTERVAL_MS) return;
+      void runScheduled(s);
+    }, TICK_MS),
+  };
+  _schedules.set(live.sessionId, schedule);
+}
+
+export function stopAutoBackup(sessionId: string): void {
+  const s = _schedules.get(sessionId);
+  if (!s) return;
+  clearInterval(s.timer);
+  _schedules.delete(sessionId);
+}
+
+/** One automatic round. Never interactive, and never noisy: a failure leaves
+ *  the reason in `liveBackupStatus` — which the indicator shows in red, where a
+ *  press retries it WITH a window if that is what was missing. */
+async function runScheduled(s: Schedule): Promise<void> {
+  if (!autoBackupOn() || !isDriveConnected()) return;
+  try {
+    await backupLiveSession(s.live, false);
+    s.activeMs = 0;
+  } catch { /* reported through liveBackupStatus */ }
 }
 
 // ── Throwing away ────────────────────────────────────────────────────────────

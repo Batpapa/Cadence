@@ -160,6 +160,16 @@ export const DEBUG_LIVE_AUDIO = false;
 /** MediaRecorder timeslice (ms) — one chunk every 5 s appended to IndexedDB. */
 export const RECORDER_TIMESLICE_MS = 5000;
 
+/** How often a live recording copies itself to Drive on its own (phase 2 of the
+ *  live backup, 2026-09-17). Ten minutes is the agreed trade between what a
+ *  crash costs and what the upload costs: about 4.8 MB of audio per round at
+ *  64 kbit/s, on someone's mobile data.
+ *
+ *  Here, alone and named, because it is the one number of this feature anybody
+ *  will want to change. The countdown only advances while the recording is
+ *  actually running — a pause freezes it (see liveBackup.ts). */
+export const LIVE_BACKUP_INTERVAL_MS = 10 * 60_000;
+
 /** Session sharing: base64 inflates the audio blob ~33%, and the JSON envelope
  *  adds a little more on top — stay safely under the backend's 100 MB share cap. */
 export const SHARE_MAX_AUDIO_BYTES = 70 * 1024 * 1024;

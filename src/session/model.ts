@@ -198,6 +198,15 @@ export interface TuneAnalyserModuleData {
    *  untouched install as off, which is the opposite of what happens. Both
    *  values are written now, precisely so a deliberate "no" survives. */
   syncAudioByDefault?: boolean;
+  /** Copy a recording that is STILL RUNNING to Drive every few minutes, so a
+   *  device that loses everything mid-session keeps it (see liveBackup.ts).
+   *
+   *  ⚠️ Absent = YES, same discipline as `syncAudioByDefault` above: read it
+   *  through `AUTO_LIVE_BACKUP_BY_DEFAULT` / `autoLiveBackupEnabled()`, and
+   *  both values are written so a deliberate "no" survives. Turning it off
+   *  leaves the manual cloud on the recording screen, which is the whole
+   *  feature minus the timer. */
+  autoLiveBackup?: boolean;
   /** Session id → the Drive file holding its recording, for the sessions where
    *  that was chosen. A sibling map rather than a field on Analysis,
    *  purely so this stays one obvious place to look. */

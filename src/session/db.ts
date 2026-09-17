@@ -589,6 +589,34 @@ export async function syncAudioByDefault(): Promise<boolean> {
   return (await moduleData()).syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT;
 }
 
+/** Same "absent means yes" discipline as SYNC_AUDIO_BY_DEFAULT, and the same
+ *  reason for stating it here: the settings checkbox reads the stored field
+ *  directly, so the default has to be one value both sides read. */
+export const AUTO_LIVE_BACKUP_BY_DEFAULT = true;
+
+/** Read synchronously off the state the caller already holds: the backup
+ *  scheduler consults this on every tick, and an await per tick to read a flag
+ *  would be silly. */
+export function autoLiveBackupEnabled(user: AppStateLike): boolean {
+  const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  return mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT;
+}
+
+/** Just enough of AppState to find the module's data — avoids importing
+ *  types.ts's AppState here, which this module deliberately keeps at arm's
+ *  length (see storeModule's doc). */
+interface AppStateLike { modules?: Record<string, unknown> }
+
+export async function setAutoLiveBackup(on: boolean): Promise<void> {
+  const { mutate } = await storeModule();
+  await mutate(user => {
+    user.modules ??= {};
+    const mod = (user.modules[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+    mod.autoLiveBackup = on;   // both values written — see the constant above
+    user.modules[TUNE_ANALYSER_MODULE_KEY] = mod;
+  });
+}
+
 export async function setSyncAudioByDefault(on: boolean): Promise<void> {
   const { mutate } = await storeModule();
   await mutate(user => {
@@ -664,9 +692,39 @@ export async function saveSessionAudio(sessionId: string, audio: Blob, sync?: bo
   // behaviour the Drive work spent so long removing.
   void uploadSessionAudio(sessionId, false).catch((e: unknown) => {
     // Nothing is lost: the recording is on this device, and the summary offers
-    // the upload again whenever the user wants it.
+    // the upload again whenever the user wants it. But when the only thing
+    // missing was a token, waiting for the user to go and ask by hand is a poor
+    // answer — remember it, and the next gesture that buys a token sends it
+    // (2026-09-17, on the user's remark that this case was not covered).
+    const message = e instanceof Error ? e.message : String(e);
+    if (/needs_auth|auth_failed/.test(message)) queueUploadAwaitingToken(sessionId);
     console.warn('[sessions] background upload of the recording failed:', e);
   });
+}
+
+/** Recordings whose automatic upload found no token. In memory only: the
+ *  recording is on this device either way, and the settings' backlog button is
+ *  the durable answer — this just spares the user having to find it. */
+const _uploadsAwaitingToken = new Set<string>();
+let _uploadWorkRegistered = false;
+
+function queueUploadAwaitingToken(sessionId: string): void {
+  _uploadsAwaitingToken.add(sessionId);
+  if (_uploadWorkRegistered) return;
+  _uploadWorkRegistered = true;
+  void driveModule().then(drive => drive.registerDrivePendingWork({
+    pending: () => _uploadsAwaitingToken.size > 0,
+    resume: () => {
+      for (const id of [..._uploadsAwaitingToken]) {
+        _uploadsAwaitingToken.delete(id);
+        void uploadSessionAudio(id, false).catch((e: unknown) => {
+          const message = e instanceof Error ? e.message : String(e);
+          if (/needs_auth|auth_failed/.test(message)) _uploadsAwaitingToken.add(id);
+          console.warn('[sessions] retry of the recording upload failed:', e);
+        });
+      }
+    },
+  }));
 }
 
 /** Copies this session's recording to Drive. Resolves once the file is there and
