@@ -31,6 +31,7 @@ import {
   lastImportDump, importStarting, importPlaybackWarn,
 } from './sessionStore';
 import { registerCardPanel } from '../../services/cardPanels';
+import { HelpIcon } from '../../components/icons';
 import { DetectedIn } from './DetectedIn';
 
 // ── Session orchestration ─────────────────────────────────────────────────────
@@ -514,6 +515,12 @@ registerCardPanel((cardId) => <DetectedIn cardId={cardId} />);
 // panel it does not know exists. Saved on change with no confirmation, like the
 // score playback preferences: one value, undone by setting it back.
 
+/** One setting per row, explanation on demand — the same `?` as the general
+ *  settings (components/settingsModal.tsx's Row), for the same reason: three
+ *  permanent paragraphs of small grey text turned this panel into a wall.
+ *
+ *  The button sits OUTSIDE the label: inside it, pressing it would toggle the
+ *  setting as well. */
 function SettingRow({ checked, onToggle, label, hint, children }: {
   checked: boolean;
   onToggle: (next: boolean) => void;
@@ -521,20 +528,33 @@ function SettingRow({ checked, onToggle, label, hint, children }: {
   hint: string;
   children?: ComponentChild;
 }) {
+  const [hintOpen, setHintOpen] = useState(false);
   return (
     <div>
-      <label class="flex items-start gap-3 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          class="card-checkbox mt-0.5"
-          checked={checked}
-          onChange={(e) => onToggle((e.target as HTMLInputElement).checked)}
-        />
-        <span>
+      <div class="flex items-start gap-1.5">
+        <label class="flex items-start gap-3 cursor-pointer select-none min-w-0 flex-1">
+          <input
+            type="checkbox"
+            class="card-checkbox mt-0.5"
+            checked={checked}
+            onChange={(e) => onToggle((e.target as HTMLInputElement).checked)}
+          />
           <span class="text-sm text-primary">{label}</span>
-          <span class="block text-xs text-muted mt-0.5">{hint}</span>
-        </span>
-      </label>
+        </label>
+        <button
+          class={`flex items-center p-0.5 rounded-full transition-colors cursor-pointer shrink-0 ${
+            hintOpen ? 'text-accent' : 'text-dim hover:text-primary'
+          }`}
+          title={t('settings.explain')}
+          aria-expanded={hintOpen}
+          onClick={() => setHintOpen(o => !o)}
+        >
+          <HelpIcon size={14} />
+        </button>
+      </div>
+      {hintOpen && (
+        <p class="text-xs text-dim leading-relaxed mt-2 px-3 py-2 rounded-lg border border-border bg-bg">{hint}</p>
+      )}
       {children}
     </div>
   );
@@ -727,6 +747,21 @@ function SessionSettingsBody() {
 
       {/* Absent entirely without Drive rather than shown disabled: there is no
           Drive to copy to, so the setting has nothing to mean. */}
+      {/* The recording being made comes before the recording already saved:
+          it is the one that can be lost outright. Each setting keeps what
+          belongs to it right underneath — the backups on Drive here, the
+          upload backlog under the copy-when-saved setting. */}
+      {driveOn && (
+        <SettingRow
+          checked={mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT}
+          label={t('sessions.autoLiveBackup')}
+          hint={t('sessions.autoLiveBackup.hint')}
+          onToggle={(next) => { void setAutoLiveBackup(next); }}
+        />
+      )}
+
+      {driveOn && <DriveBackupsRow />}
+
       {driveOn && (
         <SettingRow
           checked={mod?.syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT}
@@ -748,20 +783,7 @@ function SessionSettingsBody() {
         </SettingRow>
       )}
 
-      {/* Beside the "copy when saved" setting, because it answers the other half
-          of the same worry: that one protects a finished recording, this one
-          protects the recording being made. */}
-      {driveOn && (
-        <SettingRow
-          checked={mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT}
-          label={t('sessions.autoLiveBackup')}
-          hint={t('sessions.autoLiveBackup.hint')}
-          onToggle={(next) => { void setAutoLiveBackup(next); }}
-        />
-      )}
-
       {driveOn && <BackfillRow />}
-      {driveOn && <DriveBackupsRow />}
     </div>
   );
 }

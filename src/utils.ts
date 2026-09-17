@@ -1,6 +1,7 @@
 import type { AppState, FileEntry } from './types';
 import { t } from './services/i18nService';
 import { SCHEMA_VERSION } from './services/migration';
+import { needsAudioSniff, sniffAudioMime, SNIFF_BYTES } from './services/audioSniff';
 
 export function generateId(): string {
   return crypto.randomUUID();
@@ -111,17 +112,35 @@ export const DAY_NAMES_KEYS = [
   'time.days.thu', 'time.days.fri', 'time.days.sat',
 ] as const;
 
-export function fileToEntry(file: File): Promise<FileEntry> {
-  return new Promise((resolve, reject) => {
+/** What to store as an attachment's type.
+ *
+ *  `file.type` is the browser's guess from the EXTENSION, and it is wrong in a
+ *  way that matters: `.webm` is video/webm in Chromium whatever the file holds,
+ *  so a recording attached by hand opened in a bare <video> instead of the
+ *  custom audio player. When the label is one of those guesses, the file's own
+ *  head decides — see audioSniff.ts. */
+async function resolveMimeType(file: File): Promise<string> {
+  if (!needsAudioSniff(file.type)) return file.type;
+  try {
+    const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+    return sniffAudioMime(head) ?? file.type;
+  } catch {
+    return file.type; // unreadable head: the declared type is all we have
+  }
+}
+
+export async function fileToEntry(file: File): Promise<FileEntry> {
+  const mimeType = await resolveMimeType(file);
+  const data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target!.result as string;
-      const base64 = dataUrl.split(',')[1] ?? '';
-      resolve({ name: file.name, data: base64, mimeType: file.type });
+      resolve(dataUrl.split(',')[1] ?? '');
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+  return { name: file.name, data, mimeType };
 }
 
 /** A stored file's bytes — kept as base64 in the user blob. A fresh array on
