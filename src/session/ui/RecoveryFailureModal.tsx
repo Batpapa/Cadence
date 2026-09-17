@@ -158,10 +158,12 @@ function RecoveryFailureBody({ initial, onClose }: { initial: RecoveryFailure; o
 
 /** One dialog per failed recording, one after the other. `onSettled` runs after
  *  each decision — the library re-reads its list, since a retry that worked
- *  just added an analysis to it. */
-export function showRecoveryFailures(failures: RecoveryFailure[], onSettled: () => void): void {
+ *  just added an analysis to it. `onDone` runs once they have all been decided,
+ *  or straight away if there were none: whatever comes next must wait its turn,
+ *  or its dialog would sit on top of one that closes whatever is on top. */
+export function showRecoveryFailures(failures: RecoveryFailure[], onSettled: () => void, onDone?: () => void): void {
   const [first, ...rest] = failures;
-  if (!first) return;
+  if (!first) { onDone?.(); return; }
   const { el, cleanup } = renderModalBody(
     <RecoveryFailureBody
       initial={first}
@@ -170,7 +172,7 @@ export function showRecoveryFailures(failures: RecoveryFailure[], onSettled: () 
         cleanup();
         settleRecoveryFailure(first.session.id);
         onSettled();
-        showRecoveryFailures(rest, onSettled);
+        showRecoveryFailures(rest, onSettled, onDone);
       }}
     />,
   );

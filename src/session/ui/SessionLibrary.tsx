@@ -5,6 +5,8 @@ import { CustomSelect } from '../../components/customSelect';
 import { listSessions } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
 import { showRecoveryFailures } from './RecoveryFailureModal';
+import { showLiveBackupOffers } from './LiveBackupOfferModal';
+import { sweepLiveBackups } from '../liveBackup';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { activeLive } from './sessionStore';
 import { useTuneNames } from './sessionUiShared';
@@ -127,7 +129,11 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
       .then(async failures => {
         setAllSessions(await listSessions());
         setSessionsLoaded(true);
-        showRecoveryFailures(failures, reloadSessions);
+        // Then the Drive backups, once the local failures have all been
+        // decided — a recording this device lost entirely only exists there.
+        showRecoveryFailures(failures, reloadSessions, () => {
+          void sweepLiveBackups(activeLive.value?.sessionId).then(offers => showLiveBackupOffers(offers, reloadSessions));
+        });
       });
     // eslint-disable-next-line
   }, []);

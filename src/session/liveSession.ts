@@ -383,6 +383,9 @@ export class LiveSession {
       // source — drop it rather than keeping a growing raw-windows dump
       // around forever for every past session.
       await deleteSessionWindows(session.id);
+      // Its Drive backup, if one was sent, goes once the recording is safe —
+      // possibly not yet, while the audio upload is still on its way.
+      void import('./liveBackup').then(m => m.settleLiveBackup(session.id));
 
       this.setPhase('done');
       return session;
@@ -404,6 +407,9 @@ export class LiveSession {
     }
     try {
       await deleteSession(this.sessionId); // remove the progressively-persisted draft
+      // Deleted here means deleted: a backup left on Drive would come back
+      // offered for recovery.
+      void import('./liveBackup').then(m => m.discardLiveBackup(this.sessionId));
     } finally {
       // After the delete, not with cleanup(): released earlier, another tab
       // could take the half-deleted draft for a crash orphan.
