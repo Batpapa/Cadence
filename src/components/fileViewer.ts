@@ -3,11 +3,11 @@ import type { AbcOpenMode, FileEntry } from '../types';
 import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop } from '../utils';
 import { renderMarkdown } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
-import { starIconElement, iconElement, ExternalLinkIcon, GearIcon } from './icons';
+import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon } from './icons';
 import { t } from '../services/i18nService';
-import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, abcOpenMode } from '../services/abcService';
+import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
-import { showModal, updateTopModal } from './modal';
+import { showModal, updateTopModal, confirmModal } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { appState, mutate } from '../store';
 import { registerOverlay } from './overlayStack';
@@ -547,14 +547,39 @@ export function showPreviewModal(
     container.appendChild(textarea);
 
     const saveRow = document.createElement('div');
-    saveRow.className = 'hidden flex items-center justify-end gap-2';
+    saveRow.className = 'hidden flex items-center justify-between gap-2 flex-wrap';
+
+    // ── Adding / deleting a version ───────────────────────────────────────────
+    // On the save row rather than beside the version nav: these two write to the
+    // file, like Save and unlike the nav, and this row is already exactly where
+    // "editable, and looking at the source" is decided — it only ever shows in
+    // text mode, and only when the caller passed a save callback.
+    const versionEdit = document.createElement('div');
+    versionEdit.className = 'flex items-center gap-1 p-1 bg-bg rounded-lg w-fit';
+    const mkEditBtn = (icon: Element, title: string, danger: boolean): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.appendChild(icon);
+      b.title = title;
+      b.className = `px-2 py-1 rounded transition-colors cursor-pointer text-muted hover:bg-elevated ${danger ? 'hover:text-danger' : 'hover:text-primary'}`;
+      return b;
+    };
+    const addVersionBtn = mkEditBtn(iconElement(PlusIcon, 13), t('fileViewer.abc.addVersion'), false);
+    const deleteVersionBtn = mkEditBtn(iconElement(TrashIcon, 13), t('fileViewer.abc.deleteVersion'), true);
+    versionEdit.append(addVersionBtn, deleteVersionBtn);
+
+    const saveGroup = document.createElement('div');
+    // Takes what the version buttons leave and keeps the primary action against
+    // the right edge; `min-w-0` lets the status text wrap inside it rather than
+    // pushing Save off the row.
+    saveGroup.className = 'flex items-center gap-2 flex-1 min-w-0 justify-end';
     const saveStatus = document.createElement('span');
     saveStatus.className = 'text-xs text-dim';
     const saveBtn = document.createElement('button');
     saveBtn.className = 'btn-primary text-xs';
     saveBtn.textContent = t('fileViewer.abc.save');
     saveBtn.disabled = true;
-    saveRow.append(saveStatus, saveBtn);
+    saveGroup.append(saveStatus, saveBtn);
+    saveRow.append(versionEdit, saveGroup);
     container.appendChild(saveRow);
 
     body.appendChild(container);
@@ -564,19 +589,64 @@ export function showPreviewModal(
     // The "X:n" header line is the tune's identity within the file (what
     // splitAbcTunes keys the version split on) — never shown/editable, so the
     // user can't desync it from its position and corrupt the file structure.
+    //
+    // Matched on `X:` alone, without requiring the number splitAbcTunes wants:
+    // a hand-made file whose block opens on a bare `X:` has an identity line all
+    // the same, and leaving it in the editable body would put it back in reach.
     function splitXLine(tune: string): { xLine: string; body: string } {
       const nl = tune.indexOf('\n');
       const firstLine = nl === -1 ? tune : tune.slice(0, nl);
-      if (/^X:\s*\d+/.test(firstLine)) return { xLine: firstLine, body: nl === -1 ? '' : tune.slice(nl + 1) };
+      if (/^X:/.test(firstLine)) return { xLine: firstLine, body: nl === -1 ? '' : tune.slice(nl + 1) };
       return { xLine: '', body: tune };
     }
     const currentBody = (): string => splitXLine(tunes[currentIndex] ?? '').body;
+
+    /** The edited body put back under the `X:` line its version already had —
+     *  and stripped of any OTHER `X:` line it may have gained.
+     *
+     *  An `X:` line anywhere in a block opens a new tune: that is what
+     *  splitAbcTunes cuts on, and what abcjs cuts on too. Pasting a whole tune
+     *  into the box (TheSession and abcTools both hand out blocks starting with
+     *  `X: 1`) would otherwise split this version in two behind the user's back:
+     *  every later version shifts by one, and every position stored into this
+     *  file — the ★ `preferredIndex`, the block a set fuses, the setting a
+     *  detection opens on — would then designate its neighbour. The block itself
+     *  would be broken too, parseAbcBlock reading everything after the FIRST
+     *  `K:` as music.
+     *
+     *  Dropped rather than refused: the line carries nothing the pasted music
+     *  needs — it is a position in a file, and this block already has one. The
+     *  cut is visible the moment it is made, the box being refilled from what
+     *  was written.
+     *
+     *  `^X:` is deliberately wider than the splitter's own `^X:\s*\d+`: an `X:`
+     *  with no number splits for abcjs alone, which is worse still — two tunes
+     *  drawn inside one "version", of which only the first is playable, and
+     *  nothing in the nav to say so. */
+    const withXLine = (index: number, body: string): string => {
+      const { xLine } = splitXLine(tunes[index] ?? '');
+      const clean = body.split('\n').filter(l => !/^X:/.test(l)).join('\n');
+      return xLine ? `${xLine}\n${clean}` : clean;
+    };
+
+    /** Text mode only: what the box holds, when it differs from what was loaded
+     *  into it. In sheet mode the textarea still shows whatever version was
+     *  last opened in text mode (goToVersion only refills it in text mode), so
+     *  its content is not a pending edit of the current version. */
+    const pendingBody = (): string | null =>
+      currentMode === 'text' && textarea.value !== currentBody() ? textarea.value : null;
 
     function goToVersion(index: number): void {
       currentIndex = Math.max(0, Math.min(versionCount - 1, index));
       prevBtn.disabled = currentIndex === 0;
       nextBtn.disabled = currentIndex === versionCount - 1;
       versionLabel.textContent = `${currentIndex + 1}/${versionCount}`;
+      // Recomputed on every move rather than once at build time: adding or
+      // deleting a version changes the count under an open viewer. Deleting is
+      // hidden on a single-version file rather than offered and refused — the
+      // last version cannot go without the file going with it.
+      versionNav.classList.toggle('hidden', versionCount <= 1);
+      deleteVersionBtn.classList.toggle('hidden', versionCount <= 1);
       updateStarBtn?.();
       abcToolsLink.href = abcToolsShareUrl(tunes[currentIndex] ?? '');
       if (currentMode === 'sheet') {
@@ -614,35 +684,134 @@ export function showPreviewModal(
     }
 
     if (onSave) {
-      textarea.addEventListener('input', () => {
-        saveBtn.disabled = textarea.value === currentBody();
-        saveStatus.textContent = '';
-      });
-      saveBtn.onclick = async () => {
-        const { xLine } = splitXLine(tunes[currentIndex] ?? '');
-        const nextTunes = [...tunes];
-        nextTunes[currentIndex] = xLine ? `${xLine}\n${textarea.value}` : textarea.value;
+      /** Writes a new version list to the attachment, then re-reads everything
+       *  the viewer holds about the file from it. One place for the three
+       *  actions that rewrite it (saving the text, adding a version, deleting
+       *  one), because they all have the same two subtleties: the save may be
+       *  REFUSED — a TheSession score is written to a copy, and the user may
+       *  cancel that — in which case nothing here may move; and `versionCount`
+       *  has to follow `tunes`, which is exactly what used not to happen when
+       *  an `X:` line slipped into an edit. */
+      async function persist(nextTunes: string[], nextIndex: number): Promise<boolean> {
         // Tunes already carry their trailing separator from splitAbcTunes —
         // plain '\n' join reconstructs the file without doubling blank lines.
         const nextText = nextTunes.join('\n');
-        saveBtn.disabled = true;
         // Awaited, and only then applied: a save may ask first (a TheSession
         // score is saved as a copy) and the answer may be no.
-        const result = await onSave(arrayBufferToBase64(new TextEncoder().encode(nextText).buffer));
-        if (result === false) {
-          saveBtn.disabled = textarea.value === currentBody();
-          return;
-        }
+        const result = await onSave!(arrayBufferToBase64(new TextEncoder().encode(nextText).buffer));
+        if (result === false) return false;
         tunes = nextTunes;
         abcText = nextText;
+        versionCount = tunes.length;
         if (typeof result === 'string') {
           shownName = result;
           updateTopModal({ title: result });
         }
+        // Re-render lazily once Sheet is reopened — see setAbcMode. goToVersion
+        // draws it straight away when the stave is what is on screen.
+        if (currentMode === 'text') sheetNeedsRerender = true;
+        // Refreshes the nav, the label, the ★, the share link and the box.
+        goToVersion(nextIndex);
+        return true;
+      }
+
+      /** A fresh, empty version: the current one's header, no music.
+       *
+       *  Carrying `T:/R:/M:/L:/Q:/K:` over rather than starting from a bare
+       *  `X:` is what makes the new block usable straight away — another
+       *  setting of the same tune is in the same key and the same metre far
+       *  more often than not, and either is one line to change. What is NOT
+       *  carried is everything identifying: a `S:` line above all, which is how
+       *  settingIndexInScore recognises a TheSession setting and which would
+       *  then match two blocks at once.
+       *
+       *  The `X:` number is the file's highest plus one, so it collides with
+       *  nothing even after deletions have left gaps in the numbering. */
+      function newVersionBlock(blocks: string[]): string {
+        // Read from the list being written, not from `tunes` — a header the
+        // user has just changed in the box and not yet saved is the one to copy.
+        const src = parseAbcBlock(blocks[currentIndex] ?? '');
+        let maxX = 0;
+        for (const b of blocks) {
+          const m = /^X:\s*(\d+)/m.exec(b);
+          if (m) maxX = Math.max(maxX, parseInt(m[1]!, 10));
+        }
+        return [
+          `X: ${maxX + 1}`,
+          ...(src.title ? [`T: ${src.title}`] : []),
+          ...(src.rhythm ? [`R: ${src.rhythm}`] : []),
+          ...(src.meter ? [`M: ${src.meter}`] : []),
+          `L: ${src.unitLength || '1/8'}`,
+          ...(src.tempo ? [`Q: ${src.tempo}`] : []),
+          // K: closes the ABC header — everything after it is music, so it goes
+          // last, and the empty line after it IS the (empty) body.
+          `K: ${src.key || 'D'}`,
+          '',
+        ].join('\n');
+      }
+
+      /** The version list with the box's unsaved edit folded in. Adding a
+       *  version rewrites the whole file and then moves away from this one, so
+       *  an edit left behind would vanish without a trace — it goes in. */
+      function tunesWithPendingEdit(): string[] {
+        const pending = pendingBody();
+        const next = [...tunes];
+        if (pending !== null) next[currentIndex] = withXLine(currentIndex, pending);
+        return next;
+      }
+
+      textarea.addEventListener('input', () => {
+        saveBtn.disabled = textarea.value === currentBody();
+        saveStatus.textContent = '';
+      });
+
+      saveBtn.onclick = async () => {
+        const nextTunes = [...tunes];
+        nextTunes[currentIndex] = withXLine(currentIndex, textarea.value);
+        saveBtn.disabled = true;
+        if (!await persist(nextTunes, currentIndex)) {
+          saveBtn.disabled = textarea.value === currentBody();
+          return;
+        }
         saveStatus.textContent = t('fileViewer.abc.saved');
-        sheetNeedsRerender = true; // re-render lazily once Sheet is reopened — see setAbcMode
-        abcToolsLink.href = abcToolsShareUrl(tunes[currentIndex] ?? '');
       };
+
+      addVersionBtn.onclick = async () => {
+        const nextTunes = tunesWithPendingEdit();
+        nextTunes.push(newVersionBlock(nextTunes));
+        // Straight onto the new one: it is empty, and there is nothing else to
+        // do with it than write in it.
+        if (await persist(nextTunes, nextTunes.length - 1)) setAbcMode('text');
+      };
+
+      deleteVersionBtn.onclick = () => {
+        if (versionCount <= 1) return;
+        confirmModal(
+          t('fileViewer.abc.deleteVersion.title'),
+          t('fileViewer.abc.deleteVersion.message', { n: String(currentIndex + 1), total: String(versionCount) }),
+          t('fileViewer.abc.deleteVersion.confirm'),
+          () => { void deleteCurrentVersion(); },
+        );
+      };
+
+      async function deleteCurrentVersion(): Promise<void> {
+        const removed = currentIndex;
+        const nextTunes = [...tunes];
+        nextTunes.splice(removed, 1);
+        // The version that FOLLOWED the deleted one now sits at its index, so
+        // staying put is landing on it; deleting the last one falls back to the
+        // new last, which goToVersion's own clamp does without a special case.
+        if (!await persist(nextTunes, removed)) return;
+        // Only once the write went through — a cancelled copy must not move the
+        // ★. Deleting the favourite CLEARS the preference rather than handing
+        // it to whichever version slid into that slot: nobody picked that one,
+        // and "no favourite" is a state this viewer already knows how to show.
+        if (favoriteIndex !== undefined && favoriteIndex >= removed) {
+          favoriteIndex = favoriteIndex === removed ? undefined : favoriteIndex - 1;
+          onSetPreferredIndex?.(favoriteIndex);
+          updateStarBtn?.();
+        }
+      }
     }
 
     goToVersion(currentIndex); // initializes prev/next disabled state + label (respects opts.initialIndex)
