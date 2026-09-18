@@ -13,6 +13,15 @@ export function splitFileName(name: string): { base: string; ext: string } {
   return dot > 0 ? { base: name.slice(0, dot), ext: name.slice(dot) } : { base: name, ext: '' };
 }
 
+/** A name's base with everything no filesystem accepts taken out of it, and
+ *  its whitespace tidied. For a name DERIVED from something that was never
+ *  meant to be one — a set's name ("Cooley's / The Wise Maid"), the `T:` title
+ *  line of a pasted ABC — since an attachment is downloadable and ends up a
+ *  real file on someone's disk. What the user types by hand is left alone. */
+export function sanitizeFileBase(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+}
+
 /** `name` with `newBase` in front of its unchanged extension. Null when there
  *  is nothing to do: an empty base, or the same name as before. */
 export function renamedFileName(name: string, newBase: string): string | null {

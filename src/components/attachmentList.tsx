@@ -1,12 +1,13 @@
 import { useEffect, useRef, useMemo, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
-import { fileToEntry, entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance } from '../utils';
+import { entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance } from '../utils';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon } from './icons';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult } from './fileViewer';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
+import { showAddFileModal } from './addFileModal';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
 import { resolveCardRef } from '../services/cardRefService';
 import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder } from '../services/abcService';
@@ -629,18 +630,6 @@ function addLink(onAdd: (a: Attachment) => void): void {
   focusIfDesktop(inp);
 }
 
-function addFiles(onAdd: (a: Attachment) => void): void {
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.multiple = true;
-  inp.onchange = async () => {
-    for (const file of Array.from(inp.files ?? [])) {
-      const entry = await fileToEntry(file);
-      onAdd({ type: 'file', ...entry });
-    }
-  };
-  inp.click();
-}
-
 /** The save of a TheSession score's editor (2026-09-15). "Refresh ABC" replaces
  *  that file wholesale, so an edit made in it would be lost at the next refresh:
  *  the first save of an opened viewer asks, then writes the edit to a COPY
@@ -742,7 +731,10 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
   // not deserve standing header real estate. Each entry closes the menu
   // before it runs, so an entry may safely open a modal of its own.
   const addMenu = useContextMenu([
-    { label: t('fileViewer.addFile'), onClick: () => addFiles(onAdd) },
+    // A file has two sources — the device, or a text in the clipboard — and
+    // which one is asked in a dialog of its own rather than as two entries
+    // here: this menu says WHAT is being attached, not where it comes from.
+    { label: t('fileViewer.addFile'), onClick: () => showAddFileModal(onAdd) },
     { label: t('fileViewer.addLink'), onClick: () => addLink(onAdd) },
     { label: t('fileViewer.addCard'), onClick: () => showCardRefPicker(onAdd) },
     // Sets only, and once only — the entry disappears rather than being offered
