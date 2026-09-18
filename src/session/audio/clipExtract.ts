@@ -79,6 +79,64 @@ export async function detectAudioFile(audio: Blob): Promise<{ mimeType: string; 
   }
 }
 
+/** The audio of `file`, with the picture left behind — or null when there is
+ *  nothing to gain or nothing that can be done safely.
+ *
+ *  An analysis keeps its recording: that is what a clip is cut from and what
+ *  the player plays. For a file imported from a camera or a phone, that
+ *  recording is a VIDEO, and the picture is nearly all of its weight — 419 MB
+ *  for 67 seconds of music in the file that prompted this (2026-09-18), against
+ *  a few MB of sound. It sits in IndexedDB on the device and, when session
+ *  audio is synced, goes up to Drive as well.
+ *
+ *  Nothing is decoded or re-encoded here either: the audio packets are copied
+ *  into an audio-only container of the same family, exactly as extractClip
+ *  copies a slice. Two properties are non-negotiable and both are checked
+ *  rather than assumed:
+ *
+ *  • `shiftTolerance` is left at its default of 0 — no shift at all, so output
+ *    timestamps match the input's to the sample. Every detection of the
+ *    analysis is an absolute time into this file; a file shifted by a
+ *    container's edit list would desynchronise all of them at once.
+ *  • `mode: 'forced'`, so an audio track that cannot be copied as-is is never
+ *    silently transcoded. It returns null instead, and the caller keeps the
+ *    original file — heavy, but untouched and exactly what was analysed.
+ *
+ *  Null is therefore the ordinary answer for anything audio-only, anything in
+ *  a container this module does not write, and anything that would need a
+ *  shift or a re-encode. */
+export async function extractAudioOnly(
+  file: Blob,
+  onProgress?: (ratio: number) => void,
+): Promise<ExtractedClip | null> {
+  const { mb, input } = await openInput(file);
+  try {
+    // Nothing to strip: an audio file is left strictly alone, down to the
+    // bytes — no remux, no risk, no time spent.
+    if ((await input.getVideoTracks()).length === 0) return null;
+
+    const container = containerOf(mb, await input.getFormat());
+    if (!container) return null;
+
+    const target = new mb.BufferTarget();
+    const output = new mb.Output({ format: container.makeFormat(), target });
+    const conversion = await mb.Conversion.init({
+      input,
+      output,
+      video: { discard: true },
+      copy: { mode: 'forced' },
+      showWarnings: false,
+    });
+    if (!conversion.isValid) return null;
+    if (onProgress) conversion.onProgress = ratio => onProgress(ratio);
+    await conversion.execute();
+    if (!target.buffer) return null;
+    return { blob: new Blob([target.buffer], { type: container.mimeType }), extension: container.extension };
+  } finally {
+    input.dispose();
+  }
+}
+
 export interface ExtractedClip {
   blob: Blob;
   /** Without the dot — the container's, so the file name tells the truth. */

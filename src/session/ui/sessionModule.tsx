@@ -165,7 +165,7 @@ export function showImportSessionModal(ctx: AppContext): void {
 
 /** The import phases that have a screen of their own. Exported so the view
  *  and the "one job at a time" guard below cannot drift apart. */
-export const IMPORT_RUNNING_PHASES = ['initializing', 'decoding', 'analyzing', 'saving'];
+export const IMPORT_RUNNING_PHASES = ['initializing', 'decoding', 'analyzing', 'extracting', 'saving'];
 
 /** Whether a recognition job is on screen right now — the SAME question the
  *  sessions view asks to decide what to render.
@@ -324,7 +324,13 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
     wholeFileWarning = warning;
   }
 
-  importPlaybackWarn.value = !canPlayFile(file);
+  // A video says nothing yet: its audio is extracted before the analysis
+  // starts, and THAT is what the screen will play — an m4a or a WAV, where the
+  // video itself could not be opened at all. The import announces the file it
+  // settled on (onPlaybackFile) and the answer is given there; warning here
+  // would only flash a line that the next two seconds contradict. Nothing can
+  // be played during those two seconds anyway: there is no detection yet.
+  importPlaybackWarn.value = !file.type.startsWith('video/') && !canPlayFile(file);
 
   const imp = new ImportSession(file, {});
   imp.pitchShift = pitchShiftSetting(appState.value);
