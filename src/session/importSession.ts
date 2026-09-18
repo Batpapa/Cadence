@@ -14,7 +14,7 @@ import type { IndexProgress } from './recognition/indexStore';
 // pipeline runs over the decoded PCM faster than real time, through the exact
 // same worker path as live capture.
 
-export type ImportPhase = 'idle' | 'initializing' | 'decoding' | 'analyzing' | 'saving' | 'done' | 'cancelled' | 'error';
+export type ImportPhase = 'idle' | 'initializing' | 'decoding' | 'analyzing' | 'extracting' | 'saving' | 'done' | 'cancelled' | 'error';
 
 // ── ETA estimation ─────────────────────────────────────────────────────────
 // Pure helpers (exported for unit testing) backing onWindow()'s progress
@@ -66,14 +66,28 @@ export interface ImportSessionCallbacks {
   onIndexProgress?: (p: IndexProgress) => void;
   onProgress?: (p: ImportProgress) => void;
   onDetections?: (events: DetectionEvent[], all: Detection[]) => void;
+  /** 0 → 1 while a video's audio is being copied out of it (phase
+   *  'extracting'). Never called for a file that keeps its own bytes. */
+  onExtractProgress?: (ratio: number) => void;
+  /** The file to play from now on — a video's extracted audio, which the
+   *  browser can open where the video itself could not. Fires once, before the
+   *  analysis starts, and only when a file was actually replaced. */
+  onPlaybackFile?: (file: File) => void;
   onError?: (message: string) => void;
 }
 
 export class ImportSession {
   private cb: ImportSessionCallbacks;
   private phase: ImportPhase = 'idle';
-  /** The original file — also the playback source while analysis is running. */
+  /** The file the user picked, whatever it holds. Keeps its name, its date and
+   *  its type — what the analysis is CALLED comes from here. */
   readonly file: File;
+  /** Set once a video has been reduced to its sound — see keepAudioOnly. */
+  private audioFile: File | null = null;
+
+  /** What is analysed, played and stored: the extracted audio when there was a
+   *  picture to leave behind, the file itself otherwise. */
+  get playbackFile(): File { return this.audioFile ?? this.file; }
 
   private recognition: RecognitionClient | null = null;
   private source: PcmSource | null = null;
@@ -176,8 +190,17 @@ export class ImportSession {
         return null;
       }
 
+      // Before anything reads the file: a video is reduced to its sound, and
+      // everything that follows — the analysis, the slice playback on this
+      // screen, what is stored — works on that. See audioOnly().
+      await this.keepAudioOnly();
+      if (this.cancelRequested) {
+        this.setPhase('cancelled');
+        return null;
+      }
+
       this.setPhase('decoding');
-      this.source = await createFileSource(this.file);
+      this.source = await createFileSource(this.playbackFile);
       console.debug(`[import] decoded: ${this.source.duration!.toFixed(1)}s @ ${this.source.sampleRate}Hz`);
       if (this.source.duration! < IMPORT_MIN_S) {
         throw new Error(`too-short:${Math.round(this.source.duration!)}`);
@@ -324,6 +347,89 @@ export class ImportSession {
     return this.file.name.replace(/\.[^.]+$/, '');
   }
 
+  /** The audio of an imported VIDEO, to store in place of the whole film.
+   *
+   *  Null whenever the file stays as it is — audio already, a container this
+   *  cannot rewrite, or a copy that would not be exact (extractAudioOnly says
+   *  which). A failure here is never the import's failure: it is logged, and
+   *  the whole file is used exactly as it was before 2026-09-18.
+   *
+   *  It runs in its own phase because it is the one step whose cost follows
+   *  the size of the FILE rather than the length of the music: a minute of 4K
+   *  is hundreds of megabytes to read through for a few of sound. */
+  /** Replaces the file everything downstream works on by its sound alone,
+   *  when there is a picture to leave behind.
+   *
+   *  Done BEFORE the analysis rather than at save time (2026-09-18, second
+   *  pass): the analysis then reads a few megabytes instead of seeking through
+   *  a whole film, and — the reason the user asked — the slices become
+   *  listenable while it runs, since neither QuickTime nor AVI can be played
+   *  by the browser while an m4a or a WAV can.
+   *
+   *  The peak memory is the same either way: nothing here ever holds the video
+   *  (the packets are streamed), and what is held is the extracted audio, a
+   *  few MB, whichever end of the import it is made at. */
+  private async keepAudioOnly(): Promise<void> {
+    const stripped = await this.audioOnly();
+    if (stripped) {
+      // Keeps the original's base name, so the analysis is still called after
+      // the file the user picked — defaultName() reads this one.
+      const base = this.file.name.replace(/\.[^.]+$/, '');
+      this.audioFile = new File([stripped.blob], `${base}.${stripped.extension}`, { type: stripped.blob.type });
+    }
+    // Announced even when nothing was replaced: this is the moment the screen
+    // learns what it will be able to play, and "the file as it is" is an
+    // answer to that question too.
+    this.cb.onPlaybackFile?.(this.playbackFile);
+  }
+
+  private async audioOnly(): Promise<{ blob: Blob; extension: string } | null> {
+    let announced = false;
+    const announce = () => {
+      // Only once it is known there IS something to try — the phase must not
+      // flash by on the ordinary audio import, which answers immediately.
+      if (!announced) { announced = true; this.setPhase('extracting'); }
+    };
+    /** Each attempt swallows its own failure: the copier THROWS on a container
+     *  it cannot read (an AVI: UnsupportedInputFormatError), and that is not an
+     *  error, it is the answer "not this way" — which the next attempt is there
+     *  to take up. */
+    const attempt = async (what: string, run: () => Promise<{ blob: Blob; extension: string } | null>) => {
+      try {
+        return await run();
+      } catch (e) {
+        console.debug(`[import] ${what} did not apply to this file`, e);
+        return null;
+      }
+    };
+
+    let stripped = await attempt('copying the audio out', async () => {
+      const { extractAudioOnly } = await import('./audio/clipExtract');
+      return extractAudioOnly(this.file, (ratio) => {
+        announce();
+        this.cb.onExtractProgress?.(ratio);
+      });
+    });
+
+    // A container the copier cannot rewrite — an AVI, above all. Its audio may
+    // still be raw PCM, and then it needs no muxer at all. Videos only: an
+    // audio file is never rewritten, it is already what it should be.
+    if (!stripped && this.file.type.startsWith('video/')) {
+      announce();
+      stripped = await attempt('writing the audio out as a WAV', async () => {
+        const { extractPcmWav } = await import('./audio/streamingFileSource');
+        return extractPcmWav(this.file);
+      });
+    }
+
+    if (stripped) {
+      console.debug(`[import] audio kept, picture dropped: ${(this.file.size / 1048576).toFixed(1)} MB → ${(stripped.blob.size / 1048576).toFixed(1)} MB`);
+    } else if (this.file.type.startsWith('video/')) {
+      console.warn('[import] the audio could not be separated from the picture — keeping the file whole', this.file.type);
+    }
+    return stripped;
+  }
+
   private async save(): Promise<Analysis> {
     this.setPhase('saving');
     // this.getDetections() is now trustworthy as the FINAL result, not just
@@ -347,12 +453,17 @@ export class ImportSession {
       // (see analyzedDurationS) — never persist a session shorter than what
       // was actually analyzed.
       duration: Math.max(this.source!.duration!, this.analyzedDurationS),
-      mimeType: this.file.type || 'application/octet-stream',
+      // Of what is STORED, which is not the file that was picked when it was a
+      // video: the player reads this to decide how to open the recording.
+      mimeType: this.playbackFile.type || 'application/octet-stream',
       source: this.sourceOverride ?? 'import',
       annotations: this.getDetections(),
     };
-    // Store the original file untouched: no webm duration bug, native seeking.
-    await saveSessionAudio(session.id, this.file);
+    // A video's picture is dropped before anything is stored — see
+    // extractAudioOnly for what is and is not allowed to happen to the file.
+    // Everything else is stored untouched: no webm duration bug, native
+    // seeking, and the exact bytes that were analysed.
+    await saveSessionAudio(session.id, this.playbackFile);
     await saveSessionMeta(session);
     this.setPhase('done');
     return session;

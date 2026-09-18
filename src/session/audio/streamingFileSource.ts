@@ -27,6 +27,57 @@ export const WEB_DEMUXER_WASM_URL = new URL('../../../node_modules/web-demuxer/d
 /** Cap on in-flight decode() calls not yet output — bounds decoder-side memory. */
 const MAX_DECODE_QUEUE = 8;
 
+// ── 24-bit PCM, decoded here rather than by the browser ──────────────────────
+// Chromium CRASHES THE WHOLE TAB on this one, and takes the app with it —
+// measured on 2026-09-18 with a QuickTime .MOV whose audio track is
+// pcm_s24le (a camera or an editor writes these; the file that found it was
+// 67 seconds of music in 419 MB). The sequence, reproduced down to a page with
+// nothing else on it:
+//
+//   AudioDecoder.isConfigSupported({codec:'pcm-s24'})  → supported: true
+//   decode(one 6144-byte packet)                       → output() fires
+//   audioData.format                                   → 's32'   ← the lie
+//   audioData.allocationSize({format:'f32-planar'})    → 4096    (plausible)
+//   audioData.copyTo(...)                              → renderer gone
+//
+// The frames are three bytes wide and the AudioData says four, so the copy
+// reads past the end of its own buffer. Any destination format does it, and
+// only `copyTo` does it: an output left untouched closes cleanly. Nothing here
+// can fix that, and nothing here needs it — the packets ARE the samples, so
+// the conversion is a few lines, exactly the ones a decoder would run.
+// The other raw widths (u8, s16, s32, f32) were checked in the same browser
+// and convert correctly, so they keep going through AudioDecoder.
+const PCM_S24 = 'pcm-s24';
+const S24_BYTES = 3;
+
+/** Interleaved little-endian 24-bit PCM, mixed down to mono floats in
+ *  [-1, 1) — the same thing AudioDecoder's output plus the copyTo above would
+ *  have produced. Takes bytes rather than a chunk so it can be tested without
+ *  WebCodecs (jsdom has no EncodedAudioChunk). */
+export function monoFromS24Bytes(bytes: Uint8Array, channels: number): Float32Array {
+  const ch = Math.max(1, channels);
+  const frames = Math.floor(bytes.length / (S24_BYTES * ch));
+  const mono = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    let sum = 0;
+    for (let c = 0; c < ch; c++) {
+      const at = (f * ch + c) * S24_BYTES;
+      // Little-endian, and the top byte carries the sign: shifting it into the
+      // high bits of a 32-bit int and back down sign-extends it in one step.
+      const raw = (bytes[at]! | (bytes[at + 1]! << 8) | (bytes[at + 2]! << 16)) << 8;
+      sum += (raw >> 8) / 8388608;   // 2^23
+    }
+    mono[f] = sum / ch;
+  }
+  return mono;
+}
+
+function monoFromS24(chunk: EncodedAudioChunk, channels: number): Float32Array {
+  const bytes = new Uint8Array(chunk.byteLength);
+  chunk.copyTo(bytes);
+  return monoFromS24Bytes(bytes, channels);
+}
+
 /** Why chunked decoding is not available for a file.
  *
  *  Named, because the fallback it triggers is what kills a phone tab on a long
@@ -55,6 +106,99 @@ export interface StreamProbe {
 function detailOf(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e);
   return raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
+}
+
+// ── Raw PCM out of a container nothing else here can rewrite ─────────────────
+// clipExtract's extractAudioOnly copies a video's audio into an audio-only
+// file of the same family, which is the right answer whenever mediabunny can
+// read the container. It cannot read AVI — and an AVI is exactly the shape of
+// file that needs this most: the ones this was measured on (a camera writing
+// MJPEG video beside uncompressed sound, 2026-09-18) run 650 MB to 1 GB for a
+// minute of music, of which 11 MB is the music.
+//
+// The demuxer here reads AVI perfectly well, and when the audio is RAW PCM
+// there is nothing to mux: the packets are the samples, and a WAV is a header
+// in front of them. So that is what this writes — no decoding, no re-encoding,
+// every sample the file had, and a file every browser can play (which the AVI
+// itself is not, so the clips of such an analysis were unlistenable too).
+//
+// Compressed audio in an unreadable container keeps its whole file, as before:
+// wrapping an MP3 or AC-3 stream would need a muxer, and inventing one to save
+// a few megabytes is not the trade this makes.
+
+/** Bits per sample, and whether the WAV format tag must say "float", for the
+ *  raw PCM codec strings WebCodecs defines — all little-endian by definition,
+ *  which is also what a WAV holds. */
+const PCM_WAV_LAYOUT: Record<string, { bits: number; float: boolean }> = {
+  'pcm-u8':  { bits: 8,  float: false },
+  'pcm-s16': { bits: 16, float: false },
+  'pcm-s24': { bits: 24, float: false },
+  'pcm-s32': { bits: 32, float: false },
+  'pcm-f32': { bits: 32, float: true },
+};
+
+/** A 44-byte canonical WAV header for `dataBytes` of samples. */
+export function wavHeader(dataBytes: number, sampleRate: number, channels: number, bits: number, float: boolean): Uint8Array<ArrayBuffer> {
+  const header = new Uint8Array(44);
+  const view = new DataView(header.buffer);
+  const ascii = (at: number, s: string) => { for (let i = 0; i < s.length; i++) header[at + i] = s.charCodeAt(i); };
+  const blockAlign = channels * (bits / 8);
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, float ? 3 : 1, true);   // 3 = IEEE float, 1 = integer
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bits, true);
+  ascii(36, 'data');
+  view.setUint32(40, dataBytes, true);
+  return header;
+}
+
+/** The audio track of `file` as a WAV, or null when that is not the right
+ *  thing to do here — no audio, or audio that is not raw PCM. Never throws for
+ *  a file it simply cannot handle; the caller keeps the original. */
+export async function extractPcmWav(file: File): Promise<{ blob: Blob; extension: string } | null> {
+  let demuxer: WebDemuxer | null = null;
+  try {
+    demuxer = new WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
+    await demuxer.load(file);
+    const config = await demuxer.getDecoderConfig('audio');
+    const layout = PCM_WAV_LAYOUT[config.codec];
+    const channels = config.numberOfChannels;
+    const sampleRate = config.sampleRate;
+    if (!layout || !channels || !sampleRate) return null;
+
+    const parts: Uint8Array<ArrayBuffer>[] = [];
+    let total = 0;
+    const reader = demuxer.read('audio', 0).getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const bytes = new Uint8Array(value.byteLength);
+        value.copyTo(bytes);
+        parts.push(bytes);
+        total += bytes.length;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (total === 0) return null;
+
+    return {
+      blob: new Blob([wavHeader(total, sampleRate, channels, layout.bits, layout.float), ...parts], { type: 'audio/wav' }),
+      extension: 'wav',
+    };
+  } catch {
+    return null;
+  } finally {
+    discard(demuxer);
+  }
 }
 
 /** `destroy()` on a demuxer that never finished loading can itself throw, and
@@ -173,29 +317,41 @@ export class StreamingFileSource implements PcmSource {
     const targetNativeChunkSamples = Math.round(HOP_S_IMPORT * this.config.sampleRate);
     let decodeError: unknown = null;
 
-    this.decoder = new AudioDecoder({
-      output: (audioData) => {
-        nativeSampleRate = audioData.sampleRate;
-        const frames = audioData.numberOfFrames;
-        const channels = audioData.numberOfChannels;
-        const mono = new Float32Array(frames);
-        if (channels === 1) {
-          audioData.copyTo(mono, { planeIndex: 0, format: 'f32-planar' });
-        } else {
-          const tmp = new Float32Array(frames);
-          for (let ch = 0; ch < channels; ch++) {
-            audioData.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
-            for (let i = 0; i < frames; i++) mono[i]! += tmp[i]! / channels;
+    const pushMono = (mono: Float32Array, frames: number): void => {
+      nativeBuffer.push(mono);
+      nativeBufferedSamples += frames;
+      decodedFrames += frames;
+    };
+
+    // 24-bit PCM never reaches AudioDecoder — see monoFromS24: handing it one
+    // takes the whole tab down. Everything else does, including the other raw
+    // PCM widths, which Chrome converts correctly.
+    const rawPcm = this.config.codec === PCM_S24 ? (chunk: EncodedAudioChunk) => monoFromS24(chunk, this.config.numberOfChannels) : null;
+    const rawBytesPerFrame = rawPcm ? S24_BYTES * this.config.numberOfChannels : 0;
+
+    if (!rawPcm) {
+      this.decoder = new AudioDecoder({
+        output: (audioData) => {
+          nativeSampleRate = audioData.sampleRate;
+          const frames = audioData.numberOfFrames;
+          const channels = audioData.numberOfChannels;
+          const mono = new Float32Array(frames);
+          if (channels === 1) {
+            audioData.copyTo(mono, { planeIndex: 0, format: 'f32-planar' });
+          } else {
+            const tmp = new Float32Array(frames);
+            for (let ch = 0; ch < channels; ch++) {
+              audioData.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
+              for (let i = 0; i < frames; i++) mono[i]! += tmp[i]! / channels;
+            }
           }
-        }
-        audioData.close();
-        nativeBuffer.push(mono);
-        nativeBufferedSamples += frames;
-        decodedFrames += frames;
-      },
-      error: (e) => { decodeError = e; },
-    });
-    this.decoder.configure(this.config);
+          audioData.close();
+          pushMono(mono, frames);
+        },
+        error: (e) => { decodeError = e; },
+      });
+      this.decoder.configure(this.config);
+    }
 
     // #16: pads with silence up to the packet-timestamp-implied sample count
     // whenever AudioDecoder under-produces (see packetSpanS above) — keeps
@@ -252,16 +408,24 @@ export class StreamingFileSource implements PcmSource {
         if (prevPacketTsS !== null) packetSpanS += packetTsS - prevPacketTsS;
         prevPacketTsS = packetTsS;
 
-        this.decoder.decode(value);
-        if (this.decoder.decodeQueueSize > MAX_DECODE_QUEUE) {
-          await new Promise<void>(resolve => {
-            this.decoder!.addEventListener('dequeue', () => resolve(), { once: true });
-          });
+        if (rawPcm) {
+          // Raw samples: converted on the spot, so nothing is ever in flight
+          // and there is no queue to wait on.
+          pushMono(rawPcm(value), Math.floor(value.byteLength / rawBytesPerFrame));
+        } else {
+          this.decoder!.decode(value);
+          if (this.decoder!.decodeQueueSize > MAX_DECODE_QUEUE) {
+            await new Promise<void>(resolve => {
+              this.decoder!.addEventListener('dequeue', () => resolve(), { once: true });
+            });
+          }
         }
         await flushIfReady();
       }
       if (!this.cancelled) {
-        await this.decoder.flush();
+        // Nothing to drain on the raw path — every packet was converted as it
+        // arrived — so there is no decoder to flush either.
+        await this.decoder?.flush();
         if (decodeError) throw decodeError;
         await flushIfReady(true);
       }

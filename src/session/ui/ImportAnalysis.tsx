@@ -11,6 +11,7 @@ import {
 } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { importPlaybackWarn } from './sessionStore';
+import { canPlayFile } from '../audio/sources';
 import { useThrottled } from './throttle';
 
 // ── Screen: file import ───────────────────────────────────────────────────────
@@ -56,10 +57,13 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   const [playingId, setPlayingId] = useState<string | null>(null);
 
 
-  // ── Slice playback straight from the original file, while analysis runs.
-  const [audio] = useState(() => new Audio(URL.createObjectURL(imp.file)));
+  // ── Slice playback straight from the file, while analysis runs.
+  // One <audio> for the whole screen, whose SOURCE can change once: a video's
+  // audio is extracted before the analysis starts, and that extract is what
+  // can be played — the video itself usually cannot be (QuickTime, AVI). The
+  // element is kept and its src swapped, so nothing else here has to know.
+  const [audio] = useState(() => new Audio(URL.createObjectURL(imp.playbackFile)));
   useEffect(() => {
-    const audioUrl = audio.src;
     const onTimeUpdate = () => { if (playingIdRef.current !== null && audio.currentTime >= sliceEndRef.current) audio.pause(); };
     const onPause = () => { if (playingIdRef.current !== null) { playingIdRef.current = null; setPlayingId(null); } };
     audio.addEventListener('timeupdate', onTimeUpdate);
@@ -68,7 +72,9 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('pause', onPause);
       audio.pause();
-      URL.revokeObjectURL(audioUrl);
+      // `audio.src`, not the URL captured at mount: a swap revoked that one
+      // already, and this has to release whichever is current.
+      URL.revokeObjectURL(audio.src);
     };
     // eslint-disable-next-line
   }, []);
@@ -109,8 +115,21 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         if (phase === 'initializing') setStatusText(t('sessions.initializing'));
         else if (phase === 'decoding') setStatusText(t('sessions.decoding'));
         else if (phase === 'analyzing') setStatusText('');
+        else if (phase === 'extracting') setStatusText(t('sessions.extractingAudio'));
       },
       onIndexProgress: p => setStatusText(indexProgressText(p)),
+      // Runs before the analysis, so this is what the screen shows while
+      // nothing else is happening yet. Its cost follows the size of the file,
+      // so on a long video it is worth a number.
+      onExtractProgress: (ratio) => setStatusText(t('sessions.extractingAudio') + ` ${Math.round(ratio * 100)}%`),
+      // The video's audio, extracted: the one thing on this screen that can
+      // actually be played. Swapping the src also settles the warning below —
+      // an m4a or a WAV plays where the video it came from did not.
+      onPlaybackFile: (file) => {
+        URL.revokeObjectURL(audio.src);
+        audio.src = URL.createObjectURL(file);
+        importPlaybackWarn.value = !canPlayFile(file);
+      },
       onProgress,
       onDetections: (_events, all) => onDetections(all),
       onError: (message) => setStatusText(`⚠ ${message}`),
