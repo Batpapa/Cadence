@@ -1,6 +1,7 @@
 import type { AbcOpenMode, Attachment, Card, CardRef, FileEntry } from '../types';
 import { resolveCardRef } from './cardRefService';
 import { isTuneset, hasTunesetScore } from './cardTypeService';
+import { sanitizeFileBase } from './attachmentNames';
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 // Shared with fileViewer.ts, which used to own private copies. Splitting and
@@ -378,8 +379,7 @@ export const TUNESET_ABC_NAME = 'ABC';
  *  A set's name contains slashes by construction ("Cooley's / The Wise Maid"),
  *  which no filesystem accepts, so the separators become dashes. */
 export function tunesetAbcFileName(setName: string): string {
-  const safe = setName.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
-  return `${safe || 'set'}.abc`;
+  return `${sanitizeFileBase(setName) || 'set'}.abc`;
 }
 
 export function tunesetAbcEntry(set: Card, cards: Record<string, Card>, opts?: TunesetAbcOptions): FileEntry | null {

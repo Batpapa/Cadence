@@ -1073,20 +1073,124 @@ export function showPreviewModal(
 
   } else if (isText(entry)) {
     body.classList.replace('items-center', 'items-start');
-    const text = decodeAbc(entry);
-    if (isMarkdown(entry)) {
-      const rendered = document.createElement('div');
-      rendered.className = 'markdown text-sm leading-relaxed w-full';
+    // Reassigned by a save, which is what the box is compared against to know
+    // whether there is anything left to write.
+    let text = decodeAbc(entry);
+    const markdown = isMarkdown(entry);
+
+    const container = document.createElement('div');
+    container.className = 'w-full space-y-3';
+    body.appendChild(container);
+
+    const rendered = document.createElement('div');
+    rendered.className = 'markdown text-sm leading-relaxed w-full';
+    const paint = () => {
       renderMarkdown(text).then(html => {
         rendered.innerHTML = html;
         rendered.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
       }).catch(() => { rendered.textContent = text; });
-      body.appendChild(rendered);
+    };
+
+    if (!onSave) {
+      // Read-only — study, a shared session's preview: exactly what this was
+      // before editing existed. A page to read, or the text as it is written.
+      if (markdown) {
+        paint();
+        container.appendChild(rendered);
+      } else {
+        const pre = document.createElement('pre');
+        pre.className = 'text-xs font-mono text-primary/90 whitespace-pre-wrap break-all w-full';
+        pre.textContent = text;
+        container.appendChild(pre);
+      }
     } else {
-      const pre = document.createElement('pre');
-      pre.className = 'text-xs font-mono text-primary/90 whitespace-pre-wrap break-all w-full';
-      pre.textContent = text;
-      body.appendChild(pre);
+      // ── Editable ──
+      // A text attachment can now be WRITTEN here — pasted in empty and filled
+      // in, or corrected — which the ABC branch above has always been able to
+      // do and these two could not: a typo cost a delete and a re-paste.
+      //
+      // Markdown alone gets the two faces, for the same reason a score does:
+      // the rendered page is what the note is FOR, the source is where it is
+      // written. A .txt is its own source, so tabs would offer a choice
+      // between a thing and itself.
+      const textarea = document.createElement('textarea');
+      textarea.className = 'w-full h-72 font-mono text-xs p-3 border border-border rounded-lg bg-bg text-primary resize-y outline-none focus:border-accent';
+      textarea.spellcheck = false;
+      textarea.value = text;
+
+      const saveRow = document.createElement('div');
+      saveRow.className = 'flex items-center justify-end gap-2';
+      const saveStatus = document.createElement('span');
+      saveStatus.className = 'text-xs text-dim';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn-primary text-xs';
+      saveBtn.textContent = t('common.save');
+      saveBtn.disabled = true;
+      saveRow.append(saveStatus, saveBtn);
+
+      textarea.addEventListener('input', () => {
+        saveBtn.disabled = textarea.value === text;
+        saveStatus.textContent = '';
+      });
+
+      saveBtn.onclick = async () => {
+        const next = textarea.value;
+        saveBtn.disabled = true;
+        // Awaited, then applied: a save may ask something first and be
+        // refused — see the ABC branch's theSessionScoreSaver.
+        const result = await onSave(arrayBufferToBase64(new TextEncoder().encode(next).buffer));
+        if (result === false) {
+          saveBtn.disabled = textarea.value === text;
+          return;
+        }
+        text = next;
+        if (typeof result === 'string') {
+          shownName = result;
+          updateTopModal({ title: result });
+        }
+        saveStatus.textContent = t('fileViewer.text.saved');
+        // The rendered face is showing what was saved a moment ago, so it is
+        // repainted even while hidden: unlike a score's SVG, markdown costs
+        // nothing to redraw and has no layout to reflow visibly.
+        if (markdown) paint();
+      };
+
+      if (!markdown) {
+        container.append(textarea, saveRow);
+      } else {
+        const tabBar = document.createElement('div');
+        tabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg w-fit';
+        const mkTab = (label: string): HTMLButtonElement => {
+          const b = document.createElement('button');
+          b.textContent = label;
+          b.className = 'px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer';
+          return b;
+        };
+        const renderedTab = mkTab(t('fileViewer.text.renderedTab'));
+        const sourceTab = mkTab(t('fileViewer.text.sourceTab'));
+        tabBar.append(renderedTab, sourceTab);
+
+        const setTextMode = (mode: 'rendered' | 'source') => {
+          const active = 'bg-accent text-white';
+          const inactive = 'text-muted hover:text-primary hover:bg-elevated';
+          renderedTab.className = `px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${mode === 'rendered' ? active : inactive}`;
+          sourceTab.className = `px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${mode === 'source' ? active : inactive}`;
+          rendered.style.display = mode === 'rendered' ? '' : 'none';
+          textarea.style.display = mode === 'source' ? 'block' : 'none';
+          saveRow.style.display = mode === 'source' ? 'flex' : 'none';
+          if (mode === 'source') focusIfDesktop(textarea);
+        };
+        renderedTab.onclick = () => setTextMode('rendered');
+        sourceTab.onclick = () => setTextMode('source');
+
+        container.append(tabBar, rendered, textarea, saveRow);
+        paint();
+        // Opens on the page, not on its source: reading is what one opens a
+        // note for, and the tab is right there for the other half. An EMPTY
+        // note is the exception — a blank page added to be written in, whose
+        // rendered face is nothing at all.
+        setTextMode(text.trim() === '' ? 'source' : 'rendered');
+      }
     }
   }
 
