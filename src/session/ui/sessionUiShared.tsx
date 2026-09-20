@@ -329,48 +329,65 @@ export async function attachClip(
   return true;
 }
 
-function BoundStepper({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <span class="flex items-center gap-1 text-[11px] text-dim">
-      <button class="px-1 rounded hover:bg-elevated cursor-pointer" onClick={() => onChange(value - 5)}>−5s</button>
-      <span class="font-mono tabular-nums">{label} {fmtTime(value)}</span>
-      <button class="px-1 rounded hover:bg-elevated cursor-pointer" onClick={() => onChange(value + 5)}>+5s</button>
-    </span>
+/** Re-cuts a clip that was already on the card, after its detection's bounds
+ *  moved. Silent, and nothing to decide (2026-09-20, user request).
+ *
+ *  It has to exist because a clip is keyed by where it starts — see clipKey.
+ *  Move the bound and the old attachment stops matching: the card would go
+ *  back to offering "attach", the stale clip would sit there for good, and
+ *  accepting the offer would leave two clips of the same tune, one of them
+ *  cut on bounds nobody believes any more. Re-cutting keeps the promise the
+ *  attachment makes — that it holds exactly the span the detection names.
+ *
+ *  `previous` is where the detection used to begin and end; `ann` already
+ *  carries the new bounds. Returns whether anything was replaced, which is
+ *  false in the ordinary case of a tune with no clip attached.
+ *
+ *  A clip the user RENAMED keeps its name. Told apart from a default one by
+ *  rebuilding what the default would have been at the old bounds: anything
+ *  else was typed by a person and is not ours to overwrite. */
+export async function recutAttachedClip(
+  ctx: AppContext,
+  session: ClipSessionRef,
+  ann: Detection,
+  previous: { start: number; end: number | null },
+  audio: Blob,
+): Promise<boolean> {
+  const card = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
+  if (!card) return false;
+
+  const wasAnn = { ...ann, start: previous.start, end: previous.end };
+  const oldKey = clipKey(session, wasAnn);
+  const at = card.content.attachments.findIndex(
+    a => a.type === 'file' && (a.clipOf === oldKey || legacyClipTag(a.name)?.key === oldKey),
   );
+  if (at === -1) return false;
+
+  const existing = card.content.attachments[at];
+  if (!existing || existing.type !== 'file') return false;
+  const oldExt = existing.name.split('.').pop() ?? '';
+  const wasDefaultName = existing.name === clipFileName(session, wasAnn, oldExt);
+
+  const clip = await extractClip(audio, ann.start, ann.end ?? session.duration);
+  const name = wasDefaultName ? clipFileName(session, ann, clip.extension) : existing.name;
+  const entry = await fileToEntry(new File([clip.blob], name, { type: clip.blob.type }));
+
+  await ctx.mutate(s => {
+    const target = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
+    if (!target) return;
+    // Found again by key rather than by the index read above: the state may
+    // have moved on between the extraction and this write.
+    const i = target.content.attachments.findIndex(
+      a => a.type === 'file' && (a.clipOf === oldKey || legacyClipTag(a.name)?.key === oldKey),
+    );
+    if (i === -1) return;
+    // Replaced in place, so the clip keeps its position among the card's
+    // attachments — it is the same clip, re-cut, not a new one.
+    target.content.attachments[i] = { type: 'file', ...entry, clipOf: clipKey(session, ann) };
+  });
+  return true;
 }
 
-/** ±5s start/end bound adjustment, shared by the summary, live, and
- *  import-in-progress feeds. Mutates `ann` in place — for a live/import
- *  session that's enough on its own: `ann` is the SAME object
- *  getDetections() already returns, so the edit is naturally included
- *  whenever that session is next saved, no separate persist step required
- *  (`persist`, when given, is for the summary's "write it out right now" case
- *  only). `previewBound` plays a 3s preview at the new bound when given —
- *  omitted for a live recording, which has no seekable file to preview from
- *  (raw mic capture, not played-back audio); the value still updates, just
- *  silently. */
-export function BoundControls({ ann, getDuration, persist, refresh, previewBound }: {
-  ann: Detection;
-  getDuration: () => number;
-  persist?: () => void;
-  refresh?: () => void;
-  previewBound?: (t: number) => void;
-}) {
-  const apply = (field: 'start' | 'end', v: number) => {
-    const clamped = Math.max(0, Math.min(getDuration(), v));
-    if (field === 'start') ann.start = clamped; else ann.end = clamped;
-    persist?.();
-    refresh?.();
-    previewBound?.(clamped);
-  };
-
-  return (
-    <>
-      <BoundStepper label="▸" value={ann.start} onChange={(v) => apply('start', v)} />
-      <BoundStepper label="◂" value={ann.end ?? getDuration()} onChange={(v) => apply('end', v)} />
-    </>
-  );
-}
 
 /** Download-clip + attach-to-card controls, shared by the summary, live, and
  *  import-in-progress feeds — a finalized detection can show up before a

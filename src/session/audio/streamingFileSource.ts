@@ -1,4 +1,5 @@
 import { WebDemuxer } from 'web-demuxer';
+import type { AudioSample, Input, InputAudioTrack } from 'mediabunny';
 import type { PcmSource, RecognitionSink } from './sources';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT } from '../sessionConfig';
 
@@ -10,12 +11,35 @@ import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT } from '../sessionConfig';
 // same PcmSource interface FileSource does (this was the intended extension
 // point — see the "future streaming decoder" note in sources.ts).
 //
-// WebCodecs decodes but doesn't read containers (mp4/m4a/…), so a demuxer
-// (web-demuxer, WASM build of FFmpeg's libavformat — container parsing only,
-// no codecs, kept small) supplies the encoded chunks. If the browser lacks
-// WebCodecs or the file's codec isn't supported, tryCreate() returns null and
-// the caller falls back to FileSource/decodeAudioData — never a regression
-// for a case that worked before, just no longer the only path.
+// If the browser lacks WebCodecs or the file cannot be read here,
+// tryCreate() returns null and the caller falls back to
+// FileSource/decodeAudioData — never a regression for a case that worked
+// before, just no longer the only path.
+//
+// ── It reads through mediabunny since 2026-09-20, not web-demuxer ───────────
+// web-demuxer CANNOT OPEN AN MP3. Measured that day on four files: an .m4a
+// streamed, and every .mp3 failed at `get_av_stream` with the wasm printing
+// "Cannot open input file" — a 52 MB one carrying an ID3 tag, a 14 MB one of
+// raw frames with no tag, and that one again under a different name. So it
+// was the container, not the size, the name or the tag.
+//
+// Every MP3 import had therefore been falling back to the whole-file decode,
+// silently: 963 MB of RAM for the 36-minute file that prompted the search,
+// under a warning threshold of 113 minutes on a desktop, so nothing was ever
+// said about it. On a phone, where that threshold is 19 minutes, it is a dead
+// tab.
+//
+// mediabunny reads it, and was already here for clips, for a video's audio
+// and for the bound editor's waveform. It also hands back DECODED samples
+// rather than encoded packets, so the AudioDecoder, its queue cap and the
+// packet-span arithmetic that used to live here are all gone — see the #16
+// note inside start() for what replaced the last of those, and why the
+// replacement is a better measurement rather than merely a shorter one.
+//
+// web-demuxer stays for exactly one thing, at the bottom of this file:
+// extractPcmWav, the AVI escape hatch, for the one container mediabunny
+// cannot read. Its 3 MB of wasm is now fetched only for those files, instead
+// of on every single import.
 
 // Self-hosted (no CDN): webpack 5 resolves this as an asset URL, works in dev
 // and prod alike — same pattern already used for the FolkFriend WASM (ffWorker.ts).
@@ -24,8 +48,6 @@ import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT } from '../sessionConfig';
 // the full build is required, lazily loaded so it never touches the main bundle.
 export const WEB_DEMUXER_WASM_URL = new URL('../../../node_modules/web-demuxer/dist/wasm-files/web-demuxer.wasm', import.meta.url);
 
-/** Cap on in-flight decode() calls not yet output — bounds decoder-side memory. */
-const MAX_DECODE_QUEUE = 8;
 
 // ── 24-bit PCM, decoded here rather than by the browser ──────────────────────
 // Chromium CRASHES THE WHOLE TAB on this one, and takes the app with it —
@@ -72,10 +94,10 @@ export function monoFromS24Bytes(bytes: Uint8Array, channels: number): Float32Ar
   return mono;
 }
 
-function monoFromS24(chunk: EncodedAudioChunk, channels: number): Float32Array {
-  const bytes = new Uint8Array(chunk.byteLength);
-  chunk.copyTo(bytes);
-  return monoFromS24Bytes(bytes, channels);
+/** Lets a half-opened input go without making a noise about it. A probe must
+ *  never fail louder than the thing it was probing. */
+function disposeInput(input: Input | null): void {
+  try { input?.dispose(); } catch { /* nothing left to release */ }
 }
 
 /** Why chunked decoding is not available for a file.
@@ -224,15 +246,16 @@ export async function resamplePcm(pcm: Float32Array<ArrayBuffer>, fromRate: numb
   return rendered.getChannelData(0).slice();
 }
 
+
 export class StreamingFileSource implements PcmSource {
   readonly sampleRate = ANALYSIS_SAMPLE_RATE;
   private cancelled = false;
-  private decoder: AudioDecoder | null = null;
-  private reader: ReadableStreamDefaultReader<EncodedAudioChunk> | null = null;
+  private iterator: AsyncGenerator<AudioSample, void, unknown> | null = null;
 
   private constructor(
-    private readonly demuxer: WebDemuxer,
-    private readonly config: AudioDecoderConfig,
+    private readonly input: Input,
+    private readonly track: InputAudioTrack,
+    private readonly nativeRate: number,
     readonly duration: number,
   ) {}
 
@@ -244,200 +267,192 @@ export class StreamingFileSource implements PcmSource {
 
   /** The same probe, but saying WHY when it fails.
    *
-   *  One `try` per step rather than one around the lot: "the demuxer could not
-   *  open this container" and "this browser cannot decode that codec" are two
+   *  One `try` per step rather than one around the lot: "nothing here can read
+   *  this container" and "this browser cannot decode that codec" are two
    *  different answers to give someone whose import just failed, and a single
    *  catch cannot tell them apart. Still never throws — the caller's job is to
    *  fall back, not to handle an error. */
   static async probe(file: File): Promise<StreamProbe> {
     if (typeof AudioDecoder === 'undefined') return { source: null, reason: 'no-webcodecs' };
 
-    let demuxer: WebDemuxer | null = null;
+    let input: Input | null = null;
     try {
-      // Constructing it also starts fetching the wasm, so a failure here is
-      // usually "the 3 MB module never arrived", not "the file is bad".
-      demuxer = new WebDemuxer({ wasmFilePath: WEB_DEMUXER_WASM_URL.href });
-      await demuxer.load(file);
+      const mb = await import('mediabunny');
+      // ALL_FORMATS, unlike clipExtract's short named list: that one is short
+      // because it only writes back the containers it can also read, and this
+      // one only reads. An import is whatever the user happened to record on.
+      input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS });
+      await input.getFormat();
     } catch (e) {
-      discard(demuxer);
+      disposeInput(input);
       return { source: null, reason: 'container', detail: detailOf(e) };
     }
 
-    let config: AudioDecoderConfig;
+    let track: InputAudioTrack | null = null;
     try {
-      config = await demuxer.getDecoderConfig('audio');
+      track = await input.getPrimaryAudioTrack();
     } catch (e) {
-      discard(demuxer);
+      disposeInput(input);
       return { source: null, reason: 'no-audio-stream', detail: detailOf(e) };
+    }
+    if (!track) {
+      disposeInput(input);
+      return { source: null, reason: 'no-audio-stream' };
     }
 
     try {
-      const support = await AudioDecoder.isConfigSupported(config);
-      if (!support.supported) {
-        discard(demuxer);
+      const codec = await track.getCodec();
+      // 24-bit PCM is never handed to a decoder — see monoFromS24Bytes: it
+      // takes the whole tab down. The whole-file path converts it by hand, so
+      // falling back is the right answer here rather than a failure.
+      if (codec && codec.startsWith(PCM_S24)) {
+        disposeInput(input);
+        return { source: null, reason: 'codec', detail: codec };
+      }
+      if (!(await track.canDecode())) {
+        disposeInput(input);
         // The codec string is the whole answer here, and the one thing worth
         // reading back off a screenshot.
-        return { source: null, reason: 'codec', detail: config.codec };
+        return { source: null, reason: 'codec', detail: codec ?? '(unknown codec)' };
       }
     } catch (e) {
-      discard(demuxer);
+      disposeInput(input);
       return { source: null, reason: 'codec', detail: detailOf(e) };
     }
 
     try {
-      const info = await demuxer.getMediaInfo();
-      if (!(info.duration > 0)) {
-        discard(demuxer);
-        return { source: null, reason: 'no-duration', detail: String(info.duration) };
+      const rate = await track.getSampleRate();
+      const duration = await input.computeDuration();
+      if (!(duration > 0) || !(rate > 0)) {
+        disposeInput(input);
+        return { source: null, reason: 'no-duration', detail: `${duration}s @ ${rate}Hz` };
       }
-      return { source: new StreamingFileSource(demuxer, config, info.duration), reason: null };
+      return { source: new StreamingFileSource(input, track, rate, duration), reason: null };
     } catch (e) {
-      discard(demuxer);
+      disposeInput(input);
       return { source: null, reason: 'unknown', detail: detailOf(e) };
     }
   }
 
   async start(sink: RecognitionSink): Promise<void> {
-    let nativeBuffer: Float32Array[] = [];
-    let nativeBufferedSamples = 0;
-    let nativeSampleRate = this.config.sampleRate;
-    // #16: the container's own per-packet PTS (what the file declares each
-    // encoded chunk's real-time span to be) — AudioDecoder can genuinely
-    // return fewer decoded samples than that span implies (confirmed: a
-    // growing multi-minute deficit over a long recording, e.g. DTX/comfort-
-    // noise packets during quiet stretches). packetSpanS is the reference the
-    // padding below catches up to.
-    let prevPacketTsS: number | null = null;
-    let packetSpanS = 0;
-    let decodedFrames = 0;
+    const { AudioSampleSink } = await import('mediabunny');
+
+    let buffer: Float32Array[] = [];
+    let buffered = 0;
+    let rate = this.nativeRate;
+    /** Native frames handed on so far, padding included — the counter the gap
+     *  arithmetic below measures against. */
+    let produced = 0;
     // Batched by HOP_S_IMPORT, not a larger arbitrary size: ffWorker.ts's ring
     // buffer only carries ANALYSIS_WINDOW_S + hopS of slack (one hop's worth),
     // and maybeAnalyzeLive() only catches up on a single missed hop per PCM
     // message — a bigger batch would silently skip whole analysis windows.
-    const targetNativeChunkSamples = Math.round(HOP_S_IMPORT * this.config.sampleRate);
-    let decodeError: unknown = null;
+    const targetChunk = Math.round(HOP_S_IMPORT * rate);
 
-    const pushMono = (mono: Float32Array, frames: number): void => {
-      nativeBuffer.push(mono);
-      nativeBufferedSamples += frames;
-      decodedFrames += frames;
+    const push = (mono: Float32Array): void => {
+      buffer.push(mono);
+      buffered += mono.length;
+      produced += mono.length;
     };
 
-    // 24-bit PCM never reaches AudioDecoder — see monoFromS24: handing it one
-    // takes the whole tab down. Everything else does, including the other raw
-    // PCM widths, which Chrome converts correctly.
-    const rawPcm = this.config.codec === PCM_S24 ? (chunk: EncodedAudioChunk) => monoFromS24(chunk, this.config.numberOfChannels) : null;
-    const rawBytesPerFrame = rawPcm ? S24_BYTES * this.config.numberOfChannels : 0;
+    // Sequential on purpose: only one flush (resample + feedPcmWithAck) is ever
+    // in flight, so chunks reach the recognition worker strictly in order.
+    const flush = async (final = false): Promise<void> => {
+      if (buffered === 0) return;
+      if (!final && buffered < targetChunk) return;
+      const merged = new Float32Array(buffered);
+      let off = 0;
+      for (const seg of buffer) { merged.set(seg, off); off += seg.length; }
+      buffer = [];
+      buffered = 0;
+      await sink.feedPcmWithAck(await resamplePcm(merged, rate, this.sampleRate));
+    };
 
-    if (!rawPcm) {
-      this.decoder = new AudioDecoder({
-        output: (audioData) => {
-          nativeSampleRate = audioData.sampleRate;
-          const frames = audioData.numberOfFrames;
-          const channels = audioData.numberOfChannels;
+    // No end timestamp: read to the true end of stream. Never bound this by
+    // `this.duration` — a duration is a computed number, the content is the
+    // content, and an analysis cut minutes early is the expensive kind of
+    // wrong. It happened once, on a 6h07 recording whose declared duration
+    // undershot the container's own last timecode by eleven minutes.
+    //
+    // Backpressure needs nothing explicit: the iterator only decodes a little
+    // ahead, and the await on feedPcmWithAck below holds the whole chain.
+    this.iterator = new AudioSampleSink(this.track).samples();
+
+    try {
+      for await (const sample of this.iterator) {
+        if (this.cancelled) { sample.close(); break; }
+        try {
+          rate = sample.sampleRate || rate;
+
+          // #16 — the shortfall, measured rather than inferred.
+          //
+          // A decoder can hand back fewer samples than the file's timeline
+          // says have gone by: comfort-noise and DTX packets over a quiet
+          // stretch decode to nothing at all. Left alone that shortfall
+          // accumulates, and every detection after it is reported earlier
+          // than it really happened — minutes out, by the end of a long
+          // recording.
+          //
+          // Each decoded sample carries the instant it belongs at, so the
+          // shortfall is just where this one starts minus what has been
+          // produced. Measured against the RUNNING TOTAL rather than from one
+          // sample to the next, so a thousand gaps of a few milliseconds are
+          // caught exactly as well as one long one. The previous version
+          // compared encoded-packet spans instead and needed a second of
+          // safety margin to avoid mistaking ordinary decode lag for a gap;
+          // reading the decoded samples' own timestamps needs no such margin.
+          const wantAt = Math.round(Math.max(0, sample.timestamp) * rate);
+          if (wantAt > produced) push(new Float32Array(wantAt - produced)); // zero-filled
+
+          const frames = sample.numberOfFrames;
+          const channels = sample.numberOfChannels;
           const mono = new Float32Array(frames);
           if (channels === 1) {
-            audioData.copyTo(mono, { planeIndex: 0, format: 'f32-planar' });
+            sample.copyTo(mono, { planeIndex: 0, format: 'f32-planar' });
           } else {
             const tmp = new Float32Array(frames);
             for (let ch = 0; ch < channels; ch++) {
-              audioData.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
+              sample.copyTo(tmp, { planeIndex: ch, format: 'f32-planar' });
               for (let i = 0; i < frames; i++) mono[i]! += tmp[i]! / channels;
             }
           }
-          audioData.close();
-          pushMono(mono, frames);
-        },
-        error: (e) => { decodeError = e; },
-      });
-      this.decoder.configure(this.config);
-    }
-
-    // #16: pads with silence up to the packet-timestamp-implied sample count
-    // whenever AudioDecoder under-produces (see packetSpanS above) — keeps
-    // the fed sample count aligned with real file time regardless of *why*
-    // the decoder fell behind. A margin (~1 s of native samples) is left
-    // unpadded each time so ordinary decode-queue lag (bounded by
-    // MAX_DECODE_QUEUE) is never mistaken for a real deficit.
-    const DEFICIT_SAFETY_MARGIN_S = 1;
-    let paddedNativeSamples = 0; // counts as "decoded" so it isn't repadded next flush
-
-    // Sequential on purpose: only one flush (resample + feedPcmWithAck) is ever
-    // in flight, so chunks reach the recognition worker strictly in order even
-    // though decode() outputs can arrive asynchronously relative to the read loop.
-    const flushIfReady = async (final = false): Promise<void> => {
-      const expectedNativeSamples = Math.round(packetSpanS * nativeSampleRate);
-      const actualNativeSamples = decodedFrames + paddedNativeSamples;
-      const deficit = expectedNativeSamples - actualNativeSamples - Math.round(DEFICIT_SAFETY_MARGIN_S * nativeSampleRate);
-      if (deficit > 0) {
-        nativeBuffer.push(new Float32Array(deficit)); // zero-filled by construction
-        nativeBufferedSamples += deficit;
-        paddedNativeSamples += deficit;
-      }
-
-      if (nativeBufferedSamples === 0) return;
-      if (!final && nativeBufferedSamples < targetNativeChunkSamples) return;
-      const merged = new Float32Array(nativeBufferedSamples);
-      let off = 0;
-      for (const seg of nativeBuffer) { merged.set(seg, off); off += seg.length; }
-      nativeBuffer = [];
-      nativeBufferedSamples = 0;
-      const resampled = await resamplePcm(merged, nativeSampleRate, this.sampleRate);
-      await sink.feedPcmWithAck(resampled);
-    };
-
-    // Never bound this by `this.duration` — that's web-demuxer's own duration
-    // ESTIMATE (getMediaInfo(), no Cues to compute it exactly for a Cue-less
-    // MediaRecorder webm), and it can undershoot the real content by several
-    // minutes on a long file: confirmed on a 6h07 recording where the
-    // estimate was ~11 minutes short of the container's own last Cluster
-    // timecode, silently truncating the analysis that many minutes early.
-    // Omitting `end` reads to the true end of stream instead.
-    const stream = this.demuxer.read('audio', 0);
-    this.reader = stream.getReader();
-
-    try {
-      while (!this.cancelled) {
-        const { done, value } = await this.reader.read();
-        if (decodeError) throw decodeError;
-        if (done) break;
-
-        // value.timestamp is microseconds since the start of the stream —
-        // the container's own PTS, independent of anything AudioDecoder does.
-        const packetTsS = value.timestamp / 1e6;
-        if (prevPacketTsS !== null) packetSpanS += packetTsS - prevPacketTsS;
-        prevPacketTsS = packetTsS;
-
-        if (rawPcm) {
-          // Raw samples: converted on the spot, so nothing is ever in flight
-          // and there is no queue to wait on.
-          pushMono(rawPcm(value), Math.floor(value.byteLength / rawBytesPerFrame));
-        } else {
-          this.decoder!.decode(value);
-          if (this.decoder!.decodeQueueSize > MAX_DECODE_QUEUE) {
-            await new Promise<void>(resolve => {
-              this.decoder!.addEventListener('dequeue', () => resolve(), { once: true });
-            });
-          }
+          push(mono);
+        } finally {
+          sample.close();
         }
-        await flushIfReady();
+        await flush();
       }
-      if (!this.cancelled) {
-        // Nothing to drain on the raw path — every packet was converted as it
-        // arrived — so there is no decoder to flush either.
-        await this.decoder?.flush();
-        if (decodeError) throw decodeError;
-        await flushIfReady(true);
-      }
+      if (!this.cancelled) await flush(true);
+    } catch (e) {
+      // Cancelling tears the iterator down under a read that is still in
+      // flight, and what comes back is that teardown, not a fault: an
+      // InputDisposedError, or whatever the next read throws once the file is
+      // gone. This method's contract is to RESOLVE when stopped — the import
+      // treats a rejection as a failed analysis and puts the message in front
+      // of the user, which is exactly what pressing Cancel used to do
+      // (2026-09-21).
+      if (!this.cancelled) throw e;
     } finally {
-      this.reader.releaseLock();
+      this.iterator = null;
+      // Here rather than in stop(): the file is let go only once nothing is
+      // reading from it any more. Also covers the ordinary end of the file,
+      // which nothing else would have closed.
+      disposeInput(this.input);
     }
   }
 
   stop(): void {
     this.cancelled = true;
-    void this.reader?.cancel().catch(() => { /* already released/closed */ });
-    if (this.decoder && this.decoder.state !== 'closed') this.decoder.close();
-    this.demuxer.destroy();
+    if (this.iterator) {
+      // Ends a read currently waiting on the next decoded sample; start()'s
+      // own `finally` then disposes. Disposing here as well would pull the
+      // file out from under that pending read.
+      void this.iterator.return(undefined).catch(() => { /* already finished */ });
+      return;
+    }
+    // Never started, or already finished: nothing is reading, so this is the
+    // one that has to let go. The probe-then-stop path in preflightImport
+    // only ever comes through here.
+    disposeInput(this.input);
   }
 }

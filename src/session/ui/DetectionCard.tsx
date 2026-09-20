@@ -40,9 +40,8 @@ export interface DetectionCardOptions {
    *  separate button would have to name what it acts on, and the range names
    *  itself. It also gets the two ±5 s steppers off every card — they sat on
    *  all of them, permanently, for a correction made on perhaps one detection
-   *  in twenty. Absent for a detection that can still be revised, and on the
-   *  live/import feeds, which have no finished recording to read a waveform
-   *  from (they keep BoundControls — see sessionUiShared.tsx). */
+   *  in twenty. Absent for a detection the decoder can still revise — which on
+   *  the live and import feeds means anything not yet finalized. */
   onEditBounds?: () => void;
   /** Controls parked at the far end of the meta line, next to the range —
    *  the summary puts its clip buttons there. */
@@ -212,6 +211,15 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
       ? `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)} · ${t('sessions.consolidating')}`
       : `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)}`;
 
+  // Closed is enough — a detection still consolidating gets the rating
+  // buttons too (2026-09-20, user request). It is only the EDIT controls that
+  // wait for `finalized`, because those act on bounds the decoder can still
+  // move; having played the tune is already true the moment it closes.
+  //
+  // The entry is pinned at `sessionStartMs + end`, and that instant doubles as
+  // the marker saying it was logged — so if the decoder later shifts `end`,
+  // this card stops recognising its own entry and offers to log a second one.
+  // Known, and the same already happens when a bound is edited by hand.
   const showReviewLog = known && opts.sessionStartMs !== undefined && ann.end !== null;
 
   return (

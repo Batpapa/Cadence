@@ -6,6 +6,7 @@ import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWi
 import { holdAnalysisLock } from './recovery';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from './model';
+import { applyDetectionEvents } from './detectionState';
 import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
@@ -226,40 +227,7 @@ export class LiveSession {
   }
 
   private applyEvents(events: DetectionEvent[]): void {
-    for (const ev of events) {
-      if (ev.type === 'retract') {
-        // A guess the user hasn't touched never got confirmed — remove it
-        // entirely, as if it had never been shown. Never erase an explicit
-        // user choice, even if the algorithm itself would retract it.
-        if (!this.annotations.get(ev.id)?.userConfirmed) this.annotations.delete(ev.id);
-        continue;
-      }
-      const existing = this.annotations.get(ev.detection.id);
-      if (existing?.userConfirmed) {
-        // The user relabelled this detection — keep their tune identity,
-        // only track timing/confidence coming from the aggregator.
-        this.annotations.set(ev.detection.id, {
-          ...ev.detection,
-          tuneId: existing.tuneId,
-          settingId: existing.settingId,
-          displayName: existing.displayName,
-          dance: existing.dance,
-          meter: existing.meter,
-          userConfirmed: true,
-          liked: existing.liked,
-          manualAlternates: existing.manualAlternates,
-        });
-      } else {
-        // The aggregator never knows about the like marker or the tunes named
-        // by hand — carry them forward across updates like any other user
-        // choice. Hand-named tunes outlive an un-confirmation, hence this branch.
-        this.annotations.set(ev.detection.id, {
-          ...ev.detection,
-          liked: existing?.liked ?? false,
-          manualAlternates: existing?.manualAlternates,
-        });
-      }
-    }
+    applyDetectionEvents(this.annotations, events);
     this.persistDraft();
     this.cb.onDetections?.(events, this.getDetections());
   }
