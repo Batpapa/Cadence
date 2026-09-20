@@ -49,7 +49,13 @@ function containerOf(mb: Mediabunny, format: InputFormat): Container | null {
   return null;
 }
 
-async function openInput(audio: Blob) {
+/** A recording opened for reading, with mediabunny itself handed back.
+ *
+ *  Exported so localWaveform.ts can read samples out of the same file through
+ *  the same door: a second `Input` of its own would mean a second list of
+ *  formats to keep in step with this one, and the whole point of the list is
+ *  that it is short and deliberate. */
+export async function openAudioInput(audio: Blob) {
   // Lazy: mediabunny has no business in the main bundle for everyone who never
   // cuts a clip.
   const mb = await import('mediabunny');
@@ -62,12 +68,13 @@ async function openInput(audio: Blob) {
   return { mb, input };
 }
 
+
 /** What an audio file really is, read from its content — for when its declared
  *  type says nothing (an import the browser could not type). Null when the
  *  content is not a format read here. */
 export async function detectAudioFile(audio: Blob): Promise<{ mimeType: string; extension: string } | null> {
   try {
-    const { mb, input } = await openInput(audio);
+    const { mb, input } = await openAudioInput(audio);
     try {
       const container = containerOf(mb, await input.getFormat());
       return container && { mimeType: container.mimeType, extension: container.extension };
@@ -109,7 +116,7 @@ export async function extractAudioOnly(
   file: Blob,
   onProgress?: (ratio: number) => void,
 ): Promise<ExtractedClip | null> {
-  const { mb, input } = await openInput(file);
+  const { mb, input } = await openAudioInput(file);
   try {
     // Nothing to strip: an audio file is left strictly alone, down to the
     // bytes — no remux, no risk, no time spent.
@@ -153,7 +160,7 @@ export async function extractClip(
   end: number,
   onProgress?: (ratio: number) => void,
 ): Promise<ExtractedClip> {
-  const { mb, input } = await openInput(sessionAudio);
+  const { mb, input } = await openAudioInput(sessionAudio);
   try {
     const container = containerOf(mb, await input.getFormat());
     if (!container) throw new Error('clip_format_unsupported');

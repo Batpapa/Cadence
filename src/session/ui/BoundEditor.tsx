@@ -1,0 +1,873 @@
+import { render } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { t } from '../../services/i18nService';
+import { showModal, closeModal } from '../../components/modal';
+import { playIcon, pauseIcon } from '../../components/playbackIcons';
+import { ResetIcon } from '../../components/icons';
+import type { Detection } from '../model';
+import {
+  contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
+  snapMarks, findSnap, findTroughs, missingRanges,
+  LOUPE_HALF_S, PEAK_BUCKET_S, type SnapMark,
+} from './boundEditorModel';
+import {
+  makePeakBuffer, readInto, isRead, levelOver, largestCovered,
+  type PeakBuffer, type WaveRead,
+} from '../audio/localWaveform';
+
+// ── Bound editor ─────────────────────────────────────────────────────────────
+// Replaces the two ±5 s steppers that used to sit on every detection card
+// (BoundControls in sessionUiShared.tsx, still used by the live and import
+// feeds where there is no finished recording to read). Those asked the user to
+// correct a bound whose estimate is off by about a second, in steps of five,
+// with a three-second preview played blind and each press written to disk with
+// no way back.
+//
+// Three ideas hold this screen up.
+//
+// TWO SCALES, BECAUSE THERE ARE TWO GESTURES. A three-minute detection across
+// a phone's 350 px is 2 px per second — aiming to the second there is simply
+// not possible. So the context strip is for seeing and aiming roughly (drag a
+// handle), and the magnifier below it, 8 s across, is for placing (a second is
+// about 45 px). One state, two speeds.
+//
+// IN THE MAGNIFIER THE SOUND MOVES, NOT THE BOUND. The mark stays in the
+// middle and the recording scrolls under it, the way a video trimmer's film
+// strip does. Nothing tiny to catch, travel that never runs out, and the thumb
+// never covers the place being aimed at.
+//
+// THE WAVEFORM IS NOT ENOUGH. Between two tunes OF A SET there is no silence
+// at all: the waveform is flat and says nothing. So the strip also draws the
+// recogniser's own observation windows — Detection.evidence[], already stored
+// on every detection — this tune's in the accent colour, its neighbours' in
+// grey. Where the grey stops and the coloured start is the join. The waveform
+// answers the other case, the real pause between two sets, which it shows
+// plainly and the evidence does not.
+//
+// Nothing is written until "Save": the draft lives here, and Cancel leaves the
+// detection exactly as it was found.
+
+/** What one press of the nudge buttons (and of an arrow key) moves. A quarter
+ *  of a second: a fraction of the error being corrected, and still audible as
+ *  a difference when the loop replays. */
+const NUDGE_S = 0.25;
+/** With Shift, for crossing a phrase rather than trimming one. */
+const NUDGE_COARSE_S = 2;
+/** How far BEFORE the bound listening always starts.
+ *
+ *  Never at the bound itself. What is being judged is a transition, and a
+ *  transition cannot be heard from its far side: dropped exactly on the cut,
+ *  the ear has nothing to compare the new tune to. A couple of seconds is
+ *  enough to already be somewhere when it happens (2026-09-20, user request:
+ *  "on doit écouter un peu avant la borne pour se rendre compte de la
+ *  transition"). */
+const PRE_ROLL_S = 2;
+/** And how far past it the loop runs before going back to the top. The same as
+ *  the lead-in: the cut sits in the middle of the loop, so each pass gives the
+ *  before and the after equal weight.
+ *
+ *  Two seconds, settled by ear (2026-09-20): three made every pass a wait. The
+ *  two are separate constants although they hold the same number, because they
+ *  answer different questions — how much run-up the ear needs, and how long to
+ *  keep listening once the answer is in. */
+const POST_ROLL_S = 2;
+/** Travel below which a press on the magnifier counts as a click rather than a
+ *  jog. A finger never holds perfectly still. */
+const LOUPE_CLICK_SLOP_PX = 4;
+
+const fmtFine = (s: number): string => {
+  const m = Math.floor(Math.max(0, s) / 60);
+  const r = Math.max(0, s) - m * 60;
+  return `${m}:${r < 10 ? '0' : ''}${r.toFixed(2)}`;
+};
+const fmtShort = (s: number): string => {
+  const m = Math.floor(Math.max(0, s) / 60);
+  return `${m}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
+};
+const fmtDelta = (d: number): string => `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(2)} s`;
+
+const cssVar = (name: string): string =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888';
+
+/** What `class="capitalize"` does, for text going into a canvas.
+ *
+ *  A detection's displayName is LOWERCASE — that is how the recognition index
+ *  holds it (see Detection.displayName), and every view that shows it adds the
+ *  CSS class. A canvas cannot, so the same rule is applied by hand: first
+ *  letter of each word, nothing else. Deliberately no cleverer than CSS, for
+ *  the reason the model states — re-casing is guesswork the moment a name
+ *  contains "McGuire", and failing identically everywhere beats failing
+ *  differently here. */
+const capitalizeWords = (s: string): string => s.replace(/\b\p{L}/gu, ch => ch.toUpperCase());
+
+/** Sizes a canvas to its box in real device pixels and hands back a context
+ *  whose coordinates are plain layout pixels.
+ *
+ *  The scale is read from the bounding rect rather than assumed to be the
+ *  device ratio: the app can be under a CSS zoom on <html>, which multiplies
+ *  the rect without touching clientWidth (see the zoom note in utils). Drawing
+ *  through the ratio alone would then be soft on exactly the strips that are
+ *  meant to be read to the pixel. */
+function fitCanvas(cv: HTMLCanvasElement, box: HTMLElement): { g: CanvasRenderingContext2D; w: number; h: number } | null {
+  const w = box.clientWidth, h = box.clientHeight;
+  if (w <= 0 || h <= 0) return null;
+  const rect = box.getBoundingClientRect();
+  const scale = (rect.width / w) * Math.min(3, window.devicePixelRatio || 1);
+  const bw = Math.max(1, Math.round(w * scale)), bh = Math.max(1, Math.round(h * scale));
+  if (cv.width !== bw) cv.width = bw;
+  if (cv.height !== bh) cv.height = bh;
+  const g = cv.getContext('2d');
+  if (!g) return null;
+  g.setTransform(scale, 0, 0, scale, 0, 0);
+  g.clearRect(0, 0, w, h);
+  return { g, w, h };
+}
+
+/** The envelope, drawn as a mirrored bar per pixel column.
+ *
+ *  A column nobody has decoded yet is a hairline, never a bar: an unread
+ *  stretch drawn at zero height is indistinguishable from silence, and the one
+ *  thing this strip must not do is invent a pause where the file has music. */
+function drawWave(
+  g: CanvasRenderingContext2D, w: number, yTop: number, yH: number,
+  t0: number, t1: number, buf: PeakBuffer | null, inFrom: number, inTo: number,
+): void {
+  const mid = yTop + yH / 2, half = yH / 2 - 1;
+  const cOut = cssVar('--color-dim'), cIn = cssVar('--color-accent');
+  const perPx = (t1 - t0) / w;
+  for (let x = 0; x < w; x++) {
+    const ta = t0 + x * perPx;
+    const inside = ta >= inFrom && ta < inTo;
+    if (!buf || !isRead(buf, ta)) {
+      g.globalAlpha = .2;
+      g.fillStyle = cOut;
+      g.fillRect(x, mid - .5, 1, 1);
+      continue;
+    }
+    const level = perPx <= PEAK_BUCKET_S ? levelOver(buf, ta, ta + PEAK_BUCKET_S) : levelOver(buf, ta, ta + perPx);
+    const bar = Math.max(1, level * half);
+    g.globalAlpha = inside ? .95 : .5;
+    g.fillStyle = inside ? cIn : cOut;
+    g.fillRect(x, mid - bar, 1, bar * 2);
+  }
+  g.globalAlpha = 1;
+}
+
+interface BoundEditorProps {
+  ann: Detection;
+  /** Every detection of the analysis, this one included — the neighbours are
+   *  drawn and offered as snap marks. */
+  anns: Detection[];
+  duration: number;
+  /** The recording, read once when the editor opens. Absent when the analysis
+   *  was opened on a device that does not hold it. */
+  getAudio: () => Promise<Blob | undefined>;
+  /** Object URL of the same recording, for listening. Null goes with the same
+   *  case as above. */
+  audioUrl: string | null;
+  /** Fired on every change, so the modal's Save button can read the draft
+   *  without owning it. */
+  onDraft: (start: number, end: number) => void;
+}
+
+export function BoundEditor({ ann, anns, duration, getAudio, audioUrl, onDraft }: BoundEditorProps) {
+  const origin = useRef({ start: ann.start, end: ann.end ?? duration }).current;
+  /** The whole recording — what a bound may reach. */
+  const reach: [number, number] = [0, duration];
+
+  const [draft, setDraftState] = useState({ start: origin.start, end: origin.end });
+  const [bound, setBound] = useState<'start' | 'end'>('start');
+  const [magnet, setMagnet] = useState(true);
+  const [loop, setLoop] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  /** Bumped whenever the waveform gains ground. The peak array is mutated in
+   *  place by the reader, so nothing else would tell Preact to repaint — and
+   *  the value itself is never read, since the repaint effect below runs on
+   *  every render and reads the buffer straight through its ref. Same shape as
+   *  SessionSummary's own `bump`. */
+  const [, setWaveTick] = useState(0);
+  const [troughs, setTroughs] = useState<number[]>([]);
+
+  const bufRef = useRef<PeakBuffer | null>(null);
+  const blobRef = useRef<Blob | null>(null);
+  /** Stretches already ordered, so a drag does not order the same seconds
+   *  again on every frame. Grows only; the reads themselves land in `buf`. */
+  const orderedRef = useRef<Array<[number, number]>>([]);
+  const readsRef = useRef<WaveRead[]>([]);
+
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const ctxBoxRef = useRef<HTMLDivElement>(null);
+  const ctxCvRef = useRef<HTMLCanvasElement>(null);
+  const loupeBoxRef = useRef<HTMLDivElement>(null);
+  const loupeCvRef = useRef<HTMLCanvasElement>(null);
+  const ctxHeadRef = useRef<HTMLDivElement>(null);
+  const loupeHeadRef = useRef<HTMLDivElement>(null);
+  const handleRefs = {
+    start: useRef<HTMLDivElement>(null),
+    end: useRef<HTMLDivElement>(null),
+  };
+  const headRef = useRef(origin.start);
+
+  const active = bound === 'start' ? draft.start : draft.end;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const loopRef = useRef(loop);
+  loopRef.current = loop;
+
+  const setDraft = (next: { start: number; end: number }) => {
+    setDraftState(next);
+    onDraft(next.start, next.end);
+  };
+
+  const marks = snapMarks(anns, ann.id, draft, bound, duration, troughs);
+
+  /** Moves the active bound, snapping unless the caller is being exact. */
+  const moveTo = (v: number, { snap = true } = {}) => {
+    const target = snap && magnet ? (findSnap(v, marks)?.t ?? v) : v;
+    setDraft(clampBound(bound, target, draft, reach));
+  };
+
+  // ── What the context strip shows ───────────────────────────────────────────
+  // Recomputed from the draft, not fixed at open time (2026-09-20, user
+  // request): pulling a bound back has to uncover what lies BEFORE it, rather
+  // than run into a wall, so the thirty seconds of margin travel with the
+  // bounds and a bound may reach anywhere in the recording.
+  const win = contextWindow(draft.start, draft.end, duration);
+
+  // ── Reading the recording ──────────────────────────────────────────────────
+  // The peak envelope is allocated for the WHOLE recording — at one value per
+  // 10 ms that is 4 MB for three hours, next to a recording that is already
+  // held in memory by the tens of megabytes — and filled in piece by piece as
+  // the view asks for it. One array means the two strips can never disagree
+  // about a second they both cover, and audio uncovered by a moving bound is
+  // simply the next piece to fill.
+  //
+  // The magnifier's dozen seconds are always ordered first: that is where the
+  // precise work happens, and it is ready before the user has looked away from
+  // the title. Everything else follows into the same array.
+  const refreshTroughs = () => {
+    const buf = bufRef.current;
+    const range = buf && largestCovered(buf);
+    if (!buf || !range) return;
+    setTroughs(findTroughs(buf.peaks.subarray(range[0], range[1]), buf.from + range[0] * PEAK_BUCKET_S));
+  };
+
+  /** Orders whatever of `[from, to]` has not been asked for yet. */
+  const ensureDecoded = (from: number, to: number) => {
+    const buf = bufRef.current, blob = blobRef.current;
+    if (!buf || !blob) return;
+    // Rounded outwards to whole seconds: a drag changes the window by a pixel
+    // at a time, and without this each frame would order its own sliver.
+    const want: [number, number] = [Math.max(0, Math.floor(from)), Math.min(duration, Math.ceil(to))];
+    for (const piece of missingRanges(want, orderedRef.current)) {
+      orderedRef.current.push(piece);
+      readsRef.current.push(readInto(blob, buf, piece[0], piece[1],
+        () => setWaveTick(x => x + 1),
+        () => { setWaveTick(x => x + 1); refreshTroughs(); },
+      ));
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void getAudio().then(blob => {
+      if (cancelled || !blob) return;
+      blobRef.current = blob;
+      bufRef.current = makePeakBuffer(0, duration);
+      ensureDecoded(...loupeDecodeWindow(origin.start, reach));
+      setWaveTick(x => x + 1);
+    });
+    return () => {
+      cancelled = true;
+      for (const r of readsRef.current) r.cancel();
+      readsRef.current = [];
+    };
+    // eslint-disable-next-line
+  }, []);
+
+  // Whatever is on screen gets ordered. The magnifier first, always, and then
+  // the context strip — unless the detection has grown past the cap, where the
+  // strip goes without its envelope and only the magnifier keeps one.
+  useEffect(() => {
+    if (!bufRef.current) return;
+    ensureDecoded(...loupeDecodeWindow(active, reach));
+    if (waveformFitsContext(win)) ensureDecoded(win[0], win[1]);
+    // eslint-disable-next-line
+  });
+
+  // ── Listening ──────────────────────────────────────────────────────────────
+  // A rAF poll rather than the element's own 'timeupdate': that fires about
+  // four times a second, which is fine for a head crossing a whole session in
+  // the summary's strip and far too coarse here — the magnifier shows eight
+  // seconds, so a quarter-second step is a visible jump, and a loop would
+  // overshoot its end by as much.
+  useEffect(() => {
+    let raf = 0;
+    const step = () => {
+      const a = audioRef.current;
+      if (a && !a.paused) {
+        if (loopRef.current) {
+          const lo = activeRef.current - PRE_ROLL_S, hi = activeRef.current + POST_ROLL_S;
+          if (a.currentTime >= hi || a.currentTime < lo - .5) a.currentTime = Math.max(0, lo);
+        }
+        headRef.current = a.currentTime;
+        paintHeads();
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line
+  }, []);
+
+  // Leaving takes the sound with it. The element is about to be unmounted
+  // anyway, but a paused element is what the summary's own player expects to
+  // find when it takes over again.
+  useEffect(() => () => { audioRef.current?.pause(); }, []);
+
+  const seek = (tSec: number) => {
+    const a = audioRef.current;
+    headRef.current = Math.max(0, Math.min(duration, tSec));
+    if (a) a.currentTime = headRef.current;
+    paintHeads();
+  };
+  const playFrom = (tSec: number) => {
+    const a = audioRef.current;
+    if (!a || !audioUrl) return;
+    seek(tSec);
+    void a.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+  };
+  /** Listening at the active bound always means starting PRE_ROLL_S before it. */
+  const playAtBound = () => playFrom(activeRef.current - PRE_ROLL_S);
+  const toggleLoop = () => {
+    if (loop) { audioRef.current?.pause(); setPlaying(false); setLoop(false); return; }
+    setLoop(true);
+    playAtBound();
+  };
+  /** A bound has moved, so whatever was playing is now about the old one:
+   *  start again from the lead-in to the new one (2026-09-20, user request).
+   *
+   *  Only when something IS playing — looping or not. Starting the sound on
+   *  its own for every arrow key would turn a quiet correction into a noise,
+   *  and the loop and the play button are both one tap away. */
+  const rearmListening = () => {
+    const a = audioRef.current;
+    if (!a || a.paused) return;
+    playAtBound();
+  };
+
+  // ── Painting ───────────────────────────────────────────────────────────────
+  const paintHeads = () => {
+    const h = headRef.current;
+    const ctxBox = ctxBoxRef.current, ctxHead = ctxHeadRef.current;
+    if (ctxBox && ctxHead) {
+      const p = (h - win[0]) / (win[1] - win[0]);
+      ctxHead.style.left = `${p * ctxBox.clientWidth}px`;
+      ctxHead.style.opacity = p < 0 || p > 1 ? '0' : '.9';
+    }
+    const lBox = loupeBoxRef.current, lHead = loupeHeadRef.current;
+    if (lBox && lHead) {
+      const q = (h - (activeRef.current - LOUPE_HALF_S)) / (2 * LOUPE_HALF_S);
+      lHead.style.left = `${q * lBox.clientWidth}px`;
+      lHead.style.opacity = q < 0 || q > 1 ? '0' : '.9';
+    }
+  };
+
+  const drawContext = () => {
+    const box = ctxBoxRef.current, cv = ctxCvRef.current;
+    if (!box || !cv) return;
+    const fitted = fitCanvas(cv, box);
+    if (!fitted) return;
+    const { g, w, h } = fitted;
+    const [t0, t1] = win, span = t1 - t0;
+    const X = (tt: number) => ((tt - t0) / span) * w;
+
+    const yNb = 0, hNb = Math.round(h * .14);
+    const yWav = Math.round(h * .18), hWav = Math.round(h * .55);
+    const yEv = Math.round(h * .77), hEv = Math.round(h * .08);
+    const yEv2 = Math.round(h * .88), hEv2 = Math.round(h * .06);
+
+    // What is being kept, behind everything else.
+    g.fillStyle = cssVar('--color-accent-dim');
+    g.fillRect(X(draft.start), yWav - 2, Math.max(1, X(draft.end) - X(draft.start)), hWav + 4);
+
+    drawWave(g, w, yWav, hWav, t0, t1, bufRef.current, draft.start, draft.end);
+
+    // The neighbours, drawn plainly even where they bite into this one: joins
+    // overlap as a rule, and hiding that would make the strip lie.
+    g.font = '500 9px "IBM Plex Sans", system-ui, sans-serif';
+    for (const d of anns) {
+      if (d.id === ann.id) continue;
+      const x0 = X(d.start), x1 = X(d.end ?? duration);
+      if (x1 < 0 || x0 > w) continue;
+      g.globalAlpha = .3;
+      g.fillStyle = cssVar('--color-dim');
+      g.fillRect(x0, yNb, Math.max(2, x1 - x0), hNb);
+      g.globalAlpha = 1;
+      g.fillStyle = cssVar('--color-muted');
+      const label = capitalizeWords(d.displayName);
+      if (x1 - x0 > g.measureText(label).width + 10) g.fillText(label, Math.max(2, x0) + 4, yNb + hNb - 3);
+    }
+
+    // The recogniser's testimony: this tune's windows, then everyone else's.
+    for (const e of ann.evidence ?? []) {
+      g.globalAlpha = .25 + .65 * Math.max(0, Math.min(1, e.score));
+      g.fillStyle = cssVar('--color-accent');
+      g.fillRect(X(e.t), yEv, Math.max(1, X(e.tEnd ?? e.t + 10) - X(e.t) - 1), hEv);
+    }
+    for (const d of anns) {
+      if (d.id === ann.id) continue;
+      for (const e of d.evidence ?? []) {
+        g.globalAlpha = .2 + .4 * Math.max(0, Math.min(1, e.score));
+        g.fillStyle = cssVar('--color-dim');
+        g.fillRect(X(e.t), yEv2, Math.max(1, X(e.tEnd ?? e.t + 10) - X(e.t) - 1), hEv2);
+      }
+    }
+    g.globalAlpha = 1;
+
+    // Written straight to the nodes rather than through the style props: the
+    // strip is redrawn on every pixel of a drag, and the handles have to land
+    // in the same frame as the canvas under them.
+    if (handleRefs.start.current) handleRefs.start.current.style.left = `${X(draft.start)}px`;
+    if (handleRefs.end.current) handleRefs.end.current.style.left = `${X(draft.end)}px`;
+  };
+
+  const drawLoupe = () => {
+    const box = loupeBoxRef.current, cv = loupeCvRef.current;
+    if (!box || !cv) return;
+    const fitted = fitCanvas(cv, box);
+    if (!fitted) return;
+    const { g, w, h } = fitted;
+    const c = active, t0 = c - LOUPE_HALF_S, t1 = c + LOUPE_HALF_S;
+    const X = (tt: number) => ((tt - t0) / (t1 - t0)) * w;
+
+    // Which side of the mark is inside the tune. Unmistakable, and it flips
+    // with the bound being edited — that is the whole answer to "what am I
+    // including".
+    const inFrom = bound === 'start' ? c : t0 - 1;
+    const inTo = bound === 'start' ? t1 + 1 : c;
+    g.fillStyle = cssVar('--color-accent-dim');
+    g.fillRect(X(Math.max(t0, inFrom)), 0, Math.max(0, X(Math.min(t1, inTo)) - X(Math.max(t0, inFrom))), h);
+
+    drawWave(g, w, Math.round(h * .16), Math.round(h * .58), t0, t1, bufRef.current, inFrom, inTo);
+
+    // Half-second ticks, whole seconds taller: the scale has to be readable
+    // without a label on every line.
+    g.strokeStyle = cssVar('--color-border');
+    g.lineWidth = 1;
+    for (let k = Math.ceil(t0 * 2) / 2; k <= t1; k += .5) {
+      const x = Math.round(X(k)) + .5;
+      const whole = Math.abs(k - Math.round(k)) < .01;
+      g.beginPath();
+      g.moveTo(x, h - Math.round(h * .2));
+      g.lineTo(x, h - Math.round(h * (whole ? .08 : .13)));
+      g.stroke();
+    }
+
+    // The marks the bound can click onto.
+    g.font = '500 9px "IBM Plex Sans", system-ui, sans-serif';
+    for (const m of marks) {
+      if (m.t < t0 || m.t > t1) continue;
+      // The one the bound is already sitting on is drawn by the crosshair and
+      // named by the tag under it. Drawn again here, its line would hide
+      // behind the crosshair and its label behind the crosshair's grip — which
+      // is exactly what it looked like: a name with its first letters eaten.
+      if (Math.abs(m.t - c) < .01) continue;
+      const x = Math.round(X(m.t)) + .5;
+      const colour = m.kind === 'trough' ? cssVar('--color-warn') : cssVar('--color-muted');
+      g.strokeStyle = colour;
+      g.setLineDash(m.kind === 'trough' ? [3, 3] : [2, 4]);
+      g.beginPath();
+      g.moveTo(x, Math.round(h * .1));
+      g.lineTo(x, h - Math.round(h * .2));
+      g.stroke();
+      g.setLineDash([]);
+      g.fillStyle = colour;
+      g.fillText(labelOf(m), x + 3, Math.round(h * .14));
+    }
+
+    // Where each observation window begins and ends — at this scale a window
+    // is wider than the view, so only its edges can be shown, and the edges
+    // are what a bound is being lined up against anyway.
+    for (const d of anns) {
+      for (const e of d.evidence ?? []) {
+        for (const edge of [e.t, e.tEnd ?? e.t + 10]) {
+          if (edge < t0 || edge > t1) continue;
+          g.globalAlpha = .55;
+          g.fillStyle = d.id === ann.id ? cssVar('--color-accent') : cssVar('--color-dim');
+          g.fillRect(Math.round(X(edge)), h - Math.round(h * .07), 1, Math.round(h * .06));
+        }
+      }
+    }
+    g.globalAlpha = 1;
+  };
+
+  const labelOf = (m: SnapMark): string => {
+    if (m.kind === 'trough') return t('sessions.bounds.snapSilence');
+    if (!m.name) return t(m.edge === 'start' ? 'sessions.bounds.snapOwnStart' : 'sessions.bounds.snapOwnEnd');
+    return t(m.edge === 'start' ? 'sessions.bounds.snapStart' : 'sessions.bounds.snapEnd', { name: capitalizeWords(m.name) });
+  };
+
+  // Repaint on anything that changes what either strip shows. Cheap: a few
+  // hundred pixel columns each, and nothing here runs per frame.
+  useEffect(() => {
+    drawContext();
+    drawLoupe();
+    paintHeads();
+    // eslint-disable-next-line
+  });
+
+  useEffect(() => {
+    const onResize = () => { drawContext(); drawLoupe(); paintHeads(); };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+    // eslint-disable-next-line
+  }, []);
+
+  // ── Keyboard ───────────────────────────────────────────────────────────────
+  // The arrows are the exact route: a quarter second, two seconds with Shift.
+  // Space plays, as it does in the summary and in the score viewer. Ignored
+  // while a field or a button has focus, for the reason the summary states —
+  // a button already answers the space bar by activating itself.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        moveTo(activeRef.current + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? NUDGE_COARSE_S : NUDGE_S), { snap: false });
+        rearmListening();
+      } else if (e.code === 'Space' && tag !== 'button') {
+        e.preventDefault();
+        const a = audioRef.current;
+        if (!a || !audioUrl) return;
+        if (a.paused) playAtBound(); else { a.pause(); setPlaying(false); }
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  });
+
+  // ── Gestures ───────────────────────────────────────────────────────────────
+  const ctxTimeAt = (clientX: number): number => {
+    const box = ctxBoxRef.current;
+    if (!box) return win[0];
+    const r = box.getBoundingClientRect();
+    return win[0] + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (win[1] - win[0]);
+  };
+
+  const onHandleDown = (which: 'start' | 'end') => (e: PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setBound(which);
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const v = ctxTimeAt(ev.clientX);
+      const target = magnet ? (findSnap(v, marks)?.t ?? v) : v;
+      setDraft(clampBound(which, target, draft, win));
+    };
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      rearmListening();
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+
+  /** A press on the strip itself listens there. Deliberately not a second way
+   *  to move a bound: the handles do that, and a strip where every touch moved
+   *  something would make listening around impossible. */
+  const onCtxDown = (e: PointerEvent) => {
+    if (loop) setLoop(false);
+    playFrom(ctxTimeAt(e.clientX));
+  };
+
+  const loupeDragRef = useRef<{ x: number; from: number; moved: boolean } | null>(null);
+  const onLoupeDown = (e: PointerEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    loupeDragRef.current = { x: e.clientX, from: active, moved: false };
+  };
+  const onLoupeMove = (e: PointerEvent) => {
+    const d = loupeDragRef.current;
+    const box = loupeBoxRef.current;
+    if (!d || !box) return;
+    // A press that never travels is a click, not a jog. A few pixels of slack,
+    // because a finger never holds perfectly still.
+    if (!d.moved && Math.abs(e.clientX - d.x) < LOUPE_CLICK_SLOP_PX) return;
+    d.moved = true;
+    // Pull the film strip right and the mark moves EARLIER — the mark is
+    // standing still while the recording travels under it.
+    //
+    // Measured against the BOUNDING RECT, not clientWidth. The app runs under
+    // a CSS zoom on <html> — 125% on a desktop by default (zoomService) — and
+    // the two are not the same width then: clientWidth is layout pixels,
+    // while a pointer's clientX is viewport pixels, like the rect. Dividing
+    // one by the other made the sound travel 1.25× the distance of the
+    // finger, on every desktop, which is exactly how far off it felt.
+    const width = box.getBoundingClientRect().width || box.clientWidth;
+    const secPerPx = (2 * LOUPE_HALF_S) / width;
+    moveTo(d.from - (e.clientX - d.x) * secPerPx);
+  };
+  /** Read at pointerup, like the summary's own timeline: a drag has already
+   *  done its work, a plain press means "listen here" — the same thing a press
+   *  on the context strip means, so the two read alike (2026-09-20, user
+   *  request). */
+  const onLoupeUp = (e: PointerEvent) => {
+    const d = loupeDragRef.current;
+    if (!d) return;
+    loupeDragRef.current = null;
+    if (d.moved) { rearmListening(); return; }
+    const box = loupeBoxRef.current;
+    if (!box) return;
+    const r = box.getBoundingClientRect();
+    const at = (active - LOUPE_HALF_S) + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (2 * LOUPE_HALF_S);
+    if (loop) setLoop(false);
+    playFrom(at);
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const dStart = draft.start - origin.start;
+  const dEnd = draft.end - origin.end;
+  const dirty = Math.abs(dStart) > .004 || Math.abs(dEnd) > .004;
+  const noWave = !waveformFitsContext(win);
+  const snapped = magnet ? findSnap(active, marks, 0.002) : null;
+
+  const boundBtn = (which: 'start' | 'end', value: number, delta: number) => (
+    <button
+      class={`rounded-lg border px-3 py-1.5 text-left transition-colors cursor-pointer ${
+        bound === which ? 'border-accent bg-accent/10' : 'border-border bg-bg hover:border-dim'}`}
+      aria-pressed={bound === which}
+      onClick={() => { setBound(which); rearmListening(); }}
+    >
+      <span class={`block text-[10px] uppercase tracking-widest ${bound === which ? 'text-accent' : 'text-dim'}`}>
+        {t(which === 'start' ? 'sessions.bounds.start' : 'sessions.bounds.end')}
+      </span>
+      <span class="block text-base font-mono font-semibold tabular-nums text-primary leading-snug">{fmtFine(value)}</span>
+      <span class="block text-[11px] text-warn tabular-nums h-4">{Math.abs(delta) > .004 ? fmtDelta(delta) : ''}</span>
+    </button>
+  );
+
+  return (
+    <div class="space-y-4">
+      <div>
+        <p class="text-sm font-semibold text-primary capitalize truncate">{ann.displayName}</p>
+        <p class="text-xs text-muted">
+          {ann.dance} · {ann.meter} · {t('sessions.bounds.length', { d: fmtShort(draft.end - draft.start) })}
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        {boundBtn('start', draft.start, dStart)}
+        {boundBtn('end', draft.end, dEnd)}
+      </div>
+
+      {/* ── Context ── */}
+      <div>
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-[10px] uppercase tracking-widest text-dim">{t('sessions.bounds.context')}</span>
+          <span class="text-[11px] text-dim truncate">{t('sessions.bounds.contextHint')}</span>
+        </div>
+        <div
+          ref={ctxBoxRef}
+          class="relative h-[84px] rounded-lg overflow-hidden bg-elevated touch-none select-none cursor-pointer"
+          onPointerDown={onCtxDown}
+        >
+          <canvas ref={ctxCvRef} class="block w-full h-full" />
+          {noWave && (
+            <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[11px] text-dim px-3 pointer-events-none">
+              {t('sessions.bounds.tooLong')}
+            </span>
+          )}
+          {!audioUrl && !noWave && (
+            <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[11px] text-dim px-3 pointer-events-none">
+              {t('sessions.bounds.noAudio')}
+            </span>
+          )}
+          {(['start', 'end'] as const).map(which => (
+            <div
+              key={which}
+              ref={handleRefs[which]}
+              class="absolute inset-y-0 w-9 -ml-[18px] flex justify-center z-[3] cursor-ew-resize"
+              style={{ left: '0px' }}
+              onPointerDown={onHandleDown(which)}
+              title={t(which === 'start' ? 'sessions.bounds.start' : 'sessions.bounds.end')}
+            >
+              <div class={`w-0.5 h-full ${bound === which ? 'bg-accent' : 'bg-dim opacity-70'}`} />
+              <div class={`absolute top-0 w-4 h-4 rounded-b flex items-center justify-center ${
+                bound === which ? 'bg-accent' : 'bg-dim opacity-70'}`}
+              >
+                <span class="block w-1.5 h-2 border-x border-white/70" />
+              </div>
+            </div>
+          ))}
+          <div ref={ctxHeadRef} class="absolute inset-y-0 w-0.5 bg-primary pointer-events-none z-[4]" style={{ left: '0px', opacity: 0 }} />
+        </div>
+        <div class="flex justify-between text-[10px] text-dim font-mono tabular-nums mt-0.5">
+          {[0, .25, .5, .75, 1].map(f => <span key={f}>{fmtShort(win[0] + (win[1] - win[0]) * f)}</span>)}
+        </div>
+      </div>
+
+      {/* ── Magnifier ── */}
+      <div>
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-[10px] uppercase tracking-widest text-dim">
+            {t('sessions.bounds.loupe')} · {t(bound === 'start' ? 'sessions.bounds.start' : 'sessions.bounds.end')}
+          </span>
+          <span class="text-[11px] text-dim truncate">{t('sessions.bounds.loupeHint')}</span>
+        </div>
+        <div
+          ref={loupeBoxRef}
+          class="relative h-[96px] rounded-lg overflow-hidden bg-elevated touch-none select-none cursor-ew-resize"
+          onPointerDown={onLoupeDown}
+          onPointerMove={onLoupeMove}
+          onPointerUp={onLoupeUp}
+          onPointerCancel={onLoupeUp}
+        >
+          <canvas ref={loupeCvRef} class="block w-full h-full" />
+          <div class="absolute inset-y-0 left-1/2 -ml-px w-0.5 bg-accent pointer-events-none z-[3]">
+            <span class="absolute top-0 -left-[7px] w-4 h-4 rounded-b bg-accent" />
+          </div>
+          <span class="absolute left-1/2 -translate-x-1/2 top-5 z-[4] pointer-events-none rounded-full border border-accent bg-bg px-2.5 py-0.5 font-mono tabular-nums text-xs font-semibold text-primary whitespace-nowrap">
+            {fmtFine(active)}
+          </span>
+          {snapped && (
+            <span class="absolute left-1/2 -translate-x-1/2 bottom-1.5 z-[4] pointer-events-none rounded-full bg-bg px-2 text-[10px] text-warn whitespace-nowrap">
+              ◎ {labelOf(snapped)}
+            </span>
+          )}
+          <div ref={loupeHeadRef} class="absolute inset-y-0 w-0.5 bg-primary pointer-events-none z-[4]" style={{ left: '0px', opacity: 0 }} />
+        </div>
+        <div class="flex justify-between text-[10px] text-dim font-mono mt-0.5">
+          <span>−4 s</span><span>−2 s</span><span>0</span><span>+2 s</span><span>+4 s</span>
+        </div>
+      </div>
+
+      {/* ── Transport ── */}
+      <div class="flex items-center gap-2 flex-wrap">
+        <button
+          class="w-9 h-9 p-0 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+          disabled={!audioUrl}
+          title={t(playing ? 'sessions.bounds.pause' : 'sessions.bounds.play')}
+          dangerouslySetInnerHTML={{ __html: playing ? pauseIcon(12) : playIcon(12) }}
+          onClick={() => {
+            const a = audioRef.current;
+            if (!a) return;
+            if (!a.paused) { a.pause(); setPlaying(false); return; }
+            playAtBound();
+          }}
+        />
+        <button
+          class={`min-h-9 px-3 rounded-full border text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
+            loop ? 'border-accent text-accent bg-accent/10' : 'border-border text-muted hover:border-accent hover:text-primary'}`}
+          disabled={!audioUrl}
+          aria-pressed={loop}
+          title={t('sessions.bounds.loopHint')}
+          onClick={toggleLoop}
+        >
+          ⟲ {t('sessions.bounds.loop')}
+        </button>
+        <button
+          class="min-h-9 px-3 rounded-full border border-border text-xs text-muted hover:border-accent hover:text-primary inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+          disabled={!audioUrl}
+          title={t('sessions.bounds.markHint')}
+          onClick={() => { moveTo(headRef.current, { snap: false }); rearmListening(); }}
+        >
+          ⌖ {t('sessions.bounds.markHere')}
+        </button>
+
+        {/* No value between the two arrows: the bound is already written in
+            full on its own card above and on the magnifier's readout, and a
+            third copy of the same number only made the dialog taller. */}
+        <div class="flex items-stretch rounded-lg border border-border overflow-hidden ml-auto">
+          <button
+            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer border-r border-border"
+            title={t('sessions.bounds.keyboard')}
+            onClick={() => { moveTo(active - NUDGE_S, { snap: false }); rearmListening(); }}
+          >
+            {t('sessions.bounds.nudgeBack')}
+          </button>
+          <button
+            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer"
+            title={t('sessions.bounds.keyboard')}
+            onClick={() => { moveTo(active + NUDGE_S, { snap: false }); rearmListening(); }}
+          >
+            {t('sessions.bounds.nudgeForward')}
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-x-3 gap-y-2 flex-wrap">
+        <div class="flex items-center gap-3 text-[11px] text-dim flex-wrap">
+          <span class="inline-flex items-center gap-1.5"><i class="inline-block w-2 h-2 rounded-sm bg-accent" />{t('sessions.bounds.legendThis')}</span>
+          <span class="inline-flex items-center gap-1.5"><i class="inline-block w-2 h-2 rounded-sm bg-dim" />{t('sessions.bounds.legendOthers')}</span>
+          <span class="inline-flex items-center gap-1.5"><i class="inline-block w-2 h-2 rounded-sm bg-warn" />{t('sessions.bounds.legendSnap')}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          {dirty && (
+            <button
+              class="text-[11px] text-dim hover:text-primary inline-flex items-center gap-1 transition-colors cursor-pointer"
+              onClick={() => { setDraft({ ...origin }); rearmListening(); }}
+            >
+              <ResetIcon size={11} /> {t('sessions.bounds.reset')}
+            </button>
+          )}
+          <button
+            class={`min-h-8 px-3 rounded-full border text-[11px] transition-colors cursor-pointer ${
+              magnet ? 'border-accent text-accent bg-accent/10' : 'border-border text-muted hover:text-primary'}`}
+            aria-pressed={magnet}
+            title={t('sessions.bounds.magnetHint')}
+            onClick={() => setMagnet(m => !m)}
+          >
+            ◎ {t('sessions.bounds.magnet')}
+          </button>
+        </div>
+      </div>
+
+      <audio ref={audioRef} class="hidden" src={audioUrl ?? undefined} onPause={() => setPlaying(false)} />
+    </div>
+  );
+}
+
+/** Imperative bridge — showModal still needs a plain HTMLElement body, and it
+ *  already owns the title bar, the close button, Escape and the click-outside
+ *  (see AlternatesPopover's identical bridge, and modal.tsx for why the Preact
+ *  tree inside has to be unmounted by hand on the way out).
+ *
+ *  `onSave` receives the draft only when the user says so: every path out
+ *  other than the Save button leaves the detection untouched, which is the one
+ *  thing the old ±5 s steppers could not offer. */
+export function showBoundEditor(opts: {
+  ann: Detection;
+  anns: Detection[];
+  duration: number;
+  getAudio: () => Promise<Blob | undefined>;
+  audioUrl: string | null;
+  onSave: (start: number, end: number) => void;
+}): void {
+  const body = document.createElement('div');
+  const cleanup = () => render(null, body);
+  let draft = { start: opts.ann.start, end: opts.ann.end ?? opts.duration };
+
+  render(
+    <BoundEditor
+      ann={opts.ann}
+      anns={opts.anns}
+      duration={opts.duration}
+      getAudio={opts.getAudio}
+      audioUrl={opts.audioUrl}
+      onDraft={(start, end) => { draft = { start, end }; }}
+    />,
+    body,
+  );
+
+  showModal(t('sessions.bounds.title'), body, [
+    { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
+    { label: t('common.save'), primary: true, onClick: () => { closeModal(); cleanup(); opts.onSave(draft.start, draft.end); } },
+  ], { maxWidth: '34rem', onDismiss: cleanup });
+}

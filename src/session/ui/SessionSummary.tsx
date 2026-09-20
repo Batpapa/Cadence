@@ -20,8 +20,9 @@ import { detectAudioFile } from '../audio/clipExtract';
 import { audioExtension } from '../../services/zip';
 import {
   fmtLongTime, TitleRow, DateRow,
-  BoundControls, ClipControls,
+  ClipControls,
 } from './sessionUiShared';
+import { showBoundEditor } from './BoundEditor';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import { appState } from '../../store';
 import { headPosition, withGaps } from './timelineModel';
@@ -524,13 +525,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // tune's start and then, if a second click comes, refines to the exact point.
   const onBarDoubleClick = (e: MouseEvent) => seekTo(timeAtX(e.clientX));
 
-  const previewBound = (tSec: number) => {
-    const a = audioRef.current;
-    if (!a) return;
-    a.currentTime = Math.max(0, tSec);
-    void a.play().catch(() => { /* not loaded yet */ });
-    setTimeout(() => a.pause(), 3000);
-  };
+  // previewBound lived here until 2026-09-20: three seconds of audio played at
+  // a bound the user could not see, which was the whole of the old adjustment's
+  // feedback. The bound editor listens around the bound in a loop, against a
+  // waveform, so there is nothing left for it to do.
 
   const dump = lastImportDump.value?.sessionId === session.id ? lastImportDump.value
     : lastLiveDump.value?.sessionId === session.id ? lastLiveDump.value
@@ -576,55 +574,70 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       persist();
       bump();
     },
+    // Bound adjustment lives in its own screen now (2026-09-20) — the ±5 s
+    // steppers that used to sit here are gone from the summary. They asked for
+    // a correction of about a second in steps of five, played blind, and wrote
+    // every press straight to disk. See BoundEditor.tsx.
+    //
+    // The summary's own player is stopped on the way in: the editor listens
+    // through an element of its own, and two players on the same recording
+    // would talk over each other from behind a modal.
+    onEditBounds: () => {
+      audioRef.current?.pause();
+      showBoundEditor({
+        ann,
+        anns: session.annotations,
+        duration: session.duration,
+        getAudio: () => loadSessionAudio(session.id),
+        audioUrl,
+        onSave: (start, end) => {
+          ann.start = start;
+          ann.end = end;
+          persist();
+          bump();
+        },
+      });
+    },
+    // Download/attach clip — hidden (download) or reduced to just the
+    // "already attached" label (attach) once the session's audio has been
+    // forgotten (nothing left to extract from). On the meta line since
+    // 2026-09-20: a clip is a cut of the very stretch that line names.
+    metaActions: () => (
+      <ClipControls ann={ann} session={session} audioAvailable={!!audioUrl} getAudio={() => loadSessionAudio(session.id)} ctx={ctx} onAttached={bump} />
+    ),
+    // Confirmed: the row carries hand-made work (bound adjustments, alternate
+    // picks, attached clips) and there is no undo.
+    onDelete: () => confirmModal(
+      t('sessions.detection.delete.title'),
+      t('sessions.detection.delete.message', { name: ann.displayName }),
+      t('common.delete'),
+      () => {
+        session.annotations.splice(i, 1);
+        persist();
+        bump();
+      },
+    ),
+    // All that is left of the third row, and it only appears when there is
+    // something to merge WITH — the same tune detected twice in a row, which
+    // is a false set change. Every other card is now two lines.
     extraControls: () => {
-      // Merge with previous detection of the same tune (false set change).
       const prev = session.annotations[i - 1];
+      if (!prev || prev.tuneId !== ann.tuneId) return null;
       return (
-        <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
-          {/* Bound adjustment: ±5 s with a 3 s audio preview at the new bound. */}
-          <BoundControls ann={ann} getDuration={() => session.duration} persist={persist} refresh={bump} previewBound={previewBound} />
-
-          {/* Download/attach clip — hidden (download) or reduced to just the
-             "already attached" label (attach) once the session's audio has
-             been forgotten (nothing left to extract from). */}
-          <ClipControls ann={ann} session={session} audioAvailable={!!audioUrl} getAudio={() => loadSessionAudio(session.id)} ctx={ctx} onAttached={bump} />
-
-          {prev && prev.tuneId === ann.tuneId && (
-            <button
-              class="text-[11px] text-accent hover:underline cursor-pointer"
-              onClick={() => {
-                prev.end = ann.end;
-                prev.evidence = [...prev.evidence, ...ann.evidence];
-                prev.confidence = Math.max(prev.confidence, ann.confidence);
-                prev.bucket = prev.confidence >= 0.7 ? 'high' : prev.confidence >= 0.5 ? 'medium' : 'low';
-                session.annotations.splice(i, 1);
-                persist();
-                bump();
-              }}
-            >
-              {t('sessions.merge')}
-            </button>
-          )}
-
-          {/* Confirmed: the row carries hand-made work (bound adjustments,
-              alternate picks, attached clips) and there is no undo. */}
-          <button
-            class="text-dim hover:text-danger transition-colors cursor-pointer ml-auto"
-            title={t('common.delete')}
-            onClick={() => confirmModal(
-              t('sessions.detection.delete.title'),
-              t('sessions.detection.delete.message', { name: ann.displayName }),
-              t('common.delete'),
-              () => {
-                session.annotations.splice(i, 1);
-                persist();
-                bump();
-              },
-            )}
-          >
-            <TrashIcon size={11} />
-          </button>
-        </div>
+        <button
+          class="text-[11px] text-accent hover:underline cursor-pointer"
+          onClick={() => {
+            prev.end = ann.end;
+            prev.evidence = [...prev.evidence, ...ann.evidence];
+            prev.confidence = Math.max(prev.confidence, ann.confidence);
+            prev.bucket = prev.confidence >= 0.7 ? 'high' : prev.confidence >= 0.5 ? 'medium' : 'low';
+            session.annotations.splice(i, 1);
+            persist();
+            bump();
+          }}
+        >
+          {t('sessions.merge')}
+        </button>
       );
     },
   });
