@@ -72,6 +72,15 @@ export const WEB_DEMUXER_WASM_URL = new URL('../../../node_modules/web-demuxer/d
 const PCM_S24 = 'pcm-s24';
 const S24_BYTES = 3;
 
+/** Chunks handed to the recognition worker but not yet acknowledged, beyond
+ *  which the read loop waits. It is the one bound on how far decoding may run
+ *  ahead of analysis, and it stands where the old code's MAX_DECODE_QUEUE did
+ *  — same number, same job, one step further down the pipe: that one counted
+ *  encoded packets given to a decoder, this one counts decoded chunks given
+ *  to the worker. A chunk is one analysis hop, so eight of them is a few tens
+ *  of seconds of mono audio at most. */
+const MAX_IN_FLIGHT = 8;
+
 /** Interleaved little-endian 24-bit PCM, mixed down to mono floats in
  *  [-1, 1) — the same thing AudioDecoder's output plus the copyTo above would
  *  have produced. Takes bytes rather than a chunk so it can be tested without
@@ -355,9 +364,23 @@ export class StreamingFileSource implements PcmSource {
       produced += mono.length;
     };
 
-    // Sequential on purpose: only one flush (resample + feedPcmWithAck) is ever
-    // in flight, so chunks reach the recognition worker strictly in order.
-    const flush = async (final = false): Promise<void> => {
+    // ── Feeding runs alongside decoding, not after it ────────────────────────
+    // A flush is queued rather than awaited, and the queue is a CHAIN: each
+    // link starts only once the previous one has been acknowledged, so chunks
+    // still reach the recognition worker strictly in order. What changes is
+    // who waits — the read loop no longer does, so mediabunny keeps decoding
+    // while the worker chews on what it was already given.
+    //
+    // Measured on 2026-09-21, the file import that prompted this: awaiting the
+    // flush inside the loop serialised the two halves and cost about a fifth
+    // of the throughput against the old code, which had kept up to eight
+    // decodes in flight. See MAX_IN_FLIGHT for the bound that replaces that
+    // one.
+    let pending: Promise<void> = Promise.resolve();
+    let inFlight = 0;
+    let flushError: unknown = null;
+
+    const queueFlush = (final = false): void => {
       if (buffered === 0) return;
       if (!final && buffered < targetChunk) return;
       const merged = new Float32Array(buffered);
@@ -365,7 +388,17 @@ export class StreamingFileSource implements PcmSource {
       for (const seg of buffer) { merged.set(seg, off); off += seg.length; }
       buffer = [];
       buffered = 0;
-      await sink.feedPcmWithAck(await resamplePcm(merged, rate, this.sampleRate));
+      // Captured here: by the time this link runs, the loop may have moved on
+      // to a sample declaring a different rate.
+      const from = rate;
+      inFlight++;
+      pending = pending
+        .then(async () => {
+          if (flushError) return;   // the chain has already failed; do not pile on
+          await sink.feedPcmWithAck(await resamplePcm(merged, from, this.sampleRate));
+        })
+        .catch((e: unknown) => { flushError ??= e; })
+        .finally(() => { inFlight--; });
     };
 
     // No end timestamp: read to the true end of stream. Never bound this by
@@ -374,8 +407,6 @@ export class StreamingFileSource implements PcmSource {
     // wrong. It happened once, on a 6h07 recording whose declared duration
     // undershot the container's own last timecode by eleven minutes.
     //
-    // Backpressure needs nothing explicit: the iterator only decodes a little
-    // ahead, and the await on feedPcmWithAck below holds the whole chain.
     this.iterator = new AudioSampleSink(this.track).samples();
 
     try {
@@ -420,9 +451,19 @@ export class StreamingFileSource implements PcmSource {
         } finally {
           sample.close();
         }
-        await flush();
+        queueFlush();
+        // The one place the read loop does wait: when enough chunks are
+        // queued that reading further would grow memory without helping.
+        // Draining the whole chain rather than just the oldest link keeps
+        // this to one line — it happens rarely, and only because the worker
+        // is the slower half at that moment.
+        if (inFlight >= MAX_IN_FLIGHT) await pending;
+        // A failed feed means the worker is gone; nothing below will fix it.
+        if (flushError) throw flushError;
       }
-      if (!this.cancelled) await flush(true);
+      if (!this.cancelled) queueFlush(true);
+      await pending;
+      if (flushError) throw flushError;
     } catch (e) {
       // Cancelling tears the iterator down under a read that is still in
       // flight, and what comes back is that teardown, not a fault: an
@@ -434,6 +475,10 @@ export class StreamingFileSource implements PcmSource {
       if (!this.cancelled) throw e;
     } finally {
       this.iterator = null;
+      // Nothing decoded here outlives this call, cancel or not — the chain is
+      // at most MAX_IN_FLIGHT chunks and each one is already in the worker's
+      // hands or about to be.
+      await pending.catch(() => { /* already recorded in flushError */ });
       // Here rather than in stop(): the file is let go only once nothing is
       // reading from it any more. Also covers the ordinary end of the file,
       // which nothing else would have closed.
