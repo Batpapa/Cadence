@@ -67,6 +67,12 @@ export interface ModalOptions {
    *  look lost in it. Deliberately NOT remembered between openings: it is a
    *  way to look closer at what is on screen now, not a preference. */
   expandable?: boolean;
+  /** Called with the expanded state, at opening and on every toggle. For a
+   *  body that sizes something against the dialog — a score capped at half the
+   *  viewport, which must take the room the expansion just gave it rather than
+   *  leaving it empty. The body renders in its own tree and cannot see this
+   *  state any other way. */
+  onExpandedChange?: (expanded: boolean) => void;
   /** Turns the header title into a second level: a back arrow appears before
    *  it, and the caller decides what going back means. For a modal whose body
    *  navigates — an export picker whose formats open a sub-choice — so the
@@ -93,6 +99,7 @@ interface ModalEntry {
   onDismiss?: () => void;
   headerActions: ModalHeaderAction[];
   expandable: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   onBack?: () => void;
   titleEdit?: ModalOptions['titleEdit'];
 }
@@ -175,6 +182,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     onDismiss: opts.onDismiss,
     headerActions: opts.headerActions ?? [],
     expandable: opts.expandable ?? false,
+    onExpandedChange: opts.onExpandedChange,
     onBack: opts.onBack,
   }];
 }
@@ -349,6 +357,11 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
   // every re-render of the stack and only that.
   const [expanded, setExpanded] = useState(false);
   const dismiss = () => { closeModal(); entry.onDismiss?.(); };
+
+  // Before the browser paints, not after: the body sizes itself against this,
+  // and an effect-driven answer would show one frame at the wrong height.
+  const notifyExpanded = entry.onExpandedChange;
+  useLayoutEffect(() => { notifyExpanded?.(expanded); }, [expanded, notifyExpanded]);
 
   // No Escape listener here any more (2026-09-10). Every dialog used to run
   // its own, each re-deriving "am I the topmost?" from this stack — which was
