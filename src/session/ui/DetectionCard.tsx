@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon, HourglassIcon, ChevronDownIcon } from '../../components/icons';
+import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon } from '../../components/icons';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { findByExternalId } from '../../services/theSessionService';
 import { AbcPreview } from './abcPreview';
@@ -32,6 +32,24 @@ export interface DetectionCardOptions {
   /** Extra controls rendered at the bottom of the card (bound-adjust/clip
    *  buttons — finalized annotations only, gated by the caller). */
   extraControls?: () => ComponentChild;
+  /** Opens the bound editor. When given, the card's own time range becomes the
+   *  way in — a button with a pencil, in the meta line where the range already
+   *  is (2026-09-20).
+   *
+   *  The range is the control because it is the thing being changed: a
+   *  separate button would have to name what it acts on, and the range names
+   *  itself. It also gets the two ±5 s steppers off every card — they sat on
+   *  all of them, permanently, for a correction made on perhaps one detection
+   *  in twenty. Absent for a detection that can still be revised, and on the
+   *  live/import feeds, which have no finished recording to read a waveform
+   *  from (they keep BoundControls — see sessionUiShared.tsx). */
+  onEditBounds?: () => void;
+  /** Controls parked at the far end of the meta line, next to the range —
+   *  the summary puts its clip buttons there. */
+  metaActions?: () => ComponentChild;
+  /** Deletes this detection. Rendered beside the like heart; the caller does
+   *  the confirming, since it alone knows what is being thrown away. */
+  onDelete?: () => void;
   /** Unix ms of the session's t=0. When set, closed annotations of known cards
    *  get the "log this as a review" control (summary + live feed; the import
    *  feed has no date until the user sets one in the summary). */
@@ -271,9 +289,40 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             <HeartIcon size={13} filled={ann.liked} />
           </button>
         )}
+
+        {/* Beside the heart, at the end of the row that carries this
+            detection's identity — which is what deleting it is about. It used
+            to sit alone on a row of its own below (2026-09-20). */}
+        {opts.onDelete && (
+          <button
+            class="shrink-0 text-dim hover:text-danger transition-colors cursor-pointer"
+            title={t('common.delete')}
+            onClick={(e) => { e.stopPropagation(); opts.onDelete!(); }}
+          >
+            <TrashIcon size={12} />
+          </button>
+        )}
       </div>
 
-      <div class="text-xs text-muted">{ann.dance} · {ann.meter} · {range}</div>
+      <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
+        <span>{ann.dance} · {ann.meter} ·</span>
+        {opts.onEditBounds ? (
+          <button
+            class="inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 font-mono tabular-nums text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer group"
+            title={t('sessions.bounds.edit')}
+            onClick={(e) => { e.stopPropagation(); opts.onEditBounds!(); }}
+          >
+            <span>{range}</span>
+            <span class="text-dim group-hover:text-accent flex items-center transition-colors"><PencilIcon size={10} /></span>
+          </button>
+        ) : (
+          <span>{range}</span>
+        )}
+        {/* Pushed to the far end of the same line: cutting a clip is an act on
+            this stretch of recording, so it belongs beside the times that
+            define it rather than on a row of its own (2026-09-20). */}
+        {opts.metaActions && <span class="ml-auto flex items-center gap-1.5">{opts.metaActions()}</span>}
+      </div>
 
       {showReviewLog && (
         <div class="flex items-center gap-3 flex-wrap">
