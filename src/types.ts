@@ -179,6 +179,12 @@ export interface User {
    *  Someone who edits ABC by hand all day sets it once instead of pressing
    *  the same tab on every score. */
   abcOpenMode?: AbcOpenMode;
+  /** How big the NOTATION is drawn, as a percentage. Absent = 100, the size
+   *  abcjs draws at on its own — see `ABC_BASE_STAFF_WIDTH` in fileViewer, the
+   *  single reader. A display setting rather than a playback one, and stored
+   *  all the same: it answers "can this be read from where the instrument is",
+   *  which is a property of the eyes and the screen, not of the tune. */
+  abcZoomPercent?: number;
 
   // Misc.
   /** How many times a tune is played through when it JOINS a set — three is

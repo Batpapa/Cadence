@@ -3,7 +3,7 @@ import type { AbcOpenMode, FileEntry } from '../types';
 import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop } from '../utils';
 import { renderMarkdown } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
-import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon } from './icons';
+import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon } from './icons';
 import { t } from '../services/i18nService';
 import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
@@ -57,6 +57,28 @@ function abcTempoPercent(): number {
   const stored = appState.value.abcTempoPercent;
   if (typeof stored !== 'number' || !Number.isFinite(stored)) return DEFAULT_TEMPO_PERCENT;
   return Math.max(MIN_TEMPO_PERCENT, Math.min(MAX_TEMPO_PERCENT, Math.round(stored)));
+}
+
+/** How big the notation is DRAWN, as a percentage — nothing to do with the
+ *  app's own zoom (zoomService), which scales the whole interface.
+ *
+ *  abcjs lays a score out to a fixed staff width and then scales that drawing
+ *  to whatever box it is put in (`responsive: 'resize'` — the SVG is pure
+ *  viewBox). So zooming in means laying out NARROWER: the box magnifies the
+ *  result, and the music re-wraps to fewer bars per line instead of running off
+ *  the side. That is the whole reason this is a re-draw rather than a CSS
+ *  scale, which would have bought horizontal scrolling at every step.
+ *
+ *  740 is abcjs's own default staff width, which is what makes 100% mean
+ *  "exactly as before this setting existed". */
+const ABC_BASE_STAFF_WIDTH = 740;
+const DEFAULT_ZOOM_PERCENT = 100;
+const ABC_ZOOM_LEVELS = [50, 67, 80, 100, 125, 150, 200, 250, 300];
+
+function abcZoomPercent(): number {
+  const stored = appState.value.abcZoomPercent;
+  if (typeof stored !== 'number' || !ABC_ZOOM_LEVELS.includes(stored)) return DEFAULT_ZOOM_PERCENT;
+  return stored;
 }
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
@@ -291,7 +313,10 @@ export function showPreviewModal(
   // Set by the PDF branch when pdf.js draws the pages: its worker and canvases
   // go with the modal.
   let releasePdf: () => void = () => {};
-  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); };
+  // Set by the ABC branch: a score given the whole page lives in an overlay of
+  // its own, outside this dialog, and has to come down with it.
+  let releaseFullscreen: () => void = () => {};
+  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); releaseFullscreen(); };
 
   const body = document.createElement('div');
   body.className = 'w-full flex items-center justify-center';
@@ -299,6 +324,9 @@ export function showPreviewModal(
   // Filled in by the ABC branch; the header gear needs a way to re-prime the
   // score once preferences change, and only that branch knows how.
   let reapplyAbcPrefs: (() => void) | null = null;
+  // Same shape, for the dialog's own "Full page": the score branch is the only
+  // one that sizes anything against the room the dialog has.
+  let onModalExpanded: ((expanded: boolean) => void) | null = null;
 
   const m = entry.mimeType;
   // 0.85 (not 0.9) to match the shared modal shell's own dialog max-height
@@ -525,16 +553,181 @@ export function showPreviewModal(
     controls.className = 'sticky -top-4 z-10 bg-elevated py-2';
     container.appendChild(controls);
 
+    // A frame AROUND the score, holding both it and the controls that float
+    // over it. The controls cannot sit inside the score itself: that box
+    // scrolls, and an absolutely positioned child of a scrolling box scrolls
+    // away with the music. The frame does not scroll, so they stay put.
+    const scoreFrame = document.createElement('div');
+    scoreFrame.className = 'relative w-full';
+    container.appendChild(scoreFrame);
+
+    // The score's own scrolling viewport, capped well below the modal's
+    // height: the score is the only thing that should move while the cursor
+    // advances. When the modal body was the scroller, centring a staff dragged
+    // the tabs and the transport controls out of view along with it.
+    //
+    // A box of its own, and NOT the element abcjs draws into: a responsive
+    // render makes its target `display:inline-block; overflow:hidden` with a
+    // percentage `padding-bottom` for the aspect ratio (svg.js's
+    // setResponsiveWidth), which overwrites whatever scrolling it was given and
+    // puts its whole height in padding, where `max-height` cannot reach it.
+    // Carrying both jobs on one element meant neither cap nor scrollbar ever
+    // took, and the modal body quietly went on being the scroller.
+    const scoreScroll = document.createElement('div');
+    scoreScroll.className = 'w-full bg-white rounded p-2 overflow-y-auto';
+    scoreScroll.style.color = '#000';
+    scoreFrame.appendChild(scoreScroll);
+
+    /** Half the screen normally; what the dialog's own "Full page" leaves once
+     *  the header, the tabs and the transport have had theirs. The cap has to
+     *  follow that toggle: the score is the only thing in this modal that
+     *  grows, so an expansion it ignored would just open a field of grey under
+     *  a score exactly as small as before. */
+    let modalExpanded = false;
+    // Declared here rather than beside the full-page code below: the cap has to
+    // know to keep its hands off while the score owns the page.
+    let fullscreen: HTMLElement | null = null;
+    const capScore = () => {
+      if (fullscreen) return; // full page sizes itself from its own flex column
+      scoreScroll.style.maxHeight = modalExpanded
+        ? `calc(${modalMaxH(1)} - 12rem)`
+        : modalMaxH(0.5);
+    };
+    capScore();
+    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); };
+
     const notation = document.createElement('div');
-    // Its own scrolling viewport, capped well below the modal's height: the
-    // score is the only thing that should move while the cursor advances. When
-    // the modal body was the scroller, centring a staff dragged the tabs and
-    // the transport controls out of view along with it.
-    notation.className = 'w-full bg-white rounded p-2 overflow-y-auto';
-    notation.style.maxHeight = modalMaxH(0.5);
-    notation.style.color = '#000';
+    notation.className = 'w-full';
     notation.id = `abc-notation-${uid}`;
-    container.appendChild(notation);
+    scoreScroll.appendChild(notation);
+
+    // ── Controls floating over the top right of the score ────────────────────
+    // On the score rather than in a row of their own: they act on the picture
+    // and only on it — the tabs, the transport and the version nav are not
+    // theirs to move — and a row would push the music down on every screen to
+    // serve two buttons. Small, translucent, and above the first staff, which
+    // starts below the title line.
+    const scoreTools = document.createElement('div');
+    scoreTools.className = 'absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg border border-black/10 bg-white/85 backdrop-blur-sm px-1 py-0.5 shadow-sm';
+    scoreFrame.appendChild(scoreTools);
+
+    const mkScoreToolBtn = (content: Element | string, title: string): HTMLButtonElement => {
+      const b = document.createElement('button');
+      if (typeof content === 'string') b.textContent = content; else b.appendChild(content);
+      b.title = title;
+      // Roomier than it looks: these are over a score, reached with a thumb as
+      // often as with a pointer, and the header's own icon buttons had already
+      // been reported as too small to hit on a phone.
+      b.className = 'px-2.5 py-2 rounded text-sm leading-none text-[#555] hover:text-black hover:bg-black/5 transition-colors cursor-pointer flex items-center disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[#555]';
+      // Blurred on every click: the space bar plays and stops the score, and
+      // that shortcut steps aside for whatever button holds the focus (see
+      // onKeyDown). Pressing one of these would otherwise trade the transport
+      // for itself — space would zoom, or leave full page.
+      b.addEventListener('click', () => b.blur());
+      return b;
+    };
+
+    // ── Zoom ─────────────────────────────────────────────────────────────────
+    let zoomPercent = abcZoomPercent();
+    /** Set once abcjs has loaded — before that there is nothing drawn to redraw. */
+    let redrawScore: (() => void) | null = null;
+
+    const zoomOutBtn = mkScoreToolBtn('−', t('fileViewer.abc.zoomOut'));
+    const zoomLabel = document.createElement('span');
+    zoomLabel.className = 'px-0.5 text-[10px] font-medium text-[#555] tabular-nums select-none';
+    const zoomInBtn = mkScoreToolBtn('+', t('fileViewer.abc.zoomIn'));
+
+    const updateZoomUi = () => {
+      zoomLabel.textContent = `${zoomPercent}%`;
+      zoomOutBtn.disabled = zoomPercent <= ABC_ZOOM_LEVELS[0]!;
+      zoomInBtn.disabled = zoomPercent >= ABC_ZOOM_LEVELS[ABC_ZOOM_LEVELS.length - 1]!;
+    };
+    const setZoomPercent = (next: number) => {
+      if (next === zoomPercent) return;
+      zoomPercent = next;
+      updateZoomUi();
+      // Stored like the other score preferences, and absent at its default —
+      // nothing to carry through Drive, nothing to explain to a later reader.
+      void mutate(st => {
+        if (next === DEFAULT_ZOOM_PERCENT) delete st.abcZoomPercent; else st.abcZoomPercent = next;
+      });
+      redrawScore?.();
+    };
+    zoomOutBtn.onclick = () => {
+      const prev = [...ABC_ZOOM_LEVELS].reverse().find(v => v < zoomPercent);
+      if (prev !== undefined) setZoomPercent(prev);
+    };
+    zoomInBtn.onclick = () => {
+      const next = ABC_ZOOM_LEVELS.find(v => v > zoomPercent);
+      if (next !== undefined) setZoomPercent(next);
+    };
+    updateZoomUi();
+
+    // ── Full page, the score alone ───────────────────────────────────────────
+    // The whole dialog can already be expanded (modal.tsx's own toggle), which
+    // is a different thing: that one gives the tabs, the transport and the
+    // version nav the room too. This gives the page to the music and nothing
+    // else — a stand you can read from across the room.
+    //
+    // The frame is MOVED into an overlay on document.body rather than being
+    // pinned where it stands: the dialog around it is `overflow-hidden`, and
+    // the modal's backdrop-filter makes it a containing block for fixed
+    // children, so a score fixed in place would be positioned and then clipped
+    // by the very window it is escaping.
+    const fullscreenBtn = mkScoreToolBtn(iconElement(ExpandIcon, 13), t('fileViewer.abc.fullscreen'));
+    scoreTools.append(zoomOutBtn, zoomLabel, zoomInBtn, fullscreenBtn);
+
+    // Where the frame goes back to. A placeholder in the flow, rather than a
+    // remembered sibling: the rows around it come and go as the file is edited.
+    const scoreAnchor = document.createComment('abc-score');
+    let unregisterFullscreen = () => {};
+
+    const exitFullscreen = () => {
+      if (!fullscreen) return;
+      unregisterFullscreen();
+      unregisterFullscreen = () => {};
+      scoreFrame.classList.remove('flex', 'flex-col', 'flex-1', 'min-h-0');
+      scoreScroll.classList.remove('flex-1', 'min-h-0');
+      scoreScroll.classList.add('rounded');
+      scoreAnchor.replaceWith(scoreFrame);
+      fullscreen.remove();
+      fullscreen = null;
+      capScore();
+      fullscreenBtn.replaceChildren(iconElement(ExpandIcon, 13));
+      fullscreenBtn.title = t('fileViewer.abc.fullscreen');
+    };
+
+    const enterFullscreen = () => {
+      if (fullscreen) return;
+      const overlay = document.createElement('div');
+      // The same white as the score's own box, so the page reads as one sheet
+      // rather than a picture of one.
+      overlay.className = 'fixed inset-0 z-[100] bg-white flex flex-col';
+      scoreFrame.replaceWith(scoreAnchor);
+      scoreFrame.classList.add('flex', 'flex-col', 'flex-1', 'min-h-0');
+      scoreScroll.classList.remove('rounded');
+      scoreScroll.classList.add('flex-1', 'min-h-0');
+      // Height comes from the flex column now; the modal-relative cap it was
+      // wearing would hold the score to half a dialog that is no longer there.
+      scoreScroll.style.maxHeight = '';
+      overlay.appendChild(scoreFrame);
+      document.body.appendChild(overlay);
+      fullscreen = overlay;
+      fullscreenBtn.replaceChildren(iconElement(CollapseIcon, 13));
+      fullscreenBtn.title = t('fileViewer.abc.fullscreenExit');
+      // Registered as the topmost overlay, which is what makes Escape and the
+      // Android back gesture leave full page rather than close the viewer
+      // underneath it. No re-render is needed on the way in or out: abcjs's
+      // responsive SVG is a viewBox, so it simply scales to whatever box it
+      // finds itself in.
+      unregisterFullscreen = registerOverlay(exitFullscreen);
+    };
+
+    fullscreenBtn.onclick = () => { if (fullscreen) exitFullscreen(); else enterFullscreen(); };
+    // The viewer can go while the score is still filling the page — the stack
+    // is popped from elsewhere by closeAllModals — and a frame left inside an
+    // overlay nothing points at any more would stay on screen for good.
+    releaseFullscreen = exitFullscreen;
 
     // ── Raw ABC text of the SELECTED tune only — editable and saved back to
     // the attachment when the caller passed a save callback (card view);
@@ -668,7 +861,10 @@ export function showPreviewModal(
       // it — inline style.display, not just the 'hidden' class: abcjs's own
       // resize handling can otherwise leave the notation SVG visibly reflowing.
       controls.style.display = mode === 'sheet' ? '' : 'none';
-      notation.style.display = mode === 'sheet' ? '' : 'none';
+      // The frame, not the score inside it: the zoom and full-page buttons
+      // float over the notation and would otherwise stay hanging over the ABC
+      // source, acting on a picture nobody is looking at.
+      scoreFrame.style.display = mode === 'sheet' ? '' : 'none';
       textarea.style.display = mode === 'text' ? 'block' : 'none';
       if (onSave) saveRow.style.display = mode === 'text' ? 'flex' : 'none';
       if (mode === 'sheet' && sheetNeedsRerender) {
@@ -913,6 +1109,11 @@ export function showPreviewModal(
           add_classes: true,
           paddingright: 0,
           paddingleft: 0,
+          // The zoom, and the only place it exists — see ABC_BASE_STAFF_WIDTH.
+          // A narrower layout in the same box is a bigger score with fewer
+          // bars to the line; read here rather than captured, so a re-draw
+          // always carries whatever the buttons have since been set to.
+          staffwidth: Math.round(ABC_BASE_STAFF_WIDTH * 100 / zoomPercent),
           format: { gchordfont: 'Verdana 12', annotationfont: 'Verdana 12' },
           // Clicking a note makes abcjs paint it as "selected", and it only
           // repaints on the NEXT click — so the clicked note stayed coloured
@@ -1023,18 +1224,45 @@ export function showPreviewModal(
       document.addEventListener('keydown', onKeyDown);
       releaseKeys = () => document.removeEventListener('keydown', onKeyDown);
 
-      // Changing instrument without losing your place. The audio cannot simply
-      // be re-voiced: abcjs pre-renders the whole performance into one buffer
-      // from the chosen soundfont, so a new instrument means a new buffer.
-      // What CAN be preserved is the position and whether it was playing —
-      // which is exactly the dance abcjs itself does in setWarp.
-      //
-      // `setTune` resets `isStarted` to false and the position to zero, so both
-      // have to be read BEFORE the re-render and put back after. Expect a short
-      // silence while the buffer is rebuilt; there is no way around that one.
-      reapplyAbcPrefs = () => {
+      /** Re-draws the score without losing your place in it. Nothing the
+       *  viewer can change about a score is changeable in place: abcjs
+       *  pre-renders the whole performance into one buffer from the chosen
+       *  soundfont, and the notation's layout belongs to the render options, so
+       *  a new instrument or a new size both mean a new drawing and a new
+       *  buffer. What CAN be preserved is the position and whether it was
+       *  playing — exactly the dance abcjs itself does in setWarp.
+       *
+       *  `setTune` resets `isStarted` to false and the position to zero, so
+       *  both are read BEFORE the re-draw and put back after. Expect a short
+       *  silence while the buffer is rebuilt; there is no way around that one. */
+      const redrawPreservingPlayback = (draw: () => void) => {
         const wasPlaying = !!synthControl?.isStarted;
         const at = synthControl?.percent ?? 0;
+        draw();
+        // Stopped at the very beginning is "nothing to put back", and saying so
+        // matters: seeking runs the cursor callback, which paints the note it
+        // lands on. Restoring a position nobody had left would mark the first
+        // note of a score that has never been played.
+        if (!wasPlaying && at === 0) return;
+        void primed.then(() => {
+          if (!synthControl) return;
+          try {
+            if (wasPlaying) void synthControl.play().then(() => synthControl.seek(at));
+            else synthControl.seek(at);
+          } catch { /* nothing primed to resume */ }
+        });
+      };
+
+      // Zooming. Deferred while the source is what is on screen, like every
+      // other re-draw here — the buttons are hidden with the notation, so this
+      // is only ever the safety net.
+      redrawScore = () => {
+        if (currentMode !== 'sheet') { sheetNeedsRerender = true; return; }
+        redrawPreservingPlayback(() => renderTune(currentIndex));
+      };
+
+      // Changing instrument without losing your place.
+      reapplyAbcPrefs = () => redrawPreservingPlayback(() => {
         selectedProgram = appState.value.abcInstrument;
         // A derived score may have just been rebuilt differently under us.
         const fresh = opts?.reloadEntry?.();
@@ -1049,14 +1277,7 @@ export function showPreviewModal(
         } else {
           renderTune(currentIndex);
         }
-        void primed.then(() => {
-          if (!synthControl) return;
-          try {
-            if (wasPlaying) void synthControl.play().then(() => synthControl.seek(at));
-            else synthControl.seek(at);
-          } catch { /* nothing primed to resume */ }
-        });
-      };
+      });
       // Only if the stave is the face we opened on. Drawing into a
       // display:none container is exactly what `sheetNeedsRerender` exists to
       // avoid (abcjs's resize handling makes the SVG reflow visibly when it
@@ -1204,6 +1425,7 @@ export function showPreviewModal(
     maxWidth: modalWidth(entry),
     onDismiss,
     expandable: isScore,
+    onExpandedChange: (expanded) => onModalExpanded?.(expanded),
     titleEdit: onRename
       ? {
           suffix: splitFileName(entry.name).ext,
