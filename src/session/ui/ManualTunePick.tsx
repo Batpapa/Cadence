@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { ComponentChild } from 'preact';
 import { t } from '../../services/i18nService';
 import { focusIfDesktop, sortByRelevance } from '../../utils';
 import { fetchTuneById, searchTunes, tuneTypeToMeter, type TuneResult } from '../../services/theSessionService';
@@ -7,15 +8,18 @@ import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../../services/tune
 import { PlusIcon } from '../../components/icons';
 import type { DetectionAlternate } from '../model';
 
-// ── "Another tune…": naming a detection by hand ───────────────────────────────
-// For when the right tune is not among the candidates the recogniser saw at
-// all (2026-09-13, user request). Looked up by name or TheSession id, the way
-// the new-card modal's tune field does — its own compact copy rather than that
-// field, which also parses id lists and drives an import.
+// ── Naming a tune by hand ─────────────────────────────────────────────────────
+// Two users of one field:
 //
-// "Add" only adds (user request): the tune joins the variants list and is
-// ticked from there like any other, so choosing it and naming it are never
-// the same gesture. The field folds away once it has added, to show the row.
+//   ManualTunePick    — "Another tune…" at the foot of the alternates picker,
+//                       for when the right tune is not among the candidates the
+//                       recogniser saw at all (2026-09-13, user request).
+//   AddDetection      — the identity line of a detection being added by hand
+//                       over a stretch the recogniser left empty (2026-09-21).
+//
+// They differ only in their chrome, so the lookup itself — debounce, local
+// index then remote, id resolution, and the guard that keeps a stale answer
+// from landing — lives once in TuneLookupField below and is wrapped twice.
 //
 // Needs the network to confirm, deliberately, as adding a card does: the
 // setting a detection points at is TheSession's MOST POPULAR one for the tune,
@@ -24,14 +28,30 @@ import type { DetectionAlternate } from '../model';
 // the catalogue: that setting was in the recognition index every time, so the
 // ABC preview and the key filter keep working on a hand-picked detection.
 //
-// The results list sits inside the modal rather than floating over it: this
-// already is a modal, and a portal over it is one more layer to get wrong on a
-// phone for no gain.
+// The results list sits inline rather than floating over its surroundings:
+// both callers already are a modal, and a portal over one is one more layer to
+// get wrong on a phone for no gain.
 
 interface Suggestion { id: number; name: string; type: string; via?: string }
 
-export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) => void }) {
-  const [open, setOpen] = useState(false);
+/** Searches TheSession by name or id and reports the tune currently resolved —
+ *  `null` whenever there is none, which is what a caller's commit control
+ *  watches to know whether it would do anything.
+ *
+ *  It reports rather than commits: adding to a list and starting a detection
+ *  are different acts, and neither is "having typed a name". */
+export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = true }: {
+  onResolved: (tune: DetectionAlternate | null) => void;
+  /** Rendered on the input's own row — the caller's commit button, where it
+   *  has one. */
+  trailing?: ComponentChild;
+  /** Enter, once a tune is resolved. */
+  onSubmit?: () => void;
+  /** Desktop only either way (focusIfDesktop), and off where typing is not
+   *  the first thing to do: in the add-detection editor the first act is to
+   *  LISTEN, and a focused field would swallow the space bar that plays. */
+  autoFocus?: boolean;
+}) {
   const [value, setValue] = useState('');
   const [status, setStatus] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -46,7 +66,25 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
   const begin = () => { const mine = ++seq.current; return () => mine === seq.current; };
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); seq.current++; }, []);
-  useEffect(() => { if (open && inputRef.current) focusIfDesktop(inputRef.current); }, [open]);
+  useEffect(() => { if (autoFocus && inputRef.current) focusIfDesktop(inputRef.current); }, []);
+
+  /** Told to the caller as a detection's identity, or `null` while there is
+   *  none. A tune with no setting has nothing a detection could point at, so
+   *  it never reaches here. */
+  const report = (tune: TuneResult | null) => {
+    setPending(tune);
+    onResolved(tune && {
+      tuneId: String(tune.id),
+      settingId: String(tune.settings[0]!.id),
+      // Lower case, as every detection name is (see Detection.displayName):
+      // the views re-case it from the card or the name index anyway.
+      displayName: tune.name.toLowerCase(),
+      dance: tune.type,
+      meter: tuneTypeToMeter(tune.type),
+      // Never shown — a hand-picked tune has no score, and says "manual" instead.
+      meanScore: 0,
+    });
+  };
 
   /** The same three answers the new-card modal gives: taken down, no such
    *  tune, or anything else — the network, most of the time — in its own words. */
@@ -57,14 +95,13 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
 
   const resolve = async (id: number) => {
     const fresh = begin();
-    setPending(null);
+    report(null);
     setStatus(t('theSession.status.fetching'));
     try {
       const tune = await fetchTuneById(id);
       if (!fresh()) return;
-      // A tune with no setting has nothing a detection could point at.
       if (tune.settings.length === 0) { setStatus(t('theSession.id.notFound')); return; }
-      setPending(tune);
+      report(tune);
       setStatus('');
     } catch (e) {
       if (fresh()) setStatus(describeError(e));
@@ -75,7 +112,7 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     seq.current++;
     setValue(val);
-    setPending(null);
+    report(null);
     setSuggestions([]);
     setStatus('');
     const q = val.trim();
@@ -113,42 +150,8 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
     void resolve(tune.id);
   };
 
-  const add = () => {
-    if (!pending) return;
-    onAdd({
-      tuneId: String(pending.id),
-      settingId: String(pending.settings[0]!.id),
-      // Lower case, as every detection name is (see Detection.displayName):
-      // the views re-case it from the card or the name index anyway.
-      displayName: pending.name.toLowerCase(),
-      dance: pending.type,
-      meter: tuneTypeToMeter(pending.type),
-      // Never shown — a hand-picked tune has no score, and says "manual" instead.
-      meanScore: 0,
-    });
-    seq.current++;
-    setValue('');
-    setPending(null);
-    setSuggestions([]);
-    setStatus('');
-    setOpen(false);
-  };
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        class="w-full flex items-center gap-3 px-5 py-2.5 text-left text-sm text-muted hover:bg-bg hover:text-primary transition-colors cursor-pointer border-t border-border/50"
-        onClick={() => setOpen(true)}
-      >
-        <span class="w-4 shrink-0 flex items-center justify-center"><PlusIcon size={11} /></span>
-        {t('sessions.alternates.other')}
-      </button>
-    );
-  }
-
   return (
-    <div class="px-5 py-3 space-y-2 border-t border-border/50">
+    <div class="space-y-2">
       <div class="flex gap-2">
         <input
           ref={inputRef}
@@ -157,11 +160,9 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
           placeholder={t('theSession.tune.placeholder')}
           value={value}
           onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && pending) { e.preventDefault(); add(); } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && pending) { e.preventDefault(); onSubmit?.(); } }}
         />
-        <button type="button" class="btn-primary text-xs shrink-0" disabled={!pending} onClick={add}>
-          {t('common.add')}
-        </button>
+        {trailing}
       </div>
 
       {pending && <p class="text-xs text-muted truncate">{pending.name} · {pending.type}</p>}
@@ -185,6 +186,50 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** "Another tune…" — the alternates picker's way in. "Add" only adds (user
+ *  request): the tune joins the variants list and is ticked from there like any
+ *  other, so choosing it and naming it are never the same gesture. The field
+ *  folds away once it has added, which both shows the new row and discards the
+ *  lookup's state with it. */
+export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) => void }) {
+  const [open, setOpen] = useState(false);
+  const [tune, setTune] = useState<DetectionAlternate | null>(null);
+
+  const add = () => {
+    if (!tune) return;
+    onAdd(tune);
+    setTune(null);
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        class="w-full flex items-center gap-3 px-5 py-2.5 text-left text-sm text-muted hover:bg-bg hover:text-primary transition-colors cursor-pointer border-t border-border/50"
+        onClick={() => setOpen(true)}
+      >
+        <span class="w-4 shrink-0 flex items-center justify-center"><PlusIcon size={11} /></span>
+        {t('sessions.alternates.other')}
+      </button>
+    );
+  }
+
+  return (
+    <div class="px-5 py-3 border-t border-border/50">
+      <TuneLookupField
+        onResolved={setTune}
+        onSubmit={add}
+        trailing={
+          <button type="button" class="btn-primary text-xs shrink-0" disabled={!tune} onClick={add}>
+            {t('common.add')}
+          </button>
+        }
+      />
     </div>
   );
 }

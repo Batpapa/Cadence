@@ -90,6 +90,28 @@ export interface Detection {
    *  choice. Never scored. Optional: absent on every detection that never had
    *  one, and on every session saved before it existed, which read as none. */
   manualAlternates?: DetectionAlternate[];
+  /** Added by hand from a finished analysis's summary, in a stretch the
+   *  recogniser left empty (2026-09-21) — see manualDetection() below.
+   *
+   *  It matters because NO WINDOW EVER OBSERVED THIS TUNE: there is no decoder
+   *  answer behind it, so `viterbiPick` is this detection's own identity for
+   *  want of anything truer, `alternates` and `evidence` are empty, and
+   *  `meanScore` is 0. Anything that presents those as results has to check
+   *  this flag first — the alternates picker does, and shows "manual" where it
+   *  would otherwise print a score and a "Viterbi" badge over the user's own
+   *  typing.
+   *
+   *  `confidence`/`bucket` are the exception, and deliberately so: they are
+   *  set to 1/'high', which is not a fabricated measurement but the honest
+   *  reading of the field — "how sure are we this tune was played here" — when
+   *  the answer comes from the person who played it. That is what keeps a
+   *  hand-added detection looking like a confirmed one (green everywhere)
+   *  rather than like a weak result (2026-09-21, user request).
+   *
+   *  Absent on every detection the recogniser produced, which is all of them
+   *  before this existed — no migration, the same convention as `finalized`
+   *  and `manualAlternates`. */
+  manual?: true;
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */
   liked: boolean;
@@ -388,6 +410,61 @@ export function withManualAlternate(ann: Detection, tune: DetectionAlternate): D
   return listed.some(o => o.tuneId === tune.tuneId)
     ? ann.manualAlternates
     : [...(ann.manualAlternates ?? []), tune];
+}
+
+// ── Adding a detection by hand ───────────────────────────────────────────────
+
+/** A tune the recogniser missed entirely, entered by hand over a stretch of a
+ *  finished analysis (2026-09-21, user request: "dans un trou sans détection,
+ *  il est possible qu'un morceau ait été joué mais pas détecté").
+ *
+ *  Born confirmed and finalized, because both are already true the moment it
+ *  exists: a person named it, and nothing will ever revise it — the decoder is
+ *  long done with this recording. That also makes it behave like any other
+ *  detection everywhere downstream with no special cases: review logging, the
+ *  attached clip, bound editing, deletion and the card's "detected in" panel
+ *  all read the same fields they always did.
+ *
+ *  `settingId` is TheSession's most popular setting for the tune and is not a
+ *  choice (user request) — see ManualTunePick, which resolves it. */
+export function manualDetection(
+  tune: DetectionAlternate,
+  start: number,
+  end: number,
+): Detection {
+  return {
+    id: crypto.randomUUID(),
+    tuneId: tune.tuneId,
+    settingId: tune.settingId,
+    displayName: tune.displayName,
+    dance: tune.dance,
+    meter: tune.meter,
+    start,
+    end,
+    // See Detection.manual for why these two are 1/'high' while meanScore is 0.
+    confidence: 1,
+    bucket: 'high',
+    meanScore: 0,
+    // Nothing observed it: no windows, no rivals, and no decoder answer to
+    // fall back on — `manual` is what tells the views to say so.
+    evidence: [],
+    alternates: [],
+    viterbiPick: { ...tune },
+    manual: true,
+    userConfirmed: true,
+    liked: false,
+    finalized: true,
+  };
+}
+
+/** Where `detection` goes in a list kept sorted by start time — the order every
+ *  engine hands its detections over in, and the one the summary's list, its
+ *  timeline and `withGaps` all assume. Ties go AFTER the detections that
+ *  already start at that instant, so a tune added flush against a neighbour
+ *  does not jump in front of it. */
+export function insertionIndex(anns: Detection[], start: number): number {
+  const at = anns.findIndex(a => a.start > start);
+  return at === -1 ? anns.length : at;
 }
 
 /** What removing a hand-named variant writes onto a detection (user request,
