@@ -6,6 +6,7 @@ import { saveSessionMeta, saveSessionAudio } from './db';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from './model';
+import { applyDetectionEvents } from './detectionState';
 import type { IndexProgress } from './recognition/indexStore';
 
 // ── Import session orchestrator ───────────────────────────────────────────────
@@ -277,38 +278,7 @@ export class ImportSession {
   }
 
   private applyEvents(events: DetectionEvent[]): void {
-    for (const ev of events) {
-      if (ev.type === 'retract') {
-        // A guess the user hasn't touched never got confirmed — remove it
-        // entirely, as if it had never been shown. Never erase an explicit
-        // user choice, even if the algorithm itself would retract it.
-        if (!this.annotations.get(ev.id)?.userConfirmed) this.annotations.delete(ev.id);
-        continue;
-      }
-      const existing = this.annotations.get(ev.detection.id);
-      if (existing?.userConfirmed) {
-        this.annotations.set(ev.detection.id, {
-          ...ev.detection,
-          tuneId: existing.tuneId,
-          settingId: existing.settingId,
-          displayName: existing.displayName,
-          dance: existing.dance,
-          meter: existing.meter,
-          userConfirmed: true,
-          liked: existing.liked,
-          manualAlternates: existing.manualAlternates,
-        });
-      } else {
-        // The aggregator never knows about the like marker or the tunes named
-        // by hand — carry them forward across updates like any other user
-        // choice. Hand-named tunes outlive an un-confirmation, hence this branch.
-        this.annotations.set(ev.detection.id, {
-          ...ev.detection,
-          liked: existing?.liked ?? false,
-          manualAlternates: existing?.manualAlternates,
-        });
-      }
-    }
+    applyDetectionEvents(this.annotations, events);
     this.cb.onDetections?.(events, this.getDetections());
   }
 

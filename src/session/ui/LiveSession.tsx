@@ -4,17 +4,11 @@ import type { AppContext } from '../../types';
 import { isTouchPrimaryDevice } from '../../utils';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
-import { collectChunks } from '../db';
-import fixWebmDuration from 'fix-webm-duration';
-import { RECORDER_TIMESLICE_MS } from '../sessionConfig';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
-import {
-  fmtLongTime, indexProgressText, TitleRow,
-  BoundControls, ClipControls, type ClipSessionRef,
-} from './sessionUiShared';
+import { fmtLongTime, indexProgressText, TitleRow } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { LiveBackupIndicator } from './LiveBackupIndicator';
 import { generatedSessionName } from '../sessionNaming';
@@ -158,27 +152,36 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     // eslint-disable-next-line
   }, [isTouchPrimary]);
 
-  const liveRef = (): ClipSessionRef => ({ id: live.sessionId, name: live.name, date: effectiveDate(), duration: live.getElapsedMs() / 1000 });
-  // Assembles a Blob from whatever chunks the recorder has written to
-  // IndexedDB so far (same technique recovery.ts trusts for a crashed
-  // session), lazily — only pays this cost when the user actually clicks a
-  // clip control, not on every feed render.
-  const getLiveAudioBlob = async (): Promise<Blob | undefined> => {
-    const chunks = await collectChunks(live.sessionId);
-    if (chunks.length === 0) return undefined;
-    const mimeType = live.mimeType || 'audio/webm';
-    let blob = new Blob(chunks, { type: mimeType });
-    if (mimeType.includes('webm')) {
-      try { blob = await fixWebmDuration(blob, chunks.length * RECORDER_TIMESLICE_MS, { logger: false }); }
-      catch { /* seeking degraded but audio intact */ }
-    }
-    return blob;
-  };
+  // ── Nothing here acts on the recording while it is being made ─────────────
+  // Adjusting a bound, cutting a clip, attaching one to a card and deleting a
+  // detection all left this screen on 2026-09-20, and none of them is coming
+  // back: they belong to the summary, which opens the moment the recording
+  // stops.
+  //
+  // The reason is the microphone. Being sure of a bound means LISTENING around
+  // it — and playing the session back into the room while the room is being
+  // recorded feeds the sound straight into the recogniser. There is no version
+  // of "listen to what you are recording" that does not corrupt the thing
+  // being recorded. And a bound nobody could check is a bound nobody should be
+  // cutting a clip on: the clip controls went with it, because a clip of an
+  // unverified span is a clip of the wrong thing.
+  //
+  // Logging a review stays. It claims only that the tune was played, which
+  // needs no listening back — see sessionStartMs below.
 
-  const cardOptsFor = (ann: Detection): DetectionCardOptions => ({
+  // One object for the whole feed, not one per detection: with the four
+  // recording-time controls gone, nothing left here differs from one card to
+  // the next.
+  const cardOpts: DetectionCardOptions = {
     ctx,
     onOpenCard,
     onCardAdded: () => setDetections(live.getDetections()),
+    // Logging a practice needs a date and a detection that has CLOSED — that
+    // last part is DetectionCard's own gate, and it is deliberately the only
+    // one. A tune still consolidating can be logged (2026-09-20, user
+    // request): by the time it closes it has been played, which is the whole
+    // of what a review entry claims, and waiting for the decoder to converge
+    // means the moment has passed.
     sessionStartMs: live.startedAt || undefined,
     getPinnedDeckIds: () => live.pinnedDeckIds,
     onToggleLike: (id) => { live.toggleLike(id); setDetections(live.getDetections()); },
@@ -186,17 +189,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     onAddManualAlternate: (id, tune) => { live.addManualAlternate(id, tune); setDetections(live.getDetections()); },
     onRemoveManualAlternate: (id, tuneId) => { live.removeManualAlternate(id, tuneId); setDetections(live.getDetections()); },
     getLatestDetection: (id) => live.getDetections().find(a => a.id === id),
-    // Clip extraction only once finalized (2026-08-21) — before that the
-    // tune's own bounds/existence could still be revised.
-    extraControls: ann.finalized ? () => (
-      <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
-        {/* No previewBound here — a live recording has no seekable file to
-           preview from (raw mic capture), unlike summary/import. */}
-        <BoundControls ann={ann} getDuration={() => live.getElapsedMs() / 1000} refresh={() => setDetections([...live.getDetections()])} />
-        <ClipControls ann={ann} session={liveRef()} audioAvailable={true} getAudio={getLiveAudioBlob} ctx={ctx} onAttached={() => setDetections([...live.getDetections()])} />
-      </div>
-    ) : undefined,
-  });
+  };
 
   useAutoFollowScroll(feedAnchorRef, [annotations]);
 
@@ -264,7 +257,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}
 
       <div ref={feedAnchorRef} class="mt-3 space-y-2">
-        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOptsFor(ann)} />)}
+        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
       </div>
 
       <p class="text-xs text-dim mt-3 text-center min-h-[1rem]">{stateZoneText}</p>

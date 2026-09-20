@@ -16,12 +16,17 @@ import {
 } from '../audio/localWaveform';
 
 // ── Bound editor ─────────────────────────────────────────────────────────────
-// Replaces the two ±5 s steppers that used to sit on every detection card
-// (BoundControls in sessionUiShared.tsx, still used by the live and import
-// feeds where there is no finished recording to read). Those asked the user to
-// correct a bound whose estimate is off by about a second, in steps of five,
-// with a three-second preview played blind and each press written to disk with
-// no way back.
+// Replaced the two ±5 s steppers that used to sit on every detection card
+// (sessionUiShared's BoundControls, now gone). Those asked the user to correct
+// a bound whose estimate is off by about a second, in steps of five, with a
+// three-second preview played blind and each press written to disk with no way
+// back.
+//
+// It serves all three screens — the finished summary, a live recording and a
+// file import — from the same `getAudio` blob, which is why the recording is
+// asked for rather than passed: a live one is assembled from its chunks on
+// demand. Offered on a FINALIZED detection only, everywhere, since until then
+// the decoder can still move the very bounds being edited.
 //
 // Three ideas hold this screen up.
 //
@@ -159,18 +164,18 @@ interface BoundEditorProps {
    *  drawn and offered as snap marks. */
   anns: Detection[];
   duration: number;
-  /** The recording, read once when the editor opens. Absent when the analysis
-   *  was opened on a device that does not hold it. */
+  /** The recording, read once when the editor opens — for the waveform AND
+   *  for listening, which is why it is a blob and not also a URL: a live
+   *  recording's is assembled from its chunks on demand, and assembling it
+   *  twice for one screen would be a second pass over the whole thing.
+   *  Resolves to undefined when the device does not hold the recording. */
   getAudio: () => Promise<Blob | undefined>;
-  /** Object URL of the same recording, for listening. Null goes with the same
-   *  case as above. */
-  audioUrl: string | null;
   /** Fired on every change, so the modal's Save button can read the draft
    *  without owning it. */
   onDraft: (start: number, end: number) => void;
 }
 
-export function BoundEditor({ ann, anns, duration, getAudio, audioUrl, onDraft }: BoundEditorProps) {
+export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEditorProps) {
   const origin = useRef({ start: ann.start, end: ann.end ?? duration }).current;
   /** The whole recording — what a bound may reach. */
   const reach: [number, number] = [0, duration];
@@ -187,6 +192,15 @@ export function BoundEditor({ ann, anns, duration, getAudio, audioUrl, onDraft }
    *  SessionSummary's own `bump`. */
   const [, setWaveTick] = useState(0);
   const [troughs, setTroughs] = useState<number[]>([]);
+  /** Made from the same blob the envelope is read out of, so the recording is
+   *  fetched once. Null until it arrives — and for good on a device that does
+   *  not hold it, which is what greys out every listening control. */
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  /** The device does not hold this recording — settled only once the lookup
+   *  has come back, so the explanation does not flash while it is still being
+   *  read (a live recording's blob is assembled from its chunks and takes a
+   *  moment). */
+  const [audioMissing, setAudioMissing] = useState(false);
 
   const bufRef = useRef<PeakBuffer | null>(null);
   const blobRef = useRef<Blob | null>(null);
@@ -270,9 +284,13 @@ export function BoundEditor({ ann, anns, duration, getAudio, audioUrl, onDraft }
 
   useEffect(() => {
     let cancelled = false;
+    let url: string | null = null;
     void getAudio().then(blob => {
-      if (cancelled || !blob) return;
+      if (cancelled) return;
+      if (!blob) { setAudioMissing(true); return; }
       blobRef.current = blob;
+      url = URL.createObjectURL(blob);
+      setAudioUrl(url);
       bufRef.current = makePeakBuffer(0, duration);
       ensureDecoded(...loupeDecodeWindow(origin.start, reach));
       setWaveTick(x => x + 1);
@@ -281,6 +299,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, audioUrl, onDraft }
       cancelled = true;
       for (const r of readsRef.current) r.cancel();
       readsRef.current = [];
+      if (url) URL.revokeObjectURL(url);
     };
     // eslint-disable-next-line
   }, []);
@@ -684,7 +703,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, audioUrl, onDraft }
               {t('sessions.bounds.tooLong')}
             </span>
           )}
-          {!audioUrl && !noWave && (
+          {audioMissing && !noWave && (
             <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[11px] text-dim px-3 pointer-events-none">
               {t('sessions.bounds.noAudio')}
             </span>
@@ -847,7 +866,6 @@ export function showBoundEditor(opts: {
   anns: Detection[];
   duration: number;
   getAudio: () => Promise<Blob | undefined>;
-  audioUrl: string | null;
   onSave: (start: number, end: number) => void;
 }): void {
   const body = document.createElement('div');
@@ -860,7 +878,6 @@ export function showBoundEditor(opts: {
       anns={opts.anns}
       duration={opts.duration}
       getAudio={opts.getAudio}
-      audioUrl={opts.audioUrl}
       onDraft={(start, end) => { draft = { start, end }; }}
     />,
     body,

@@ -5,10 +5,7 @@ import type { ImportSession, ImportProgress } from '../importSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { useAutoFollowScroll } from './domInterop';
-import {
-  fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta,
-  BoundControls, ClipControls, type ClipSessionRef,
-} from './sessionUiShared';
+import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { importPlaybackWarn } from './sessionStore';
 import { canPlayFile } from '../audio/sources';
@@ -54,50 +51,14 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   });
   const [progress, setProgress] = useState<{ analyzedS: number; totalS: number; etaS: number | null }>({ analyzedS: 0, totalS: 0, etaS: null });
   const [annotations, setDetections] = useState<Detection[]>(() => (imp.getPhase() === 'analyzing' ? imp.getDetections() : []));
-  const [playingId, setPlayingId] = useState<string | null>(null);
 
-
-  // ── Slice playback straight from the file, while analysis runs.
-  // One <audio> for the whole screen, whose SOURCE can change once: a video's
-  // audio is extracted before the analysis starts, and that extract is what
-  // can be played — the video itself usually cannot be (QuickTime, AVI). The
-  // element is kept and its src swapped, so nothing else here has to know.
-  const [audio] = useState(() => new Audio(URL.createObjectURL(imp.playbackFile)));
-  useEffect(() => {
-    const onTimeUpdate = () => { if (playingIdRef.current !== null && audio.currentTime >= sliceEndRef.current) audio.pause(); };
-    const onPause = () => { if (playingIdRef.current !== null) { playingIdRef.current = null; setPlayingId(null); } };
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('pause', onPause);
-    return () => {
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('pause', onPause);
-      audio.pause();
-      // `audio.src`, not the URL captured at mount: a swap revoked that one
-      // already, and this has to release whichever is current.
-      URL.revokeObjectURL(audio.src);
-    };
-    // eslint-disable-next-line
-  }, []);
-  // Refs mirroring playingId/sliceEnd for the audio event listeners above
-  // (registered once on mount — they need the LATEST value, not a stale
-  // closure over the mount-time one).
-  const playingIdRef = useRef<string | null>(null);
-  const sliceEndRef = useRef(0);
-  playingIdRef.current = playingId;
-
-  const playSlice = (ann: Detection) => {
-    if (playingId === ann.id) { audio.pause(); return; }
-    sliceEndRef.current = ann.end ?? Number.POSITIVE_INFINITY;
-    audio.currentTime = ann.start;
-    void audio.play().catch(() => { playingIdRef.current = null; setPlayingId(null); });
-    setPlayingId(ann.id);
-  };
-
-  // Latest known total duration, for the clip-filename fallback only — a
-  // finalized detection (the only ones offered clip extraction below)
-  // always has a concrete `end`, so this is never actually load-bearing, just
-  // satisfying ClipSessionRef's shape.
-  const impRef = (): ClipSessionRef => ({ id: imp.sessionId, name: imp.name || imp.defaultName(), date: imp.dateOverride, duration: progress.totalS });
+  // There was an <audio> here, playing a detection's slice straight from the
+  // file while the analysis ran. It went on 2026-09-20 with the rest of the
+  // acting-on-a-detection controls — see the note above cardOpts.
+  //
+  // `importPlaybackWarn` outlived it on purpose: whether the browser can open
+  // this file at all is still worth saying early, because the summary is about
+  // to need it.
 
   // Analysis emits a window roughly every 60ms — both feeds below would
   // otherwise re-render this screen a dozen-plus times a second. The session
@@ -122,14 +83,10 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       // nothing else is happening yet. Its cost follows the size of the file,
       // so on a long video it is worth a number.
       onExtractProgress: (ratio) => setStatusText(t('sessions.extractingAudio') + ` ${Math.round(ratio * 100)}%`),
-      // The video's audio, extracted: the one thing on this screen that can
-      // actually be played. Swapping the src also settles the warning below —
-      // an m4a or a WAV plays where the video it came from did not.
-      onPlaybackFile: (file) => {
-        URL.revokeObjectURL(audio.src);
-        audio.src = URL.createObjectURL(file);
-        importPlaybackWarn.value = !canPlayFile(file);
-      },
+      // A video's audio, extracted. Nothing on this screen plays it any more,
+      // but it settles the warning below — an m4a or a WAV opens where the
+      // video it came from did not, and the summary is where that will matter.
+      onPlaybackFile: (file) => { importPlaybackWarn.value = !canPlayFile(file); },
       onProgress,
       onDetections: (_events, all) => onDetections(all),
       onError: (message) => setStatusText(`⚠ ${message}`),
@@ -142,10 +99,26 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     // eslint-disable-next-line
   }, []);
 
-  const cardOptsFor = (ann: Detection): DetectionCardOptions => ({
+  // ── An analysis in progress is watched, not worked on ─────────────────────
+  // Listening to a detection, adjusting its bounds, cutting a clip from it,
+  // attaching that clip to a card and deleting it all left this screen on
+  // 2026-09-20, together with the same five on the live one. They live in the
+  // summary, which opens as soon as the analysis is done.
+  //
+  // The rule came from live recording, where it is a physical fact: playing
+  // the session back into the room while the room is being recorded feeds the
+  // sound into the recogniser. It holds here for a plainer reason — these
+  // actions all rest on bounds the user has had no chance to check, and a clip
+  // of an unchecked span is a clip of the wrong thing. One rule for both
+  // screens beats two screens that each allow something different.
+  //
+  // What stays is everything that describes rather than acts: the tune's name
+  // and score, its sheet preview, adding it to the library, the heart, the
+  // alternatives picker — and logging a practice, which claims only that the
+  // tune was played and needs no listening back.
+
+  const cardOpts: DetectionCardOptions = {
     ctx,
-    onPlay: importPlaybackWarn.value ? undefined : playSlice,
-    playingId,
     onOpenCard,
     onCardAdded: () => setDetections(imp.getDetections()),
     getPinnedDeckIds: () => imp.pinnedDeckIds,
@@ -154,26 +127,15 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     onAddManualAlternate: (id, tune) => { imp.addManualAlternate(id, tune); setDetections(imp.getDetections()); },
     onRemoveManualAlternate: (id, tuneId) => { imp.removeManualAlternate(id, tuneId); setDetections(imp.getDetections()); },
     getLatestDetection: (id) => imp.getDetections().find(a => a.id === id),
-    // Clip extraction only once finalized: the full file is already sitting
-    // right there in imp.file from the very first instant, unlike a live
-    // recording — no reason to make the user wait for the whole import to
-    // finish just to grab a proven-stable tune's clip. Provisional
-    // (not-yet-finalized) annotations still don't get the buttons, since
-    // their bounds/existence could still change.
-    extraControls: ann.finalized ? () => (
-      <div class="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
-        <BoundControls
-          ann={ann}
-          getDuration={() => progress.totalS}
-          refresh={() => setDetections([...imp.getDetections()])}
-          previewBound={(tSec) => { audio.currentTime = Math.max(0, tSec); void audio.play().catch(() => { /* not loaded yet */ }); setTimeout(() => audio.pause(), 3000); }}
-        />
-        <ClipControls ann={ann} session={impRef()} audioAvailable={true} getAudio={async () => imp.file} ctx={ctx} onAttached={() => setDetections([...imp.getDetections()])} />
-      </div>
-    ) : undefined,
-  });
+    // Logging a practice needs a date and a detection that has CLOSED — that
+    // last part is DetectionCard's own gate, and it is deliberately the only
+    // one: a tune still consolidating can be logged (2026-09-20, user
+    // request). The date is the one the file's own modification time guessed,
+    // editable in the row above.
+    sessionStartMs: imp.dateOverride ? Date.parse(imp.dateOverride) : undefined,
+  };
 
-  useAutoFollowScroll(feedAnchorRef, [annotations, playingId]);
+  useAutoFollowScroll(feedAnchorRef, [annotations]);
 
   const pct = progress.totalS > 0 ? Math.min(100, (progress.analyzedS / progress.totalS) * 100) : 0;
 
@@ -217,7 +179,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       {importPlaybackWarn.value && <p class="text-xs text-amber-500 mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
 
       <div ref={feedAnchorRef} class="mt-3 space-y-2">
-        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOptsFor(ann)} />)}
+        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
       </div>
     </>
   );

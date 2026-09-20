@@ -20,7 +20,7 @@ import { detectAudioFile } from '../audio/clipExtract';
 import { audioExtension } from '../../services/zip';
 import {
   fmtLongTime, TitleRow, DateRow,
-  ClipControls,
+  ClipControls, recutAttachedClip,
 } from './sessionUiShared';
 import { showBoundEditor } from './BoundEditor';
 import { lastImportDump, lastLiveDump } from './sessionStore';
@@ -589,12 +589,21 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         anns: session.annotations,
         duration: session.duration,
         getAudio: () => loadSessionAudio(session.id),
-        audioUrl,
         onSave: (start, end) => {
+          const previous = { start: ann.start, end: ann.end };
           ann.start = start;
           ann.end = end;
           persist();
           bump();
+          // A clip already on the card is re-cut to the new span, silently
+          // (2026-09-20, user request): it is keyed by where it starts, so
+          // without this it would quietly stop belonging to this detection.
+          // In the background — the extraction takes a moment and the bounds
+          // are already saved, so there is nothing to wait for.
+          void loadSessionAudio(session.id)
+            .then(blob => blob && recutAttachedClip(ctx, session, ann, previous, blob))
+            .then(changed => { if (changed) bump(); })
+            .catch(() => { /* the clip keeps its old cut; nothing is lost */ });
         },
       });
     },
