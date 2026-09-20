@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { formatBytes } from '../../utils';
-import { TrashIcon, ResetIcon, CloudUpIcon } from '../../components/icons';
+import { TrashIcon, ResetIcon, CloudUpIcon, PlusIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, alertModal } from '../../components/modal';
 import {
@@ -12,7 +12,7 @@ import {
 import { isDriveConnected } from '../../services/driveService';
 import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
 import { TUNE_ANALYSER_MODULE_KEY } from '../model';
-import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from '../model';
+import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields, insertionIndex } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { showShareSessionModal } from './ShareSessionModal';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
@@ -23,6 +23,7 @@ import {
   ClipControls, recutAttachedClip,
 } from './sessionUiShared';
 import { showBoundEditor } from './BoundEditor';
+import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import { appState } from '../../store';
 import { headPosition, withGaps } from './timelineModel';
@@ -534,6 +535,28 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     : lastLiveDump.value?.sessionId === session.id ? lastLiveDump.value
     : null;
 
+  /** Fills a hole the recogniser left: a tune played here and never
+   *  recognised (2026-09-21, user request). The hole seeds the bounds, so the
+   *  common case is to listen, name and add without touching them.
+   *
+   *  Inserted at its place in playing order rather than appended: the list,
+   *  the timeline and withGaps all read `annotations` as sorted by start, and
+   *  the merge/delete controls address a detection by its index in it. */
+  const addDetectionIn = (from: number, len: number) => {
+    audioRef.current?.pause();
+    showAddDetection({
+      seed: { start: from, end: from + len },
+      anns: session.annotations,
+      duration: session.duration,
+      getAudio: () => loadSessionAudio(session.id),
+      onAdd: (detection) => {
+        session.annotations.splice(insertionIndex(session.annotations, detection.start), 0, detection);
+        persist();
+        bump();
+      },
+    });
+  };
+
   const cardOptsFor = (ann: Detection, i: number): DetectionCardOptions => ({
     ctx,
     onPlay: audioUrl ? playSlice : undefined,
@@ -582,7 +605,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // The summary's own player is stopped on the way in: the editor listens
     // through an element of its own, and two players on the same recording
     // would talk over each other from behind a modal.
-    onEditBounds: () => {
+    // Only while the recording is on this device (2026-09-21, user request):
+    // a bound is placed by ear, so with nothing to listen to there is no
+    // adjusting to be done — the range goes back to being plain text, and the
+    // player area above already says where the recording is. Same reason the
+    // gap rows stop offering to add a detection.
+    onEditBounds: !audioUrl ? undefined : () => {
       audioRef.current?.pause();
       showBoundEditor({
         ann,
@@ -869,6 +897,14 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
               // What the timeline shows as a hole and the list used to swallow
               // whole: read end to end, the cards otherwise describe one
               // unbroken concert.
+              //
+              // And, since 2026-09-21, the way to fill one: a tune can have
+              // been played here and never recognised. The row is the control
+              // because it is the only thing on the screen that both names the
+              // gap and sits in it — a button elsewhere would have to say
+              // which hole it meant. The whole row is the target, which on a
+              // phone is a comfortable strip, and the ⊕ is what says so
+              // without a hover anyone can have (see hoverOnlyWhenSupported).
               <div
                 key={`gap-${item.from}`}
                 data-gap-from={item.from}
@@ -879,7 +915,18 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
                   lit.gapFrom === item.from ? 'text-accent' : 'text-dim'}`}
               >
                 <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
-                <span class="shrink-0 tabular-nums">{t('sessions.gap', { d: fmtLongTime(item.len) })}</span>
+                {audioUrl ? (
+                  <button
+                    class="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                    title={t('sessions.addDetection.hint')}
+                    onClick={() => addDetectionIn(item.from, item.len)}
+                  >
+                    <PlusIcon size={9} />
+                    {t('sessions.gap', { d: fmtLongTime(item.len) })}
+                  </button>
+                ) : (
+                  <span class="shrink-0 tabular-nums">{t('sessions.gap', { d: fmtLongTime(item.len) })}</span>
+                )}
                 <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
               </div>
             ) : (

@@ -1,4 +1,5 @@
 import { render } from 'preact';
+import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
@@ -173,9 +174,14 @@ interface BoundEditorProps {
   /** Fired on every change, so the modal's Save button can read the draft
    *  without owning it. */
   onDraft: (start: number, end: number) => void;
+  /** Replaces the name/dance/meter line at the top. For a detection being
+   *  ADDED, whose identity is not settled yet and is chosen right there — see
+   *  AddDetection.tsx. Handed the live draft, because the length belongs on
+   *  that line and belongs to the bounds rather than to the tune. */
+  identitySlot?: (draft: { start: number; end: number }) => ComponentChild;
 }
 
-export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEditorProps) {
+export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySlot }: BoundEditorProps) {
   const origin = useRef({ start: ann.start, end: ann.end ?? duration }).current;
   /** The whole recording — what a bound may reach. */
   const reach: [number, number] = [0, duration];
@@ -222,6 +228,16 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
   };
   const headRef = useRef(origin.start);
 
+  /** The recording is not on this device, so every control here is inert.
+   *
+   *  Not a degraded mode but a closed door (2026-09-21, user request): a bound
+   *  is placed BY EAR, and without the audio there is no cue to place it
+   *  against — dragging a handle over a blank strip would only let the user
+   *  make the bounds worse while feeling productive. The summary already keeps
+   *  this screen shut in that case, and says why on the page; this is the
+   *  backstop for the recording being forgotten while the editor is open. */
+  const locked = audioMissing;
+
   const active = bound === 'start' ? draft.start : draft.end;
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -235,8 +251,11 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
 
   const marks = snapMarks(anns, ann.id, draft, bound, duration, troughs);
 
-  /** Moves the active bound, snapping unless the caller is being exact. */
+  /** Moves the active bound, snapping unless the caller is being exact. The
+   *  one route every keyboard, button and jog movement takes — so the lock
+   *  below only has to be stated here and at the three pointer entries. */
   const moveTo = (v: number, { snap = true } = {}) => {
+    if (locked) return;
     const target = snap && magnet ? (findSnap(v, marks)?.t ?? v) : v;
     setDraft(clampBound(bound, target, draft, reach));
   };
@@ -247,6 +266,20 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
   // than run into a wall, so the thirty seconds of margin travel with the
   // bounds and a bound may reach anywhere in the recording.
   const win = contextWindow(draft.start, draft.end, duration);
+  /** The same window, reachable from the frame loop below.
+   *
+   *  That loop is registered once and runs until the editor closes, so it
+   *  holds the FIRST render's closures for good — which is why everything it
+   *  reads across frames is a ref (activeRef, loopRef, headRef). `win` was
+   *  missed: once a bound had moved, the strip's span changed but the loop
+   *  kept mapping the play head through the span the editor opened with, so
+   *  the head was painted at the wrong place and a press on the strip appeared
+   *  to land somewhere else (2026-09-21, user report). The press itself was
+   *  always right — `ctxTimeAt` reads `win` from a fresh handler — it was the
+   *  mark that lied, and only while the sound was running, which is exactly
+   *  when a press on the strip leaves it running. */
+  const winRef = useRef(win);
+  winRef.current = win;
 
   // ── Reading the recording ──────────────────────────────────────────────────
   // The peak envelope is allocated for the WHOLE recording — at one value per
@@ -380,7 +413,9 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
     const h = headRef.current;
     const ctxBox = ctxBoxRef.current, ctxHead = ctxHeadRef.current;
     if (ctxBox && ctxHead) {
-      const p = (h - win[0]) / (win[1] - win[0]);
+      // Through the ref, never the closure: see winRef.
+      const [t0, t1] = winRef.current;
+      const p = (h - t0) / (t1 - t0);
       ctxHead.style.left = `${p * ctxBox.clientWidth}px`;
       ctxHead.style.opacity = p < 0 || p > 1 ? '0' : '.9';
     }
@@ -536,12 +571,16 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
     // eslint-disable-next-line
   });
 
+  // Re-registered on every render, deliberately, like the keyboard handler
+  // below: `drawContext` reads the draft, the window and the peaks it has so
+  // far, so a listener registered once would redraw a rotated phone with
+  // whatever the editor opened on. Adding and removing one listener per render
+  // is cheaper than the redraw it guards.
   useEffect(() => {
     const onResize = () => { drawContext(); drawLoupe(); paintHeads(); };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-    // eslint-disable-next-line
-  }, []);
+  });
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
   // The arrows are the exact route: a quarter second, two seconds with Shift.
@@ -577,6 +616,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
   };
 
   const onHandleDown = (which: 'start' | 'end') => (e: PointerEvent) => {
+    if (locked) return;
     e.preventDefault();
     e.stopPropagation();
     setBound(which);
@@ -602,12 +642,14 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
    *  to move a bound: the handles do that, and a strip where every touch moved
    *  something would make listening around impossible. */
   const onCtxDown = (e: PointerEvent) => {
+    if (locked) return;
     if (loop) setLoop(false);
     playFrom(ctxTimeAt(e.clientX));
   };
 
   const loupeDragRef = useRef<{ x: number; from: number; moved: boolean } | null>(null);
   const onLoupeDown = (e: PointerEvent) => {
+    if (locked) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     loupeDragRef.current = { x: e.clientX, from: active, moved: false };
@@ -674,12 +716,14 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
 
   return (
     <div class="space-y-4">
-      <div>
-        <p class="text-sm font-semibold text-primary capitalize truncate">{ann.displayName}</p>
-        <p class="text-xs text-muted">
-          {ann.dance} · {ann.meter} · {t('sessions.bounds.length', { d: fmtShort(draft.end - draft.start) })}
-        </p>
-      </div>
+      {identitySlot ? identitySlot(draft) : (
+        <div>
+          <p class="text-sm font-semibold text-primary capitalize truncate">{ann.displayName}</p>
+          <p class="text-xs text-muted">
+            {ann.dance} · {ann.meter} · {t('sessions.bounds.length', { d: fmtShort(draft.end - draft.start) })}
+          </p>
+        </div>
+      )}
 
       <div class="grid grid-cols-2 gap-2">
         {boundBtn('start', draft.start, dStart)}
@@ -694,7 +738,8 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
         </div>
         <div
           ref={ctxBoxRef}
-          class="relative h-[84px] rounded-lg overflow-hidden bg-elevated touch-none select-none cursor-pointer"
+          class={`relative h-[84px] rounded-lg overflow-hidden bg-elevated touch-none select-none ${
+            locked ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
           onPointerDown={onCtxDown}
         >
           <canvas ref={ctxCvRef} class="block w-full h-full" />
@@ -712,7 +757,8 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
             <div
               key={which}
               ref={handleRefs[which]}
-              class="absolute inset-y-0 w-9 -ml-[18px] flex justify-center z-[3] cursor-ew-resize"
+              class={`absolute inset-y-0 w-9 -ml-[18px] flex justify-center z-[3] ${
+                locked ? 'cursor-default' : 'cursor-ew-resize'}`}
               style={{ left: '0px' }}
               onPointerDown={onHandleDown(which)}
               title={t(which === 'start' ? 'sessions.bounds.start' : 'sessions.bounds.end')}
@@ -742,7 +788,8 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
         </div>
         <div
           ref={loupeBoxRef}
-          class="relative h-[96px] rounded-lg overflow-hidden bg-elevated touch-none select-none cursor-ew-resize"
+          class={`relative h-[96px] rounded-lg overflow-hidden bg-elevated touch-none select-none ${
+            locked ? 'cursor-default opacity-60' : 'cursor-ew-resize'}`}
           onPointerDown={onLoupeDown}
           onPointerMove={onLoupeMove}
           onPointerUp={onLoupeUp}
@@ -805,14 +852,16 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft }: BoundEdi
             third copy of the same number only made the dialog taller. */}
         <div class="flex items-stretch rounded-lg border border-border overflow-hidden ml-auto">
           <button
-            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer border-r border-border"
+            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer border-r border-border disabled:opacity-40 disabled:cursor-default"
+            disabled={locked}
             title={t('sessions.bounds.keyboard')}
             onClick={() => { moveTo(active - NUDGE_S, { snap: false }); rearmListening(); }}
           >
             {t('sessions.bounds.nudgeBack')}
           </button>
           <button
-            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer"
+            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+            disabled={locked}
             title={t('sessions.bounds.keyboard')}
             onClick={() => { moveTo(active + NUDGE_S, { snap: false }); rearmListening(); }}
           >

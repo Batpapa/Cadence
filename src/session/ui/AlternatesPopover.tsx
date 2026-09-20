@@ -102,9 +102,21 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
   const viterbiPick = viterbiPickOf(ann);
   const options = optionsFor(ann, viterbiPick);
   /** Everything the recogniser actually scored. An option outside it can only
-   *  have been named by hand. */
-  const scored = [viterbiPick, ...(ann.alternates ?? [])];
+   *  have been named by hand.
+   *
+   *  A detection ADDED by hand was never scored at all (Detection.manual): no
+   *  window observed it, so `viterbiPick` holds its own identity for want of
+   *  anything truer and must not be dressed up as the decoder's answer — it
+   *  would put a "Viterbi" badge and a 0 % score on what the user typed
+   *  themselves. Below, the list then reads exactly as it should: every line
+   *  says "manual", because every line is. */
+  const scored = ann.manual ? [] : [viterbiPick, ...(ann.alternates ?? [])];
   const isManual = (opt: DetectionAlternate) => !scored.some(o => o.tuneId === opt.tuneId);
+  /** Un-ticking hands a detection back to the decoder — which only means
+   *  something when a decoder had an opinion. On a hand-added one there is
+   *  nothing to fall back to, so the ticked line stays ticked and the way to
+   *  change the tune is to pick another (or name one). */
+  const canUntick = !ann.manual;
 
   /** Stores the tune, and shows it here at once: a finished session has no
    *  engine to poll, and a live one would only bring it back on the next tick. */
@@ -127,11 +139,13 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
           entry again undoes it. Neither was written anywhere before 2026-09-09,
           and a user reported being unable to find how to confirm at all. */}
       <p class="text-xs text-dim text-center py-2 px-5 border-b border-border/50">
-        {t(canChoose ? 'sessions.alternates.howToPick' : 'sessions.alternates.notFinalizedYet')}
+        {t(!canChoose ? 'sessions.alternates.notFinalizedYet'
+          : canUntick ? 'sessions.alternates.howToPick'
+          : 'sessions.alternates.howToPickManual')}
       </p>
       <div class="divide-y divide-border/50">
         {options.map(opt => {
-          const isViterbi = opt.tuneId === viterbiPick.tuneId;
+          const isViterbi = !ann.manual && opt.tuneId === viterbiPick.tuneId;
           // Selection is the user's verdict, not the algorithm's: until they
           // have confirmed something, NOTHING is ticked here — the card is
           // showing a proposal, and a tick beside it would read as an answer
@@ -150,8 +164,8 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
               tabIndex={canChoose ? 0 : undefined}
               class={`w-full flex items-center gap-3 px-5 py-2.5 transition-colors ${
                 isSelected ? 'bg-accent/10' : canChoose ? 'hover:bg-bg cursor-pointer' : ''} ${!canChoose ? 'opacity-70' : ''}`}
-              onClick={canChoose ? () => onSelect(isSelected ? null : opt) : undefined}
-              onKeyDown={canChoose ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(isSelected ? null : opt); } } : undefined}
+              onClick={canChoose ? () => { if (!isSelected || canUntick) onSelect(isSelected ? null : opt); } : undefined}
+              onKeyDown={canChoose ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isSelected || canUntick) onSelect(isSelected ? null : opt); } } : undefined}
             >
               <span class="w-4 shrink-0 text-accent text-sm leading-none">{isSelected ? '✓' : ''}</span>
               <AbcPreview settingId={opt.settingId} displayName={opt.displayName} size={11} />
