@@ -788,8 +788,6 @@
   "fileViewer.abc.deleteVersion.message": "Supprimer la version {n} sur {total} de cette partition ? Cette action est sans retour.",
   "fileViewer.abc.deleteVersion.confirm": "Supprimer",
   "fileViewer.abc.openInAbcTools": "Ouvrir dans ABC Transcription Tools",
-  "fileViewer.abc.zoomIn": "Agrandir la partition",
-  "fileViewer.abc.zoomOut": "Réduire la partition",
   "fileViewer.abc.fullscreen": "Partition en plein écran",
   "fileViewer.abc.fullscreenExit": "Quitter le plein écran",
   "fileViewer.abc.instrument": "Instrument",
