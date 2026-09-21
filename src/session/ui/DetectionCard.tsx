@@ -222,8 +222,14 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // Known, and the same already happens when a bound is edited by hand.
   const showReviewLog = known && opts.sessionStartMs !== undefined && ann.end !== null;
 
+  // Read once, shown in up to three places (the two halves of the badge and
+  // its aria-label) — and the dynamic key is built in exactly one spot, which
+  // is what i18nKeys.test.ts counts.
+  const bucketWord = t(`sessions.confidence.${ann.bucket}`);
+  const confidencePct = `${Math.round(ann.confidence * 100)}%`;
+
   return (
-    <div class={`p-3 rounded-lg border bg-bg space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
+    <div class={`detection-card p-3 rounded-lg border bg-bg space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
       <div class="flex items-center gap-2">
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
@@ -271,6 +277,12 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
           title={opts.onSelectAlternate
             ? t(ann.userConfirmed ? 'sessions.alternates.confirmed' : 'sessions.alternates.trigger')
             : undefined}
+          // Spelled out whatever the card's width has hidden: `display:none`
+          // takes the qualifier out of the accessibility tree too, leaving a
+          // bare number whose colour is the only thing saying how to read it —
+          // which says nothing to a screen reader, nor to anyone who cannot
+          // tell amber from green.
+          aria-label={ann.userConfirmed ? t('sessions.alternates.confirmed') : `${bucketWord} ${confidencePct}`}
           onClick={opts.onSelectAlternate ? (e) => {
             e.stopPropagation();
             showAlternatesPopover(
@@ -282,7 +294,21 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             );
           } : undefined}
         >
-          <span>{ann.userConfirmed ? '✓' : `${t(`sessions.confidence.${ann.bucket}`)} ${Math.round(ann.confidence * 100)}%`}</span>
+          {/* Three widths, one badge. The word and the number drop out in turn
+              as the card narrows (see .detection-card in styles.css) so the
+              tune's NAME keeps the room — it is the thing being read, and the
+              badge's colour already carries the verdict on its own. Confirmed,
+              there is only ever the check. */}
+          {ann.userConfirmed ? <span>✓</span> : (
+            <>
+              {/* Siblings of the chevron rather than a wrapper around them: the
+                  button's own flex gap then simply skips the word once the
+                  container query hides it, instead of spacing an empty box.
+                  The percentage never hides — see .detection-card. */}
+              <span class="detection-conf-word">{bucketWord}</span>
+              <span class="tabular-nums">{confidencePct}</span>
+            </>
+          )}
           {opts.onSelectAlternate && (
             <span class="flex items-center opacity-70"><ChevronDownIcon size={9} /></span>
           )}
