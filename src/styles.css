@@ -335,6 +335,31 @@
   .stats-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
+/* Detection card — the confidence badge gives up its width to the tune name
+   as the card narrows (2026-09-21, user request: "on sacrifie trop le titre").
+   Under 400 px the qualifier goes and the number stays: "élevée 87 %" → "87 %".
+
+   The number always stays, settled by the user after a first pass dropped it
+   too below a second breakpoint. A bare coloured pill reads as decoration; the
+   percentage is the one part that says something on its own, and it is also
+   the short part — the word is what costs the title its room.
+
+   A CONTAINER query, not a media query. The app runs under a CSS zoom on
+   <html> — 125 % on a desktop by default, and the user can set anything from
+   25 % to 500 % (zoomService) — so the viewport's pixels and the card's are
+   not the same pixels: at 125 % a 600 px window lays the card out in 480. A
+   media query would read 600 there and keep the full badge on a card that has
+   no room for it, which is the very bug this fixes, only triggered by zoom
+   instead of by screen size.
+
+   The 400 is therefore the card's own INNER width (a container query measures
+   the content box), which is the room the title actually has. That runs
+   roughly 40-60 px narrower than the screen once the page's padding and the
+   card's own are taken out, so it bites on a slightly wider screen than
+   400 px. One number to shift if it should bite later. */
+.detection-card { container-type: inline-size; }
+@container (max-width: 399.98px) { .detection-conf-word { display: none; } }
+
 /* Drag & drop indicators */
 .drop-before { box-shadow: inset 0 2px 0 0 var(--color-accent); }
 .drop-after  { box-shadow: inset 0 -2px 0 0 var(--color-accent); }
