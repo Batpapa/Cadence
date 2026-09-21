@@ -48,19 +48,26 @@ export const MIN_SPAN_S = 1;
  *  pixel), and a three-minute window is still only 18 000 floats. */
 export const PEAK_BUCKET_S = 0.01;
 
-/** Somewhere the active bound can click onto.
+/** Somewhere the active bound can click onto: a neighbouring detection's
+ *  bound, or this detection's other one. The label is built by the component,
+ *  which is the only part that may speak to the user.
  *
- *  `kind` decides how it is drawn and what it is called; the label itself is
- *  built by the component, which is the only part that may speak to the user. */
+ *  Silences were marks too until 2026-09-21 — troughs read off the envelope,
+ *  at 45 % of the window's median level for at least 0.4 s. Dropped at the
+ *  user's request: "je trouve ça plus juste de les lire à l'œil avec la forme
+ *  de l'onde". The waveform already shows a real pause plainly, and a mark
+ *  placed at the MIDDLE of one was answering a question nobody asked — where a
+ *  bound belongs is the edge of the silence, and which edge depends on which
+ *  bound. Do not reintroduce them without that answer. */
 export interface SnapMark {
   t: number;
-  /** A neighbouring detection's bound, or this detection's other one. */
-  kind: 'bound' | 'trough';
-  /** The neighbour's name — absent for this detection's own other bound and
-   *  for a silence. */
+  /** The neighbour's name — absent for this detection's own other bound. */
   name?: string;
-  /** Which end of that detection the mark is. Absent for a silence. */
-  edge?: 'start' | 'end';
+  /** Which end of that detection the mark is. */
+  edge: 'start' | 'end';
+  /** The detection the mark belongs to — absent for this detection's own
+   *  other bound. What `findTwin` matches a linked neighbour by. */
+  id?: string;
 }
 
 /** What the editor shows and what its bounds may reach, fixed at open time.
@@ -129,27 +136,91 @@ export function clampBound(
  *  forbidden by this: 22 of 37 joins on a real session overlap, and a mark is
  *  an offer, not a rail (see timelineModel.ts's own note).
  *
- *  `troughs` are the silences read off the waveform — absent when the
- *  recording is not on this device, which is why they arrive as an argument
- *  rather than being computed here. */
+ *  A bound that is LINKED to ours is left out: it is travelling with us, so
+ *  offering it would be offering to snap to where we already are. */
 export function snapMarks(
   anns: Detection[],
   editedId: string,
   draft: { start: number; end: number },
   activeBound: 'start' | 'end',
   duration: number,
-  troughs: number[],
+  linkedIds: ReadonlySet<string> = new Set(),
 ): SnapMark[] {
   const out: SnapMark[] = [];
   for (const a of anns) {
-    if (a.id === editedId) continue;
-    out.push({ t: a.start, kind: 'bound', name: a.displayName, edge: 'start' });
-    out.push({ t: a.end ?? duration, kind: 'bound', name: a.displayName, edge: 'end' });
+    if (a.id === editedId || linkedIds.has(a.id)) continue;
+    out.push({ t: a.start, name: a.displayName, edge: 'start', id: a.id });
+    out.push({ t: a.end ?? duration, name: a.displayName, edge: 'end', id: a.id });
   }
   // This detection's OTHER bound, so a very short tune can be closed exactly.
-  out.push({ t: activeBound === 'start' ? draft.end : draft.start, kind: 'bound', edge: activeBound === 'start' ? 'end' : 'start' });
-  for (const t of troughs) out.push({ t, kind: 'trough' });
+  out.push({ t: activeBound === 'start' ? draft.end : draft.start, edge: activeBound === 'start' ? 'end' : 'start' });
   return out;
+}
+
+// ── Joins that move as one ───────────────────────────────────────────────────
+
+/** How close two bounds have to be to count as THE SAME instant. A join is
+ *  written by one gesture — a snap, or a previous linked move — so the two
+ *  numbers are either equal or they are not; this only absorbs the float
+ *  arithmetic on the way. */
+const TWIN_EPSILON_S = 0.001;
+
+/** A neighbouring bound that sits exactly on one of ours. */
+export interface BoundTwin {
+  id: string;
+  name: string;
+  /** Which of the NEIGHBOUR's bounds it is: the previous tune's `end` sits on
+   *  our `start`, the next tune's `start` sits on our `end`. */
+  edge: 'start' | 'end';
+}
+
+/** Keeps a linked move from turning the neighbour inside out.
+ *
+ *  `clampBound` already stops THIS detection's two bounds from crossing, but a
+ *  linked bound drags a neighbour's along with it, and that neighbour has an
+ *  far side of its own: pulling our start back past the previous tune's start
+ *  would leave it ending before it began. So each linked bound also answers to
+ *  the far side of the tune it is joined to.
+ *
+ *  `startTwin` is the tune whose END follows our start, `endTwin` the one whose
+ *  START follows our end — the only two shapes a join has. */
+export function clampLinked(
+  pair: { start: number; end: number },
+  startTwin: Detection | null,
+  endTwin: Detection | null,
+  duration: number,
+): { start: number; end: number } {
+  let { start, end } = pair;
+  if (startTwin) start = Math.max(start, startTwin.start + MIN_SPAN_S);
+  if (endTwin) end = Math.min(end, (endTwin.end ?? duration) - MIN_SPAN_S);
+  // Our own two bounds come first: a twin must never be the reason they cross.
+  if (end - start < MIN_SPAN_S) return pair;
+  return { start, end };
+}
+
+/** The neighbour whose bound sits on `t`, or null.
+ *
+ *  This is what makes a join a single frontier rather than two numbers that
+ *  happen to agree: when two detections touch, moving one side alone does not
+ *  correct anything — it opens a hole or an overlap exactly as wide as the
+ *  move (user request, 2026-09-21).
+ *
+ *  `edge` is the neighbour's side, so ours is the opposite one: pass 'end' to
+ *  find what our `start` is flush against. Ties are impossible in practice and
+ *  resolved by order if they happen. */
+export function findTwin(
+  anns: Detection[],
+  editedId: string,
+  t: number,
+  edge: 'start' | 'end',
+  duration: number,
+): BoundTwin | null {
+  for (const a of anns) {
+    if (a.id === editedId) continue;
+    const at = edge === 'start' ? a.start : (a.end ?? duration);
+    if (Math.abs(at - t) <= TWIN_EPSILON_S) return { id: a.id, name: a.displayName, edge };
+  }
+  return null;
 }
 
 /** The mark `t` would click onto, or null. Nearest wins; ties go to the first
@@ -162,66 +233,4 @@ export function findSnap(t: number, marks: SnapMark[], tolerance = SNAP_TOLERANC
     if (d < bestD) { best = m; bestD = d; }
   }
   return best;
-}
-
-/** Longest run of near-silence to still count as bound slop rather than a
- *  place. Below this, a snap mark would land on the gap between two notes. */
-const TROUGH_MIN_S = 0.4;
-/** Share of the window's typical level under which the sound counts as absent. */
-const TROUGH_RATIO = 0.45;
-/** Half-width of the box the level is smoothed over before troughs are read,
- *  so the gaps BETWEEN notes do not each become a silence. */
-const TROUGH_SMOOTH_S = 0.3;
-/** A recording chopped into more holes than this is not telling us anything —
- *  offering hundreds of marks would make the snap a nuisance, not a help. */
-const TROUGH_MAX = 60;
-
-/** The silences in a decoded window, as instants to snap to.
- *
- *  Read off the peak envelope rather than the samples: a real pause between
- *  two sets shows there plainly, and that is the one boundary the ear and the
- *  eye agree on. Between two tunes OF a set there is no silence at all — the
- *  waveform says nothing there, which is exactly why the editor also draws
- *  the recogniser's own observation windows.
- *
- *  `from` is the window's start in session time; `peaks` holds one value per
- *  PEAK_BUCKET_S from there. Only the decoded head of the array is read, so
- *  this can be re-run while the rest is still arriving. */
-export function findTroughs(peaks: Float32Array, from: number, decodedCount = peaks.length): number[] {
-  const n = Math.min(decodedCount, peaks.length);
-  if (n === 0) return [];
-  const half = Math.round(TROUGH_SMOOTH_S / PEAK_BUCKET_S);
-
-  // Box-smoothed level, via a running sum — the naive version is O(n·half),
-  // which on a ten-minute window is 36 million additions for a strip nobody
-  // is looking at yet.
-  const smooth = new Float32Array(n);
-  let sum = 0;
-  for (let i = 0; i < Math.min(n, half + 1); i++) sum += peaks[i]!;
-  for (let i = 0; i < n; i++) {
-    const lo = i - half, hi = i + half;
-    smooth[i] = sum / (Math.min(n - 1, hi) - Math.max(0, lo) + 1);
-    if (hi + 1 < n) sum += peaks[hi + 1]!;
-    if (lo >= 0) sum -= peaks[lo]!;
-  }
-
-  // The window's own typical level, so a quiet recording is read on its own
-  // terms instead of against an absolute that would call all of it silence.
-  const sorted = Float32Array.from(smooth).sort();
-  const median = sorted[Math.floor(n / 2)] ?? 0;
-  if (median <= 0) return [];
-  const floor = median * TROUGH_RATIO;
-  const minRun = Math.round(TROUGH_MIN_S / PEAK_BUCKET_S);
-
-  const out: number[] = [];
-  let i = 0;
-  while (i < n && out.length < TROUGH_MAX) {
-    if (smooth[i]! < floor) {
-      let j = i;
-      while (j < n && smooth[j]! < floor) j++;
-      if (j - i >= minRun) out.push(from + ((i + j) / 2) * PEAK_BUCKET_S);
-      i = j;
-    } else i++;
-  }
-  return out;
 }

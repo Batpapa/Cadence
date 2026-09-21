@@ -22,7 +22,7 @@ import {
   fmtLongTime, TitleRow, DateRow,
   ClipControls, recutAttachedClip,
 } from './sessionUiShared';
-import { showBoundEditor } from './BoundEditor';
+import { showBoundEditor, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import { appState } from '../../store';
@@ -535,6 +535,41 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     : lastLiveDump.value?.sessionId === session.id ? lastLiveDump.value
     : null;
 
+  /** Writes the neighbour bounds that travelled with an edited one — a join
+   *  two detections share moves on both sides at once (2026-09-21). Returns
+   *  what each one looked like before, which is what re-cutting its clip needs.
+   *
+   *  A no-op edit is skipped rather than recorded: linking is ON by default, so
+   *  every save on a joined detection reports twins, and most of those saves
+   *  never moved the join at all. */
+  const applyTwinEdits = (twins: TwinEdit[]): Array<{ ann: Detection; previous: { start: number; end: number | null } }> => {
+    const moved: Array<{ ann: Detection; previous: { start: number; end: number | null } }> = [];
+    for (const edit of twins) {
+      const target = session.annotations.find(a => a.id === edit.id);
+      if (!target) continue;
+      const current = edit.edge === 'start' ? target.start : (target.end ?? session.duration);
+      if (Math.abs(current - edit.t) < 0.001) continue;
+      const previous = { start: target.start, end: target.end };
+      if (edit.edge === 'start') target.start = edit.t; else target.end = edit.t;
+      moved.push({ ann: target, previous });
+    }
+    return moved;
+  };
+
+  /** Re-cuts the attached clip of every detection whose bounds just moved, in
+   *  the background — the bounds are already saved, so there is nothing to
+   *  wait for. Same reasoning as the edited detection's own re-cut. */
+  const recutAll = async (moved: Array<{ ann: Detection; previous: { start: number; end: number | null } }>) => {
+    if (moved.length === 0) return;
+    const blob = await loadSessionAudio(session.id).catch(() => undefined);
+    if (!blob) return;
+    let changed = false;
+    for (const { ann: target, previous } of moved) {
+      changed = await recutAttachedClip(ctx, session, target, previous, blob).catch(() => false) || changed;
+    }
+    if (changed) bump();
+  };
+
   /** Fills a hole the recogniser left: a tune played here and never
    *  recognised (2026-09-21, user request). The hole seeds the bounds, so the
    *  common case is to listen, name and add without touching them.
@@ -549,10 +584,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       anns: session.annotations,
       duration: session.duration,
       getAudio: () => loadSessionAudio(session.id),
-      onAdd: (detection) => {
+      onAdd: (detection, twins) => {
         session.annotations.splice(insertionIndex(session.annotations, detection.start), 0, detection);
+        const moved = applyTwinEdits(twins);
         persist();
         bump();
+        void recutAll(moved);
       },
     });
   };
@@ -617,12 +654,17 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         anns: session.annotations,
         duration: session.duration,
         getAudio: () => loadSessionAudio(session.id),
-        onSave: (start, end) => {
+        onSave: (edit) => {
           const previous = { start: ann.start, end: ann.end };
-          ann.start = start;
-          ann.end = end;
+          ann.start = edit.start;
+          ann.end = edit.end;
+          // The neighbours a join carried along, written in the same breath —
+          // a frontier that moved on one side only is exactly the hole or the
+          // overlap the link exists to prevent.
+          const moved = applyTwinEdits(edit.twins);
           persist();
           bump();
+          void recutAll(moved);
           // A clip already on the card is re-cut to the new span, silently
           // (2026-09-20, user request): it is keyed by where it starts, so
           // without this it would quietly stop belonging to this detection.
