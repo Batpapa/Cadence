@@ -59,27 +59,18 @@ function abcTempoPercent(): number {
   return Math.max(MIN_TEMPO_PERCENT, Math.min(MAX_TEMPO_PERCENT, Math.round(stored)));
 }
 
-/** How big the notation is DRAWN, as a percentage — nothing to do with the
- *  app's own zoom (zoomService), which scales the whole interface.
- *
- *  abcjs lays a score out to a fixed staff width and then scales that drawing
- *  to whatever box it is put in (`responsive: 'resize'` — the SVG is pure
- *  viewBox). So zooming in means laying out NARROWER: the box magnifies the
- *  result, and the music re-wraps to fewer bars per line instead of running off
- *  the side. That is the whole reason this is a re-draw rather than a CSS
- *  scale, which would have bought horizontal scrolling at every step.
- *
- *  740 is abcjs's own default staff width, which is what makes 100% mean
- *  "exactly as before this setting existed". */
-const ABC_BASE_STAFF_WIDTH = 740;
-const DEFAULT_ZOOM_PERCENT = 100;
-const ABC_ZOOM_LEVELS = [50, 67, 80, 100, 125, 150, 200, 250, 300];
-
-function abcZoomPercent(): number {
-  const stored = appState.value.abcZoomPercent;
-  if (typeof stored !== 'number' || !ABC_ZOOM_LEVELS.includes(stored)) return DEFAULT_ZOOM_PERCENT;
-  return stored;
-}
+// A score ZOOM lived here until 2026-09-21: nine levels from 50 % to 300 %,
+// stored on the User, applied by laying the score out to a narrower
+// `staffwidth` so the box magnified the result and the music re-wrapped
+// instead of scrolling sideways.
+//
+// Taken out at the user's request — "sur téléphone c'est bof, on retravaillera
+// dessus plus tard". The full-page toggle below stays; it is the half that
+// worked. Worth knowing before rebuilding it: on a phone in portrait the score
+// is bounded by WIDTH, so magnifying it does not fill the height, it just
+// re-wraps to fewer bars — which is why the two buttons never felt like they
+// did much there. A future version probably has to let the score overflow and
+// scroll, not re-wrap.
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
@@ -627,42 +618,6 @@ export function showPreviewModal(
       return b;
     };
 
-    // ── Zoom ─────────────────────────────────────────────────────────────────
-    let zoomPercent = abcZoomPercent();
-    /** Set once abcjs has loaded — before that there is nothing drawn to redraw. */
-    let redrawScore: (() => void) | null = null;
-
-    const zoomOutBtn = mkScoreToolBtn('−', t('fileViewer.abc.zoomOut'));
-    const zoomLabel = document.createElement('span');
-    zoomLabel.className = 'px-0.5 text-[10px] font-medium text-[#555] tabular-nums select-none';
-    const zoomInBtn = mkScoreToolBtn('+', t('fileViewer.abc.zoomIn'));
-
-    const updateZoomUi = () => {
-      zoomLabel.textContent = `${zoomPercent}%`;
-      zoomOutBtn.disabled = zoomPercent <= ABC_ZOOM_LEVELS[0]!;
-      zoomInBtn.disabled = zoomPercent >= ABC_ZOOM_LEVELS[ABC_ZOOM_LEVELS.length - 1]!;
-    };
-    const setZoomPercent = (next: number) => {
-      if (next === zoomPercent) return;
-      zoomPercent = next;
-      updateZoomUi();
-      // Stored like the other score preferences, and absent at its default —
-      // nothing to carry through Drive, nothing to explain to a later reader.
-      void mutate(st => {
-        if (next === DEFAULT_ZOOM_PERCENT) delete st.abcZoomPercent; else st.abcZoomPercent = next;
-      });
-      redrawScore?.();
-    };
-    zoomOutBtn.onclick = () => {
-      const prev = [...ABC_ZOOM_LEVELS].reverse().find(v => v < zoomPercent);
-      if (prev !== undefined) setZoomPercent(prev);
-    };
-    zoomInBtn.onclick = () => {
-      const next = ABC_ZOOM_LEVELS.find(v => v > zoomPercent);
-      if (next !== undefined) setZoomPercent(next);
-    };
-    updateZoomUi();
-
     // ── Full page, the score alone ───────────────────────────────────────────
     // The whole dialog can already be expanded (modal.tsx's own toggle), which
     // is a different thing: that one gives the tabs, the transport and the
@@ -675,7 +630,7 @@ export function showPreviewModal(
     // children, so a score fixed in place would be positioned and then clipped
     // by the very window it is escaping.
     const fullscreenBtn = mkScoreToolBtn(iconElement(ExpandIcon, 13), t('fileViewer.abc.fullscreen'));
-    scoreTools.append(zoomOutBtn, zoomLabel, zoomInBtn, fullscreenBtn);
+    scoreTools.append(fullscreenBtn);
 
     // Where the frame goes back to. A placeholder in the flow, rather than a
     // remembered sibling: the rows around it come and go as the file is edited.
@@ -1109,11 +1064,9 @@ export function showPreviewModal(
           add_classes: true,
           paddingright: 0,
           paddingleft: 0,
-          // The zoom, and the only place it exists — see ABC_BASE_STAFF_WIDTH.
-          // A narrower layout in the same box is a bigger score with fewer
-          // bars to the line; read here rather than captured, so a re-draw
-          // always carries whatever the buttons have since been set to.
-          staffwidth: Math.round(ABC_BASE_STAFF_WIDTH * 100 / zoomPercent),
+          // No `staffwidth`: abcjs lays out at its own default (740) and the
+          // box scales the result. It was the score zoom's one lever, and went
+          // with it — see the note at the top of this file.
           format: { gchordfont: 'Verdana 12', annotationfont: 'Verdana 12' },
           // Clicking a note makes abcjs paint it as "selected", and it only
           // repaints on the NEXT click — so the clicked note stayed coloured
@@ -1251,14 +1204,6 @@ export function showPreviewModal(
             else synthControl.seek(at);
           } catch { /* nothing primed to resume */ }
         });
-      };
-
-      // Zooming. Deferred while the source is what is on screen, like every
-      // other re-draw here — the buttons are hidden with the notation, so this
-      // is only ever the safety net.
-      redrawScore = () => {
-        if (currentMode !== 'sheet') { sheetNeedsRerender = true; return; }
-        redrawPreservingPlayback(() => renderTune(currentIndex));
       };
 
       // Changing instrument without losing your place.
