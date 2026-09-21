@@ -3,7 +3,7 @@ import { useRef, useState } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
-import { BoundEditor } from './BoundEditor';
+import { BoundEditor, type BoundEdit, type TwinEdit } from './BoundEditor';
 import { TuneLookupField } from './ManualTunePick';
 import { fmtTime } from './sessionUiShared';
 import { manualDetection } from '../model';
@@ -60,7 +60,7 @@ function AddDetectionBody({ seed, anns, duration, getAudio, onDraft, onTune }: {
   anns: Detection[];
   duration: number;
   getAudio: () => Promise<Blob | undefined>;
-  onDraft: (start: number, end: number) => void;
+  onDraft: (edit: BoundEdit) => void;
   onTune: (tune: DetectionAlternate | null) => void;
 }) {
   const [tune, setTune] = useState<DetectionAlternate | null>(null);
@@ -75,6 +75,7 @@ function AddDetectionBody({ seed, anns, duration, getAudio, onDraft, onTune }: {
       duration={duration}
       getAudio={getAudio}
       onDraft={onDraft}
+      linkByDefault={false}
       identitySlot={(draft) => (
         <div class="space-y-1.5">
           {/* Not focused on opening: the first thing to do here is listen. */}
@@ -103,11 +104,11 @@ export function showAddDetection(opts: {
   anns: Detection[];
   duration: number;
   getAudio: () => Promise<Blob | undefined>;
-  onAdd: (detection: Detection) => void;
+  onAdd: (detection: Detection, twins: TwinEdit[]) => void;
 }): void {
   const body = document.createElement('div');
   const cleanup = () => render(null, body);
-  let draft = { ...opts.seed };
+  let draft: BoundEdit = { ...opts.seed, twins: [] };
   let tune: DetectionAlternate | null = null;
   // A signal because the footer buttons are declared outside the body's own
   // Preact tree and have no other way to hear that a tune has been resolved
@@ -121,7 +122,7 @@ export function showAddDetection(opts: {
       anns={opts.anns}
       duration={opts.duration}
       getAudio={opts.getAudio}
-      onDraft={(start, end) => { draft = { start, end }; }}
+      onDraft={(edit) => { draft = edit; }}
       onTune={(next) => { tune = next; nothingToAdd.value = next === null; }}
     />,
     body,
@@ -137,7 +138,7 @@ export function showAddDetection(opts: {
         if (!tune) return;
         closeModal();
         cleanup();
-        opts.onAdd(manualDetection(tune, draft.start, draft.end));
+        opts.onAdd(manualDetection(tune, draft.start, draft.end), draft.twins);
       },
     },
   ], { maxWidth: '34rem', onDismiss: cleanup });

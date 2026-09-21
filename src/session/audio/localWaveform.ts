@@ -64,14 +64,11 @@ export function levelOver(buf: PeakBuffer, a: number, b: number): number {
   return buf.max > 0 ? m / buf.max : 0;
 }
 
-/** The widest unbroken stretch that has been read, as `[startBucket, endBucket)`
- *  — what the silence detector may look at. It reads a run of quiet as a
- *  place, so handing it a hole between two reads would invent one. */
-export function largestCovered(buf: PeakBuffer): [number, number] | null {
-  let best: [number, number] | null = null;
-  for (const r of buf.covered) if (!best || r[1] - r[0] > best[1] - best[0]) best = r;
-  return best;
-}
+// largestCovered lived here until 2026-09-21: the widest unbroken stretch
+// read so far, which was what the silence detector was allowed to look at (a
+// hole between two reads would have been read as a pause). The silence snap
+// marks are gone at the user's request — "plus juste de les lire à l'œil avec
+// la forme de l'onde" — and this went with its only caller.
 
 function addCover(buf: PeakBuffer, lo: number, hi: number): void {
   if (hi <= lo) return;

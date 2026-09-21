@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import type { Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
-  snapMarks, findSnap, findTroughs, missingRanges,
-  CTX_PAD_S, MIN_SPAN_S, PEAK_BUCKET_S,
+  snapMarks, findSnap, findTwin, clampLinked, missingRanges,
+  CTX_PAD_S, MIN_SPAN_S,
 } from './boundEditorModel';
 
 function det(id: string, start: number, end: number | null, name = id): Detection {
@@ -84,82 +84,99 @@ describe('snapMarks / findSnap', () => {
   const draft = { start: 58, end: 114 };
 
   it('offers the neighbours’ bounds and this detection’s other one', () => {
-    const marks = snapMarks(anns, 'b', draft, 'start', 200, []);
-    expect(marks.filter(m => m.kind === 'bound').map(m => m.t).sort((x, y) => x - y))
+    const marks = snapMarks(anns, 'b', draft, 'start', 200);
+    expect(marks.map(m => m.t).sort((x, y) => x - y))
       .toEqual([10, 62, 114, 128, 177]);
     // The edited detection's own start is not a mark for itself.
     expect(marks.some(m => m.t === 58)).toBe(false);
   });
 
   it('reads an open detection’s end as the session’s end', () => {
-    const marks = snapMarks([det('a', 10, null)], 'b', draft, 'start', 200, []);
+    const marks = snapMarks([det('a', 10, null)], 'b', draft, 'start', 200);
     expect(marks.some(m => m.t === 200 && m.edge === 'end')).toBe(true);
   });
 
-  it('includes the silences it is given', () => {
-    const marks = snapMarks(anns, 'b', draft, 'start', 200, [120.5]);
-    expect(marks.find(m => m.kind === 'trough')?.t).toBe(120.5);
+  // A linked bound travels with ours, so offering it would be offering to
+  // snap to where we already are.
+  it('leaves out a bound that is linked to ours', () => {
+    const marks = snapMarks(anns, 'b', draft, 'start', 200, new Set(['a']));
+    expect(marks.some(m => m.id === 'a')).toBe(false);
+    expect(marks.some(m => m.id === 'c')).toBe(true);
   });
 
   it('snaps to the nearest mark within tolerance, and to nothing outside it', () => {
-    const marks = snapMarks(anns, 'b', draft, 'start', 200, []);
+    const marks = snapMarks(anns, 'b', draft, 'start', 200);
     expect(findSnap(62.2, marks)?.t).toBe(62);
     expect(findSnap(62.5, marks)).toBeNull();
   });
 
   it('prefers the nearer of two close marks', () => {
-    const marks = snapMarks([det('a', 10, 62), det('d', 62.2, 90)], 'b', draft, 'start', 200, []);
+    const marks = snapMarks([det('a', 10, 62), det('d', 62.2, 90)], 'b', draft, 'start', 200);
     expect(findSnap(62.15, marks)?.t).toBe(62.2);
     expect(findSnap(62.05, marks)?.t).toBe(62);
   });
 });
 
-describe('findTroughs', () => {
-  /** A window of `spans` — each [seconds, level] — as a peak array. */
-  const build = (spans: Array<[number, number]>) => {
-    const total = spans.reduce((s, [d]) => s + d, 0);
-    const out = new Float32Array(Math.round(total / PEAK_BUCKET_S));
-    let i = 0;
-    for (const [d, level] of spans) {
-      const n = Math.round(d / PEAK_BUCKET_S);
-      for (let k = 0; k < n && i < out.length; k++, i++) out[i] = level;
-    }
-    return out;
-  };
+describe('findTwin', () => {
+  // A set played straight through: the kesh runs into morrison's with no
+  // silence, so their join is one instant written twice.
+  const anns = [det('a', 10, 62, 'the kesh'), det('b', 62, 114, "morrison's"), det('c', 128, 177, 'silver spear')];
 
-  it('finds a real pause and places it at its middle', () => {
-    // 10 s of music, 4 s of near-silence, 10 s of music.
-    const peaks = build([[10, .8], [4, .02], [10, .8]]);
-    const troughs = findTroughs(peaks, 100);
-    expect(troughs).toHaveLength(1);
-    expect(troughs[0]!).toBeCloseTo(112, 0);
+  it('finds the previous tune sitting on our start', () => {
+    expect(findTwin(anns, 'b', 62, 'end', 200)).toEqual({ id: 'a', name: 'the kesh', edge: 'end' });
   });
 
-  it('ignores the gaps between notes', () => {
-    // A note every 200 ms with a 60 ms tail of quiet: far too short to be a place.
-    const spans: Array<[number, number]> = [];
-    for (let k = 0; k < 60; k++) { spans.push([.14, .8]); spans.push([.06, .02]); }
-    expect(findTroughs(build(spans), 0)).toEqual([]);
+  it('finds the next tune sitting on our end', () => {
+    expect(findTwin(anns, 'c', 128, 'end', 200)).toBeNull();
+    expect(findTwin(anns, 'b', 114, 'start', 200)).toBeNull();
+    expect(findTwin([det('a', 10, 62), det('b', 62, 114)], 'a', 62, 'start', 200))
+      .toEqual({ id: 'b', name: 'b', edge: 'start' });
   });
 
-  it('reads a quiet recording on its own terms, not against an absolute', () => {
-    // The same shape a hundred times quieter still has its pause found.
-    const peaks = build([[10, .008], [4, .0002], [10, .008]]);
-    expect(findTroughs(peaks, 0)).toHaveLength(1);
+  it('says nothing when the bounds merely overlap, which is the norm', () => {
+    expect(findTwin([det('a', 10, 65), det('b', 62, 114)], 'b', 62, 'end', 200)).toBeNull();
   });
 
-  it('only reads the decoded head of the array', () => {
-    const peaks = new Float32Array(Math.round(30 / PEAK_BUCKET_S));
-    const filled = build([[10, .8], [4, .02], [6, .8]]);
-    peaks.set(filled, 0);
-    // The tail is still zeroes — reading it would invent a silence at the end.
-    const troughs = findTroughs(peaks, 0, filled.length);
-    expect(troughs).toHaveLength(1);
-    expect(troughs[0]!).toBeCloseTo(12, 0);
+  it('never twins a detection with itself', () => {
+    expect(findTwin(anns, 'a', 10, 'start', 200)).toBeNull();
   });
 
-  it('says nothing about an empty or silent window', () => {
-    expect(findTroughs(new Float32Array(0), 0)).toEqual([]);
-    expect(findTroughs(new Float32Array(1000), 0)).toEqual([]);
+  it('absorbs float arithmetic but not a real gap', () => {
+    expect(findTwin([det('a', 10, 62.0005)], 'b', 62, 'end', 200)?.id).toBe('a');
+    expect(findTwin([det('a', 10, 62.4)], 'b', 62, 'end', 200)).toBeNull();
+  });
+
+  it('reads an open detection’s end as the session’s end', () => {
+    expect(findTwin([det('a', 10, null)], 'b', 200, 'end', 200)?.id).toBe('a');
+  });
+});
+
+describe('clampLinked', () => {
+  const prev = det('a', 10, 62, 'the kesh');
+  const next = det('c', 114, 177, 'silver spear');
+
+  it('leaves an unlinked pair alone', () => {
+    expect(clampLinked({ start: 5, end: 300 }, null, null, 200)).toEqual({ start: 5, end: 300 });
+  });
+
+  it('will not drag the previous tune’s end past its own start', () => {
+    expect(clampLinked({ start: 5, end: 114 }, prev, null, 200))
+      .toEqual({ start: 10 + MIN_SPAN_S, end: 114 });
+  });
+
+  it('will not drag the next tune’s start past its own end', () => {
+    expect(clampLinked({ start: 62, end: 190 }, null, next, 200))
+      .toEqual({ start: 62, end: 177 - MIN_SPAN_S });
+  });
+
+  it('reads an open twin’s end as the session’s end', () => {
+    expect(clampLinked({ start: 0, end: 500 }, null, det('c', 114, null), 200).end)
+      .toBe(200 - MIN_SPAN_S);
+  });
+
+  it('gives up rather than make our own bounds cross', () => {
+    // Squeezing from both sides would leave nothing between them.
+    const pair = { start: 60, end: 60.5 };
+    expect(clampLinked(pair, det('a', 59.9, 60), det('c', 60.5, 60.6), 200)).toBe(pair);
   });
 });

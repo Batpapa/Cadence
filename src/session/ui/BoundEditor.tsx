@@ -8,11 +8,11 @@ import { ResetIcon } from '../../components/icons';
 import type { Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
-  snapMarks, findSnap, findTroughs, missingRanges,
-  LOUPE_HALF_S, PEAK_BUCKET_S, type SnapMark,
+  snapMarks, findSnap, findTwin, clampLinked, missingRanges,
+  LOUPE_HALF_S, PEAK_BUCKET_S, type SnapMark, type BoundTwin,
 } from './boundEditorModel';
 import {
-  makePeakBuffer, readInto, isRead, levelOver, largestCovered,
+  makePeakBuffer, readInto, isRead, levelOver,
   type PeakBuffer, type WaveRead,
 } from '../audio/localWaveform';
 
@@ -53,9 +53,30 @@ import {
 // Nothing is written until "Save": the draft lives here, and Cancel leaves the
 // detection exactly as it was found.
 
-/** What one press of the nudge buttons (and of an arrow key) moves. A quarter
- *  of a second: a fraction of the error being corrected, and still audible as
- *  a difference when the loop replays. */
+/** A neighbour's bound, moved because it was joined to one of ours. */
+export interface TwinEdit {
+  id: string;
+  /** Which of the NEIGHBOUR's bounds moves. */
+  edge: 'start' | 'end';
+  t: number;
+}
+
+/** Everything a save writes. More than this detection's two bounds since
+ *  2026-09-21: a join that two detections share moves on both sides at once,
+ *  so the caller is told about the neighbours it has to write as well. */
+export interface BoundEdit {
+  start: number;
+  end: number;
+  twins: TwinEdit[];
+}
+
+/** What one press of an arrow key moves. A quarter of a second: a fraction of
+ *  the error being corrected, and still audible as a difference when the loop
+ *  replays.
+ *
+ *  The two ±0.25 s buttons that used to sit in the transport row are gone
+ *  (2026-09-21, user request) — the magnifier's jog does the same job with the
+ *  sound under the finger, and the arrows remain for anyone on a keyboard. */
 const NUDGE_S = 0.25;
 /** With Shift, for crossing a phrase rather than trimming one. */
 const NUDGE_COARSE_S = 2;
@@ -173,15 +194,22 @@ interface BoundEditorProps {
   getAudio: () => Promise<Blob | undefined>;
   /** Fired on every change, so the modal's Save button can read the draft
    *  without owning it. */
-  onDraft: (start: number, end: number) => void;
+  onDraft: (edit: BoundEdit) => void;
   /** Replaces the name/dance/meter line at the top. For a detection being
    *  ADDED, whose identity is not settled yet and is chosen right there — see
    *  AddDetection.tsx. Handed the live draft, because the length belongs on
    *  that line and belongs to the bounds rather than to the tune. */
   identitySlot?: (draft: { start: number; end: number }) => ComponentChild;
+  /** Whether a bound that opens flush against a neighbour starts out linked to
+   *  it. True everywhere but the add-detection screen, where the bounds are
+   *  seeded from a SILENCE: they touch the neighbours because the hole is
+   *  bounded by them, which is the opposite of a join. Linking there by
+   *  default would stretch the tunes on either side over the pause as soon as
+   *  the user tightened the new detection. The toggle is still offered, off. */
+  linkByDefault?: boolean;
 }
 
-export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySlot }: BoundEditorProps) {
+export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySlot, linkByDefault = true }: BoundEditorProps) {
   const origin = useRef({ start: ann.start, end: ann.end ?? duration }).current;
   /** The whole recording — what a bound may reach. */
   const reach: [number, number] = [0, duration];
@@ -197,7 +225,6 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
    *  every render and reads the buffer straight through its ref. Same shape as
    *  SessionSummary's own `bump`. */
   const [, setWaveTick] = useState(0);
-  const [troughs, setTroughs] = useState<number[]>([]);
   /** Made from the same blob the envelope is read out of, so the recording is
    *  fetched once. Null until it arrives — and for good on a device that does
    *  not hold it, which is what greys out every listening control. */
@@ -244,12 +271,64 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   const loopRef = useRef(loop);
   loopRef.current = loop;
 
-  const setDraft = (next: { start: number; end: number }) => {
-    setDraftState(next);
-    onDraft(next.start, next.end);
+  // ── Joins that move as one ─────────────────────────────────────────────────
+  // When this detection's start sits exactly on the previous tune's end, that
+  // is not two bounds agreeing — it is ONE frontier, written twice. Moving our
+  // side alone does not correct it: it opens a hole or an overlap exactly as
+  // wide as the move. So the neighbour comes along (user request, 2026-09-21).
+  //
+  // ON by default, and only ever offered where the bounds already touch — so
+  // the default is simply "a join stays a join", and the toggle is there for
+  // the one case where the user means to break it apart. That is also why
+  // availability is read from the bounds as they OPENED: a link that switched
+  // itself on mid-drag, the instant a snap made the numbers agree, would start
+  // moving a second detection under the user's finger.
+  const opening = useRef({
+    start: findTwin(anns, ann.id, origin.start, 'end', duration),
+    end: findTwin(anns, ann.id, origin.end, 'start', duration),
+  }).current;
+  const [linked, setLinked] = useState({
+    start: linkByDefault && !!opening.start,
+    end: linkByDefault && !!opening.end,
+  });
+  /** The twin actually travelling with each bound, or null. */
+  const twin: Record<'start' | 'end', BoundTwin | null> = {
+    start: linked.start ? opening.start : null,
+    end: linked.end ? opening.end : null,
+  };
+  const linkedIds = new Set([twin.start?.id, twin.end?.id].filter((v): v is string => !!v));
+
+  /** Where a neighbour's bound stands right now — its own, unless it is linked
+   *  to ours and travelling with it. Everything that draws or measures a
+   *  neighbour goes through this, or the strip would show the join splitting
+   *  while the save puts it back together. */
+  const boundOf = (d: Detection, edge: 'start' | 'end'): number => {
+    if (twin.start?.id === d.id && twin.start.edge === edge) return draft.start;
+    if (twin.end?.id === d.id && twin.end.edge === edge) return draft.end;
+    return edge === 'start' ? d.start : (d.end ?? duration);
   };
 
-  const marks = snapMarks(anns, ann.id, draft, bound, duration, troughs);
+  /** A linked bound answers to the far side of the tune it drags along, or the
+   *  neighbour would end before it began. Every move goes through this. */
+  const withTwins = (pair: { start: number; end: number }) => clampLinked(
+    pair,
+    twin.start ? anns.find(a => a.id === twin.start!.id) ?? null : null,
+    twin.end ? anns.find(a => a.id === twin.end!.id) ?? null : null,
+    duration,
+  );
+
+  /** What a save would write to the neighbours. Empty unless a link is on. */
+  const twinEdits = (next: { start: number; end: number }): TwinEdit[] => [
+    ...(twin.start ? [{ id: twin.start.id, edge: twin.start.edge, t: next.start }] : []),
+    ...(twin.end ? [{ id: twin.end.id, edge: twin.end.edge, t: next.end }] : []),
+  ];
+
+  const setDraft = (next: { start: number; end: number }) => {
+    setDraftState(next);
+    onDraft({ start: next.start, end: next.end, twins: twinEdits(next) });
+  };
+
+  const marks = snapMarks(anns, ann.id, draft, bound, duration, linkedIds);
 
   /** Moves the active bound, snapping unless the caller is being exact. The
    *  one route every keyboard, button and jog movement takes — so the lock
@@ -257,7 +336,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   const moveTo = (v: number, { snap = true } = {}) => {
     if (locked) return;
     const target = snap && magnet ? (findSnap(v, marks)?.t ?? v) : v;
-    setDraft(clampBound(bound, target, draft, reach));
+    setDraft(withTwins(clampBound(bound, target, draft, reach)));
   };
 
   // ── What the context strip shows ───────────────────────────────────────────
@@ -292,13 +371,6 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   // The magnifier's dozen seconds are always ordered first: that is where the
   // precise work happens, and it is ready before the user has looked away from
   // the title. Everything else follows into the same array.
-  const refreshTroughs = () => {
-    const buf = bufRef.current;
-    const range = buf && largestCovered(buf);
-    if (!buf || !range) return;
-    setTroughs(findTroughs(buf.peaks.subarray(range[0], range[1]), buf.from + range[0] * PEAK_BUCKET_S));
-  };
-
   /** Orders whatever of `[from, to]` has not been asked for yet. */
   const ensureDecoded = (from: number, to: number) => {
     const buf = bufRef.current, blob = blobRef.current;
@@ -310,7 +382,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
       orderedRef.current.push(piece);
       readsRef.current.push(readInto(blob, buf, piece[0], piece[1],
         () => setWaveTick(x => x + 1),
-        () => { setWaveTick(x => x + 1); refreshTroughs(); },
+        () => setWaveTick(x => x + 1),
       ));
     }
   };
@@ -452,7 +524,9 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     g.font = '500 9px "IBM Plex Sans", system-ui, sans-serif';
     for (const d of anns) {
       if (d.id === ann.id) continue;
-      const x0 = X(d.start), x1 = X(d.end ?? duration);
+      // Through boundOf, so a neighbour linked to a bound we are dragging is
+      // drawn where it is GOING, not where it was.
+      const x0 = X(boundOf(d, 'start')), x1 = X(boundOf(d, 'end'));
       if (x1 < 0 || x0 > w) continue;
       g.globalAlpha = .3;
       g.fillStyle = cssVar('--color-dim');
@@ -528,9 +602,9 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
       // is exactly what it looked like: a name with its first letters eaten.
       if (Math.abs(m.t - c) < .01) continue;
       const x = Math.round(X(m.t)) + .5;
-      const colour = m.kind === 'trough' ? cssVar('--color-warn') : cssVar('--color-muted');
+      const colour = cssVar('--color-muted');
       g.strokeStyle = colour;
-      g.setLineDash(m.kind === 'trough' ? [3, 3] : [2, 4]);
+      g.setLineDash([2, 4]);
       g.beginPath();
       g.moveTo(x, Math.round(h * .1));
       g.lineTo(x, h - Math.round(h * .2));
@@ -557,7 +631,6 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   };
 
   const labelOf = (m: SnapMark): string => {
-    if (m.kind === 'trough') return t('sessions.bounds.snapSilence');
     if (!m.name) return t(m.edge === 'start' ? 'sessions.bounds.snapOwnStart' : 'sessions.bounds.snapOwnEnd');
     return t(m.edge === 'start' ? 'sessions.bounds.snapStart' : 'sessions.bounds.snapEnd', { name: capitalizeWords(m.name) });
   };
@@ -625,7 +698,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     const move = (ev: PointerEvent) => {
       const v = ctxTimeAt(ev.clientX);
       const target = magnet ? (findSnap(v, marks)?.t ?? v) : v;
-      setDraft(clampBound(which, target, draft, win));
+      setDraft(withTwins(clampBound(which, target, draft, win)));
     };
     const up = () => {
       el.removeEventListener('pointermove', move);
@@ -729,6 +802,45 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
         {boundBtn('start', draft.start, dStart)}
         {boundBtn('end', draft.end, dEnd)}
       </div>
+
+      {/* Only for the bound being worked on, and only where a neighbour is
+          actually joined to it — a control that is absent most of the time
+          says more by appearing than a permanently greyed one ever could. It
+          names the neighbour, because "move both" is meaningless until you
+          know which other tune you are about to change. */}
+      {opening[bound] && (
+        <button
+          class={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-[11px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
+            linked[bound] ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted hover:text-primary'}`}
+          disabled={locked}
+          aria-pressed={linked[bound]}
+          title={t('sessions.bounds.linkHint')}
+          onClick={() => {
+            const next = { ...linked, [bound]: !linked[bound] };
+            setLinked(next);
+            // The draft's own numbers did not move, but what a save would
+            // write just did — the caller has to hear about it.
+            onDraft({
+              start: draft.start,
+              end: draft.end,
+              twins: [
+                ...(next.start && opening.start ? [{ id: opening.start.id, edge: opening.start.edge, t: draft.start }] : []),
+                ...(next.end && opening.end ? [{ id: opening.end.id, edge: opening.end.edge, t: draft.end }] : []),
+              ],
+            });
+          }}
+        >
+          {/* One glyph in both states, like the loop and magnet toggles: the
+              border and colour already say which it is, and a "broken chain"
+              needs a combining overlay that half the fonts draw as two marks. */}
+          <span class="shrink-0 text-sm leading-none">⛓</span>
+          <span class="flex-1 min-w-0 truncate">
+            {t(linked[bound] ? 'sessions.bounds.linkOn' : 'sessions.bounds.linkOff', {
+              name: capitalizeWords(opening[bound]!.name),
+            })}
+          </span>
+        </button>
+      )}
 
       {/* ── Context ── */}
       <div>
@@ -847,35 +959,13 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           ⌖ {t('sessions.bounds.markHere')}
         </button>
 
-        {/* No value between the two arrows: the bound is already written in
-            full on its own card above and on the magnifier's readout, and a
-            third copy of the same number only made the dialog taller. */}
-        <div class="flex items-stretch rounded-lg border border-border overflow-hidden ml-auto">
-          <button
-            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer border-r border-border disabled:opacity-40 disabled:cursor-default"
-            disabled={locked}
-            title={t('sessions.bounds.keyboard')}
-            onClick={() => { moveTo(active - NUDGE_S, { snap: false }); rearmListening(); }}
-          >
-            {t('sessions.bounds.nudgeBack')}
-          </button>
-          <button
-            class="px-3 min-h-9 text-xs font-mono tabular-nums text-muted hover:bg-elevated hover:text-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
-            disabled={locked}
-            title={t('sessions.bounds.keyboard')}
-            onClick={() => { moveTo(active + NUDGE_S, { snap: false }); rearmListening(); }}
-          >
-            {t('sessions.bounds.nudgeForward')}
-          </button>
-        </div>
       </div>
 
-      <div class="flex items-center justify-between gap-x-3 gap-y-2 flex-wrap">
-        <div class="flex items-center gap-3 text-[11px] text-dim flex-wrap">
-          <span class="inline-flex items-center gap-1.5"><i class="inline-block w-2 h-2 rounded-sm bg-accent" />{t('sessions.bounds.legendThis')}</span>
-          <span class="inline-flex items-center gap-1.5"><i class="inline-block w-2 h-2 rounded-sm bg-dim" />{t('sessions.bounds.legendOthers')}</span>
-          <span class="inline-flex items-center gap-1.5"><i class="inline-block w-2 h-2 rounded-sm bg-warn" />{t('sessions.bounds.legendSnap')}</span>
-        </div>
+      {/* The colour legend stood here until 2026-09-21. Removed at the user's
+          request — "très clair déjà": the accent block is under the crosshair
+          being dragged and the grey ones carry the neighbours' names, so both
+          say what they are without a key. */}
+      <div class="flex items-center justify-end gap-x-3 gap-y-2 flex-wrap">
         <div class="flex items-center gap-2">
           {dirty && (
             <button
@@ -915,11 +1005,13 @@ export function showBoundEditor(opts: {
   anns: Detection[];
   duration: number;
   getAudio: () => Promise<Blob | undefined>;
-  onSave: (start: number, end: number) => void;
+  onSave: (edit: BoundEdit) => void;
 }): void {
   const body = document.createElement('div');
   const cleanup = () => render(null, body);
-  let draft = { start: opts.ann.start, end: opts.ann.end ?? opts.duration };
+  // Seeded with no twins: the editor reports them on its first change, and
+  // saving without touching anything must not write to a neighbour.
+  let draft: BoundEdit = { start: opts.ann.start, end: opts.ann.end ?? opts.duration, twins: [] };
 
   render(
     <BoundEditor
@@ -927,13 +1019,13 @@ export function showBoundEditor(opts: {
       anns={opts.anns}
       duration={opts.duration}
       getAudio={opts.getAudio}
-      onDraft={(start, end) => { draft = { start, end }; }}
+      onDraft={(edit) => { draft = edit; }}
     />,
     body,
   );
 
   showModal(t('sessions.bounds.title'), body, [
     { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
-    { label: t('common.save'), primary: true, onClick: () => { closeModal(); cleanup(); opts.onSave(draft.start, draft.end); } },
+    { label: t('common.save'), primary: true, onClick: () => { closeModal(); cleanup(); opts.onSave(draft); } },
   ], { maxWidth: '34rem', onDismiss: cleanup });
 }
