@@ -10,7 +10,7 @@ import { showEmbedModal } from './embedViewer';
 import { showAddFileModal } from './addFileModal';
 import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
 import { resolveCardRef } from '../services/cardRefService';
-import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder } from '../services/abcService';
+import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder, isAbcFile } from '../services/abcService';
 import { isTuneset, hasTunesetScore, CARD_TYPE_TUNE } from '../services/cardTypeService';
 import { appState, navigate, getContext, mutate } from '../store';
 import { showModal, closeModal, confirmModal, renderModalBody } from './modal';
@@ -691,6 +691,65 @@ export interface AttachmentListOptions {
    *  generated score, whose stored `data` is empty by design — everything else
    *  here works from the attachments alone. */
   card?: Card;
+}
+
+/** Opens the card's SCORE — its first ABC attachment — in the viewer, wired
+ *  exactly as its row in the list below would wire it.
+ *
+ *  Here rather than at the call site because that wiring is not obvious: a
+ *  generated set score is rebuilt rather than read, a TheSession score saves to
+ *  a copy and may be refused, and a derived one has to be re-read whenever a
+ *  preference changes underneath it. One reader for all of that, so the button
+ *  in the opening-bars heading and the file row can never open the same score
+ *  two different ways.
+ *
+ *  Answers whether there was a score to open, so a caller can decide not to
+ *  offer the button at all.
+ *
+ *  The one difference from the row: its TheSession saver is built once per
+ *  render and this one once per opening. Both give a freshly opened viewer a
+ *  saver that has not yet asked its question, which is the behaviour that
+ *  matters (see theSessionScoreSaver). */
+export function openCardScore(options: AttachmentListOptions): boolean {
+  const { attachments, editable, card } = options;
+  const i = attachments.findIndex(a => a.type === 'file' && isAbcFile(a));
+  const att = attachments[i];
+  if (!att || att.type !== 'file') return false;
+
+  const generated = att.generatedBy === 'tuneset' && card
+    ? tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats })
+    : null;
+  const entry: FileEntry & { preferredIndex?: number } = generated && card
+    ? { ...att, data: generated.data, mimeType: generated.mimeType, name: card.name + '.abc' }
+    : att;
+
+  const onUpdateFile = options.onUpdateFile;
+  const onCopyFile = options.onCopyFile;
+  const onSave = onUpdateFile && att.generatedBy !== 'tuneset'
+    ? att.generatedBy === 'thesession' && onCopyFile
+      ? theSessionScoreSaver(i, onUpdateFile, onCopyFile)
+      : (data: string) => onUpdateFile(i, data)
+    : undefined;
+
+  showPreviewModal(entry, editable ? onSave : undefined, {
+    initialIndex: att.preferredIndex,
+    favoriteIndex: att.preferredIndex,
+    onSetPreferredIndex: options.onSetPreferredIndex && att.generatedBy !== 'tuneset'
+      ? (index) => options.onSetPreferredIndex!(i, index)
+      : undefined,
+    onRename: editable && options.onRenameFile && att.generatedBy !== 'tuneset'
+      ? (name) => options.onRenameFile!(i, name)
+      : undefined,
+    reloadEntry: att.generatedBy === 'tuneset' && card
+      ? () => tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats })
+      : undefined,
+  });
+  return true;
+}
+
+/** Whether `openCardScore` would have anything to open. */
+export function hasScore(attachments: Attachment[]): boolean {
+  return attachments.some(a => a.type === 'file' && isAbcFile(a));
 }
 
 export function AttachmentList({ options }: { options: AttachmentListOptions }) {

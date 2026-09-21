@@ -75,6 +75,30 @@ export async function renderMarkdown(src: string): Promise<string> {
   return purify.sanitize(marked.parse(src) as string);
 }
 
+/**
+ * A fragment of HTML reduced to plain text plus `<em>` marks, for a string
+ * that is MOSTLY trustworthy but quotes something that is not.
+ *
+ * The case it exists for: abcjs's parser warnings. They carry markup of their
+ * own — the offending character comes wrapped in a `<span style="…">` so it
+ * stands out — but what they wrap is the USER'S OWN ABC, verbatim. Showing
+ * them as text prints the tags (reported 2026-09-21); showing them with
+ * innerHTML would run whatever a `.abc` file cared to put in an attachment,
+ * which is exactly the hole DOMPurify was brought in to close for markdown.
+ *
+ * So: every tag dropped except `<em>`, and every attribute dropped without
+ * exception — `style` included, which is why the emphasis is re-marked in CSS
+ * rather than carried in the string. Nothing here can introduce a script, a
+ * handler, a URL, or a rule that paints over the rest of the page.
+ */
+export async function sanitizeEmphasisOnly(html: string): Promise<string> {
+  const purify = await getPurify();
+  // abcjs uses `<span style="…">` for its emphasis; `<em>` is what survives,
+  // so the span is rewritten before the allow-list drops everything else.
+  const marked = html.replace(/<span\b[^>]*>/gi, '<em>').replace(/<\/span>/gi, '</em>');
+  return purify.sanitize(marked, { ALLOWED_TAGS: ['em'], ALLOWED_ATTR: [] });
+}
+
 /** Delegated listeners so spoilers work on every innerHTML-rendered surface.
  *  A hidden spoiler swallows its click (a link inside must reveal, not
  *  navigate); a revealed one re-hides on click except when following a link. */

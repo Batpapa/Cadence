@@ -8,7 +8,7 @@ import { INCIPIT_BARS, abcIncipit, abcOpenMode, isAbcFile, decodeAbc, splitAbcTu
 import { resolveCardRef } from '../services/cardRefService';
 import { appState } from '../store';
 import { playIcon, stopIcon } from './playbackIcons';
-import { MusicNoteIcon } from './icons';
+import { MusicNoteIcon, ExpandIcon } from './icons';
 import { t } from '../services/i18nService';
 
 // ── The opening bars, in place ───────────────────────────────────────────────
@@ -114,9 +114,12 @@ export function incipitScores(card: Card, cards: Record<string, Card>): Array<{ 
  *  Renders nothing at all — no heading, no frame — when the setting says no,
  *  when the card has no score, or while abcjs is still on its way. A screen
  *  therefore never has to guard the call, and never shows an empty slot. */
-export function IncipitRow({ card, where, class: className = '' }: {
+export function IncipitRow({ card, where, onOpenScore, class: className = '' }: {
   card: Card;
   where: 'card' | 'study';
+  /** Opens the card's full score. Absent on a screen that has no way to open
+   *  one — the button is then not offered rather than offered and dead. */
+  onOpenScore?: () => void;
   class?: string;
 }) {
   const user = appState.value;
@@ -138,20 +141,49 @@ export function IncipitRow({ card, where, class: className = '' }: {
     <div class={`space-y-1 ${className}`}>
       <div class="flex items-center gap-2">
         <span class="section-title">{t('card.section.incipit')}</span>
+        {/* `group` / `group-hover`, and not a `hover:` on the pill itself.
+            The BUTTON is the target — `.tap-btn` gives it 32 px so a finger
+            can reach it — while the pill inside is 24 px, so a hover state
+            living on the pill left a 4 px ring all round that was clickable,
+            showed a pointer cursor, and lit nothing. With two of these side by
+            side the dead ring doubled and the highlight blinked on and off
+            between them. What reacts is now what you are pointing at. */}
         <button
           type="button"
-          class="tap-btn shrink-0 cursor-pointer"
+          class="tap-btn shrink-0 cursor-pointer group"
           title={t(mode === 'sheet' ? 'card.incipit.showSource' : 'card.incipit.showScore')}
           onClick={() => setMode(m => (m === 'sheet' ? 'text' : 'sheet'))}
         >
           {/* Shows the face it would switch TO, in the viewer's own
               vocabulary — the "ABC" tab there is this "ABC" here. */}
-          <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
+          <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors">
             {mode === 'sheet'
               ? <span class="text-[8px] font-mono font-bold leading-none">ABC</span>
               : <MusicNoteIcon size={11} />}
           </span>
         </button>
+        {/* Straight to the score, from the one place on the card that is
+            already about the music (the user's call, 2026-09-21). Two bars are
+            a reminder; this is for when they are not enough, and until now the
+            only way through was to find the `.abc` row further down and know
+            that a file name was a score.
+
+            The same round pill as the switch beside it, and the same size: they
+            are two things you do to the same object. The glyph is an expand and
+            not a second note — the switch already shows a note when the source
+            is on screen, and two notes in one heading would say nothing. */}
+        {onOpenScore && (
+          <button
+            type="button"
+            class="tap-btn shrink-0 cursor-pointer group"
+            title={t('card.incipit.openScore')}
+            onClick={onOpenScore}
+          >
+            <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors">
+              <ExpandIcon size={11} />
+            </span>
+          </button>
+        )}
       </div>
       {scores.map(s => <Incipit key={s.key} abc={s.abc} mode={mode} />)}
     </div>
@@ -415,16 +447,19 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
       {audible && (
         <button
           type="button"
-          class="tap-btn shrink-0 cursor-pointer"
+          class="tap-btn shrink-0 cursor-pointer group"
           title={t(playing ? 'card.incipit.stop' : 'card.incipit.play')}
           onClick={() => { void toggle(); }}
         >
           {/* The same small accent disc the detection rows and the trending
               table already use for their per-row actions — a bare glyph
               beside a stave read as part of the notation. The touch target
-              is the button around it, not the disc. */}
+              is the button around it, not the disc, which is exactly why the
+              hover state is driven from the button (`group-hover`): a tint on
+              the disc alone left the ring between the two lighting nothing.
+              Same fix as the two switches in the heading above. */}
           <span
-            class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+            class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors"
             dangerouslySetInnerHTML={{ __html: playing ? stopIcon(11) : playIcon(11) }}
           />
         </button>

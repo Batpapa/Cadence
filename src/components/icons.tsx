@@ -437,6 +437,75 @@ export function CollapseIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+// ── The three swing feels, written out ────────────────────────────────────────
+// Each one is the pair of notes it actually produces, because that is what a
+// player reads off a page — and because the names ("swing ternaire") are four
+// syllables in a bar with no room for them.
+//
+// Three and not four, and these three, at the user's request (2026-09-21): the
+// fourth was a 3:2 that differed from the triplet only by where a note head
+// sat, which is not a difference anyone can see at 15 px. What is left are
+// three silhouettes you can tell apart at a glance — one beam, no beam, two
+// beams — rather than one shape with the spacing nudged.
+//
+// Shared geometry, so the three read as one family: heads on the same line,
+// stems the same height, the same weight throughout.
+const NOTE_HEAD = { cy: 16.5, rx: 2.8, ry: 2.1 };
+const STEM_TOP = 5.5;
+
+/** Two quavers under one beam: straight, played as written. */
+export function SwingStraightIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+      <ellipse cx="5" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      <ellipse cx="15" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      <path d={`M7.6 ${NOTE_HEAD.cy}V${STEM_TOP}M17.6 ${NOTE_HEAD.cy}V${STEM_TOP}`} />
+      <path d={`M7.6 ${STEM_TOP}h10`} stroke-width="2.6" />
+    </svg>
+  );
+}
+
+/** A crotchet and a quaver under a 3: the 2:1 triplet feel. The one with NO
+ *  beam, which is what makes it unmistakable beside the other two. */
+export function SwingTripletIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+      <ellipse cx="5" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      <ellipse cx="15" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      <path d={`M7.6 ${NOTE_HEAD.cy}V8M17.6 ${NOTE_HEAD.cy}V8`} />
+      {/* The quaver's flag — the second of the pair is the short one. */}
+      <path d="M17.6 8c2.2 1 3.2 2.2 3.2 4" />
+      {/* The 3 that says triplet, where a bracket would go. */}
+      <text x="11" y="6" text-anchor="middle" font-size="8" font-weight="600" font-family="Georgia, serif" fill="currentColor" stroke="none">3</text>
+    </svg>
+  );
+}
+
+/** A dotted quaver and a semiquaver: the hornpipe's own pair. Two beams, the
+ *  second of them short — the shape that says "the first note is long". */
+export function SwingDottedIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+      <ellipse cx="5" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      <circle cx="9.6" cy={NOTE_HEAD.cy} r="1.15" fill="currentColor" stroke="none" />
+      <ellipse cx="16" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      <path d={`M7.6 ${NOTE_HEAD.cy}V${STEM_TOP}M18.6 ${NOTE_HEAD.cy}V${STEM_TOP}`} />
+      <path d={`M7.6 ${STEM_TOP}h11`} stroke-width="2.6" />
+      <path d={`M14.6 ${STEM_TOP + 3.4}h4`} stroke-width="2.2" />
+    </svg>
+  );
+}
+
+/** A metronome: the case, and the pendulum caught off centre. */
+export function MetronomeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 3h4l5 18H5z"/>
+      <path d="M15 8l-6 8"/>
+    </svg>
+  );
+}
+
 /** "Put this clip on the card": the same waveform as below, cut short to make
  *  room for a plus. A pair with ClipAttachedIcon — one asks, the other answers,
  *  and they have to read as the same object in two states.

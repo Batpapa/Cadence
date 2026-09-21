@@ -1,7 +1,8 @@
-import type { AbcOpenMode, Attachment, Card, CardRef, FileEntry } from '../types';
+import type { AbcOpenMode, AbcPaper, Attachment, Card, CardRef, FileEntry } from '../types';
 import { resolveCardRef } from './cardRefService';
 import { isTuneset, hasTunesetScore } from './cardTypeService';
 import { sanitizeFileBase } from './attachmentNames';
+import { getTheme } from './themeService';
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 // Shared with fileViewer.ts, which used to own private copies. Splitting and
@@ -432,6 +433,119 @@ export const ABC_OPEN_MODE_DEFAULT: AbcOpenMode = 'sheet';
 export function abcOpenMode(user: { abcOpenMode?: AbcOpenMode }): AbcOpenMode {
   return user.abcOpenMode ?? ABC_OPEN_MODE_DEFAULT;
 }
+
+/** How many bars a line of an engraved score aims to hold.
+ *
+ *  Four, because that is the carrure this music is written in: a jig or a reel
+ *  is eight bars twice over, and four to a line puts the repeat exactly under
+ *  its first half. It is a REQUEST — abcjs will not compress music below its
+ *  own minimum, so a phone that cannot fit four at a readable size draws two or
+ *  three instead, which is the point: the staff keeps its size and the line
+ *  gives way. */
+export const DEFAULT_BARS_PER_LINE = 4;
+export const BARS_PER_LINE_CHOICES = [2, 3, 4, 6];
+
+export function abcBarsPerLine(user: { abcBarsPerLine?: number }): number {
+  const stored = user.abcBarsPerLine;
+  if (typeof stored !== 'number' || !Number.isFinite(stored)) return DEFAULT_BARS_PER_LINE;
+  // Clamped against the offered choices rather than trusted: this value comes
+  // back from a synced blob that an older or newer bundle may have written.
+  return BARS_PER_LINE_CHOICES.includes(stored) ? stored : DEFAULT_BARS_PER_LINE;
+}
+
+/** The swing settings offered, and what each one is called.
+ *
+ *  The numbers are abcjs's own scale (`addSwing` in create-synth.js, read
+ *  rather than guessed): 50 is straight, 66 is the 2:1 triplet feel, 60 sits
+ *  between at 3:2, and 75 — a dotted eighth against a sixteenth — is where
+ *  abcjs clamps. Four steps rather than a slider: these are the feels this
+ *  music is actually played with, and a hornpipe is not "63 % swung".
+ *
+ *  `labelKey` rather than a label, so the list stays a data structure the i18n
+ *  key check can see. */
+/** Four feels. Three of them are a rhythm you can write down and get an icon
+ *  that draws it; the light 3:2 shares the straight pair's icon, because it IS
+ *  written as two even quavers — what marks it is the chip being lit, which is
+ *  exactly how a swung tune is told apart from a straight one on paper. */
+export const SWING_CHOICES: Array<{ value: number; labelKey: string }> = [
+  { value: 50, labelKey: 'fileViewer.abc.swing.straight' },
+  { value: 60, labelKey: 'fileViewer.abc.swing.light' },
+  { value: 66, labelKey: 'fileViewer.abc.swing.triplet' },
+  { value: 75, labelKey: 'fileViewer.abc.swing.dotted' },
+];
+
+/** Whether abcjs can swing this metre at all.
+ *
+ *  Read out of its `addSwing`, not guessed: it only touches events that fall on
+ *  an odd HALF-BEAT, where the beat is a quarter in X/4 and — this is the
+ *  catch — an EIGHTH in X/8. So in 6/8, 9/8 or 12/8 it swings the
+ *  semiquavers, and a jig written in quavers (which is every jig) has nothing
+ *  on an odd semiquaver for it to move. The setting is a no-op there, and a
+ *  control that does nothing is worse than one that is not offered.
+ *
+ *  Reels, hornpipes, polkas, marches and barndances are all X/4 and swing
+ *  normally — which is where anyone wanted it. */
+export function meterCanSwing(meter: string): boolean {
+  const m = /^\s*(\d+)\s*\/\s*(\d+)/.exec(meter);
+  if (!m) return true;                    // unstated: do not take the control away
+  return parseInt(m[2]!, 10) === 4;
+}
+
+export const NO_SWING = 50;
+
+export function abcSwing(user: { abcSwing?: number }): number {
+  const stored = user.abcSwing;
+  if (typeof stored !== 'number' || !Number.isFinite(stored)) return NO_SWING;
+  // Clamped against the offered values, like the density: this comes back from
+  // a synced blob another bundle may have written.
+  return SWING_CHOICES.some(c => c.value === stored) ? stored : NO_SWING;
+}
+
+/** The paper a score is drawn on, and the ink that goes with it.
+ *
+ *  Absent means the app's theme decides, which is the honest default: a viewer
+ *  that opened a white sheet inside a dark app was the one place in Cadence
+ *  that ignored the theme — the incipit on the very same card has always drawn
+ *  its notation in `currentColor`, because that is abcjs 6's own default for
+ *  `foregroundColor`. An explicit value is a choice the user made and wins
+ *  over the theme, in both directions. */
+export function abcPaper(user: { abcPaper?: AbcPaper }): AbcPaper {
+  if (user.abcPaper) return user.abcPaper;
+  return paperForTheme();
+}
+
+/** The paper that goes with the app's own theme — the default, and its own
+ *  entry in the settings ("Thème") so it can be chosen back.
+ *
+ *  Green maps to sepia rather than to white: it is the warm theme, and a sheet
+ *  of pure white in it is the same jarring slab that the dark theme had. */
+export function paperForTheme(): AbcPaper {
+  const theme = getTheme();
+  if (theme === 'dark') return 'dark';
+  if (theme === 'green') return 'sepia';
+  return 'white';
+}
+
+/** What the paper SETTING says, as opposed to what it resolves to: `theme`
+ *  when the user has not pinned one, which is stored as the field being
+ *  absent. Two readers because the selector has four entries and the score has
+ *  three papers. */
+export const ABC_PAPER_AUTO = 'theme';
+
+export function abcPaperSetting(user: { abcPaper?: AbcPaper }): string {
+  return user.abcPaper ?? ABC_PAPER_AUTO;
+}
+
+/** Paper colour, ink colour, and the colour the playback cursor takes on it.
+ *
+ *  The cursor is not one colour for all three: the rose the viewer has always
+ *  used reads well on white and on sepia, and washes out against the dark
+ *  surface, where a lighter tint of the same hue carries better. */
+export const ABC_PAPERS: Record<AbcPaper, { paper: string; ink: string; cursor: string }> = {
+  dark:  { paper: '#141414', ink: '#e8e8e8', cursor: '#fb7185' },
+  sepia: { paper: '#f6efe2', ink: '#2b2418', cursor: '#be123c' },
+  white: { paper: '#ffffff', ink: '#111111', cursor: '#e11d48' },
+};
 
 export function addTunesetAbcOnConvert(user: { addTunesetAbcOnConvert?: boolean }): boolean {
   return user.addTunesetAbcOnConvert ?? ADD_TUNESET_ABC_BY_DEFAULT;

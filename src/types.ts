@@ -179,6 +179,30 @@ export interface User {
    *  Someone who edits ABC by hand all day sets it once instead of pressing
    *  the same tab on every score. */
   abcOpenMode?: AbcOpenMode;
+
+  // Score engraving — how ABC READS. Measured on 2026-09-21: with no
+  // `staffwidth` abcjs lays every score out at its own default of 740 units
+  // and the box then stretches or crushes the result, so the engraved staff
+  // came out at 3,9 mm on a phone and 13,6 mm on a wide screen — against the
+  // 7 mm of printed music. The width is now the box's own, and what adapts is
+  // how many bars a line holds. See `engraveOptions` in fileViewer.
+  /** Bars per line the score aims for. Absent = DEFAULT_BARS_PER_LINE, which
+   *  is the carrure most of this music is written in. A request, not an order:
+   *  abcjs will not compress music below its own minimum, so a narrow screen
+   *  gets fewer bars than asked and the staff keeps its size. */
+  abcBarsPerLine?: number;
+  /** Absent = the app's theme decides — see `abcPaper` in abcService. */
+  abcPaper?: AbcPaper;
+  // The metronome is NOT here, deliberately (2026-09-22): it belongs to the
+  // session, not to the reader. You put a click on while you are learning a
+  // passage and you do not want the next score you open to start clicking.
+  // It lives in the viewer and starts off every time.
+  /** How much the playback swings, as abcjs counts it: 50 is straight, 60 is
+   *  3:2, 66 is a 2:1 triplet feel, 75 is a dotted eighth against a sixteenth
+   *  and is its ceiling. Absent = straight. Only `X/4` and `X/8` metres swing
+   *  at all, which is every metre this music is written in. */
+  abcSwing?: number;
+
   // abcZoomPercent lived here until 2026-09-21 — how big the notation was
   // drawn, as a percentage. The score zoom is gone (see fileViewer's note on
   // why, and what to know before rebuilding it). A value stored by whoever
@@ -262,6 +286,12 @@ export type IncipitDisplay = 'none' | 'card' | 'study';
  *  the full viewer and an incipit read it, and both keep their own switch, so
  *  this decides where you land and never where you can go. */
 export type AbcOpenMode = 'sheet' | 'text';
+
+/** The paper a score is drawn on. Not a theme of its own: `white` is the sheet
+ *  of paper this viewer always forced, `dark` is the app's own surface with the
+ *  ink inverted, `sepia` is the warm page people read long from. Absent means
+ *  the app's theme decides — see `abcPaper` in abcService, the single reader. */
+export type AbcPaper = 'dark' | 'sepia' | 'white';
 
 export type Route =
   | { view: 'folder'; folderId: string | null }
