@@ -306,13 +306,236 @@
 .markdown td { @apply px-3 py-2 text-primary/90 border-b border-border/50; }
 .markdown tbody tr:hover { @apply bg-elevated/50; }
 
-/* ABC notation audio controls */
+/* ── The score transport ───────────────────────────────────────────────────
+   abcjs ships its own stylesheet (`abcjs/abcjs-audio.css`, imported whole in
+   main.ts) and it is built for a page that is not this one: a #424242 bar with
+   #f4f4f4 icons, 28 × 34 buttons and a 2 px-bordered pill for a progress bar.
+   Inside a dark, rounded, accent-purple app it read as a foreign object, and
+   it was the first thing anyone saw on opening a score.
+
+   Restyled rather than rebuilt. The widget is abcjs's own DOM, driven by its
+   SynthController, and this file has been caught more than once by that
+   library not doing what its surface suggests — so what changes here is the
+   paint, never the plumbing. Scoped under `.abc-transport` so anything else
+   that ever mounts an abcjs player keeps the library's own look.
+
+   The tempo field is gone from it entirely (`displayWarp: false`): speed is a
+   BPM stepper in the practice row now. The rule below is kept for any player
+   still built with the percent field on. */
 .abcjs-inline-audio .abcjs-midi-tempo { color: #000; }
 
-/* Playback cursor + note highlight — notation is always rendered on a white
-   background regardless of app theme, so plain hex colors (not theme vars). */
-.abcjs-cursor { stroke: #e11d48; stroke-width: 2px; }
-.abcjs-highlight { fill: #e11d48 !important; }
+.abc-transport .abcjs-inline-audio {
+  height: auto;
+  min-height: 2.75rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  background-color: transparent;
+  gap: 0.125rem;
+}
+
+.abc-transport .abcjs-inline-audio .abcjs-btn {
+  width: auto;
+  height: auto;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  margin-right: 0;
+  padding: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0.5rem;
+  color: rgb(var(--color-muted-ch));
+  transition: color .15s, background-color .15s;
+}
+/* The glyphs are drawn with explicit fill/stroke by the library, so they have
+   to be told to follow the button's colour rather than keep their own. */
+.abc-transport .abcjs-inline-audio .abcjs-btn g,
+.abc-transport .abcjs-inline-audio .abcjs-btn path {
+  fill: currentColor;
+  stroke: currentColor;
+}
+.abc-transport .abcjs-inline-audio .abcjs-btn:hover { background-color: rgb(var(--color-bg-ch)); }
+.abc-transport .abcjs-inline-audio .abcjs-btn:hover g,
+.abc-transport .abcjs-inline-audio .abcjs-btn:hover path { fill: currentColor; stroke: currentColor; }
+
+/* Play, stop and repeat, drawn exactly as the audio player draws them
+   (audioPlayer.ts's `mkBtn`): a bordered square, muted at rest, accent border
+   and brighter glyph on hover, accent through and through once it is on. The
+   same three controls doing the same three jobs should not look like two
+   different apps, and the audio player's is the shape this one is copying. */
+.abc-transport .abcjs-inline-audio .abcjs-midi-start,
+.abc-transport .abcjs-inline-audio .abcjs-midi-reset,
+.abc-transport .abcjs-inline-audio .abcjs-midi-loop {
+  border: 1px solid rgb(var(--color-border-ch));
+  border-radius: 4px;
+  background-color: transparent;
+  color: rgb(var(--color-muted-ch));
+}
+.abc-transport .abcjs-inline-audio .abcjs-midi-start:hover,
+.abc-transport .abcjs-inline-audio .abcjs-midi-reset:hover,
+.abc-transport .abcjs-inline-audio .abcjs-midi-loop:hover {
+  border-color: rgb(var(--color-accent-ch));
+  color: rgb(var(--color-primary-ch));
+  background-color: transparent;
+}
+
+/* "Pushed" is a STATE — loop is on, and it was on by default with nothing
+   saying so. Accent border and accent glyph, which is what the audio player's
+   repeat button does when it is on. */
+.abc-transport .abcjs-inline-audio .abcjs-midi-loop.abcjs-pushed,
+.abc-transport .abcjs-inline-audio .abcjs-midi-reset.abcjs-pushed,
+.abc-transport .abcjs-inline-audio .abcjs-midi-start.abcjs-pushed,
+.abc-transport .abcjs-inline-audio .abcjs-midi-selection.abcjs-pushed {
+  border-color: rgb(var(--color-accent-ch));
+  color: rgb(var(--color-accent-ch));
+  background-color: transparent;
+}
+
+.abc-transport .abcjs-inline-audio .abcjs-midi-progress-background {
+  height: 4px;
+  border: none;
+  border-radius: 2px;
+  margin: 0 0.75rem;
+  background-color: rgb(var(--color-border-ch));
+}
+.abc-transport .abcjs-inline-audio .abcjs-midi-progress-indicator {
+  width: 12px;
+  margin-left: -6px;
+  height: 12px;
+  top: -4px;
+  border-radius: 6px;
+  background-color: rgb(var(--color-primary-ch));
+}
+.abc-transport .abcjs-inline-audio .abcjs-midi-clock {
+  margin: 0 0.25rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--color-muted-ch));
+}
+
+/* abcjs's percent field, kept in the DOM and taken off the screen.
+   It cannot simply be switched off (`displayWarp: false`): the library's own
+   `setWarp` writes into this input with no null check, so turning it off made
+   every speed change throw. The speed the user sees and sets is the BPM
+   stepper beside the transport; this is abcjs's scratch pad. */
+.abc-transport .abcjs-inline-audio .abcjs-tempo-wrapper { display: none; }
+
+/* The CSS-missing banner abcjs appends unconditionally. Its own stylesheet is
+   loaded (main.ts), so this is always a false alarm — and it is 300 px of red
+   border if anything ever hides it. */
+.abc-transport .abcjs-css-warning { display: none; }
+
+/* ── A parser warning ──────────────────────────────────────────────────────
+   abcjs marks the offending character in its warnings with markup of its own,
+   which is stripped down to `<em>` before it is rendered (see
+   `sanitizeEmphasisOnly`): the string quotes the user's own ABC, so its
+   attributes cannot be trusted. The emphasis is therefore painted here rather
+   than carried in the string. */
+.abc-warning em {
+  font-style: normal;
+  font-weight: 600;
+  color: rgb(var(--color-warn-ch));
+  border-bottom: 2px solid rgb(var(--color-warn-ch));
+  padding: 0 1px;
+}
+
+/* ── The engraved page ─────────────────────────────────────────────────────
+   A safety net, not a layout: the score is engraved to the exact width of this
+   box and needs no scaling, but between a resize and the re-engrave that
+   follows it the drawing is briefly the width of the box it was made for. This
+   keeps that moment from pushing a horizontal scrollbar onto the page.
+
+   The tempo mark is hidden here rather than kept out of the ABC. Taking the
+   `Q:` out was tried and reverted: it is what the note timestamps are built
+   from, and without it clicking a note seeked into a different clock (see
+   `injectDefaultTempo`). Hiding it in CSS reclaims the space it reserved all
+   the same, because `cropToInk` measures INK and an element with
+   `display: none` has none — which is the piece that was missing the first
+   time this was tried. */
+/* `display: block` because an SVG is inline by default, so it sits on a text
+   baseline and the line-box leaves a few pixels of descender space under it. */
+.abc-score-paper svg { max-width: 100%; display: block; }
+.abc-score-paper .abcjs-tempo { display: none; }
+
+/* The scrollbar down a full-page score that fits was NOT the score. abcjs
+   measures glyph widths by drawing them into a scratch SVG, and
+   `Svg.prototype.createDummySvg` (write/svg.js) appends that scratch to
+   `<body>` once and never takes it away:
+
+     <svg style="display: block !important;height: 1px;width: 1px;position: absolute;">
+
+   `position: absolute` with no offsets keeps an element at its static place,
+   and its static place is the END of the body — so it hangs one layout pixel
+   past the bottom of the document, for good, from the first score drawn
+   anywhere in the app. Measured: `documentElement.scrollHeight - clientHeight`
+   = 1, `window.innerWidth - clientWidth` = 7, in a full-page reader whose own
+   score box overflowed by exactly 0. A scrollbar down the whole window for one
+   pixel of nothing.
+
+   Pinning it to the origin costs abcjs nothing — it is never shown, only
+   measured with `getBBox`, which does not care where the box sits. */
+body > svg[style*="height: 1px"][style*="position: absolute"] {
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* Playback cursor + note highlight. The colour comes from the paper the score
+   is drawn on (`--abc-cursor`, set by the viewer): the rose that reads well on
+   white washes out on the dark surface, so each paper names its own. The
+   fallback is the value this used to be hard-coded to, for any score drawn
+   outside the viewer. */
+.abcjs-cursor { stroke: var(--abc-cursor, #e11d48); stroke-width: 2px; }
+.abcjs-highlight { fill: var(--abc-cursor, #e11d48) !important; }
+
+/* ── The score viewer's own controls ───────────────────────────────────────
+   An icon button in the viewer's toolbar row. 36 layout px, which the app's
+   zoom turns into 45 on a desktop and 32,4 on a phone — the floor `.tap-btn`
+   sets for every other target in the app, and which these did not meet (21 px)
+   until 2026-09-21. */
+.abc-tool-btn {
+  @apply flex items-center justify-center rounded-md transition-colors cursor-pointer shrink-0;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding-inline: 0.375rem;
+}
+
+/* A switch in the transport row — the metronome, the swing, the key. One class
+   for the three so they cannot drift apart, and `.abc-chip-on` for the state.
+   Sized as a target first (36 px, the app's floor) and as a glyph second. */
+.abc-chip {
+  @apply flex items-center justify-center gap-1 rounded-lg text-xs font-medium
+         transition-colors cursor-pointer shrink-0 border border-border bg-bg text-muted;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding-inline: 0.5rem;
+}
+.abc-chip:hover { @apply text-primary; }
+.abc-chip-on {
+  @apply border-accent/40 text-accent;
+  background-color: rgb(var(--color-accent-ch) / 0.15);
+}
+.abc-chip-on:hover { @apply text-accent; }
+
+/* The bar that floats over the score in the full-page reader — on the paper,
+   so it takes the paper's own colours rather than the app's. `color-mix` keeps
+   one rule for three papers instead of three rules that can drift apart. */
+.abc-score-tools {
+  background: color-mix(in srgb, var(--abc-paper, #ffffff) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--abc-ink, #000000) 14%, transparent);
+}
+.abc-score-tool {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  color: color-mix(in srgb, var(--abc-ink, #000000) 72%, transparent);
+}
+.abc-score-tool:hover {
+  color: var(--abc-ink, #000000);
+  background: color-mix(in srgb, var(--abc-ink, #000000) 8%, transparent);
+}
+
 
 
 /* Library list — show date column when container is wide enough */

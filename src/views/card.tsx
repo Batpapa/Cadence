@@ -6,7 +6,8 @@ import { copyFileName } from '../services/attachmentNames';
 import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
-import { AttachmentList, CardRefList, showCardPicker, cardToRef } from '../components/attachmentList';
+import { AttachmentList, CardRefList, showCardPicker, cardToRef, openCardScore, hasScore,
+  type AttachmentListOptions } from '../components/attachmentList';
 import { decksContainingCard, deckPath } from '../services/deckService';
 import { findBacklinks, findSetsContaining } from '../services/cardRefService';
 import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, isTuneset, canBeTuneOf, isTypeLocked, applyCardType } from '../services/cardTypeService';
@@ -589,6 +590,54 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const rColor    = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
   const easeColor = ease === undefined ? 'text-dim' : ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : 'text-danger';
 
+  /** Hoisted out of the JSX because TWO things now open this card's files: the
+   *  attachment list, and the button in the opening-bars heading that goes
+   *  straight to the score. They must open it the same way — see
+   *  `openCardScore`, which is the one place that knows how. */
+  const attachmentOptions: AttachmentListOptions = {
+    attachments: card.content.attachments,
+    card,
+    editable: true,
+    onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); }),
+    onRemove:  (i) => mutate(s => { s.cards[cardId]!.content.attachments.splice(i, 1); }),
+    onUpdateFile: (i, data) => mutate(s => {
+      const att = s.cards[cardId]!.content.attachments[i];
+      if (att && att.type === 'file') att.data = data;
+    }),
+    onSetPreferredIndex: (i, index) => mutate(s => {
+      const att = s.cards[cardId]!.content.attachments[i];
+      if (att && att.type === 'file') {
+        if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
+      }
+    }),
+    onRenameFile: (i, name) => mutate(s => {
+      const att = s.cards[cardId]!.content.attachments[i];
+      if (att && att.type === 'file') att.name = name;
+    }),
+    // Answers synchronously, so the viewer can show the copy's name at once:
+    // mutate() runs its function before its first await, which is also what
+    // lets the number be chosen against the live list rather than a render's.
+    onCopyFile: (i, data) => {
+      let name = '';
+      void mutate(s => {
+        const atts = s.cards[cardId]!.content.attachments;
+        const original = atts[i];
+        if (!original || original.type !== 'file') return;
+        name = copyFileName(original.name, atts.flatMap(a => (a.type === 'file' ? [a.name] : [])));
+        // Everything but the marker: the copy is the user's, so no refresh
+        // may ever replace it. The star comes along.
+        const { generatedBy: _generatedBy, ...rest } = original;
+        atts.splice(i, 0, { ...rest, name, data });
+      });
+      return name;
+    },
+    onReorder: (from, insertBefore) => mutate(s => {
+      const atts = s.cards[cardId]!.content.attachments;
+      const [moved] = atts.splice(from, 1);
+      atts.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
+    }),
+  };
+
   return (
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
 
@@ -1002,52 +1051,10 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       {/* Between the tune list and the attachments, which is where it is
           useful: the list says WHAT is played, this says how it starts, and
           the full score below is for when two bars are not enough. */}
-      <IncipitRow card={card} where="card" />
+      <IncipitRow card={card} where="card" onOpenScore={hasScore(card.content.attachments) ? () => openCardScore(attachmentOptions) : undefined} />
 
       {/* ── Attachments ── */}
-      <AttachmentList options={{
-        attachments: card.content.attachments,
-        card,
-        editable: true,
-        onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); }),
-        onRemove:  (i) => mutate(s => { s.cards[cardId]!.content.attachments.splice(i, 1); }),
-        onUpdateFile: (i, data) => mutate(s => {
-          const att = s.cards[cardId]!.content.attachments[i];
-          if (att && att.type === 'file') att.data = data;
-        }),
-        onSetPreferredIndex: (i, index) => mutate(s => {
-          const att = s.cards[cardId]!.content.attachments[i];
-          if (att && att.type === 'file') {
-            if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
-          }
-        }),
-        onRenameFile: (i, name) => mutate(s => {
-          const att = s.cards[cardId]!.content.attachments[i];
-          if (att && att.type === 'file') att.name = name;
-        }),
-        // Answers synchronously, so the viewer can show the copy's name at once:
-        // mutate() runs its function before its first await, which is also what
-        // lets the number be chosen against the live list rather than a render's.
-        onCopyFile: (i, data) => {
-          let name = '';
-          void mutate(s => {
-            const atts = s.cards[cardId]!.content.attachments;
-            const original = atts[i];
-            if (!original || original.type !== 'file') return;
-            name = copyFileName(original.name, atts.flatMap(a => (a.type === 'file' ? [a.name] : [])));
-            // Everything but the marker: the copy is the user's, so no refresh
-            // may ever replace it. The star comes along.
-            const { generatedBy: _generatedBy, ...rest } = original;
-            atts.splice(i, 0, { ...rest, name, data });
-          });
-          return name;
-        },
-        onReorder: (from, insertBefore) => mutate(s => {
-          const atts = s.cards[cardId]!.content.attachments;
-          const [moved] = atts.splice(from, 1);
-          atts.splice(insertBefore > from ? insertBefore - 1 : insertBefore, 0, moved!);
-        }),
-      }} />
+      <AttachmentList options={attachmentOptions} />
 
       {/* ── Played in these sets (read-only) ── */}
       {/* Above "referenced by" because membership is stronger information than

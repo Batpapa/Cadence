@@ -4,7 +4,7 @@ import { pickRandom, pickOptimal, pickStochastic, pickSequential, decksContainin
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
-import { AttachmentList, CardRefList } from '../components/attachmentList';
+import { AttachmentList, CardRefList, openCardScore, hasScore, type AttachmentListOptions } from '../components/attachmentList';
 import { isTuneset } from '../services/cardTypeService';
 import { IncipitRow } from '../components/incipit';
 import { TuneIcon } from '../components/icons';
@@ -236,6 +236,22 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     );
   }
 
+  /** Read-only, and shared by the attachment list and the button in the
+   *  opening-bars heading: both have to open a score the same way. Starring a
+   *  version is the one thing a review may still write — it is a viewing
+   *  preference, not a change to the card. */
+  const studyAttachmentOptions: AttachmentListOptions = {
+    attachments: card.content.attachments,
+    card,
+    editable: false,
+    onSetPreferredIndex: (i, index) => mutate(s => {
+      const att = s.cards[cardId!]?.content.attachments[i];
+      if (att && att.type === 'file') {
+        if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
+      }
+    }),
+  };
+
   return (
     <div class="flex flex-col h-full view-enter">
       {topBar}
@@ -324,27 +340,23 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           {/* The opening bars, when the user asked for them in study too.
               Under the tune list, above the score: it answers "how does this
               start" for someone who has just been shown the name. */}
-          <IncipitRow card={card} where="study" />
+          {/* The score is one tap away in a review too — and MORE useful here
+              than on the card page: the whole point of a review is to find out
+              whether you still have the tune, and the answer to "not quite" is
+              to read it. Read-only, like everything else on this screen. */}
+          <IncipitRow
+            card={card}
+            where="study"
+            onOpenScore={hasScore(card.content.attachments) ? () => openCardScore(studyAttachmentOptions) : undefined}
+          />
 
+          {/* The set's own card travels in the options above, without which a
+              generated score cannot be built: it stores only the intent, so a
+              list that does not get the card shows the placeholder entry as-is
+              — named "ABC", and empty. `editable: false` still keeps the "add
+              a generated score" action out of study. */}
           {card.content.attachments.length > 0 && (
-            <AttachmentList options={{
-              attachments: card.content.attachments,
-              // The set's own card, without which a generated score cannot be
-              // built: it stores only the intent, so an AttachmentList that
-              // does not get the card shows the placeholder entry as-is —
-              // named "ABC", and empty. `editable: false` still keeps the
-              // "add a generated score" action out of study.
-              card,
-              editable: false,
-              // Picking a favorite ABC version is a viewing preference, not a
-              // content edit — allowed here even though the rest is read-only.
-              onSetPreferredIndex: (i, index) => mutate(s => {
-                const att = s.cards[cardId!]?.content.attachments[i];
-                if (att && att.type === 'file') {
-                  if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
-                }
-              }),
-            }} />
+            <AttachmentList options={studyAttachmentOptions} />
           )}
 
           {(() => {
