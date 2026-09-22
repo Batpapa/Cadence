@@ -37,7 +37,7 @@ const SIDEBAR_MAX           = 400;
 function ContentSwitch() {
   const route = routeSignal.value;
   const e = `e${stateEpoch.value}:`;
-  if (route.view === 'study')   return <StudyView key={e} deckId={route.deckId} cardIds={route.cardIds} studyTitle={route.studyTitle} strategy={route.strategy} currentCardId={route.currentCardId} contextDeckId={route.contextDeckId} />;
+  if (route.view === 'study')   return <StudyView key={e} deckId={route.deckId} cardIds={route.cardIds} studyTitle={route.studyTitle} strategy={route.strategy} currentCardId={route.currentCardId} contextDeckId={route.contextDeckId} skippedCardIds={route.skippedCardIds} />;
   if (route.view === 'deck')    return <DeckView   key={e + route.deckId}   deckId={route.deckId} />;
   if (route.view === 'library') return <LibraryView key={e} />;
   if (route.view === 'card')    return <CardView   key={e + route.cardId}   cardId={route.cardId} contextDeckId={route.contextDeckId} />;

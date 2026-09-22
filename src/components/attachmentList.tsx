@@ -2,13 +2,14 @@ import { useEffect, useRef, useMemo, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
 import { entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance } from '../utils';
-import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon } from './icons';
+import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon } from './icons';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult } from './fileViewer';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
 import { showAddFileModal } from './addFileModal';
-import { detectPlatform, resolveEmbed, PLATFORM_ICONS } from '../services/embedService';
+import { showAddLinkModal, showEditLinkModal } from './addLinkModal';
+import { detectPlatform, PLATFORM_ICONS, linkMode, safeExternalUrl } from '../services/embedService';
 import { resolveCardRef } from '../services/cardRefService';
 import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder, isAbcFile } from '../services/abcService';
 import { isTuneset, hasTunesetScore, CARD_TYPE_TUNE } from '../services/cardTypeService';
@@ -256,9 +257,23 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   );
 }
 
-function EmbedRowContent({ entry, onRemove, editable }: { entry: EmbedEntry; onRemove: () => void; editable: boolean }) {
+function EmbedRowContent({ entry, onRemove, onEdit, editable }: {
+  entry: EmbedEntry;
+  onRemove: () => void;
+  onEdit?: () => void;
+  editable: boolean;
+}) {
+  const mode = linkMode(entry);
   const platform = detectPlatform(entry.url);
-  const icon = platform ? PLATFORM_ICONS[platform] : '⛓';
+  // An external link is marked by where it goes, not by who hosts it — the
+  // arrow is the same one the app uses for every other departure, and a
+  // YouTube URL deliberately kept external must not look like an embed.
+  const icon = mode === 'link' ? '↗' : platform ? PLATFORM_ICONS[platform] : '⛓';
+  // A safe href only for an external link — an embed never becomes one, and a
+  // scheme the browser would run as script never becomes anything (see
+  // safeExternalUrl). An imported entry is the only way null gets here.
+  const href = mode === 'link' ? safeExternalUrl(entry.url) : null;
+
   let label = entry.title;
   if (!label) {
     try {
@@ -266,17 +281,42 @@ function EmbedRowContent({ entry, onRemove, editable }: { entry: EmbedEntry; onR
       label = u.hostname.replace('www.', '') + u.pathname.split('/').slice(0, 3).join('/');
     } catch { label = entry.url; }
   }
+
+  const labelClass = 'text-xs font-mono truncate flex-1 text-muted hover:text-primary transition-colors';
+  const actionClass = 'text-dim hover:text-accent transition-colors shrink-0 cursor-pointer flex items-center';
+
   return (
     <>
       <span class="text-[11px] text-dim shrink-0 w-4 text-center font-mono">{icon}</span>
-      <span
-        class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
-        title={entry.url} onClick={() => showEmbedModal(entry)}
-      >{label}</span>
-      <button
-        class="text-xs text-dim hover:text-accent transition-colors shrink-0 cursor-pointer"
-        title={t('embed.play')} onClick={() => showEmbedModal(entry)}
-      >▶</button>
+
+      {/* A real anchor rather than a click handler, so a middle click or a
+          Ctrl+click behaves the way every other link on the page does — and so
+          no popup blocker sees a window opened out of script. */}
+      {mode === 'link' ? (
+        href ? (
+          <a href={href} target="_blank" rel="noopener noreferrer" class={labelClass} title={entry.url}>{label}</a>
+        ) : (
+          <span class={`${labelClass} italic`} title={t('embed.badUrl')}>{label}</span>
+        )
+      ) : (
+        <span class={`${labelClass} cursor-pointer`} title={entry.url} onClick={() => showEmbedModal(entry)}>{label}</span>
+      )}
+
+      {mode === 'link' ? (
+        href && (
+          <a href={href} target="_blank" rel="noopener noreferrer" class={actionClass} title={t('embed.open')}>
+            <ExternalLinkIcon size={11} />
+          </a>
+        )
+      ) : (
+        <button class={`${actionClass} text-xs`} title={t('embed.play')} onClick={() => showEmbedModal(entry)}>▶</button>
+      )}
+
+      {editable && onEdit && (
+        <button class={actionClass} title={t('embed.edit')} onClick={onEdit}>
+          <PencilIcon size={11} />
+        </button>
+      )}
       {editable && (
         <button
           class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
@@ -602,34 +642,6 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
   );
 }
 
-function addLink(onAdd: (a: Attachment) => void): void {
-  const body = document.createElement('div'); body.className = 'space-y-3';
-  const inp = document.createElement('input');
-  inp.type = 'url'; inp.placeholder = t('embed.placeholder');
-  inp.className = 'input text-xs';
-  const errorEl = document.createElement('p'); errorEl.className = 'text-xs text-danger'; errorEl.style.display = 'none';
-  const setError = (msg: string) => { errorEl.textContent = msg; errorEl.style.display = 'block'; };
-  body.append(inp, errorEl);
-
-  const doAdd = async () => {
-    const url = inp.value.trim();
-    if (!url) return;
-    if (!detectPlatform(url)) { setError(t('embed.unsupported')); return; }
-    setError(t('embed.checking'));
-    const meta = await resolveEmbed(url);
-    if (!meta) { setError(t('embed.error')); return; }
-    onAdd({ type: 'embed', id: generateId(), url, title: meta.title, embedUrl: meta.embedUrl });
-    closeModal();
-  };
-
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { void doAdd(); } });
-  showModal(t('embed.addTitle'), body, [
-    { label: t('common.cancel'), onClick: closeModal },
-    { label: t('common.add'), primary: true, onClick: () => { void doAdd(); } },
-  ]);
-  focusIfDesktop(inp);
-}
-
 /** The save of a TheSession score's editor (2026-09-15). "Refresh ABC" replaces
  *  that file wholesale, so an edit made in it would be lost at the next refresh:
  *  the first save of an opened viewer asks, then writes the edit to a COPY
@@ -687,6 +699,11 @@ export interface AttachmentListOptions {
   /** Saves an edit to a TheSession score as a copy inserted just before it,
    *  and answers the copy's name. See theSessionScoreSaver. */
   onCopyFile?: (i: number, data: string) => string;
+  /** Replaces a link attachment wholesale — its URL, its name and above all
+   *  its mode, which is why this is a replacement and not a rename: switching
+   *  an embed to an external link drops its `embedUrl`, and the entry that
+   *  comes back is already built (see showEditLinkModal). */
+  onUpdateLink?: (i: number, entry: EmbedEntry) => void;
   /** The card these attachments belong to. Only needed to resolve a set's
    *  generated score, whose stored `data` is empty by design — everything else
    *  here works from the attachments alone. */
@@ -761,6 +778,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
   const onRenameFile = options.onRenameFile;
   const onCopyFile = options.onCopyFile;
   const onSetPreferredIndex = options.onSetPreferredIndex;
+  const onUpdateLink = options.onUpdateLink;
   const card = options.card;
 
   const scratch = useRef<DragScratch>({ draggedIdx: null, indicatorEl: null }).current;
@@ -794,7 +812,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
     // which one is asked in a dialog of its own rather than as two entries
     // here: this menu says WHAT is being attached, not where it comes from.
     { label: t('fileViewer.addFile'), onClick: () => showAddFileModal(onAdd) },
-    { label: t('fileViewer.addLink'), onClick: () => addLink(onAdd) },
+    { label: t('fileViewer.addLink'), onClick: () => showAddLinkModal(onAdd) },
     { label: t('fileViewer.addCard'), onClick: () => showCardRefPicker(onAdd) },
     // Sets only, and once only — the entry disappears rather than being offered
     // and refused, like every other impossible action in this app.
@@ -851,7 +869,10 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
               ) : att.type === 'card' ? (
                 <CardRefRowContent entry={att} onRemove={() => onRemove(i)} editable={editable} />
               ) : (
-                <EmbedRowContent entry={att} onRemove={() => onRemove(i)} editable={editable} />
+                <EmbedRowContent
+                  entry={att} onRemove={() => onRemove(i)} editable={editable}
+                  onEdit={onUpdateLink ? () => showEditLinkModal(att, (next) => onUpdateLink(i, next)) : undefined}
+                />
               )}
             </AttachmentRow>
           ))}

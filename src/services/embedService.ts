@@ -1,3 +1,5 @@
+import type { EmbedEntry, LinkMode } from '../types';
+
 export type EmbedPlatform = 'youtube' | 'spotify' | 'deezer' | 'soundcloud';
 
 export interface EmbedMeta {
@@ -20,6 +22,32 @@ const OEMBED_ENDPOINTS: Record<EmbedPlatform, string> = {
   deezer:     'https://deezer.com/oembed',
   soundcloud: 'https://soundcloud.com/oembed',
 };
+
+// ── What a link does when opened ──────────────────────────────────────────────
+
+/** The one reader of `EmbedEntry.mode`. An absent mode is an embed: that is
+ *  what every link stored before 2026-09-22 was, and what a card package or an
+ *  AI import that says nothing still means. New entries write both values
+ *  explicitly all the same — an optional flag read in two places is how a
+ *  deliberate choice turns back into a default (see CLAUDE.md). */
+export function linkMode(entry: EmbedEntry): LinkMode {
+  return entry.mode === 'link' ? 'link' : 'embed';
+}
+
+/** `url` if it is safe to put in an `href`, else null.
+ *
+ *  An external link is the first place this app hands a stored string straight
+ *  to the browser as a navigation target, and attachments arrive from card
+ *  packages and AI-written JSON as well as from the dialog — `javascript:` in
+ *  that field would be a script injection with the CSP none the wiser, since
+ *  it is the user's own click that runs it. Only the two schemes an external
+ *  link can plausibly want are let through. */
+export function safeExternalUrl(url: string): string | null {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? url : null;
+  } catch { return null; }
+}
 
 // ── Platform detection ────────────────────────────────────────────────────────
 

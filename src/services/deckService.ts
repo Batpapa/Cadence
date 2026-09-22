@@ -123,6 +123,41 @@ export function pickSequential(
   return null;
 }
 
+// ── Skipping, and the round it defines ────────────────────────────────────────
+
+/** The skip marks a study session carries into its next pick.
+ *
+ *  A skipped card is set aside for the rest of the round rather than left in
+ *  the draw — without that, a random strategy hands it straight back and the
+ *  gesture means nothing. When every card still to study has been skipped the
+ *  round is over: the marks all come off and the same cards are offered again,
+ *  which is what skipping has to mean in a deck one is working through.
+ *
+ *  Marks are dropped for cards that have left the deck or the context. Mastery
+ *  is deliberately not one of those reasons: a card mastered mid-session simply
+ *  stops being a candidate, and the round ends when no candidate is unmarked.
+ *
+ *  `deck` is the CONTEXTUAL deck — the same list the pickers are given — so a
+ *  card the context excludes cannot hold a round open.
+ *
+ *  Pure: returns the new list, never mutates the one given. */
+export function advanceSkips(
+  user: User,
+  profileId: string,
+  deck: Deck,
+  cardWorks: Record<string, CardWork>,
+  excludeMastered: boolean,
+  skipped: readonly string[],
+  skipCardId?: string | null,
+): string[] {
+  const inDeck = new Set(deck.entries.map(e => e.cardId));
+  const marks  = new Set(skipped.filter(id => inDeck.has(id)));
+  if (skipCardId && inDeck.has(skipCardId)) marks.add(skipCardId);
+  const candidates  = candidateEntries(user, profileId, deck, cardWorks, excludeMastered);
+  const roundIsOpen = candidates.some(e => !marks.has(e.cardId));
+  return roundIsOpen ? [...marks] : [];
+}
+
 // ── Navigation helpers ────────────────────────────────────────────────────────
 
 export function findParentFolder(

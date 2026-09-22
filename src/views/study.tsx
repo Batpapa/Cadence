@@ -1,6 +1,6 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, leaveStudy } from '../store';
-import { pickRandom, pickOptimal, pickStochastic, pickSequential, decksContainingCard } from '../services/deckService';
+import { pickRandom, pickOptimal, pickStochastic, pickSequential, advanceSkips, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { renderNotes } from '../components/fileViewer';
@@ -37,18 +37,31 @@ function buildDeck(user: AppState, deckId?: string, cardIds?: string[], studyTit
 
 /** `afterCardId` is only read by the sequential strategy, which derives its
  *  position from the card on screen (see pickSequential). The other three
- *  ignore it — they are stateless. */
+ *  ignore it — they are stateless.
+ *
+ *  `skipped` is the round's marks (see advanceSkips): those cards are taken out
+ *  of the list the pickers see, which is all it takes for a stateless draw to
+ *  stop offering them. The one exception is the card on screen under
+ *  `sequential`: that mode reads its position from it, and a list it is missing
+ *  from restarts the walk at the top of the deck. Keeping it in cannot make it
+ *  be picked again — the walk starts at the entry AFTER it, and it is only ever
+ *  reached last, by which point advanceSkips has already ended the round. */
 function pickNextCard(
   user: AppState,
   deck: Deck,
   strategy: StudyStrategy,
   contextDeckId: string | null | undefined,
   afterCardId?: string | null,
+  skipped?: ReadonlySet<string>,
 ): DeckEntry | null {
   const profileId = user.currentProfileId;
   const w    = user.weightByImportance ?? true;
   const excl = user.excludeMastered ?? true;
-  const ctxEntries = buildContextualEntries(deck, contextDeckId, user);
+  let ctxEntries = buildContextualEntries(deck, contextDeckId, user);
+  if (skipped?.size) {
+    const anchor = strategy === 'sequential' ? afterCardId : null;
+    ctxEntries = ctxEntries.filter(e => !skipped.has(e.cardId) || e.cardId === anchor);
+  }
   const ctxDeck: Deck = { ...deck, entries: ctxEntries };
   if (strategy === 'random')     return pickRandom(user, profileId, ctxDeck, user.cardWorks, excl);
   if (strategy === 'optimal')    return pickOptimal(user, profileId, ctxDeck, user.cards, user.cardWorks, w, excl);
@@ -64,13 +77,14 @@ function VanillaEl({ el }: { el: HTMLElement }) {
   return <div ref={ref} />;
 }
 
-export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId, contextDeckId }: {
+export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId, contextDeckId, skippedCardIds }: {
   deckId?: string;
   cardIds?: string[];
   studyTitle?: string;
   strategy: StudyStrategy;
   currentCardId?: string | null;
   contextDeckId?: string | null;
+  skippedCardIds?: string[];
 }) {
   const user = appState.value;
   const deck = buildDeck(user, deckId, cardIds, studyTitle);
@@ -79,8 +93,13 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
 
   const ctxEntries = deck ? buildContextualEntries(deck, contextDeckId, user) : [];
 
+  /** The round's marks, as they were when this card was reached. They live in
+   *  the route, so going back to an earlier card restores the round as it stood
+   *  there — the same way the card itself is restored. */
+  const skipSet = new Set(skippedCardIds ?? []);
+
   // null means "deck complete" screen; undefined means "pick next card".
-  const cardId = currentCardId ?? (deck ? pickNextCard(user, deck, strategy, contextDeckId)?.cardId : undefined);
+  const cardId = currentCardId ?? (deck ? pickNextCard(user, deck, strategy, contextDeckId, null, skipSet)?.cardId : undefined);
   const card   = (cardId && currentCardId !== null) ? user.cards[cardId] : undefined;
 
   const total          = deck?.entries.length ?? 0;
@@ -91,11 +110,12 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])
   ).length;
   const candidateCount = (user.excludeMastered ?? true) ? ctxTotal - mastered : ctxTotal;
-  // Skipping logs no rating, so it changes nothing that `optimal` reads: it
-  // would re-pick the very same highest-gain card. `sequential` is
-  // deterministic too, but it advances by position — skipping means something
-  // there, and is the natural way to step through a deck without grading it.
-  const canSkip  = candidateCount > 1 && strategy !== 'optimal';
+  // Every strategy can skip since a skip sets the card aside for the round
+  // (see advanceSkips) — before that it was hidden under `optimal`, where it
+  // logged no rating and so had the very same highest-gain card handed back.
+  // Still off with a single candidate: the skip would close the round and land
+  // straight back on it.
+  const canSkip  = candidateCount > 1;
 
   // Position in the deck's own order. Sequential only: it is the one mode that
   // loops with nothing else to mark where you are — with "exclude mastered" off
@@ -108,30 +128,39 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
   // Base route shape — carries full context for each navigate() call
   const routeBase = { view: 'study' as const, deckId, cardIds, studyTitle, strategy, contextDeckId };
 
-  // navigate (push) so each card gets its own history entry — back goes to previous card, not to pre-study.
-  const goNext = () => {
-    const u    = appState.value;
-    const d    = buildDeck(u, deckId, cardIds, studyTitle);
-    if (!d) return;
-    const ctxLen = buildContextualEntries(d, contextDeckId, u).length;
-    let   next   = pickNextCard(u, d, strategy, contextDeckId, cardId);
-    // Anti-repeat re-roll: only a random draw can land back on the card we
-    // just left, and only a random draw can land elsewhere on a second try.
-    if (isRandomDraw(strategy) && next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
-    navigate({ ...routeBase, currentCardId: next?.cardId ?? null });
-  };
-
-  const skipCard = () => {
+  /** Leaves the card on screen for the next one, carrying the round with it.
+   *
+   *  `skipCurrent` is what tells a skip from a rating: only a skip sets the
+   *  card aside. The marks are settled BEFORE the pick, because settling them
+   *  is what can end the round — and a pick made against a round that is over
+   *  would be drawn from an empty list.
+   *
+   *  navigate (push) so each card gets its own history entry — back goes to the
+   *  previous card, not to pre-study. */
+  const advance = (skipCurrent: boolean) => {
     const u = appState.value;
     const d = buildDeck(u, deckId, cardIds, studyTitle);
     if (!d) return;
-    const ctxLen = buildContextualEntries(d, contextDeckId, u).length;
-    let   next   = pickNextCard(u, d, strategy, contextDeckId, cardId);
+    const ctxEntries = buildContextualEntries(d, contextDeckId, u);
+    const ctxDeck: Deck = { ...d, entries: ctxEntries };
+    const marks = advanceSkips(
+      u, u.currentProfileId, ctxDeck, u.cardWorks, u.excludeMastered ?? true,
+      skippedCardIds ?? [], skipCurrent ? cardId : null,
+    );
+    const markSet = new Set(marks);
+    let next = pickNextCard(u, d, strategy, contextDeckId, cardId, markSet);
     // Anti-repeat re-roll: only a random draw can land back on the card we
     // just left, and only a random draw can land elsewhere on a second try.
-    if (isRandomDraw(strategy) && next?.cardId === cardId && ctxLen > 1) next = pickNextCard(u, d, strategy, contextDeckId);
-    navigate({ ...routeBase, currentCardId: next?.cardId ?? null });
+    // Unreachable while that card is marked — it is not in the list any more —
+    // so this is the plain rating case, and the round that has just reopened.
+    if (isRandomDraw(strategy) && next?.cardId === cardId && ctxEntries.length > 1) {
+      next = pickNextCard(u, d, strategy, contextDeckId, null, markSet);
+    }
+    navigate({ ...routeBase, currentCardId: next?.cardId ?? null, skippedCardIds: marks.length ? marks : undefined });
   };
+
+  const goNext   = () => advance(false);
+  const skipCard = () => advance(true);
 
   const logRating = (rating: SessionRating) => {
     const ts = Date.now();
@@ -294,14 +323,11 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
                 </button>
               ))}
             </div>
-            {/* Absent under `optimal`, not merely disabled: there it could
-                never do anything. Elsewhere it greys out while a single
-                candidate is left, which is a passing state worth showing. */}
-            {strategy !== 'optimal' && (
-              <button class="btn-ghost py-1.5 text-xs w-full" disabled={!canSkip} title={t('study.skipTitle')} onClick={skipCard}>
-                {t('study.skip')}
-              </button>
-            )}
+            {/* Greys out rather than disappears while a single candidate is
+                left, which is a passing state worth showing. */}
+            <button class="btn-ghost py-1.5 text-xs w-full" disabled={!canSkip} title={t('study.skipTitle')} onClick={skipCard}>
+              {t('study.skip')}
+            </button>
           </div>
 
           {card.tags.length > 0 && (
