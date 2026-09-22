@@ -254,6 +254,10 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     end: useRef<HTMLDivElement>(null),
   };
   const headRef = useRef(origin.start);
+  /** Whether the head has ever been PUT somewhere — by a press on a strip, or
+   *  by the play button. Its starting value is the bound itself, which is not
+   *  a place anyone chose to listen at, so it is not a mark until then. */
+  const headSetRef = useRef(false);
 
   /** The recording is not on this device, so every control here is inert.
    *
@@ -328,14 +332,35 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     onDraft({ start: next.start, end: next.end, twins: twinEdits(next) });
   };
 
+  /** The fixed marks — neighbouring bounds and this detection's other one.
+   *  What the magnifier DRAWS, since a canvas only repaints on a render. */
   const marks = snapMarks(anns, ann.id, draft, bound, duration, linkedIds);
+
+  /** The marks as they stand at this instant, play head included.
+   *
+   *  Read as a function and never kept, because the head moves between renders
+   *  (2026-09-22, user request — the head replaces the "Bound here" button,
+   *  whose "here" pointed at nothing the eye could find).
+   *
+   *  Two conditions, and both are about the head being a PLACE rather than a
+   *  position. It has to have been put somewhere: until the first press it
+   *  sits on the bound itself, which nobody chose, against a line hidden
+   *  behind the crosshair. And the sound has to be stopped: a running head is
+   *  a sweep, not a target — under the loop it crosses the very spot being
+   *  dragged every few seconds, and a mark that comes to meet the finger is
+   *  not a mark. Stopped, it stands exactly where the ear left it. */
+  const marksNow = (): SnapMark[] => {
+    const a = audioRef.current;
+    const still = headSetRef.current && (!a || a.paused);
+    return still ? [...marks, { t: headRef.current, head: true }] : marks;
+  };
 
   /** Moves the active bound, snapping unless the caller is being exact. The
    *  one route every keyboard, button and jog movement takes — so the lock
    *  below only has to be stated here and at the three pointer entries. */
   const moveTo = (v: number, { snap = true } = {}) => {
     if (locked) return;
-    const target = snap && magnet ? (findSnap(v, marks)?.t ?? v) : v;
+    const target = snap && magnet ? (findSnap(v, marksNow())?.t ?? v) : v;
     setDraft(withTwins(clampBound(bound, target, draft, reach)));
   };
 
@@ -452,6 +477,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   const seek = (tSec: number) => {
     const a = audioRef.current;
     headRef.current = Math.max(0, Math.min(duration, tSec));
+    headSetRef.current = true;
     if (a) a.currentTime = headRef.current;
     paintHeads();
   };
@@ -631,6 +657,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   };
 
   const labelOf = (m: SnapMark): string => {
+    if (m.head) return t('sessions.bounds.snapHead');
     if (!m.name) return t(m.edge === 'start' ? 'sessions.bounds.snapOwnStart' : 'sessions.bounds.snapOwnEnd');
     return t(m.edge === 'start' ? 'sessions.bounds.snapStart' : 'sessions.bounds.snapEnd', { name: capitalizeWords(m.name) });
   };
@@ -697,7 +724,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     el.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
       const v = ctxTimeAt(ev.clientX);
-      const target = magnet ? (findSnap(v, marks)?.t ?? v) : v;
+      const target = magnet ? (findSnap(v, marksNow())?.t ?? v) : v;
       setDraft(withTwins(clampBound(which, target, draft, win)));
     };
     const up = () => {
@@ -770,7 +797,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   const dEnd = draft.end - origin.end;
   const dirty = Math.abs(dStart) > .004 || Math.abs(dEnd) > .004;
   const noWave = !waveformFitsContext(win);
-  const snapped = magnet ? findSnap(active, marks, 0.002) : null;
+  const snapped = magnet ? findSnap(active, marksNow(), 0.002) : null;
 
   const boundBtn = (which: 'start' | 'end', value: number, delta: number) => (
     <button
@@ -950,42 +977,42 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
         >
           ⟲ {t('sessions.bounds.loop')}
         </button>
+        {/* Snapping sits in the transport row since 2026-09-22, in the place
+            the "Bound here" button held: what it now clicks onto is mostly the
+            play head, and the head is what the two controls to its left move.
+            The button it replaced said "here" about a thin line the eye never
+            found — dragging the bound ONTO that line says the same thing with
+            the sound and the waveform under the finger, and needs no word.
+            Pushed to the far right (`ml-auto`), because it is a setting and
+            not a transport control: the play and loop buttons act now, this
+            one only changes how the next drag behaves. */}
         <button
-          class="min-h-9 px-3 rounded-full border border-border text-xs text-muted hover:border-accent hover:text-primary inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
-          disabled={!audioUrl}
-          title={t('sessions.bounds.markHint')}
-          onClick={() => { moveTo(headRef.current, { snap: false }); rearmListening(); }}
+          class={`ml-auto min-h-9 px-3 rounded-full border text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+            magnet ? 'border-accent text-accent bg-accent/10' : 'border-border text-muted hover:border-accent hover:text-primary'}`}
+          aria-pressed={magnet}
+          title={t('sessions.bounds.magnetHint')}
+          onClick={() => setMagnet(m => !m)}
         >
-          ⌖ {t('sessions.bounds.markHere')}
+          ◎ {t('sessions.bounds.magnet')}
         </button>
-
       </div>
 
       {/* The colour legend stood here until 2026-09-21. Removed at the user's
           request — "très clair déjà": the accent block is under the crosshair
           being dragged and the grey ones carry the neighbours' names, so both
           say what they are without a key. */}
-      <div class="flex items-center justify-end gap-x-3 gap-y-2 flex-wrap">
-        <div class="flex items-center gap-2">
-          {dirty && (
-            <button
-              class="text-[11px] text-dim hover:text-primary inline-flex items-center gap-1 transition-colors cursor-pointer"
-              onClick={() => { setDraft({ ...origin }); rearmListening(); }}
-            >
-              <ResetIcon size={11} /> {t('sessions.bounds.reset')}
-            </button>
-          )}
+      {/* Nothing but Reset is left on this line, so it only exists once there
+          is something to reset — an empty row would still spend its margin. */}
+      {dirty && (
+        <div class="flex items-center justify-end">
           <button
-            class={`min-h-8 px-3 rounded-full border text-[11px] transition-colors cursor-pointer ${
-              magnet ? 'border-accent text-accent bg-accent/10' : 'border-border text-muted hover:text-primary'}`}
-            aria-pressed={magnet}
-            title={t('sessions.bounds.magnetHint')}
-            onClick={() => setMagnet(m => !m)}
+            class="text-[11px] text-dim hover:text-primary inline-flex items-center gap-1 transition-colors cursor-pointer"
+            onClick={() => { setDraft({ ...origin }); rearmListening(); }}
           >
-            ◎ {t('sessions.bounds.magnet')}
+            <ResetIcon size={11} /> {t('sessions.bounds.reset')}
           </button>
         </div>
-      </div>
+      )}
 
       <audio ref={audioRef} class="hidden" src={audioUrl ?? undefined} onPause={() => setPlaying(false)} />
     </div>

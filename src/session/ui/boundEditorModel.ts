@@ -63,11 +63,18 @@ export interface SnapMark {
   t: number;
   /** The neighbour's name — absent for this detection's own other bound. */
   name?: string;
-  /** Which end of that detection the mark is. */
-  edge: 'start' | 'end';
+  /** Which end of that detection the mark is. Absent on the play head, which
+   *  is not a bound at all. */
+  edge?: 'start' | 'end';
   /** The detection the mark belongs to — absent for this detection's own
    *  other bound. What `findTwin` matches a linked neighbour by. */
   id?: string;
+  /** The play head: not a bound but the place the user has just put their ear.
+   *  Added by the component at the moment the marks are read, never by
+   *  `snapMarks` — it moves between renders, and it only exists once the user
+   *  has listened somewhere (2026-09-22, user request: it replaces the "Bound
+   *  here" button, which named a spot nothing on screen pointed at). */
+  head?: true;
 }
 
 /** What the editor shows and what its bounds may reach, fixed at open time.
