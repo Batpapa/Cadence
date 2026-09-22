@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickSequential } from './deckService';
+import { pickSequential, advanceSkips } from './deckService';
 import { emptyState } from '../utils';
 import type { AppState, CardWork, Deck } from '../types';
 
@@ -80,5 +80,61 @@ describe('pickSequential', () => {
 
   it('returns null on an empty deck', () => {
     expect(next(makeUser(), deckOf(), null)).toBeNull();
+  });
+});
+
+const skips = (
+  user: AppState,
+  deck: Deck,
+  marks: string[],
+  skipCardId: string | null,
+  excludeMastered = true,
+) => advanceSkips(user, PROFILE, deck, user.cardWorks, excludeMastered, marks, skipCardId);
+
+describe('advanceSkips', () => {
+  it('sets the skipped card aside', () => {
+    expect(skips(makeUser(), deckOf('a', 'b', 'c'), [], 'a')).toEqual(['a']);
+  });
+
+  it('keeps the marks already standing', () => {
+    expect(skips(makeUser(), deckOf('a', 'b', 'c'), ['a'], 'b')).toEqual(['a', 'b']);
+  });
+
+  it('carries the round through a rating, which marks nothing', () => {
+    expect(skips(makeUser(), deckOf('a', 'b', 'c'), ['a'], null)).toEqual(['a']);
+  });
+
+  it('never marks the same card twice', () => {
+    expect(skips(makeUser(), deckOf('a', 'b', 'c'), ['a'], 'a')).toEqual(['a']);
+  });
+
+  // The rule the feature exists for: once nothing unskipped is left to study,
+  // the round is over and every card is offered again.
+  it('clears the marks when the last unskipped card is skipped', () => {
+    expect(skips(makeUser(), deckOf('a', 'b'), ['a'], 'b')).toEqual([]);
+  });
+
+  it('ends the round on the cards that are ELIGIBLE, not on the whole deck', () => {
+    // `c` is mastered, so it was never going to be offered: `a` and `b` being
+    // marked is the end of the round even though a third card exists.
+    expect(skips(makeUser(['c']), deckOf('a', 'b', 'c'), ['a'], 'b')).toEqual([]);
+  });
+
+  it('counts mastered cards in when excludeMastered is off', () => {
+    expect(skips(makeUser(['c']), deckOf('a', 'b', 'c'), ['a'], 'b', false)).toEqual(['a', 'b']);
+  });
+
+  it('drops marks for cards that have left the deck or the context', () => {
+    expect(skips(makeUser(), deckOf('a', 'b', 'c'), ['gone', 'a'], null)).toEqual(['a']);
+  });
+
+  it('ignores a skip of a card that is not in the deck', () => {
+    expect(skips(makeUser(), deckOf('a', 'b'), [], 'gone')).toEqual([]);
+  });
+
+  it('does not mutate the list it is given', () => {
+    const marks = ['a'];
+    skips(makeUser(), deckOf('a', 'b', 'c'), marks, 'b');
+    expect(marks).toEqual(['a']);
   });
 });

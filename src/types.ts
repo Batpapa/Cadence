@@ -6,11 +6,22 @@ export interface FileEntry {
   mimeType: string;
 }
 
+/** What a link attachment DOES when it is opened: `embed` plays it in a modal
+ *  iframe, `link` leaves the app for a new tab. Never read off the field
+ *  directly — `linkMode()` in embedService is the single reader, because an
+ *  absent one means `embed` (every link stored before 2026-09-22 was one). */
+export type LinkMode = 'embed' | 'link';
+
 export interface EmbedEntry {
   id: string;
   url: string;       // original URL as pasted by user
-  title?: string;    // fetched via oEmbed at add time
+  /** The row's label. Fetched via oEmbed at add time for an embed; typed by
+   *  hand, and mandatory, for an external link — nothing can be read off a
+   *  cross-origin page, and a bare URL is not a name. */
+  title?: string;
   embedUrl?: string; // resolved iframe src, stored to avoid re-fetching
+  /** Written explicitly on both sides since 2026-09-22 — see LinkMode. */
+  mode?: LinkMode;
 }
 
 /** A pointer to another card, independent of the role that pointer plays.
@@ -313,7 +324,11 @@ export type Route =
   | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; types?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean; reviewedFrom?: string; reviewedTo?: string; cards?: string[] }
   | { view: 'deck'; deckId: string }
   | { view: 'card'; cardId: string; contextDeckId?: string }
-  | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null }
+  // `skippedCardIds` is the cards set aside by a skip in the round under way.
+  // It travels in the route and NOT in the user's data: it describes this
+  // sitting, not what is known — a reload resumes the round, a new session
+  // starts a fresh one, and nothing of it reaches IndexedDB or Drive.
+  | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null; skippedCardIds?: string[] }
   | { view: 'modules' }
   // `annotationId` points at one detection inside the session — a "detected in"
   // link from a card, where two passes through the same tune are two distinct

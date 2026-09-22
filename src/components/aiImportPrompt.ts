@@ -60,7 +60,8 @@ Card types — "type" is a TOP-LEVEL field, a sibling of "name". Leave it out en
 - Do not invent sets. Only produce a "tuneset" card when I actually describe tunes played together as a set.
 
 Attachments (optional, inside "content.attachments" — leave it as [] unless one of these three clearly applies):
-1. A link (video, webpage, recording…): {"type": "embed", "url": "https://..."}
+1. A link. A YouTube, Spotify, Deezer or SoundCloud URL plays inside the app: {"type": "embed", "url": "https://..."}
+   Any OTHER link — a webpage, a forum thread, a tutorial — opens in a new tab and needs a name: {"type": "embed", "url": "https://...", "mode": "link", "title": "Short name for this link"}
 2. A text file to attach (e.g. sheet music in ABC notation, tab, lyrics): {"type": "file", "name": "filename.abc", "mimeType": "text/plain", "text": "the plain-text content"}
 3. A reference to another card in this SAME batch (e.g. "see also", a related tune): {"type": "card", "id": -2, "title": "the other card's name, for display"}
    To make this work: give the TARGET card a temporary negative "id" (e.g. -2) at its top level, then use that same number in the "id" field of the "card" attachment pointing to it. This works even if the target card is an id-linked TheSession/IrishTuneInfo card.

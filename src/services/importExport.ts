@@ -155,6 +155,11 @@ function sanitizeAttachment(raw: unknown): unknown {
   if (raw['type'] === 'embed') {
     if (typeof raw['id'] !== 'string' || !raw['id']) raw['id'] = generateId();
     if (typeof raw['url'] !== 'string') raw['url'] = '';
+    // Anything that is not one of the two known modes is dropped rather than
+    // kept: linkMode() would read it as an embed anyway, and a stored value no
+    // reader recognises is the sort of thing a later version mistakes for a
+    // deliberate choice.
+    if (raw['mode'] !== 'link' && raw['mode'] !== 'embed') delete raw['mode'];
   } else if (raw['type'] === 'file') {
     if (typeof raw['data'] !== 'string' && typeof raw['text'] === 'string') {
       raw['data'] = arrayBufferToBase64(new TextEncoder().encode(raw['text']).buffer);

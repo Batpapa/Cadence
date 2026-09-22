@@ -614,6 +614,13 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       const att = s.cards[cardId]!.content.attachments[i];
       if (att && att.type === 'file') att.name = name;
     }),
+    // A replacement, not a patch: the editor hands back a whole entry, and the
+    // fields it left out — an `embedUrl` an external link has no use for — are
+    // meant to be gone. Merging would keep them.
+    onUpdateLink: (i, entry) => mutate(s => {
+      const atts = s.cards[cardId]!.content.attachments;
+      if (atts[i]?.type === 'embed') atts[i] = { type: 'embed', ...entry };
+    }),
     // Answers synchronously, so the viewer can show the copy's name at once:
     // mutate() runs its function before its first await, which is also what
     // lets the number be chosen against the live list rather than a render's.
