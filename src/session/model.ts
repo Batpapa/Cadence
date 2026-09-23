@@ -484,3 +484,4 @@ export function manualAlternateRemovalFields(
     ...(ann.userConfirmed && ann.tuneId === tuneId ? alternatePickFields(ann, null) : {}),
   };
 }
+

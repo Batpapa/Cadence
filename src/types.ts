@@ -137,6 +137,19 @@ export type SessionRating = 'again' | 'hard' | 'good' | 'easy';
 export interface SessionEntry {
   ts: number;           // timestamp in ms
   rating: SessionRating;
+  /** Set when this rating was filed from somewhere that still exists and has
+   *  to find it again — to show it as already given, to take it back, or to
+   *  follow it when what it describes is corrected (2026-09-23).
+   *
+   *  OPAQUE here, and deliberately so: whoever files the entry owns the
+   *  string's shape and is the only one that reads into it, which is what
+   *  keeps a card's history from knowing about any module. Everything in the
+   *  core compares it and nothing more — see services/reviewEntries.ts.
+   *
+   *  Absent on every rating given in the study flow or typed on the card page,
+   *  and on everything filed before ids existed. An id whose owner is gone is
+   *  dropped rather than left dangling, and the rating stays. */
+  id?: string;
 }
 
 export interface Profile {

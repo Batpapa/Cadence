@@ -7,9 +7,11 @@ import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { findByExternalId } from '../../services/theSessionService';
 import { AbcPreview } from './abcPreview';
 import { showAlternatesPopover } from './AlternatesPopover';
-import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
+import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton, transferReviewEntry } from './sessionUiShared';
 import { getContext } from '../../store';
-import type { Detection, DetectionAlternate } from '../model';
+import { viterbiPickOf, type Detection, type DetectionAlternate } from '../model';
+import { reviewEntryIndex } from '../../services/reviewEntries';
+import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 
 // ── DetectionCard ────────────────────────────────────────────────────────────
 // The central unit of the session feed/summary: one recognised tune, with its
@@ -51,8 +53,18 @@ export interface DetectionCardOptions {
   onDelete?: () => void;
   /** Unix ms of the session's t=0. When set, closed annotations of known cards
    *  get the "log this as a review" control (summary + live feed; the import
-   *  feed has no date until the user sets one in the summary). */
+   *  feed has no date until the user sets one in the summary).
+   *
+   *  Without it a rating can no longer be GIVEN — there is no instant to file
+   *  it at — but one already given is still shown, and can still be taken
+   *  back: clearing a session's date used to make its ratings vanish from the
+   *  screen that made them (2026-09-23). */
   sessionStartMs?: number;
+  /** The analysis this feed belongs to. Half of what identifies a rating given
+   *  from one of its detections — see reviewLink.ts. The same id on the live,
+   *  import and summary screens, so a rating given while recording is still
+   *  recognised as its own once the session is saved. */
+  sessionId: string;
   /** Decks pinned on the page this feed belongs to — they come back ticked in
    *  the deck choice modal, which now opens on EVERY add or link rather than
    *  once per page (see deckSelector.tsx for why). The Set is owned and mutated
@@ -93,10 +105,11 @@ function fmtLongTime(s: number): string {
 
 // ── Review logging from a recognised tune ─────────────────────────────────────
 // "I played it at this session" = one review entry at the detection's end
-// time, in the same history the card view and FSRS read. The exact timestamp
-// doubles as the marker that this detection was already logged: when an entry
-// exists at that instant the four rating buttons are replaced by a single
-// remove control.
+// time, in the same history the card view and FSRS read. The entry names the
+// detection it came from, and that is what tells this card its rating is
+// already filed: when one is found, the four rating buttons give way to a
+// single remove control. The instant alone used to do that job — see
+// services/reviewEntries.ts for everything that broke while it did.
 
 const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: string; cls: string; labelKey: string }> = [
   { rating: 'again', glyph: '✗', cls: 'text-danger',  labelKey: 'rating.again' },
@@ -105,14 +118,31 @@ const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: string; cls: string; 
   { rating: 'easy',  glyph: '✓', cls: 'text-success', labelKey: 'rating.easy' },
 ];
 
-function ReviewLogControl({ cardId, ts, ctx }: { cardId: string; ts: number; ctx: AppContext }) {
+/** The rating this detection carries, if any. Read from live state, so the
+ *  card and the control below always agree on whether there is one. */
+function ratingOf(cardId: string, reviewId: string, ts: number | null) {
+  const user = getContext().user;
+  const history = user.cardWorks[`${user.currentProfileId}:${cardId}`]?.history ?? [];
+  const at = reviewEntryIndex(history, reviewId, ts);
+  return at === -1 ? undefined : history[at];
+}
+
+function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
+  cardId: string;
+  /** What this rating is filed under — opaque to the card's history, built by
+   *  this module (reviewLink.ts). */
+  reviewId: string;
+  /** Null when the session has no date: nothing new can be filed, since the
+   *  instant is the rating's only place in time. */
+  ts: number | null;
+  ctx: AppContext;
+}) {
   // Local re-render trigger after a mutation — mirrors the original's
   // `.then(render)` self-refresh exactly (not signal-driven): this card tree
   // is mounted into a detached node by the bridge below, outside the app's
   // main reactive tree, so nothing else would re-render it automatically.
   const [, setTick] = useState(0);
-  const user = getContext().user;
-  const existing = user.cardWorks[`${user.currentProfileId}:${cardId}`]?.history.find(e => e.ts === ts);
+  const existing = ratingOf(cardId, reviewId, ts);
 
   if (existing) {
     const glyph = RATING_GLYPHS.find(r => r.rating === existing.rating);
@@ -120,12 +150,13 @@ function ReviewLogControl({ cardId, ts, ctx }: { cardId: string; ts: number; ctx
       <span class="inline-flex items-center gap-1.5">
         <button
           class="text-xs text-muted cursor-pointer inline-flex items-center gap-1 hover:text-danger"
-          title={new Date(ts).toLocaleString()}
+          title={new Date(existing.ts).toLocaleString()}
           onClick={() => {
             void ctx.mutate(s => {
               const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
-              const i = h?.findIndex(e => e.ts === ts) ?? -1;
-              if (h && i !== -1) h.splice(i, 1);
+              if (!h) return;
+              const i = reviewEntryIndex(h, reviewId, ts);
+              if (i !== -1) h.splice(i, 1);
             }).then(() => setTick(x => x + 1));
           }}
         >
@@ -135,6 +166,10 @@ function ReviewLogControl({ cardId, ts, ctx }: { cardId: string; ts: number; ctx
       </span>
     );
   }
+
+  // Nothing to offer: no instant means no place in time to file a rating at.
+  // The card's own history is where one can still be added by hand.
+  if (ts === null) return null;
 
   return (
     <span class="inline-flex items-center gap-1.5">
@@ -148,7 +183,7 @@ function ReviewLogControl({ cardId, ts, ctx }: { cardId: string; ts: number; ctx
             void ctx.mutate(s => {
               const key = `${s.currentProfileId}:${cardId}`;
               if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
-              s.cardWorks[key]!.history.push({ ts, rating });
+              s.cardWorks[key]!.history.push({ ts, rating, id: reviewId });
               s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
             }).then(() => setTick(x => x + 1));
           }}
@@ -193,6 +228,11 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // Makes this card re-render once the cached name index has been read, so the
   // recogniser's lower-case name is replaced by TheSession's own spelling.
   useTuneNames();
+  // A rating that moved to another card, after this detection's tune was
+  // corrected: the container's own bump happens before that write lands, so
+  // the row would otherwise keep offering its four buttons until something
+  // else redrew the card.
+  const [, setReviewTick] = useState(0);
   const isOpen = ann.end === null;
   // Closed, but the Viterbi decoder hasn't yet proven it can't still retract
   // or revise this one as later windows arrive (see Detection.finalized's
@@ -216,11 +256,18 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // wait for `finalized`, because those act on bounds the decoder can still
   // move; having played the tune is already true the moment it closes.
   //
-  // The entry is pinned at `sessionStartMs + end`, and that instant doubles as
-  // the marker saying it was logged — so if the decoder later shifts `end`,
-  // this card stops recognising its own entry and offers to log a second one.
-  // Known, and the same already happens when a bound is edited by hand.
-  const showReviewLog = known && opts.sessionStartMs !== undefined && ann.end !== null;
+  // The rating's instant follows the detection's end (repinReviewEntry), and
+  // the detection it names is what finds it again — so a rating survives a
+  // bound edit, a date change, a merge and a corrected tune alike. The card
+  // still needs an end: that is what "the tune was played" is measured from.
+  const reviewId = detectionReviewId(opts.sessionId, ann.id);
+  const reviewTs = opts.sessionStartMs !== undefined && ann.end !== null
+    ? reviewEntryTs(opts.sessionStartMs, ann.end)
+    : null;
+  // A dateless session shows the row only when it already holds a rating —
+  // there is one to take back, but no new one to give.
+  const showReviewLog = !!known && ann.end !== null
+    && (reviewTs !== null || !!ratingOf(known.id, reviewId, null));
 
   // Read once, shown in up to three places (the two halves of the badge and
   // its aria-label) — and the dynamic key is built in exactly one spot, which
@@ -288,7 +335,26 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             showAlternatesPopover(
               ann,
               opts.getLatestDetection ? () => opts.getLatestDetection!(ann.id) : undefined,
-              (pick) => opts.onSelectAlternate!(ann.id, pick),
+              (pick) => {
+                // BOTH read before the pick is applied. `ann` is not a
+                // snapshot: the summary assigns the new identity onto this very
+                // object (Object.assign on the detection it found in the
+                // session), and the live and import engines do the same to
+                // theirs — so a line below reads the tune that is ARRIVING,
+                // never the one leaving, and the transfer would compare a value
+                // with itself (2026-09-23, user debugging).
+                const leaving = ann.tuneId;
+                const arriving = (pick ?? viterbiPickOf(ann)).tuneId;
+                opts.onSelectAlternate!(ann.id, pick);
+                // A rating lives in the history of the CARD this detection
+                // points at, so correcting the tune moves it to another card —
+                // otherwise it stays credited to the one the recogniser got
+                // wrong, and the corrected tune offers to be rated afresh
+                // (2026-09-23, user report). `null` hands the detection back to
+                // the decoder, whose own pick is then the tune.
+                void transferReviewEntry(opts.ctx, reviewId, leaving, arriving, reviewTs)
+                  .then(moved => { if (moved) setReviewTick(x => x + 1); });
+              },
               opts.onAddManualAlternate ? (tune) => opts.onAddManualAlternate!(ann.id, tune) : undefined,
               opts.onRemoveManualAlternate ? (tuneId) => opts.onRemoveManualAlternate!(ann.id, tuneId) : undefined,
             );
@@ -360,7 +426,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
 
       {showReviewLog && (
         <div class="flex items-center gap-3 flex-wrap">
-          <ReviewLogControl cardId={known!.id} ts={opts.sessionStartMs! + ann.end! * 1000} ctx={opts.ctx} />
+          <ReviewLogControl cardId={known!.id} reviewId={reviewId} ts={reviewTs} ctx={opts.ctx} />
         </div>
       )}
 
