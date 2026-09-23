@@ -60,7 +60,6 @@ export function recomputeDetections(windows: WindowResult[], hopS: number = ANAL
 async function finalizeOrphan(session: Analysis): Promise<void> {
   const chunks = await collectChunks(session.id);
   const mimeType = session.mimeType || 'audio/webm';
-  let blob = new Blob(chunks, { type: mimeType });
   // Chunk count × timeslice is a better duration estimate than wall-clock
   // deltas here — it isn't thrown off by a backgrounded/suspended tab. But it
   // only holds while one chunk is one timeslice: a recording put back from its
@@ -69,10 +68,22 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
   // instead, so the larger of the two stands.
   const durationMs = Math.max(chunks.length * RECORDER_TIMESLICE_MS, session.duration * 1000);
 
-  if (mimeType.includes('webm') && blob.size > 0) {
-    try {
-      blob = await fixWebmDuration(blob, durationMs, { logger: false });
-    } catch { /* seeking degraded but audio intact */ }
+  // No chunks at all — the tab died inside the first timeslice, or they were
+  // already consumed. Until 2026-09-23 the empty Blob was saved anyway, which
+  // is worse than saving nothing: the analysis then claims to HAVE a recording
+  // (the summary shows a player for a file that plays nothing, the clip
+  // extractor has bytes to work from) and saveSessionAudio would upload the
+  // empty file to Drive. A MISSING recording, by contrast, is a case the whole
+  // app already handles — it is what a recording freed or recorded elsewhere
+  // looks like. So leave it missing.
+  if (chunks.length > 0) {
+    let blob = new Blob(chunks, { type: mimeType });
+    if (mimeType.includes('webm')) {
+      try {
+        blob = await fixWebmDuration(blob, durationMs, { logger: false });
+      } catch { /* seeking degraded but audio intact */ }
+    }
+    await saveSessionAudio(session.id, blob);
   }
 
   const windows = await loadSessionWindows(session.id);
@@ -84,7 +95,6 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
     // like it's still live.
     : session.annotations.map(a => ({ ...a, finalized: true }));
 
-  await saveSessionAudio(session.id, blob);
   await saveSessionMeta({
     ...session,
     duration: Math.max(session.duration, durationMs / 1000),

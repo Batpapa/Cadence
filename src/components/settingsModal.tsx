@@ -478,6 +478,16 @@ async function runReset(): Promise<void> {
   const userId = ctx.user.id;
   await ctx.mutate(s => {
     const fresh = emptyState(); fresh.id = s.id;
+    // A reset wipes DATA, not who you are. The confirmation enumerates exactly
+    // what goes — tunes, decks, folders, history, analyses, recordings and
+    // profiles — and says nothing about the account's name or the language the
+    // interface is in, so both are carried over rather than reverting to
+    // `emptyState()`'s 'Default' and 'en' (reported 2026-09-15). Carrying the
+    // language is also what makes the profile `ensureCurrentProfile` recreates
+    // just below come back named "Par défaut" in a French interface: it names
+    // it in `fresh.language`. Both still go through `ensureCurrentUser`, so an
+    // old state that carries neither is filled in as it always was.
+    fresh.name = s.name; fresh.language = s.language;
     ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
     // EMPTIED first, not just overwritten. `Object.assign` only touches the
     // keys `emptyState()` happens to name, so every optional field added since
@@ -847,7 +857,13 @@ function UserSection({ ctx }: { ctx: AppContext }) {
 
 // ── Display section ───────────────────────────────────────────────────────────
 
-function DisplaySection({ ctx, onZoomChange }: { ctx: AppContext; onZoomChange: () => void }) {
+/** `redrawShell` repaints the dialog AROUND this section — its title, its nav
+ *  and its footer, which this section does not own. Two controls in here change
+ *  them: the zoom (it re-measures the nav) and, since 2026-09-23, the language
+ *  — switching to English used to leave "Paramètres — Affichage", the six tab
+ *  labels and "Déconnexion" in French until the modal was reopened, because
+ *  `setLanguage` writes a module variable that no signal watches. */
+function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: () => void }) {
   const user = appState.value;
   const [, bump] = useState(0);
   const [theme, setThemeState] = useState<Theme>(getTheme);
@@ -863,9 +879,9 @@ function DisplaySection({ ctx, onZoomChange }: { ctx: AppContext; onZoomChange: 
     <>
       <Row label={t('settings.zoom')}>
         <div class="flex items-center gap-1">
-          <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomOut()} onClick={() => { zoomOut(); bump(x => x + 1); onZoomChange(); }}>−</button>
+          <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomOut()} onClick={() => { zoomOut(); bump(x => x + 1); redrawShell(); }}>−</button>
           <span class="text-sm font-mono w-12 text-center tabular-nums">{getZoom()}%</span>
-          <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomIn()} onClick={() => { zoomIn(); bump(x => x + 1); onZoomChange(); }}>+</button>
+          <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomIn()} onClick={() => { zoomIn(); bump(x => x + 1); redrawShell(); }}>+</button>
         </div>
       </Row>
       <Sep />
@@ -892,6 +908,7 @@ function DisplaySection({ ctx, onZoomChange }: { ctx: AppContext; onZoomChange: 
             options={[{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }]}
             onChange={(newLang) => {
               setLanguage(newLang as Lang);
+              redrawShell();
               void ctx.mutate(s => updateUser(s, { language: newLang as Lang }));
             }}
             triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent w-32"
@@ -1108,7 +1125,7 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
             {section === 'study' && <StudySection ctx={ctx} />}
             {section === 'user' && <UserSection ctx={ctx} />}
             {section === 'storage' && <StorageSection userId={ctx.user.id} />}
-            {section === 'display' && <DisplaySection ctx={ctx} onZoomChange={() => bumpDialog(x => x + 1)} />}
+            {section === 'display' && <DisplaySection ctx={ctx} redrawShell={() => bumpDialog(x => x + 1)} />}
             {section === 'misc' && <MiscSection ctx={ctx} />}
             {section === 'about' && <AboutSection />}
           </div>
