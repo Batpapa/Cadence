@@ -183,6 +183,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     // of what a review entry claims, and waiting for the decoder to converge
     // means the moment has passed.
     sessionStartMs: live.startedAt || undefined,
+    sessionId: live.sessionId,
     getPinnedDeckIds: () => live.pinnedDeckIds,
     onToggleLike: (id) => { live.toggleLike(id); setDetections(live.getDetections()); },
     onSelectAlternate: (id, pick) => { live.selectAlternate(id, pick); setDetections(live.getDetections()); },

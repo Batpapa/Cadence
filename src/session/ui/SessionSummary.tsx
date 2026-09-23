@@ -20,7 +20,7 @@ import { detectAudioFile } from '../audio/clipExtract';
 import { audioExtension } from '../../services/zip';
 import {
   fmtLongTime, TitleRow, DateRow,
-  ClipControls, recutAttachedClip,
+  ClipControls, recutAttachedClip, repinReviewEntry, absorbReviewEntry, dropReviewEntry, repinSessionDate,
 } from './sessionUiShared';
 import { showBoundEditor, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
@@ -556,16 +556,26 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     return moved;
   };
 
-  /** Re-cuts the attached clip of every detection whose bounds just moved, in
-   *  the background — the bounds are already saved, so there is nothing to
-   *  wait for. Same reasoning as the edited detection's own re-cut. */
-  const recutAll = async (moved: Array<{ ann: Detection; previous: { start: number; end: number | null } }>) => {
+  /** Everything a moved bound drags behind it, for every detection that just
+   *  moved — its review entry, then its attached clip. In the background: the
+   *  bounds themselves are already saved, so there is nothing to wait for.
+   *
+   *  The re-pin comes first and runs whatever the recording's fate: it needs
+   *  no audio, and it is the one that guards a rating already given. The
+   *  re-cut needs the recording, so it simply does not happen on a device that
+   *  no longer holds it — a clip cut from nothing would be worse than a stale
+   *  one. */
+  const settleMoved = async (moved: Array<{ ann: Detection; previous: { start: number; end: number | null } }>) => {
     if (moved.length === 0) return;
-    const blob = await loadSessionAudio(session.id).catch(() => undefined);
-    if (!blob) return;
     let changed = false;
     for (const { ann: target, previous } of moved) {
-      changed = await recutAttachedClip(ctx, session, target, previous, blob).catch(() => false) || changed;
+      changed = await repinReviewEntry(ctx, session, target, previous).catch(() => false) || changed;
+    }
+    const blob = await loadSessionAudio(session.id).catch(() => undefined);
+    if (blob) {
+      for (const { ann: target, previous } of moved) {
+        changed = await recutAttachedClip(ctx, session, target, previous, blob).catch(() => false) || changed;
+      }
     }
     if (changed) bump();
   };
@@ -589,7 +599,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         const moved = applyTwinEdits(twins);
         persist();
         bump();
-        void recutAll(moved);
+        void settleMoved(moved);
       },
     });
   };
@@ -599,6 +609,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     onPlay: audioUrl ? playSlice : undefined,
     playingId,
     sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
+    sessionId: session.id,
     onOpenCard,
     onCardAdded: bump,
     getPinnedDeckIds: () => pinnedDeckIdsRef.current,
@@ -658,22 +669,19 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           const previous = { start: ann.start, end: ann.end };
           ann.start = edit.start;
           ann.end = edit.end;
-          // The neighbours a join carried along, written in the same breath —
-          // a frontier that moved on one side only is exactly the hole or the
-          // overlap the link exists to prevent.
-          const moved = applyTwinEdits(edit.twins);
+          const stood = Math.abs(previous.start - ann.start) < 0.001
+            && Math.abs((previous.end ?? -1) - (ann.end ?? -1)) < 0.001;
+          // The edited detection travels with the neighbours a join carried
+          // along — a frontier that moved on one side only is exactly the hole
+          // or the overlap the link exists to prevent. All of them settle the
+          // same way afterwards (rating, then clip), so they go in one list.
+          const moved = [
+            ...(stood ? [] : [{ ann, previous }]),
+            ...applyTwinEdits(edit.twins),
+          ];
           persist();
           bump();
-          void recutAll(moved);
-          // A clip already on the card is re-cut to the new span, silently
-          // (2026-09-20, user request): it is keyed by where it starts, so
-          // without this it would quietly stop belonging to this detection.
-          // In the background — the extraction takes a moment and the bounds
-          // are already saved, so there is nothing to wait for.
-          void loadSessionAudio(session.id)
-            .then(blob => blob && recutAttachedClip(ctx, session, ann, previous, blob))
-            .then(changed => { if (changed) bump(); })
-            .catch(() => { /* the clip keeps its old cut; nothing is lost */ });
+          void settleMoved(moved);
         },
       });
     },
@@ -694,6 +702,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         session.annotations.splice(i, 1);
         persist();
         bump();
+        // The rating goes with it (user's rule, 2026-09-23): it said this tune
+        // was played here, and deleting the detection says it was not. Nothing
+        // like deleting the whole analysis, where the playing stands.
+        void dropReviewEntry(ctx, session, ann).then(gone => { if (gone) bump(); });
       },
     ),
     // All that is left of the third row, and it only appears when there is
@@ -706,6 +718,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         <button
           class="text-[11px] text-accent hover:underline cursor-pointer"
           onClick={() => {
+            // A merge moves a bound like any other edit — the survivor takes
+            // over the other's end — so its rating and its clip settle the
+            // same way. On top of that the detection merged AWAY may carry a
+            // rating of its own, which the survivor inherits (or, if it was
+            // rated too, which goes: one tune, one playing, one review).
+            const previous = { start: prev.start, end: prev.end };
+            const absorbedEnd = ann.end;
             prev.end = ann.end;
             prev.evidence = [...prev.evidence, ...ann.evidence];
             prev.confidence = Math.max(prev.confidence, ann.confidence);
@@ -713,6 +732,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             session.annotations.splice(i, 1);
             persist();
             bump();
+            // One after the other, never side by side: each writes the shared
+            // state through its own mutate, and two of those in flight at once
+            // would each be working from the state as it was before the other.
+            void (async () => {
+              await settleMoved([{ ann: prev, previous }]);
+              if (await absorbReviewEntry(ctx, session, ann, absorbedEnd, prev)) bump();
+            })();
           }}
         >
           {t('sessions.merge')}
@@ -768,7 +794,17 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       <AnalysisFolderPicker ctx={ctx} sessionId={session.id} />
       <DateRow
         getDate={() => session.date}
-        setDate={(date) => { session.date = date; persist(); }}
+        setDate={(date) => {
+          const previousDate = session.date;
+          session.date = date;
+          persist();
+          // Every rating of this session is filed at "this date plus where the
+          // tune ended", so moving the date moves all of them — and the picker
+          // only offers minutes, which means re-choosing what looks like the
+          // same date still lands seconds away from it.
+          void repinSessionDate(ctx, session, session.annotations, previousDate)
+            .then(moved => { if (moved) bump(); });
+        }}
         onChange={bump}
       />
 

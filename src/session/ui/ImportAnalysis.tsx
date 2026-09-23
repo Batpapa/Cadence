@@ -5,7 +5,7 @@ import type { ImportSession, ImportProgress } from '../importSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { useAutoFollowScroll } from './domInterop';
-import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta } from './sessionUiShared';
+import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta, repinSessionDate } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { importPlaybackWarn } from './sessionStore';
 import { canPlayFile } from '../audio/sources';
@@ -133,6 +133,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     // request). The date is the one the file's own modification time guessed,
     // editable in the row above.
     sessionStartMs: imp.dateOverride ? Date.parse(imp.dateOverride) : undefined,
+    sessionId: imp.sessionId,
   };
 
   useAutoFollowScroll(feedAnchorRef, [annotations]);
@@ -152,7 +153,19 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       <AnalysisFolderPicker ctx={ctx} sessionId={imp.sessionId} />
       <DateRow
         getDate={() => imp.dateOverride}
-        setDate={(date) => { imp.dateOverride = date; }}
+        setDate={(date) => {
+          const previousDate = imp.dateOverride;
+          imp.dateOverride = date;
+          // A practice can already have been logged from this feed, and it is
+          // filed at this date plus where the tune ended — so the date moving
+          // moves it too. Same call the summary makes (2026-09-23).
+          void repinSessionDate(
+            ctx,
+            { id: imp.sessionId, date },
+            imp.getDetections(),
+            previousDate,
+          ).then(moved => { if (moved) setDetections(imp.getDetections()); });
+        }}
       />
 
       {/* Pinned like the live screen's bar and the finished analysis's

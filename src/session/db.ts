@@ -5,6 +5,8 @@ import {
 } from './model';
 import { generatedSessionName } from './sessionNaming';
 import { editSessionTree, forgetSession } from './sessionTree';
+import { strippedReviewIds } from '../services/reviewEntries';
+import { isAnalysisReviewId } from './reviewLink';
 
 // store.ts is imported lazily (dynamic import, below) rather than statically:
 // it transitively pulls in services/driveService.ts, which reads
@@ -502,6 +504,15 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await mutate(user => {
     const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
     if (mod) delete mod.sessions[sessionId];
+    // Its ratings STAY — those tunes were played, and deleting the recording
+    // of an evening does not unplay them (user's rule, 2026-09-23). What goes
+    // is the origin they point at: from here on they are what a rating typed
+    // on the card page has always been. Deleting a single DETECTION is the
+    // opposite case, and takes its rating with it.
+    for (const work of Object.values(user.cardWorks ?? {})) {
+      const history = work && strippedReviewIds(work.history, id => isAnalysisReviewId(id, sessionId));
+      if (history) work.history = history;
+    }
     // Tidiness only — every read of the tree already filters against the real
     // list of analyses (sessionTree.ts), so a stale id breaks nothing. It is
     // dropped here simply so the synced blob does not collect them.
