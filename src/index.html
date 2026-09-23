@@ -39,10 +39,14 @@
   </head>
   <body class="bg-bg text-primary font-sans antialiased">
     <div id="app" class="flex flex-col overflow-hidden"></div>
+    <!-- Written in English here and retranslated by i18nService.setLanguage()
+         through `data-i18n`: this markup exists precisely so the links are
+         readable with no JavaScript at all (see styles.css), so the English
+         text must stay in the HTML as the crawlable fallback. -->
     <footer id="legal-footer">
-      <a href="./privacy.html" rel="noopener">Privacy Policy</a>
+      <a href="./privacy.html" rel="noopener" data-i18n="settings.privacyPolicy">Privacy Policy</a>
       &nbsp;·&nbsp;
-      <a href="./terms.html" rel="noopener">Terms of Service</a>
+      <a href="./terms.html" rel="noopener" data-i18n="settings.termsOfService">Terms of Service</a>
     </footer>
   </body>
 </html>
