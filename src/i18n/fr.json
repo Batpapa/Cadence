@@ -757,6 +757,7 @@
   "embed.mode.hint": "Seuls YouTube, Spotify, Deezer et SoundCloud se lisent dans l'application.",
   "embed.name": "Nom",
   "embed.namePlaceholder": "Nom affiché dans la liste",
+  "embed.namePlaceholderAuto": "Automatique",
   "embed.badUrl": "Un lien doit commencer par http:// ou https://",
   "embed.play": "Déplier",
   "embed.open": "Ouvrir dans un nouvel onglet",

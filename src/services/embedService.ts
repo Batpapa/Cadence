@@ -34,6 +34,14 @@ export function linkMode(entry: EmbedEntry): LinkMode {
   return entry.mode === 'link' ? 'link' : 'embed';
 }
 
+/** The name the platform gives an embed, or undefined for an external link,
+ *  which has none. An embed stored before 2026-09-28 has no `autoTitle`, but
+ *  nothing could be typed over its `title` then, so that title is the one. */
+export function embedAutoTitle(entry: EmbedEntry): string | undefined {
+  if (linkMode(entry) !== 'embed') return undefined;
+  return entry.autoTitle ?? entry.title;
+}
+
 /** `url` if it is safe to put in an `href`, else null.
  *
  *  An external link is the first place this app hands a stored string straight

@@ -757,6 +757,7 @@
   "embed.mode.hint": "Only YouTube, Spotify, Deezer and SoundCloud play inside the app.",
   "embed.name": "Name",
   "embed.namePlaceholder": "Name shown in the list",
+  "embed.namePlaceholderAuto": "Automatic",
   "embed.badUrl": "A link must start with http:// or https://",
   "embed.play": "Expand",
   "embed.open": "Open in a new tab",
