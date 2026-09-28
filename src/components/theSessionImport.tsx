@@ -5,6 +5,7 @@ import type { ComponentChild, RefObject } from 'preact';
 import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
 import { parseCardPackage, parseCardPackageFromText } from '../services/importExport';
+import { externaliseIncoming, uploadAttachmentSoon } from '../services/attachmentStore';
 import { downloadShare } from '../services/shareService';
 import { mutate, appState } from '../store';
 import {
@@ -101,6 +102,11 @@ async function hydrateExternalCard(card: Card): Promise<Card> {
 
 async function importCardPackage(cards: Card[], deckIds: Iterable<string>): Promise<string> {
   let imported = 0;
+  // Before the mutate, because its callback is synchronous and the rule is
+  // not: a package's files arrive inline whatever their size, and one that
+  // belongs outside the blob has to be put there on the way in — the same
+  // constructor the file picker and the analyser's clips go through.
+  const moved = await externaliseIncoming(cards, appState.value);
   await mutate(s => {
     for (const card of cards) {
       const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : s.cards[card.id];
@@ -112,6 +118,7 @@ async function importCardPackage(cards: Card[], deckIds: Iterable<string>): Prom
       }
     }
   });
+  for (const att of moved) uploadAttachmentSoon(att);
   const skipped = cards.length - imported;
   let summary = t('theSession.status.batchDone', { count: imported });
   if (skipped > 0) summary = summary.replace('.', '') + t('theSession.status.batchSkipped', { count: skipped }) + '.';

@@ -1,10 +1,11 @@
 import { signal, computed, type Signal } from '@preact/signals';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { render } from 'preact';
+import { render, Fragment } from 'preact';
 import type { ComponentChildren } from 'preact';
 import type { AppContext, IncipitDisplay } from '../types';
 import { generateId, emptyState } from '../utils';
-import { deleteLocalSessionData, localSessionAudioStats } from '../session/db';
+import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, freeSyncedSessionAudio } from '../session/db';
+import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
 import { TrashIcon, ResetIcon, HelpIcon } from './icons';
 import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
@@ -13,6 +14,13 @@ import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services
 import { applyExternalData } from '../services/migration';
 import { exportBackup, exportSnapshotBackup, parseImport } from '../services/importExport';
 import { exportFullBackup, fullBackupSize, parseFullBackup, restoreFullBackupAudio, BackupTooLarge, MAX_FULL_BACKUP_BYTES } from '../services/fullBackup';
+import {
+  restoreExternalAttachments, uploadPendingAttachments, externalAttachmentBytes,
+  conversionPlan, applyConversion, freeableAttachments, freeUploadedAttachments, sweepLocalAttachments,
+  DEFAULT_THRESHOLD_KB, type ConversionPlan,
+} from '../services/attachmentStore';
+import { askIncompleteExport } from './incompleteExportModal';
+import { findDriveOrphans, trashDriveOrphans, driveStorageUsage, OrphanScanUnavailable, type DriveOrphan } from '../services/driveOrphans';
 import { listSnapshots, getSnapshotState, clearSnapshotsForUser, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
 import { isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
@@ -433,7 +441,7 @@ function SnapshotsRow({ userId }: { userId: string }) {
                 class="btn-ghost p-1 shrink-0"
                 title={t('settings.snapshots.download')}
                 onClick={() => {
-                  void getSnapshotState(s.key).then(state => { if (state) exportSnapshotBackup(state, s.ts); });
+                  void getSnapshotState(s.key).then(state => state && exportSnapshotBackup(state, s.ts, askIncompleteExport));
                 }}
               >
                 <span class="flex items-center" dangerouslySetInnerHTML={{ __html: EXPORT_SVG }} />
@@ -459,11 +467,28 @@ function SnapshotsRow({ userId }: { userId: string }) {
 async function runImport(file: File, full: boolean, setBusy: (b: boolean) => void): Promise<void> {
   setBusy(true);
   try {
-    const parsed = full ? await parseFullBackup(file) : { raw: await parseImport(file), audio: null };
+    const parsed = full ? await parseFullBackup(file) : { raw: await parseImport(file), audio: null, attachments: null };
     closeAllModals(); closeSettingsModal?.();
     const ctx = getContext();
     await ctx.mutate(s => { Object.assign(s, applyExternalData(parsed.raw, s.id)); });
     if (parsed.audio) await restoreFullBackupAudio(parsed.audio);
+    if (parsed.attachments) {
+      await restoreExternalAttachments(parsed.attachments);
+      // The archive's attachments arrive with no `driveFileId` (see
+      // exportFullBackup), which IS the upload backlog — but nothing would
+      // look at it again until the next launch, and a restore is exactly the
+      // moment someone wants their library whole on their own Drive.
+      void uploadPendingAttachments();
+    }
+    // An import replaces the whole library, so everything in it has just
+    // arrived from outside — which makes this the one moment the rule applies
+    // to all of it at once, and not the retroactive conversion that was
+    // refused. It runs in both directions, which is what closes the two holes
+    // this had: a .cdb carries its attachments inline whatever their size (it
+    // is JSON and nothing else), and a .cdbf restored on a device with no
+    // Drive would otherwise leave them outside the blob with nothing backing
+    // them up.
+    await applyConversion().catch(e => console.warn('[import] the rule could not be applied', e));
     ctx.navigate({ view: 'folder', folderId: null });
   } catch (e) {
     alertModal(t('settings.import.failed.title'), e instanceof Error ? e.message : String(e));
@@ -502,6 +527,10 @@ async function runReset(): Promise<void> {
   // database — see deleteLocalSessionData for why leaving it would resurrect a
   // session rather than merely waste space.
   await deleteLocalSessionData(userId);
+  // Same for the bytes of externalised attachments. Their Drive copies are
+  // deliberately left alone: neither this nor removing a user has ever deleted
+  // a companion file (verified 2026-09-23), and attachments follow that rule.
+  await deleteLocalAttachmentData(userId);
   ctx.navigate({ view: 'folder', folderId: null });
 }
 
@@ -526,6 +555,7 @@ async function removeUserFromDevice(userId: string): Promise<void> {
   clearDriveStateForUser(userId);
   await clearSnapshotsForUser(userId);
   await deleteLocalSessionData(userId);
+  await deleteLocalAttachmentData(userId);
   removeUserFromOrder(userId);
   await deleteUser(userId);
   clearLastUserId();
@@ -542,6 +572,9 @@ async function removeUserFromDevice(userId: string): Promise<void> {
  *  three orders of magnitude. */
 function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioBytes: number | null }) {
   const [busy, setBusy] = useState(false);
+  // A reset drops the local copies of externalised attachments too, so the
+  // figure it announces has to include them.
+  const attachmentBytes = externalAttachmentBytes(appState.value);
 
   const chooseExport = () => {
     const choice = signal<ExportKind | null>(null);
@@ -607,7 +640,7 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
         title={t('settings.reset')}
         onClick={() => confirmModal(
           t('settings.reset.title'),
-          t('settings.reset.message', { size: formatBytes(dataBytes + (audioBytes ?? 0)) }),
+          t('settings.reset.message', { size: formatBytes(dataBytes + attachmentBytes + (audioBytes ?? 0)) }),
           t('settings.reset.confirm'),
           () => { void runReset(); },
         )}
@@ -624,10 +657,13 @@ type ExportKind = 'data' | 'full';
  *  thing rather than two that have to agree. */
 async function runExport(full: boolean, setBusy: (b: boolean) => void): Promise<void> {
   const user = getContext().user;
-  if (!full) { exportBackup(user); return; }
+  // Busy for both kinds now: a .cdb no longer just serialises what is already
+  // in memory — it may have to fetch externalised attachments back from Drive
+  // first, which takes as long as the network takes.
   setBusy(true);
   try {
-    await exportFullBackup(user);
+    if (full) await exportFullBackup(user, askIncompleteExport);
+    else await exportBackup(user, askIncompleteExport);
   } catch (e) {
     alertModal(t('settings.export.failed.title'), e instanceof BackupTooLarge
       ? t('settings.export.tooBig', { size: formatBytes(e.bytes), max: formatBytes(MAX_FULL_BACKUP_BYTES) })
@@ -651,13 +687,24 @@ function ExportChoice({ dataBytes, choice }: { dataBytes: number; choice: Signal
   // option that the file never reaches.
   const [audioBytes, setAudioBytes] = useState<number | null>(null);
   useEffect(() => { void fullBackupSize(getContext().user).then(r => setAudioBytes(r.audioBytes)); }, []);
+  // Read straight from the state, so no second measurement to wait for. These
+  // bytes are in NEITHER figure above: out of the blob, and not recordings.
+  const attachmentBytes = externalAttachmentBytes(appState.value);
+
+  // A .cdb puts externalised attachments back inline, so it weighs more than
+  // the state does in memory — and base64 is a third bigger again than the
+  // bytes it encodes. Announcing the in-memory figure would understate the
+  // file by that whole third. The archive has no such third: zip entries are
+  // bytes.
+  const dataOnlyBytes = dataBytes + Math.round(attachmentBytes * 4 / 3);
+  const fullBytes = audioBytes === null ? null : dataBytes + attachmentBytes + audioBytes;
 
   return (
     <div class="space-y-2" role="radiogroup" aria-label={t('settings.export')}>
       <ExportOption
         kind="data"
         choice={choice}
-        label={t('settings.export.dataOnly', { size: formatBytes(dataBytes) })}
+        label={t('settings.export.dataOnly', { size: formatBytes(dataOnlyBytes) })}
       />
       <ExportOption
         kind="full"
@@ -665,8 +712,15 @@ function ExportChoice({ dataBytes, choice }: { dataBytes: number; choice: Signal
         disabled={audioBytes === null}
         label={audioBytes === null
           ? t('settings.export.measuring')
-          : t('settings.export.full', { size: formatBytes(dataBytes + audioBytes) })}
+          : t('settings.export.full', { size: formatBytes(fullBytes!) })}
       />
+      {/* The option that contains MORE can weigh LESS, whenever the
+          attachments outweigh the recordings. Both figures are right and the
+          pairing reads as a mistake, so it is explained where it happens
+          rather than left to be puzzled over. */}
+      {fullBytes !== null && dataOnlyBytes > fullBytes && (
+        <p class="text-xs text-dim leading-relaxed pt-1">{t('settings.export.whyBigger')}</p>
+      )}
     </div>
   );
 }
@@ -712,45 +766,73 @@ function ExportOption({ kind, label, choice, disabled }: {
  *  a single byte of audio. */
 function StorageSection({ userId }: { userId: string }) {
   const [audioBytes, setAudioBytes] = useState<number | null>(null);
+  const [attachLocal, setAttachLocal] = useState<number | null>(null);
+  const [drive, setDrive] = useState<{ data: number | null; attachments: number | null; recordings: number | null } | null>(null);
   const [total, setTotal] = useState<{ usage: number | null; quota: number | null } | null>(null);
+  // Freeing space, or moving files in or out, changes none of the state these
+  // figures are derived from — so nothing would tell them to look again. This
+  // does.
+  const [tick, setTick] = useState(0);
+  const driveOn = isDriveConnected();
 
   useEffect(() => {
-    // fullBackupSize, not localSessionAudioStats: the latter walks the audio
-    // store and so counts orphans — blobs no analysis points at any more,
-    // which an import can strand and which nothing but the recovery screen
-    // can reach. Counting space the user cannot act on is noise, so the
-    // figure here is the one the export writes and the app can play.
-    void fullBackupSize(appState.value).then(r => setAudioBytes(r.audioBytes));
+    // localSessionAudioStats, not fullBackupSize: this panel now answers
+    // "where did the space go", and orphaned recordings — blobs no analysis
+    // points at any more — are precisely the space nobody can otherwise
+    // account for. The export figure, which counts only what it would write,
+    // stays where it belongs, on the export dialog.
+    void localSessionAudioStats(userId).then(s => setAudioBytes(s?.bytes ?? 0));
+    // Swept before being counted. Deleting an attachment deliberately leaves
+    // its bytes here — a snapshot taken before the deletion still needs them,
+    // and the sweep is the only thing that knows — but until now that sweep
+    // only ran at launch, so the panel showed a deleted file's weight with no
+    // way to understand it. Looking at the figures is exactly the moment to
+    // make them true. Snapshot-protected bytes legitimately survive it.
+    void sweepLocalAttachments()
+      .catch(() => 0)
+      .then(() => localAttachmentBytes())
+      .then(r => setAttachLocal(r.bytes))
+      .catch(() => setAttachLocal(null));
     void refreshStorageEstimate().then(() => setTotal({ usage: storageUsage.value, quota: storageQuota.value }));
     // appState.value, not just userId: a fresh object on every mutation, so
     // the figures follow an import, a reset, or a Drive state landing while
     // this section is on screen. Nothing else here mutates, so it is not a
     // recount on every keystroke.
-  }, [userId, appState.value]);
+  }, [userId, appState.value, tick]);
+
+  // Drive is asked on its own schedule and NOT on every mutation: it is three
+  // network requests, and changing a threshold — which mutates — moves nothing
+  // up there. The tick covers the actions that genuinely do.
+  useEffect(() => {
+    if (!driveOn) { setDrive(null); return; }
+    void driveStorageUsage().then(setDrive).catch(() => setDrive(null));
+  }, [userId, driveOn, tick]);
 
   // Structured clone is not JSON, so this is an approximation — stated as one
   // rather than dressed up with a precision it does not have.
   const dataBytes = new Blob([JSON.stringify(appState.value)]).size;
   const unknown = t('storage.unknown');
+  // The local column adds up to what this device holds for this user, and the
+  // Drive one to what the account holds up there. The data line carries the
+  // attachments still inside the blob, by construction — they ARE the blob.
+  const rows = [
+    { label: t('settings.storage.data'), local: dataBytes, drive: drive ? drive.data : null },
+    { label: t('settings.storage.attachments'), local: attachLocal, drive: drive ? drive.attachments : null },
+    { label: t('settings.storage.audio'), local: audioBytes, drive: drive ? drive.recordings : null },
+  ];
 
   return (
     <>
-      {/* Not a <Row>: the actions belong beside the name, not out in the
-          value column where a figure lives. Same vertical rhythm as Row so
-          the two kinds of line still align. */}
-      <div class="flex items-center justify-between gap-4 py-2">
-        <div class="flex items-center gap-1 min-w-0">
+      {/* The title, its buttons and the column names share one line: the
+          heading is the table's own header row, so naming the columns costs
+          no height at all. */}
+      <StorageMatrix
+        rows={rows}
+        driveOn={driveOn}
+        heading={<>
           <span class="text-sm text-primary shrink-0">{t('settings.storage.user')}</span>
           <BackupButtons dataBytes={dataBytes} audioBytes={audioBytes} />
-        </div>
-        <span class="text-sm text-muted tabular-nums shrink-0">
-          {audioBytes === null ? '…' : formatBytes(dataBytes + audioBytes)}
-        </span>
-      </div>
-      <SubRow label={t('settings.storage.data')} value={formatBytes(dataBytes)} />
-      <SubRow
-        label={t('settings.storage.audio')}
-        value={audioBytes === null ? '…' : formatBytes(audioBytes)}
+        </>}
       />
 
       <Row label={t('settings.storage.device')}>
@@ -760,19 +842,267 @@ function StorageSection({ userId }: { userId: string }) {
               : t('settings.storage.totalValue', { used: formatBytes(total.usage), quota: formatBytes(total.quota) })}
         </span>
       </Row>
+
+      <FreeSpaceRow tick={tick} onFreed={() => setTick(n => n + 1)} />
+      <DriveOrphansRow />
+
+      <Sep />
+      <AttachmentRules />
     </>
   );
 }
 
-/** A breakdown line under its total: same grid, quieter, indented. */
-function SubRow({ label, value }: { label: string; value: string }) {
+/** The rule that decides where a newly attached file lives, and the one button
+ *  that applies it to a library already built.
+ *
+ *  The two are deliberately apart. Changing the threshold converts nothing on
+ *  its own — a setting that silently rewrote where thousands of files live,
+ *  and uploaded them, would be a very expensive way to answer a question
+ *  nobody asked. The line below simply says what the rule WOULD change, and
+ *  the button is the answer. */
+function AttachmentRules() {
+  const user = appState.value;
+  const current = user.attachmentThresholdKb ?? DEFAULT_THRESHOLD_KB;
+  const [text, setText] = useState(String(current));
+  const [plan, setPlan] = useState<ConversionPlan | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // The field keeps what is typed and is only ever rewritten from the state on
+  // a change that did not come from it — the trap the Trending date fields
+  // fell into on 2026-09-14, where every keystroke was echoed back mid-edit.
+  useEffect(() => { setText(String(current)); }, [current]);
+  useEffect(() => { void conversionPlan(appState.value).then(setPlan).catch(() => setPlan(null)); }, [appState.value]);
+
+  const commit = () => {
+    const n = Math.round(Number(text.replace(',', '.')));
+    // Zero is allowed and means "keep nothing in the blob" — a deliberate
+    // choice someone may want. A negative is not a size, and neither is a
+    // word: both put the field back rather than storing nonsense.
+    if (!Number.isFinite(n) || n < 0) { setText(String(current)); return; }
+    if (n === current) { setText(String(n)); return; }
+    void getContext().mutate(s => { s.attachmentThresholdKb = n; });
+  };
+
+  const convert = () => {
+    setBusy(true);
+    void applyConversion()
+      .then(r => {
+        if (r.failed > 0) {
+          alertModal(t('settings.attachments.convert.partial.title'),
+            t('settings.attachments.convert.partial.message', { count: r.failed }));
+        }
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const lines: string[] = [];
+  if (plan && plan.out.count > 0) {
+    lines.push(t(plan.out.count === 1 ? 'settings.attachments.convert.outOne' : 'settings.attachments.convert.out',
+      { count: plan.out.count, size: formatBytes(plan.out.bytes) }));
+  }
+  if (plan && plan.back.count > 0) {
+    lines.push(t(plan.back.count === 1 ? 'settings.attachments.convert.backOne' : 'settings.attachments.convert.back',
+      { count: plan.back.count, size: formatBytes(plan.back.bytes) }));
+  }
+
   return (
-    <div class="flex items-center justify-between gap-4 py-1 pl-4">
-      <span class="text-xs text-dim">{label}</span>
-      <span class="text-xs text-dim tabular-nums">{value}</span>
+    <>
+      <Row label={t('settings.attachments.threshold')} hint={t('settings.attachments.thresholdHint')}>
+        <div class="flex items-center gap-1.5">
+          <input
+            type="number"
+            min="0"
+            class="input w-20 text-right"
+            value={text}
+            onInput={(e) => setText(e.currentTarget.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          />
+          <span class="text-sm text-muted shrink-0">{t('settings.attachments.thresholdUnit')}</span>
+        </div>
+      </Row>
+      {lines.length > 0 && (
+        <div class="flex items-center justify-between gap-3 py-1 pl-4">
+          <span class="text-xs text-dim">{lines.join(' · ')}</span>
+          <button class="btn-ghost text-xs shrink-0" disabled={busy} onClick={convert}>
+            {t(busy ? 'settings.attachments.convert.busy' : 'settings.attachments.convert.action')}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Frees what Drive already holds a copy of — recordings and attachments
+ *  alike, since they are the same promise made twice.
+ *
+ *  Proven file by file. The green cloud says the BLOB is up to date and says
+ *  nothing about the companion files, which run on their own schedule;
+ *  trusting it here would delete recordings that had never been uploaded.
+ *  Anything without that proof is kept, silently and deliberately. */
+function FreeSpaceRow({ tick, onFreed }: { tick: number; onFreed: () => void }) {
+  const [bytes, setBytes] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const driveOn = isDriveConnected();
+
+  useEffect(() => {
+    if (!driveOn) { setBytes(null); return; }
+    void Promise.all([freeableAttachments(appState.value), freeableSessionAudio()])
+      .then(([a, s]) => setBytes(a.bytes + s.bytes))
+      .catch(() => setBytes(null));
+  }, [appState.value, driveOn, tick]);
+
+  // Nothing to free is not a disabled button: it is a line with nothing to say.
+  if (!driveOn || !bytes) return null;
+
+  const free = () => {
+    setBusy(true);
+    void Promise.all([freeUploadedAttachments(appState.value), freeSyncedSessionAudio()])
+      .finally(() => { setBusy(false); onFreed(); });
+  };
+
+  return (
+    <Row label={t('settings.free.label')} hint={t('settings.free.hint')}>
+      <button
+        class="btn-ghost text-xs"
+        disabled={busy}
+        onClick={() => confirmModal(
+          t('settings.free.title'),
+          t('settings.free.message', { size: formatBytes(bytes) }),
+          t('settings.free.confirm'),
+          free,
+        )}
+      >
+        {t('settings.free.action', { size: formatBytes(bytes) })}
+      </button>
+    </Row>
+  );
+}
+
+/** Companion files on Drive that nothing points at any more.
+ *
+ *  A scan, then a decision — never one button that both looks and deletes. The
+ *  count and the size are shown first because a sweep can be wrong, and the
+ *  files go to the Drive trash rather than away (see driveOrphans.ts for the
+ *  three conditions that make this safe at all). */
+function DriveOrphansRow() {
+  const [busy, setBusy] = useState(false);
+  if (!isDriveConnected()) return null;
+
+  const purge = (orphans: DriveOrphan[]) => {
+    setBusy(true);
+    void trashDriveOrphans(orphans)
+      .then(r => alertModal(t('settings.orphans.done.title'),
+        t('settings.orphans.done.message', { count: r.count, size: formatBytes(r.bytes) })))
+      .catch(e => alertModal(t('settings.orphans.failed.title'), String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const scan = () => {
+    setBusy(true);
+    void findDriveOrphans()
+      .then(({ orphans, bytes, tooYoung }) => {
+        // Said whenever it applies. Without it, "nothing to delete" reads as a
+        // broken search to anyone who can see an unreferenced file sitting
+        // there — the age rule is what makes this safe, and a safety rule
+        // nobody can see is one they assume is a bug.
+        const spared = tooYoung === 0 ? ''
+          : ' ' + t(tooYoung === 1 ? 'settings.orphans.tooYoungOne' : 'settings.orphans.tooYoung', { count: tooYoung });
+        if (orphans.length === 0) {
+          // NOT both sentences. "Everything on Drive is referenced by the
+          // library" and "47 files are referenced by nothing" contradict each
+          // other flatly, and that is what the two of them said together —
+          // seen on a real Drive on 2026-09-24. When the age rule is the only
+          // reason nothing is being deleted, the age rule is the whole answer.
+          alertModal(t('settings.orphans.none.title'),
+            tooYoung === 0 ? t('settings.orphans.none.message') : spared.trim());
+          return;
+        }
+        confirmModal(
+          t('settings.orphans.found.title'),
+          t(orphans.length === 1 ? 'settings.orphans.foundOne' : 'settings.orphans.found',
+            { count: orphans.length, size: formatBytes(bytes) }) + spared,
+          t('settings.orphans.confirm'),
+          () => purge(orphans),
+        );
+      })
+      .catch(e => alertModal(t('settings.orphans.failed.title'),
+        // "Could not read the library from Drive" is the one failure worth
+        // wording, because it is the condition that makes the scan safe: an
+        // unreadable blob makes every file look unreferenced.
+        e instanceof OrphanScanUnavailable && e.reason === 'unreadable'
+          ? t('settings.orphans.failed.unreadable')
+          : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Row label={t('settings.orphans.label')} hint={t('settings.orphans.hint')}>
+      <button class="btn-ghost text-xs" disabled={busy} onClick={scan}>
+        {t(busy ? 'settings.orphans.busy' : 'settings.orphans.action')}
+      </button>
+    </Row>
+  );
+}
+
+/** Where the space actually is: one line per kind of thing, one column per
+ *  place it can be.
+ *
+ *  Both sides count ORPHANS — bytes nothing in the library points at any more.
+ *  That is deliberate and it reverses what the audio figure used to do: the
+ *  old one hid them on the grounds that they were space the user could not act
+ *  on, but the panel's job is to explain where the space went, and space
+ *  nothing points at is exactly the space nobody can otherwise account for.
+ *  The two buttons below are what act on the difference.
+ *
+ *  A missing Drive figure shows as "?" and never as zero: "we could not ask"
+ *  and "there is nothing there" are different answers, and only one of them
+ *  would be a lie. */
+function StorageMatrix({ rows, driveOn, heading }: {
+  rows: Array<{ label: string; local: number | null; drive: number | null }>;
+  driveOn: boolean;
+  /** The section's own title and buttons, taking the first cell of the header
+   *  row. In the grid rather than above it so the column names land exactly
+   *  over the figures they name — and so naming the columns costs no line. */
+  heading: ComponentChildren;
+}) {
+  const cell = (n: number | null) => (n === null ? t('storage.unknown') : formatBytes(n));
+  /** Unknown is contagious on purpose: a total that silently skipped the one
+   *  figure it could not read would be a smaller number presented as complete. */
+  const sum = (pick: (r: typeof rows[number]) => number | null) =>
+    rows.reduce<number | null>((acc, r) => {
+      const v = pick(r);
+      return acc === null || v === null ? null : acc + v;
+    }, 0);
+
+  // No indent on the grid itself: the heading sits flush left like every other
+  // section title, and only the breakdown's own labels are stepped in under
+  // it. `self-end` drops the column names onto the heading's baseline, where
+  // they read as belonging to the figures below rather than to the title.
+  const head = 'text-[10px] uppercase tracking-wider text-dim text-right leading-none self-end pb-1';
+  return (
+    <div class={'grid gap-x-4 gap-y-1 pb-1 ' + (driveOn ? 'grid-cols-[1fr_auto_auto]' : 'grid-cols-[1fr_auto]')}>
+      <div class="flex items-center gap-1 min-w-0 pt-2">{heading}</div>
+      <span class={head}>{t('settings.storage.here')}</span>
+      {driveOn && <span class={head}>{t('settings.storage.onDrive')}</span>}
+      {rows.map(r => (
+        <Fragment key={r.label}>
+          <span class="text-xs text-dim pl-4">{r.label}</span>
+          <span class="text-xs text-dim tabular-nums text-right">{cell(r.local)}</span>
+          {driveOn && <span class="text-xs text-dim tabular-nums text-right">{cell(r.drive)}</span>}
+        </Fragment>
+      ))}
+      {/* The total belongs at the foot of its own column, under a rule, where
+          a column of figures is always added up — not off on the heading,
+          where it read as a fourth unrelated number. */}
+      <span class="col-span-full border-t border-border mt-0.5" />
+      <span class="text-xs text-muted pl-4">{t('settings.storage.total')}</span>
+      <span class="text-xs text-muted tabular-nums text-right">{cell(sum(r => r.local))}</span>
+      {driveOn && <span class="text-xs text-muted tabular-nums text-right">{cell(sum(r => r.drive))}</span>}
     </div>
   );
 }
+
 
 function UserSection({ ctx }: { ctx: AppContext }) {
   const user = appState.value;

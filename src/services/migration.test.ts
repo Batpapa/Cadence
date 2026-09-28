@@ -268,3 +268,83 @@ describe('a set imported without typed members is repaired, not trusted', () => 
     expect(parseCardPackageFromText(text)[0]!.type).toBeUndefined();
   });
 });
+
+// ── What a device still on the PREVIOUS build makes of an externalised state ─
+// The worry worth answering before any of this ships: two devices, one
+// updated and one not, syncing the same library through Drive. The updated
+// one writes attachments carrying `external` and an empty `data`; the other
+// has never heard of either.
+//
+// The answer is the schema version. Externalisation added a FIELD and did not
+// change the shape, so SCHEMA_VERSION stayed at 9 and a state written by the
+// new build is, to the old one, an ordinary current state: no migration runs
+// on it at all. And neither migrateState nor normaliseState ever rebuilds a
+// file attachment — they read the card refs among the attachments and write
+// back nothing — so an unknown field survives being loaded, cloned, saved and
+// pushed again.
+//
+// These two tests pin exactly that. They pass today because the files they
+// exercise are byte for byte the ones already in production; the day either
+// starts rebuilding attachments, or the version moves, this says so.
+describe('a state carrying externalised attachments, through the current schema', () => {
+  const externalised = () => stateWith(card({
+    content: { notes: '', attachments: [
+      { type: 'file', name: 'session.webm', mimeType: 'audio/webm', data: '',
+        external: { id: 'ext-1', driveFileId: 'drive-1', bytes: 1_234_567 } },
+      { type: 'file', name: 'Cooleys.abc', mimeType: 'text/vnd.abc', data: 'WDogMQo=' },
+    ] },
+  }));
+
+  it('is already at the current version, so nothing migrates it', () => {
+    const state = externalised();
+    (state as unknown as Record<string, unknown>)['schemaVersion'] = SCHEMA_VERSION;
+    const before = JSON.stringify(state);
+    migrateState(state);
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it('survives a migration from an older version with the field intact', () => {
+    // The upgrade path of a device that was behind: V6 → 9 runs, and must not
+    // touch bytes that are not there.
+    const state = externalised();
+    migrateState(state);
+    const atts = (state.cards['c1'] as unknown as { content: { attachments: Array<Record<string, unknown>> } }).content.attachments;
+    expect(atts[0]!['external']).toEqual({ id: 'ext-1', driveFileId: 'drive-1', bytes: 1_234_567 });
+    expect(atts[0]!['data']).toBe('');
+    // And the audio sniffing of V8 → V9 left the empty one alone rather than
+    // reading a head that is not there.
+    expect(atts[0]!['mimeType']).toBe('audio/webm');
+  });
+});
+
+// ── A state from a build that does not exist yet ────────────────────────────
+// Reading it is fine; RELABELLING it is not. `user.schemaVersion =
+// SCHEMA_VERSION` used to run unconditionally, so a v10 state opened on a v9
+// device came out saying v9 — and the device that understood v10 would read
+// that and run the v9 → v10 migration over data already migrated.
+describe('a state written by a LATER build', () => {
+  it('keeps its own version rather than being stamped down', () => {
+    const state = stateWith(card());
+    (state as unknown as Record<string, unknown>)['schemaVersion'] = SCHEMA_VERSION + 1;
+    migrateState(state);
+    expect(state.schemaVersion).toBe(SCHEMA_VERSION + 1);
+  });
+
+  it('is left entirely alone — no migration is run over it', () => {
+    const state = stateWith(card({
+      content: { notes: '', attachments: [
+        { type: 'file', name: 'x.webm', mimeType: 'video/webm', data: '', external: { id: 'e', bytes: 9 } }] },
+    }));
+    (state as unknown as Record<string, unknown>)['schemaVersion'] = SCHEMA_VERSION + 3;
+    const before = JSON.stringify(state);
+    migrateState(state);
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it('still migrates everything that is genuinely behind', () => {
+    const state = stateWith(card());
+    (state as unknown as Record<string, unknown>)['schemaVersion'] = 6;
+    migrateState(state);
+    expect(state.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+});

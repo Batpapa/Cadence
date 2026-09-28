@@ -1,6 +1,7 @@
 import { mutate } from '../store';
 import { showModal, closeModal } from './modal';
 import { removeCards } from '../services/cardService';
+import { condemnCardAttachments } from '../services/attachmentStore';
 import { t } from '../services/i18nService';
 import type { Card } from '../types';
 
@@ -63,7 +64,10 @@ export function showDuplicateCardsModal(cards: Card[], opts: DuplicateModalOptio
       danger: true,
       onClick: () => {
         closeModal();
-        void mutate(s => removeCards(s, cards.map(c => c.id)));
+        // Same as deleting a card by hand: what lives outside the blob has a
+        // Drive copy that nothing will point at once these are gone.
+        void mutate(s => removeCards(s, cards.map(c => c.id)))
+          .then(() => condemnCardAttachments(cards));
         opts.onDeleted?.();
       },
     },

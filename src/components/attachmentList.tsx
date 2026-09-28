@@ -1,7 +1,9 @@
-import { useEffect, useRef, useMemo, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
-import type { Attachment, FileEntry, EmbedEntry, Card, CardRef } from '../types';
-import { entryToObjectUrl, generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance } from '../utils';
+import type { Attachment, FileAttachment, FileEntry, EmbedEntry, Card, CardRef, ResolvableFile } from '../types';
+import { generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance, downloadBlob, base64ToBlob } from '../utils';
+import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
+import { alertModal } from './modal';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon } from './icons';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult } from './fileViewer';
@@ -27,6 +29,54 @@ function isPreviewable(entry: FileEntry): boolean {
     m === 'application/pdf' || m.startsWith('text/') ||
     entry.name.endsWith('.md') || entry.name.endsWith('.txt') ||
     entry.name.endsWith('.abc') || m === 'text/vnd.abc';
+}
+
+/** Runs `use` with an entry whose bytes are actually in hand.
+ *
+ *  For everything carried in the blob this resolves immediately and nothing
+ *  changes. For a file kept outside it (see attachmentStore), the bytes come
+ *  from this device — and, once phase 2 lands, from Drive when this device does
+ *  not have them, which is why every opening goes through here rather than
+ *  reading `entry.data`.
+ *
+ *  The single place attachments are opened from, so the waiting and the
+ *  "needs the network" explanation have one home rather than five. */
+export function withResolvedEntry(entry: ResolvableFile, use: (e: FileEntry) => void): Promise<void> {
+  // A file already on this device resolves in a few milliseconds, and a dialog
+  // that flashes for those is worse than none. One that has to come down from
+  // Drive can take seconds, and silence there reads as a dead click — so the
+  // wait appears only once it is real. Opening is a gesture, hence interactive.
+  const work = hydratedEntry(entry, true);
+  const patience = setTimeout(() => showFetchingModal(entry.name), PATIENCE_MS);
+  let waited = false;
+  const stop = () => {
+    clearTimeout(patience);
+    if (waited) closeModal();
+  };
+  setTimeout(() => { waited = true; }, PATIENCE_MS);
+
+  return work.then(e => { stop(); use(e); }).catch((e: unknown) => {
+    stop();
+    if (e instanceof AttachmentNotHere) {
+      alertModal(t(`attachment.missing.${e.reason}.title`), t(`attachment.missing.${e.reason}.message`, { name: entry.name }));
+      return;
+    }
+    console.warn('[attachments] could not resolve ' + entry.name, e);
+    alertModal(t('attachment.failed.title'), t('attachment.failed.message', { name: entry.name }));
+  });
+}
+
+/** How long a fetch may take before it is worth saying something. */
+const PATIENCE_MS = 1000;
+
+function showFetchingModal(name: string): void {
+  const body = document.createElement('p');
+  body.className = 'text-sm text-muted leading-relaxed';
+  body.textContent = t('attachment.fetching.message', { name });
+  // No button: nothing to decide, and it closes itself. Dismissable all the
+  // same — the download carries on, and trapping someone behind a progress
+  // message they cannot cancel is worse than letting them walk away.
+  showModal(t('attachment.fetching.title'), body, []);
 }
 
 function mimeIcon(entry: FileEntry): string {
@@ -142,7 +192,7 @@ function confirmRemove(name: string, isRef: boolean, remove: () => void): void {
 
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, reloadEntry, glyph, downloadName }: {
+function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, glyph, onOpen, onDownload }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
@@ -150,15 +200,15 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   /** The full new name, extension kept. Absent where a file cannot be renamed. */
   onRename?: (name: string) => void;
   onSetPreferredIndex?: (index: number | undefined) => void;
-  /** For a DERIVED file only — see PreviewModalOpts.reloadEntry. */
-  reloadEntry?: () => FileEntry | null;
-  /** What the download is called, when that must differ from what is shown —
-   *  a set name contains slashes, which no filesystem accepts, but the row is
-   *  just a label and should read as the set is really called. */
-  downloadName?: string;
   /** Replaces the MIME glyph. Used to mark a file the app generates, which is
    *  not the same kind of thing as one the user attached. */
   glyph?: ComponentChild;
+  /** For a file whose bytes are NOT `entry.data` — today, a set's fused score,
+   *  which is rebuilt from its members and so has to resolve THEIR bytes, not
+   *  its own (it has none). Given these, the row never reads `entry.data`:
+   *  opening and downloading both go through them, and `entry` is a label. */
+  onOpen?: () => void;
+  onDownload?: () => void;
 }) {
   const previewable = isPreviewable(entry);
   // Renaming in place, on the row itself: the viewer's title offers the same,
@@ -219,10 +269,10 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
         <span
           class={`text-xs font-mono truncate flex-1 ${previewable ? 'text-muted hover:text-primary cursor-pointer transition-colors' : 'text-dim'}`}
           // Favoriting a version isn't "editing" the card — available regardless of `editable`.
-          onClick={previewable ? () => showPreviewModal(entry, editable ? onSave : undefined, {
-            initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex, reloadEntry,
+          onClick={!previewable ? undefined : onOpen ?? (() => void withResolvedEntry(entry, resolved => showPreviewModal(resolved, editable ? onSave : undefined, {
+            initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex,
             onRename: editable ? onRename : undefined,
-          }) : undefined}
+          })))}
         >
           {entry.name}
         </span>
@@ -239,10 +289,16 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
       {/* The same glyph the session module downloads with — this was the one
           place still using a bare arrow character, which read as a smaller,
           lighter control than the identical action everywhere else. */}
-      <a
-        href={entryToObjectUrl(entry)} download={downloadName ?? entry.name}
-        class="text-dim hover:text-accent transition-colors shrink-0 flex items-center"
+      {/* A button, not an <a href>: the bytes may have to be fetched, and an
+          href cannot wait. It also stops the leak the href was — it built a
+          fresh object URL on EVERY render of the row, none of them ever
+          revoked, so merely scrolling a card allocated a copy of the file per
+          pass. */}
+      <button
+        class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center"
         title={t('fileViewer.download')}
+        onClick={onDownload ?? (() => void withResolvedEntry(entry, resolved =>
+          downloadBlob(base64ToBlob(resolved.data, resolved.mimeType), entry.name)))}
         dangerouslySetInnerHTML={{ __html: downloadIcon(12) }}
       />
       {editable && (
@@ -728,13 +784,73 @@ export interface AttachmentListOptions {
  *  saver that has not yet asked its question, which is the behaviour that
  *  matters (see theSessionScoreSaver). */
 export function openCardScore(options: AttachmentListOptions): boolean {
-  const { attachments, editable, card } = options;
+  const { attachments } = options;
   const i = attachments.findIndex(a => a.type === 'file' && isAbcFile(a));
   const att = attachments[i];
   if (!att || att.type !== 'file') return false;
+  // Whether there is a score to open is answered here and now; GETTING it may
+  // take a download, and that is the resolver's business — the same door every
+  // other attachment goes through, so a score kept outside the blob waits,
+  // explains itself, and never opens an empty viewer.
+  void openResolvedScore(options, att, i);
+  return true;
+}
 
-  const generated = att.generatedBy === 'tuneset' && card
-    ? tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats })
+/** A set's members with their ABC bytes in hand, folded over the live library.
+ *
+ *  A set's score is built from its MEMBERS' scores, so those are what have to
+ *  be resolved — on copies, since this is only to render from. Only their ABC:
+ *  resolving a member's whole attachment list would pull its audio clips down
+ *  to draw a stave.
+ *
+ *  Null when one of them could not be produced; `withResolvedEntry` has
+ *  already said why. Showing the set without one of its tunes would be a
+ *  quieter kind of wrong — and it is exactly what happened before this
+ *  existed, since `blockForTune` reads `data` and an emptied one yields the
+ *  labelled bar of silence meant for a tune that has no score at all. */
+async function resolvedMemberCards(card: Card): Promise<Record<string, Card> | null> {
+  const clones = structuredClone((card.tunes ?? [])
+    .map(ref => appState.value.cards[ref.id])
+    .filter((c): c is Card => !!c));
+  for (const member of clones) {
+    const abc = member.content?.attachments?.find(a => a.type === 'file' && isAbcFile(a));
+    if (abc?.type !== 'file' || !abc.external) continue;
+    let resolved = false;
+    await withResolvedEntry(abc, e => { abc.data = e.data; delete abc.external; resolved = true; });
+    if (!resolved) return null;
+  }
+  return { ...appState.value.cards, ...Object.fromEntries(clones.map(c => [c.id, c])) };
+}
+
+/** The fused score of a set, with every member's notation actually in it.
+ *  What the row downloads, and what `openResolvedScore` opens. */
+async function resolvedTunesetEntry(card: Card): Promise<FileEntry | null> {
+  const cards = await resolvedMemberCards(card);
+  return cards && tunesetAbcEntry(card, cards, { includeRepeats: appState.value.abcIncludeRepeats });
+}
+
+async function openResolvedScore(
+  options: AttachmentListOptions, att: FileAttachment, i: number,
+): Promise<void> {
+  const { editable, card } = options;
+  const isSet = att.generatedBy === 'tuneset' && !!card;
+
+  let cards = appState.value.cards;
+  if (isSet && card) {
+    const resolved = await resolvedMemberCards(card);
+    if (!resolved) return;
+    cards = resolved;
+  } else if (att.external) {
+    let resolved = false;
+    const hydrated = { ...att };
+    await withResolvedEntry(att, e => { hydrated.data = e.data; resolved = true; });
+    if (!resolved) return;
+    delete hydrated.external;
+    att = hydrated;
+  }
+
+  const generated = isSet && card
+    ? tunesetAbcEntry(card, cards, { includeRepeats: appState.value.abcIncludeRepeats })
     : null;
   const entry: FileEntry & { preferredIndex?: number } = generated && card
     ? { ...att, data: generated.data, mimeType: generated.mimeType, name: card.name + '.abc' }
@@ -757,11 +873,22 @@ export function openCardScore(options: AttachmentListOptions): boolean {
     onRename: editable && options.onRenameFile && att.generatedBy !== 'tuneset'
       ? (name) => options.onRenameFile!(i, name)
       : undefined,
-    reloadEntry: att.generatedBy === 'tuneset' && card
-      ? () => tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats })
+    // Rebuilt from the SAME resolved members, not from the live map: a reload
+    // happens when the score preferences change, and re-reading the state
+    // there would hand back the members with their bytes missing again.
+    reloadEntry: isSet && card
+      ? () => tunesetAbcEntry(card, cards, { includeRepeats: appState.value.abcIncludeRepeats })
       : undefined,
   });
-  return true;
+}
+
+/** Opens ONE named attachment as a score, resolving whatever it needs first.
+ *
+ *  `openCardScore` above picks the card's first ABC, which is what a button
+ *  labelled "score" means; a row knows exactly which attachment it is, and a
+ *  set may well carry another ABC beside its generated one. */
+function openScoreEntry(options: AttachmentListOptions, att: FileAttachment, i: number): void {
+  void openResolvedScore(options, att, i);
 }
 
 /** Whether `openCardScore` would have anything to open. */
@@ -783,23 +910,23 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
 
   const scratch = useRef<DragScratch>({ draggedIdx: null, indicatorEl: null }).current;
 
-  // A set's score is REBUILT here rather than read from the attachment: what is
-  // stored is only the intent to show one. Recomputed whenever the library
-  // changes, so it cannot lag behind a tune being renamed, restarred, added or
-  // removed — and it costs nothing in the synced blob.
-  const generatedAbc = useMemo(
-    () => (card && isTuneset(card) ? tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats }) : null),
-    [card, appState.value.cards, appState.value.abcIncludeRepeats],
-  );
   const hasAbc = hasTunesetScore(attachments);
 
-  /** The stored entry carries no content and a placeholder name; this is what
-   *  is shown, previewed and downloaded. The NAME is derived too, so it follows
-   *  the set being renamed — including automatically, which happens whenever a
-   *  tune is added or renamed. */
+  /** The stored entry carries no content and a placeholder name; this is the
+   *  LABEL shown for it. The name is derived from the set, so it follows the
+   *  set being renamed — including automatically, which happens whenever a
+   *  tune is added or renamed.
+   *
+   *  `data` is deliberately left empty and the row never reads it: the
+   *  notation is rebuilt from the members, and a member's score kept outside
+   *  the blob has to come down first. Building it here — synchronously, from
+   *  the live library — produced a score in which every externalised tune was
+   *  the labelled bar of silence that means "this tune has no score", with
+   *  nothing said about it. Opening and downloading go through
+   *  `resolvedTunesetEntry`, which waits and explains. */
   const resolve = (att: Attachment): Attachment => (
-    att.type === 'file' && att.generatedBy === 'tuneset' && generatedAbc && card
-      ? { ...att, data: generatedAbc.data, mimeType: generatedAbc.mimeType, name: card.name + '.abc' }
+    att.type === 'file' && att.generatedBy === 'tuneset' && card
+      ? { ...att, data: '', mimeType: 'text/vnd.abc', name: card.name + '.abc' }
       : att
   );
 
@@ -850,7 +977,6 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   // A gear rather than the clef: this file is produced by the
                   // app, not attached by the user, and that is worth seeing.
                   glyph={att.generatedBy === 'tuneset' ? <GearIcon size={12} filled /> : undefined}
-                  downloadName={att.generatedBy === 'tuneset' && card ? tunesetAbcFileName(card.name) : undefined}
                   // A derived score has nowhere to save an edit back to, and a
                   // fused set is a single page — so neither editing its text
                   // nor starring a version applies to it.
@@ -862,8 +988,15 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   // Its name is derived from the set's, so it has none of its own to change.
                   onRename={onRenameFile && att.generatedBy !== 'tuneset' ? (name) => onRenameFile(i, name) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
-                  reloadEntry={att.generatedBy === 'tuneset' && card
-                    ? () => tunesetAbcEntry(card, appState.value.cards, { includeRepeats: appState.value.abcIncludeRepeats })
+                  // A set's fused score has no bytes of its own — see `resolve`
+                  // above. Both gestures rebuild it from members whose scores
+                  // are actually in hand, and say so when one is not.
+                  onOpen={att.generatedBy === 'tuneset' && card
+                    ? () => openScoreEntry(options, att, i) : undefined}
+                  onDownload={att.generatedBy === 'tuneset' && card
+                    ? () => void resolvedTunesetEntry(card).then(e => {
+                      if (e) downloadBlob(base64ToBlob(e.data, e.mimeType), tunesetAbcFileName(card.name));
+                    })
                     : undefined}
                 />
               ) : att.type === 'card' ? (

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { getSettingAbcMeta, getSettingAbcMetaSync, type SettingAbcMeta } from '../recognition/indexStore';
 import { theSessionKeyToAbc, findSettingInScore } from '../../services/theSessionService';
+import { isAbcFile } from '../../services/abcService';
+import { hydratedEntry } from '../../services/attachmentStore';
 import { showPreviewModal } from '../../components/fileViewer';
 import { getContext } from '../../store';
 import type { AppContext } from '../../types';
@@ -54,13 +56,33 @@ function showAbcPreview(displayName: string, settingId: string, meta: SettingAbc
  *  Which of the card's scores is findSettingInScore's call: the TheSession
  *  score first, then any ABC carrying the setting — asking the FILE, so a score
  *  predating the `generatedBy` marker is never passed over for a label. */
-function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined) {
+async function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined) {
   if (!cardId || !ctx) return null;
   const card = getContext().user.cards[cardId];
   const id = parseInt(settingId, 10);
-  const target = card && Number.isFinite(id) ? findSettingInScore(card, id) : null;
-  if (!card || !target) return null;
-  const entry = card.content.attachments[target.attachmentIndex];
+  if (!card || !Number.isFinite(id)) return null;
+  // Resolved FIRST, on a copy. `findSettingInScore` reads the `S:` line out of
+  // the ABC text, so a score kept outside the blob — `data` empty — carried no
+  // setting it could find: the card's own score was silently swapped for the
+  // index's rendition of it, ★ and version nav included. Told apart only by
+  // the title, which then came from the detection's lowercase displayName
+  // (reported 2026-09-25, reproduced at a threshold of zero).
+  //
+  // Only the ABC attachments, and only until one matches: resolving the rest
+  // would pull a card's audio clips down to draw a stave. A failure falls back
+  // to the index stand-in rather than raising anything — that rendition IS
+  // what was recognised, so it is an answer, not an error.
+  const resolved = structuredClone(card);
+  for (const att of resolved.content?.attachments ?? []) {
+    if (att.type !== 'file' || !att.external || !isAbcFile(att)) continue;
+    try {
+      att.data = (await hydratedEntry(att, true)).data;
+      delete att.external;
+    } catch { /* left as it was; findSettingInScore simply will not match it */ }
+  }
+  const target = findSettingInScore(resolved, id);
+  if (!target) return null;
+  const entry = resolved.content.attachments[target.attachmentIndex];
   if (!entry || entry.type !== 'file') return null;
   return () => showPreviewModal(entry, undefined, {
     initialIndex: target.blockIndex,
@@ -129,8 +151,10 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx }: {
       title={t('sessions.listenAbc')}
       onClick={(e) => {
         e.stopPropagation();
-        const fromCard = cardScorePreview(settingId, cardId, ctx);
-        if (fromCard) fromCard(); else showAbcPreview(displayName, settingId, meta);
+        // Asynchronous now: the card's score may have to come back from Drive
+        // before we can even tell whether it carries this setting.
+        void cardScorePreview(settingId, cardId, ctx)
+          .then(fromCard => { if (fromCard) fromCard(); else showAbcPreview(displayName, settingId, meta); });
       }}
     >
       {icon}
