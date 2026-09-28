@@ -3,6 +3,8 @@ import { signal, type Signal } from '@preact/signals';
 import type { ComponentChild } from 'preact';
 import type { Attachment } from '../types';
 import { fileToEntry, focusIfDesktop } from '../utils';
+import { attachmentFor } from '../services/attachmentStore';
+import { appState } from '../store';
 import { showModal, closeModal, renderModalBody } from './modal';
 import { CustomSelect } from './customSelect';
 import { FileIcon, ClipboardIcon } from './icons';
@@ -33,7 +35,10 @@ function pickFiles(onAdd: (a: Attachment) => void): void {
   inp.onchange = async () => {
     for (const file of Array.from(inp.files ?? [])) {
       const entry = await fileToEntry(file);
-      onAdd({ type: 'file', ...entry });
+      // Not `{ type: 'file', ...entry }` any more: above the size threshold the
+      // bytes are kept out of the synced blob, and attachmentFor is the one
+      // place that decides (services/attachmentStore.ts).
+      onAdd(await attachmentFor(entry, appState.value));
     }
   };
   inp.click();
@@ -196,7 +201,18 @@ function showPasteTextModal(onAdd: (a: Attachment) => void): void {
       label: t('common.add'),
       primary: true,
       disabled,
-      onClick: () => { leave(); onAdd(textAttachment(draft.base, draft.text, draft.format)); },
+      // Through attachmentFor, exactly like the device picker two rows up:
+      // this is the same act — a file being attached here and now — and it
+      // went straight to `onAdd` instead, so a pasted text stayed in the
+      // synced blob whatever its size and whatever the threshold said. Only
+      // visible at a low threshold or on a long paste, but the rule is meant
+      // to have one door (services/attachmentStore.ts) and this was a second.
+      onClick: () => {
+        leave();
+        const entry = textAttachment(draft.base, draft.text, draft.format);
+        void attachmentFor({ name: entry.name, data: entry.data, mimeType: entry.mimeType }, appState.value)
+          .then(onAdd);
+      },
     },
   ], {
     maxWidth: '34rem',

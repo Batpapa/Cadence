@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AbcOpenMode, AppState, Card, IncipitDisplay } from '../types';
+import { signal } from '@preact/signals';
+import type { AbcOpenMode, AppState, Card, ExternalFile, FileAttachment, IncipitDisplay } from '../types';
 // Type-only: erased at compile time, so it costs nothing at runtime and the
 // module itself stays lazily imported below.
 import type { TuneObject, MidiBuffer } from 'abcjs';
@@ -7,6 +8,7 @@ import { isTuneset } from '../services/cardTypeService';
 import { INCIPIT_BARS, abcIncipit, abcOpenMode, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock } from '../services/abcService';
 import { resolveCardRef } from '../services/cardRefService';
 import { appState } from '../store';
+import { hydratedEntry } from '../services/attachmentStore';
 import { playIcon, stopIcon } from './playbackIcons';
 import { MusicNoteIcon, ExpandIcon } from './icons';
 import { t } from '../services/i18nService';
@@ -72,12 +74,52 @@ export function showsIncipit(user: Pick<AppState, 'incipitDisplay'>, where: 'car
   return setting === 'study';
 }
 
-/** One tune's opening, from its own starred score. Null when it has none. */
-function tuneIncipit(card: Card | null | undefined): string | null {
+// ── Scores that are not in the blob ─────────────────────────────────────────
+// An incipit is drawn during a render, and a render cannot wait — so a score
+// kept outside the blob is fetched once, remembered, and the row that asked
+// redraws when it lands. Never interactive: nothing here is a gesture, and a
+// consent window raised by a card merely being LOOKED at would be indefensible.
+//
+// Cached by external id, which names one immutable set of bytes: an edit
+// elsewhere lands under a new id and misses this map rather than being masked
+// by it. `null` means it was tried and will not come — the row says so rather
+// than quietly drawing one tune fewer.
+const _externalAbc = new Map<string, string | null>();
+const _fetching = new Set<string>();
+const _abcArrived = signal(0);
+
+function externalAbcText(att: FileAttachment & { external: ExternalFile }): string | null | undefined {
+  const id = att.external.id;
+  if (_externalAbc.has(id)) return _externalAbc.get(id);
+  if (!_fetching.has(id)) {
+    _fetching.add(id);
+    void hydratedEntry(att, false)
+      .then(e => { _externalAbc.set(id, decodeAbc(e)); })
+      .catch(() => { _externalAbc.set(id, null); })
+      .finally(() => { _fetching.delete(id); _abcArrived.value++; });
+  }
+  return undefined;   // still on its way
+}
+
+/** One tune's opening, from its own starred score.
+ *
+ *  Null when it has no score at all — the row simply leaves it out. `false`
+ *  when it HAS one that this device cannot produce, which is a different thing
+ *  and is said out loud. */
+function tuneIncipit(card: Card | null | undefined): string | null | false {
   const attachment = card?.content?.attachments?.find(a => a.type === 'file' && isAbcFile(a));
   if (!attachment || attachment.type !== 'file') return null;
+  let text: string;
+  if (attachment.external) {
+    const fetched = externalAbcText(attachment as FileAttachment & { external: ExternalFile });
+    if (fetched === undefined) return null;   // on its way; the signal redraws
+    if (fetched === null) return false;       // not here, and not coming
+    text = fetched;
+  } else {
+    try { text = decodeAbc(attachment); } catch { return null; }
+  }
   let blocks: string[];
-  try { blocks = splitAbcTunes(decodeAbc(attachment)); } catch { return null; }
+  try { blocks = splitAbcTunes(text); } catch { return null; }
   const index = Math.max(0, Math.min(blocks.length - 1, attachment.preferredIndex ?? 0));
   const block = blocks[index];
   return block ? abcIncipit(block, INCIPIT_BARS) : null;
@@ -96,15 +138,17 @@ function tuneIncipit(card: Card | null | undefined): string | null {
  *  in a fused score that silence held the tune's PLACE in a line that had to
  *  stay continuous; separate staves keep their order without it, and an empty
  *  stave would be a row that says nothing. */
-export function incipitScores(card: Card, cards: Record<string, Card>): Array<{ key: string; abc: string }> {
+export function incipitScores(
+  card: Card, cards: Record<string, Card>,
+): Array<{ key: string; abc: string | false }> {
   if (!isTuneset(card)) {
     const abc = tuneIncipit(card);
-    return abc ? [{ key: card.id, abc }] : [];
+    return abc === null ? [] : [{ key: card.id, abc }];
   }
-  const out: Array<{ key: string; abc: string }> = [];
+  const out: Array<{ key: string; abc: string | false }> = [];
   for (const [i, ref] of (card.tunes ?? []).entries()) {
     const abc = tuneIncipit(resolveCardRef(ref, cards));
-    if (abc) out.push({ key: `${ref.id}-${i}`, abc });
+    if (abc !== null) out.push({ key: `${ref.id}-${i}`, abc });
   }
   return out;
 }
@@ -135,6 +179,8 @@ export function IncipitRow({ card, where, onOpenScore, class: className = '' }: 
   const [mode, setMode] = useState<AbcOpenMode>(() => abcOpenMode(appState.value));
 
   if (!showsIncipit(user, where)) return null;
+  // Read so this row redraws when a score kept outside the blob comes down.
+  _abcArrived.value;
   const scores = incipitScores(card, user.cards);
   if (scores.length === 0) return null;
   return (
@@ -185,7 +231,11 @@ export function IncipitRow({ card, where, onOpenScore, class: className = '' }: 
           </button>
         )}
       </div>
-      {scores.map(s => <Incipit key={s.key} abc={s.abc} mode={mode} />)}
+      {scores.map(s => s.abc === false
+        // It has a score; this device just cannot produce it. Said plainly,
+        // rather than drawing one tune fewer and letting the row lie.
+        ? <p key={s.key} class="text-xs text-dim py-1">{t('card.incipit.unavailable')}</p>
+        : <Incipit key={s.key} abc={s.abc} mode={mode} />)}
     </div>
   );
 }

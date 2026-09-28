@@ -8,6 +8,7 @@ import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, exportCardsTXT, cardsTextReport, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
 import { confirmModal, closeAllModals } from '../components/modal';
+import { askIncompleteExport } from '../components/incompleteExportModal';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { removeCards } from '../services/cardService';
 import { localDayRange, hasReviewInRange } from '../services/reviewRange';
@@ -166,7 +167,7 @@ function showExportModal(cards: Card[], user: AppState): void {
     backBtn.classList.remove('hidden');
     backBtn.onclick = renderRoot;
     body.innerHTML = '';
-    body.appendChild(mkChoice(iconFile,  t('library.export.file'),  t('library.export.cdcDesc'),  'var(--color-warn)',   () => { close(); exportCards(cards); }));
+    body.appendChild(mkChoice(iconFile,  t('library.export.file'),  t('library.export.cdcDesc'),  'var(--color-warn)',   () => { close(); void exportCards(cards, askIncompleteExport); }));
     body.appendChild(mkChoice(iconShare, t('library.share.label'),  t('library.share.desc'),       'var(--color-accent)', () => { void renderShareResult(); }));
   };
 
@@ -178,7 +179,12 @@ function showExportModal(cards: Card[], user: AppState): void {
     status.textContent = t('library.share.uploading');
     body.appendChild(status);
     try {
-      const { key, secondsRemaining } = await uploadShare(cardPackageText(cards));
+      // Built before anything is sent: a share is the one export that leaves
+      // this device for good, so an attachment it could not fetch back has to
+      // be settled here rather than discovered by whoever receives the key.
+      const text = await cardPackageText(cards, askIncompleteExport);
+      if (text === null) { renderCdc(); return; }
+      const { key, secondsRemaining } = await uploadShare(text);
       body.innerHTML = '';
       const keyEl = document.createElement('div');
       keyEl.className = 'text-center font-mono text-3xl font-bold tracking-[0.3em] text-primary py-2';

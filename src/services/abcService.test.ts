@@ -60,6 +60,33 @@ describe('buildTunesetAbc — one block, tunes in sequence', () => {
   });
 });
 
+describe('buildTunesetAbc — a member whose score is not in the blob', () => {
+  /** Same card, its ABC externalised: `data` emptied, the bytes elsewhere. */
+  function externalised(c: Card): Card {
+    const att = c.content.attachments[0]!;
+    return { ...c, content: { ...c.content, attachments: [{ ...att, data: '', external: { id: 'e-' + c.id, bytes: 99 } } as typeof att] } };
+  }
+
+  it('cannot tell it apart from a tune that has no score at all', () => {
+    // This is WHY every caller resolves the members first (attachmentList's
+    // resolvedMemberCards). This function is synchronous and reads `data`, so
+    // an emptied one reads as "no score" and gets the labelled bar of silence
+    // — a set drawn with its tunes silently missing. Pinned here rather than
+    // fixed here: making the fusion asynchronous would push a download into
+    // every render that merely mentions a set.
+    const abc = buildTunesetAbc(set('Set', [ref(cooleys), ref(kesh)]), lib(externalised(cooleys), kesh))!;
+    expect(abc).not.toContain('EBBA B2 EB|');
+    expect(abc).toContain('Z4 |');
+    expect(abc).toContain('G3 GAB|');
+  });
+
+  it('gives nothing at all when EVERY member is outside the blob', () => {
+    // Not merely degraded — null, which is the row falling back to the stored
+    // placeholder's own name. Another reason the caller must resolve first.
+    expect(buildTunesetAbc(set('Set', [ref(cooleys)]), lib(externalised(cooleys)))).toBeNull();
+  });
+});
+
 describe('buildTunesetAbc — inline changes', () => {
   it('carries key, meter and tempo INLINE when they change', () => {
     // Reel in Edor 4/4 → jig in Gmaj 6/8: everything changes at the seam.

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'preact/hooks';
 import { Fragment } from 'preact';
 import { appState, navigate, mutate } from '../store';
+import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
 import { copyFileName } from '../services/attachmentNames';
 import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
@@ -598,12 +599,59 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
     attachments: card.content.attachments,
     card,
     editable: true,
-    onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); }),
-    onRemove:  (i) => mutate(s => { s.cards[cardId]!.content.attachments.splice(i, 1); }),
-    onUpdateFile: (i, data) => mutate(s => {
-      const att = s.cards[cardId]!.content.attachments[i];
-      if (att && att.type === 'file') att.data = data;
-    }),
+    // The upload follows the state, never precedes it: what is in the state
+    // is what the backlog looks for, so a tab closed in between leaves work
+    // that can be found again rather than a file nobody claims.
+    onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); })
+      .then(() => uploadAttachmentSoon(a)),
+    // The bytes go with it, but only once the state no longer points at them —
+    // and only for an attachment whose bytes live outside the blob, where
+    // "removed from the card" and "delete the file" are two different acts.
+    onRemove:  (i) => {
+      const removed = appState.value.cards[cardId]?.content.attachments[i];
+      return mutate(s => { s.cards[cardId]!.content.attachments.splice(i, 1); })
+        .then(() => {
+          if (!removed) return;
+          // The file out there is condemned now — recorded even when Drive
+          // cannot be reached. The bytes HERE are not touched: dropping them
+          // would step over the safety net, because a snapshot taken before
+          // this deletion still names them, and restoring it must not hand
+          // back a card whose attachment is dead. The local sweep owns that
+          // decision and is the only thing that reads the snapshots.
+          condemnAttachmentFile(removed).catch(() => {});
+        });
+    },
+    onUpdateFile: (i, data) => {
+      const att = appState.value.cards[cardId]?.content.attachments[i];
+      // An externalised file is edited where its bytes actually are. Only text
+      // is editable and text is normally far below the threshold, so this is
+      // the rare case of a very large note — but writing `data` here would
+      // leave the card carrying both a copy and a pointer, and the pointer
+      // would win at every read.
+      if (att?.type === 'file' && isExternal(att)) {
+        return replaceExternalBytes(att, data)
+          // The edit lands under a NEW id, so every other device misses on its
+          // own copy and fetches the new content instead of serving the old
+          // one for ever. Which also means the previous bytes are now
+          // referenced by nothing — dropped here, and only once the state
+          // actually carries the new id.
+          .then(external => mutate(s => {
+            const target = s.cards[cardId]!.content.attachments[i];
+            if (target?.type === 'file' && target.external) target.external = external;
+          }).then(() => {
+            // The old content is referenced by nothing in the CURRENT state,
+            // so its Drive copy goes. Its local bytes stay for the sweep to
+            // judge, for the same reason as onRemove just above: a snapshot
+            // may still name them.
+            void condemnAttachmentFile(att);
+            uploadAttachmentSoon({ ...att, type: 'file', external });
+          }));
+      }
+      return mutate(s => {
+        const target = s.cards[cardId]!.content.attachments[i];
+        if (target && target.type === 'file') target.data = data;
+      });
+    },
     onSetPreferredIndex: (i, index) => mutate(s => {
       const att = s.cards[cardId]!.content.attachments[i];
       if (att && att.type === 'file') {
@@ -633,7 +681,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         name = copyFileName(original.name, atts.flatMap(a => (a.type === 'file' ? [a.name] : [])));
         // Everything but the marker: the copy is the user's, so no refresh
         // may ever replace it. The star comes along.
-        const { generatedBy: _generatedBy, ...rest } = original;
+        //
+        // `external` is dropped too, and that one is not cosmetic: the copy
+        // arrives with its own `data`, and keeping the pointer would leave two
+        // attachments sharing ONE set of bytes — removing either would take
+        // the other's file with it.
+        const { generatedBy: _generatedBy, external: _external, ...rest } = original;
         atts.splice(i, 0, { ...rest, name, data });
       });
       return name;
@@ -717,7 +770,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               t('card.delete.message', { name: card.name }),
               t('common.delete'),
               () => {
-                void mutate(s => removeCards(s, [cardId]));
+                // Captured before the state loses it: deleting a card deletes
+                // its attachments, and the ones that live outside the blob
+                // have a Drive copy that nothing will ever point at again.
+                const doomed = appState.value.cards[cardId];
+                void mutate(s => removeCards(s, [cardId]))
+                  .then(() => { if (doomed) void condemnCardAttachments([doomed]); });
                 navigate({ view: 'folder', folderId: null });
               },
             )}

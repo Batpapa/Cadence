@@ -2,8 +2,34 @@
 
 export interface FileEntry {
   name: string;
-  data: string; // base64
+  /** base64 — EMPTY when the bytes live outside the blob, see `external`. */
+  data: string;
   mimeType: string;
+}
+
+/** Where an attachment's bytes are when they are NOT in `data`.
+ *
+ *  Ten audio files were 82% of one real user's whole synced state (34.6 MB),
+ *  and base64 added a third on top of that — while every mutation clones and
+ *  rewrites the state, and every push sends it to Drive whole. Above a size
+ *  threshold the bytes therefore move out: to this device's own database
+ *  (attachmentDb.ts) and to a file in the Drive companion folder.
+ *
+ *  The PRESENCE of this field is the whole state — there is no mode enum to
+ *  keep in step with reality, and `data` is left empty exactly as
+ *  `generatedBy: 'tuneset'` already leaves it for a score rebuilt on display. */
+export interface ExternalFile {
+  /** Identity of the BYTES, and the only stable one an attachment has: its
+   *  position in a list is not, since reordering and removing a sibling both
+   *  move it. Keys the local row and names nothing else. */
+  id: string;
+  /** The file in `cadence-data-ext/attachments`. Absent means "not uploaded
+   *  yet" — added while offline or without a token — and therefore that these
+   *  bytes exist on this device ALONE. Nothing may free them in that state. */
+  driveFileId?: string;
+  /** Size of the real file, so the storage screen can total what is held
+   *  without opening a single blob. */
+  bytes: number;
 }
 
 /** What a link attachment DOES when it is opened: `embed` plays it in a modal
@@ -70,9 +96,25 @@ export type Attachment =
        *  the analysis tells the clip is already attached, whatever the file has
        *  since been renamed to. It was a tag inside the name until schema V8. */
       clipOf?: string;
+      /** Set when the bytes are not in `data` — see ExternalFile. Read it
+       *  through attachmentStore.ts, never by hand: resolving an attachment
+       *  means "this device, then Drive", and that decision lives there. */
+      external?: ExternalFile;
     })
   | ({ type: 'embed' } & EmbedEntry)
   | CardReferenceAttachment;
+
+/** The file variant on its own. Anything that produces or resolves a file
+ *  attachment says so with this rather than with the whole union, which would
+ *  make `{ ...att, clipOf }` a type error and force a cast at every call. */
+export type FileAttachment = Extract<Attachment, { type: 'file' }>;
+
+/** What can be resolved to bytes: a stored file attachment, or any bare entry
+ *  carrying the same two fields. The discriminant is irrelevant here — what
+ *  decides is whether `external` is set — so the resolvers ask for this and
+ *  not for `Attachment`, and a row component holding a plain FileEntry can
+ *  call them without being handed a `type` it never had. */
+export type ResolvableFile = FileEntry & { external?: ExternalFile };
 
 export interface Card {
   id: string;
@@ -251,6 +293,16 @@ export interface User {
    *  Absent = 'card', the default: the reminder is the feature, and one that
    *  has to be switched on is one nobody finds. */
   incipitDisplay?: IncipitDisplay;
+  /** Size in KILOBYTES from which a newly attached file's bytes are kept
+   *  outside the synced blob (see ExternalFile). Absent = the default in
+   *  attachmentStore.
+   *
+   *  Applies AT THE MOMENT A FILE IS ATTACHED and nowhere else — lowering it
+   *  does not reach back and move what is already there, which would be an
+   *  automatic repair of the kind refused for `addTunesetAbcOnConvert`.
+   *  Converting what already exists is its own button, in the storage
+   *  settings, because it spends someone's Drive and needs their say-so. */
+  attachmentThresholdKb?: number;
 
   // Profiles
   profileIds: string[];

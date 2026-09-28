@@ -11,6 +11,8 @@ import { ensurePersistentStorage } from './services/storageService';
 import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, localUsersOnSameDrive, adoptDriveConnection, type ConnectResult } from './services/driveService';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName, localSessionAudioStats } from './session/db';
+import { initAttachmentDbForUser, rawAttachmentBlobs } from './services/attachmentDb';
+import { initAttachmentSync } from './services/attachmentStore';
 import { buildZip, audioExtension } from './services/zip';
 import { applyDriveState, showDriveConflictModal } from './components/driveConflictModal';
 import { migrateState, migrateLegacyToUser, applyExternalData } from './services/migration';
@@ -73,6 +75,9 @@ async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
   // user never has legacy data, but the check itself still needs the right
   // user in scope) reads/writes AppState via store.ts's mutate().
   await initSessionDbForUser(user.id);
+  initAttachmentDbForUser(user.id);
+
+  initAttachmentSync();
   initRoutePersistence(user.id);
   finishBoot(root);
   setTimeout(() => showHelpModal(getContext(), { tab: 'guide' }), 0);
@@ -144,6 +149,9 @@ async function recoverUserFromDrive(root: HTMLElement): Promise<DriveRecovery> {
       touchUserOrder(user.id);
       setLanguage(appState.value.language);
       await initSessionDbForUser(user.id);
+      initAttachmentDbForUser(user.id);
+
+      initAttachmentSync();
       initRoutePersistence(user.id);
       finishBoot(root);
       return { kind: 'opened' };
@@ -196,6 +204,9 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
   touchUserOrder(id);
   // See createAndOpenUser's identical comment — must run after appState.value.
   await initSessionDbForUser(id);
+  initAttachmentDbForUser(id);
+
+  initAttachmentSync();
   const savedRoute = loadSavedRoute(saved);
   if (savedRoute) routeSignal.value = savedRoute;
   initRoutePersistence(saved.id);
@@ -232,6 +243,9 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
       setLanguage(user.language);
       // See createAndOpenUser's identical comment — must run after appState.value.
       await initSessionDbForUser(user.id);
+      initAttachmentDbForUser(user.id);
+
+      initAttachmentSync();
       initRoutePersistence(user.id);
       finishBoot(root);
       return;
@@ -324,10 +338,14 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
       btn.innerHTML = `${EXPORT_SVG}Data`;
       // Downloaded as .cdb, id stripped — the exact shape Settings → Backup →
       // Import accepts, so recovery-to-restore is: download here, import there.
-      btn.onclick = () => {
-        const { id: _id, ...data } = (user ?? { id }) as Record<string, unknown> & { id?: string };
-        downloadJson(data, `cadence-user-${safeName}-${id}.cdb`);
-      };
+      //
+      // Attachments kept out of the blob are put BACK into it first, from this
+      // device's own copies. Without that, the one screen that exists for a
+      // broken app would hand someone a file of references and call it their
+      // data — the 2026-09-09 failure, on the screen built to answer it. Drive
+      // is deliberately not consulted: this runs when nothing works, and a
+      // file this device does not hold simply stays a reference.
+      btn.onclick = () => { void downloadUserData(id, safeName, user); };
       btns.appendChild(btn);
 
       // `?.has` may be true, false, or unknown (Safari lacks databases()) —
@@ -429,6 +447,57 @@ async function renderRecoverySnapshots(): Promise<void> {
     row.append(when, what, who, btn);
     host.appendChild(row);
   }
+}
+
+/** One user's library as a .cdb, with every attachment this device holds put
+ *  back inside it.
+ *
+ *  The reading and the re-encoding are done here rather than through
+ *  attachmentStore, on purpose: that module resolves through Drive, asks for
+ *  tokens, and expects the app to have started. None of those are available on
+ *  this screen, and none of them are wanted — what is on this device is what
+ *  this device can give.
+ *
+ *  Anything that cannot be filled in stays exactly as it is, reference and
+ *  all: it is still the truth about that attachment, and it is what lets the
+ *  file be repaired later on a device that does have the bytes. */
+async function downloadUserData(
+  id: string, safeName: string, user: Awaited<ReturnType<typeof loadUser>>,
+): Promise<void> {
+  const { id: _id, ...data } = (user ?? { id }) as Record<string, unknown> & { id?: string };
+  try {
+    const held = await rawAttachmentBlobs(id);
+    if (held && held.size > 0) {
+      const cards = (data['cards'] ?? {}) as Record<string, { content?: { attachments?: Array<Record<string, unknown>> } }>;
+      for (const card of Object.values(cards)) {
+        for (const att of card.content?.attachments ?? []) {
+          const external = att['external'] as { id?: string } | undefined;
+          if (att['type'] !== 'file' || !external?.id) continue;
+          const blob = held.get(external.id);
+          if (!blob) continue;
+          att['data'] = await blobToBase64(blob);
+          delete att['external'];
+        }
+      }
+    }
+  } catch (e) {
+    // A file of references is still worth having, and far better than no
+    // download at all on a screen someone reached because nothing works.
+    console.warn('Recovery: could not inline attachments', e);
+  }
+  downloadJson(data, `cadence-user-${safeName}-${id}.cdb`);
+}
+
+/** Chunked: spreading a multi-megabyte array into fromCharCode blows the
+ *  argument limit — the trap utils' arrayBufferToBase64 documents. */
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 /** Every audio this user has on this device, zipped: finalized sessions,

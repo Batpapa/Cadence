@@ -15,7 +15,7 @@ import { fileStartDate } from '../fileStartDate';
 import { readRecordingStart } from '../audio/recordingDate';
 import {
   loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio,
-  setAutoLiveBackup, AUTO_LIVE_BACKUP_BY_DEFAULT,
+  setAutoLiveBackup, AUTO_LIVE_BACKUP_BY_DEFAULT, reconcileSyncedAudio,
 } from '../db';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
@@ -579,7 +579,10 @@ function BackfillRow() {
   const [result, setResult] = useState<{ ok: number; failed: number } | null>(null);
 
   const refresh = () => { void pendingAudioUploads().then(setPending); };
-  useEffect(refresh, []);
+  // Re-read on every state change, not just on mount: the panel reconciles
+  // its Drive records when it opens, and a recording whose file turned out to
+  // be gone becomes work for this very button.
+  useEffect(refresh, [appState.value]);
 
   if (!pending) return null;
 
@@ -733,6 +736,12 @@ function SessionSettingsBody() {
   const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
   const synced = Object.values(mod?.syncedAudio ?? {});
   const syncedBytes = synced.reduce((sum, e) => sum + e.bytes, 0);
+  // Checked against the folder the moment this panel opens, because this is
+  // where the figure is READ. Until now it reported what the library believed:
+  // a user who emptied their Drive by hand was told 17 recordings were safe
+  // when six were (reported 2026-09-24). A recording whose file is gone
+  // rejoins the backlog below, which is the honest place for it.
+  useEffect(() => { void reconcileSyncedAudio(); }, []);
   // Copying recordings to Drive is meaningless without a Drive to copy them to,
   // and a checkbox that silently does nothing is worse than one that says why.
   const driveOn = isDriveConnected();

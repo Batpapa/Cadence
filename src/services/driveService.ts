@@ -1057,6 +1057,14 @@ export const DRIVE_NOT_CONNECTED = 'drive_not_connected';
 async function companionFolderId(interactive: boolean): Promise<string>;
 async function companionFolderId(interactive: boolean, create: false): Promise<string | null>;
 async function companionFolderId(interactive: boolean, create = true): Promise<string | null> {
+  // Looking cannot duplicate anything, so it never waits on a creation.
+  // Creating shares its promise, which is what stops two callers from making
+  // two `cadence-data-ext` folders — see `_creating`.
+  if (!create) return resolveCompanionFolder(interactive, false);
+  return shareInFlight(`root:${_state.userId}`, () => resolveCompanionFolder(interactive, true));
+}
+
+async function resolveCompanionFolder(interactive: boolean, create: boolean): Promise<string | null> {
   const cached = localStorage.getItem(lsFolderId());
   if (cached) {
     // Confirm it still exists: a folder the user trashed would otherwise make
@@ -1175,7 +1183,16 @@ export async function deleteCompanionFile(fileId: string, interactive = false): 
  *  check this first rather than provoke a NEEDS_AUTH they would only swallow. */
 export function hasDriveToken(): boolean { return hasValidToken(); }
 
-export interface DriveChild { id: string; name: string; mimeType: string; size?: string }
+export interface DriveChild {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  /** RFC 3339. Carried because an orphan sweep must be able to leave recent
+   *  files alone: a file uploaded by another device is unreferenced here until
+   *  that device pushes the blob, and the two are minutes apart at worst. */
+  createdTime?: string;
+}
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 /** Escaped for a `q` literal. The names here are ours (ids, fixed words), but a
@@ -1186,6 +1203,30 @@ const qLiteral = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
  *  every press otherwise. A folder the user trashed meanwhile turns the next
  *  write into a failure, and the caller drops the entry (forgetCompanionPath). */
 const _folderIds = new Map<string, string>();
+
+/** Resolutions that are CREATING, still in flight, shared by key.
+ *
+ *  Finding-then-creating is two round trips, and nothing made them one act:
+ *  two uploads starting together both searched for `cadence-data-ext`, both
+ *  found nothing, and both created one. A restore fires a whole library's
+ *  uploads at once — plus the recordings, plus the conversion pass — so the
+ *  user ended up with SEVERAL companion folders, their attachments scattered
+ *  between them and `localStorage` naming whichever won the last write
+ *  (reported 2026-09-25 on a real restore).
+ *
+ *  Sharing the in-flight promise rather than serialising every call: callers
+ *  wanting the same folder collapse into one request, and callers wanting
+ *  different ones still run in parallel. Cleared when it settles, so a failure
+ *  is retried rather than remembered. */
+const _creating = new Map<string, Promise<string | null>>();
+
+function shareInFlight(key: string, run: () => Promise<string | null>): Promise<string | null> {
+  const existing = _creating.get(key);
+  if (existing) return existing;
+  const started = run().finally(() => { _creating.delete(key); });
+  _creating.set(key, started);
+  return started;
+}
 
 /** The folder at `path` below the companion folder, created as needed. */
 export async function companionPathId(path: string[], interactive = false): Promise<string> {
@@ -1201,31 +1242,46 @@ export async function findCompanionPath(path: string[], interactive = false): Pr
 
 async function resolveCompanionPath(path: string[], interactive: boolean, create: boolean): Promise<string | null> {
   if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
-  let parent = create ? await companionFolderId(interactive) : await companionFolderId(interactive, false);
-  if (parent === null) return null;
+  const rootId = create ? await companionFolderId(interactive) : await companionFolderId(interactive, false);
+  if (rootId === null) return null;
+  // Annotated: the loop below assigns back into it from a call that takes it,
+  // which TypeScript otherwise reads as a circular inference.
+  let parent: string = rootId;
   for (let i = 0; i < path.length; i++) {
     const key = `${_state.userId}/${path.slice(0, i + 1).join('/')}`;
     const cached = _folderIds.get(key);
     if (cached) { parent = cached; continue; }
-    const name = path[i]!;
-    const q = encodeURIComponent(`name='${qLiteral(name)}' and '${qLiteral(parent)}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`);
-    const search = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`, {}, interactive);
-    if (!search.ok) throw new Error(`companion_folder_failed: ${search.status}`);
-    let id = ((await search.json()) as { files?: Array<{ id: string }> }).files?.[0]?.id;
-    if (!id) {
-      if (!create) return null;
-      const created = await driveRequest('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parent] }),
-      }, interactive);
-      if (!created.ok) throw new Error(`companion_folder_failed: ${created.status}`);
-      id = ((await created.json()) as { id: string }).id;
-    }
+    const under = parent;
+    // Shared per PREFIX rather than per whole path: two backups wanting
+    // `live-backups/a` and `live-backups/b` ask for different paths but need
+    // the same `live-backups`, and would each make one.
+    const id = create
+      ? await shareInFlight(`path:${key}`, () => childFolder(path[i]!, under, interactive, true))
+      : await childFolder(path[i]!, under, interactive, false);
+    if (id === null) return null;
     _folderIds.set(key, id);
     parent = id;
   }
   return parent;
+}
+
+/** One named folder directly inside `parent` — found, or made when asked. */
+async function childFolder(
+  name: string, parent: string, interactive: boolean, create: boolean,
+): Promise<string | null> {
+  const q = encodeURIComponent(`name='${qLiteral(name)}' and '${qLiteral(parent)}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`);
+  const search = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`, {}, interactive);
+  if (!search.ok) throw new Error(`companion_folder_failed: ${search.status}`);
+  const found = ((await search.json()) as { files?: Array<{ id: string }> }).files?.[0]?.id;
+  if (found) return found;
+  if (!create) return null;
+  const created = await driveRequest('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parent] }),
+  }, interactive);
+  if (!created.ok) throw new Error(`companion_folder_failed: ${created.status}`);
+  return ((await created.json()) as { id: string }).id;
 }
 
 /** Forgets cached folder ids under `path` — after deleting one, or when a write
@@ -1244,7 +1300,7 @@ export async function listCompanionChildren(folderId: string, interactive = fals
   let pageToken: string | undefined;
   do {
     const q = encodeURIComponent(`'${qLiteral(folderId)}' in parents and trashed=false`);
-    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,size)&pageSize=1000&spaces=drive`
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,size,createdTime)&pageSize=1000&spaces=drive`
       + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
     const resp = await driveRequest(url, {}, interactive);
     if (!resp.ok) throw new Error(`companion_list_failed: ${resp.status}`);
@@ -1261,6 +1317,47 @@ export async function uploadCompanionFileInto(
 ): Promise<string> {
   if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
   return uploadIntoFolder(folderId, name, blob, interactive);
+}
+
+/** What the synced blob weighs as Drive holds it — null when we cannot look.
+ *
+ *  Null and zero are different answers and the panel shows them differently:
+ *  "we could not ask" is not "there is nothing there". Never interactive,
+ *  because opening a settings panel is not a reason to raise a consent
+ *  window. */
+export async function driveBlobSize(): Promise<number | null> {
+  if (!_state.fileId || !hasValidToken()) return null;
+  try {
+    const resp = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files/${_state.fileId}?fields=size`, {}, false,
+    );
+    if (!resp.ok) return null;
+    const n = Number(((await resp.json()) as { size?: string }).size);
+    return Number.isFinite(n) ? n : null;
+  } catch { return null; }
+}
+
+/** Moves a companion file to the user's own Drive trash.
+ *
+ *  Never `files.delete`, and the difference is the whole point: a sweep
+ *  decides that nothing references a file, and a sweep can be wrong — a
+ *  device that uploaded while offline, a conflict resolved the other way.
+ *  Trashed, the file sits in the user's bin for thirty days and one click
+ *  brings it back. Deleted, it is gone for everyone, for ever. */
+export async function trashCompanionFile(fileId: string, interactive = false): Promise<boolean> {
+  if (!_state.fileId) return false;
+  try {
+    const resp = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files/${fileId}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) },
+      interactive,
+    );
+    // Already gone counts as done: the goal is that it no longer be there.
+    return resp.ok || resp.status === 404;
+  } catch (e) {
+    console.warn('[drive] could not trash ' + fileId, e);
+    return false;
+  }
 }
 
 /** Replaces an existing file's content, keeping its id and name. */

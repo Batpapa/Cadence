@@ -4,6 +4,7 @@ import { SCHEMA_VERSION, stampTuneType } from './migration';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
 import { cardAliases } from './aliasService';
+import { inlineExternalAttachments, type ExportGate } from './attachmentStore';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -26,27 +27,66 @@ function isValidBackup(data: unknown): data is Record<string, unknown> {
  *  opens in a text editor. Anyone who does can run it through a prettifier.
  *  On a phone it also doubled the peak memory an export has to hold at once,
  *  which is the resource the .cdbf size ceiling exists to protect. */
-export function exportBackup(user: AppState): void {
-  const { id: _id, ...data } = user;
+export async function exportBackup(user: AppState, gate: ExportGate): Promise<void> {
+  const state = await inlinedState(user, gate);
+  if (!state) return;
+  const { id: _id, ...data } = state;
   download(JSON.stringify(data), `cadence-backup-${toDateStr(new Date())}.cdb`);
 }
 
 /** Same format as exportBackup, for a stored safety-net snapshot: restoring
  *  one goes through the ordinary Settings → Backup → Import path, so no
  *  second restore machinery exists to drift out of sync with the first. */
-export function exportSnapshotBackup(state: AppState, ts: number): void {
-  const { id: _id, ...data } = state as AppState & { id?: string };
+export async function exportSnapshotBackup(state: AppState, ts: number, gate: ExportGate): Promise<void> {
+  const whole = await inlinedState(state, gate);
+  if (!whole) return;
+  const { id: _id, ...data } = whole as AppState & { id?: string };
   download(JSON.stringify(data), `cadence-snapshot-${toDateStr(new Date(ts))}.cdb`);
 }
 
-/** Serializes cards to CDC JSON string without downloading. */
-export function cardPackageText(cards: Card[]): string {
-  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards });
+/** Serializes cards to CDC JSON string without downloading. Null if the gate
+ *  refused an export missing some of its attachments. */
+export async function cardPackageText(cards: Card[], gate: ExportGate): Promise<string | null> {
+  const inlined = await inlinedCards(cards, gate);
+  return inlined && JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards: inlined });
 }
 
 /** Card-only export — no history, no decks, no personal data. */
-export function exportCards(cards: Card[]): void {
-  download(cardPackageText(cards), `cadence-cards-${toDateStr(new Date())}.cdc`);
+export async function exportCards(cards: Card[], gate: ExportGate): Promise<void> {
+  const text = await cardPackageText(cards, gate);
+  if (text === null) return;
+  download(text, `cadence-cards-${toDateStr(new Date())}.cdc`);
+}
+
+// ── Externalised attachments, on the way out ─────────────────────────────────
+// A .cdb and a .cdc are JSON and nothing else, so an attachment whose bytes
+// live outside the blob has to come back INTO it here or the file travels with
+// a hole in it. Both formats are read by builds that predate externalisation
+// and by other people's devices, neither of which could fetch those bytes.
+//
+// On a COPY, never in place. `data` is empty in the running state on purpose,
+// and refilling it there would put back the very megabytes the externalisation
+// took out — paid again on every clone and every sync, for as long as the tab
+// stays open.
+//
+// An attachment the gate let through unresolved travels AS IT IS, `external`
+// and `driveFileId` included. It looks wrong for a share — that id names a
+// file in the exporter's Drive — but the alternative is worse in both
+// directions: in a backup restored by the same person it is the one thing
+// that can still fetch the file back, and for anyone else it degrades to
+// "no longer on Drive", which is true, where dropping the id would promise
+// "not sent yet" — a wait that never ends.
+
+async function inlinedState(state: AppState, gate: ExportGate): Promise<AppState | null> {
+  const copy = structuredClone(state);
+  const missing = await inlineExternalAttachments(Object.values(copy.cards ?? {}));
+  return missing.length === 0 || await gate(missing) ? copy : null;
+}
+
+async function inlinedCards(cards: Card[], gate: ExportGate): Promise<Card[] | null> {
+  const copy = structuredClone(cards);
+  const missing = await inlineExternalAttachments(copy);
+  return missing.length === 0 || await gate(missing) ? copy : null;
 }
 
 function isCardPackage(data: unknown): data is { schemaVersion?: number; cards: unknown[] } {

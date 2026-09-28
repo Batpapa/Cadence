@@ -155,6 +155,25 @@ const migrations: Array<(s: Record<string, unknown>) => void> = [
  */
 export function migrateState(user: AppState): void {
   const from = user.schemaVersion ?? 0;
+  // A state written by a LATER build is not this one's to relabel.
+  //
+  // The loop below already does nothing for it — there is no migration to run
+  // forwards — but the line after it used to stamp SCHEMA_VERSION over the
+  // number unconditionally. So a v10 state opened on a v9 device came out
+  // labelled v9 and was pushed to Drive saying so, and the device that DOES
+  // understand v10 would then read it as v9 and run the v9 → v10 migration a
+  // second time, over data already migrated. Depending on the migration that
+  // ranges from harmless to destructive.
+  //
+  // Leaving the number alone keeps the truth in the blob. Nothing else
+  // changes: this build goes on reading what it can, which for a purely
+  // additive change is everything — verified for the attachment
+  // externalisation, whose fields survive a full round trip through the
+  // previous build untouched.
+  if (from > SCHEMA_VERSION) {
+    console.warn(`[migration] this state comes from a later build (v${from} > v${SCHEMA_VERSION}) — reading it as it is, and leaving its version alone`);
+    return;
+  }
   for (let v = from; v < SCHEMA_VERSION; v++) {
     migrations[v]?.(user as unknown as Record<string, unknown>);
   }

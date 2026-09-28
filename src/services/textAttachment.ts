@@ -11,7 +11,7 @@
 // `text/markdown` half of isMarkdown(), and a file typed as neither falls
 // through to the plain-text view.
 
-import type { Attachment } from '../types';
+import type { FileAttachment } from '../types';
 import { arrayBufferToBase64 } from '../utils';
 import { sanitizeFileBase } from './attachmentNames';
 
@@ -61,7 +61,7 @@ export function suggestedTextName(text: string, format: TextFormatId): string {
  *  Base64 through arrayBufferToBase64 rather than abcService's encodeAbc: that
  *  one spreads the whole byte array into a call and blows the stack on a long
  *  paste, which a generated score is never big enough to reach. */
-export function textAttachment(base: string, text: string, format: TextFormatId): Attachment {
+export function textAttachment(base: string, text: string, format: TextFormatId): FileAttachment {
   const { ext, mimeType } = TEXT_FORMATS[format];
   const body = text.replace(/\r\n?/g, '\n');
   return {

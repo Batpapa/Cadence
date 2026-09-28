@@ -812,6 +812,97 @@ export async function uploadPendingAudio(
   return { ok, failed };
 }
 
+/** Confronts the "copied to Drive" records with what is actually in the folder,
+ *  and drops the ones whose file is gone.
+ *
+ *  Each record is a BELIEF, written when an upload returned and never checked
+ *  again. A file deleted from the Drive itself — which the user is entitled to
+ *  do, and which `drive.file` makes invisible to us until we look — leaves the
+ *  app announcing a backup it no longer has. That is the one direction that
+ *  must never be wrong: believing a recording is safe when it is not is the
+ *  2026-09-09 loss with a reassuring figure on top.
+ *
+ *  Only ever from a listing that SUCCEEDED. A failed one would read as "the
+ *  folder is empty" and drop every record at once — so anything short of a
+ *  complete answer changes nothing. Dropping a record is not destructive
+ *  either way: the recording stays on this device, and it rejoins the upload
+ *  backlog, which is exactly where a recording with no Drive copy belongs.
+ *
+ *  Returns how many were dropped; zero for "nothing to do" and for "could not
+ *  look" alike, which the caller does not need to tell apart. */
+export async function reconcileSyncedAudio(): Promise<number> {
+  const drive = await driveModule();
+  if (!drive.isDriveConnected() || !drive.hasDriveToken()) return 0;
+
+  let onDrive: Set<string>;
+  try {
+    const root = await drive.findCompanionPath([], false);
+    if (!root) return 0;
+    onDrive = new Set((await drive.listCompanionChildren(root, false)).map(c => c.id));
+  } catch (e) {
+    console.warn('[sessions] could not check which recordings are still on Drive', e);
+    return 0;
+  }
+
+  const mod = await moduleData();
+  const stale = Object.entries(mod.syncedAudio ?? {})
+    .filter(([, entry]) => entry && !onDrive.has(entry.fileId))
+    .map(([id]) => id);
+  if (stale.length === 0) return 0;
+
+  const { mutate } = await storeModule();
+  await mutate(user => {
+    const m = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+    if (!m?.syncedAudio) return;
+    for (const id of stale) delete m.syncedAudio[id];
+    if (Object.keys(m.syncedAudio).length === 0) delete m.syncedAudio;
+  });
+  return stale.length;
+}
+
+/** The mirror of the backlog above: the recordings this device holds whose
+ *  copy on Drive is PROVEN. The same walk, the opposite condition.
+ *
+ *  Proven file by file, never from the global sync status. That status says
+ *  the blob is up to date; it says nothing about the companion files, which
+ *  run on their own schedule — confusing the two is exactly what produced the
+ *  backlog above on 2026-09-10, and here it would delete recordings that had
+ *  never been uploaded at all. */
+export async function freeableSessionAudio(): Promise<{ ids: string[]; bytes: number }> {
+  const mod = await moduleData();
+  const synced = mod.syncedAudio ?? {};
+  const db = await localDb();
+  const ids: string[] = [];
+  let bytes = 0;
+  for (const id of Object.keys(mod.sessions ?? {})) {
+    if (!synced[id]) continue;
+    const blob = await db.get(AUDIO_STORE, id) as Blob | undefined;
+    if (!blob) continue;   // already freed here, or recorded elsewhere
+    ids.push(id);
+    bytes += blob.size;
+  }
+  return { ids, bytes };
+}
+
+/** Frees them. Nothing is lost: `fetchSyncedAudio` brings any of them back on
+ *  demand, which is what makes this safe to offer as one button. */
+export async function freeSyncedSessionAudio(): Promise<{ count: number; bytes: number }> {
+  const mod = await moduleData();
+  const synced = mod.syncedAudio ?? {};
+  const db = await localDb();
+  let count = 0, bytes = 0;
+  for (const id of Object.keys(mod.sessions ?? {})) {
+    if (!synced[id]) continue;
+    const blob = await db.get(AUDIO_STORE, id) as Blob | undefined;
+    if (!blob) continue;
+    // Re-read and delete one at a time rather than from a list gathered
+    // earlier: the figure reported is then what actually went.
+    try { await forgetSessionAudio(id); count++; bytes += blob.size; }
+    catch (e) { console.warn('[sessions] could not free the audio of ' + id, e); }
+  }
+  return { count, bytes };
+}
+
 /** Deletes the Drive copy, leaving this device's untouched. */
 export async function unsyncSessionAudio(sessionId: string): Promise<void> {
   await dropSyncedAudio(sessionId);

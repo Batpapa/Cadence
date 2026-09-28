@@ -8,6 +8,7 @@ import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../service
 import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName } from '../../utils';
+import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile } from '../../services/attachmentStore';
 import { extractClip } from '../audio/clipExtract';
 import { legacyClipTag } from '../../services/attachmentNames';
 import { getContext } from '../../store';
@@ -324,10 +325,15 @@ export async function attachClip(
 
   const clip = await extractClip(audio, ann.start, ann.end ?? session.duration, onProgress);
   const entry = await fileToEntry(new File([clip.blob], clipFileName(session, ann, clip.extension), { type: clip.blob.type }));
+  // A clip is the biggest thing this app attaches by itself — the ten that
+  // dominated one real library were nearly all clips — so it goes through the
+  // same rule as a hand-picked file (services/attachmentStore.ts).
+  const att = await attachmentFor(entry, getContext().user);
   await ctx.mutate(s => {
     const card = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
-    if (card) card.content.attachments.push({ type: 'file', ...entry, clipOf: clipKey(session, ann) });
+    if (card) card.content.attachments.push({ ...att, clipOf: clipKey(session, ann) });
   });
+  uploadAttachmentSoon(att);
   return true;
 }
 
@@ -374,6 +380,8 @@ export async function recutAttachedClip(
   const name = wasDefaultName ? clipFileName(session, ann, clip.extension) : existing.name;
   const entry = await fileToEntry(new File([clip.blob], name, { type: clip.blob.type }));
 
+  const att = await attachmentFor(entry, getContext().user);
+  let replaced = false;
   await ctx.mutate(s => {
     const target = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
     if (!target) return;
@@ -385,8 +393,17 @@ export async function recutAttachedClip(
     if (i === -1) return;
     // Replaced in place, so the clip keeps its position among the card's
     // attachments — it is the same clip, re-cut, not a new one.
-    target.content.attachments[i] = { type: 'file', ...entry, clipOf: clipKey(session, ann) };
+    target.content.attachments[i] = { ...att, clipOf: clipKey(session, ann) };
+    replaced = true;
   });
+  // Only once the new clip is in the state: the bytes of the old one are then
+  // referenced by nothing, and a re-cut that did not happen must not take them.
+  if (replaced) {
+    void condemnAttachmentFile(existing);
+    uploadAttachmentSoon(att);
+    // The old clip's local bytes are left to the sweep, which is the only
+    // thing that counts the snapshots as references — see card.tsx's onRemove.
+  }
   return true;
 }
 
