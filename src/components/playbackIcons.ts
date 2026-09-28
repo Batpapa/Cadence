@@ -11,7 +11,11 @@ export const pauseIcon = (size = 12): string =>
 export const stopIcon = (size = 12): string =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg>`;
 
-export const repeatIcon = (size = 12): string =>
+/** Back to a point: a bar, then a triangle pointing at it. */
+export const rewindIcon = (size = 12): string =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="3" height="16" rx="1"/><polygon points="20 4 9 12 20 20"/></svg>`;
+
+export const repeatIcon =(size = 12): string =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
 
 export const downloadIcon = (size = 12): string =>
