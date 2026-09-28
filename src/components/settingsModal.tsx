@@ -21,7 +21,7 @@ import {
 } from '../services/attachmentStore';
 import { askIncompleteExport } from './incompleteExportModal';
 import { findDriveOrphans, trashDriveOrphans, driveStorageUsage, OrphanScanUnavailable, type DriveOrphan } from '../services/driveOrphans';
-import { listSnapshots, getSnapshotState, clearSnapshotsForUser, type SnapshotMeta } from '../services/snapshotService';
+import { listSnapshots, getSnapshotState, clearSnapshotsForUser, deleteSnapshot, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
 import { isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
@@ -417,35 +417,71 @@ const IMPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" 
 
 /** Safety-net snapshots (the side set aside by a sync decision), downloadable
  *  as ordinary .cdb backups so restoring one reuses the battle-tested
- *  Backup → Import path. Renders nothing until a snapshot exists. */
+ *  Backup → Import path. Renders nothing until a snapshot exists.
+ *
+ *  Deletable one at a time since 2026-09-29, asked for by someone short of
+ *  space: a snapshot is a whole copy of the library, and one taken before the
+ *  attachments moved out of the blob can weigh tens of megabytes. There is no
+ *  "delete all" on purpose — this is the only net under the sync, and the
+ *  likeliest moment to tidy it is right after the conflict it was made for. */
 function SnapshotsRow({ userId }: { userId: string }) {
   const [snaps, setSnaps] = useState<SnapshotMeta[]>([]);
   useEffect(() => { void listSnapshots(userId).then(setSnaps); }, [userId]);
   if (snaps.length === 0) return null;
+
+  const remove = (s: SnapshotMeta) => confirmModal(
+    t('settings.snapshots.delete.title'),
+    t('settings.snapshots.delete.message', { date: new Date(s.ts).toLocaleString() }),
+    t('common.delete'),
+    () => {
+      void deleteSnapshot(s.key)
+        .then(async () => {
+          // A snapshot counts as a reference to the attachment bytes it names,
+          // so the space of an attachment deleted since is only given back
+          // once no snapshot names it any more — that is, now.
+          await sweepLocalAttachments().catch(() => 0);
+          setSnaps(await listSnapshots(userId));
+        })
+        .catch(e => alertModal(t('settings.snapshots.delete.title'), e instanceof Error ? e.message : String(e)));
+    },
+  );
+
   return (
     <>
       <Sep />
       <Row label={t('settings.snapshots')} hint={t('settings.snapshotsHint')} stacked>
         <div class="flex flex-col gap-1">
           {snaps.map(s => (
-            <div key={s.key} class="flex items-center gap-2 pl-2.5 pr-1 py-1 rounded-lg border border-border bg-bg">
-              <span class="text-xs text-muted flex-1 min-w-0 truncate">
-                {new Date(s.ts).toLocaleString()} · {t(`settings.snapshots.reason.${s.reason}`)}
+            // Two lines: when and why, with the actions, on the first; what
+            // the copy weighs and holds on the second. On one line the reason
+            // was the part that got truncated.
+            <div key={s.key} class="flex flex-col pl-2.5 pr-1 py-1 rounded-lg border border-border bg-bg">
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-muted flex-1 min-w-0 truncate">
+                  {new Date(s.ts).toLocaleString()} · {t(`settings.snapshots.reason.${s.reason}`)}
+                </span>
+                {/* Explicit download button: the whole line used to BE the button,
+                    which gave no clue that clicking it saved a file. */}
+                <button
+                  class="btn-ghost p-1 shrink-0"
+                  title={t('settings.snapshots.download')}
+                  onClick={() => {
+                    void getSnapshotState(s.key).then(state => state && exportSnapshotBackup(state, s.ts, askIncompleteExport));
+                  }}
+                >
+                  <span class="flex items-center" dangerouslySetInnerHTML={{ __html: EXPORT_SVG }} />
+                </button>
+                <button
+                  class="btn-ghost p-1 shrink-0 hover:text-danger"
+                  title={t('settings.snapshots.delete')}
+                  onClick={() => remove(s)}
+                >
+                  <TrashIcon size={13} />
+                </button>
+              </div>
+              <span class="text-[11px] text-dim tabular-nums truncate">
+                {s.bytes === null ? t('storage.unknown') : formatBytes(s.bytes)} · {t('settings.sync.conflict.stats', { cards: s.cards, reviews: s.reviews })}
               </span>
-              <span class="text-[11px] text-dim tabular-nums shrink-0">
-                {t('settings.sync.conflict.stats', { cards: s.cards, reviews: s.reviews })}
-              </span>
-              {/* Explicit download button: the whole line used to BE the button,
-                  which gave no clue that clicking it saved a file. */}
-              <button
-                class="btn-ghost p-1 shrink-0"
-                title={t('settings.snapshots.download')}
-                onClick={() => {
-                  void getSnapshotState(s.key).then(state => state && exportSnapshotBackup(state, s.ts, askIncompleteExport));
-                }}
-              >
-                <span class="flex items-center" dangerouslySetInnerHTML={{ __html: EXPORT_SVG }} />
-              </button>
             </div>
           ))}
         </div>
@@ -767,6 +803,7 @@ function ExportOption({ kind, label, choice, disabled }: {
 function StorageSection({ userId }: { userId: string }) {
   const [audioBytes, setAudioBytes] = useState<number | null>(null);
   const [attachLocal, setAttachLocal] = useState<number | null>(null);
+  const [snapBytes, setSnapBytes] = useState<number | null>(null);
   const [drive, setDrive] = useState<{ data: number | null; attachments: number | null; recordings: number | null } | null>(null);
   const [total, setTotal] = useState<{ usage: number | null; quota: number | null } | null>(null);
   // Freeing space, or moving files in or out, changes none of the state these
@@ -793,6 +830,11 @@ function StorageSection({ userId }: { userId: string }) {
       .then(() => localAttachmentBytes())
       .then(r => setAttachLocal(r.bytes))
       .catch(() => setAttachLocal(null));
+    // The one line the device total used to hide entirely: up to five whole
+    // copies of the library. Unknown if any single one could not be measured.
+    void listSnapshots(userId).then(snaps => setSnapBytes(
+      snaps.reduce<number | null>((acc, s) => (acc === null || s.bytes === null ? null : acc + s.bytes), 0),
+    ));
     void refreshStorageEstimate().then(() => setTotal({ usage: storageUsage.value, quota: storageQuota.value }));
     // appState.value, not just userId: a fresh object on every mutation, so
     // the figures follow an import, a reset, or a Drive state landing while
@@ -819,6 +861,9 @@ function StorageSection({ userId }: { userId: string }) {
     { label: t('settings.storage.data'), local: dataBytes, drive: drive ? drive.data : null },
     { label: t('settings.storage.attachments'), local: attachLocal, drive: drive ? drive.attachments : null },
     { label: t('settings.storage.audio'), local: audioBytes, drive: drive ? drive.recordings : null },
+    // Never sent to Drive: snapshots exist for when the Drive copy is the
+    // thing that went wrong.
+    { label: t('settings.snapshots'), local: snapBytes, drive: undefined },
   ];
 
   return (
@@ -1057,21 +1102,25 @@ function DriveOrphansRow() {
  *
  *  A missing Drive figure shows as "?" and never as zero: "we could not ask"
  *  and "there is nothing there" are different answers, and only one of them
- *  would be a lie. */
+ *  would be a lie. A third answer, "this never goes there" (`drive: undefined`,
+ *  the snapshots), shows as a dash and adds nothing: it is known, and it is
+ *  not a figure that could turn out to be missing. */
 function StorageMatrix({ rows, driveOn, heading }: {
-  rows: Array<{ label: string; local: number | null; drive: number | null }>;
+  rows: Array<{ label: string; local: number | null; drive: number | null | undefined }>;
   driveOn: boolean;
   /** The section's own title and buttons, taking the first cell of the header
    *  row. In the grid rather than above it so the column names land exactly
    *  over the figures they name — and so naming the columns costs no line. */
   heading: ComponentChildren;
 }) {
-  const cell = (n: number | null) => (n === null ? t('storage.unknown') : formatBytes(n));
+  const cell = (n: number | null | undefined) =>
+    (n === undefined ? '—' : n === null ? t('storage.unknown') : formatBytes(n));
   /** Unknown is contagious on purpose: a total that silently skipped the one
    *  figure it could not read would be a smaller number presented as complete. */
-  const sum = (pick: (r: typeof rows[number]) => number | null) =>
+  const sum = (pick: (r: typeof rows[number]) => number | null | undefined) =>
     rows.reduce<number | null>((acc, r) => {
       const v = pick(r);
+      if (v === undefined) return acc;
       return acc === null || v === null ? null : acc + v;
     }, 0);
 

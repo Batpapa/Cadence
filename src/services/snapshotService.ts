@@ -27,9 +27,15 @@ export interface SnapshotMeta {
   reason: SnapshotReason;
   cards: number;
   reviews: number;
+  /** Approximate weight, measured like the Storage panel's data line (the
+   *  state as JSON). Null only when it could not be measured. */
+  bytes: number | null;
 }
 
-interface SnapshotRecord extends Omit<SnapshotMeta, 'key'> {
+interface SnapshotRecord extends Omit<SnapshotMeta, 'key' | 'bytes'> {
+  /** Written since 2026-09-29. Older records lack it and are measured when
+   *  listed — see metaOf. */
+  bytes?: number;
   state: AppState;
 }
 
@@ -47,6 +53,25 @@ export function countReviews(state: AppState): number {
   return n;
 }
 
+function measure(state: AppState): number | null {
+  try { return new Blob([JSON.stringify(state)]).size; } catch { return null; }
+}
+
+/** A record at a given key never changes (keys carry their timestamp and
+ *  nothing rewrites a snapshot), so a size measured once stays true for the
+ *  life of the page. Measured rather than written back into the record: a
+ *  display figure is not worth touching the safety net for. */
+const _measured = new Map<string, number | null>();
+
+function metaOf(key: string, rec: SnapshotRecord): SnapshotMeta {
+  let bytes = rec.bytes ?? null;
+  if (rec.bytes === undefined) {
+    if (!_measured.has(key)) _measured.set(key, measure(rec.state));
+    bytes = _measured.get(key) ?? null;
+  }
+  return { key, userId: rec.userId, ts: rec.ts, reason: rec.reason, cards: rec.cards, reviews: rec.reviews, bytes };
+}
+
 /** Stash `state` as the about-to-be-lost side. Never throws — but callers
  *  should still `await` it, so the copy exists BEFORE the destruction runs. */
 export async function saveSnapshot(userId: string, reason: SnapshotReason, state: AppState): Promise<void> {
@@ -56,6 +81,7 @@ export async function saveSnapshot(userId: string, reason: SnapshotReason, state
       userId, ts, reason,
       cards: Object.keys(state.cards ?? {}).length,
       reviews: countReviews(state),
+      bytes: measure(state) ?? undefined,
       // structuredClone: the live appState object must not end up shared with
       // a stored record that outlives it.
       state: structuredClone(state),
@@ -82,7 +108,7 @@ export async function listSnapshots(userId: string): Promise<SnapshotMeta[]> {
     const out: SnapshotMeta[] = [];
     for (const key of keys) {
       const rec = await d.get(STORE, key) as SnapshotRecord | undefined;
-      if (rec) out.push({ key, userId: rec.userId, ts: rec.ts, reason: rec.reason, cards: rec.cards, reviews: rec.reviews });
+      if (rec) out.push(metaOf(key, rec));
     }
     return out;
   } catch {
@@ -106,7 +132,7 @@ export async function listAllSnapshots(): Promise<SnapshotMeta[]> {
     const out: SnapshotMeta[] = [];
     for (const key of keys) {
       const rec = await d.get(STORE, key) as SnapshotRecord | undefined;
-      if (rec) out.push({ key, userId: rec.userId, ts: rec.ts, reason: rec.reason, cards: rec.cards, reviews: rec.reviews });
+      if (rec) out.push(metaOf(key, rec));
     }
     return out;
   } catch {
@@ -122,6 +148,15 @@ export async function getSnapshotState(key: string): Promise<AppState | null> {
   } catch {
     return null;
   }
+}
+
+/** One snapshot, by hand, from Settings. Unlike everything else in this file it
+ *  reports failure: the person asked for the space back and has to know when
+ *  they did not get it. */
+export async function deleteSnapshot(key: string): Promise<void> {
+  const d = await db();
+  await d.delete(STORE, key);
+  _measured.delete(key);
 }
 
 export async function clearSnapshotsForUser(userId: string): Promise<void> {
