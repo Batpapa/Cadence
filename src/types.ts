@@ -41,10 +41,19 @@ export type LinkMode = 'embed' | 'link';
 export interface EmbedEntry {
   id: string;
   url: string;       // original URL as pasted by user
-  /** The row's label. Fetched via oEmbed at add time for an embed; typed by
-   *  hand, and mandatory, for an external link — nothing can be read off a
+  /** The row's label, whatever it came from. For an embed it is the name typed
+   *  in the dialog, else the platform's own (`autoTitle`); for an external link
+   *  it is typed by hand, and mandatory — nothing can be read off a
    *  cross-origin page, and a bare URL is not a name. */
   title?: string;
+  /** An embed's title as oEmbed gave it, kept beside `title` since 2026-09-28
+   *  so a name typed over it can be emptied back to it. The typed name goes in
+   *  `title` rather than here on purpose: a device on an older bundle reads
+   *  `title` alone, and shows the user's name without knowing this exists.
+   *  Never read directly — `embedAutoTitle()` in embedService, since every
+   *  embed stored before this date has only a `title`, and that title IS the
+   *  platform's. */
+  autoTitle?: string;
   embedUrl?: string; // resolved iframe src, stored to avoid re-fetching
   /** Written explicitly on both sides since 2026-09-22 — see LinkMode. */
   mode?: LinkMode;
