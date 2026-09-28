@@ -14,7 +14,7 @@ import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpe
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { showModal, updateTopModal, confirmModal } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
-import { playIcon, pauseIcon, stopIcon, repeatIcon } from './playbackIcons';
+import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon } from './playbackIcons';
 import { appState, mutate } from '../store';
 import { registerOverlay } from './overlayStack';
 
@@ -314,6 +314,16 @@ function stripForRender(abc: string): string {
 /** How far before a clicked note to seek — see the click handler for why an
  *  exact seek lands on the wrong note. */
 const SEEK_BACKOFF_MS = 10;
+
+/** How soon a second press of the back button must follow one that went to
+ *  the bookmark to go on to the start, the way "previous" works on any
+ *  player. Wall-clock time between two PRESSES — not a distance from the
+ *  bookmark: that was the first version, and anywhere in the bookmarked bar
+ *  of a jig (a second long at the default tempo) read as a second press and
+ *  went to the start (reported 2026-09-29 on The Kesh). Half a second, as
+ *  asked after trying it: 1.5 s caught presses that were meant as a fresh
+ *  "back to the bookmark". */
+const REWIND_GRACE_MS = 500;
 
 /** The nearest scrolling box, starting with the element itself — the score has
  *  its own viewport, and it is that one, not the modal around it, that should
@@ -1025,11 +1035,25 @@ export function showPreviewModal(
       }
       const loop = root.querySelector('.abcjs-midi-loop');
       if (loop) loop.innerHTML = repeatIcon(15);
-      // Play, stop, repeat — the order the audio player has them in, and the
-      // order they were asked for. abcjs builds loop / restart / play, so all
-      // three move: play to the front, then stop, then the loop after it.
+      // Back without stopping — which is what abcjs's "restart" used to do
+      // before it was made a real stop (above), and what was asked for back
+      // (2026-09-25): the tune is left looping and practised against, and
+      // reaching for stop then play every time breaks the flow. Ours, in
+      // their row: abcjs only ever looks its buttons up by their own classes,
+      // so one more `.abcjs-btn` beside them is invisible to it.
+      const rewind = document.createElement('button');
+      rewind.type = 'button';
+      rewind.className = 'abcjs-btn abc-midi-rewind';
+      rewind.innerHTML = rewindIcon(15);
+      rewind.addEventListener('click', () => rewindToMark());
+      rewindBtn = rewind;
+      setRewindTitle(false);
+      // Play, back, stop, repeat — the audio player's order, with the one
+      // control it has no counterpart for next to play. abcjs builds loop /
+      // restart / play, so everything moves.
+      root.prepend(rewind);
       if (start) root.prepend(start);
-      if (start && reset) start.after(reset);
+      if (reset) rewind.after(reset);
       if (reset && loop) reset.after(loop);
     };
 
@@ -1040,6 +1064,17 @@ export function showPreviewModal(
      *  first half of what the stop button does, the rewind being abcjs's own.
      *  Late-bound for the same reason: the controller lives inside the import. */
     let pauseIfPlaying: () => void = () => {};
+    /** Back to the bookmark, or to the start — see `rewindToMark` where it is
+     *  assigned. Late-bound like the two above. */
+    let rewindToMark: () => void = () => {};
+    let rewindBtn: HTMLButtonElement | null = null;
+    /** The button says where it will go, since that depends on a bookmark. */
+    const setRewindTitle = (hasMark: boolean) => {
+      if (!rewindBtn) return;
+      const title = t(hasMark ? 'fileViewer.abc.rewindBookmark' : 'fileViewer.abc.rewindStart');
+      rewindBtn.title = title;
+      rewindBtn.setAttribute('aria-label', title);
+    };
 
     /** A group of three: down, the value, up. The value itself is a button and
      *  resets — a stepper you can only walk back one press at a time is the
@@ -1277,12 +1312,13 @@ export function showPreviewModal(
      *  to abcjs: the "format non décodable" text and anything else that lands
      *  in this box has to be readable on the paper it lands on. */
     const applyPaper = () => {
-      const { paper: bg, ink, cursor } = ABC_PAPERS[paper];
+      const { paper: bg, ink, cursor, bookmark } = ABC_PAPERS[paper];
       // On the FRAME, so the controls that float over the score inherit them
       // too — they sit on the paper, not on the dialog.
       scoreFrame.style.setProperty('--abc-paper', bg);
       scoreFrame.style.setProperty('--abc-ink', ink);
       scoreFrame.style.setProperty('--abc-cursor', cursor);
+      scoreFrame.style.setProperty('--abc-bookmark', bookmark);
       scoreScroll.style.background = bg;
       scoreScroll.style.color = ink;
     };
@@ -1853,8 +1889,125 @@ export function showPreviewModal(
         return cursor;
       };
 
+      // ── The bookmark ──────────────────────────────────────────────────────
+      // The note last clicked, which the back button returns to. Held as WHERE
+      // THE NOTE IS IN THE TEXT and which time round it was — never as a time:
+      // a time is only right for the speed it was taken at, and the speed
+      // stepper re-times the whole performance under it. The text and the
+      // passes survive a speed change, a resize, a transposition, a new
+      // instrument — every redraw that keeps the tune. Only a different text
+      // (another tune, another version, an edit) makes it mean nothing, and
+      // `renderTune` drops it then. Never saved: it is where you are
+      // practising today, not something the score is.
+      let bookmark: { startChar: number; pass: number } | null = null;
+      let bookmarkSource: string | null = null;
+
+      /** Every time a note is played, as the controller's timer has it: one
+       *  event per pass round the repeats, in time order. The timer is the
+       *  time base a seek is measured in at the CURRENT speed, and knows where
+       *  the note sits on the page. Empty until a tune is primed. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const passesOf = (startChar: number): any[] => {
+        const timings = synthControl?.timer?.noteTimings;
+        if (!Array.isArray(timings)) return [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return timings.filter((ev: any) => ev.type === 'event' && ev.left != null
+          && Array.isArray(ev.startCharArray) && ev.startCharArray.includes(startChar));
+      };
+
+      /** The timing event of the bookmarked note, on this pass round the
+       *  repeats — read off the controller's own timer, which is both the time
+       *  base a seek is measured in and where the note sits on the page. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bookmarkEvent = (): any | null => {
+        if (!bookmark) return null;
+        const passes = passesOf(bookmark.startChar);
+        return passes[Math.min(bookmark.pass, passes.length - 1)] ?? null;
+      };
+
+      /** Puts the flag on the page — or takes it off. A dashed pole down the
+       *  bookmarked note's staff, at the cursor's own offset, and a pennant at
+       *  its top; kept INSIDE the staff's extent, since the score's viewBox is
+       *  cropped to its ink (cropToInk) and anything above the first staff
+       *  would be cut. The pennant is the one part that takes a click: the
+       *  pole crosses the note it marks, and must not steal the click on it. */
+      const drawBookmark = () => {
+        const svg = notation.querySelector('svg');
+        svg?.querySelectorAll('.abc-bookmark').forEach(el => el.remove());
+        const ev = bookmarkEvent();
+        setRewindTitle(!!ev);
+        if (!svg || !ev) return;
+        const NS = 'http://www.w3.org/2000/svg';
+        const x = ev.left - 4;
+        const top = ev.top as number;
+        const g = document.createElementNS(NS, 'g');
+        g.setAttribute('class', 'abc-bookmark');
+        const pole = document.createElementNS(NS, 'line');
+        pole.setAttribute('x1', String(x)); pole.setAttribute('x2', String(x));
+        pole.setAttribute('y1', String(top)); pole.setAttribute('y2', String(top + ev.height));
+        g.appendChild(pole);
+        const flag = document.createElementNS(NS, 'g');
+        flag.setAttribute('class', 'abc-bookmark-flag');
+        const pennant = document.createElementNS(NS, 'polygon');
+        pennant.setAttribute('points', `${x},${top} ${x + 9},${top + 4} ${x},${top + 8}`);
+        // Bigger than the pennant, so a finger can find it.
+        const hit = document.createElementNS(NS, 'rect');
+        hit.setAttribute('class', 'abc-bookmark-hit');
+        hit.setAttribute('x', String(x - 4)); hit.setAttribute('y', String(top - 2));
+        hit.setAttribute('width', '16'); hit.setAttribute('height', '14');
+        const title = document.createElementNS(NS, 'title');
+        title.textContent = t('fileViewer.abc.bookmarkRemove');
+        flag.append(pennant, hit, title);
+        // abcjs reads its clicks off the whole <svg>, on mousedown and
+        // touchstart, and snaps any press to the nearest note within 12 px —
+        // the bookmarked note is right there, so a press on the flag would
+        // re-set the bookmark instead of removing it. Stopped here, below the
+        // <svg>, abcjs never hears of it.
+        const swallow = (e: Event) => e.stopPropagation();
+        flag.addEventListener('mousedown', swallow);
+        flag.addEventListener('touchstart', swallow, { passive: true });
+        flag.addEventListener('click', (e) => {
+          e.stopPropagation();
+          bookmark = null;
+          drawBookmark();
+        });
+        g.appendChild(flag);
+        svg.appendChild(g);
+      };
+
+      /** When the last press went to the bookmark, or null if it did not. */
+      let lastRewindToMarkAt: number | null = null;
+
+      /** Back to the bookmark if the tune is past it, else to the very start;
+       *  playing or not, and without stopping. A press right after one that
+       *  went to the bookmark goes on to the start — see REWIND_GRACE_MS. */
+      rewindToMark = () => {
+        const timer = synthControl?.timer;
+        if (!timer) return; // nothing primed: already at the start
+        const ev = bookmarkEvent();
+        const pressedAt = performance.now();
+        const secondPress = lastRewindToMarkAt !== null && pressedAt - lastRewindToMarkAt < REWIND_GRACE_MS;
+        lastRewindToMarkAt = null;
+        let target = 0;
+        if (ev && !secondPress) {
+          const now = typeof timer.currentMillisecond === 'function' ? timer.currentMillisecond() : 0;
+          // Past it by any amount. Sitting ON it — a click leaves the tune
+          // SEEK_BACKOFF_MS short of the note — is not past it, and "back"
+          // from there is the start; so is a bookmark still ahead, since
+          // going to it would be going forward.
+          if (now > ev.milliseconds) {
+            target = Math.max(0, ev.milliseconds - SEEK_BACKOFF_MS);
+            lastRewindToMarkAt = pressedAt;
+          }
+        }
+        try { synthControl.seek(target / 1000, 'seconds'); } catch { /* not primed yet */ }
+      };
+
       const cursorControl = {
         beatSubdivisions: 2,
+        // After every priming — a new tune, and each speed change, which
+        // rebuilds the timer the bookmark is read from.
+        onReady: () => drawBookmark(),
         onStart: () => {
           lastCursorTop = null;
           ensureCursor();
@@ -1938,6 +2091,13 @@ export function showPreviewModal(
       const renderTune = (index: number) => {
         const ink = ABC_PAPERS[paper].ink;
         const source = injectDefaultTempo(stripForRender(tunes[index] ?? ''));
+        // A bookmark points into THIS text: another tune, another version or
+        // an edit, and the place it names is gone or somewhere else.
+        if (source !== bookmarkSource) {
+          bookmark = null;
+          bookmarkSource = source;
+          setRewindTitle(false);
+        }
         lastEngravedWidth = engraveWidth();
         const visualObj = abcjs.renderAbc(notation.id, source, {
           ...engraveOptions({ width: lastEngravedWidth, barsPerLine, ink, transpose }),
@@ -1971,34 +2131,51 @@ export function showPreviewModal(
             // example writes it: no MIDI pitches, nothing to play from — which
             // also rules out clefs, barlines, tempo marks and rests.
             if (!abcElem?.midiPitches) return;
-            // The MIDI flattener stamps every element it schedules with its own
-            // position, so the score already knows when each note is played —
-            // no mapping to build.
+            // When the note is played is read off the controller's timer: one
+            // event per time round, in the time base both the cursor and the
+            // audio are sought in.
             //
-            // An element inside a `:|` repeat carries an ARRAY, one entry per
-            // pass, and taking `[0]` sent every click on a repeated bar back to
-            // the first time round — which is why the cursor "did not always
-            // land where you clicked" (reported 2026-09-21). Repeated music is
-            // most of this repertoire, so most of the score behaved that way.
+            // NOT the stamp the MIDI flattener leaves on the element
+            // (`currentTrackMilliseconds`), which this used to read. That stamp
+            // is always at the WRITTEN tempo — the speed stepper warps the
+            // timer and the audio, never the flattener — so away from 100 % a
+            // click landed that much too far (measured 2026-09-29: the fifth
+            // note of a reel at 150 % is at 800 ms, its stamp says 1200).
+            // Reported through the bookmark, which is set by the same click.
+            //
+            // A note inside a `:|` repeat has one event per pass, and taking
+            // the first sent every click on a repeated bar back to the first
+            // time round — which is why the cursor "did not always land where
+            // you clicked" (reported 2026-09-21). Repeated music is most of
+            // this repertoire, so most of the score behaved that way.
             //
             // The pass nearest where the tune is NOW is the one meant: clicking
             // a bar during the second time through means that bar, this time
             // round. Stopped at the start, that resolves to the first pass, so
             // the old behaviour is still what an untouched score does.
-            const ms = abcElem?.currentTrackMilliseconds;
-            let at: unknown = ms;
-            if (Array.isArray(ms) && ms.length > 0) {
-              const durationMs = (synthControl?.midiBuffer?.duration ?? 0) * 1000;
-              const nowMs = (synthControl?.percent ?? 0) * durationMs;
-              at = ms.reduce((best: number, cur: number) =>
-                (Math.abs(cur - nowMs) < Math.abs(best - nowMs) ? cur : best), ms[0] as number);
-            }
-            if (typeof at !== 'number' || !synthControl) return;
+            if (!synthControl || typeof abcElem.startChar !== 'number') return;
+            const passes = passesOf(abcElem.startChar);
+            if (passes.length === 0) return; // not primed yet: nothing to seek in
+            // `percent` and the timer's own length, both warped alike — the
+            // position as a fraction is the one reading that does not care
+            // what speed it was taken at.
+            const nowMs = (synthControl.percent ?? 0) * (synthControl.timer?.lastMoment ?? 0);
+            // Which time round — kept for the bookmark, which cannot keep the
+            // time itself (see `bookmark`).
+            const pass = passes.reduce((best: number, cur: { milliseconds: number }, i: number) =>
+              (Math.abs(cur.milliseconds - nowMs) < Math.abs(passes[best]!.milliseconds - nowMs) ? i : best), 0);
+            const at = passes[pass]!.milliseconds;
+            // Every note clicked is where you want to come back to: clicking
+            // is already "play from here", and the bookmark is that, kept.
+            bookmark = { startChar: abcElem.startChar, pass };
+            drawBookmark();
             // Land just BEFORE the note, never exactly on it. abcjs picks the
-            // current event with a strict `milliseconds < currentTime`, and the
-            // note's stamp and the timing table are computed down two different
-            // float paths — when rounding leaves the table a hair lower, an
-            // exact seek steps past the note and selects the next one. A few
+            // current event with a strict `milliseconds < currentTime`, and a
+            // seek goes out in seconds and comes back in milliseconds — when
+            // the round trip leaves it a hair higher, an exact seek steps past
+            // the note and selects the next one. (Needed all the more when this
+            // read the flattener's stamps, computed down another float path
+            // entirely.) A few
             // milliseconds of margin is far below the shortest note in this
             // music (a sixteenth in a fast reel is about 80ms) and puts the
             // comparison out of reach of the noise.

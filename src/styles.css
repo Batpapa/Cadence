@@ -365,6 +365,7 @@
    same three controls doing the same three jobs should not look like two
    different apps, and the audio player's is the shape this one is copying. */
 .abc-transport .abcjs-inline-audio .abcjs-midi-start,
+.abc-transport .abcjs-inline-audio .abc-midi-rewind,
 .abc-transport .abcjs-inline-audio .abcjs-midi-reset,
 .abc-transport .abcjs-inline-audio .abcjs-midi-loop {
   border: 1px solid rgb(var(--color-border-ch));
@@ -373,6 +374,7 @@
   color: rgb(var(--color-muted-ch));
 }
 .abc-transport .abcjs-inline-audio .abcjs-midi-start:hover,
+.abc-transport .abcjs-inline-audio .abc-midi-rewind:hover,
 .abc-transport .abcjs-inline-audio .abcjs-midi-reset:hover,
 .abc-transport .abcjs-inline-audio .abcjs-midi-loop:hover {
   border-color: rgb(var(--color-accent-ch));
@@ -489,6 +491,19 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
    outside the viewer. */
 .abcjs-cursor { stroke: var(--abc-cursor, #e11d48); stroke-width: 2px; }
 .abcjs-highlight { fill: var(--abc-cursor, #e11d48) !important; }
+
+/* The bookmark (fileViewer's drawBookmark): a dashed pole in the paper's own
+   bookmark colour, so it never reads as the solid cursor passing it. Only the
+   flag at the top answers a click — see drawBookmark for why the pole must
+   not. */
+.abc-bookmark line {
+  stroke: var(--abc-bookmark, #2563eb);
+  stroke-width: 1.5px;
+  stroke-dasharray: 3 2;
+  pointer-events: none;
+}
+.abc-bookmark polygon { fill: var(--abc-bookmark, #2563eb); pointer-events: none; }
+.abc-bookmark .abc-bookmark-hit { fill: transparent; pointer-events: all; cursor: pointer; }
 
 /* ── The score viewer's own controls ───────────────────────────────────────
    An icon button in the viewer's toolbar row. 36 layout px, which the app's

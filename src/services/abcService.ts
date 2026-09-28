@@ -536,15 +536,18 @@ export function abcPaperSetting(user: { abcPaper?: AbcPaper }): string {
   return user.abcPaper ?? ABC_PAPER_AUTO;
 }
 
-/** Paper colour, ink colour, and the colour the playback cursor takes on it.
+/** Paper colour, ink colour, and the colours the playback cursor and the
+ *  bookmark take on it.
  *
  *  The cursor is not one colour for all three: the rose the viewer has always
  *  used reads well on white and on sepia, and washes out against the dark
- *  surface, where a lighter tint of the same hue carries better. */
-export const ABC_PAPERS: Record<AbcPaper, { paper: string; ink: string; cursor: string }> = {
-  dark:  { paper: '#141414', ink: '#e8e8e8', cursor: '#fb7185' },
-  sepia: { paper: '#f6efe2', ink: '#2b2418', cursor: '#be123c' },
-  white: { paper: '#ffffff', ink: '#111111', cursor: '#e11d48' },
+ *  surface, where a lighter tint of the same hue carries better. The bookmark
+ *  is blue for the opposite reason — it sits on the staff while the cursor
+ *  runs past it, and the two must never be mistaken for one another. */
+export const ABC_PAPERS: Record<AbcPaper, { paper: string; ink: string; cursor: string; bookmark: string }> = {
+  dark:  { paper: '#141414', ink: '#e8e8e8', cursor: '#fb7185', bookmark: '#60a5fa' },
+  sepia: { paper: '#f6efe2', ink: '#2b2418', cursor: '#be123c', bookmark: '#1d4ed8' },
+  white: { paper: '#ffffff', ink: '#111111', cursor: '#e11d48', bookmark: '#2563eb' },
 };
 
 export function addTunesetAbcOnConvert(user: { addTunesetAbcOnConvert?: boolean }): boolean {
