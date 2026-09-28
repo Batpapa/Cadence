@@ -325,6 +325,16 @@ const SEEK_BACKOFF_MS = 10;
  *  "back to the bookmark". */
 const REWIND_GRACE_MS = 500;
 
+/** How far from a note a tap may land and still mean it, in window pixels —
+ *  across, to the nearest note of the system, and above or below the system.
+ *  About half a fingertip: notes in a phone-width bar sit a dozen pixels
+ *  apart, so the nearest one wins long before this is reached, and a tap
+ *  further off than this is a tap on empty paper. */
+const TAP_REACH_PX = 20;
+
+/** How far a press may travel and still be a tap rather than a drag. */
+const TAP_SLOP_PX = 10;
+
 /** The nearest scrolling box, starting with the element itself — the score has
  *  its own viewport, and it is that one, not the modal around it, that should
  *  move. Walking on up is a fallback for whatever hosts a score tomorrow. */
@@ -2003,6 +2013,121 @@ export function showPreviewModal(
         try { synthControl.seek(target / 1000, 'seconds'); } catch { /* not primed yet */ }
       };
 
+      /** Play from this note, and bookmark it.
+       *
+       *  When the note is played is read off the controller's timer: one event
+       *  per time round, in the time base both the cursor and the audio are
+       *  sought in. NOT the stamp the MIDI flattener leaves on the element
+       *  (`currentTrackMilliseconds`), which this used to read: that stamp is
+       *  always at the WRITTEN tempo — the speed stepper warps the timer and
+       *  the audio, never the flattener — so away from 100 % a click landed
+       *  that much too far (measured 2026-09-29: the fifth note of a reel at
+       *  150 % is at 800 ms, its stamp says 1200).
+       *
+       *  A note inside a `:|` repeat has one event per pass, and taking the
+       *  first sent every click on a repeated bar back to the first time round
+       *  (reported 2026-09-21). The pass nearest where the tune is NOW is the
+       *  one meant: clicking a bar during the second time through means that
+       *  bar, this time round. Stopped at the start, that is the first pass. */
+      const seekToNote = (startChar: number) => {
+        if (!synthControl) return;
+        const passes = passesOf(startChar);
+        if (passes.length === 0) return; // not primed yet: nothing to seek in
+        // `percent` and the timer's own length, both warped alike — the
+        // position as a fraction is the one reading that does not care what
+        // speed it was taken at.
+        const nowMs = (synthControl.percent ?? 0) * (synthControl.timer?.lastMoment ?? 0);
+        const pass = passes.reduce((best: number, cur: { milliseconds: number }, i: number) =>
+          (Math.abs(cur.milliseconds - nowMs) < Math.abs(passes[best]!.milliseconds - nowMs) ? i : best), 0);
+        const at = passes[pass]!.milliseconds;
+        // Every note clicked is where you want to come back to: clicking is
+        // already "play from here", and the bookmark is that, kept.
+        bookmark = { startChar, pass };
+        drawBookmark();
+        // Land just BEFORE the note, never exactly on it. abcjs picks the
+        // current event with a strict `milliseconds < currentTime`, and a seek
+        // goes out in seconds and comes back in milliseconds — when the round
+        // trip leaves it a hair higher, an exact seek steps past the note and
+        // selects the next one. A few milliseconds is far below the shortest
+        // note in this music (a sixteenth in a fast reel is about 80 ms).
+        try { synthControl.seek(Math.max(0, at - SEEK_BACKOFF_MS) / 1000, 'seconds'); }
+        catch { /* not primed yet */ }
+      };
+
+      /** The note a tap at this point means, as its `startChar` — or null for
+       *  a tap on nothing.
+       *
+       *  Found here rather than by abcjs's `clickListener`, which is what this
+       *  used to be, because on a phone that listener almost never fired
+       *  (reported 2026-09-29). Three reasons, all in selection.js: it only
+       *  accepted a press ON the ink, and a fingertip lands on blank staff or
+       *  on a staff line far more often than on a six-pixel note head; its
+       *  own fallback for a near miss reads `layerX`, which for a touch it
+       *  sets to `pageX` — the page, not the score; and it scales by
+       *  `clientWidth`, a layout size, against a pointer position in window
+       *  pixels, which the app's zoom (80 % on a phone) sets 20 % apart.
+       *
+       *  Everything here is in ONE space: the tap's `clientX/Y` and each
+       *  note's `getBoundingClientRect`, both window pixels, whatever the
+       *  zoom. The system tapped is the one whose notes span the tap
+       *  vertically (with a margin, for a tap above or below the staff); in
+       *  it, the note nearest across wins, if it is close enough to mean it —
+       *  a tap in empty space must not jump the playhead. */
+      const noteAt = (x: number, y: number): number | null => {
+        const timings = synthControl?.timer?.noteTimings;
+        if (!Array.isArray(timings)) return null;
+        // One box per note (the passes of a repeat share one), grouped by
+        // the system it is drawn on.
+        const seen = new Set<number>();
+        const notes: { startChar: number; line: number; box: DOMRect }[] = [];
+        for (const ev of timings) {
+          // "A sounding note", as the library's own example has it: no MIDI
+          // pitches, nothing to play from — rests, and ties' second halves.
+          if (ev.type !== 'event' || ev.left == null || !ev.midiPitches?.length) continue;
+          const startChar = ev.startCharArray?.[0];
+          if (typeof startChar !== 'number' || seen.has(startChar)) continue;
+          seen.add(startChar);
+          const el = ev.elements?.[0]?.[0] as Element | undefined;
+          if (!el?.getBoundingClientRect) continue;
+          notes.push({ startChar, line: ev.line ?? 0, box: el.getBoundingClientRect() });
+        }
+        const bands = new Map<number, { top: number; bottom: number }>();
+        for (const n of notes) {
+          const b = bands.get(n.line);
+          if (!b) bands.set(n.line, { top: n.box.top, bottom: n.box.bottom });
+          else { b.top = Math.min(b.top, n.box.top); b.bottom = Math.max(b.bottom, n.box.bottom); }
+        }
+        let best: number | null = null;
+        let bestDx = TAP_REACH_PX;
+        for (const n of notes) {
+          const band = bands.get(n.line)!;
+          if (y < band.top - TAP_REACH_PX || y > band.bottom + TAP_REACH_PX) continue;
+          const dx = x < n.box.left ? n.box.left - x : x > n.box.right ? x - n.box.right : 0;
+          if (dx <= bestDx) { bestDx = dx; best = n.startChar; }
+        }
+        return best;
+      };
+
+      // A TAP, not a click: pressed and released without travelling. A finger
+      // scrolling the score is a press too, and the browser says so with a
+      // `pointercancel` when it takes the gesture over for the scroll.
+      let pressAt: { x: number; y: number } | null = null;
+      notation.addEventListener('pointerdown', (e) => {
+        pressAt = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+      });
+      notation.addEventListener('pointercancel', () => { pressAt = null; });
+      const onScoreTap = (e: PointerEvent) => {
+        const from = pressAt;
+        pressAt = null;
+        if (!from || !e.isPrimary) return;
+        if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > TAP_SLOP_PX) return;
+        // The bookmark's flag has a click of its own: it removes the bookmark.
+        if ((e.target as Element | null)?.closest?.('.abc-bookmark')) return;
+        const startChar = noteAt(e.clientX, e.clientY);
+        if (startChar !== null) seekToNote(startChar);
+      };
+      notation.addEventListener('pointerup', onScoreTap);
+
       const cursorControl = {
         beatSubdivisions: 2,
         // After every priming — a new tune, and each speed change, which
@@ -2041,6 +2166,16 @@ export function showPreviewModal(
       // a caller can act after the tune is actually playable, rather than after
       // the notation has merely been drawn.
       let primed: Promise<unknown> = Promise.resolve();
+
+      /** Every rebuild of the synth — a new tune, a new speed — one after the
+       *  other. Each is a teardown and a rebuild of the same controller, and
+       *  two interleaved leave it holding the pieces of both (see applyWarp).
+       *  A failed step does not block the ones behind it. */
+      let synthQueue: Promise<unknown> = Promise.resolve();
+      const enqueueSynth = (step: () => Promise<unknown> | undefined): Promise<unknown> => {
+        synthQueue = synthQueue.then(step).catch(() => {});
+        return synthQueue;
+      };
 
       /** Opens the audio output before the first note needs it.
        *
@@ -2101,87 +2236,14 @@ export function showPreviewModal(
         lastEngravedWidth = engraveWidth();
         const visualObj = abcjs.renderAbc(notation.id, source, {
           ...engraveOptions({ width: lastEngravedWidth, barsPerLine, ink, transpose }),
-          // Clicking a note makes abcjs paint it as "selected", and it only
-          // repaints on the NEXT click — so the clicked note stayed coloured
-          // alongside whatever the playback cursor was colouring, showing two
-          // marked notes at once. Selection is still what carries the click; it
-          // just has nothing to say visually here, the cursor jumping to the
-          // note being the answer. Painting it the paper's own ink is how abcjs
-          // is asked to keep quiet — and it has to follow the paper, or the
-          // clicked note turns black on a dark page.
+          // abcjs listens for clicks on every score it draws, whatever it is
+          // given, and paints the note it thinks was clicked as "selected" —
+          // which it only repaints on the NEXT click, so a clicked note stayed
+          // coloured beside the cursor's. The click is handled by our own tap
+          // (see onScoreTap); this is only how abcjs is asked to keep quiet,
+          // in the paper's own ink so it does not turn black on a dark page.
+          // `dragging` is left off: abcjs's note-dragging would edit pitches.
           selectionColor: ink,
-          // Click a note, play from there. `dragging` is left off, so this
-          // only ever selects — abcjs's note-dragging (which would edit
-          // pitches) needs that flag and never gets it.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          clickListener: (abcElem: any, _tuneNumber: number, _classes: string, _analysis: unknown, _drag: unknown, ev?: MouseEvent) => {
-            // Only a click that actually landed ON a note may move the cursor.
-            // Without a direct hit abcjs falls back to "nearest selectable",
-            // which happily returns something on the other side of the page —
-            // and a click meant for empty space would jump the playhead.
-            //
-            // A click on drawn ink targets that glyph; a click on blank staff
-            // targets the <svg> itself, since a <g> has no geometry to hit. So
-            // the root being the target IS the miss. abcjs's own full-synth
-            // example does not guard this at all — it is the answer to a
-            // problem the example never has, its score being one short line.
-            const target = ev?.target as Element | undefined;
-            if (!target || target.nodeName.toLowerCase() === 'svg') return;
-            // "Is this a sounding note", written the way the library's own
-            // example writes it: no MIDI pitches, nothing to play from — which
-            // also rules out clefs, barlines, tempo marks and rests.
-            if (!abcElem?.midiPitches) return;
-            // When the note is played is read off the controller's timer: one
-            // event per time round, in the time base both the cursor and the
-            // audio are sought in.
-            //
-            // NOT the stamp the MIDI flattener leaves on the element
-            // (`currentTrackMilliseconds`), which this used to read. That stamp
-            // is always at the WRITTEN tempo — the speed stepper warps the
-            // timer and the audio, never the flattener — so away from 100 % a
-            // click landed that much too far (measured 2026-09-29: the fifth
-            // note of a reel at 150 % is at 800 ms, its stamp says 1200).
-            // Reported through the bookmark, which is set by the same click.
-            //
-            // A note inside a `:|` repeat has one event per pass, and taking
-            // the first sent every click on a repeated bar back to the first
-            // time round — which is why the cursor "did not always land where
-            // you clicked" (reported 2026-09-21). Repeated music is most of
-            // this repertoire, so most of the score behaved that way.
-            //
-            // The pass nearest where the tune is NOW is the one meant: clicking
-            // a bar during the second time through means that bar, this time
-            // round. Stopped at the start, that resolves to the first pass, so
-            // the old behaviour is still what an untouched score does.
-            if (!synthControl || typeof abcElem.startChar !== 'number') return;
-            const passes = passesOf(abcElem.startChar);
-            if (passes.length === 0) return; // not primed yet: nothing to seek in
-            // `percent` and the timer's own length, both warped alike — the
-            // position as a fraction is the one reading that does not care
-            // what speed it was taken at.
-            const nowMs = (synthControl.percent ?? 0) * (synthControl.timer?.lastMoment ?? 0);
-            // Which time round — kept for the bookmark, which cannot keep the
-            // time itself (see `bookmark`).
-            const pass = passes.reduce((best: number, cur: { milliseconds: number }, i: number) =>
-              (Math.abs(cur.milliseconds - nowMs) < Math.abs(passes[best]!.milliseconds - nowMs) ? i : best), 0);
-            const at = passes[pass]!.milliseconds;
-            // Every note clicked is where you want to come back to: clicking
-            // is already "play from here", and the bookmark is that, kept.
-            bookmark = { startChar: abcElem.startChar, pass };
-            drawBookmark();
-            // Land just BEFORE the note, never exactly on it. abcjs picks the
-            // current event with a strict `milliseconds < currentTime`, and a
-            // seek goes out in seconds and comes back in milliseconds — when
-            // the round trip leaves it a hair higher, an exact seek steps past
-            // the note and selects the next one. (Needed all the more when this
-            // read the flattener's stamps, computed down another float path
-            // entirely.) A few
-            // milliseconds of margin is far below the shortest note in this
-            // music (a sixteenth in a fast reel is about 80ms) and puts the
-            // comparison out of reach of the noise.
-            try { synthControl.seek(Math.max(0, at - SEEK_BACKOFF_MS) / 1000, 'seconds'); }
-            catch { /* not primed yet */ }
-          },
         });
 
         // What abcjs thought of the ABC it was just handed. It has always
@@ -2288,13 +2350,19 @@ export function showPreviewModal(
           // under an `options` key of our own buried it one level too deep and
           // abcjs ignored it in silence.
           if (swing !== NO_SWING && swingApplies()) audioParams.swing = swing;
-          primed = synthControl.setTune(visualObj[0]!, true, audioParams).then(() => {
+          primed = enqueueSynth(() => synthControl.setTune(visualObj[0]!, true, audioParams).then(() => {
             // After setTune, never before: warping rebuilds the audio buffer,
-            // so it needs a tune to rebuild from. Skipped at 100% — it would
-            // throw away and re-render the buffer to arrive where it already is.
-            if (tempoPercent !== DEFAULT_TEMPO_PERCENT) {
-              try { synthControl.setWarp(tempoPercent); } catch { /* ignore */ }
-            }
+            // so it needs a tune to rebuild from. Skipped when the controller
+            // is already at that speed — it keeps its warp from one tune to
+            // the next, and `setTune` builds at it — since it would throw away
+            // and re-render the buffer to arrive where it already is.
+            //
+            // AWAITED, which it was not: `primed` resolved while the rebuild
+            // was still running, and anything waiting on it (a redraw putting
+            // the tune back where it was) raced it.
+            if (synthControl.warp !== tempoPercent) return synthControl.setWarp(tempoPercent);
+            return undefined;
+          }).then(() => {
             // Looping on by default — a score is opened to be practised
             // against, and reaching for the button on every pass is friction.
             // `setTune` resets isLooping to false, so this belongs here, after
@@ -2303,7 +2371,7 @@ export function showPreviewModal(
               try { synthControl.toggleLoop(); } catch { /* ignore */ }
             }
             warmAudioOutput();
-          }).catch(() => {});
+          }).catch(() => {}));
         }
       };
 
@@ -2369,8 +2437,35 @@ export function showPreviewModal(
       redrawScore = () => redrawPreservingPlayback(() => renderTune(currentIndex));
       // abcjs's own setWarp already does the keep-your-place dance internally
       // (it is where redrawPreservingPlayback above was copied from), so this
-      // is the one change that does not need wrapping.
-      applyWarp = (percent) => { try { synthControl?.setWarp(percent); } catch { /* not primed */ } };
+      // is the one change that does not need wrapping — but it does need
+      // QUEUEING, and collapsing. Each press of the speed stepper used to call
+      // setWarp at once, and setWarp is a whole rebuild: tear down, re-render
+      // the audio, new timer, then put the position back. Two presses closer
+      // together than a rebuild ran two at once (reported 2026-09-29, "the
+      // loop goes haywire"): the first's timer was left running with nobody
+      // holding it, still firing end-of-tune into the controller, and the
+      // second read "not playing, at the start" — which the first had just
+      // set on its way down — and put the tune back there.
+      //
+      // So one rebuild at a time, through the same queue as a new tune, and
+      // presses made while one is running fold into a single next one, which
+      // goes straight to the speed the stepper shows by then.
+      let warpPending = false;
+      applyWarp = () => {
+        if (warpPending) return;
+        warpPending = true;
+        void enqueueSynth(() => {
+          warpPending = false;
+          if (!synthControl || synthControl.warp === tempoPercent) return undefined;
+          return Promise.resolve(synthControl.setWarp(tempoPercent)).then(() => {
+            // setWarp's teardown clears the "on" look off EVERY button
+            // (destroy → control.resetAll), the loop's included, while the
+            // loop itself stays on. It looked off; pressing it to put it back
+            // turned it off for real — "I lose the repeat".
+            try { synthControl.control?.pushLoop(synthControl.isLooping); } catch { /* no widget */ }
+          });
+        });
+      };
 
       // What abcjs makes of the text as it is typed — the warnings, and nothing
       // drawn. `parseOnly` does the reading without the engraving, which is the
