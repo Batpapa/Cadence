@@ -4,6 +4,7 @@ import {
   isDriveConnected, hasDriveToken, manualSync, readDriveFile, findCompanionPath,
   listCompanionChildren, trashCompanionFile, driveBlobSize, type DriveChild,
 } from './driveService';
+import { snapshotStates } from './snapshotService';
 
 /** Google's own name for a folder — the one thing a listing must never treat
  *  as a file. */
@@ -31,6 +32,10 @@ const FOLDER_MIME = 'application/vnd.google-apps.folder';
 //      the size in view. A sweep can be wrong; a trashed file comes back with
 //      one click, a deleted one never does.
 //
+// A fourth, added 2026-09-29: a file one of this device's snapshots still
+// names is not an orphan, whatever the server blob says. Restoring the
+// snapshot would hand it back, and the snapshot has no other copy of it.
+//
 // And it looks only where it understands what it sees: the attachments folder,
 // whose every file is an attachment, and recordings in the companion root,
 // which carry their session id in their name. The live-recording backups live
@@ -51,7 +56,7 @@ export interface DriveOrphan {
 }
 
 export class OrphanScanUnavailable extends Error {
-  constructor(public readonly reason: 'not-connected' | 'unreadable') { super('orphan_scan:' + reason); }
+  constructor(public readonly reason: 'not-connected' | 'unreadable' | 'snapshots') { super('orphan_scan:' + reason); }
 }
 
 function bytesOf(child: DriveChild): number {
@@ -91,8 +96,11 @@ function referenced(state: AppState): { attachments: Set<string>; recordings: Se
  *  is reported rather than swallowed because otherwise the honest answer
  *  ("nothing to delete") and the surprising one ("I can see it right there")
  *  look identical — and the rule that makes this safe stays invisible until
- *  someone assumes it is broken. */
-export async function findDriveOrphans(): Promise<{ orphans: DriveOrphan[]; bytes: number; tooYoung: number }> {
+ *  someone assumes it is broken. `inSnapshots` likewise, for the files only a
+ *  snapshot of `userId`'s still names. */
+export async function findDriveOrphans(userId: string): Promise<{
+  orphans: DriveOrphan[]; bytes: number; tooYoung: number; inSnapshots: number;
+}> {
   if (!isDriveConnected()) throw new OrphanScanUnavailable('not-connected');
 
   // Condition 1, first half: anything this device is holding goes up before
@@ -107,12 +115,29 @@ export async function findDriveOrphans(): Promise<{ orphans: DriveOrphan[]; byte
   if (read.status !== 'ok') throw new OrphanScanUnavailable('unreadable');
   const refs = referenced(read.data);
 
+  // Condition 4, and fatal when it fails for the same reason as the blob: a
+  // snapshot that could not be read makes its files look unreferenced. Read
+  // after the push, which can itself resolve a conflict and so take one.
+  const held = { attachments: new Set<string>(), recordings: new Set<string>() };
+  try {
+    for (const state of await snapshotStates(userId)) {
+      const r = referenced(state);
+      for (const id of r.attachments) held.attachments.add(id);
+      for (const id of r.recordings) held.recordings.add(id);
+    }
+  } catch (e) {
+    console.warn('[orphans] could not read the snapshots', e);
+    throw new OrphanScanUnavailable('snapshots');
+  }
+
   const now = Date.now();
   const orphans: DriveOrphan[] = [];
   let tooYoung = 0;
+  let inSnapshots = 0;
 
   const consider = (child: DriveChild, kind: DriveOrphan['kind'], referenced: boolean) => {
     if (referenced) return;
+    if ((kind === 'attachment' ? held.attachments : held.recordings).has(child.id)) { inSnapshots++; return; }
     if (!oldEnough(child, now)) { tooYoung++; return; }
     orphans.push({ id: child.id, name: child.name, bytes: bytesOf(child), kind });
   };
@@ -133,7 +158,7 @@ export async function findDriveOrphans(): Promise<{ orphans: DriveOrphan[]; byte
     }
   }
 
-  return { orphans, bytes: orphans.reduce((n, o) => n + o.bytes, 0), tooYoung };
+  return { orphans, bytes: orphans.reduce((n, o) => n + o.bytes, 0), tooYoung, inSnapshots };
 }
 
 // ── What all of it weighs, up there ─────────────────────────────────────────
