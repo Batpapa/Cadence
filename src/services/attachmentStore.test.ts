@@ -3,7 +3,7 @@ import {
   attachmentThresholdBytes, isAboveThreshold, isExternal, DEFAULT_THRESHOLD_KB,
   inlineExternalAttachments, externalAttachmentBlobs, externalAttachmentBytes,
   restoreExternalAttachments, conversionPlan, applyConversion, freeableAttachments,
-  sweepLocalAttachments,
+  sweepLocalAttachments, purgeCondemnedFiles,
 } from './attachmentStore';
 import type { AppState, Attachment, Card, ResolvableFile } from '../types';
 
@@ -22,13 +22,15 @@ vi.mock('./attachmentDb', () => ({
   deleteAttachmentBlob: (id: string) => { held.delete(id); return Promise.resolve(); },
   heldAttachmentIds: () => Promise.resolve([...held.keys()]),
   condemnDriveFile: () => Promise.resolve(),
-  condemnedFiles: () => Promise.resolve([]),
-  forgetCondemned: () => Promise.resolve(),
+  condemnedFiles: () => Promise.resolve([...graveyard.values()]),
+  forgetCondemned: (driveFileId: string) => { graveyard.delete(driveFileId); return Promise.resolve(); },
 }));
+/** The journal of Drive files waiting to be deleted, keyed like the real one. */
+const graveyard = vi.hoisted(() => new Map<string, { driveFileId: string; attachmentId: string; at: number }>());
 
 // Drive and the running state, likewise: the conversion is a rule, and a rule
 // is worth testing without a network or a browser.
-const drive = vi.hoisted(() => ({ connected: false, unreachable: false, downloads: 0 }));
+const drive = vi.hoisted(() => ({ connected: false, unreachable: false, downloads: 0, deleted: [] as string[] }));
 vi.mock('./driveService', () => ({
   isDriveConnected: () => drive.connected,
   hasDriveToken: () => true,
@@ -40,7 +42,7 @@ vi.mock('./driveService', () => ({
   },
   companionPathId: () => Promise.resolve('folder-id'),
   uploadCompanionFileInto: () => Promise.resolve('drive-new'),
-  deleteCompanionFile: () => Promise.resolve(true),
+  deleteCompanionFile: (id: string) => { drive.deleted.push(id); return Promise.resolve(true); },
   registerDrivePendingWork: () => {},
 }));
 
@@ -361,9 +363,11 @@ describe('what can be freed locally', () => {
 // Every externalisation is two steps, and between them the bytes are
 // referenced by nothing — which is exactly what the sweep deletes.
 
+/** This device's snapshots, as the strict reader returns them. `broken` is a
+ *  snapshot store that cannot be read. */
+const snaps = vi.hoisted(() => ({ states: [] as unknown[], broken: false }));
 vi.mock('./snapshotService', () => ({
-  listSnapshots: () => Promise.resolve([]),
-  getSnapshotState: () => Promise.resolve(null),
+  snapshotStates: () => (snaps.broken ? Promise.reject(new Error('idb gone')) : Promise.resolve(snaps.states)),
 }));
 
 describe('the local sweep, while a conversion is in flight', () => {
@@ -399,6 +403,87 @@ describe('the local sweep, while a conversion is in flight', () => {
     store.state = stateWith([]);
     expect(await sweepLocalAttachments()).toBe(1);
     expect(held.has('orphan')).toBe(false);
+  });
+});
+
+// ── What a snapshot keeps alive ─────────────────────────────────────────────
+// A snapshot holds a state, not bytes. Restoring one that names an attachment
+// deleted since only works if the bytes are still somewhere — here, or on
+// Drive. The hole closed on 2026-09-29: free an attachment's local bytes,
+// delete it, and the purge used to delete its only remaining copy.
+
+describe('what a snapshot keeps alive', () => {
+  const condemn = (attachmentId: string, driveFileId = 'drive-' + attachmentId) =>
+    graveyard.set(driveFileId, { driveFileId, attachmentId, at: 0 });
+
+  beforeEach(() => {
+    held.clear(); graveyard.clear();
+    drive.connected = true; drive.deleted = [];
+    snaps.states = []; snaps.broken = false;
+    store.state = stateWith([]);
+  });
+
+  it('keeps the local bytes of a deleted attachment a snapshot names', async () => {
+    held.set('e1', new Blob([new Uint8Array([1])]));
+    snaps.states = [stateWith([smallExternal('e1')])];
+    expect(await sweepLocalAttachments()).toBe(0);
+    expect(held.has('e1')).toBe(true);
+  });
+
+  it('sweeps nothing when the snapshots cannot be read', async () => {
+    // The lenient readers answered a failure with an empty list, so this used
+    // to read as "no snapshot" and sweep regardless.
+    held.set('orphan', new Blob([new Uint8Array([9])]));
+    snaps.broken = true;
+    expect(await sweepLocalAttachments()).toBe(0);
+    expect(held.has('orphan')).toBe(true);
+  });
+
+  it('spares the Drive file of a freed, then deleted, attachment a snapshot names', async () => {
+    // Freed: nothing held here. Deleted: absent from the state, condemned.
+    condemn('e1');
+    snaps.states = [stateWith([smallExternal('e1')])];
+    const waiting = await purgeCondemnedFiles();
+    expect(drive.deleted).toEqual([]);
+    // Kept in the journal, so it goes once the snapshot does…
+    expect(graveyard.has('drive-e1')).toBe(true);
+    // …and not counted as waiting on Drive, which would have the token
+    // renewal asking on every tap for a month to do nothing.
+    expect(waiting).toBe(0);
+  });
+
+  it('recognises it by attachment id when the snapshot predates the upload', async () => {
+    condemn('e1');
+    const beforeUpload = { type: 'file', name: 'e1.abc', mimeType: 'text/plain', data: '',
+      external: { id: 'e1', bytes: 3 } } as Attachment;
+    snaps.states = [stateWith([beforeUpload])];
+    await purgeCondemnedFiles();
+    expect(drive.deleted).toEqual([]);
+  });
+
+  it('deletes it once no snapshot names it any more', async () => {
+    condemn('e1');
+    expect(await purgeCondemnedFiles()).toBe(0);
+    expect(drive.deleted).toEqual(['drive-e1']);
+    expect(graveyard.size).toBe(0);
+  });
+
+  it('deletes nothing on Drive when the snapshots cannot be read', async () => {
+    condemn('e1');
+    snaps.broken = true;
+    expect(await purgeCondemnedFiles()).toBe(1);
+    expect(drive.deleted).toEqual([]);
+    expect(graveyard.has('drive-e1')).toBe(true);
+  });
+
+  it('still reports what waits on Drive while Drive is away', async () => {
+    condemn('e1');
+    condemn('e2');
+    snaps.states = [stateWith([smallExternal('e2')])];
+    drive.connected = false;
+    // e1 is due and cannot go yet; e2 is held by a snapshot and is not due.
+    expect(await purgeCondemnedFiles()).toBe(1);
+    expect(drive.deleted).toEqual([]);
   });
 });
 

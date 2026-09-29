@@ -26,6 +26,16 @@ vi.mock('./driveService', () => ({
   trashCompanionFile: (id: string) => { drive.trashed.push(id); return Promise.resolve(true); },
 }));
 
+// This device's snapshots: states the scan must count as references. `broken`
+// stands for a snapshot store that cannot be read.
+const snaps = vi.hoisted(() => ({ states: [] as unknown[], broken: false, askedFor: [] as string[] }));
+vi.mock('./snapshotService', () => ({
+  snapshotStates: (userId: string) => {
+    snaps.askedFor.push(userId);
+    return snaps.broken ? Promise.reject(new Error('idb gone')) : Promise.resolve(snaps.states);
+  },
+}));
+
 const DAY = 24 * 60 * 60 * 1000;
 const ago = (days: number) => new Date(Date.now() - days * DAY).toISOString();
 
@@ -46,11 +56,14 @@ beforeEach(() => {
   drive.children = new Map();
   drive.pushed = 0;
   drive.trashed = [];
+  snaps.states = [];
+  snaps.broken = false;
+  snaps.askedFor = [];
 });
 
 describe('before it dares look', () => {
   it('pushes whatever is pending first', async () => {
-    await findDriveOrphans();
+    await findDriveOrphans('u1');
     // Otherwise a file this very device uploaded a minute ago, whose blob has
     // not gone up yet, reads as referenced by nobody.
     expect(drive.pushed).toBe(1);
@@ -61,12 +74,12 @@ describe('before it dares look', () => {
     drive.children.set('attachments', [child({ id: 'a1' })]);
     // An empty blob makes EVERY file look unreferenced. Reporting an orphan
     // here would be reporting the whole library.
-    await expect(findDriveOrphans()).rejects.toBeInstanceOf(OrphanScanUnavailable);
+    await expect(findDriveOrphans('u1')).rejects.toBeInstanceOf(OrphanScanUnavailable);
   });
 
   it('refuses when Drive is not connected', async () => {
     drive.connected = false;
-    await expect(findDriveOrphans()).rejects.toBeInstanceOf(OrphanScanUnavailable);
+    await expect(findDriveOrphans('u1')).rejects.toBeInstanceOf(OrphanScanUnavailable);
   });
 });
 
@@ -77,7 +90,7 @@ describe('what it will not touch', () => {
       child({ id: 'lastWeek', createdTime: ago(7) }),
       child({ id: 'old', createdTime: ago(40) }),
     ]);
-    const { orphans } = await findDriveOrphans();
+    const { orphans } = await findDriveOrphans('u1');
     // The window to protect is minutes wide (30 s debounce, 5 min ceiling);
     // thirty days is that with room to spare.
     expect(orphans.map(o => o.id)).toEqual(['old']);
@@ -85,7 +98,7 @@ describe('what it will not touch', () => {
 
   it('treats an unknown age as too young', async () => {
     drive.children.set('attachments', [child({ id: 'noDate', createdTime: undefined })]);
-    expect((await findDriveOrphans()).orphans).toEqual([]);
+    expect((await findDriveOrphans('u1')).orphans).toEqual([]);
   });
 
   it('ignores anything in the root it does not recognise', async () => {
@@ -94,7 +107,7 @@ describe('what it will not touch', () => {
       child({ id: 'stranger', name: 'someone-elses-file.txt' }),
       child({ id: 'rec', name: 'cadence-session-abc.webm' }),
     ]);
-    const { orphans } = await findDriveOrphans();
+    const { orphans } = await findDriveOrphans('u1');
     // The live-recording backups have their own lifecycle, and a file this
     // code cannot name is a file it has no business judging.
     expect(orphans.map(o => o.id)).toEqual(['rec']);
@@ -105,7 +118,7 @@ describe('what it will not touch', () => {
       child({ id: 'sub', mimeType: 'application/vnd.google-apps.folder' }),
       child({ id: 'a1' }),
     ]);
-    expect((await findDriveOrphans()).orphans.map(o => o.id)).toEqual(['a1']);
+    expect((await findDriveOrphans('u1')).orphans.map(o => o.id)).toEqual(['a1']);
   });
 });
 
@@ -122,7 +135,7 @@ describe('what the server state protects', () => {
       } as unknown as AppState,
     };
     drive.children.set('attachments', [child({ id: 'kept' }), child({ id: 'dropped' })]);
-    expect((await findDriveOrphans()).orphans.map(o => o.id)).toEqual(['dropped']);
+    expect((await findDriveOrphans('u1')).orphans.map(o => o.id)).toEqual(['dropped']);
   });
 
   it('spares a recording some analysis still points at', async () => {
@@ -138,12 +151,12 @@ describe('what the server state protects', () => {
       child({ id: 'kept', name: 'cadence-session-s1.webm' }),
       child({ id: 'dropped', name: 'cadence-session-s2.webm' }),
     ]);
-    expect((await findDriveOrphans()).orphans.map(o => o.id)).toEqual(['dropped']);
+    expect((await findDriveOrphans('u1')).orphans.map(o => o.id)).toEqual(['dropped']);
   });
 
   it('totals what would be freed', async () => {
     drive.children.set('attachments', [child({ id: 'a', size: '1000' }), child({ id: 'b', size: '2500' })]);
-    const { orphans, bytes } = await findDriveOrphans();
+    const { orphans, bytes } = await findDriveOrphans('u1');
     expect(orphans.length).toBe(2);
     expect(bytes).toBe(3500);
   });
@@ -156,7 +169,7 @@ describe('what it says about what it spared', () => {
       child({ id: 'fresh', createdTime: ago(2) }),
       child({ id: 'alsoFresh', createdTime: ago(0) }),
     ]);
-    const { orphans, tooYoung } = await findDriveOrphans();
+    const { orphans, tooYoung } = await findDriveOrphans('u1');
     // Otherwise "nothing to delete" and "I can see it right there" look the
     // same, and the rule that makes this safe reads as a broken search.
     expect(orphans.map(o => o.id)).toEqual(['old']);
@@ -175,8 +188,40 @@ describe('what it says about what it spared', () => {
       } as unknown as AppState,
     };
     drive.children.set('attachments', [child({ id: 'kept', createdTime: ago(1) })]);
-    const { orphans, tooYoung } = await findDriveOrphans();
+    const { orphans, tooYoung } = await findDriveOrphans('u1');
     expect(orphans).toEqual([]);
     expect(tooYoung).toBe(0);
+  });
+});
+
+// ── What this device's snapshots protect ────────────────────────────────────
+// The server blob no longer names a file its user deleted — but a snapshot
+// taken before the deletion still does, and restoring it needs the file back.
+
+describe('what the snapshots protect', () => {
+  const namingState = (driveFileId: string) => ({
+    cards: { c1: { content: { attachments: [
+      { type: 'file', name: 'x', data: '', mimeType: 'audio/mpeg', external: { id: 'e1', bytes: 1, driveFileId } },
+    ] } } },
+    modules: { [TUNE_ANALYSER_MODULE_KEY]: { syncedAudio: { s1: { fileId: 'rec-kept', mimeType: 'audio/webm', bytes: 10 } } } },
+  });
+
+  it('spares the files a snapshot still names, and says how many', async () => {
+    snaps.states = [namingState('snap-kept')];
+    drive.children.set('attachments', [child({ id: 'snap-kept' }), child({ id: 'dropped' })]);
+    drive.children.set('root', [child({ id: 'rec-kept', name: 'cadence-session-s1.webm' })]);
+    const { orphans, inSnapshots } = await findDriveOrphans('u1');
+    expect(orphans.map(o => o.id)).toEqual(['dropped']);
+    expect(inSnapshots).toBe(2);
+    // Its own user's snapshots, not whoever else once used this device.
+    expect(snaps.askedFor).toEqual(['u1']);
+  });
+
+  it('refuses when the snapshots cannot be read', async () => {
+    snaps.broken = true;
+    drive.children.set('attachments', [child({ id: 'a1' })]);
+    // Unreadable snapshots look like no snapshots, which would make every file
+    // they name look deletable.
+    await expect(findDriveOrphans('u1')).rejects.toMatchObject({ reason: 'snapshots' });
   });
 });

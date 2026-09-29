@@ -17,6 +17,10 @@ import type { AppState } from '../types';
 const DB_NAME  = 'cadence-snapshots';
 const STORE    = 'snapshots';
 const KEEP_PER_USER = 5;
+/** Asked for on 2026-09-29, for the space: a snapshot is a whole copy of the
+ *  library, and a sync mistake shows itself within days, not months. */
+const MAX_AGE_DAYS = 30;
+const MAX_AGE_MS = MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 
 export type SnapshotReason = 'apply-drive' | 'conflict-keep-local' | 'conflict-use-drive';
 
@@ -95,9 +99,58 @@ export async function saveSnapshot(userId: string, reason: SnapshotReason, state
     for (const k of keys.slice(0, Math.max(0, keys.length - KEEP_PER_USER))) {
       await d.delete(STORE, k);
     }
+    for (const k of expiredSnapshotKeys(keys, userId, ts)) await d.delete(STORE, k);
   } catch (e) {
     console.warn('[snapshots] failed to save (continuing — snapshots are best-effort)', e);
   }
+}
+
+/** The keys of `userId`'s snapshots older than MAX_AGE_DAYS at `now`. Read off
+ *  the key, which carries the timestamp, so expiring costs no record reads.
+ *
+ *  A key whose date cannot be read is never expired: not knowing a snapshot's
+ *  age is no reason to delete it. One dated in the future (a clock put back
+ *  since) is not expired either — it will be, in its own time. */
+export function expiredSnapshotKeys(keys: string[], userId: string, now: number): string[] {
+  const prefix = `${userId}:`;
+  return keys.filter(k => {
+    if (!k.startsWith(prefix)) return false;
+    // Digits only: Number('') is 0, which would date an empty suffix to 1970.
+    const rest = k.slice(prefix.length);
+    return /^\d+$/.test(rest) && now - Number(rest) > MAX_AGE_MS;
+  });
+}
+
+/** Drops `userId`'s expired snapshots. Only ever called for a user who has just
+ *  been opened — never from the recovery screen, and never for a snapshot whose
+ *  owner is gone from this device: those are what the recovery screen is for,
+ *  and the one place age must not decide. Best-effort. */
+export async function pruneExpiredSnapshots(userId: string): Promise<number> {
+  try {
+    const d = await db();
+    const expired = expiredSnapshotKeys(await d.getAllKeys(STORE) as string[], userId, Date.now());
+    for (const k of expired) { await d.delete(STORE, k); _measured.delete(k); }
+    return expired.length;
+  } catch (e) {
+    console.warn('[snapshots] could not expire old snapshots', e);
+    return 0;
+  }
+}
+
+/** Every stored state of `userId`'s snapshots — and, unlike the rest of this
+ *  file, it THROWS when it cannot read them. For the callers that delete
+ *  things a snapshot might still need: to them "no snapshot" and "could not
+ *  look" call for opposite answers, and the lenient readers above return an
+ *  empty list for both. */
+export async function snapshotStates(userId: string): Promise<AppState[]> {
+  const d = await db();
+  const keys = (await d.getAllKeys(STORE) as string[]).filter(k => k.startsWith(`${userId}:`));
+  const out: AppState[] = [];
+  for (const key of keys) {
+    const rec = await d.get(STORE, key) as SnapshotRecord | undefined;
+    if (rec?.state) out.push(rec.state);
+  }
+  return out;
 }
 
 /** Newest first. Metadata only — the full state is fetched on demand. */

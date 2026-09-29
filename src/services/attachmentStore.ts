@@ -769,13 +769,23 @@ export async function condemnAttachmentFile(att: Attachment | ResolvableFile): P
  *  That single check is what makes the order of writes irrelevant (record then
  *  mutate, or the reverse, both become safe) AND covers the case where a
  *  conflict resolution brought the attachment back between the condemnation
- *  and now. */
-export async function purgeCondemnedFiles(): Promise<void> {
+ *  and now.
+ *
+ *  And spares — without forgetting — every file a snapshot still names
+ *  (2026-09-29). Until then the check stopped at the live state, which left one
+ *  real way to gut a snapshot: free an attachment's local bytes (Storage →
+ *  free space), then delete it. Its only copy was the Drive one, this deleted
+ *  it, and restoring a snapshot from before handed back a card whose
+ *  attachment existed nowhere. The row stays in the journal, so the file goes
+ *  once the last snapshot naming it expires or is deleted.
+ *
+ *  Returns how many files are still waiting on DRIVE — the ones a snapshot
+ *  holds are not: counted as pending, they would keep the token renewal asking
+ *  for a token on every tap, for a month, to do nothing. */
+export async function purgeCondemnedFiles(): Promise<number> {
   let rows;
-  try { rows = await condemnedFiles(); } catch { return; }
-  if (!rows.length) return;
-  const drive = await driveModule();
-  if (!drive.isDriveConnected() || !drive.hasDriveToken()) return;
+  try { rows = await condemnedFiles(); } catch { return 0; }
+  if (!rows.length) return 0;
 
   const { appState } = await storeModule();
   const live = new Set(
@@ -783,13 +793,52 @@ export async function purgeCondemnedFiles(): Promise<void> {
       .map(x => x.att.external.driveFileId)
       .filter((id): id is string => !!id),
   );
+  let held: SnapshotReferences;
+  try { held = await snapshotReferences(appState.value.id); }
+  catch (e) {
+    // Same rule as the local sweep: unable to read the net, delete nothing.
+    console.warn('[attachments] skipping the Drive purge — snapshots unreadable', e);
+    return rows.length;
+  }
+
+  const due: typeof rows = [];
   for (const row of rows) {
     if (live.has(row.driveFileId)) { await forgetCondemned(row.driveFileId); continue; }
+    // Either id will do: a snapshot taken before the upload finished names
+    // the attachment but not yet its Drive file.
+    if (held.driveFileIds.has(row.driveFileId) || held.ids.has(row.attachmentId)) continue;
+    due.push(row);
+  }
+  if (!due.length) return 0;
+  const drive = await driveModule();
+  if (!drive.isDriveConnected() || !drive.hasDriveToken()) return due.length;
+
+  let left = 0;
+  for (const row of due) {
     // Best-effort, like every companion deletion: a file that cannot be
     // removed right now stays an orphan in the user's own Drive, visible and
     // deletable by them — a far better failure than blocking anything here.
     if (await drive.deleteCompanionFile(row.driveFileId, false)) await forgetCondemned(row.driveFileId);
+    else left++;
   }
+  return left;
+}
+
+interface SnapshotReferences { ids: Set<string>; driveFileIds: Set<string> }
+
+/** Every external attachment `userId`'s snapshots name, by both of its ids.
+ *  Throws when the snapshots cannot be read; the callers then delete nothing. */
+async function snapshotReferences(userId: string): Promise<SnapshotReferences> {
+  const { snapshotStates } = await import('./snapshotService');
+  const ids = new Set<string>();
+  const driveFileIds = new Set<string>();
+  for (const state of await snapshotStates(userId)) {
+    for (const { att } of externalAttachments(state)) {
+      ids.add(att.external.id);
+      if (att.external.driveFileId) driveFileIds.add(att.external.driveFileId);
+    }
+  }
+  return { ids, driveFileIds };
 }
 
 /** Drops bytes this device holds for attachments nothing points at any more.
@@ -804,13 +853,13 @@ export async function purgeCondemnedFiles(): Promise<void> {
  *  attachment is dead — and the snapshots are the app's only safety net. */
 export async function sweepLocalAttachments(): Promise<number> {
   const { appState } = await storeModule();
-  const { listSnapshots, getSnapshotState } = await import('./snapshotService');
   const referenced = new Set(externalAttachments(appState.value).map(x => x.att.external.id));
   try {
-    for (const meta of await listSnapshots(appState.value.id)) {
-      const state = await getSnapshotState(meta.key);
-      if (state) for (const x of externalAttachments(state)) referenced.add(x.att.external.id);
-    }
+    // The strict reader, since 2026-09-29. The catch below never fired before:
+    // listSnapshots and getSnapshotState answer a failure with an empty list
+    // and a null, so an unreadable snapshot store read as "no snapshot" and
+    // the sweep went ahead.
+    for (const id of (await snapshotReferences(appState.value.id)).ids) referenced.add(id);
   } catch (e) {
     // Could not read the snapshots: delete nothing rather than risk gutting
     // one. An unused blob costs space; a broken snapshot costs the net.
@@ -854,24 +903,44 @@ export function initAttachmentSync(): void {
       resume: () => { void runPendingAttachmentWork(); },
     }));
   }
-  setTimeout(() => {
+  setTimeout(() => { void expireSnapshotsThenCollect(true); }, 8000);
+  // Not only at boot: a tab or an installed app can stay open for weeks, and
+  // a snapshot must be gone a month after it was taken, not a month after the
+  // last launch. Hourly is plenty for a thirty-day limit, and costs one key
+  // listing when nothing has expired.
+  _expiryTimer ??= setInterval(() => { void expireSnapshotsThenCollect(false); }, 60 * 60 * 1000);
+}
+
+let _expiryTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Snapshots expire first, and here, because what they release is what the
+ *  two passes after them are waiting on: the local bytes and the condemned
+ *  Drive files only an expired snapshot still named. Here is also the only
+ *  kind of place it may run — a user opened, never the recovery screen.
+ *
+ *  `always`: at boot the two passes run regardless, as they always have. On
+ *  the hourly tick only when something expired — otherwise nothing changed
+ *  that they could act on, and the sweep reads every snapshot. */
+async function expireSnapshotsThenCollect(always: boolean): Promise<void> {
+  try {
+    const { appState } = await storeModule();
+    const { pruneExpiredSnapshots } = await import('./snapshotService');
+    const expired = await pruneExpiredSnapshots(appState.value.id);
+    if (!always && expired === 0) return;
     void runPendingAttachmentWork();
     void sweepLocalAttachments().then(n => {
       if (n) console.info(`[attachments] freed ${n} local file(s) nothing referenced any more`);
     }).catch(() => {});
-  }, 8000);
+  } catch { /* next tick, or next launch */ }
 }
 
 async function runPendingAttachmentWork(): Promise<void> {
   try {
     const { failed } = await uploadPendingAttachments();
-    await purgeCondemnedFiles();
+    const waiting = await purgeCondemnedFiles();
     const { appState } = await storeModule();
-    const [{ ids }, condemned] = await Promise.all([
-      pendingAttachmentUploads(appState.value),
-      condemnedFiles().catch(() => []),
-    ]);
-    _pendingHint = failed > 0 || ids.length > 0 || condemned.length > 0;
+    const { ids } = await pendingAttachmentUploads(appState.value);
+    _pendingHint = failed > 0 || ids.length > 0 || waiting > 0;
   } catch {
     _pendingHint = true;
   }

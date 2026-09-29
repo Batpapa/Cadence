@@ -17,7 +17,7 @@ import { exportFullBackup, fullBackupSize, parseFullBackup, restoreFullBackupAud
 import {
   restoreExternalAttachments, uploadPendingAttachments, externalAttachmentBytes,
   conversionPlan, applyConversion, freeableAttachments, freeUploadedAttachments, sweepLocalAttachments,
-  DEFAULT_THRESHOLD_KB, type ConversionPlan,
+  purgeCondemnedFiles, DEFAULT_THRESHOLD_KB, type ConversionPlan,
 } from '../services/attachmentStore';
 import { askIncompleteExport } from './incompleteExportModal';
 import { findDriveOrphans, trashDriveOrphans, driveStorageUsage, OrphanScanUnavailable, type DriveOrphan } from '../services/driveOrphans';
@@ -436,10 +436,11 @@ function SnapshotsRow({ userId }: { userId: string }) {
     () => {
       void deleteSnapshot(s.key)
         .then(async () => {
-          // A snapshot counts as a reference to the attachment bytes it names,
-          // so the space of an attachment deleted since is only given back
-          // once no snapshot names it any more — that is, now.
+          // A snapshot counts as a reference to the attachments it names, so
+          // an attachment deleted since keeps its local bytes and its Drive
+          // file until no snapshot names it any more — that is, now.
           await sweepLocalAttachments().catch(() => 0);
+          void purgeCondemnedFiles().catch(() => 0);
           setSnaps(await listSnapshots(userId));
         })
         .catch(e => alertModal(t('settings.snapshots.delete.title'), e instanceof Error ? e.message : String(e)));
@@ -1045,22 +1046,24 @@ function DriveOrphansRow() {
 
   const scan = () => {
     setBusy(true);
-    void findDriveOrphans()
-      .then(({ orphans, bytes, tooYoung }) => {
+    void findDriveOrphans(appState.value.id)
+      .then(({ orphans, bytes, tooYoung, inSnapshots }) => {
         // Said whenever it applies. Without it, "nothing to delete" reads as a
         // broken search to anyone who can see an unreferenced file sitting
         // there — the age rule is what makes this safe, and a safety rule
-        // nobody can see is one they assume is a bug.
-        const spared = tooYoung === 0 ? ''
-          : ' ' + t(tooYoung === 1 ? 'settings.orphans.tooYoungOne' : 'settings.orphans.tooYoung', { count: tooYoung });
+        // nobody can see is one they assume is a bug. The snapshot rule too.
+        const reasons: string[] = [];
+        if (tooYoung) reasons.push(t(tooYoung === 1 ? 'settings.orphans.tooYoungOne' : 'settings.orphans.tooYoung', { count: tooYoung }));
+        if (inSnapshots) reasons.push(t(inSnapshots === 1 ? 'settings.orphans.inSnapshotsOne' : 'settings.orphans.inSnapshots', { count: inSnapshots }));
+        const spared = reasons.map(s => ' ' + s).join('');
         if (orphans.length === 0) {
           // NOT both sentences. "Everything on Drive is referenced by the
           // library" and "47 files are referenced by nothing" contradict each
           // other flatly, and that is what the two of them said together —
-          // seen on a real Drive on 2026-09-24. When the age rule is the only
-          // reason nothing is being deleted, the age rule is the whole answer.
+          // seen on a real Drive on 2026-09-24. When the spared files are the
+          // only reason nothing is being deleted, they are the whole answer.
           alertModal(t('settings.orphans.none.title'),
-            tooYoung === 0 ? t('settings.orphans.none.message') : spared.trim());
+            reasons.length === 0 ? t('settings.orphans.none.message') : spared.trim());
           return;
         }
         confirmModal(
@@ -1077,7 +1080,9 @@ function DriveOrphansRow() {
         // unreadable blob makes every file look unreferenced.
         e instanceof OrphanScanUnavailable && e.reason === 'unreadable'
           ? t('settings.orphans.failed.unreadable')
-          : String(e)))
+          : e instanceof OrphanScanUnavailable && e.reason === 'snapshots'
+            ? t('settings.orphans.failed.snapshots')
+            : String(e)))
       .finally(() => setBusy(false));
   };
 
