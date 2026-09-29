@@ -54,7 +54,12 @@ export interface EmbedEntry {
    *  embed stored before this date has only a `title`, and that title IS the
    *  platform's. */
   autoTitle?: string;
-  embedUrl?: string; // resolved iframe src, stored to avoid re-fetching
+  /** The resolved iframe src, stored to avoid re-fetching. For an embed that
+   *  is a plain FILE (since 2026-09-29, opened by Cadence's own viewers — see
+   *  remoteFile.ts), the file's own URL: an older bundle knows nothing but the
+   *  iframe, and an mp3 or a PDF in one still plays or shows. Which of the two
+   *  an embed is comes from `isFileEmbed()`, never from this field. */
+  embedUrl?: string;
   /** Written explicitly on both sides since 2026-09-22 — see LinkMode. */
   mode?: LinkMode;
 }

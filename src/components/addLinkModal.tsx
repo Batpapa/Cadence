@@ -4,7 +4,8 @@ import type { Attachment, EmbedEntry, LinkMode } from '../types';
 import { generateId, focusIfDesktop } from '../utils';
 import { showModal, closeModal, renderModalBody } from './modal';
 import { t } from '../services/i18nService';
-import { detectPlatform, resolveEmbed, safeExternalUrl, linkMode, embedAutoTitle, type EmbedMeta } from '../services/embedService';
+import { checkEmbed, checkLink, detectPlatform, safeExternalUrl, linkMode, embedAutoTitle, type LinkCheck, type EmbedPlatform } from '../services/embedService';
+import { refusalMessage } from '../services/remoteFile';
 
 // ── Adding, and editing, a link attachment ───────────────────────────────────
 // A link does one of two things when it is opened, and until 2026-09-22 it
@@ -22,8 +23,15 @@ import { detectPlatform, resolveEmbed, safeExternalUrl, linkMode, embedAutoTitle
 // empty, the box means the platform's name, which is what it shows greyed out.
 //
 // One screen rather than two: unlike a file's source, the mode is not a
-// question asked before the URL — it is a property OF the URL, and half the
-// time the URL answers it on its own (see `canEmbed`).
+// question asked before the URL — it is a property OF the URL. The dialog no
+// longer answers it for the user, though (see `apply`).
+//
+// Since 2026-09-29 the in-app side also takes a plain file — audio, video,
+// image, PDF, text, ABC — which then opens in Cadence's own viewers
+// (remoteFile.ts). Whether it can is the server's say, not the URL's: it has
+// to let a page read its answer (CORS). The typing-time check asks it, so a
+// refusal is known here, where the other side of the toggle is one click away,
+// rather than at the first click on the row.
 
 /** What the footer's button reads — the body renders from its own state and
  *  writes here, being mounted outside the shell that owns the button.
@@ -36,30 +44,45 @@ interface Draft { url: string; mode: LinkMode; name: string }
  *  no longer has one to show. Null when adding, or editing an external link. */
 interface KnownAuto { url: string; title: string }
 
-/** oEmbed for one URL, shared by the check made while typing and by Save — so
- *  a Save pressed before the answer is in waits for that request rather than
- *  sending its own. See showLinkModal for what it keeps. */
-type Lookup = (url: string) => Promise<EmbedMeta | null>;
+/** The entry being edited, as it was saved. A URL that has not moved from it,
+ *  on the side it was saved on, is not asked about again: it passed once, and
+ *  asking would make a rename impossible offline (see buildEntry). */
+interface Saved { url: string; mode: LinkMode }
 
-/** What the typing-time check knows about one URL — the one in the box, or
- *  a moment ago the one in the box, which is why it carries it. */
+/** The check for one URL on one side of the toggle — oEmbed or the file probe
+ *  in-app, "does it lead anywhere" for a tab — shared by the check made while
+ *  typing and by Save, so a Save pressed before the answer is in waits for
+ *  that request rather than sending its own. See showLinkModal for what it
+ *  keeps. */
+type Lookup = (url: string, mode: LinkMode) => Promise<LinkCheck>;
+
+/** What the typing-time check knows about one URL on one side — the ones in
+ *  the dialog, or a moment ago the ones in the dialog, which is why it carries
+ *  them: a verdict for the tab side says nothing about the in-app one. */
 type Check =
-  | { url: string; state: 'pending' }
-  | { url: string; state: 'ok'; title: string }
-  | { url: string; state: 'bad' };
+  | { url: string; mode: LinkMode; state: 'pending' }
+  | { url: string; mode: LinkMode; state: 'ok'; title: string }
+  | { url: string; mode: LinkMode; state: 'bad'; message: string };
 
 /** Long enough that typing a URL by hand is one request, short enough that a
  *  paste reads as answered at once. */
 const CHECK_DELAY_MS = 400;
+
+/** The in-app side's list, in the order the hint reads. Brand names as they
+ *  write themselves, in every language; the last entry is ours to translate. */
+const SUPPORTED: ReadonlyArray<readonly [EmbedPlatform | 'file', string | null]> = [
+  ['youtube', 'YouTube'], ['spotify', 'Spotify'], ['deezer', 'Deezer'], ['soundcloud', 'SoundCloud'], ['file', null],
+];
 
 const MODES: ReadonlyArray<readonly [LinkMode, string]> = [
   ['embed', 'embed.mode.embed'],
   ['link',  'embed.mode.link'],
 ];
 
-function LinkBody({ draft, known, lookup, disabled, busy, error, onSubmit }: {
+function LinkBody({ draft, known, saved, lookup, disabled, busy, error, onSubmit }: {
   draft: Draft;
   known: KnownAuto | null;
+  saved: Saved | null;
   lookup: Lookup;
   disabled: Signal<boolean>;
   busy: Signal<boolean>;
@@ -70,9 +93,6 @@ function LinkBody({ draft, known, lookup, disabled, busy, error, onSubmit }: {
   const [mode, setMode] = useState<LinkMode>(draft.mode);
   const [name, setName] = useState(draft.name);
   const [check, setCheck] = useState<Check | null>(null);
-  /** The URL once typing has paused on it — what an external link's error
-   *  waits for, so that "h", "ht", "htt" are not each called malformed. */
-  const [settled, setSettled] = useState('');
   const urlRef = useRef<HTMLInputElement>(null);
 
   // Deferred focus through focusIfDesktop for both of its properties: no
@@ -81,57 +101,66 @@ function LinkBody({ draft, known, lookup, disabled, busy, error, onSubmit }: {
   // element in no document. Same reasoning as the paste dialog's box.
   useLayoutEffect(() => { if (urlRef.current) focusIfDesktop(urlRef.current); }, []);
 
-  // An empty box is the one state where the embed option stands without a
-  // platform behind it: nothing is known yet, so nothing is taken away.
-  const canEmbed = url.trim() === '' || detectPlatform(url) !== null;
-
-  // The link is tried as it is typed, not only on Save: the platform's name
-  // turning up under the box is the confirmation that the link is good, and a
-  // bad one is said while it is still in front of the user. The saved entry's
-  // own URL is never asked about — what the platform said is already stored,
-  // and it is what Save will keep (see buildEntry).
+  // The link is tried as it is typed, not only on Save, and on both sides of
+  // the toggle: the platform's name turning up under the box is the
+  // confirmation that the link is good, and a bad one is said while it is
+  // still in front of the user. The saved entry's own URL is never asked about
+  // — what was learnt is already stored, and it is what Save will keep.
   const trimmed = url.trim();
-  const isKnown = known !== null && trimmed === known.url;
+  const unchanged = saved !== null && trimmed === saved.url && mode === saved.mode;
+  /** What the dialog shows NOW, for an answer to tell whether it still
+   *  concerns anything on screen — one for a URL since replaced, or for the
+   *  side just left, is dropped. */
+  const shown = useRef({ url: trimmed, mode });
+  shown.current = { url: trimmed, mode };
   useEffect(() => {
-    if (trimmed === '') { setSettled(''); return; }
-    const asks = mode === 'embed' && !isKnown;
+    if (trimmed === '' || unchanged) return;
     // "Checking…" from the first keystroke rather than after the pause, so
-    // the line never shows the previous URL's verdict under the new one.
-    if (asks) setCheck(c => (c?.url === trimmed && c.state === 'ok' ? c : { url: trimmed, state: 'pending' }));
+    // the line never shows the previous URL's verdict under the new one — but
+    // not for what is not a URL yet: "h", "ht"… get their verdict after the
+    // pause, rather than a wait for a request that will never be sent.
+    if (safeExternalUrl(trimmed)) {
+      setCheck(c => (c?.url === trimmed && c.mode === mode && c.state === 'ok' ? c : { url: trimmed, mode, state: 'pending' }));
+    }
     const timer = setTimeout(() => {
-      setSettled(trimmed);
-      if (!asks) return;
-      void lookup(trimmed).then((meta) => {
-        // An answer for a URL since replaced is dropped: the check in state
-        // is always about the box's content, or about nothing.
-        setCheck(c => (c?.url !== trimmed ? c
-          : meta ? { url: trimmed, state: 'ok', title: meta.title }
-          : { url: trimmed, state: 'bad' }));
+      void lookup(trimmed, mode).then((answer) => {
+        if (shown.current.url !== trimmed || shown.current.mode !== mode) return;
+        setCheck(answer.ok ? { url: trimmed, mode, state: 'ok', title: answer.title }
+          : { url: trimmed, mode, state: 'bad', message: refusalMessage(answer.refusal) });
       });
     }, CHECK_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [trimmed, mode, isKnown, lookup]);
+  }, [trimmed, mode, unchanged, lookup]);
 
-  const current = check?.url === trimmed ? check : null;
+  const current = check?.url === trimmed && check.mode === mode && !unchanged ? check : null;
+  // Which of the in-app side's kinds this URL is, once that is known: a check
+  // that passed, or the saved embed itself, which passed when it was added.
+  const supported: EmbedPlatform | 'file' | null =
+    mode === 'embed' && trimmed !== '' && (unchanged || current?.state === 'ok')
+      ? detectPlatform(trimmed) ?? 'file'
+      : null;
 
   // Empty rather than unknown when there is none: oEmbed can answer without a
-  // title, and an empty name is no better a placeholder than none.
+  // title, and an empty name is no better a placeholder than none. Only an
+  // in-app check has one — a tab's learns nothing but "it leads somewhere".
   const autoFor = (u: string) => {
     const k = u.trim();
     if (known && k === known.url) return known.title;
-    return check?.url === k && check.state === 'ok' ? check.title : '';
+    return check?.url === k && check.mode === 'embed' && check.state === 'ok' ? check.title : '';
   };
   const auto = autoFor(url);
 
   const apply = (patch: Partial<Draft>) => {
     const nextUrl  = patch.url  ?? draft.url;
     let nextName   = patch.name ?? draft.name;
-    // A URL no platform claims can only be an external link, so the toggle
-    // shows that choice already made rather than sitting on one that Add would
-    // then refuse. Recomputed from the URL every time, so deleting a YouTube
-    // link and pasting a blog post moves the toggle across by itself.
-    const embeddable = nextUrl.trim() === '' || detectPlatform(nextUrl) !== null;
-    const nextMode: LinkMode = embeddable ? (patch.mode ?? draft.mode) : 'link';
+    // The toggle moves under the user's hand and nothing else. Until
+    // 2026-09-29 a URL no platform claimed pushed it to the external side by
+    // itself, which was right while only four platforms could play in the
+    // app; with files there, any URL may belong on either side, and a toggle
+    // jumping away from what was chosen — in answer to a refusal, or to a
+    // guess from the URL's shape — read as the dialog arguing back (user's
+    // call). A refusal is said in red under the side it concerns instead.
+    const nextMode: LinkMode = patch.mode ?? draft.mode;
 
     // The box means something else on each side of the toggle — optional over
     // an embed, the whole label of an external link — so crossing it carries
@@ -177,30 +206,18 @@ function LinkBody({ draft, known, lookup, disabled, busy, error, onSubmit }: {
       {/* The session library's segmented control, to the class: a background
           pill holding the two choices, rather than two loose buttons. */}
       <div class="flex gap-1 p-1 bg-bg rounded-lg">
-        {MODES.map(([id, key]) => {
-          const off = id === 'embed' && !canEmbed;
-          return (
-            <button
-              key={id}
-              type="button"
-              disabled={off}
-              title={off ? t('embed.mode.hint') : undefined}
-              class={`flex-1 px-3 py-1 text-xs font-medium rounded transition-colors ${
-                off ? 'text-dim opacity-50 cursor-not-allowed'
-                  : mode === id ? 'bg-accent text-white cursor-pointer'
-                  : 'text-muted hover:text-primary hover:bg-elevated cursor-pointer'}`}
-              onClick={() => apply({ mode: id })}
-            >
-              {t(key)}
-            </button>
-          );
-        })}
+        {MODES.map(([id, key]) => (
+          <button
+            key={id}
+            type="button"
+            class={`flex-1 px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+              mode === id ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-elevated'}`}
+            onClick={() => apply({ mode: id })}
+          >
+            {t(key)}
+          </button>
+        ))}
       </div>
-
-      {/* Said out loud rather than left to a disabled button nobody hovers:
-          the reason the choice is gone is a property of the URL just pasted,
-          and it is not guessable from the greyed-out half alone. */}
-      {!canEmbed && <p class="text-[11px] text-dim leading-relaxed">{t('embed.mode.hint')}</p>}
 
       <div>
         <label class="label">{t('embed.name')}</label>
@@ -215,19 +232,35 @@ function LinkBody({ draft, known, lookup, disabled, busy, error, onSubmit }: {
           onInput={(e) => apply({ name: (e.target as HTMLInputElement).value })}
           onKeyDown={onKeyDown}
         />
+        {/* What the in-app side takes, and only there: a new tab opens
+            anything, and has nothing to list. The item the URL turned out to
+            be lights up once it is confirmed — the list doubles as the
+            verdict, and says WHICH of them it is. */}
+        {mode === 'embed' && (
+          <p class="mt-1 text-[11px] text-dim leading-relaxed">
+            {t('embed.mode.hintLabel')}{' '}
+            {SUPPORTED.map(([id, label], i) => (
+              <span key={id}>
+                {i > 0 && ', '}
+                <span class={supported === id ? 'text-success font-medium' : undefined}>
+                  {label ?? t('embed.mode.hintFiles')}
+                </span>
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
-      {/* The oEmbed round trip, which is the only thing here that takes time.
-          Its own line rather than the error's — it used to be written into it,
-          and "Checking…" came up in the red the box is otherwise only ever red
-          for. Save's own error first, being the newest thing said; then the
-          typing-time verdict on the URL in the box. */}
-      {busy.value || (mode === 'embed' && current?.state === 'pending')
+      {/* The one line that takes time — oEmbed, the file probe, or "does it
+          lead anywhere" — and its verdict. Its own line rather than the
+          error's — it used to be written into it, and "Checking…" came up in
+          the red the box is otherwise only ever red for. Save's own error
+          first, being the newest thing said; then the typing-time verdict on
+          what is in the dialog. */}
+      {busy.value || current?.state === 'pending'
         ? <p class="text-xs text-dim">{t('embed.checking')}</p>
         : error.value !== '' ? <p class="text-xs text-danger">{error.value}</p>
-        : mode === 'embed' && current?.state === 'bad' ? <p class="text-xs text-danger">{t('embed.error')}</p>
-        : mode === 'link' && trimmed !== '' && settled === trimmed && !safeExternalUrl(trimmed)
-          && <p class="text-xs text-danger">{t('embed.badUrl')}</p>}
+        : current?.state === 'bad' && <p class="text-xs text-danger">{current.message}</p>}
     </div>
   );
 }
@@ -250,21 +283,27 @@ async function buildEntry(draft: Draft, base: EmbedEntry | undefined, lookup: Lo
   const id = base?.id ?? generateId();
   const name = draft.name.trim();
 
+  if (!safeExternalUrl(url)) { error.value = t('embed.badUrl'); return null; }
+  const unchanged = base !== undefined && base.url === url && linkMode(base) === draft.mode;
+
   if (draft.mode === 'link') {
-    if (!safeExternalUrl(url)) { error.value = t('embed.badUrl'); return null; }
+    if (!unchanged) {
+      const answer = await lookup(url, 'link');
+      if (!answer.ok) { error.value = refusalMessage(answer.refusal); return null; }
+    }
     return { id, url, title: name, mode: 'link' };
   }
 
   // `title` holds the label whatever it came from, so that a device on an
   // older bundle, which reads nothing else, still shows the user's name.
-  if (base && linkMode(base) === 'embed' && base.url === url && base.embedUrl) {
+  if (unchanged && base.embedUrl) {
     const autoTitle = embedAutoTitle(base) ?? '';
     return { id, url, title: name || autoTitle, autoTitle, embedUrl: base.embedUrl, mode: 'embed' };
   }
 
-  const meta = await lookup(url);
-  if (!meta) { error.value = t('embed.error'); return null; }
-  return { id, url, title: name || meta.title, autoTitle: meta.title, embedUrl: meta.embedUrl, mode: 'embed' };
+  const answer = await lookup(url, 'embed');
+  if (!answer.ok) { error.value = refusalMessage(answer.refusal); return null; }
+  return { id, url, title: name || answer.title, autoTitle: answer.title, embedUrl: answer.embedUrl, mode: 'embed' };
 }
 
 function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | undefined, onDone: (entry: EmbedEntry) => void): void {
@@ -284,16 +323,19 @@ function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | u
   const busy = signal(false);
   const error = signal('');
 
-  // One request per URL for the dialog's life, answers kept — going back to a
-  // URL already tried, or pressing Save on the one just checked, costs
-  // nothing. Failures are not kept: most are the network, and Save is then
-  // the retry, which a cached "no" would turn into the same refusal forever.
-  const lookups = new Map<string, Promise<EmbedMeta | null>>();
-  const lookup: Lookup = (url) => {
-    let answer = lookups.get(url);
+  // One request per URL and side for the dialog's life, answers kept — going
+  // back to a URL already tried, or pressing Save on the one just checked,
+  // costs nothing. Failures are not kept: most are the network, and Save is
+  // then the retry, which a cached "no" would turn into the same refusal
+  // forever.
+  const lookups = new Map<string, Promise<LinkCheck>>();
+  const lookup: Lookup = (url, mode) => {
+    const key = mode + ' ' + url;
+    let answer = lookups.get(key);
     if (!answer) {
-      answer = resolveEmbed(url).then((meta) => { if (!meta) lookups.delete(url); return meta; });
-      lookups.set(url, answer);
+      answer = (mode === 'embed' ? checkEmbed(url) : checkLink(url))
+        .then((check) => { if (!check.ok) lookups.delete(key); return check; });
+      lookups.set(key, answer);
     }
     return answer;
   };
@@ -313,7 +355,7 @@ function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | u
   };
 
   const { el, cleanup } = renderModalBody(
-    <LinkBody draft={draft} known={known} lookup={lookup} disabled={disabled} busy={busy} error={error} onSubmit={() => { void commit(); }} />,
+    <LinkBody draft={draft} known={known} saved={base ? { url: base.url, mode: linkMode(base) } : null} lookup={lookup} disabled={disabled} busy={busy} error={error} onSubmit={() => { void commit(); }} />,
   );
   leave = () => { closeModal(); cleanup(); };
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, FileAttachment, FileEntry, EmbedEntry, Card, CardRef, ResolvableFile } from '../types';
-import { generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance, downloadBlob, base64ToBlob } from '../utils';
+import { generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance, downloadBlob, base64ToBlob, formatBytes } from '../utils';
 import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
 import { alertModal } from './modal';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon } from './icons';
@@ -11,7 +11,8 @@ import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
 import { showAddFileModal } from './addFileModal';
 import { showAddLinkModal, showEditLinkModal } from './addLinkModal';
-import { detectPlatform, PLATFORM_ICONS, linkMode, safeExternalUrl } from '../services/embedService';
+import { detectPlatform, PLATFORM_ICONS, linkMode, safeExternalUrl, isFileEmbed } from '../services/embedService';
+import { fetchRemoteFile, remoteDisplayName, refusalMessage, typeFromUrl, RemoteFileError } from '../services/remoteFile';
 import { resolveCardRef } from '../services/cardRefService';
 import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder, isAbcFile } from '../services/abcService';
 import { isTuneset, hasTunesetScore, CARD_TYPE_TUNE } from '../services/cardTypeService';
@@ -77,6 +78,79 @@ function showFetchingModal(name: string): void {
   // same — the download carries on, and trapping someone behind a progress
   // message they cannot cancel is worse than letting them walk away.
   showModal(t('attachment.fetching.title'), body, []);
+}
+
+/** Opens an in-app link that is a plain file (remoteFile.ts) in the viewer an
+ *  attached one would get — read-only, since none of it is stored here: no
+ *  save, no rename, no favourite version.
+ *
+ *  Waits like withResolvedEntry, with two differences. The waiting dialog
+ *  shows how much has come down, a file on someone's server being anything
+ *  from a page of ABC to an hour of audio. And dismissing it CANCELS: an
+ *  attachment coming down from Drive is worth finishing, since it lands on the
+ *  device, whereas this one would only open a viewer nobody is waiting for. */
+function openRemoteFile(entry: EmbedEntry): void {
+  const ctrl = new AbortController();
+  let shown = false;
+  let walkedAway = false;
+
+  const body = document.createElement('div');
+  body.className = 'space-y-2';
+  const said = document.createElement('p');
+  said.className = 'text-sm text-muted leading-relaxed';
+  const name = remoteDisplayName(entry.title, entry.url);
+  let host = entry.url;
+  try { host = new URL(entry.url).host; } catch { /* the URL is what there is */ }
+  said.textContent = t('embed.file.fetching', { name, host });
+  const progress = document.createElement('p');
+  progress.className = 'text-xs text-dim font-mono';
+  body.append(said, progress);
+
+  const patience = setTimeout(() => {
+    shown = true;
+    showModal(t('embed.file.fetchingTitle'), body, [], {
+      onDismiss: () => { walkedAway = true; ctrl.abort(); },
+    });
+  }, PATIENCE_MS);
+  // closeModal only pops, it does not run onDismiss — so closing it here on
+  // success is not mistaken for the user walking away.
+  const stop = () => { clearTimeout(patience); if (shown && !walkedAway) closeModal(); };
+
+  fetchRemoteFile(entry.url, name, {
+    signal: ctrl.signal,
+    onProgress: (received, total) => {
+      progress.textContent = total ? `${formatBytes(received)} / ${formatBytes(total)}` : formatBytes(received);
+    },
+  }).then((file) => {
+    stop();
+    if (!walkedAway) showPreviewModal(file);
+  }).catch((e: unknown) => {
+    stop();
+    if (walkedAway) return;
+    if (!(e instanceof RemoteFileError)) console.warn('[links] could not open ' + entry.url, e);
+    showRemoteFailure(entry, e instanceof RemoteFileError ? refusalMessage(e.refusal) : t('embed.error'));
+  });
+}
+
+/** Why a file link did not open, with the way out that always exists: the
+ *  file itself in a tab. A button rather than opening the tab by itself — the
+ *  failure comes back after an await, past the click that would have let a
+ *  popup through, and a tab appearing on its own seconds later explains
+ *  nothing. Rare by construction: the link dialog refuses a file its server
+ *  will not let Cadence read, so this is a server that changed its mind, or
+ *  is not there right now. */
+function showRemoteFailure(entry: EmbedEntry, message: string): void {
+  const href = safeExternalUrl(entry.url);
+  const body = document.createElement('p');
+  body.className = 'text-sm text-muted leading-relaxed';
+  body.textContent = message;
+  showModal(t('embed.file.failedTitle'), body, [
+    { label: t('common.close'), onClick: closeModal },
+    ...(href ? [{
+      label: t('embed.open'), primary: true,
+      onClick: () => { window.open(href, '_blank', 'noopener,noreferrer'); closeModal(); },
+    }] : []),
+  ]);
 }
 
 function mimeIcon(entry: FileEntry): string {
@@ -321,14 +395,22 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable }: {
 }) {
   const mode = linkMode(entry);
   const platform = detectPlatform(entry.url);
+  const file = isFileEmbed(entry);
   // An external link is marked by where it goes, not by who hosts it — the
   // arrow is the same one the app uses for every other departure, and a
-  // YouTube URL deliberately kept external must not look like an embed.
-  const icon = mode === 'link' ? '↗' : platform ? PLATFORM_ICONS[platform] : '⛓';
-  // A safe href only for an external link — an embed never becomes one, and a
-  // scheme the browser would run as script never becomes anything (see
-  // safeExternalUrl). An imported entry is the only way null gets here.
-  const href = mode === 'link' ? safeExternalUrl(entry.url) : null;
+  // YouTube URL deliberately kept external must not look like an embed. A
+  // file takes the icon an attached file of its type would, guessed from the
+  // URL since nothing of it is stored.
+  const icon = mode === 'link' ? '↗'
+    : platform ? PLATFORM_ICONS[platform]
+    : mimeIcon({ name: '', data: '', mimeType: typeFromUrl(entry.url) });
+  // A safe href only for an external link or a file — a platform's embed never
+  // becomes one, and a scheme the browser would run as script never becomes
+  // anything (see safeExternalUrl). An imported entry is the only way null
+  // gets here. A file's is the way out to the raw file: to download it, or
+  // when its server has stopped letting Cadence read it.
+  const href = mode === 'link' || file ? safeExternalUrl(entry.url) : null;
+  const play = () => (file ? openRemoteFile(entry) : showEmbedModal(entry));
 
   let label = entry.title;
   if (!label) {
@@ -355,17 +437,16 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable }: {
           <span class={`${labelClass} italic`} title={t('embed.badUrl')}>{label}</span>
         )
       ) : (
-        <span class={`${labelClass} cursor-pointer`} title={entry.url} onClick={() => showEmbedModal(entry)}>{label}</span>
+        <span class={`${labelClass} cursor-pointer`} title={entry.url} onClick={play}>{label}</span>
       )}
 
-      {mode === 'link' ? (
-        href && (
-          <a href={href} target="_blank" rel="noopener noreferrer" class={actionClass} title={t('embed.open')}>
-            <ExternalLinkIcon size={11} />
-          </a>
-        )
-      ) : (
-        <button class={`${actionClass} text-xs`} title={t('embed.play')} onClick={() => showEmbedModal(entry)}>▶</button>
+      {mode === 'embed' && (
+        <button class={`${actionClass} text-xs`} title={t('embed.play')} onClick={play}>▶</button>
+      )}
+      {href && (
+        <a href={href} target="_blank" rel="noopener noreferrer" class={actionClass} title={t('embed.open')}>
+          <ExternalLinkIcon size={11} />
+        </a>
       )}
 
       {editable && onEdit && (
