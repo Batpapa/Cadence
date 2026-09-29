@@ -1,13 +1,7 @@
 import type { EmbedEntry, LinkMode } from '../types';
+import { probeRemoteFile, checkLinkTarget, statusRefusal, RemoteFileError, type RemoteRefusal } from './remoteFile';
 
 export type EmbedPlatform = 'youtube' | 'spotify' | 'deezer' | 'soundcloud';
-
-export interface EmbedMeta {
-  platform: EmbedPlatform;
-  embedUrl: string;
-  title: string;
-  icon: string;
-}
 
 export const PLATFORM_ICONS: Record<EmbedPlatform, string> = {
   youtube:    '▶',
@@ -40,6 +34,14 @@ export function linkMode(entry: EmbedEntry): LinkMode {
 export function embedAutoTitle(entry: EmbedEntry): string | undefined {
   if (linkMode(entry) !== 'embed') return undefined;
   return entry.autoTitle ?? entry.title;
+}
+
+/** Whether an embed is a FILE, opened by Cadence's own viewers (remoteFile.ts),
+ *  rather than one of the four platforms' iframes. Told by the URL and never by
+ *  `embedUrl`: a file's is its own URL, stored so that an older bundle, which
+ *  knows only iframes, still shows it in one (see EmbedEntry). */
+export function isFileEmbed(entry: EmbedEntry): boolean {
+  return linkMode(entry) === 'embed' && detectPlatform(entry.url) === null;
 }
 
 /** `url` if it is safe to put in an `href`, else null.
@@ -81,26 +83,54 @@ export const IFRAME_DIMS: Record<EmbedPlatform, { width: string; height: string 
 
 // ── oEmbed fetch ──────────────────────────────────────────────────────────────
 
-async function fetchOEmbed(platform: EmbedPlatform, url: string): Promise<{ title: string; embedUrl: string } | null> {
+/** The platform's own answer about a URL, or why there is none, in the same
+ *  words as a file's refusal: a video that does not exist is `nowhere`, a
+ *  private or non-embeddable one `forbidden` (YouTube answers 401), and a
+ *  platform page that is no playable item — a profile, a search — comes back
+ *  without an iframe, which is `unsupported`. */
+async function fetchOEmbed(platform: EmbedPlatform, url: string): Promise<{ title: string; embedUrl: string } | RemoteRefusal> {
   try {
     const endpoint = OEMBED_ENDPOINTS[platform];
     const res = await fetch(`${endpoint}?format=json&url=${encodeURIComponent(url)}`);
-    if (!res.ok) return null;
+    if (!res.ok) return statusRefusal(res.status);
     const data = await res.json() as { title?: string; html?: string; thumbnail_url?: string };
     const title = data.title ?? '';
     const match = data.html?.match(/src="([^"]+)"/);
     const embedUrl = match?.[1] ?? null;
-    if (!embedUrl) return null;
+    if (!embedUrl) return { why: 'unsupported' };
     return { title, embedUrl };
-  } catch { return null; }
+  } catch { return { why: 'nowhere' }; }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function resolveEmbed(url: string): Promise<EmbedMeta | null> {
+/** What the link dialog learns about a URL, on either side of its toggle. An
+ *  external link has no title to learn and no iframe, hence the empty ones. */
+export type LinkCheck =
+  | { ok: true; title: string; embedUrl: string }
+  | { ok: false; refusal: RemoteRefusal };
+
+/** Whether `url` plays in the app, and under what name — oEmbed for the four
+ *  platforms, a probe of the file itself for anything else. A file's
+ *  `embedUrl` is its own URL: nothing else would show it in an older bundle's
+ *  iframe, which is the only thing such a bundle does with an embed. */
+export async function checkEmbed(url: string): Promise<LinkCheck> {
+  if (!safeExternalUrl(url)) return { ok: false, refusal: { why: 'scheme' } };
   const platform = detectPlatform(url);
-  if (!platform) return null;
-  const result = await fetchOEmbed(platform, url);
-  if (!result) return null;
-  return { platform, ...result, icon: PLATFORM_ICONS[platform] };
+  if (platform) {
+    const answer = await fetchOEmbed(platform, url);
+    return 'why' in answer ? { ok: false, refusal: answer } : { ok: true, ...answer };
+  }
+  try {
+    const head = await probeRemoteFile(url);
+    return { ok: true, title: head.name, embedUrl: url };
+  } catch (e) {
+    return { ok: false, refusal: e instanceof RemoteFileError ? e.refusal : { why: 'nowhere' } };
+  }
+}
+
+/** Whether an external link leads anywhere — the one thing a new tab needs. */
+export async function checkLink(url: string): Promise<LinkCheck> {
+  const refusal = await checkLinkTarget(url);
+  return refusal ? { ok: false, refusal } : { ok: true, title: '', embedUrl: '' };
 }
