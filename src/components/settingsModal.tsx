@@ -23,6 +23,7 @@ import { askIncompleteExport } from './incompleteExportModal';
 import { findDriveOrphans, trashDriveOrphans, driveStorageUsage, OrphanScanUnavailable, type DriveOrphan } from '../services/driveOrphans';
 import { listSnapshots, getSnapshotState, clearSnapshotsForUser, deleteSnapshot, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
+import { APP_BUILD, commitUrl } from '../services/updateService';
 import { isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
@@ -1385,11 +1386,26 @@ function AboutLine({ textKey, href }: { textKey: string; href?: string }) {
   );
 }
 
+/** The commit links to its page on GitHub: the one thing someone reporting a
+ *  bug can send that names the exact code they ran. */
+function VersionLine() {
+  const url = commitUrl();
+  const commit = APP_BUILD.commit + (APP_BUILD.dirty ? '-dev' : '');
+  return (
+    <p class="text-xs text-muted tabular-nums">
+      {t('settings.version', { version: APP_BUILD.version })}
+      {' · '}
+      {url ? <a href={url} target="_blank" rel="noopener" class="text-accent hover:underline">{commit}</a> : commit}
+    </p>
+  );
+}
+
 function AboutSection() {
   return (
     <>
       <div class="space-y-1.5">
         <AboutLine textKey="settings.aboutLine1" />
+        <VersionLine />
         <AboutLine textKey="settings.aboutLine2" />
         <AboutLine textKey="settings.aboutLine3" href="https://github.com/Batpapa/Cadence" />
       </div>

@@ -670,6 +670,15 @@ export function InstallIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+export function UpdateIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 12a8 8 0 1 1-2.34-5.66"/>
+      <polyline points="20 4 20 8.5 15.5 8.5"/>
+    </svg>
+  );
+}
+
 export function GithubIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

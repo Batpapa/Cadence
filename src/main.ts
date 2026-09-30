@@ -7,6 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './servi
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage } from './services/i18nService';
 import { initPWA } from './services/pwaService';
+import { initUpdateCheck } from './services/updateService';
 import { ensurePersistentStorage } from './services/storageService';
 import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, localUsersOnSameDrive, adoptDriveConnection, type ConnectResult } from './services/driveService';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
@@ -27,6 +28,10 @@ import type { User } from './types';
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
 }
+
+// Top-level too: the welcome screen never reaches finishBoot(), and a resumed
+// tablet can sit on it as easily as on the app.
+initUpdateCheck();
 
 // Top-level, next to the service worker it depends on — NOT from finishBoot().
 // `beforeinstallprompt` fires once, shortly after the worker takes control, and

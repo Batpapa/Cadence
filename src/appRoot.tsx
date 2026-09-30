@@ -9,8 +9,9 @@ import { ModalHost } from './components/modal';
 import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
-import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon, CloudDownIcon } from './components/icons';
+import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon, CloudDownIcon, UpdateIcon } from './components/icons';
 import { t } from './services/i18nService';
+import { updateReady, applyUpdate, versionLabel } from './services/updateService';
 import { initDriveClient } from './services/driveService';
 import type { User } from './types';
 import { FolderView } from './views/folder';
@@ -482,6 +483,24 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
               <GithubIcon size={12} />
               <span>Batpapa</span>
             </a>
+
+            {/* Quiet, like the signature: for the screenshot someone sends
+                when asking for help. When a newer build is ready it becomes the
+                way to get it — nothing is open on this screen for a reload to
+                lose, and there is no header here to carry the pill. */}
+            <div class="flex items-center gap-2 text-[10px] text-dim tabular-nums">
+              <span>{versionLabel()}</span>
+              {updateReady.value && (
+                <button
+                  class="flex items-center gap-1 text-accent hover:underline cursor-pointer"
+                  title={t('update.title', { version: versionLabel(updateReady.value) })}
+                  onClick={applyUpdate}
+                >
+                  <UpdateIcon size={11} />
+                  {t('update.button')}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
