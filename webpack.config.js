@@ -1,6 +1,7 @@
 const path = require('path');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const CopyPlugin = require('copy-webpack-plugin');
@@ -127,8 +128,60 @@ class TsPrunePlugin {
   }
 }
 
+/**
+ * What this build is, shown to people (Settings → About, the welcome screen)
+ * and compared by the running app against the deployed version.json.
+ *
+ * `version` is the date of the last commit, not of the build: two builds of the
+ * same code say the same thing, and "the version from Monday" is something a
+ * user can repeat back. `commit` is what support actually needs — it names the
+ * exact code. There is no hand-bumped number: package.json said 1.0.0 across
+ * 439 commits, and a number someone has to remember to change is a number that
+ * lies.
+ *
+ * `build` is the only field the update check compares, and it is unique per
+ * build on purpose. The comparison asks "is the deployed app a different one
+ * from this one", never "is it newer" — so it needs no ordering, and a redeploy
+ * of the same commit costs at most one needless reload offer.
+ */
+function buildInfo() {
+  const git = (...args) => execFileSync('git', args, { cwd: __dirname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  let info;
+  try {
+    info = {
+      version: git('log', '-1', '--format=%cs').replace(/-/g, '.'),
+      commit:  git('rev-parse', '--short=7', 'HEAD'),
+      dirty:   git('status', '--porcelain') !== '',
+    };
+  } catch {
+    // No git (a source zip): still a valid build, just an anonymous one.
+    info = { version: '0000.00.00', commit: 'unknown', dirty: true };
+  }
+  return { ...info, build: `${info.commit}-${Date.now().toString(36)}` };
+}
+
+/** Emits version.json: this build's identity plus the files it boots from, so
+ *  a running older app can fetch them BEFORE offering to reload (see
+ *  services/updateService.ts). At the REPORT stage, after RealContentHashPlugin
+ *  has settled the final contenthashed names. */
+class VersionPlugin {
+  constructor(info) { this.info = info; }
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap('VersionPlugin', (compilation) => {
+      compilation.hooks.processAssets.tap(
+        { name: 'VersionPlugin', stage: webpack.Compilation.PROCESS_ASSETS_STAGE_REPORT },
+        () => {
+          const assets = [...compilation.entrypoints.get('main').getFiles()].filter(f => /\.(js|css)$/.test(f));
+          compilation.emitAsset('version.json', new webpack.sources.RawSource(JSON.stringify({ ...this.info, assets })));
+        },
+      );
+    });
+  }
+}
+
 module.exports = (env, argv) => {
   const isDev = argv.mode === 'development';
+  const info = buildInfo();
 
   return {
     name: 'cadence',
@@ -167,6 +220,8 @@ module.exports = (env, argv) => {
     plugins: [
       new HtmlWebpackPlugin({ template: TEMPLATE }),
       new CspPlugin(),
+      new webpack.DefinePlugin({ __APP_VERSION__: JSON.stringify(info) }),
+      new VersionPlugin(info),
       ...(!isDev ? [new TsPrunePlugin()] : []),
       ...(!isDev ? [new MiniCssExtractPlugin({ filename: 'styles.[contenthash].css' })] : []),
       ...(!isDev ? [new CopyPlugin({

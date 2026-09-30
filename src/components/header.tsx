@@ -8,6 +8,7 @@ import { showSettingsModal, showProfileModal } from './settingsModal';
 import { showModal, closeModal } from './modal';
 import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
 import { t } from '../services/i18nService';
+import { updateReady, applyUpdate, versionLabel } from '../services/updateService';
 import { getZoom } from '../services/zoomService';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import {
@@ -16,7 +17,7 @@ import {
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon, ModulesIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
-  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, ShareIcon, WarningTriangleIcon,
+  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, ShareIcon, WarningTriangleIcon, UpdateIcon,
 } from './icons';
 import { showShareAppModal } from './shareAppModal';
 import { showStorageModal } from './storageModal';
@@ -94,6 +95,29 @@ function InstallBtn() {
     >
       <InstallIcon size={14} />
       <span class="text-xs font-medium">{t('sidebar.install')}</span>
+    </button>
+  );
+}
+
+/** The deployed version is on this device and one click away. A pill and not a
+ *  modal: the likeliest way to meet it is a tablet resumed from sleep, in the
+ *  middle of whatever was on screen — a live session, a review — and it has to
+ *  wait for the user rather than interrupt them.
+ *
+ *  Gone while a recording or an import runs: a reload would end it. It comes
+ *  back on its own once that is over. Icon-only on a portrait phone, where the
+ *  centred profile chip leaves no room for a label. */
+function UpdateBtn({ compact }: { compact: boolean }) {
+  const next = updateReady.value;
+  if (!next || sessionRecordingSignal.value) return null;
+  return (
+    <button
+      class="tap-btn gap-1.5 px-2 bg-accent/10 text-accent hover:bg-accent/20 cursor-pointer"
+      title={t('update.title', { version: versionLabel(next) })}
+      onClick={applyUpdate}
+    >
+      <UpdateIcon size={14} />
+      {!compact && <span class="text-xs font-medium">{t('update.button')}</span>}
     </button>
   );
 }
@@ -242,6 +266,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
           <ShareIcon size={14} />
         </HeaderBtn>
         <InstallBtn />
+        <UpdateBtn compact={isPortraitPhone} />
       </div>
 
       {/* Center: ← profil → */}

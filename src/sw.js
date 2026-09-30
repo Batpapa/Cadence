@@ -6,6 +6,11 @@ const CACHE = 'cadence-v2';
 // cache-first branch below picks them up on first request instead.
 const SHELL = new URL('./', self.location).href;
 
+// What is deployed right now, read by the app's update check
+// (services/updateService.ts). Never cached, never answered from a cache: a
+// stale copy would say "you are up to date" forever.
+const VERSION_FILE = new URL('./version.json', self.location).href;
+
 self.addEventListener('install', e => {
   // Precache the shell and the assets it boots from, rather than waiting for a
   // later navigation to warm them. This is what makes the *first* visit enough:
@@ -51,11 +56,15 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(
+  e.waitUntil(Promise.all([
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
-  );
+    ),
+    // The worker before this one knew nothing of version.json and filed it
+    // under cache-first. Nothing here reads that copy, but it is a lie to
+    // leave lying around.
+    caches.open(CACHE).then(cache => cache.delete(VERSION_FILE, { ignoreSearch: true })),
+  ]));
   self.clients.claim();
 });
 
@@ -66,6 +75,9 @@ self.addEventListener('fetch', e => {
 
   // Never intercept cross-origin requests (API calls to TheSession, YouTube oEmbed, etc.)
   if (url.origin !== self.location.origin) return;
+
+  // Straight to the network, as if there were no worker.
+  if (url.href.split('?')[0] === VERSION_FILE) return;
 
   // Network-first for HTML and the manifest so updates are picked up immediately,
   // but keep a copy so there is something to boot from when the network is gone.

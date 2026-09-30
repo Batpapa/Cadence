@@ -20,6 +20,11 @@ const nodeDefinesLocalStorage = 'localStorage' in globalThis;
 // thresholds and takes ~20 minutes — a measurement, not a test. Run it on
 // demand with `npm run sweep`.
 export default defineConfig({
+  // webpack's DefinePlugin supplies this in the app; without it any test that
+  // imports a module reading the version would die on a ReferenceError.
+  define: {
+    __APP_VERSION__: JSON.stringify({ version: '0000.00.00', commit: 'test', dirty: false, build: 'test' }),
+  },
   test: {
     exclude: [...configDefaults.exclude, 'experiments/**'],
     execArgv: nodeDefinesLocalStorage ? ['--no-experimental-webstorage'] : [],
