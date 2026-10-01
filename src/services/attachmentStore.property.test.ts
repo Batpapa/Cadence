@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
-  attachmentFor, mutateWithRule, uploadPendingAttachments, applyConversion, freeUploadedAttachments,
+  attachmentFor, mutateWithRule, uploadPendingAttachments, uploadAttachment, applyConversion, freeUploadedAttachments,
   sweepLocalAttachments, purgeCondemnedFiles, condemnAttachmentFile, condemnCardAttachments,
   replaceExternalBytes, attachmentBlob, isExternal, uploadAttachmentSoon,
 } from './attachmentStore';
@@ -58,14 +58,14 @@ vi.mock('./attachmentDb', () => ({
   forgetCondemned: (driveFileId: string) => { graveyard.delete(driveFileId); return Promise.resolve(); },
 }));
 
-const drive = vi.hoisted(() => ({ connected: true, files: new Map<string, Blob>(), next: 0 }));
+const drive = vi.hoisted(() => ({ connected: true, uploadsFail: false, files: new Map<string, Blob>(), next: 0 }));
 vi.mock('./driveService', () => ({
   isDriveConnected: () => drive.connected,
   hasDriveToken: () => true,
   registerDrivePendingWork: () => {},
   companionPathId: () => (drive.connected ? Promise.resolve('folder') : Promise.reject(new Error('offline'))),
   uploadCompanionFileInto: (_folder: string, _name: string, blob: Blob) => {
-    if (!drive.connected) return Promise.reject(new Error('offline'));
+    if (!drive.connected || drive.uploadsFail) return Promise.reject(new Error('offline'));
     const id = 'drive-' + (++drive.next);
     drive.files.set(id, blob);
     return Promise.resolve(id);
@@ -97,6 +97,11 @@ const mutate = (fn: (s: AppState) => void) => {
   store.state = next;
   return Promise.resolve();
 };
+
+// The saved state another tab may have written (uploadAttachment's adoption):
+// none here, there is one tab.
+const savedByOtherTab = vi.hoisted(() => ({ state: undefined as AppState | undefined }));
+vi.mock('../db', () => ({ loadUser: () => Promise.resolve(savedByOtherTab.state) }));
 
 const snaps = vi.hoisted(() => ({ states: [] as AppState[] }));
 vi.mock('./snapshotService', () => ({ snapshotStates: () => Promise.resolve(snaps.states) }));
@@ -278,6 +283,7 @@ beforeAll(async () => {
   await import('../store');
   await import('./driveService');
   await import('./snapshotService');
+  await import('../db');
 });
 
 describe('mutateWithRule', () => {
@@ -353,6 +359,28 @@ describe('mutateWithRule', () => {
     await settle();
     expect(graveyard.size).toBe(0);
     expect(drive.files.has(ext.driveFileId!)).toBe(true);
+  });
+});
+
+describe('uploading from two tabs', () => {
+  it('adopts the Drive id another tab already saved instead of sending the bytes again', async () => {
+    freshWorld(1);
+    drive.uploadsFail = true;                       // this tab could not send it
+    const card = newCard(3000);
+    await mutateWithRule(s => { s.cards[card.id] = card; });
+    await settle();
+    const ext = onlyFile(card.id).external!;
+    expect(ext.driveFileId).toBeUndefined();
+    // Meanwhile the other tab sent it and saved the result.
+    const other = structuredClone(store.state);
+    (other.cards[card.id]!.content.attachments[0] as FileAttachment).external!.driveFileId = 'drive-from-other-tab';
+    savedByOtherTab.state = other;
+    drive.uploadsFail = false;
+    const before = drive.files.size;
+    await uploadAttachment(ext.id);
+    expect(onlyFile(card.id).external!.driveFileId).toBe('drive-from-other-tab');
+    expect(drive.files.size).toBe(before);           // nothing uploaded twice
+    savedByOtherTab.state = undefined;
   });
 });
 

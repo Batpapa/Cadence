@@ -15,11 +15,15 @@
 // patched head followed by the rest of the ORIGINAL blob, sliced — a Blob made
 // of slices of a disk-backed Blob copies nothing into memory.
 //
-// Inserting bytes into Info moves everything after it. Nothing in a
-// MediaRecorder file points at those positions — there is no SeekHead and no
-// Cues — and a file that has a SeekHead is left as it is rather than patched
-// into one whose index lies. fix-webm-duration had the same blind spot (it
-// never rewrote SeekHead either); this one refuses instead.
+// Two layouts are met in practice (measured 2026-10-01):
+//   - Chrome: no Duration at all; one is INSERTED into Info. That moves
+//     everything after it, and nothing in such a file points at those
+//     positions — no SeekHead, no Cues.
+//   - Firefox: an empty SeekHead, and a Duration of 0 already in Info; it is
+//     FILLED in place, which moves nothing.
+// A file whose SeekHead does hold positions is never shifted — it would be
+// patched into one whose index lies. fix-webm-duration had that blind spot (it
+// never rewrote SeekHead); this one refuses instead.
 
 /** Enough for the EBML header, the Segment's own header, Info and Tracks, with
  *  room to spare: a MediaRecorder Info is under a hundred bytes. */
@@ -27,6 +31,7 @@ const HEAD_BYTES = 64 * 1024;
 
 const ID_EBML = 0x1a45dfa3;
 const ID_SEGMENT = 0x18538067;
+const ID_SEEKHEAD = 0x114d9b74;
 const ID_INFO = 0x1549a966;
 const ID_TIMECODESCALE = 0x2ad7b1;
 const ID_DURATION = 0x4489;
@@ -121,9 +126,13 @@ export function patchHead(b: Uint8Array, durationMs: number): { head: Uint8Array
   const segDataStart = segSizeAt + segSize.length;
 
   // Info is the first Segment child that matters; Void and CRC-32 may precede
-  // it. Anything else first — a SeekHead above all — and this is not a layout
-  // it is safe to shift.
+  // it, and so may a SeekHead — Firefox writes an EMPTY one there (measured
+  // 2026-10-01, Firefox 155). A SeekHead that holds positions only forbids
+  // SHIFTING what follows it: filling a Duration already in place moves
+  // nothing and stays allowed. Anything else first (Tracks, a Cluster…) and
+  // this is not a layout it knows.
   let pos = segDataStart;
+  let indexed = false;
   for (;;) {
     const id = readId(b, pos);
     if (!id) return null;
@@ -132,7 +141,8 @@ export function patchHead(b: Uint8Array, durationMs: number): { head: Uint8Array
     const dataStart = pos + id.length + size.length;
     const end = dataStart + size.value;
     if (id.value === ID_VOID || id.value === ID_CRC32) { pos = end; continue; }
-    if (id.value !== ID_INFO) return null;           // SeekHead, Tracks, Cluster…
+    if (id.value === ID_SEEKHEAD) { indexed ||= size.value > 0; pos = end; continue; }
+    if (id.value !== ID_INFO) return null;           // Tracks, Cluster…
     if (end > b.length) return null;                 // Info not wholly read
 
     // Inside Info.
@@ -163,7 +173,9 @@ export function patchHead(b: Uint8Array, durationMs: number): { head: Uint8Array
       return { head, consumed: end };
     }
 
-    // Absent: Info gains an 8-byte float Duration.
+    // Absent: Info gains an 8-byte float Duration — which shifts everything
+    // after it, so not under a SeekHead that points past this point.
+    if (indexed) return null;
     const duration = new Uint8Array(11);
     duration[0] = 0x44; duration[1] = 0x89; duration[2] = 0x88;   // id, size = 8
     new DataView(duration.buffer).setFloat64(3, ticks);

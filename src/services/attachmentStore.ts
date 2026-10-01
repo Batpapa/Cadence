@@ -69,6 +69,7 @@ function storeModule(): Promise<typeof import('../store')> {
 let _drive: Promise<typeof import('./driveService')> | null = null;
 let _store: Promise<typeof import('../store')> | null = null;
 let _snapshots: Promise<typeof import('./snapshotService')> | null = null;
+let _db: Promise<typeof import('../db')> | null = null;
 function once<T>(load: () => Promise<T>, forget: () => void): Promise<T> {
   return load().catch((e: unknown) => { forget(); throw e; });
 }
@@ -612,16 +613,48 @@ export async function pendingAttachmentUploads(user: AppState): Promise<{ ids: s
  *  attachment, two identical files uploaded, the second orphaned the moment
  *  the first won the write. The set closes that window.
  *
- *  Per tab. Two tabs uploading the same new attachment at the same second
- *  would still duplicate it; that needs a Web Lock, like the one the live
- *  recording holds, and is not worth it for a window this narrow. */
+ *  The set is per tab; across tabs it is a Web Lock per file (2026-10-01). A
+ *  lock alone would not do: each tab holds its own copy of the state, so the
+ *  tab that waited still believes the file unsent once the other is done.
+ *  Under the lock the SAVED state is read too, and a Drive id another tab got
+ *  for these same bytes is adopted instead of uploading them again. */
 const _uploading = new Set<string>();
 
 export async function uploadAttachment(externalId: string, interactive = false): Promise<void> {
   if (_uploading.has(externalId)) return;
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  if (!locks) return uploadAttachmentHere(externalId, interactive);
+  // ifAvailable: another tab is sending it this very moment, so leave it be —
+  // this tab's next pass adopts the result from the saved state.
+  await locks.request('cadence-upload-' + externalId, { ifAvailable: true }, async lock => {
+    if (lock) await uploadAttachmentHere(externalId, interactive);
+  });
+}
+
+/** The Drive id another tab already recorded for these bytes, if any. */
+async function uploadedElsewhere(userId: string, externalId: string): Promise<string | undefined> {
+  try {
+    const saved = await (await (_db ??= once(() => import('../db'), () => { _db = null; }))).loadUser(userId);
+    return saved ? externalAttachments(saved).find(x => x.att.external.id === externalId)?.att.external.driveFileId : undefined;
+  } catch { return undefined; }
+}
+
+async function uploadAttachmentHere(externalId: string, interactive: boolean): Promise<void> {
+  if (_uploading.has(externalId)) return;
   const { appState, mutate } = await storeModule();
   const found = externalAttachments(appState.value).find(x => x.att.external.id === externalId);
   if (!found || found.att.external.driveFileId) return;
+  const adopted = await uploadedElsewhere(appState.value.id, externalId);
+  if (adopted) {
+    await mutate(s => {
+      for (const card of Object.values(s.cards ?? {})) {
+        for (const att of card.content?.attachments ?? []) {
+          if (att.type === 'file' && att.external?.id === externalId) att.external.driveFileId = adopted;
+        }
+      }
+    });
+    return;
+  }
   const blob = await getAttachmentBlob(externalId);
   if (!blob) return;
 
@@ -1079,6 +1112,51 @@ async function runPendingAttachmentWork(): Promise<void> {
   } catch {
     _pendingHint = true;
   }
+}
+
+/** After a conflict settled in THIS device's favour: brings back to Drive the
+ *  files that decision resurrected.
+ *
+ *  The case (measured 2026-10-01 against the real Drive): device A removes an
+ *  attachment, which condemns and deletes its Drive file; device B, still on
+ *  the older state, keeps its own side of the conflict. The attachment is back
+ *  in the library, pointing at a Drive file that no longer exists — B can open
+ *  it from its local copy, every other device reads "missing from Drive".
+ *
+ *  Only the attachments the discarded Drive state no longer had are looked at:
+ *  those are the ones another device can have deleted, and asking Drive about
+ *  every file of the library after every conflict would be a request per
+ *  attachment for nothing. One that is gone and whose bytes are HERE is sent
+ *  again under a new Drive id; one whose bytes are not here cannot be helped.
+ *  Drive unreachable: nothing is concluded, nothing is touched. */
+export async function reuploadResurrected(discarded: AppState): Promise<number> {
+  const { appState, mutate } = await storeModule();
+  const there = new Set(externalAttachments(discarded).map(x => x.att.external.id));
+  const candidates = externalAttachments(appState.value)
+    .filter(x => x.att.external.driveFileId && !there.has(x.att.external.id));
+  if (candidates.length === 0) return 0;
+  const drive = await driveModule();
+  const held = new Set(await heldAttachmentIds());
+  const resend = new Set<string>();
+  for (const { att } of candidates) {
+    let size: number | 'gone';
+    try { size = await drive.companionFileSize(att.external.driveFileId!, false); }
+    catch { return 0; }
+    if (size === 'gone' && held.has(att.external.id)) resend.add(att.external.id);
+  }
+  if (resend.size === 0) return 0;
+  await mutate(s => {
+    for (const card of Object.values(s.cards ?? {})) {
+      for (const a of card.content?.attachments ?? []) {
+        if (a.type === 'file' && a.external && resend.has(a.external.id)) delete a.external.driveFileId;
+      }
+    }
+  });
+  for (const id of resend) {
+    try { await uploadAttachment(id, false); }
+    catch (e) { _pendingHint = true; console.warn('[attachments] re-upload of ' + id + ' left in the backlog', e); }
+  }
+  return resend.size;
 }
 
 /** Sends a freshly attached file up, without ever raising a token window: this

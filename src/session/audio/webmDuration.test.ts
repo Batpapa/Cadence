@@ -110,6 +110,34 @@ describe('patchHead', () => {
     expect(patchHead(recorderFile({ beforeInfo: seekHead }), 5_000)).toBeNull();
   });
 
+  it('allows an EMPTY SeekHead before Info, and still inserts', () => {
+    const empty = bytes(0x11, 0x4d, 0x9b, 0x74, 0x80);
+    const out = patchHead(recorderFile({ beforeInfo: empty }), 2_500);
+    expect(out && durationIn(out.head)).toBe(2_500);
+  });
+
+  it('fills a zero Duration in place even under a SeekHead that holds positions — nothing moves', () => {
+    const seekHead = el([0x11, 0x4d, 0x9b, 0x74], el([0x4d, 0xbb], [...el([0x53, 0xab], [0x15, 0x49, 0xa9, 0x66]), ...el([0x53, 0xac], [0])]));
+    const info = el([0x15, 0x49, 0xa9, 0x66], [...el([0x2a, 0xd7, 0xb1], [0x0f, 0x42, 0x40]), 0x44, 0x89, 0x88, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const file = recorderFile({ beforeInfo: seekHead, info });
+    const out = patchHead(file, 4_000)!;
+    expect(out.head.length).toBe(out.consumed);
+    expect(durationIn(out.head)).toBe(4_000);
+  });
+
+  it('handles the head of a REAL Firefox 155 recording (empty SeekHead, Duration 0, 8-byte sizes)', () => {
+    // First 300 bytes of a MediaRecorder audio/webm;codecs=opus file from
+    // Firefox 155 (2026-10-01): EBML, Segment of unknown size, SeekHead of
+    // size 0, Info with a zero Duration, Tracks, the start of a Cluster.
+    const ff = Uint8Array.from(Buffer.from('1a45dfa3010000000000001f4286810142f7810142f2810442f381084282847765626d42878102428581021853806701ffffffffffffff114d9b7401000000000000001549a96601000000000000492ad7b1830f424044898800000000000000004d809851546d7578696e674170704c69625765624d2d302e302e31574199515477726974696e674170704c69625765624d2d302e302e311654ae6b0100000000000060ae0100000000000057d7810273c584d57b3d5d83810256aa8400632ea056bb8404c4b4008686415f4f50555363a2934f707573486561640101380180bb0000000000258688844f505553e1010000000000000db58840e77000000000009f81011f43b67501ffffffffffffffe78106a3100000e682000000f89ef115b1ee2be30706718519026649', 'hex'));
+    const out = patchHead(ff, 4_340)!;
+    expect(out).not.toBeNull();
+    expect(out.head.length).toBe(out.consumed);          // in place
+    expect(durationIn(out.head)).toBe(4_340);
+    const rest = (b: Uint8Array) => Array.from(b.subarray(out.consumed));
+    expect(rest(cat(out.head, ff.subarray(out.consumed)))).toEqual(rest(ff));
+  });
+
   it('steps over a Void before Info', () => {
     const out = patchHead(recorderFile({ beforeInfo: el([0xec], [0, 0, 0, 0]) }), 3_000);
     expect(out && durationIn(out.head)).toBe(3_000);
