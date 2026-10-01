@@ -936,7 +936,7 @@ function AttachmentRules() {
       .then(r => {
         if (r.failed > 0) {
           alertModal(t('settings.attachments.convert.partial.title'),
-            t('settings.attachments.convert.partial.message', { count: r.failed }));
+            t(r.full ? 'settings.attachments.convert.partial.full' : 'settings.attachments.convert.partial.message', { count: r.failed }));
         }
       })
       .finally(() => setBusy(false));

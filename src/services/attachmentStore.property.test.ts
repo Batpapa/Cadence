@@ -72,7 +72,7 @@ vi.mock('./driveService', () => ({
   },
   downloadCompanionFile: (id: string) =>
     (drive.connected ? Promise.resolve(drive.files.get(id) ?? null) : Promise.reject(new Error('offline'))),
-  deleteCompanionFile: (id: string) => {
+  trashCompanionFile: (id: string) => {
     if (!drive.connected) return Promise.resolve(false);
     drive.files.delete(id);
     return Promise.resolve(true);

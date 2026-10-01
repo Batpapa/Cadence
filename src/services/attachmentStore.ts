@@ -4,6 +4,7 @@ import {
   getAttachmentBlob, putAttachmentBlob, deleteAttachmentBlob, heldAttachmentIds,
   condemnDriveFile, condemnedFiles, forgetCondemned,
 } from './attachmentDb';
+import { isQuotaError } from './saveHealth';
 
 // ── Resolving an attachment's bytes ──────────────────────────────────────────
 // One module owns two questions, and nothing else may answer them by hand:
@@ -264,7 +265,6 @@ export async function mutateWithRule(recipe: (s: AppState) => void): Promise<voi
 
   const belongsOut = await attachmentRule(after);
   const changes: PlannedChange[] = [];
-  const uploads: FileAttachment[] = [];
   for (const [cardId, card] of Object.entries(after.cards ?? {})) {
     const atts = card.content?.attachments ?? [];
     const old = new Set((before.cards?.[cardId]?.content?.attachments ?? [])
@@ -276,8 +276,7 @@ export async function mutateWithRule(recipe: (s: AppState) => void): Promise<voi
       try {
         const built = await externaliseEntry({ name: att.name, data: att.data, mimeType: att.mimeType });
         if (!built.external) continue;
-        changes.push({ cardId, index, name: att.name, data: att.data, external: built.external });
-        uploads.push(built);
+        changes.push({ cardId, index, name: att.name, was: { data: att.data }, data: '', external: built.external, att: built });
       } catch (e) {
         // No room for the local row: it stays inline, as attachmentFor keeps it.
         console.warn('[attachments] keeping ' + att.name + ' in the blob — could not store it locally', e);
@@ -285,17 +284,18 @@ export async function mutateWithRule(recipe: (s: AppState) => void): Promise<voi
     }
   }
   if (changes.length === 0) return;
-  const filed = new Set<string>();
+  const filed: PlannedChange[] = [];
   await mutate(s => {
+    filed.length = 0;
     for (const ch of changes) {
       const att = s.cards[ch.cardId]?.content?.attachments?.[ch.index];
-      if (!att || att.type !== 'file' || att.external || att.name !== ch.name || att.data !== ch.data) continue;
-      att.data = '';
+      if (!stillTheOneRead(att, ch)) continue;
+      att.data = ch.data;
       att.external = ch.external;
-      filed.add(ch.external!.id);
+      filed.push(ch);
     }
   });
-  for (const att of uploads) if (filed.has(att.external!.id)) uploadAttachmentSoon(att);
+  for (const ch of filed) uploadAttachmentSoon(ch.att);
 }
 
 /** Why an attachment's bytes could not be produced. Three distinct situations,
@@ -744,30 +744,48 @@ export async function conversionPlan(user: AppState): Promise<ConversionPlan> {
  *  take minutes when files have to come down from Drive, and a card edited
  *  meanwhile must not have a stranger's bytes written into it. A change whose
  *  anchor no longer matches is dropped rather than applied to whatever is
- *  there now. */
+ *  there now.
+ *
+ *  And the bytes themselves (2026-10-01): position and name are not enough
+ *  against an import or a restore landing mid-walk — a refreshed score, a
+ *  backup of the same library, keep both and carry other bytes. The walk then
+ *  wrote the bytes it had read before over the ones just imported. So the
+ *  attachment must still be the one that was read: same external id (ids name
+ *  immutable bytes), or, inline, the same data. */
 interface PlannedChange {
   cardId: string;
   index: number;
   name: string;
+  /** What was there when the walk read it: its external id, or its inline data. */
+  was: { externalId: string } | { data: string };
   external?: ExternalFile;
   data: string;
+  /** For the steps that follow the write: the upload to start, or the Drive
+   *  copy to condemn — only for a change that was actually applied. */
+  att: FileAttachment;
+}
+
+function stillTheOneRead(att: Attachment | undefined, ch: PlannedChange): att is FileAttachment {
+  if (!att || att.type !== 'file' || att.name !== ch.name) return false;
+  return 'externalId' in ch.was
+    ? att.external?.id === ch.was.externalId
+    : !att.external && att.data === ch.was.data;
 }
 
 /** Applies the rule to every attachment of the current library.
  *
  *  Interactive: this runs off a button, so fetching bytes back from Drive may
  *  legitimately raise a token window. */
-export async function applyConversion(): Promise<{ out: number; back: number; failed: number }> {
+export async function applyConversion(): Promise<{ out: number; back: number; failed: number; full: boolean }> {
   const { appState, mutate } = await storeModule();
   const user = appState.value;
   const belongsOut = await attachmentRule(user);
 
   const changes: PlannedChange[] = [];
-  const uploads: FileAttachment[] = [];
-  /** Copied before the state loses the reference: once the bytes are back in
-   *  the blob, nothing remembers which Drive file they came from. */
-  const returned: FileAttachment[] = [];
   let failed = 0;
+  /** Some failure was this device running out of room — which the user can
+   *  act on, and must not be told is a file that could not be fetched. */
+  let full = false;
 
   /** Set by the first failure that condemns the rest of the pass too — see
    *  pastRecovery. Everything after it is counted as failed without being
@@ -791,17 +809,19 @@ export async function applyConversion(): Promise<{ out: number; back: number; fa
           // The bytes have to be in hand before the reference is dropped —
           // the whole point of coming back in is that the blob carries them.
           const entry = await hydratedEntry(att, true);
-          changes.push({ cardId, index, name: att.name, data: entry.data });
-          returned.push(att);
+          // `att` keeps the reference the state is about to lose: once the
+          // bytes are back in the blob, nothing remembers which Drive file
+          // they came from.
+          changes.push({ cardId, index, name: att.name, was: { externalId: att.external.id }, data: entry.data, att });
         } else {
           if (!belongsOut(inlineBytes(att))) continue;
           const built = await externaliseEntry({ name: att.name, data: att.data, mimeType: att.mimeType });
           if (!built.external) continue;
-          changes.push({ cardId, index, name: att.name, external: built.external, data: '' });
-          uploads.push(built);
+          changes.push({ cardId, index, name: att.name, was: { data: att.data }, external: built.external, data: '', att: built });
         }
       } catch (e) {
         failed++;
+        full ||= isQuotaError(e);
         console.warn('[attachments] could not convert ' + att.name, e);
         if (pastRecovery(e)) {
           doomed = true;
@@ -811,14 +831,21 @@ export async function applyConversion(): Promise<{ out: number; back: number; fa
     }
   }
 
+  const applied: PlannedChange[] = [];
   if (changes.length > 0) {
+    // A write that fails (disk full) rejects here, and nothing below runs —
+    // on purpose: what came home must not be condemned while the state on
+    // disk still points at it. Its Drive copy stays; the orphan sweep has it
+    // once the write finally lands.
     await mutate(s => {
+      applied.length = 0;   // the recipe may run more than once
       for (const ch of changes) {
         const att = s.cards[ch.cardId]?.content?.attachments?.[ch.index];
-        if (!att || att.type !== 'file' || att.name !== ch.name) continue;
+        if (!stillTheOneRead(att, ch)) continue;
         att.data = ch.data;
         if (ch.external) att.external = ch.external;
         else delete att.external;
+        applied.push(ch);
       }
     });
   }
@@ -832,13 +859,20 @@ export async function applyConversion(): Promise<{ out: number; back: number; fa
   // Safe for the same reason every other condemnation is: purgeCondemnedFiles
   // re-checks the live state before deleting, so a file that came back into
   // use in the meantime is spared.
-  for (const back of returned) void condemnAttachmentFile(back);
-  for (const att of uploads) uploadAttachmentSoon(att);
+  //
+  // Only for what was applied: a change dropped because the attachment moved
+  // on leaves nothing to condemn, and nothing to upload — its freshly written
+  // local bytes are unreferenced, and the local sweep collects them.
+  for (const ch of applied) {
+    if (ch.external) uploadAttachmentSoon(ch.att);
+    else void condemnAttachmentFile(ch.att);
+  }
 
   return {
-    out: changes.filter(c => c.external).length,
-    back: changes.filter(c => !c.external).length,
+    out: applied.filter(c => c.external).length,
+    back: applied.filter(c => !c.external).length,
     failed,
+    full,
   };
 }
 
@@ -964,10 +998,15 @@ export async function purgeCondemnedFiles(): Promise<number> {
 
   let left = 0;
   for (const row of due) {
+    // To the user's Drive trash, never deleted outright (2026-10-01). The
+    // snapshots that hold a file back above are THIS device's: another
+    // device's snapshot may still name it, and nothing here can know. Trashed,
+    // it stays readable for thirty days — the span a snapshot lives — and
+    // reuploadResurrected can bring it back.
     // Best-effort, like every companion deletion: a file that cannot be
     // removed right now stays an orphan in the user's own Drive, visible and
     // deletable by them — a far better failure than blocking anything here.
-    if (await drive.deleteCompanionFile(row.driveFileId, false)) await forgetCondemned(row.driveFileId);
+    if (await drive.trashCompanionFile(row.driveFileId, false)) await forgetCondemned(row.driveFileId);
     else left++;
   }
   return left;
@@ -1126,8 +1165,11 @@ async function runPendingAttachmentWork(): Promise<void> {
  *  Only the attachments the discarded Drive state no longer had are looked at:
  *  those are the ones another device can have deleted, and asking Drive about
  *  every file of the library after every conflict would be a request per
- *  attachment for nothing. One that is gone and whose bytes are HERE is sent
- *  again under a new Drive id; one whose bytes are not here cannot be helped.
+ *  attachment for nothing. One that is gone is first taken back out of the
+ *  trash, where the purge has put it since 2026-10-01 — same id, so nothing
+ *  else changes, and it works whether or not this device holds the bytes.
+ *  Deleted for good and its bytes HERE: sent again under a new Drive id. Bytes
+ *  not here either: cannot be helped.
  *  Drive unreachable: nothing is concluded, nothing is touched. */
 export async function reuploadResurrected(discarded: AppState): Promise<number> {
   const { appState, mutate } = await storeModule();
@@ -1138,13 +1180,16 @@ export async function reuploadResurrected(discarded: AppState): Promise<number> 
   const drive = await driveModule();
   const held = new Set(await heldAttachmentIds());
   const resend = new Set<string>();
+  let untrashed = 0;
   for (const { att } of candidates) {
     let size: number | 'gone';
     try { size = await drive.companionFileSize(att.external.driveFileId!, false); }
-    catch { return 0; }
-    if (size === 'gone' && held.has(att.external.id)) resend.add(att.external.id);
+    catch { return untrashed; }
+    if (size !== 'gone') continue;
+    if (await drive.untrashCompanionFile(att.external.driveFileId!, false)) { untrashed++; continue; }
+    if (held.has(att.external.id)) resend.add(att.external.id);
   }
-  if (resend.size === 0) return 0;
+  if (resend.size === 0) return untrashed;
   await mutate(s => {
     for (const card of Object.values(s.cards ?? {})) {
       for (const a of card.content?.attachments ?? []) {
@@ -1156,7 +1201,7 @@ export async function reuploadResurrected(discarded: AppState): Promise<number> 
     try { await uploadAttachment(id, false); }
     catch (e) { _pendingHint = true; console.warn('[attachments] re-upload of ' + id + ' left in the backlog', e); }
   }
-  return resend.size;
+  return untrashed + resend.size;
 }
 
 /** Sends a freshly attached file up, without ever raising a token window: this

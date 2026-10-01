@@ -3,7 +3,7 @@ import {
   attachmentThresholdBytes, isAboveThreshold, isExternal, DEFAULT_THRESHOLD_KB,
   inlineExternalAttachments, externalAttachmentBlobs, externalAttachmentBytes,
   restoreExternalAttachments, conversionPlan, applyConversion, freeableAttachments,
-  sweepLocalAttachments, purgeCondemnedFiles,
+  sweepLocalAttachments, purgeCondemnedFiles, reuploadResurrected,
 } from './attachmentStore';
 import type { AppState, Attachment, Card, ResolvableFile } from '../types';
 
@@ -30,7 +30,9 @@ const graveyard = vi.hoisted(() => new Map<string, { driveFileId: string; attach
 
 // Drive and the running state, likewise: the conversion is a rule, and a rule
 // is worth testing without a network or a browser.
-const drive = vi.hoisted(() => ({ connected: false, unreachable: false, downloads: 0, deleted: [] as string[] }));
+const drive = vi.hoisted(() => ({ connected: false, unreachable: false, downloads: 0, trashed: [] as string[],
+  /** Files no longer live on Drive: in the trash, or erased for good. */
+  away: new Map<string, 'trashed' | 'erased'>(), untrashed: [] as string[] }));
 vi.mock('./driveService', () => ({
   isDriveConnected: () => drive.connected,
   hasDriveToken: () => true,
@@ -42,7 +44,13 @@ vi.mock('./driveService', () => ({
   },
   companionPathId: () => Promise.resolve('folder-id'),
   uploadCompanionFileInto: () => Promise.resolve('drive-new'),
-  deleteCompanionFile: (id: string) => { drive.deleted.push(id); return Promise.resolve(true); },
+  trashCompanionFile: (id: string) => { drive.trashed.push(id); return Promise.resolve(true); },
+  companionFileSize: (id: string) => Promise.resolve(drive.away.has(id) ? 'gone' : 3),
+  untrashCompanionFile: (id: string) => {
+    if (drive.away.get(id) !== 'trashed') return Promise.resolve(false);
+    drive.away.delete(id); drive.untrashed.push(id);
+    return Promise.resolve(true);
+  },
   registerDrivePendingWork: () => {},
 }));
 
@@ -336,6 +344,42 @@ describe('applying it', () => {
     expect(att.name).toBe('after.mp3');
     expect(att.data).not.toBe('');
   });
+
+  it('keeps what an import wrote mid-walk under the same name', async () => {
+    // A restore, or a refresh, landing during the walk: same card, same
+    // position, same NAME — other bytes. The anchor used to stop at the name,
+    // and the walk wrote the bytes it had read before over the imported ones.
+    drive.connected = true;
+    store.state = stateWith([bigInline('tune.mp3')]);
+    const imported = { ...bigInline('tune.mp3'), data: 'B'.repeat(80_000) } as Attachment;
+    hooks.onPut = () => { store.state.cards['c1']!.content.attachments[0] = imported; };
+    const r = await applyConversion();
+    expect(r.out).toBe(0);
+    const att = store.state.cards['c1']!.content.attachments[0] as { data: string; external?: unknown };
+    expect(att.external).toBeUndefined();
+    expect(att.data).toBe('B'.repeat(80_000));
+  });
+
+  it('keeps an external file an import swapped in mid-walk', async () => {
+    // Coming back in: the walk fetched e1's bytes; meanwhile the import put
+    // another file, e2, at the same place and under the same name.
+    drive.connected = true;
+    held.set('e1', new Blob([new Uint8Array([1, 2, 3])]));
+    store.state = stateWith([smallExternal('e1')]);
+    const swapped = { ...smallExternal('e2'), name: 'e1.abc' } as Attachment;
+    // The walk reads e1 from the local store; the hook is on the write side,
+    // so the swap is made by a getter on the very first read of the card.
+    const real = store.state.cards['c1']!.content.attachments;
+    let reads = 0;
+    Object.defineProperty(store.state.cards['c1']!.content, 'attachments', {
+      configurable: true,
+      get() { return reads++ === 0 ? real : [swapped]; },
+    });
+    const r = await applyConversion();
+    expect(r.back).toBe(0);
+    const att = store.state.cards['c1']!.content.attachments[0] as ResolvableFile;
+    expect(att.external?.id).toBe('e2');
+  });
 });
 
 describe('what can be freed locally', () => {
@@ -418,7 +462,7 @@ describe('what a snapshot keeps alive', () => {
 
   beforeEach(() => {
     held.clear(); graveyard.clear();
-    drive.connected = true; drive.deleted = [];
+    drive.connected = true; drive.trashed = [];
     snaps.states = []; snaps.broken = false;
     store.state = stateWith([]);
   });
@@ -444,7 +488,7 @@ describe('what a snapshot keeps alive', () => {
     condemn('e1');
     snaps.states = [stateWith([smallExternal('e1')])];
     const waiting = await purgeCondemnedFiles();
-    expect(drive.deleted).toEqual([]);
+    expect(drive.trashed).toEqual([]);
     // Kept in the journal, so it goes once the snapshot does…
     expect(graveyard.has('drive-e1')).toBe(true);
     // …and not counted as waiting on Drive, which would have the token
@@ -458,13 +502,13 @@ describe('what a snapshot keeps alive', () => {
       external: { id: 'e1', bytes: 3 } } as Attachment;
     snaps.states = [stateWith([beforeUpload])];
     await purgeCondemnedFiles();
-    expect(drive.deleted).toEqual([]);
+    expect(drive.trashed).toEqual([]);
   });
 
   it('deletes it once no snapshot names it any more', async () => {
     condemn('e1');
     expect(await purgeCondemnedFiles()).toBe(0);
-    expect(drive.deleted).toEqual(['drive-e1']);
+    expect(drive.trashed).toEqual(['drive-e1']);
     expect(graveyard.size).toBe(0);
   });
 
@@ -472,7 +516,7 @@ describe('what a snapshot keeps alive', () => {
     condemn('e1');
     snaps.broken = true;
     expect(await purgeCondemnedFiles()).toBe(1);
-    expect(drive.deleted).toEqual([]);
+    expect(drive.trashed).toEqual([]);
     expect(graveyard.has('drive-e1')).toBe(true);
   });
 
@@ -483,7 +527,43 @@ describe('what a snapshot keeps alive', () => {
     drive.connected = false;
     // e1 is due and cannot go yet; e2 is held by a snapshot and is not due.
     expect(await purgeCondemnedFiles()).toBe(1);
-    expect(drive.deleted).toEqual([]);
+    expect(drive.trashed).toEqual([]);
+  });
+});
+
+// ── A conflict kept on this side, against a deletion made on the other ──────
+// Since 2026-10-01 the purge sends a file to the trash rather than deleting it,
+// so the attachment the conflict brought back can have its very file back,
+// same id — whether or not this device ever held the bytes.
+
+describe('reuploadResurrected, with the trash', () => {
+  beforeEach(() => {
+    held.clear(); drive.connected = true; drive.away.clear(); drive.untrashed = [];
+  });
+
+  it('takes a trashed file back out, bytes here or not', async () => {
+    store.state = stateWith([smallExternal('e1')]);
+    drive.away.set('drive-e1', 'trashed');
+    expect(await reuploadResurrected(stateWith([]))).toBe(1);
+    expect(drive.untrashed).toEqual(['drive-e1']);
+    expect(drive.away.has('drive-e1')).toBe(false);
+    // Same file, same id: the state is untouched.
+    expect(isExternal(store.state.cards.c1!.content.attachments[0] as ResolvableFile)).toBe(true);
+    expect((store.state.cards.c1!.content.attachments[0] as ResolvableFile).external?.driveFileId).toBe('drive-e1');
+  });
+
+  it('leaves alone what the other side still had', async () => {
+    store.state = stateWith([smallExternal('e1')]);
+    drive.away.set('drive-e1', 'trashed');
+    expect(await reuploadResurrected(stateWith([smallExternal('e1')]))).toBe(0);
+    expect(drive.untrashed).toEqual([]);
+  });
+
+  it('cannot help a file erased for good whose bytes are not here', async () => {
+    store.state = stateWith([smallExternal('e1')]);
+    drive.away.set('drive-e1', 'erased');
+    expect(await reuploadResurrected(stateWith([]))).toBe(0);
+    expect((store.state.cards.c1!.content.attachments[0] as ResolvableFile).external?.driveFileId).toBe('drive-e1');
   });
 });
 

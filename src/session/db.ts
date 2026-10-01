@@ -653,12 +653,15 @@ async function recordSyncedAudio(sessionId: string, entry: SyncedAudio): Promise
   });
 }
 
-/** Drops the Drive record, and the Drive file with it unless `fileAlreadyGone`
- *  — which is the 404 case, where deleting it again would be noise. */
+/** Drops the Drive record, and sends the Drive file to the user's trash unless
+ *  `fileAlreadyGone` — which is the 404 case, where doing it again would be
+ *  noise. The trash rather than a deletion since 2026-10-01: a snapshot, here
+ *  or on another device, may still hold the session, and for thirty days the
+ *  recording stays within reach of it. */
 async function dropSyncedAudio(sessionId: string, fileAlreadyGone = false): Promise<void> {
   const entry = await syncedAudioOf(sessionId);
   if (!entry) return;
-  if (!fileAlreadyGone) await (await driveModule()).deleteCompanionFile(entry.fileId);
+  if (!fileAlreadyGone) await (await driveModule()).trashCompanionFile(entry.fileId);
   const { mutate } = await storeModule();
   await mutate(user => {
     const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
@@ -906,6 +909,27 @@ export async function freeSyncedSessionAudio(): Promise<{ count: number; bytes: 
 /** Deletes the Drive copy, leaving this device's untouched. */
 export async function unsyncSessionAudio(sessionId: string): Promise<void> {
   await dropSyncedAudio(sessionId);
+}
+
+/** After a conflict settled in THIS device's favour: takes back out of the
+ *  trash the recordings that decision resurrected — sessions another device
+ *  deleted, whose Drive copy went to the trash with them. Same reasoning, and
+ *  same narrowing to what the discarded state no longer had, as the
+ *  attachments' reuploadResurrected. Drive unreachable: nothing touched. */
+export async function untrashResurrectedAudio(discarded: AppStateLike): Promise<number> {
+  const there = (discarded.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.syncedAudio ?? {};
+  const candidates = Object.entries((await moduleData()).syncedAudio ?? {})
+    .filter(([sessionId]) => !there[sessionId]);
+  if (candidates.length === 0) return 0;
+  const drive = await driveModule();
+  let untrashed = 0;
+  for (const [, entry] of candidates) {
+    try {
+      if (await drive.companionFileSize(entry.fileId, false) !== 'gone') continue;
+    } catch { return untrashed; }
+    if (await drive.untrashCompanionFile(entry.fileId, false)) untrashed++;
+  }
+  return untrashed;
 }
 
 /** The recording as held on THIS device. Never reaches for the network — see

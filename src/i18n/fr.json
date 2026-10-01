@@ -518,6 +518,7 @@
   "settings.attachments.convert.busy": "En cours…",
   "settings.attachments.convert.partial.title": "Déplacement incomplet",
   "settings.attachments.convert.partial.message": "{count} pièces jointes n'ont pas pu être déplacées, faute d'avoir pu récupérer leurs fichiers. Elles restent où elles étaient.",
+  "settings.attachments.convert.partial.full": "{count} pièces jointes n'ont pas pu être déplacées : l'espace de stockage de cet appareil est plein. Elles restent où elles étaient.",
   "settings.free.label": "Espace libérable",
   "settings.free.hint": "Les fichiers dont une copie se trouve sur le Drive peuvent être retirés de cet appareil. Ils reviennent tout seuls à leur prochaine ouverture.",
   "settings.free.action": "Libérer {size}",

@@ -518,6 +518,7 @@
   "settings.attachments.convert.busy": "Working…",
   "settings.attachments.convert.partial.title": "Not everything moved",
   "settings.attachments.convert.partial.message": "{count} attachments could not be moved, because their files could not be fetched. They stay where they were.",
+  "settings.attachments.convert.partial.full": "{count} attachments could not be moved: this device's storage is full. They stay where they were.",
   "settings.free.label": "Space that can be freed",
   "settings.free.hint": "Files with a copy on Drive can be removed from this device. They come back on their own the next time they are opened.",
   "settings.free.action": "Free {size}",
