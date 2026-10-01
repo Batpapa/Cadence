@@ -5,7 +5,7 @@ import type { ComponentChild, RefObject } from 'preact';
 import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
 import { parseCardPackage, parseCardPackageFromText } from '../services/importExport';
-import { externaliseIncoming, uploadAttachmentSoon } from '../services/attachmentStore';
+import { externaliseIncoming, uploadAttachmentSoon, mutateWithRule } from '../services/attachmentStore';
 import { downloadShare } from '../services/shareService';
 import { mutate, appState } from '../store';
 import {
@@ -353,7 +353,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
         setBusy(false);
       } else {
         const card = tuneResultToCard(tune);
-        await mutate(s => {
+        await mutateWithRule(s => {
           s.cards[card.id] = card;
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
             const deck = s.decks[deckId];
@@ -393,7 +393,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
       return;
     }
     withDeckChoice(() => { void (async () => {
-      await mutate(s => {
+      await mutateWithRule(s => {
         for (const card of newCards) { s.cards[card.id] = card; }
         const linkIds = [...newCards.map(c => c.id), ...skippedIds.map(id => existingCardIdByTuneId.get(id)!)];
         for (const deckId of (getTargetDeckIds?.() ?? [])) {
@@ -704,7 +704,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         return;
       }
       withDeckChoice(() => { void (async () => {
-        await mutate(s => {
+        await mutateWithRule(s => {
           for (const card of newCards) { s.cards[card.id] = card; }
           // Already-owned tunes were skipped above (no re-fetch), but they
           // still belong in the chosen decks if they were missing there.
@@ -912,7 +912,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         return;
       }
       withDeckChoice(() => { void (async () => {
-        await mutate(s => {
+        await mutateWithRule(s => {
           for (const card of newCards) s.cards[card.id] = card;
           // Bookmarks ARE tunes, so the deck choice applies to them directly —
           // unlike a set import, where the deck belongs to the set card and the
@@ -1127,7 +1127,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         const { setCard, newTunes } = await buildSetCards(set, appState.value.cards, defaultTuneRepeat(appState.value));
         created += newTunes.length;
         imported++;
-        await mutate(s => {
+        await mutateWithRule(s => {
           for (const tune of newTunes) s.cards[tune.id] = tune;
           s.cards[setCard.id] = setCard;
           // The deck choice applies to the SET — that is what was imported.

@@ -1,5 +1,5 @@
 import type { Analysis } from '../session/model';
-import { arrayBufferToBase64, base64ToBlob, generateId } from '../utils';
+import { arrayBufferToBase64, base64ToBlob, generateId, downloadCadenceFile } from '../utils';
 import { uploadShare, downloadShare, type ShareUploadResult } from './shareService';
 import { saveSessionMeta, saveSessionAudio } from '../session/db';
 
@@ -61,13 +61,7 @@ export async function shareSession(session: Analysis, audioBlob: Blob | null): P
 /** Downloads a `.cds` file — no size limit beyond the browser/disk. */
 export async function exportSessionFile(session: Analysis, audioBlob: Blob | null): Promise<void> {
   const text = await buildPackageText(session, audioBlob);
-  const blob = new Blob([text], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${(session.name || 'session').replace(/[^\w-]+/g, '_')}.cds`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadCadenceFile(text, `${(session.name || 'session').replace(/[^\w-]+/g, '_')}.cds`);
 }
 
 // ── In ────────────────────────────────────────────────────────────────────────

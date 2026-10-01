@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'preact/hooks';
 import { Fragment } from 'preact';
 import { appState, navigate, mutate } from '../store';
-import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments } from '../services/attachmentStore';
+import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
 import { copyFileName } from '../services/attachmentNames';
 import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
@@ -240,7 +240,7 @@ async function refreshSetTunes(cardId: string, externalId: string | undefined): 
   try {
     const set = await fetchSet(parsed.memberId, parsed.setId);
     const { setCard, newTunes } = await buildSetCards(set, appState.value.cards, defaultTuneRepeat(appState.value));
-    await mutate(s => {
+    await mutateWithRule(s => {
       for (const tune of newTunes) s.cards[tune.id] = tune;
       const existing = s.cards[cardId];
       if (!existing) return;
@@ -294,7 +294,7 @@ async function refreshFromTheSession(
 ): Promise<void> {
   try {
     const tune = await fetchTuneById(sessionId);
-    await mutate(s => {
+    await mutateWithRule(s => {
       const card = s.cards[cardId]; if (!card) return;
       apply(card, tune);
     });
@@ -309,7 +309,7 @@ async function refreshFromTheSession(
 async function migrateCardToTheSession(cardId: string, sessionId: number): Promise<void> {
   try {
     const tune = await fetchTuneById(sessionId);
-    await mutate(s => {
+    await mutateWithRule(s => {
       const existing = s.cards[cardId]; if (!existing) return;
       applyTheSessionMigration(existing, tune);
     });
@@ -643,7 +643,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
             // so its Drive copy goes. Its local bytes stay for the sweep to
             // judge, for the same reason as onRemove just above: a snapshot
             // may still name them.
-            void condemnAttachmentFile(att);
+            void condemnAttachmentFile(att, external.id);
             uploadAttachmentSoon({ ...att, type: 'file', external });
           }));
       }
@@ -673,12 +673,19 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
     // mutate() runs its function before its first await, which is also what
     // lets the number be chosen against the live list rather than a render's.
     onCopyFile: (i, data) => {
-      let name = '';
-      void mutate(s => {
+      // Named from the live state BEFORE the write, and the write re-checks it
+      // is still the same file: the viewer needs the name back synchronously,
+      // and mutateWithRule — which gives the copy the same rule as any new file
+      // (2026-10-01; it used to land in the blob whatever its size) — runs its
+      // recipe after a module load, too late to fill a variable returned here.
+      const current = appState.value.cards[cardId]?.content.attachments ?? [];
+      const source = current[i];
+      if (!source || source.type !== 'file') return '';
+      const name = copyFileName(source.name, current.flatMap(a => (a.type === 'file' ? [a.name] : [])));
+      void mutateWithRule(s => {
         const atts = s.cards[cardId]!.content.attachments;
         const original = atts[i];
-        if (!original || original.type !== 'file') return;
-        name = copyFileName(original.name, atts.flatMap(a => (a.type === 'file' ? [a.name] : [])));
+        if (!original || original.type !== 'file' || original.name !== source.name) return;
         // Everything but the marker: the copy is the user's, so no refresh
         // may ever replace it. The star comes along.
         //

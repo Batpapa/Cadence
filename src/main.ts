@@ -1,13 +1,14 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
-import { emptyState, formatBytes } from './utils';
+import { emptyState, formatBytes, downloadCadenceFile } from './utils';
 import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
-import { setLanguage } from './services/i18nService';
+import { setLanguage, t } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { initUpdateCheck } from './services/updateService';
+import { swallowReportedSaveRejections } from './services/saveHealth';
 import { ensurePersistentStorage } from './services/storageService';
 import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, localUsersOnSameDrive, adoptDriveConnection, type ConnectResult } from './services/driveService';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
@@ -32,6 +33,10 @@ if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
 // Top-level too: the welcome screen never reaches finishBoot(), and a resumed
 // tablet can sit on it as easily as on the app.
 initUpdateCheck();
+
+// A save failure is shown to the user once, by saveHealth; the rejection each
+// `void mutate(…)` then leaves behind is not a second, separate error.
+swallowReportedSaveRejections();
 
 // Top-level, next to the service worker it depends on — NOT from finishBoot().
 // `beforeinstallprompt` fires once, shortly after the worker takes control, and
@@ -284,25 +289,29 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
  *  anything not synced to Drive. */
 async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<void> {
   const message = err !== undefined ? (err instanceof Error ? err.message : String(err)) : null;
+  // Neither entry point runs showUserSelector(), which is where the language
+  // is otherwise set: without this the screen spoke English to everyone.
+  setLanguage(detectLanguage());
 
   root.innerHTML = `
     <div class="p-8 max-w-3xl mx-auto space-y-4">
-      <h1 class="text-lg font-semibold text-center">Recovery</h1>
+      <h1 class="text-lg font-semibold text-center">${escapeHtml(t('recovery.title'))}</h1>
       ${message
-        ? `<p class="text-danger font-mono text-sm text-center">Failed to initialize: ${escapeHtml(message)}</p>
-           <p class="text-xs text-muted text-center">This can happen if another tab got stuck holding your local data open, or if it became corrupted.</p>
-           <div class="flex justify-center"><button id="recovery-retry" class="btn-primary text-sm">Retry</button></div>`
-        : `<p class="text-xs text-muted text-center">Download your data below, then use "Report a bug" to send it over.</p>`}
+        ? `<p class="text-danger font-mono text-sm text-center">${escapeHtml(t('recovery.failed', { message }))}</p>
+           <p class="text-xs text-muted text-center">${escapeHtml(t('recovery.failedHint'))}</p>
+           <div class="flex justify-center"><button id="recovery-retry" class="btn-primary text-sm">${escapeHtml(t('recovery.retry'))}</button></div>`
+        : `<p class="text-xs text-muted text-center">${escapeHtml(t('recovery.intro'))}</p>`}
       <div id="recovery-users" class="space-y-2 overflow-x-auto"></div>
       <div id="recovery-snapshots" class="space-y-2"></div>
       <div class="flex gap-2 justify-center pt-2 border-t border-border">
-        <button id="recovery-raw" class="btn-ghost text-sm">Download full raw dump</button>
-        <button id="recovery-report" class="btn-ghost text-sm">Report a bug on GitHub</button>
+        <button id="recovery-raw" class="btn-ghost text-sm">${escapeHtml(t('recovery.rawDump'))}</button>
+        <button id="recovery-report" class="btn-ghost text-sm">${escapeHtml(t('recovery.report'))}</button>
       </div>
     </div>`;
 
   document.getElementById('recovery-retry')?.addEventListener('click', () => location.reload());
-  document.getElementById('recovery-raw')?.addEventListener('click', () => { void downloadRawDump(message); });
+  const rawBtn = document.getElementById('recovery-raw') as HTMLButtonElement | null;
+  rawBtn?.addEventListener('click', () => { void runDownload(rawBtn, t('recovery.rawDump'), () => downloadRawDump(message), false); });
   document.getElementById('recovery-report')?.addEventListener('click', () => { void reportBug(message); });
 
   const usersEl = document.getElementById('recovery-users')!;
@@ -313,7 +322,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
     if (!message) await initDb();
     const ids = await getAllUserIds();
     if (ids.length === 0) {
-      usersEl.innerHTML = `<p class="text-xs text-muted text-center">No local users found on this device.</p>`;
+      usersEl.innerHTML = `<p class="text-xs text-muted text-center">${escapeHtml(t('recovery.noUsers'))}</p>`;
       return;
     }
     // One batched lookup instead of a per-user existence check — tells us
@@ -332,7 +341,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
       idTag.textContent = id;
       const nameTag = document.createElement('span');
       nameTag.className = 'text-sm truncate min-w-0 flex-1';
-      nameTag.textContent = user?.name ?? 'Unnamed';
+      nameTag.textContent = user?.name ?? t('recovery.unnamed');
 
       const safeName = (user?.name ?? 'unnamed').toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const btns = document.createElement('span');
@@ -340,7 +349,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
 
       const btn = document.createElement('button');
       btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
-      btn.innerHTML = `${EXPORT_SVG}Data`;
+      btn.innerHTML = EXPORT_SVG + escapeHtml(t('recovery.data'));
       // Downloaded as .cdb, id stripped — the exact shape Settings → Backup →
       // Import accepts, so recovery-to-restore is: download here, import there.
       //
@@ -350,7 +359,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
       // data — the 2026-09-09 failure, on the screen built to answer it. Drive
       // is deliberately not consulted: this runs when nothing works, and a
       // file this device does not hold simply stays a reference.
-      btn.onclick = () => { void downloadUserData(id, safeName, user); };
+      btn.onclick = () => { void runDownload(btn, t('recovery.data'), () => downloadUserData(id, safeName, user)); };
       btns.appendChild(btn);
 
       // `?.has` may be true, false, or unknown (Safari lacks databases()) —
@@ -359,8 +368,9 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
       if (sessionDbNames === null || sessionDbNames.has(userDbName(id))) {
         const audioBtn = document.createElement('button');
         audioBtn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
-        audioBtn.innerHTML = `${EXPORT_SVG}Audio`;
-        audioBtn.onclick = () => { void downloadSessionAudioZip(id, safeName, user); };
+        let audioLabel = t('recovery.audio');
+        audioBtn.innerHTML = EXPORT_SVG + escapeHtml(audioLabel);
+        audioBtn.onclick = () => { void runDownload(audioBtn, audioLabel, () => downloadSessionAudioZip(id, safeName, user)); };
         btns.appendChild(audioBtn);
         // How much is behind that button, once we can tell. This screen exists
         // for someone whose app is broken and who is about to wait on a
@@ -369,7 +379,9 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
         // usable while the figure is still being counted, and stays usable if
         // it never arrives.
         void localSessionAudioStats(id).then(stats => {
-          if (stats) audioBtn.innerHTML = `${EXPORT_SVG}Audio (${formatBytes(stats.bytes)})`;
+          if (!stats) return;
+          audioLabel = t('recovery.audioSized', { size: formatBytes(stats.bytes) });
+          if (!audioBtn.disabled) audioBtn.innerHTML = EXPORT_SVG + escapeHtml(audioLabel);
         }).catch(() => { /* the plain label is already correct */ });
       }
 
@@ -378,7 +390,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
     }
   } catch (listErr) {
     console.error('Recovery: failed to list users:', listErr);
-    usersEl.innerHTML = `<p class="text-xs text-muted text-center">Couldn't list individual users — try "Download full raw dump" instead.</p>`;
+    usersEl.innerHTML = `<p class="text-xs text-muted text-center">${escapeHtml(t('recovery.listFailed'))}</p>`;
   }
 
   await renderRecoverySnapshots();
@@ -412,12 +424,12 @@ async function renderRecoverySnapshots(): Promise<void> {
 
   const title = document.createElement('p');
   title.className = 'text-xs font-semibold uppercase tracking-widest text-muted pt-4 border-t border-border';
-  title.textContent = 'Automatic backups';
+  title.textContent = t('recovery.snapshots.title');
   host.appendChild(title);
 
   const hint = document.createElement('p');
   hint.className = 'text-xs text-muted';
-  hint.textContent = 'Taken automatically before a sync replaced your data. Download one, then restore it from Settings -> Backup -> Import.';
+  hint.textContent = t('recovery.snapshots.hint');
   host.appendChild(hint);
 
   for (const s of snaps) {
@@ -430,7 +442,7 @@ async function renderRecoverySnapshots(): Promise<void> {
 
     const what = document.createElement('span');
     what.className = 'text-sm truncate min-w-0 flex-1';
-    what.textContent = s.cards + ' cards, ' + s.reviews + ' reviews  (' + s.reason + ')';
+    what.textContent = t('recovery.snapshots.summary', { cards: s.cards, reviews: s.reviews, reason: s.reason });
 
     const who = document.createElement('span');
     who.className = 'text-xs text-dim font-mono select-all shrink-0';
@@ -438,14 +450,16 @@ async function renderRecoverySnapshots(): Promise<void> {
 
     const btn = document.createElement('button');
     btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
-    btn.innerHTML = EXPORT_SVG + 'Download';
+    btn.innerHTML = EXPORT_SVG + escapeHtml(t('recovery.download'));
     btn.onclick = () => {
-      void getSnapshotState(s.key).then(state => {
-        if (!state) { alert("That snapshot could not be read."); return; }
+      void runDownload(btn, t('recovery.download'), async () => {
+        const state = await getSnapshotState(s.key);
+        if (!state) { alert(t('recovery.snapshotUnreadable')); return false; }
         // id stripped, exactly like the per-user download above: it is
         // device-local, and the import path assigns its own.
         const { id: _id, ...data } = state as unknown as Record<string, unknown> & { id?: string };
-        downloadJson(data, "cadence-snapshot-" + s.userId + "-" + s.ts + ".cdb");
+        downloadCadenceFile(JSON.stringify(data), "cadence-snapshot-" + s.userId + "-" + s.ts + ".cdb");
+        return true;
       });
     };
 
@@ -468,7 +482,7 @@ async function renderRecoverySnapshots(): Promise<void> {
  *  file be repaired later on a device that does have the bytes. */
 async function downloadUserData(
   id: string, safeName: string, user: Awaited<ReturnType<typeof loadUser>>,
-): Promise<void> {
+): Promise<boolean> {
   const { id: _id, ...data } = (user ?? { id }) as Record<string, unknown> & { id?: string };
   try {
     const held = await rawAttachmentBlobs(id);
@@ -490,7 +504,8 @@ async function downloadUserData(
     // download at all on a screen someone reached because nothing works.
     console.warn('Recovery: could not inline attachments', e);
   }
-  downloadJson(data, `cadence-user-${safeName}-${id}.cdb`);
+  downloadCadenceFile(JSON.stringify(data), `cadence-user-${safeName}-${id}.cdb`);
+  return true;
 }
 
 /** Chunked: spreading a multi-megabyte array into fromCharCode blows the
@@ -510,12 +525,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
  *  raw DB dump was useless here — Blobs JSON-serialize to {} — where actual
  *  files play anywhere. Session names come from AppState metadata when
  *  available, from the local draft otherwise, from the id as a last resort. */
-async function downloadSessionAudioZip(id: string, safeName: string, user: Awaited<ReturnType<typeof loadUser>>): Promise<void> {
+async function downloadSessionAudioZip(id: string, safeName: string, user: Awaited<ReturnType<typeof loadUser>>): Promise<boolean> {
   try {
     const collected = await collectUserSessionAudio(id);
     if (!collected || (collected.audio.length === 0 && collected.orphans.length === 0)) {
-      alert('No session audio found for this user.');
-      return;
+      alert(t('recovery.noAudio'));
+      return false;
     }
     const metaSessions = ((user?.modules?.['tune-analyser'] as { sessions?: Record<string, { name?: string; mimeType?: string }> } | undefined)?.sessions) ?? {};
     const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'session';
@@ -544,14 +559,33 @@ async function downloadSessionAudioZip(id: string, safeName: string, user: Await
     a.download = `cadence-audio-${safeName}-${id}.zip`;
     a.click();
     URL.revokeObjectURL(url);
+    return true;
   } catch (e) {
     console.error('Recovery: audio zip failed:', e);
-    alert(`Couldn't collect this user's audio: ${e instanceof Error ? e.message : String(e)}`);
+    alert(t('recovery.audioFailed', { message: e instanceof Error ? e.message : String(e) }));
+    return false;
   }
 }
 
 // Same icon as the "Export" button in settingsModal.ts, for the same action.
 const EXPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+
+/** Every download on the recovery screen says that it happened. A user pressed
+ *  "Data" five times in four minutes (2026-09-17: five identical files in his
+ *  Downloads) because nothing on screen changed — and a browser never reports
+ *  a download as finished, so "handed over" is the most this can honestly
+ *  claim. The busy state also stops the slow ones (a zip of hours of audio)
+ *  being started twice. */
+async function runDownload(btn: HTMLButtonElement, label: string, action: () => Promise<boolean>, icon = true): Promise<void> {
+  const show = (text: string) => { btn.innerHTML = (icon ? EXPORT_SVG : '') + escapeHtml(text); };
+  btn.disabled = true;
+  show(t('recovery.preparing'));
+  let ok = false;
+  try { ok = await action(); } finally {
+    btn.disabled = false;
+    show(ok ? t('recovery.handedOver', { label }) : label);
+  }
+}
 
 function escapeHtml(s: string): string {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -562,14 +596,16 @@ function escapeHtml(s: string): string {
  *  works even when per-user listing above failed, since it reads via cursors
  *  on the raw IndexedDB API instead of through the (possibly broken) idb/User
  *  layer. */
-async function downloadRawDump(message: string | null): Promise<void> {
+async function downloadRawDump(message: string | null): Promise<boolean> {
   try {
     const dump = await dumpRawDatabase();
     const filename = `cadence-raw-dump-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
     downloadJson({ error: message, userAgent: navigator.userAgent, capturedAt: new Date().toISOString(), data: dump }, filename);
+    return true;
   } catch (dumpErr) {
     console.error('Failed to generate raw dump:', dumpErr);
-    alert("Couldn't read the local database at all — sorry, there's nothing to download.");
+    alert(t('recovery.rawFailed'));
+    return false;
   }
 }
 

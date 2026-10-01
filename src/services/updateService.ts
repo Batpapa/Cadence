@@ -38,8 +38,13 @@ const PERIOD_MS = 30 * 60_000;
 
 let lastSuccess = 0;
 let inFlight = false;
+let pruned = false;
 
-interface Deployed extends BuildInfo { assets: string[] }
+interface Deployed extends BuildInfo {
+  assets: string[];
+  /** Every file the build ships. Absent from version.json before 2026-10-01. */
+  files?: string[];
+}
 
 function isDeployed(x: unknown): x is Deployed {
   const d = x as Deployed;
@@ -86,6 +91,40 @@ async function warm(assets: string[]): Promise<void> {
   }
 }
 
+/** Drops from the service worker's cache everything the deployed build does
+ *  not ship. sw.js caches every same-origin file cache-first under one name
+ *  that never changes, and its `activate` only deletes OTHER cache names — so
+ *  until this, every release's bundle and lazy chunks stayed on every device
+ *  for good, about a megabyte more per deploy.
+ *
+ *  Only ever called when this page IS the deployed build, which is the one
+ *  moment its list is both current and complete: every chunk this page could
+ *  still lazily ask for is in it. With an update pending the page's own chunks
+ *  are not in the new list, and the new build's are being warmed — so nothing
+ *  is pruned then, and the next check after the reload does it.
+ *
+ *  Kept: the shell and any navigation cached under it (`./`, `./?mode=…`).
+ *  The cost, accepted: another tab still open on an old build loses the chunks
+ *  it has not loaded yet — and that tab is being offered the update anyway. */
+async function pruneCache(deployed: Deployed): Promise<void> {
+  const files = deployed.files;
+  if (!files?.length || typeof caches === 'undefined') return;
+  const abs = (f: string) => new URL(f, location.href).href;
+  const keep = new Set(files.map(abs));
+  // A list that does not even contain its own boot files is not one to delete by.
+  if (!deployed.assets.every(a => keep.has(abs(a)))) return;
+  keep.add(abs('./'));
+  for (const name of await caches.keys()) {
+    if (!name.startsWith('cadence-')) continue;
+    const cache = await caches.open(name);
+    for (const req of await cache.keys()) {
+      const u = new URL(req.url);
+      if (u.origin !== location.origin || keep.has(u.origin + u.pathname)) continue;
+      await cache.delete(req);
+    }
+  }
+}
+
 async function checkForUpdate(): Promise<void> {
   if (inFlight || Date.now() - lastSuccess < MIN_INTERVAL_MS) return;
   inFlight = true;
@@ -97,7 +136,12 @@ async function checkForUpdate(): Promise<void> {
     const deployed: unknown = await res.json();
     lastSuccess = Date.now();
     if (!isDeployed(deployed)) return;
-    if (deployed.build === APP_BUILD.build || deployed.build === updateReady.value?.build) return;
+    if (deployed.build === APP_BUILD.build) {
+      // Once per page is plenty: the deployed list does not change under it.
+      if (!pruned) { pruned = true; await pruneCache(deployed); }
+      return;
+    }
+    if (deployed.build === updateReady.value?.build) return;
     await warm(deployed.assets);
     updateReady.value = { version: deployed.version, commit: deployed.commit, dirty: !!deployed.dirty, build: deployed.build };
   } catch {

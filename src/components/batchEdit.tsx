@@ -12,6 +12,7 @@ import { cardsPlayingInSets } from '../services/cardRefService';
 import { focusIfDesktop } from '../utils';
 import { t } from '../services/i18nService';
 import type { AppState, Card } from '../types';
+import { mutateWithRule } from '../services/attachmentStore';
 
 // ── Bulk edits on a library selection ────────────────────────────────────────
 // The modal shell takes an HTMLElement and renders its footer buttons outside
@@ -558,7 +559,7 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
           // each round rather than from a snapshot: a set that pulls in a
           // missing tune must be visible to the next set that also plays it.
           const fetched = await spec.fetch(card);
-          await mutate(s => {
+          await mutateWithRule(s => {
             const c = s.cards[cardId];
             if (c) for (const f of fields) f.apply(c, fetched, s);
           });

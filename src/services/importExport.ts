@@ -1,5 +1,5 @@
 import type { AppState, Card } from '../types';
-import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile } from '../utils';
+import { toDateStr, generateId, arrayBufferToBase64, downloadTextFile, downloadCadenceFile } from '../utils';
 import { SCHEMA_VERSION, stampTuneType } from './migration';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
@@ -462,5 +462,5 @@ export function exportCardsTXT(cards: Card[], user: AppState): void {
 }
 
 function download(json: string, filename: string): void {
-  downloadTextFile(json, filename, 'application/json');
+  downloadCadenceFile(json, filename);
 }

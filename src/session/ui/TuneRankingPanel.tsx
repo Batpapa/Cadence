@@ -20,6 +20,7 @@ import { PassRow, useSlicePlayer } from './PassRow';
 import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, type PassFacet } from './tuneRanking';
 import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../../components/filterChips';
 import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf } from '../sessionTree';
+import { mutateWithRule } from '../../services/attachmentStore';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
 // The analyses read the other way round: by tune instead of by evening. It is
@@ -351,7 +352,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
           // all rather than half of it.
           const fresh = known ? null : tuneResultToCard(await fetchTuneById(Number(row.tuneId)));
           let changed = false;
-          await ctx.mutate(s => {
+          await mutateWithRule(s => {
             const existing = findByExternalId(`thesession:${row.tuneId}`, s.cards);
             let cardId = existing?.id;
             if (!existing && fresh) { s.cards[fresh.id] = fresh; cardId = fresh.id; changed = true; }

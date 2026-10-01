@@ -13,6 +13,7 @@ import type { Card } from '../../types';
 import { appState, mutate, navigate, replaceRoute } from '../../store';
 import { timeAgo, externalSourceLink } from '../../utils';
 import { Sparkline } from './sparkline';
+import { mutateWithRule } from '../../services/attachmentStore';
 
 export interface TrendingRouteParams {
   from?: string;
@@ -99,7 +100,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
   const commitAdd = async (card: Card, deckIds: string[]) => {
     setActionBusy(true);
     try {
-      await mutate(s => {
+      await mutateWithRule(s => {
         const existing = findByExternalId(externalId, s.cards);
         const id = existing?.id ?? card.id;
         if (!existing) s.cards[id] = card;

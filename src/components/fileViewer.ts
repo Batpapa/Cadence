@@ -1712,7 +1712,16 @@ export function showPreviewModal(
         const nextText = nextTunes.join('\n');
         // Awaited, and only then applied: a save may ask first (a TheSession
         // score is saved as a copy) and the answer may be no.
-        const result = await onSave!(arrayBufferToBase64(new TextEncoder().encode(nextText).buffer));
+        let result: PreviewSaveResult;
+        try {
+          result = await onSave!(arrayBufferToBase64(new TextEncoder().encode(nextText).buffer));
+        } catch (e) {
+          // Not written (a full device, typically): say so where the edit is,
+          // keep the editor as it is, and do not pretend it was saved.
+          console.warn('[viewer] save failed', e);
+          saveStatus.textContent = t('fileViewer.saveFailed');
+          return false;
+        }
         if (result === false) return false;
         tunes = nextTunes;
         abcText = nextText;
@@ -2616,7 +2625,15 @@ export function showPreviewModal(
         saveBtn.disabled = true;
         // Awaited, then applied: a save may ask something first and be
         // refused — see the ABC branch's theSessionScoreSaver.
-        const result = await onSave(arrayBufferToBase64(new TextEncoder().encode(next).buffer));
+        let result: PreviewSaveResult;
+        try {
+          result = await onSave(arrayBufferToBase64(new TextEncoder().encode(next).buffer));
+        } catch (e) {
+          console.warn('[viewer] save failed', e);
+          saveStatus.textContent = t('fileViewer.saveFailed');
+          saveBtn.disabled = false;
+          return;
+        }
         if (result === false) {
           saveBtn.disabled = textarea.value === text;
           return;

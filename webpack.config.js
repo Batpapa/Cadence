@@ -160,10 +160,12 @@ function buildInfo() {
   return { ...info, build: `${info.commit}-${Date.now().toString(36)}` };
 }
 
-/** Emits version.json: this build's identity plus the files it boots from, so
- *  a running older app can fetch them BEFORE offering to reload (see
- *  services/updateService.ts). At the REPORT stage, after RealContentHashPlugin
- *  has settled the final contenthashed names. */
+/** Emits version.json: this build's identity, the files it boots from (so a
+ *  running older app can fetch them BEFORE offering to reload), and every file
+ *  it ships (so the app can drop from the service worker's cache whatever no
+ *  longer belongs to any live build) — see services/updateService.ts. At the
+ *  REPORT stage, after RealContentHashPlugin has settled the final
+ *  contenthashed names. */
 class VersionPlugin {
   constructor(info) { this.info = info; }
   apply(compiler) {
@@ -172,7 +174,8 @@ class VersionPlugin {
         { name: 'VersionPlugin', stage: webpack.Compilation.PROCESS_ASSETS_STAGE_REPORT },
         () => {
           const assets = [...compilation.entrypoints.get('main').getFiles()].filter(f => /\.(js|css)$/.test(f));
-          compilation.emitAsset('version.json', new webpack.sources.RawSource(JSON.stringify({ ...this.info, assets })));
+          const files = Object.keys(compilation.assets).filter(f => !f.endsWith('.LICENSE.txt'));
+          compilation.emitAsset('version.json', new webpack.sources.RawSource(JSON.stringify({ ...this.info, assets, files })));
         },
       );
     });
@@ -246,6 +249,14 @@ module.exports = (env, argv) => {
     devServer: {
       port: 3002,
       hot: true,
+      // A save that failed has already been shown to the user by saveHealth,
+      // which tags the error; the rejection that `void mutate(…)` leaves is not
+      // a crash, and the full-screen overlay would say it is one.
+      client: {
+        overlay: {
+          runtimeErrors: (error) => !(error && error[Symbol.for('cadence.saveReported')]),
+        },
+      },
       // Mirrors the CopyPlugin patterns above (which only run in production) —
       // without this, static files like privacy.html/terms.html 404 in dev.
       // pdf.js's fonts and decoders are served from the package itself, at the

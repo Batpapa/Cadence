@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal, updateTopModal } from '../../components/modal';
-import { loadSessionAudio } from '../db';
+import { loadSessionAudio, probeSyncedAudio, downloadSyncedAudioOnce, type SyncedAudioProbe } from '../db';
 import { shareSession, exportSessionFile } from '../../services/sessionShareService';
 import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport } from '../../services/analysisExport';
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
@@ -65,11 +65,19 @@ function ShareKeyResult({ keyValue, secondsRemaining }: { keyValue: string; seco
 type UploadState =
   | { phase: 'idle' }
   | { phase: 'uploading' }
+  | { phase: 'fetchingAudio' }
   | { phase: 'result'; key: string; secondsRemaining: number }
   | { phase: 'error'; message: string };
 
 function ShareSessionModal({ session }: { session: Analysis }) {
   const [audioBlob, setAudioBlob] = useState<Blob | null | undefined>(undefined); // undefined = still checking
+  // When the recording is not on this device: what Drive ACTUALLY says about
+  // its copy, asked when the modal opens. The record of an upload is a belief
+  // (it once outlived a Drive emptied by hand — 2026-09-24), so the offer
+  // follows the answer, never the record: available means sent along,
+  // anything else is said as it is.
+  const [remote, setRemote] = useState<SyncedAudioProbe | null>(null);
+  const [probing, setProbing] = useState(false);
   const [includeAudio, setIncludeAudio] = useState(false);
   const [upload, setUpload] = useState<UploadState>({ phase: 'idle' });
   const [view, setView] = useState<'root' | 'package' | 'txt'>('root');
@@ -98,19 +106,35 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   }, [view, upload.phase]);
 
   useEffect(() => {
-    void loadSessionAudio(session.id).then(loaded => {
-      const blob = loaded ?? null;
+    void (async () => {
+      const blob = (await loadSessionAudio(session.id)) ?? null;
+      const probe = blob ? null : await probeSyncedAudio(session.id);
+      setRemote(probe);
       setAudioBlob(blob);
-      if (blob) setIncludeAudio(blob.size <= SHARE_MAX_AUDIO_BYTES);
-    });
+      const bytes = blob?.size ?? (probe?.status === 'ok' ? probe.bytes : null);
+      if (bytes !== null) setIncludeAudio(bytes <= SHARE_MAX_AUDIO_BYTES);
+    })();
     // eslint-disable-next-line
   }, [session.id]);
+
+  /** From the button, so a token window may open: the only way past "the
+   *  Google connection needs renewing" that GIS allows. */
+  const probeAgain = () => {
+    setProbing(true);
+    void probeSyncedAudio(session.id, true).then(probe => {
+      setRemote(probe);
+      if (probe?.status === 'ok') setIncludeAudio(probe.bytes <= SHARE_MAX_AUDIO_BYTES);
+    }).finally(() => setProbing(false));
+  };
 
   if (audioBlob === undefined) {
     return <p class="text-xs text-muted text-center py-2">{t('sessions.share.checking')}</p>;
   }
   if (upload.phase === 'uploading') {
     return <p class="text-xs text-muted text-center py-2">{isScraperServerWarm() ? t('sessions.share.uploading') : t('sessions.share.wakingServer')}</p>;
+  }
+  if (upload.phase === 'fetchingAudio') {
+    return <p class="text-xs text-muted text-center py-2">{t('sessions.share.fetchingAudio')}</p>;
   }
   if (upload.phase === 'error') {
     return <p class="text-xs text-muted text-center py-2">{upload.message}</p>;
@@ -129,7 +153,26 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     }
   };
 
-  const tooBig = audioBlob !== null && audioBlob.size > SHARE_MAX_AUDIO_BYTES;
+  const remoteBytes = remote?.status === 'ok' ? remote.bytes : null;
+  const audioBytes = audioBlob?.size ?? remoteBytes;
+  const tooBig = audioBytes !== null && audioBytes > SHARE_MAX_AUDIO_BYTES;
+
+  /** The audio to send, fetched from Drive at the moment it is needed when it
+   *  is not here. A failure says so and sends nothing: an analysis quietly
+   *  shared without the sound the box promised is the defect this replaced. */
+  const withAudio = async (send: (audio: Blob | null) => Promise<void> | void) => {
+    if (!includeAudio) { await send(null); return; }
+    if (audioBlob) { await send(audioBlob); return; }
+    setUpload({ phase: 'fetchingAudio' });
+    let fetched: Blob | null = null;
+    try { fetched = await downloadSyncedAudioOnce(session.id); } catch { /* reported below */ }
+    if (!fetched) {
+      setUpload({ phase: 'error', message: t('sessions.share.fetchAudioFailed') });
+      return;
+    }
+    setUpload({ phase: 'idle' });
+    await send(fetched);
+  };
 
   // TXT has two destinations for the same bytes, so it gets a level of its
   // own — the shape the card export modal already uses for its package.
@@ -171,7 +214,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   if (view === 'package') {
     return (
       <div class="space-y-3">
-        {audioBlob ? (
+        {audioBytes !== null ? (
           <>
             <label class="flex items-center gap-2 cursor-pointer select-none">
               <input
@@ -180,10 +223,30 @@ function ShareSessionModal({ session }: { session: Analysis }) {
                 checked={includeAudio}
                 onChange={(e) => setIncludeAudio((e.target as HTMLInputElement).checked)}
               />
-              <span class="text-xs text-muted">{t('sessions.share.includeAudio', { mb: (audioBlob.size / 1048576).toFixed(0) })}</span>
+              <span class="text-xs text-muted">{t('sessions.share.includeAudio', { mb: (audioBytes / 1048576).toFixed(0) })}</span>
             </label>
+            {!audioBlob && <p class="text-xs text-dim">{t('sessions.share.audioFromDrive')}</p>}
             {tooBig && <p class="text-xs text-warn">{t('sessions.share.tooBig')}</p>}
           </>
+        ) : remote && remote.status !== 'gone' ? (
+          // On Drive by the record, but Drive cannot be asked right now.
+          // Greyed, with the reason — and, for a token, the one way through.
+          <>
+            <label class="flex items-center gap-2 select-none opacity-50 cursor-not-allowed">
+              <input type="checkbox" class="card-checkbox" checked={false} disabled />
+              <span class="text-xs text-muted">{t('sessions.share.includeAudioUnknown')}</span>
+            </label>
+            <p class="text-xs text-dim">
+              {t(remote.status === 'needsAuth' ? 'sessions.share.audioNeedsAuth' : 'sessions.share.audioOffline')}
+            </p>
+            {remote.status === 'needsAuth' && (
+              <button class="btn-ghost text-xs" disabled={probing} onClick={probeAgain}>
+                {t(probing ? 'sessions.share.checking' : 'sessions.share.checkDrive')}
+              </button>
+            )}
+          </>
+        ) : remote?.status === 'gone' ? (
+          <p class="text-xs text-dim">{t('sessions.share.audioGone')}</p>
         ) : (
           <p class="text-xs text-dim">{t('sessions.share.noAudio')}</p>
         )}
@@ -194,14 +257,14 @@ function ShareSessionModal({ session }: { session: Analysis }) {
             label={t('library.export.file')}
             desc={t('sessions.share.fileDesc')}
             color="var(--color-warn)"
-            onClick={() => { void exportSessionFile(session, includeAudio ? audioBlob : null); closeModal(); }}
+            onClick={() => { void withAudio(async audio => { await exportSessionFile(session, audio); closeModal(); }); }}
           />
           <ShareChoiceCard
             icon={SHARE_ICON_SHARE}
             label={t('library.share.label')}
             desc={t('library.share.desc')}
             color="var(--color-accent)"
-            onClick={() => { void doUpload(includeAudio ? audioBlob : null); }}
+            onClick={() => { void withAudio(doUpload); }}
           />
         </div>
       </div>

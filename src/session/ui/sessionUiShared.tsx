@@ -8,7 +8,7 @@ import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../service
 import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName } from '../../utils';
-import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile } from '../../services/attachmentStore';
+import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile, mutateWithRule } from '../../services/attachmentStore';
 import { extractClip } from '../audio/clipExtract';
 import { legacyClipTag } from '../../services/attachmentNames';
 import { getContext } from '../../store';
@@ -745,7 +745,7 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: T
   const commitAdd = async (card: Card, deckIds: string[]) => {
     setBusy(true);
     try {
-      await ctx.mutate(s => {
+      await mutateWithRule(s => {
         const existing = card.externalId ? findByExternalId(card.externalId, s.cards) : undefined;
         const id = existing?.id ?? card.id;
         if (!existing) s.cards[id] = card;
