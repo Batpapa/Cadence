@@ -420,6 +420,12 @@ export function showDriveConflictModal(
       // What this side kept may include files the other side deleted from
       // Drive along with their attachment — see reuploadResurrected.
       void reuploadResurrected(remote).catch(() => { /* best-effort; the backlog retries */ });
+      // And the recordings of sessions it kept, whose Drive copy the other
+      // side's deletion sent to the trash. Loaded on demand: the session
+      // module stays out of the main bundle.
+      void import('../session/db')
+        .then(({ untrashResurrectedAudio }) => untrashResurrectedAudio(remote))
+        .catch(() => { /* best-effort */ });
     } else {
       // Also discards any buffered upload and settles the status (green) —
       // see markSyncedAfterApply. Applies the ORIGINAL payload, not the

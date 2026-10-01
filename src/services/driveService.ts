@@ -1377,6 +1377,25 @@ export async function trashCompanionFile(fileId: string, interactive = false): P
   }
 }
 
+/** Takes a companion file back out of the trash. False when it is not there to
+ *  take back — deleted for good (by the user emptying their bin, or thirty
+ *  days on) — or when Drive cannot be asked. */
+export async function untrashCompanionFile(fileId: string, interactive = false): Promise<boolean> {
+  if (!_state.fileId) return false;
+  try {
+    const resp = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=trashed`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: false }) },
+      interactive,
+    );
+    if (!resp.ok) return false;
+    return !((await resp.json()) as { trashed?: boolean }).trashed;
+  } catch (e) {
+    console.warn('[drive] could not untrash ' + fileId, e);
+    return false;
+  }
+}
+
 /** Replaces an existing file's content, keeping its id and name. */
 export async function replaceCompanionFileContent(fileId: string, blob: Blob, interactive = false): Promise<void> {
   if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
