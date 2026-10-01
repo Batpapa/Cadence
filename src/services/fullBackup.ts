@@ -1,5 +1,5 @@
 import type { AppState } from '../types';
-import { toDateStr, downloadBlob } from '../utils';
+import { toDateStr, downloadCadenceFile } from '../utils';
 import { buildZip, readZip, audioExtension, type ZipEntry } from './zip';
 import { loadSessionAudio, saveSessionAudio } from '../session/db';
 import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from '../session/model';
@@ -120,7 +120,7 @@ export async function exportFullBackup(user: AppState, gate: ExportGate): Promis
   }
 
   const zip = buildZip(entries);
-  downloadBlob(new Blob([zip], { type: 'application/zip' }), `cadence-backup-${toDateStr(new Date())}.cdbf`);
+  downloadCadenceFile(zip, `cadence-backup-${toDateStr(new Date())}.cdbf`);
 }
 
 export interface FullBackup {

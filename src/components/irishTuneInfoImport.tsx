@@ -3,7 +3,7 @@ import { createPortal } from 'preact/compat';
 import type { ComponentChild, RefObject } from 'preact';
 import type { AppContext, Card } from '../types';
 import { focusIfDesktop, sortByRelevance } from '../utils';
-import { mutate, appState } from '../store';
+import { appState } from '../store';
 import {
   searchTunes, fetchTuneById, fetchPlaylist, fetchTunesByIds, fetchAudioFile,
   tuneToCard, isServerWarm,
@@ -16,6 +16,7 @@ import { showModal, closeModal } from './modal';
 import { t } from '../services/i18nService';
 import { getZoom } from '../services/zoomService';
 import { CheckIcon } from './icons';
+import { mutateWithRule } from '../services/attachmentStore';
 
 /** Only the newest lookup gets to write — a local copy of theSessionImport's,
  *  by the same convention as the atoms below.
@@ -259,7 +260,7 @@ async function fetchViaTheSession(
  *  actually commits anything, and only once every fetch phase has already
  *  succeeded. */
 function commitCards(newCards: Card[], linkIds: string[], getTargetDeckIds?: () => Set<string> | undefined): Promise<void> {
-  return mutate(s => {
+  return mutateWithRule(s => {
     for (const card of newCards) { s.cards[card.id] = card; }
     for (const deckId of (getTargetDeckIds?.() ?? [])) {
       const deck = s.decks[deckId]; if (!deck) continue;
@@ -363,7 +364,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
       const tune = await fetchTuneById(tuneId);
       const existing = findByExternalId(`irishtuneinfo:${tune.id}`, appState.value.cards);
       if (existing) {
-        await mutate(s => {
+        await mutateWithRule(s => {
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
             const deck = s.decks[deckId];
             if (deck && !deck.entries.some(e => e.cardId === existing.id)) deck.entries.push({ cardId: existing.id });
@@ -374,7 +375,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
       } else {
         const audioFile = includeAudio && tune.featuredAudioUrl ? await fetchAudioFile(tune.featuredAudioUrl, `${tune.name}.mp3`) : null;
         const card = tuneToCard(tune, audioFile);
-        await mutate(s => {
+        await mutateWithRule(s => {
           s.cards[card.id] = card;
           for (const deckId of (getTargetDeckIds?.() ?? [])) {
             const deck = s.decks[deckId];

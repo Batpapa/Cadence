@@ -1,4 +1,4 @@
-import fixWebmDuration from 'fix-webm-duration';
+import { patchWebmDuration } from './audio/webmDuration';
 import {
   listDraftSessions, collectChunks, clearChunks, saveSessionAudio, saveSessionMeta, loadSessionAudio,
   loadSessionWindows, deleteSessionWindows, deleteSession,
@@ -80,7 +80,7 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
     let blob = new Blob(chunks, { type: mimeType });
     if (mimeType.includes('webm')) {
       try {
-        blob = await fixWebmDuration(blob, durationMs, { logger: false });
+        blob = await patchWebmDuration(blob, durationMs);
       } catch { /* seeking degraded but audio intact */ }
     }
     await saveSessionAudio(session.id, blob);
@@ -243,10 +243,12 @@ export function settleRecoveryFailure(sessionId: string): void {
 }
 
 /** The recording as it stands, for the user to keep before abandoning —
- *  assembled from its chunks WITHOUT fixWebmDuration: that step loads the whole
- *  file into memory twice over, the likeliest thing to have killed the tab in
- *  the first place, and a Blob of Blobs copies nothing. The file plays; seeking
- *  in it is approximate. Falls back to an audio blob saved by an attempt that
+ *  assembled from its chunks and nothing more. It was kept away from
+ *  fix-webm-duration because that library loaded the whole file into memory
+ *  several times over — the likeliest thing to have killed the tab in the first
+ *  place. Its replacement (audio/webmDuration, 2026-10-01) reads only the head,
+ *  but the duration is not known here, and a Blob of Blobs copies nothing. The
+ *  file plays; seeking in it is approximate. Falls back to an audio blob saved by an attempt that
  *  failed later on. Null when there is no audio at all. */
 export async function orphanAudio(session: Analysis): Promise<Blob | null> {
   const chunks = await collectChunks(session.id);

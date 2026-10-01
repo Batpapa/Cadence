@@ -194,12 +194,32 @@ export function downloadTextFile(content: string, filename: string, mime: string
  *  downloadTextFile handed a Uint8Array reads as a bug at every call site,
  *  and the archive path is bytes all the way down. */
 export function downloadBlob(blob: Blob, filename: string): void {
+  // A .abc from TheSession is stored as text/plain, which Android would save
+  // as "….abc.txt" — see downloadCadenceFile for why.
+  if (/^text\/plain\b/.test(blob.type) && !/\.txt$/i.test(filename)) {
+    blob = new Blob([blob], { type: 'application/octet-stream' });
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** Save-as for Cadence's own formats — .cdb, .cdbf, .cdc, .cds — and the only
+ *  way they should reach a disk.
+ *
+ *  Always application/octet-stream, never the type of what is inside. Android
+ *  saves a download through its MediaProvider, which appends the extension of
+ *  the declared type to any name whose extension it does not map to that type:
+ *  a .cdb sent as application/json lands as "….cdb.json" (found on a user's
+ *  phone, 2026-09-17: five of them), and the import, which filters on our
+ *  extensions, can then not even select it. octet-stream is the one type it
+ *  leaves alone, and it is also the truth: nothing else knows how to open
+ *  these files. */
+export function downloadCadenceFile(content: BlobPart, filename: string): void {
+  downloadBlob(new Blob([content], { type: 'application/octet-stream' }), filename);
 }
 
 /** Copies text, and says whether it worked.

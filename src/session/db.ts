@@ -914,6 +914,39 @@ export async function loadSessionAudio(sessionId: string): Promise<Blob | undefi
   return (await localDb()).get(AUDIO_STORE, sessionId);
 }
 
+/** What Drive says about this recording's copy, asked without fetching it.
+ *  Null when no copy was ever recorded. `needsAuth`: no token, and this was
+ *  not asked from a click — GIS cannot renew one silently. */
+export type SyncedAudioProbe =
+  | { status: 'ok'; bytes: number }
+  | { status: 'gone' }
+  | { status: 'needsAuth' }
+  | { status: 'offline' };
+
+export async function probeSyncedAudio(sessionId: string, interactive = false): Promise<SyncedAudioProbe | null> {
+  const entry = await syncedAudioOf(sessionId);
+  if (!entry) return null;
+  const drive = await driveModule();
+  if (!interactive && !drive.hasDriveToken()) return { status: 'needsAuth' };
+  try {
+    const size = await drive.companionFileSize(entry.fileId, interactive);
+    return size === 'gone' ? { status: 'gone' } : { status: 'ok', bytes: size || entry.bytes };
+  } catch (e) {
+    return /needs_auth/.test(String(e)) ? { status: 'needsAuth' } : { status: 'offline' };
+  }
+}
+
+/** The Drive copy's bytes for one use — sending it along with a shared
+ *  analysis — and deliberately NOT kept: the user freed this space, and
+ *  sharing is no reason to take it back. */
+export async function downloadSyncedAudioOnce(sessionId: string): Promise<Blob | null> {
+  const entry = await syncedAudioOf(sessionId);
+  if (!entry) return null;
+  const blob = await (await driveModule()).downloadCompanionFile(entry.fileId, true);
+  if (!blob) return null;
+  return blob.type ? blob : new Blob([blob], { type: entry.mimeType });
+}
+
 /** Downloads a recording this device does not have, and caches it locally so the
  *  next playback — and any clip extracted from it — costs nothing.
  *

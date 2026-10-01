@@ -146,11 +146,13 @@ export async function rawAttachmentBlobs(userId: string): Promise<Map<string, Bl
 
 /** A Drive file to delete when Drive is next reachable. Keyed by file id, so
  *  condemning the same file twice is one row. */
-export async function condemnDriveFile(driveFileId: string, attachmentId: string): Promise<void> {
-  await (await db()).put(GRAVEYARD, { driveFileId, attachmentId, at: Date.now() }, driveFileId);
+export async function condemnDriveFile(driveFileId: string, attachmentId: string, replacedBy?: string): Promise<void> {
+  await (await db()).put(GRAVEYARD, { driveFileId, attachmentId, at: Date.now(), ...(replacedBy ? { replacedBy } : {}) }, driveFileId);
 }
 
-export interface Condemned { driveFileId: string; attachmentId: string; at: number }
+/** `replacedBy`: the local id of the attachment an EDIT put in this file's
+ *  place. The purge waits until that one is on Drive (2026-10-01). */
+export interface Condemned { driveFileId: string; attachmentId: string; at: number; replacedBy?: string }
 
 export async function condemnedFiles(): Promise<Condemned[]> {
   return (await (await db()).getAll(GRAVEYARD)) as Condemned[];

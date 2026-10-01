@@ -3,6 +3,7 @@ import type { AppState, AppContext, Route } from './types';
 import { emptyState } from './utils';
 import { saveUser } from './db';
 import { syncToCloud } from './services/driveService';
+import { saveFailure, reportSaveFailure, reportSaveRecovered } from './services/saveHealth';
 import { normaliseState } from './services/stateNormalise';
 import { closeTopOverlay } from './components/overlayStack';
 
@@ -319,8 +320,66 @@ export async function mutate(fn: (user: AppState) => void): Promise<void> {
   const next = structuredClone(appState.value);
   fn(next);
   commitState(next);
-  await saveUser(next);
+  await saveOrReport(next);
   syncToCloud(next);
+}
+
+/** Saves, and on failure says so and keeps trying — still rejecting, so that a
+ *  caller whose next step assumes the write happened (condemning the bytes an
+ *  edit replaced, say) does not take it.
+ *
+ *  What it deliberately does NOT do is push to Drive anyway. That looks like a
+ *  free second copy and is a trap: the push records this device as in sync
+ *  with Drive while its own database holds the older state, so the next launch
+ *  loads that older state believing it current, and the next edit pushes it
+ *  over the newer one — the shape of the 2026-08-31 loss. Drive hears about the
+ *  changes once they are on this device, from the retry below. */
+async function saveOrReport(next: AppState): Promise<void> {
+  try {
+    await saveUser(next);
+  } catch (e) {
+    reportSaveFailure('library', e);
+    armSaveRetry();
+    throw e;
+  }
+  libraryRecovered();
+}
+
+function libraryRecovered(): void {
+  reportSaveRecovered('library');
+  _disarmSaveRetry?.();
+  _disarmSaveRetry = null;
+}
+
+const SAVE_RETRY_MS = 30_000;
+let _saveRetry: ReturnType<typeof setInterval> | null = null;
+
+/** While the library cannot be written: every 30 s, and on coming back to the
+ *  foreground, write the CURRENT state — the whole of it, so one success
+ *  catches up every change made while it failed — then let Drive have it.
+ *  Stops by itself on the first success. */
+function armSaveRetry(): void {
+  if (_saveRetry) return;
+  const attempt = () => { void retrySave(); };
+  _saveRetry = setInterval(attempt, SAVE_RETRY_MS);
+  document.addEventListener('visibilitychange', attempt);
+  _disarmSaveRetry = () => {
+    if (_saveRetry) clearInterval(_saveRetry);
+    _saveRetry = null;
+    document.removeEventListener('visibilitychange', attempt);
+  };
+}
+let _disarmSaveRetry: (() => void) | null = null;
+
+/** Also offered as a button on the failure notice. */
+export async function retrySave(): Promise<boolean> {
+  if (!saveFailure.value?.kinds.includes('library')) return true;
+  const current = appState.value;
+  try { await saveUser(current); }
+  catch { return false; }
+  libraryRecovered();
+  syncToCloud(current);
+  return true;
 }
 
 /** Apply data received from Drive without triggering a sync-back. */

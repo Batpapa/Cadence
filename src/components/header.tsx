@@ -9,6 +9,8 @@ import { showModal, closeModal } from './modal';
 import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
 import { t } from '../services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from '../services/updateService';
+import { saveFailure } from '../services/saveHealth';
+import { showSaveFailureModal } from './saveFailureModal';
 import { getZoom } from '../services/zoomService';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import {
@@ -132,6 +134,33 @@ function UpdateBtn({ compact }: { compact: boolean }) {
  *  is safe is not a browser whose silence should be read as a yes — and the
  *  incident that prompted all this (2026-09-09) is exactly a user finding out
  *  afterwards. */
+/** Something could not be written to this device (see saveHealth). Red and
+ *  labelled, unlike the storage triangle next to it: that one says data COULD
+ *  be lost some day, this one says it is being lost now.
+ *
+ *  Opens its explanation by itself the first time a kind of failure appears —
+ *  and only then, not on every retry that fails again. */
+function SaveFailureBtn({ compact }: { compact: boolean }) {
+  const failure = saveFailure.value;
+  const seen = useRef<string[]>([]);
+  useEffect(() => {
+    const kinds = failure?.kinds ?? [];
+    if (kinds.some(k => !seen.current.includes(k))) showSaveFailureModal();
+    seen.current = kinds;
+  }, [failure]);
+  if (!failure) return null;
+  return (
+    <button
+      class="tap-btn gap-1.5 px-2 bg-danger/10 text-danger hover:bg-danger/20 cursor-pointer"
+      title={t('saveFailure.pillTitle')}
+      onClick={showSaveFailureModal}
+    >
+      <WarningTriangleIcon size={14} />
+      {!compact && <span class="text-xs font-medium">{t('saveFailure.pill')}</span>}
+    </button>
+  );
+}
+
 function StorageWarnBtn() {
   // Reads the signals, so this re-renders on its own when the boot request
   // settles and when the estimate is refreshed. assessStorage owns every case,
@@ -252,6 +281,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         {isDriveFeatureEnabled() && driveStatus !== 'disconnected' && driveStatus !== 'connecting' && (
           <SyncBtn status={driveStatus} />
         )}
+        <SaveFailureBtn compact={isPortraitPhone} />
         <StorageWarnBtn />
         {/* Left side on purpose: the right group is already crowded, and the
             centred profile chip is absolutely positioned — anything added on

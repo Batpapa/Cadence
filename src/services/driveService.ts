@@ -1325,6 +1325,23 @@ export async function uploadCompanionFileInto(
  *  "we could not ask" is not "there is nothing there". Never interactive,
  *  because opening a settings panel is not a reason to raise a consent
  *  window. */
+/** Whether a companion file is really there, and how big — without fetching
+ *  it. `'gone'`: Drive says it does not exist, or it sits in the trash (a
+ *  trashed file still downloads, but the user threw it away). Throws when Drive
+ *  cannot be asked: no connection, or no token and `interactive` false. */
+export async function companionFileSize(fileId: string, interactive = false): Promise<number | 'gone'> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  const resp = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=size,trashed`, {}, interactive,
+  );
+  if (resp.status === 404) return 'gone';
+  if (!resp.ok) throw new Error(`companion_meta_failed: ${resp.status}`);
+  const meta = (await resp.json()) as { size?: string; trashed?: boolean };
+  if (meta.trashed) return 'gone';
+  const n = Number(meta.size);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export async function driveBlobSize(): Promise<number | null> {
   if (!_state.fileId || !hasValidToken()) return null;
   try {

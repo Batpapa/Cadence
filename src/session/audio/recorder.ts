@@ -1,5 +1,6 @@
-import fixWebmDuration from 'fix-webm-duration';
+import { patchWebmDuration } from './webmDuration';
 import { appendChunk, collectChunks, clearChunks } from '../db';
+import { reportSaveFailure } from '../../services/saveHealth';
 import { RECORDER_TIMESLICE_MS } from '../sessionConfig';
 
 // ── Session file recorder ─────────────────────────────────────────────────────
@@ -60,8 +61,11 @@ export class SessionFileRecorder {
     this.recorder.ondataavailable = (e: BlobEvent) => {
       console.debug(`[rec] chunk ${this.seq}: ${e.data.size} bytes`);
       if (e.data.size === 0) return;
+      // Keep recording whatever happens, but never again in silence: a chunk
+      // that cannot be written is a hole in the recording, and the user is
+      // told while there is still something to do about it (2026-10-01).
       const p = appendChunk(this.recordingId, this.seq++, e.data)
-        .catch(() => { /* storage pressure — keep recording, chunk lost */ });
+        .catch((err: unknown) => { reportSaveFailure('recording', err); });
       this.pendingWrites.push(p);
     };
   }
@@ -104,7 +108,7 @@ export class SessionFileRecorder {
 
     if (mimeType.includes('webm')) {
       try {
-        blob = await fixWebmDuration(blob, durationMs, { logger: false });
+        blob = await patchWebmDuration(blob, durationMs);
       } catch { /* seeking degraded but audio intact */ }
     }
 

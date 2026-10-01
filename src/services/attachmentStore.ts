@@ -51,13 +51,26 @@ export function attachmentThresholdBytes(user: { attachmentThresholdKb?: number 
  *  test importing this file in node. Deferred exactly as session/db.ts defers
  *  the same module, and for the same reason. */
 function driveModule(): Promise<typeof import('./driveService')> {
-  return import('./driveService');
+  return (_drive ??= once(() => import('./driveService'), () => { _drive = null; }));
 }
 
 /** store.ts pulls in driveService transitively, so it is deferred for exactly
  *  the same reason — the pattern session/db.ts documents at length. */
 function storeModule(): Promise<typeof import('../store')> {
-  return import('../store');
+  return (_store ??= once(() => import('../store'), () => { _store = null; }));
+}
+
+/** Each deferred module is asked for once, not on every call — this file makes
+ *  them by the thousand in a single pass. Found by the property test
+ *  (2026-10-01): under vitest, two `import()`s of one mocked module in flight
+ *  at the same moment could resolve the second to the REAL module. In the
+ *  browser the import is already in the bundle and this only saves the calls.
+ *  A failed import is forgotten rather than kept, so a later call retries. */
+let _drive: Promise<typeof import('./driveService')> | null = null;
+let _store: Promise<typeof import('../store')> | null = null;
+let _snapshots: Promise<typeof import('./snapshotService')> | null = null;
+function once<T>(load: () => Promise<T>, forget: () => void): Promise<T> {
+  return load().catch((e: unknown) => { forget(); throw e; });
 }
 
 /** Size half of the rule, on its own so it can be reasoned about and tested
@@ -202,6 +215,86 @@ export async function externaliseIncoming(
     }
   }
   return moved;
+}
+
+/** `mutate`, for recipes that create cards or replace their files: every
+ *  import, every refresh from a source, every migration between sources, the
+ *  copy of a file. The rule is applied to what THIS recipe changed, and to
+ *  nothing else:
+ *
+ *   - a file attachment it added inline — present after, absent from the same
+ *     card before, compared on name and bytes — goes out if the rule says so,
+ *     exactly as the file picker would have sent it;
+ *   - an external file it dropped — named before, named by no card after — has
+ *     its Drive copy condemned, exactly as deleting the attachment would.
+ *
+ *  Until 2026-10-01 each of those sites built its attachment inline whatever
+ *  its size, and a refresh that replaced an externalised score left its Drive
+ *  file behind for good. A dozen places, each of which would have had to
+ *  remember two steps; this is the one place that does.
+ *
+ *  Scoped to the diff on purpose. Applied to the whole library it would be the
+ *  retroactive conversion that was refused, and applied to a state that came
+ *  from Drive it would rewrite what another device wrote — neither goes
+ *  through here.
+ *
+ *  The two snapshots are taken INSIDE the recipe, where mutate is still
+ *  synchronous: `appState.value` is the state before, `s` the one about to be
+ *  committed, and no other write can land between them. Externalising then
+ *  happens after the commit, anchored like applyConversion — a file edited or
+ *  removed in the meantime is left alone. Between the two writes the new file
+ *  sits inline, which is where it always sat before this existed. */
+export async function mutateWithRule(recipe: (s: AppState) => void): Promise<void> {
+  const { appState, mutate } = await storeModule();
+  let before: AppState | undefined;
+  let after: AppState | undefined;
+  await mutate(s => { before = appState.value; recipe(s); after = s; });
+  if (!before || !after) return;
+
+  const externalIds = (st: AppState) => {
+    const ids = new Set<string>();
+    for (const { att } of externalFilesIn(Object.values(st.cards ?? {}))) ids.add(att.external.id);
+    return ids;
+  };
+  const still = externalIds(after);
+  for (const { att } of externalFilesIn(Object.values(before.cards ?? {}))) {
+    if (!still.has(att.external.id)) void condemnAttachmentFile(att);
+  }
+
+  const belongsOut = await attachmentRule(after);
+  const changes: PlannedChange[] = [];
+  const uploads: FileAttachment[] = [];
+  for (const [cardId, card] of Object.entries(after.cards ?? {})) {
+    const atts = card.content?.attachments ?? [];
+    const old = new Set((before.cards?.[cardId]?.content?.attachments ?? [])
+      .flatMap(a => a.type === 'file' && !a.external ? [a.name + '\0' + a.data] : []));
+    for (let index = 0; index < atts.length; index++) {
+      const att = atts[index];
+      if (!att || att.type !== 'file' || att.external || !att.data) continue;
+      if (old.has(att.name + '\0' + att.data) || !belongsOut(inlineBytes(att))) continue;
+      try {
+        const built = await externaliseEntry({ name: att.name, data: att.data, mimeType: att.mimeType });
+        if (!built.external) continue;
+        changes.push({ cardId, index, name: att.name, data: att.data, external: built.external });
+        uploads.push(built);
+      } catch (e) {
+        // No room for the local row: it stays inline, as attachmentFor keeps it.
+        console.warn('[attachments] keeping ' + att.name + ' in the blob — could not store it locally', e);
+      }
+    }
+  }
+  if (changes.length === 0) return;
+  const filed = new Set<string>();
+  await mutate(s => {
+    for (const ch of changes) {
+      const att = s.cards[ch.cardId]?.content?.attachments?.[ch.index];
+      if (!att || att.type !== 'file' || att.external || att.name !== ch.name || att.data !== ch.data) continue;
+      att.data = '';
+      att.external = ch.external;
+      filed.add(ch.external!.id);
+    }
+  });
+  for (const att of uploads) if (filed.has(att.external!.id)) uploadAttachmentSoon(att);
 }
 
 /** Why an attachment's bytes could not be produced. Three distinct situations,
@@ -551,6 +644,8 @@ export async function uploadAttachment(externalId: string, interactive = false):
   } finally {
     _uploading.delete(externalId);
   }
+  // An edit's old version may have been waiting for exactly this.
+  void purgeCondemnedFiles();
 }
 
 /** Sends whatever is waiting. Never interactive: this runs on its own. */
@@ -718,15 +813,27 @@ export async function applyConversion(): Promise<{ out: number; back: number; fa
 
 /** The externalised attachments this device holds a copy of AND whose Drive
  *  copy is proven. Anything without a `driveFileId` exists here and nowhere
- *  else in the world, so it is never offered. */
+ *  else in the world, so it is never offered.
+ *
+ *  Nor is anything a snapshot names WITHOUT a `driveFileId` (2026-10-01, found
+ *  by the property test): a snapshot taken while the file waited in the upload
+ *  backlog records no Drive id, and never will — it is a frozen state. The
+ *  live state learning the id later proves the copy exists, not that the
+ *  snapshot can find it; freed here, that snapshot would restore a card whose
+ *  file reads "not uploaded yet" for ever, with the bytes sitting on Drive
+ *  under an id nothing it holds can name. Snapshots unreadable: nothing is
+ *  offered, the rule the sweep follows. */
 export async function freeableAttachments(user: AppState): Promise<{ ids: string[]; bytes: number }> {
   const held = new Set(await heldAttachmentIds());
+  let pinned: Set<string>;
+  try { pinned = (await snapshotReferences(user.id)).withoutDriveId; }
+  catch { return { ids: [], bytes: 0 }; }
   const seen = new Set<string>();
   const ids: string[] = [];
   let bytes = 0;
   for (const { att } of externalAttachments(user)) {
     const { id, driveFileId, bytes: size } = att.external;
-    if (!driveFileId || !held.has(id) || seen.has(id)) continue;
+    if (!driveFileId || !held.has(id) || seen.has(id) || pinned.has(id)) continue;
     seen.add(id);
     ids.push(id);
     bytes += size;
@@ -754,10 +861,10 @@ export async function freeUploadedAttachments(user: AppState): Promise<{ count: 
  *  the attachment leaves the state nothing else remembers that a file out
  *  there is now pointless. Trying first and recording only on failure would
  *  lose exactly the cases that matter. */
-export async function condemnAttachmentFile(att: Attachment | ResolvableFile): Promise<void> {
+export async function condemnAttachmentFile(att: Attachment | ResolvableFile, replacedBy?: string): Promise<void> {
   const external = 'external' in att ? att.external : undefined;
   if (!external?.driveFileId) return;
-  try { await condemnDriveFile(external.driveFileId, external.id); }
+  try { await condemnDriveFile(external.driveFileId, external.id, replacedBy); }
   catch (e) { console.warn('[attachments] could not record a file deletion', e); }
   void purgeCondemnedFiles();
 }
@@ -801,9 +908,18 @@ export async function purgeCondemnedFiles(): Promise<number> {
     return rows.length;
   }
 
+  // Edits whose new version has not reached Drive yet. Until it has, the old
+  // copy is the only one any OTHER device can fetch — and, should this device
+  // never manage the upload (lost, wiped), the only one left anywhere. An
+  // online edit used to lose that race: the condemnation purged at once while
+  // the new version was still on its way up (found 2026-10-01).
+  const notYetUp = new Set(
+    externalAttachments(appState.value).filter(x => !x.att.external.driveFileId).map(x => x.att.external.id),
+  );
   const due: typeof rows = [];
   for (const row of rows) {
     if (live.has(row.driveFileId)) { await forgetCondemned(row.driveFileId); continue; }
+    if (row.replacedBy && notYetUp.has(row.replacedBy)) continue;
     // Either id will do: a snapshot taken before the upload finished names
     // the attachment but not yet its Drive file.
     if (held.driveFileIds.has(row.driveFileId) || held.ids.has(row.attachmentId)) continue;
@@ -824,21 +940,29 @@ export async function purgeCondemnedFiles(): Promise<number> {
   return left;
 }
 
-interface SnapshotReferences { ids: Set<string>; driveFileIds: Set<string> }
+interface SnapshotReferences {
+  ids: Set<string>;
+  driveFileIds: Set<string>;
+  /** Named by some snapshot that records no Drive copy: for that snapshot the
+   *  local bytes are the only way back. */
+  withoutDriveId: Set<string>;
+}
 
 /** Every external attachment `userId`'s snapshots name, by both of its ids.
  *  Throws when the snapshots cannot be read; the callers then delete nothing. */
 async function snapshotReferences(userId: string): Promise<SnapshotReferences> {
-  const { snapshotStates } = await import('./snapshotService');
+  const { snapshotStates } = await (_snapshots ??= once(() => import('./snapshotService'), () => { _snapshots = null; }));
   const ids = new Set<string>();
   const driveFileIds = new Set<string>();
+  const withoutDriveId = new Set<string>();
   for (const state of await snapshotStates(userId)) {
     for (const { att } of externalAttachments(state)) {
       ids.add(att.external.id);
       if (att.external.driveFileId) driveFileIds.add(att.external.driveFileId);
+      else withoutDriveId.add(att.external.id);
     }
   }
-  return { ids, driveFileIds };
+  return { ids, driveFileIds, withoutDriveId };
 }
 
 /** Drops bytes this device holds for attachments nothing points at any more.
@@ -898,10 +1022,21 @@ export function initAttachmentSync(): void {
   _pendingHint = true;   // until a pass proves otherwise
   if (!_wired) {
     _wired = true;
-    void driveModule().then(drive => drive.registerDrivePendingWork({
-      pending: () => _pendingHint,
-      resume: () => { void runPendingAttachmentWork(); },
-    }));
+    void driveModule().then(drive => {
+      drive.registerDrivePendingWork({
+        pending: () => _pendingHint,
+        resume: () => { void runPendingAttachmentWork(); },
+      });
+      // Until 2026-10-01 the backlog only moved at the next launch or the next
+      // token renewal: a file attached or edited offline sat on this device
+      // alone, however soon the network came back. Both passes are
+      // non-interactive, so without a token they simply wait as before.
+      const resume = () => {
+        if (_pendingHint && drive.isDriveConnected() && drive.hasDriveToken()) void runPendingAttachmentWork();
+      };
+      window.addEventListener('online', resume);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resume(); });
+    });
   }
   setTimeout(() => { void expireSnapshotsThenCollect(true); }, 8000);
   // Not only at boot: a tab or an installed app can stay open for weeks, and
