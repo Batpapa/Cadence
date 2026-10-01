@@ -11,6 +11,7 @@ import {
 import { applyFromDrive, appState } from '../store';
 import { copyText } from '../utils';
 import { saveSnapshot, countReviews, type SnapshotReason } from '../services/snapshotService';
+import { reuploadResurrected } from '../services/attachmentStore';
 import { statesEqual, diffStates, statePathDiff, briefValue, type StateDiff, type CollectionDiff, type PathDiff } from '../services/stateDiff';
 
 // ── Shared Drive-state application + conflict resolution ─────────────────────
@@ -416,6 +417,9 @@ export function showDriveConflictModal(
       // Local wins: push it to Drive now, which also re-establishes the base.
       syncToCloud(appState.value);
       void manualSync();
+      // What this side kept may include files the other side deleted from
+      // Drive along with their attachment — see reuploadResurrected.
+      void reuploadResurrected(remote).catch(() => { /* best-effort; the backlog retries */ });
     } else {
       // Also discards any buffered upload and settles the status (green) —
       // see markSyncedAfterApply. Applies the ORIGINAL payload, not the

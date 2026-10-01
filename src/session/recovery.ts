@@ -243,16 +243,22 @@ export function settleRecoveryFailure(sessionId: string): void {
 }
 
 /** The recording as it stands, for the user to keep before abandoning —
- *  assembled from its chunks and nothing more. It was kept away from
- *  fix-webm-duration because that library loaded the whole file into memory
- *  several times over — the likeliest thing to have killed the tab in the first
- *  place. Its replacement (audio/webmDuration, 2026-10-01) reads only the head,
- *  but the duration is not known here, and a Blob of Blobs copies nothing. The
- *  file plays; seeking in it is approximate. Falls back to an audio blob saved by an attempt that
- *  failed later on. Null when there is no audio at all. */
+ *  assembled from its chunks, with its duration written in so the file seeks.
+ *  This used to skip that step: fix-webm-duration loaded the whole file into
+ *  memory several times over, the likeliest thing to have killed the tab in the
+ *  first place. Its replacement (audio/webmDuration, 2026-10-01) reads only the
+ *  head and copies nothing, so the download gets it too — with the same
+ *  duration estimate finalizeOrphan uses, and the plain chunks if the patch
+ *  cannot apply. Falls back to an audio blob saved by an attempt that failed
+ *  later on. Null when there is no audio at all. */
 export async function orphanAudio(session: Analysis): Promise<Blob | null> {
   const chunks = await collectChunks(session.id);
-  if (chunks.length > 0) return new Blob(chunks, { type: session.mimeType || chunks[0]!.type || 'audio/webm' });
+  if (chunks.length > 0) {
+    const blob = new Blob(chunks, { type: session.mimeType || chunks[0]!.type || 'audio/webm' });
+    if (!blob.type.includes('webm')) return blob;
+    const durationMs = Math.max(chunks.length * RECORDER_TIMESLICE_MS, session.duration * 1000);
+    try { return await patchWebmDuration(blob, durationMs); } catch { return blob; }
+  }
   const saved = await loadSessionAudio(session.id);
   return saved && saved.size > 0 ? saved : null;
 }

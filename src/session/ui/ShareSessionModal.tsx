@@ -7,7 +7,7 @@ import { shareSession, exportSessionFile } from '../../services/sessionShareServ
 import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport } from '../../services/analysisExport';
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
 import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
-import { copyText } from '../../utils';
+import { copyText, formatBytes } from '../../utils';
 import type { Analysis } from '../model';
 
 // ── Share a session (annotations + optionally the audio) via a short key —
@@ -223,7 +223,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
                 checked={includeAudio}
                 onChange={(e) => setIncludeAudio((e.target as HTMLInputElement).checked)}
               />
-              <span class="text-xs text-muted">{t('sessions.share.includeAudio', { mb: (audioBytes / 1048576).toFixed(0) })}</span>
+              <span class="text-xs text-muted">{t('sessions.share.includeAudio', { size: formatBytes(audioBytes) })}</span>
             </label>
             {!audioBlob && <p class="text-xs text-dim">{t('sessions.share.audioFromDrive')}</p>}
             {tooBig && <p class="text-xs text-warn">{t('sessions.share.tooBig')}</p>}
