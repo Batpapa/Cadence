@@ -19,6 +19,14 @@ const config: CapacitorConfig = {
   appName: 'Cadence',
   webDir: 'dist',
   plugins: {
+    // Capacitor's own system-bar inset handling double-counts the navigation
+    // bar while the keyboard is up: on WebView 153 (Galaxy A22) it left a
+    // blank band the bar's height between the app's bottom nav and the
+    // keyboard. Known and open upstream (ionic-team/capacitor#8287, #8525);
+    // the WebView handles env(safe-area-inset-*) itself from version 140 on.
+    SystemBars: {
+      insetsHandling: 'disable',
+    },
     // Over-the-air updates, self-hosted (src/native/otaUpdate.ts): the app
     // checks GitHub Pages' version.json itself and asks for a download.
     // Everything that would talk to Capgo's own cloud is switched off — no

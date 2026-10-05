@@ -1,4 +1,5 @@
 import { isMobileDevice } from '../utils';
+import { isNative } from '../native/platform';
 
 const LS_THEME = 'cadence_theme';
 export type Theme = 'dark' | 'light' | 'green';
@@ -16,4 +17,6 @@ export function setTheme(theme: Theme): void {
 
 export function applyTheme(): void {
   document.documentElement.dataset.theme = getTheme();
+  // The Android app's system bars follow the theme (native/systemBars.ts).
+  if (isNative()) void import('../native/systemBars').then(m => m.syncSystemBars());
 }

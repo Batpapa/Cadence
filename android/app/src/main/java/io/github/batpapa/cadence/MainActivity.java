@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FileExportPlugin.class);
         registerPlugin(LiveNotificationPlugin.class);
         registerPlugin(PullToRefreshPlugin.class);
+        registerPlugin(SystemBarsColorPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

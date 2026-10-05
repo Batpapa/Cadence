@@ -14,13 +14,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * browser. Refreshing is how Cadence is brought up to date with what another
  * device put on Drive (the boot reads Drive), so the gesture is kept.
  *
- * The WebView is wrapped in a SwipeRefreshLayout at load. The layout only
- * offers the pull when the WebView itself is scrolled to the top — Cadence
- * scrolls the document, not an inner box, so that reading is right. The page
- * decides the rest (src/native/appShell.ts): it switches the gesture off while
- * a dialog is open (scrolling a dialog's own content up must not reload) and
- * during a recording (reloading would end it), and performs the reload itself
- * on the "refresh" event.
+ * The WebView is wrapped in a SwipeRefreshLayout at load. The layout can only
+ * see the WebView's own scroll, and Cadence scrolls an inner box under its
+ * header, so to the layout the page is always "at the top". The page therefore
+ * decides (src/native/appShell.ts): it switches the gesture on only when its
+ * scrollers are at their top, no dialog is open and nothing is recording, and
+ * performs the reload itself on the "refresh" event.
  */
 @CapacitorPlugin(name = "PullToRefresh")
 public class PullToRefreshPlugin extends Plugin {

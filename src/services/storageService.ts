@@ -20,6 +20,7 @@
 // button in the storage panel.
 
 import { signal } from '@preact/signals';
+import { isNative } from '../native/platform';
 
 /** What the browser last answered. `undefined` while the boot request is still
  *  in flight, `null` when the browser implements no StorageManager at all.
@@ -96,6 +97,17 @@ export function assessStorage(
   return 'unknown';
 }
 
+/** What `persisted` means for the warning on this platform. In the Android app
+ *  the durability half does not apply: persist() is not available to a WebView
+ *  and always answers no, so the triangle would be on for everyone, for good.
+ *  Measured on 2026-10-05 with the phone held at ~400 MB free (below Chromium's
+ *  eviction threshold), app relaunched and written to: nothing was evicted,
+ *  Android only purged caches. The capacity half — writes failing on a full
+ *  origin — still applies, and still shows. */
+export function effectivePersisted(persisted: boolean | null | undefined): boolean | null | undefined {
+  return isNative() ? true : persisted;
+}
+
 export interface StorageReport {
   persisted: boolean | null;
   usage: number | null;
@@ -110,6 +122,12 @@ export interface StorageReport {
  *  harmless, but the check is cheaper and keeps the call out of the way of
  *  whatever heuristics a browser applies to repeated requests. */
 export async function ensurePersistentStorage(): Promise<boolean | null> {
+  // Pointless in the Android app (see effectivePersisted); the estimate is
+  // still wanted for the capacity warning.
+  if (isNative()) {
+    void refreshStorageEstimate();
+    return null;
+  }
   const sm = navigator.storage;
   if (!sm?.persist || !sm.persisted) {
     storagePersisted.value = null;
