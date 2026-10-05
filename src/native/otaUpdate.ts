@@ -32,6 +32,12 @@ function deployedBase(): string | null {
   return document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ?? null;
 }
 
+/** When a build was made: the base-36 timestamp ending its `build` id
+ *  (webpack.config.js). */
+function builtAt(build: string): number {
+  return parseInt(build.slice(build.lastIndexOf('-') + 1), 36);
+}
+
 const MIN_INTERVAL_MS = 60_000;
 const PERIOD_MS = 30 * 60_000;
 
@@ -60,6 +66,11 @@ async function check(): Promise<void> {
     lastSuccess = Date.now();
     if (!deployed.native || typeof deployed.build !== 'string') return;
     if (deployed.build === APP_BUILD.build || deployed.build === updateReady.value?.build) return;
+    // Unlike the PWA, the app may run a build made elsewhere than the deploy:
+    // a released APK. Built from the deployed commit, it is the same code under
+    // another build id — nothing to offer. Built from a later commit than the
+    // one deployed, the deploy is OLDER — never offered as an update.
+    if (deployed.commit === APP_BUILD.commit || !(builtAt(deployed.build) > builtAt(APP_BUILD.build))) return;
     // An APK older than what the bundle needs would load code calling into
     // native features it does not have: leave it on what it has.
     const { build: nativeBuild } = await App.getInfo();
