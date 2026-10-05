@@ -29,6 +29,7 @@ import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
 import { appState, getContext } from '../store';
 import { CustomSelect } from './customSelect';
+import { isNative } from '../native/platform';
 import { clearLastUserId, deleteUser, removeUserFromOrder } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
@@ -1386,13 +1387,34 @@ function AboutLine({ textKey, href }: { textKey: string; href?: string }) {
   );
 }
 
+function offerRecoveryScreen(): void {
+  const body = document.createElement('p');
+  body.className = 'text-sm text-muted leading-relaxed';
+  body.textContent = t('native.recovery.message');
+  showModal(t('native.recovery.title'), body, [
+    { label: t('common.cancel'), onClick: closeModal },
+    { label: t('native.recovery.open'), primary: true, onClick: () => { location.href = './?mode=recovery'; } },
+  ]);
+}
+
 /** The commit links to its page on GitHub: the one thing someone reporting a
  *  bug can send that names the exact code they ran. */
 function VersionLine() {
   const url = commitUrl();
   const commit = APP_BUILD.commit + (APP_BUILD.dirty ? '-dev' : '');
+  // The Android app has no address bar to type ?mode=recovery into: a long
+  // press on this line is the way in, easy to talk someone through.
+  const pressTimer = useRef(0);
+  const press = isNative()
+    ? {
+        onPointerDown: () => { pressTimer.current = window.setTimeout(offerRecoveryScreen, 800); },
+        onPointerUp: () => clearTimeout(pressTimer.current),
+        onPointerLeave: () => clearTimeout(pressTimer.current),
+        onPointerCancel: () => clearTimeout(pressTimer.current),
+      }
+    : {};
   return (
-    <p class="text-xs text-muted tabular-nums">
+    <p class={`text-xs text-muted tabular-nums ${isNative() ? 'select-none' : ''}`} {...press}>
       {t('settings.version', { version: APP_BUILD.version })}
       {' · '}
       {url ? <a href={url} target="_blank" rel="noopener" class="text-accent hover:underline">{commit}</a> : commit}

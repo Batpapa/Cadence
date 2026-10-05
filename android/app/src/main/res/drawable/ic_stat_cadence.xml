@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status bar icon of the live analysis: the analyser module's own icon
+     (WaveformIcon in src/components/icons.tsx, seven bars). Android draws it as
+     a white silhouette, so only the shape matters. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M3,10 L3,14 M6,7 L6,17 M9,4 L9,20 M12,2 L12,22 M15,5 L15,19 M18,8 L18,16 M21,10 L21,14" />
+</vector>

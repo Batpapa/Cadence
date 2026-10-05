@@ -1,6 +1,7 @@
 import LZString from 'lz-string';
 import type { AbcOpenMode, AbcPaper, FileEntry } from '../types';
-import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop } from '../utils';
+import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop, downloadBlob } from '../utils';
+import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
@@ -772,6 +773,11 @@ export function showPreviewModal(
           const open = document.createElement('a');
           open.href = entryToObjectUrl(entry);
           open.download = entry.name;
+          // The Android app's WebView ignores `download` on a blob: link.
+          if (isNative()) open.addEventListener('click', e => {
+            e.preventDefault();
+            downloadBlob(new Blob([entryToBytes(entry)], { type: entry.mimeType }), entry.name);
+          });
           open.className = 'btn-primary';
           open.textContent = t('fileViewer.pdf.open');
           box.append(msg, open);

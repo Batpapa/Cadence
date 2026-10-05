@@ -3,7 +3,7 @@ import { render } from 'preact';
 import { createPortal } from 'preact/compat';
 import type { ComponentChild, RefObject } from 'preact';
 import type { AppContext, Card } from '../types';
-import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
+import { generateId, focusIfDesktop, sortByRelevance, copyText } from '../utils';
 import { parseCardPackage, parseCardPackageFromText } from '../services/importExport';
 import { externaliseIncoming, uploadAttachmentSoon, mutateWithRule } from '../services/attachmentStore';
 import { downloadShare } from '../services/shareService';
@@ -1510,9 +1510,11 @@ function AiStep({ getChosenDeckIds, withDeckChoice }: {
       <button
         class="btn-primary w-full text-sm"
         onClick={() => {
-          void navigator.clipboard.writeText(AI_IMPORT_PROMPT);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
+          void copyText(AI_IMPORT_PROMPT).then(ok => {
+            if (!ok) return;
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          });
         }}
       >
         {copied ? t('newCard.ai.copied') : t('newCard.ai.copy')}
