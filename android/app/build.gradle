@@ -24,6 +24,21 @@ android {
     }
 }
 
+// Every debug build gets its own, ever-growing versionCode (minutes since the
+// epoch). The over-the-air updater (@capgo/capacitor-updater) only notices a
+// newly installed APK when the versionCode changes: with a fixed one, a phone
+// that once applied a downloaded bundle kept running it and silently ignored
+// every later development install (seen 2026-10-05). Release builds keep the
+// hand-set versionCode above, which the Play Store needs and which
+// scripts/ota-bundle.js's MIN_NATIVE_BUILD is compared against.
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.outputs.each { output ->
+            output.versionCode.set((System.currentTimeMillis().intdiv(60000L)) as int)
+        }
+    }
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'

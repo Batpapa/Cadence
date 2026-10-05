@@ -6,6 +6,7 @@ import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
 import { showModal, closeModal } from './modal';
+import { registerOverlay } from './overlayStack';
 import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
 import { t } from '../services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from '../services/updateService';
@@ -24,7 +25,7 @@ import {
 import { showShareAppModal } from './shareAppModal';
 import { showStorageModal } from './storageModal';
 import { pinnedModule, isPinnedRouteActive } from './pinnedModule';
-import { storagePersisted, storageUsage, storageQuota, assessStorage } from '../services/storageService';
+import { storagePersisted, storageUsage, storageQuota, assessStorage, effectivePersisted } from '../services/storageService';
 
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
@@ -165,7 +166,7 @@ function StorageWarnBtn() {
   // Reads the signals, so this re-renders on its own when the boot request
   // settles and when the estimate is refreshed. assessStorage owns every case,
   // including "not asked yet".
-  const risk = assessStorage(storagePersisted.value, storageUsage.value, storageQuota.value);
+  const risk = assessStorage(effectivePersisted(storagePersisted.value), storageUsage.value, storageQuota.value);
   if (risk === 'none') return null;
   // Red is reserved for the one that is already losing data — a full origin
   // drops recording chunks silently. Amber is "this could be deleted later".
@@ -211,6 +212,10 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
     }
     setProfileOpen(o => !o);
   };
+  // On the overlay stack like every other popup, so Back and Escape close it
+  // — the Android app's Back used to send the whole app to the background
+  // past it (seen 2026-10-05).
+  useEffect(() => (profileOpen ? registerOverlay(() => setProfileOpen(false)) : undefined), [profileOpen]);
 
   const [driveStatus, setDriveStatus] = useState<DriveStatus>(getDriveStatus);
   useEffect(() => {

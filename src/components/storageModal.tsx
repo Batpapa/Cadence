@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { showModal } from './modal';
 import { t } from '../services/i18nService';
 import { formatBytes } from '../utils';
-import { ensurePersistentStorage, storageReport, assessStorage, type StorageReport } from '../services/storageService';
+import { ensurePersistentStorage, storageReport, assessStorage, effectivePersisted, type StorageReport } from '../services/storageService';
 
 // ── "Where your data lives" ──────────────────────────────────────────────────
 // Reached from the header warning, which only appears when the browser has not
@@ -34,7 +34,7 @@ function StorageBody() {
 
   if (!report) return <p class="text-xs text-muted text-center py-3">{t('storage.reading')}</p>;
 
-  const risk = assessStorage(report.persisted, report.usage, report.quota);
+  const risk = assessStorage(effectivePersisted(report.persisted), report.usage, report.quota);
   const used = report.usage !== null ? formatBytes(report.usage) : t('storage.unknown');
   const free = report.quota !== null && report.usage !== null ? formatBytes(report.quota - report.usage) : t('storage.unknown');
 
