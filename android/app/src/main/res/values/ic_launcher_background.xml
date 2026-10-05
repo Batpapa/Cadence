@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The logo's own background (src/icons/icon.svg). -->
+    <color name="ic_launcher_background">#2A2F34</color>
+    <!-- The PWA manifest's background_color: what the app paints first. -->
+    <color name="cadence_splash_background">#0D0D0D</color>
+</resources>

@@ -50,9 +50,11 @@ function ShareKeyResult({ keyValue, secondsRemaining }: { keyValue: string; seco
       <button
         class="btn-primary w-full text-sm"
         onClick={() => {
-          void navigator.clipboard.writeText(keyValue);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
+          void copyText(keyValue).then(ok => {
+            if (!ok) return;
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          });
         }}
       >
         {copied ? t('common.copied') : t('library.share.copy')}

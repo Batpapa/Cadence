@@ -1,7 +1,7 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
-import { emptyState, formatBytes, downloadCadenceFile } from './utils';
+import { emptyState, formatBytes, downloadCadenceFile, downloadBlob } from './utils';
 import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
 import { registerCommandPalette } from './components/commandPalette';
@@ -24,6 +24,7 @@ import { mountApp, mountUserSelector, type DriveRecovery } from './appRoot';
 import { showHelpModal } from './components/help';
 import { getContext } from './store';
 import { closeTopOverlay } from './components/overlayStack';
+import { isNative } from './native/platform';
 import type { User } from './types';
 
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
@@ -197,6 +198,7 @@ async function showUserSelector(root: HTMLElement): Promise<void> {
     (name) => createAndOpenUser(name, root),
     isDriveFeatureEnabled() ? () => recoverUserFromDrive(root) : null,
   );
+  markNativeBundleReady();
 }
 
 export async function openUser(id: string, root: HTMLElement): Promise<void> {
@@ -225,6 +227,10 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
 
 (async () => {
   const root = document.getElementById('app')!;
+
+  // The Android app's system Back, from the very first screen on — the
+  // recovery screen included.
+  if (isNative()) void import('./native/appShell').then(m => m.initNativeShell());
 
   // Manual entry point, e.g. https://.../?mode=recovery — a link you can send
   // someone whose Cadence is misbehaving, so they can self-serve into a
@@ -294,7 +300,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
   setLanguage(detectLanguage());
 
   root.innerHTML = `
-    <div class="p-8 max-w-3xl mx-auto space-y-4">
+    <div class="p-4 sm:p-8 max-w-3xl mx-auto space-y-4">
       <h1 class="text-lg font-semibold text-center">${escapeHtml(t('recovery.title'))}</h1>
       ${message
         ? `<p class="text-danger font-mono text-sm text-center">${escapeHtml(t('recovery.failed', { message }))}</p>
@@ -303,7 +309,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
         : `<p class="text-xs text-muted text-center">${escapeHtml(t('recovery.intro'))}</p>`}
       <div id="recovery-users" class="space-y-2 overflow-x-auto"></div>
       <div id="recovery-snapshots" class="space-y-2"></div>
-      <div class="flex gap-2 justify-center pt-2 border-t border-border">
+      <div class="flex flex-wrap gap-2 justify-center pt-2 border-t border-border">
         <button id="recovery-raw" class="btn-ghost text-sm">${escapeHtml(t('recovery.rawDump'))}</button>
         <button id="recovery-report" class="btn-ghost text-sm">${escapeHtml(t('recovery.report'))}</button>
       </div>
@@ -333,19 +339,22 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
     for (const id of ids) {
       const user = await loadUser(id);
       const row = document.createElement('div');
-      row.className = 'flex items-center gap-3 p-2 rounded border border-border whitespace-nowrap';
+      // One line from `sm` up; stacked below it, where the full id, the name
+      // and two buttons on one line pushed the row far past a phone's width.
+      row.className = 'flex flex-col gap-1.5 p-2 rounded border border-border sm:flex-row sm:items-center sm:gap-3 sm:whitespace-nowrap';
       const idTag = document.createElement('span');
       // Always shown in full, never wrapped/truncated — the one thing this
-      // screen exists to make legible for debugging.
-      idTag.className = 'text-xs text-muted font-mono select-all shrink-0';
+      // screen exists to make legible for debugging. On a phone it gets a line
+      // of its own, which a 36-character id fits.
+      idTag.className = 'text-xs text-muted font-mono select-all shrink-0 whitespace-nowrap';
       idTag.textContent = id;
       const nameTag = document.createElement('span');
-      nameTag.className = 'text-sm truncate min-w-0 flex-1';
+      nameTag.className = 'text-sm truncate min-w-0 sm:flex-1';
       nameTag.textContent = user?.name ?? t('recovery.unnamed');
 
       const safeName = (user?.name ?? 'unnamed').toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const btns = document.createElement('span');
-      btns.className = 'flex gap-1 shrink-0';
+      btns.className = 'flex flex-wrap gap-1 shrink-0';
 
       const btn = document.createElement('button');
       btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
@@ -434,22 +443,23 @@ async function renderRecoverySnapshots(): Promise<void> {
 
   for (const s of snaps) {
     const row = document.createElement('div');
-    row.className = 'flex items-center gap-3 p-2 rounded border border-border whitespace-nowrap';
+    // Stacked below `sm`, like the user rows above.
+    row.className = 'flex flex-col gap-1 p-2 rounded border border-border sm:flex-row sm:items-center sm:gap-3 sm:whitespace-nowrap';
 
     const when = document.createElement('span');
-    when.className = 'text-xs font-mono text-muted shrink-0';
+    when.className = 'text-xs font-mono text-muted shrink-0 whitespace-nowrap';
     when.textContent = new Date(s.ts).toISOString().slice(0, 16).replace(String.fromCharCode(84), " ");
 
     const what = document.createElement('span');
-    what.className = 'text-sm truncate min-w-0 flex-1';
+    what.className = 'text-sm min-w-0 sm:truncate sm:flex-1';
     what.textContent = t('recovery.snapshots.summary', { cards: s.cards, reviews: s.reviews, reason: s.reason });
 
     const who = document.createElement('span');
-    who.className = 'text-xs text-dim font-mono select-all shrink-0';
+    who.className = 'text-xs text-dim font-mono select-all shrink-0 whitespace-nowrap';
     who.textContent = s.userId;
 
     const btn = document.createElement('button');
-    btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5';
+    btn.className = 'btn-ghost text-xs shrink-0 inline-flex items-center gap-1.5 self-start sm:self-auto';
     btn.innerHTML = EXPORT_SVG + escapeHtml(t('recovery.download'));
     btn.onclick = () => {
       void runDownload(btn, t('recovery.download'), async () => {
@@ -553,12 +563,7 @@ async function downloadSessionAudioZip(id: string, safeName: string, user: Await
       entries.push({ name: `recovered-${unique(nice)}.${ext}`, data: new Uint8Array(await blob.arrayBuffer()) });
     }
     const zip = buildZip(entries);
-    const url = URL.createObjectURL(new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cadence-audio-${safeName}-${id}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' }), `cadence-audio-${safeName}-${id}.zip`);
     return true;
   } catch (e) {
     console.error('Recovery: audio zip failed:', e);
@@ -623,14 +628,16 @@ function reportBug(message: string | null): void {
   );
 }
 
+/** Android app: this web bundle reached a usable screen, so the over-the-air
+ *  updater must not roll it back (native/otaUpdate.ts). Deliberately not
+ *  called on the recovery screen: a bundle that only gets that far is the
+ *  broken one the rollback exists for. */
+function markNativeBundleReady(): void {
+  if (isNative()) void import('./native/otaUpdate').then(m => m.markAppReady());
+}
+
 function downloadJson(data: unknown, filename: string): void {
-  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), filename);
 }
 
 /**
@@ -706,6 +713,7 @@ function finishBoot(root: HTMLElement): void {
   }
 
   mountApp(root);
+  markNativeBundleReady();
   registerCommandPalette(getContext);
 
   // Alt+← / Alt+→ used to be handled here. Removed on 2026-09-10: they are

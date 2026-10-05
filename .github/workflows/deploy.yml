@@ -27,6 +27,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # The Android app's over-the-air update: the same build, zipped and
+      # recorded in version.json (see the script). After the build on purpose,
+      # so the zip never lands inside an APK through `cap sync`.
+      - run: node scripts/ota-bundle.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

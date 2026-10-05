@@ -1,4 +1,5 @@
 import { signal } from '@preact/signals';
+import { isNative } from '../native/platform';
 
 /** Who this running bundle is. See buildInfo() in webpack.config.js. */
 export interface BuildInfo { version: string; commit: string; dirty: boolean; build: string }
@@ -158,6 +159,12 @@ async function checkForUpdate(): Promise<void> {
  *  case), on the network returning (the cold-start-before-Wi-Fi case), and
  *  every half hour while visible. */
 export function initUpdateCheck(): void {
+  // The Android app updates over the air instead: its own copy of the web app
+  // is replaced by the deployed one, not reloaded from the network.
+  if (isNative()) {
+    void import('../native/otaUpdate').then(m => m.initNativeUpdateCheck());
+    return;
+  }
   if (location.hostname === 'localhost') return;
   const visibleCheck = () => { if (document.visibilityState === 'visible') void checkForUpdate(); };
   window.addEventListener('load', () => void checkForUpdate());
@@ -170,5 +177,9 @@ export function initUpdateCheck(): void {
  *  files it asks for are already cached. Should the network vanish in
  *  between, the worker serves the old shell, whose files are all still there. */
 export function applyUpdate(): void {
+  if (isNative()) {
+    void import('../native/otaUpdate').then(m => m.applyNativeUpdate());
+    return;
+  }
   location.reload();
 }

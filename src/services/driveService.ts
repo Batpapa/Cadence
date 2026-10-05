@@ -1,6 +1,7 @@
 import type { AppState } from '../types';
 import { GOOGLE_CLIENT_ID } from '../config';
 import { withTimeout } from '../utils';
+import { isNative } from '../native/platform';
 import { decideReconcile } from './reconcilePolicy';
 
 export type DriveStatus = 'disconnected' | 'connecting' | 'pending' | 'syncing' | 'connected' | 'error';
@@ -309,6 +310,9 @@ export function getDriveAccountEmail(): string   { return localStorage.getItem(l
  *  via WhatsApp, this is worth flagging proactively rather than waiting for
  *  a token request that may never resolve or reject. */
 export function isLikelyInAppBrowser(): boolean {
+  // Cadence's own Android app IS a WebView, but its tokens come from Play
+  // services, not from the consent page these browsers break.
+  if (isNative()) return false;
   const ua = navigator.userAgent || '';
   if (/FBAN|FBAV|Instagram|Line\/|WhatsApp|Messenger/i.test(ua)) return true;
   // Generic Android WebView marker — catches other chat/social apps' in-app browsers.
@@ -416,6 +420,8 @@ function loadGisScript(): void {
 
 export function initDriveClient(): Promise<void> {
   if (!GOOGLE_CLIENT_ID) return Promise.resolve();
+  // The Android app never loads GIS: see requestNativeToken.
+  if (isNative()) return Promise.resolve();
   if (driveReady) return driveReady;
   loadGisScript();
   const ready = new Promise<void>((resolve) => {
@@ -489,7 +495,49 @@ function onTokenResponse(resp: Gis): void {
   waiting?.resolve(accessToken!);
 }
 
+/**
+ * The Android app's token source: Google Play services (GoogleDriveAuthPlugin),
+ * because GIS's popup cannot work in a WebView — its token comes back by
+ * postMessage to an opener the WebView does not have.
+ *
+ * Unlike GIS, a grant here renews SILENTLY: with `interactive` false the call
+ * either returns a fresh token without any UI, or fails with NEEDS_AUTH when
+ * nothing was ever granted. So in the app the automatic paths (boot, the flush
+ * timer, a live recording's backup) never run out of token after an hour — the
+ * whole gesture-renewal machinery below has nothing to do there.
+ *
+ * Play services does not say when its token expires; an hour is assumed, and
+ * a token rejected earlier than that goes through driveRequest's 401 path,
+ * which evicts it from Play services' cache and asks again, silently.
+ */
+async function requestNativeToken(interactive: boolean, selectAccount = false): Promise<string> {
+  const { GoogleDriveAuth } = await import('../native/googleDriveAuth');
+  const account = localStorage.getItem(lsHint()) || undefined;
+  try {
+    const { accessToken: token } = await GoogleDriveAuth.authorize({ interactive, account, selectAccount });
+    adoptTokenResponse({ access_token: token, expires_in: 3600 });
+    return token;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(msg === NEEDS_AUTH ? NEEDS_AUTH : `${AUTH_FAILED}: ${msg}`);
+  }
+}
+
+/** Silent native requests in flight, shared like `tokenRequest` below. */
+let nativeSilentRequest: Promise<string> | null = null;
+
+function nativeSilentTokenOnce(): Promise<string> {
+  if (!nativeSilentRequest) {
+    nativeSilentRequest = requestNativeToken(false);
+    void nativeSilentRequest.catch(() => {}).finally(() => { nativeSilentRequest = null; });
+  }
+  return nativeSilentRequest;
+}
+
 function requestToken(prompt = ''): Promise<string> {
+  // 'consent' is connectDrive's prompt: the explicit Connect, where the
+  // account must be chosen rather than reused (see the plugin's authorize).
+  if (isNative()) return requestNativeToken(true, prompt === 'consent');
   const attempt = new Promise<string>((resolve, reject) => {
     pendingToken = { resolve, reject };
     tokenClient.error_callback = (err: Gis) => {
@@ -544,6 +592,10 @@ function requestTokenOnce(): Promise<string> {
  */
 async function getToken(interactive: boolean): Promise<string> {
   if (hasValidToken()) return accessToken!;
+  if (!interactive && isNative()) {
+    clearStoredToken();
+    return nativeSilentTokenOnce();
+  }
   if (!interactive) throw new Error(NEEDS_AUTH);
   clearStoredToken();
   await initDriveClient();
@@ -554,7 +606,10 @@ async function getToken(interactive: boolean): Promise<string> {
   } catch (e) {
     // Distinguishable from a network failure so the caller can decide whether
     // to keep prompting; a declined or blocked window must not become a loop.
-    throw new Error(`${AUTH_FAILED}: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    // The native path has already classified its own failure.
+    if (msg.startsWith(AUTH_FAILED)) throw e;
+    throw new Error(`${AUTH_FAILED}: ${msg}`);
   }
 }
 
@@ -563,9 +618,17 @@ async function driveRequest(url: string, options: RequestInit = {}, interactive 
     ...options,
     headers: { ...(options.headers as Record<string, string> ?? {}), Authorization: `Bearer ${tok}` },
   });
-  const resp = await doFetch(await getToken(interactive));
+  const token = await getToken(interactive);
+  const resp = await doFetch(token);
   if (resp.status === 401) {
     clearStoredToken();
+    if (isNative()) {
+      // Play services would hand the same dead token straight back: evict it
+      // first, then ask again — silently, a grant needs no gesture here.
+      const { GoogleDriveAuth } = await import('../native/googleDriveAuth');
+      await GoogleDriveAuth.clearToken({ token }).catch(() => { /* asking again is still worth it */ });
+      return doFetch(await getToken(interactive));
+    }
     // A token rejected mid-flight needs a fresh one, which needs a gesture.
     if (!interactive) throw new Error(NEEDS_AUTH);
     return doFetch(await requestTokenOnce());
@@ -636,7 +699,7 @@ async function backfillLoginHint(): Promise<void> {
 
 export async function connectDrive(allowSharedAccount = false): Promise<ConnectResult> {
   await initDriveClient();
-  if (!tokenClient) throw new Error('Drive client not ready');
+  if (!tokenClient && !isNative()) throw new Error('Drive client not ready');
   setStatus('connecting');
   // A (re)connect starts from zero: whatever merge base or failure flag might
   // linger from a previous connection is void — the Drive file may have been
@@ -737,7 +800,14 @@ export function disconnectDrive(): void {
   if (_state.syncTimer)  { clearTimeout(_state.syncTimer);  _state.syncTimer  = null; }
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
   _state.pendingState = null;
-  if (accessToken) {
+  if (isNative()) {
+    // Same intent as GIS's revoke below: the next connect asks consent again.
+    const account = localStorage.getItem(lsHint()) || undefined;
+    void import('../native/googleDriveAuth')
+      .then(m => m.GoogleDriveAuth.revoke({ account }))
+      .catch(() => { /* best-effort, as on the web */ });
+    clearStoredToken();
+  } else if (accessToken) {
     (window as Gis).google?.accounts?.oauth2?.revoke(accessToken, () => {});
     clearStoredToken();
   }
@@ -924,6 +994,9 @@ function anyWorkPending(): boolean {
 }
 
 export function initDriveTokenRenewal(): void {
+  // The Android app renews silently whenever a token is needed
+  // (requestNativeToken): there is no window to smuggle into a click.
+  if (isNative()) return;
   document.addEventListener('pointerdown', () => {
     if (gestureRenewalRefused || tokenRequest) return;
     if (!isDriveConnected() || conflictPending) return;

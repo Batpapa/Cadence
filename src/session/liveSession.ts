@@ -1,4 +1,5 @@
 import { WakeLockManager } from './audio/capture';
+import { startLiveForeground, refreshLiveForeground, stopLiveForeground } from '../native/liveForeground';
 import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
@@ -38,6 +39,10 @@ export interface LiveSessionCallbacks {
    *  session and KEEP what was captured up to here: everything already
    *  recognised is real, and the recorded audio is intact in IndexedDB. */
   onSourceEnded?: () => void;
+  /** Stop asked from outside the screen — the Android notification's button.
+   *  Handed to the UI so it takes the very path of the screen's own Stop:
+   *  saving is only half of stopping, the screen then opens the summary. */
+  onStopRequested?: () => void;
 }
 
 export class LiveSession {
@@ -212,6 +217,12 @@ export class LiveSession {
       this.persistDraft();
 
       await this.wakeLock.start();
+      // Android app only: what lets the recording outlive the screen, and its
+      // lock-screen notification.
+      void startLiveForeground(
+        () => ({ elapsedMs: this.getElapsedMs(), paused: this.phase === 'paused', detections: this.getDetections() }),
+        { onPause: () => void this.pause(), onResume: () => void this.resume(), onStop: () => this.requestStop() },
+      );
       // The automatic copy to Drive, from here until stop/cancel. It lives with
       // the session rather than with its screen: a recording keeps running while
       // the user is off looking at a card, and so must its backup.
@@ -230,6 +241,14 @@ export class LiveSession {
     applyDetectionEvents(this.annotations, events);
     this.persistDraft();
     this.cb.onDetections?.(events, this.getDetections());
+    void refreshLiveForeground();
+  }
+
+  /** See LiveSessionCallbacks.onStopRequested. */
+  private requestStop(): void {
+    if (this.phase !== 'recording' && this.phase !== 'paused') return;
+    if (this.cb.onStopRequested) this.cb.onStopRequested();
+    else void this.stop();
   }
 
   /** Toggle the "I liked this tune" marker — no bearing on recognition. */
@@ -281,6 +300,7 @@ export class LiveSession {
     await this.source.suspend();
     this.pauseStartedAt = Date.now();
     this.setPhase('paused');
+    void refreshLiveForeground();
     if (DEBUG_LIVE_AUDIO) console.log('[live] pause effective');
   }
 
@@ -314,6 +334,7 @@ export class LiveSession {
     this.recorder?.resume();
     this.pausedAccumMs += Date.now() - this.pauseStartedAt;
     this.setPhase('recording');
+    void refreshLiveForeground();
     if (DEBUG_LIVE_AUDIO) console.log('[live] reprise effective — la suite doit montrer des chunks worker');
   }
 
@@ -393,6 +414,7 @@ export class LiveSession {
   private cleanup(): void {
     void import('./liveBackup').then(m => m.stopAutoBackup(this.sessionId));
     this.wakeLock.stop();
+    void stopLiveForeground();
     this.recognition?.dispose();
     this.recognition = null;
     this.source.stop();

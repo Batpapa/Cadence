@@ -2,6 +2,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { showModal, renderModalBody } from './modal';
 import { t } from '../services/i18nService';
 import { ShareIcon, WhatsAppIcon, ExternalLinkIcon } from './icons';
+import { copyText } from '../utils';
+import { isNative } from '../native/platform';
 
 // ── "Share Cadence" ──────────────────────────────────────────────────────────
 // From a festival report (2026-09-09): the address appeared NOWHERE in the
@@ -92,19 +94,26 @@ function ShareAppBody() {
   const [copied, setCopied] = useState(false);
   // Absent on Firefox desktop among others, so the share sheet can never be the
   // only way out of this modal — the link and its copy button always are.
-  const canShare = typeof navigator.share === 'function';
+  // The Android app's WebView has no Web Share API; Android's own share sheet
+  // stands in for it there.
+  const native = isNative();
+  const canShare = native || typeof navigator.share === 'function';
 
   const copy = () => {
-    // Optional chaining short-circuits the whole chain: no clipboard (an
-    // insecure context) means no feedback rather than a thrown error, and the
-    // address stays selectable by hand right above.
-    navigator.clipboard?.writeText(url).then(
-      () => { setCopied(true); setTimeout(() => setCopied(false), 2000); },
-      () => { /* denied — the address is selectable */ },
-    );
+    // No feedback when the copy failed: the address stays selectable by hand
+    // right above.
+    void copyText(url).then(ok => {
+      if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    });
   };
 
   const share = () => {
+    if (native) {
+      void import('@capacitor/share')
+        .then(({ Share }) => Share.share({ title: t('shareApp.title'), url }))
+        .catch(() => { /* dismissed */ });
+      return;
+    }
     void navigator.share({ title: t('shareApp.title'), url }).catch(() => { /* dismissed */ });
   };
 

@@ -23,6 +23,16 @@ interface Entry { id: number; close: Closer }
 let nextId = 1;
 const stack: Entry[] = [];
 
+/** Told whenever a layer opens or goes away — the Android app's pull-to-refresh
+ *  is switched off while anything is open (native/appShell.ts). Plain callbacks
+ *  rather than a signal, to keep this module dependency-free (see above). */
+const listeners: Array<() => void> = [];
+const changed = () => { for (const l of listeners) l(); };
+
+export function onOverlaysChanged(listener: () => void): void {
+  listeners.push(listener);
+}
+
 /** Registers an overlay as the topmost thing on screen. The returned function
  *  removes it WITHOUT closing it — call it from the overlay's own teardown, so
  *  a close that came from anywhere else (a ✕, an action, Escape) leaves the
@@ -30,9 +40,10 @@ const stack: Entry[] = [];
 export function registerOverlay(close: Closer): () => void {
   const entry: Entry = { id: nextId++, close };
   stack.push(entry);
+  changed();
   return () => {
     const i = stack.findIndex(e => e.id === entry.id);
-    if (i >= 0) stack.splice(i, 1);
+    if (i >= 0) { stack.splice(i, 1); changed(); }
   };
 }
 
@@ -63,5 +74,8 @@ export function closeTopOverlay(): boolean {
   // nothing can ever close again; put straight back when it refuses, since it
   // is still the topmost thing on screen.
   if (top.close() === false) stack.push(top);
+  // Popped above, so the closer's own unregister finds nothing to remove and
+  // says nothing: report it here.
+  changed();
   return true;
 }

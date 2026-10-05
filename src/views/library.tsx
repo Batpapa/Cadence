@@ -193,9 +193,11 @@ function showExportModal(cards: Card[], user: AppState): void {
       copyBtn.className = 'btn-primary w-full text-sm';
       copyBtn.textContent = t('library.share.copy');
       copyBtn.onclick = () => {
-        void navigator.clipboard.writeText(key);
-        copyBtn.textContent = t('common.copied');
-        setTimeout(() => { copyBtn.textContent = t('library.share.copy'); }, 2000);
+        void copyText(key).then(ok => {
+          if (!ok) return;
+          copyBtn.textContent = t('common.copied');
+          setTimeout(() => { copyBtn.textContent = t('library.share.copy'); }, 2000);
+        });
       };
       const validity = document.createElement('p');
       validity.className = 'text-xs text-muted text-center';

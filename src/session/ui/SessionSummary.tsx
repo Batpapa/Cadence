@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import { formatBytes } from '../../utils';
+import { formatBytes, downloadBlob } from '../../utils';
 import { TrashIcon, ResetIcon, CloudUpIcon, PlusIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, alertModal } from '../../components/modal';
@@ -770,14 +770,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         if (!blob) return;
         let ext = audioExtension(blob.type || session.mimeType);
         if (ext === 'bin') ext = (await detectAudioFile(blob))?.extension ?? ext;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${safeName}.${ext}`;
-        a.click();
-        // Long enough for the browser to have taken the blob; revoking straight
-        // away can cancel the download on some of them.
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        downloadBlob(blob, `${safeName}.${ext}`);
       })
       .finally(() => setDownloading(false));
   };
@@ -956,12 +949,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
               class="text-[11px] text-dim hover:text-primary hover:underline cursor-pointer ml-auto"
               onClick={() => {
                 const blob = new Blob([JSON.stringify(dump.windows, null, 1)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${(session.name || 'session').replace(/[^\w-]+/g, '_')}-windows.json`;
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                downloadBlob(blob, `${(session.name || 'session').replace(/[^\w-]+/g, '_')}-windows.json`);
               }}
             >
               {t('sessions.dumpWindows')}

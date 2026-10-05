@@ -7,7 +7,7 @@ import { confirmModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
-import { fileToEntry, titleCaseTuneName } from '../../utils';
+import { fileToEntry, titleCaseTuneName, downloadBlob } from '../../utils';
 import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile, mutateWithRule } from '../../services/attachmentStore';
 import { extractClip } from '../audio/clipExtract';
 import { legacyClipTag } from '../../services/attachmentNames';
@@ -620,12 +620,7 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
       const clip = await extractClip(audio, ann.start, ann.end ?? session.duration, ratio => {
         setDownloadTitle(t('sessions.extracting', { pct: Math.round(ratio * 100) }));
       });
-      const url = URL.createObjectURL(clip.blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = clipFileName(session, ann, clip.extension);
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(clip.blob, clipFileName(session, ann, clip.extension));
     } catch (err) {
       setDownloadTitle(`⚠ ${String(err)}`);
     } finally {

@@ -2,6 +2,7 @@ import type { AppState, FileEntry } from './types';
 import { t } from './services/i18nService';
 import { SCHEMA_VERSION } from './services/migration';
 import { needsAudioSniff, sniffAudioMime, SNIFF_BYTES } from './services/audioSniff';
+import { isNative } from './native/platform';
 
 export function generateId(): string {
   return crypto.randomUUID();
@@ -199,12 +200,25 @@ export function downloadBlob(blob: Blob, filename: string): void {
   if (/^text\/plain\b/.test(blob.type) && !/\.txt$/i.test(filename)) {
     blob = new Blob([blob], { type: 'application/octet-stream' });
   }
+  // The Android app's WebView does nothing with the anchor below: the file
+  // goes through the system's save dialog instead (native/saveFile.ts).
+  if (isNative()) {
+    void import('./native/saveFile')
+      .then(m => m.saveBlobNative(blob, filename))
+      .catch(err => {
+        console.error('[native] save failed', err);
+        alert(t('native.save.failed', { message: err instanceof Error ? err.message : String(err) }));
+      });
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // Not revoked straight away: some browsers cancel a download whose URL
+  // dies before they have taken the blob (seen on audio, the largest files).
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Save-as for Cadence's own formats — .cdb, .cdbf, .cdc, .cds — and the only

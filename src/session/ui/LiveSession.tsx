@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { isTouchPrimaryDevice } from '../../utils';
+import { isNative } from '../../native/platform';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
 import type { Detection } from '../model';
@@ -96,6 +97,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         setInitStatus(t('sessions.sourceEnded'));
         void onStopClick();
       },
+      // The Android notification's Stop, possibly pressed on the lock screen:
+      // the same path as this screen's button, summary included.
+      onStopRequested: () => { void onStopClick(); },
     });
     // Re-entry (modal closed and reopened, or navigated away and back) while
     // a phase-changing event happened between the lazy useState initializers
@@ -131,8 +135,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   // own doc (still true here) on why this is unfixable code-side and only a
   // reminder past a real threshold.
   const isTouchPrimary = isTouchPrimaryDevice();
+  const native = isNative();
   useEffect(() => {
-    if (!isTouchPrimary) return;
+    if (!isTouchPrimary || native) return;
     let hiddenAtMs: number | null = null;
     let timeoutId = 0;
     const onVisibility = () => {
@@ -254,8 +259,13 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
 
       <p class="text-xs text-dim text-center">{initStatus}</p>
 
-      {isTouchPrimary && <p class="text-[11px] text-dim mt-2 text-center">{t('sessions.foregroundReminder')}</p>}
-      {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}
+      {/* Not in the Android app: there the recording carries on with the screen
+          off or another app on top (foreground service + LiveRenderer — 47 min
+          screen off, nothing lost, 2026-10-05), so both would be false. */}
+      {!native && <>
+        {isTouchPrimary && <p class="text-[11px] text-dim mt-2 text-center">{t('sessions.foregroundReminder')}</p>}
+        {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}
+      </>}
 
       <div ref={feedAnchorRef} class="mt-3 space-y-2">
         {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
