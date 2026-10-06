@@ -611,7 +611,8 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 /* Legal footer — static in raw HTML so it stays crawlable without JS (Google OAuth review) */
 #legal-footer {
   position: fixed;
-  bottom: 4px;
+  /* Above the gesture bar where the page runs under it (Android 15+, iOS). */
+  bottom: calc(env(safe-area-inset-bottom) + 4px);
   right: 8px;
   font-size: 9px;
   opacity: 0.4;
@@ -621,7 +622,9 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 }
 #legal-footer a { color: inherit; pointer-events: auto; }
 
-/* Stay clear of the bottom nav shown in portrait phone mode */
-@media (max-width: 767px) and (orientation: portrait) and (pointer: coarse) {
-  #legal-footer { bottom: calc(56px + env(safe-area-inset-bottom) + 4px); }
-}
+/* Stay clear of the bottom nav, only where it is on screen: the user selector
+   and the recovery screen have none, and a portrait-phone media query raised
+   the links there too (2026-10-06). `bottom-nav-shown` is set by BottomNav. */
+html.bottom-nav-shown #legal-footer { bottom: calc(56px + env(safe-area-inset-bottom) + 4px); }
+/* Neither rides the on-screen keyboard (services/softKeyboard.ts). */
+html.soft-keyboard-open #legal-footer { display: none; }
