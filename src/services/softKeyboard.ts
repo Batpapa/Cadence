@@ -25,7 +25,8 @@ const THRESHOLD_PX = 150;
 let tallest = 0;
 let tallestAtWidth = 0;
 
-function isTextField(el: Element | null): boolean {
+/** A field that takes typed text — what raises the keyboard. */
+export function isTextField(el: Element | null): boolean {
   if (!el) return false;
   if (el instanceof HTMLTextAreaElement) return !el.readOnly;
   if (el instanceof HTMLInputElement) {

@@ -1039,6 +1039,41 @@ export function initDriveVisibilitySync(): void {
   });
 }
 
+let refreshInFlight: Promise<void> | null = null;
+
+/**
+ * Picks up what another device wrote, at a moment when that is safe — the
+ * Android app and an installed PWA are almost never restarted, and boot was the
+ * only time Drive was read (2026-10-06). Callers: a live recording about to be
+ * saved, and the return to the foreground (main.ts).
+ *
+ * A version check first, so an unchanged Drive costs one small request. When
+ * Drive did move, the same reconciliation as at boot decides: applied silently
+ * when nothing local is waiting to go up, the conflict modal otherwise — the
+ * question the next flush would have asked anyway, only asked earlier.
+ *
+ * Never raises a consent window (`interactive` false): on the web, with no
+ * token in hand, it simply does nothing. Never throws either — offline or
+ * unreachable, the next flush's precondition still guards the push.
+ */
+export function refreshFromDrive(): Promise<void> {
+  if (!isDriveConnected() || conflictPending || !reconcileHook || !navigator.onLine) return Promise.resolve();
+  // A flush runs its own precondition; reconciling under it would race it.
+  if (_state.flushInProgress) return Promise.resolve();
+  refreshInFlight ??= (async () => {
+    try {
+      const base = getSyncedVersion();
+      if (base !== null && (await getDriveVersion(false)) === base) return;
+      await reconcileHook!(false);
+    } catch {
+      /* no token without a window, offline, Drive unreachable — see above */
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 export type DriveFileRead =
   | { status: 'ok';    data: AppState & { _lastModified?: number; _deviceId?: string }; version: string }
   // The file exists but holds nothing parseable — the empty husk of an

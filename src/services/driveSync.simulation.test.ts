@@ -614,3 +614,70 @@ describe('flipping RESOLVE_IDENTICAL_SILENTLY would not hide a real difference',
     expect(await reconcile(await openTab(reboot.local))).toEqual({ screen: 'none' });
   });
 });
+
+// ── 5. Picking up another device's edits without a restart ──────────────────
+// refreshFromDrive (2026-10-06): the Android app and an installed PWA are
+// resumed rather than restarted, and a live recording made on the phone while
+// the computer edited met those edits as a conflict at save time.
+
+describe('refreshFromDrive', () => {
+  beforeEach(() => { vi.stubGlobal('navigator', { onLine: true }); });
+
+  /** In sync, with the setup's own first push left out of the verdicts. */
+  async function inSyncFresh(): Promise<Session> {
+    const s = await connectedAndInSync();
+    s.duringFlush.length = 0;
+    return s;
+  }
+
+  it('applies another device\'s write silently when nothing local is waiting', async () => {
+    const s = await inSyncFresh();
+    advance(60_000);
+    drive.writeAs(state({ note: 'from the computer' }), 'computer', Date.now());
+    await s.mod.refreshFromDrive();
+    expect(s.duringFlush).toEqual([{ screen: 'apply' }]);
+    expect((s.local as unknown as { note?: string }).note).toBe('from the computer');
+  });
+
+  it('reads nothing more than the version when Drive has not moved', async () => {
+    const s = await inSyncFresh();
+    await s.mod.refreshFromDrive();
+    expect(s.duringFlush).toEqual([]);
+  });
+
+  it('asks rather than applies when an edit made here has not gone up yet', async () => {
+    const s = await inSyncFresh();
+    edit(s, u => { u.note = 'made on the phone'; });
+    advance(60_000);
+    drive.writeAs(state({ note: 'from the computer' }), 'computer', Date.now());
+    const commits = drive.commits;
+    await s.mod.refreshFromDrive();
+    expect(s.duringFlush).toEqual([{ screen: 'conflict', identical: false, sameDevice: false }]);
+    // Nothing was pushed over the other device's write.
+    expect(drive.commits).toBe(commits);
+    expect(driveNote()).toBe('from the computer');
+  });
+
+  it('does nothing offline', async () => {
+    const s = await inSyncFresh();
+    advance(60_000);
+    drive.writeAs(state({ note: 'from the computer' }), 'computer', Date.now());
+    vi.stubGlobal('navigator', { onLine: false });
+    await s.mod.refreshFromDrive();
+    expect(s.duringFlush).toEqual([]);
+  });
+
+  it('keeps both: the computer\'s edit, then a recording saved on top of it', async () => {
+    const s = await inSyncFresh();
+    advance(60_000);
+    drive.writeAs(state({ cards: { a: { id: 'a' } }, note: 'renamed on the computer' }), 'computer', Date.now());
+    // LiveSession.stop(): read Drive first, then save the session.
+    await s.mod.refreshFromDrive();
+    edit(s, u => { u.modules = { 'tune-analyser': { sessions: { live1: { id: 'live1' } } } }; });
+    await s.mod.manualSync();
+    expect(s.duringFlush).toEqual([{ screen: 'apply' }]);
+    const onDrive = drive.payload() as unknown as { note?: string; modules?: Record<string, { sessions: Record<string, unknown> }> };
+    expect(onDrive.note).toBe('renamed on the computer');
+    expect(Object.keys(onDrive.modules?.['tune-analyser']?.sessions ?? {})).toEqual(['live1']);
+  });
+});
