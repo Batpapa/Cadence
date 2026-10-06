@@ -24,14 +24,16 @@ import { PullToRefresh } from './pullToRefresh';
  */
 export function initNativeShell(): void {
   void App.addListener('backButton', () => {
+    // An open layer first, on every screen — the recovery screen's language
+    // and theme menus included.
+    if (anyOverlayOpen()) { closeTopOverlay(); return; }
     // The recovery screen (?mode=recovery, reached from the version line) has
     // no way back of its own — on the web one closes the tab. Back is it here.
     if (new URLSearchParams(location.search).get('mode') === 'recovery') {
       location.replace('./');
       return;
     }
-    if (anyOverlayOpen()) closeTopOverlay();
-    else if (canGoBack.value) history.back();
+    if (canGoBack.value) history.back();
     else void App.minimizeApp();
   });
   initPullToRefresh();
