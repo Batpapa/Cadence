@@ -23,6 +23,9 @@ import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 // decided once, at construction, and never appears again below: both are the
 // same LiveStreamSource, and everything downstream of it is identical.
 
+/** How long stop() waits for another device's edits before saving anyway. */
+const REFRESH_BEFORE_SAVE_MAX_MS = 15_000;
+
 export type LiveSessionPhase = 'idle' | 'initializing' | 'recording' | 'paused' | 'stopping' | 'done' | 'error';
 
 export interface LiveSessionCallbacks {
@@ -371,6 +374,15 @@ export class LiveSession {
         annotations: this.getDetections(),
       };
       await saveSessionAudio(session.id, fileResult.blob);
+      // Another device may have written to Drive during the recording — the
+      // computer, while the phone recorded. Taken in first, it is applied
+      // silently and the session lands on top of it; saved first, the two
+      // diverged and the conflict modal made the user give up one or the other
+      // (2026-10-06). Bounded: the session is saved regardless.
+      await Promise.race([
+        import('../services/driveService').then(m => m.refreshFromDrive()),
+        new Promise(resolve => setTimeout(resolve, REFRESH_BEFORE_SAVE_MAX_MS)),
+      ]).catch(() => { /* best-effort */ });
       await saveSessionMeta(session);
       // A cleanly-stopped session no longer needs its crash-recovery replay
       // source — drop it rather than keeping a growing raw-windows dump

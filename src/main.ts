@@ -10,7 +10,9 @@ import { initPWA } from './services/pwaService';
 import { initUpdateCheck } from './services/updateService';
 import { swallowReportedSaveRejections } from './services/saveHealth';
 import { ensurePersistentStorage } from './services/storageService';
-import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, localUsersOnSameDrive, adoptDriveConnection, type ConnectResult } from './services/driveService';
+import { initDriveClient, isDriveConnected, readDriveFile, reconcileDriveData, initDriveVisibilitySync, initDriveTokenRenewal, initDriveForUser, resumePendingSync, setReconcileHook, markReconcileFailed, connectDrive, clearDriveStateForUser, getDriveAccountEmail, isDriveFeatureEnabled, isLikelyInAppBrowser, markSyncedAfterApply, syncToCloud, manualSync, localUsersOnSameDrive, adoptDriveConnection, refreshFromDrive, type ConnectResult } from './services/driveService';
+import { isTextField } from './services/softKeyboard';
+import { sessionRecordingSignal } from './session/ui/sessionStore';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName, localSessionAudioStats } from './session/db';
 import { initAttachmentDbForUser, rawAttachmentBlobs } from './services/attachmentDb';
@@ -23,7 +25,7 @@ import { applyTheme } from './services/themeService';
 import { mountApp, mountUserSelector, type DriveRecovery } from './appRoot';
 import { showHelpModal } from './components/help';
 import { getContext } from './store';
-import { closeTopOverlay } from './components/overlayStack';
+import { anyOverlayOpen, closeTopOverlay } from './components/overlayStack';
 import { isNative } from './native/platform';
 import type { User } from './types';
 
@@ -678,10 +680,38 @@ async function reconcileWithDrive(interactive = true): Promise<boolean> {
   return true;
 }
 
+/** How long the page must have been out of sight before coming back re-reads
+ *  Drive: switching away for a moment is not leaving. */
+const FOREGROUND_REFRESH_AFTER_MS = 30_000;
+
+/**
+ * Back in the foreground after a while: take in what another device wrote
+ * meanwhile (refreshFromDrive). An installed app is resumed far more often than
+ * started, and boot used to be the only read — the computer's edits stayed
+ * invisible until a reload, and the first edit here then met them as a conflict
+ * (2026-10-06).
+ *
+ * Not while recording or importing (stop() does its own read before saving),
+ * not with a dialog open, not with a text field focused: an apply remounts the
+ * views, and what is being typed or edited there would be lost.
+ */
+function initForegroundDriveRefresh(): void {
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+    const away = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    if (away < FOREGROUND_REFRESH_AFTER_MS) return;
+    if (sessionRecordingSignal.value || anyOverlayOpen() || isTextField(document.activeElement)) return;
+    void refreshFromDrive();
+  });
+}
+
 function finishBoot(root: HTMLElement): void {
   applyTheme();
   applyZoom();
   initDriveVisibilitySync();
+  initForegroundDriveRefresh();
   initDriveTokenRenewal();
 
   // isDriveConnected() is a plain localStorage read — checking it first avoids
