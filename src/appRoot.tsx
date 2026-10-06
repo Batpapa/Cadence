@@ -9,6 +9,7 @@ import { ModalHost } from './components/modal';
 import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
+import { WelcomePrefs } from './components/welcomePrefs';
 import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon, CloudDownIcon, UpdateIcon } from './components/icons';
 import { t } from './services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from './services/updateService';
@@ -274,6 +275,8 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   const [recoverError, setRecoverError] = useState<'failed' | 'inAppBrowser' | null>(null);
   // Deliberately not persisted: it reopens closed on every visit.
   const [irishOpen, setIrishOpen] = useState(false);
+  // t() is not reactive: a language picked on this screen redraws it.
+  const [, redraw] = useState(0);
 
   const select = async (id: string) => {
     setLoading(id);
@@ -316,6 +319,11 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   // now lives in Settings → User, where it is a button that is simply visible.
   return (
     <div class="fixed inset-0 bg-bg flex items-center justify-center overflow-y-auto py-10">
+      {/* No Settings before a user exists: language and theme are here. Below
+          the status bar where the page runs under it (Android 15+, iOS). */}
+      <div class="fade-in absolute right-3" style="top:calc(env(safe-area-inset-top) + 8px);animation-delay:1s">
+        <WelcomePrefs onLanguageChange={() => redraw(x => x + 1)} />
+      </div>
       <div class="w-full max-w-[352px] mx-4 flex flex-col items-center">
 
         {/* ── Marque ── */}

@@ -1273,16 +1273,13 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
       <Sep />
 
       <Row label={t('settings.theme')}>
-        <div class="flex items-center gap-1">
-          {THEMES.map(th => (
-            <button
-              key={th.id}
-              class={`text-xs px-2 py-0.5 rounded transition-colors ${theme === th.id ? 'bg-accent text-white' : 'btn-ghost'}`}
-              onClick={() => changeTheme(th.id)}
-            >
-              {t(th.labelKey)}
-            </button>
-          ))}
+        <div style="flex:0 0 auto">
+          <CustomSelect
+            value={theme}
+            options={THEMES.map(th => ({ value: th.id, label: t(th.labelKey) }))}
+            onChange={(next) => changeTheme(next as Theme)}
+            triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent w-32"
+          />
         </div>
       </Row>
       <Sep />

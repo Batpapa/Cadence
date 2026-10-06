@@ -3,7 +3,9 @@ import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
 import { emptyState, formatBytes, downloadCadenceFile, downloadBlob } from './utils';
 import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
-import { ensureCurrentUser, ensureCurrentProfile, detectLanguage } from './services/userService';
+import { ensureCurrentUser, ensureCurrentProfile, welcomeLanguage } from './services/userService';
+import { h, render } from 'preact';
+import { WelcomePrefs } from './components/welcomePrefs';
 import { registerCommandPalette } from './components/commandPalette';
 import { setLanguage, t } from './services/i18nService';
 import { initPWA } from './services/pwaService';
@@ -64,7 +66,7 @@ screen.orientation?.unlock?.();
 
 function blankUser(): User {
   const user = emptyState();
-  user.language = detectLanguage();
+  user.language = welcomeLanguage();
   ensureCurrentUser(user);
   ensureCurrentProfile(user);
   return user;
@@ -189,7 +191,7 @@ async function recoverUserFromDrive(root: HTMLElement): Promise<DriveRecovery> {
 }
 
 async function showUserSelector(root: HTMLElement): Promise<void> {
-  setLanguage(detectLanguage());
+  setLanguage(welcomeLanguage());
   applyTheme();
   applyZoom();
   const users = await loadAllUsers();
@@ -299,10 +301,20 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
   const message = err !== undefined ? (err instanceof Error ? err.message : String(err)) : null;
   // Neither entry point runs showUserSelector(), which is where the language
   // is otherwise set: without this the screen spoke English to everyone.
-  setLanguage(detectLanguage());
+  setLanguage(welcomeLanguage());
+  // Nor applyTheme(): index.html's bootstrap alone falls back to dark, where
+  // the app itself starts a phone in light.
+  applyTheme();
 
+  // Redrawn in place when the language changes: let go of the previous controls.
+  const oldPrefs = document.getElementById('recovery-prefs');
+  if (oldPrefs) render(null, oldPrefs);
+  // Top padding clears the status bar where the page runs under it (Android 15+).
+  // w-full: #app is a flex column, where an auto-margined box shrinks to its
+  // text — the screen changed width with the language.
   root.innerHTML = `
-    <div class="p-4 sm:p-8 max-w-3xl mx-auto space-y-4">
+    <div class="w-full p-4 sm:p-8 max-w-3xl mx-auto space-y-4" style="padding-top:calc(env(safe-area-inset-top) + 1rem)">
+      <div id="recovery-prefs" class="flex justify-end -mb-2"></div>
       <h1 class="text-lg font-semibold text-center">${escapeHtml(t('recovery.title'))}</h1>
       ${message
         ? `<p class="text-danger font-mono text-sm text-center">${escapeHtml(t('recovery.failed', { message }))}</p>
@@ -316,6 +328,10 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
         <button id="recovery-report" class="btn-ghost text-sm">${escapeHtml(t('recovery.report'))}</button>
       </div>
     </div>`;
+
+  // The screen is plain markup: a language picked here redraws all of it.
+  render(h(WelcomePrefs, { onLanguageChange: () => { setTimeout(() => { void showRecoveryScreen(root, err); }, 0); } }),
+    document.getElementById('recovery-prefs')!);
 
   document.getElementById('recovery-retry')?.addEventListener('click', () => location.reload());
   const rawBtn = document.getElementById('recovery-raw') as HTMLButtonElement | null;

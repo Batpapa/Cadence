@@ -9,6 +9,20 @@ export function detectLanguage(): Lang {
   return (SUPPORTED_LANGS.includes(code as Lang) ? code : 'en') as Lang;
 }
 
+/** The language of the screens that come before any user is open — the
+ *  welcome screen and the recovery screen — as chosen there, else the
+ *  browser's. A new user starts in it; once a user is open, theirs applies. */
+const LS_WELCOME_LANG = 'cadence_welcome_lang';
+
+export function welcomeLanguage(): Lang {
+  const stored = localStorage.getItem(LS_WELCOME_LANG);
+  return SUPPORTED_LANGS.includes(stored as Lang) ? stored as Lang : detectLanguage();
+}
+
+export function setWelcomeLanguage(lang: Lang): void {
+  localStorage.setItem(LS_WELCOME_LANG, lang);
+}
+
 /** Ensure all required fields are present on the user. Mutates in place. */
 export function ensureCurrentUser(user: User): void {
   if (!user.id)       user.id       = generateId();
