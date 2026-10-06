@@ -14,6 +14,7 @@ import { saveFailure } from '../services/saveHealth';
 import { showSaveFailureModal } from './saveFailureModal';
 import { getZoom } from '../services/zoomService';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
+import { softKeyboardOpen } from '../services/softKeyboard';
 import {
   isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus,
 } from '../services/driveService';
@@ -442,6 +443,16 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
   const libActive     = route.view === 'library';
   const modulesActive = route.view === 'modules' || route.view === 'sessions';
   const pinned        = pinnedModule();
+
+  // Lets the legal footer (styles.css) stay clear of the bar only where there
+  // is one: the user selector and the recovery screen have none.
+  useEffect(() => {
+    document.documentElement.classList.add('bottom-nav-shown');
+    return () => document.documentElement.classList.remove('bottom-nav-shown');
+  }, []);
+
+  // The keyboard covers the bar rather than carrying it up (softKeyboard.ts).
+  if (softKeyboardOpen.value) return null;
 
   return (
     <nav
