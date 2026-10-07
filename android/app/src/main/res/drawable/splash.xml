@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- What shows between the system's launch screen and the page's first paint:
      the PWA manifest's background with Cadence's logo, in place of the
-     Capacitor template's logo on white. -->
+     Capacitor template's logo on white. The launcher drawable leaves a wide
+     margin around the logo (its safe circle), hence the large box: the logo
+     itself is ~130dp wide. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/cadence_splash_background" />
     <item
-        android:width="160dp"
-        android:height="160dp"
+        android:width="196dp"
+        android:height="196dp"
         android:gravity="center"
         android:drawable="@drawable/ic_launcher_foreground_cadence" />
 </layer-list>
