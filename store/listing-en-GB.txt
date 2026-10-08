@@ -1,0 +1,29 @@
+=== Short description (max 80) ===
+Spaced repetition for anything you learn, plus modules for Irish trad music
+
+=== Full description (max 4000) ===
+Cadence is a spaced repetition app: it helps you remember what you learn, and keep it for the long run. Your reviews are scheduled with FSRS, the state of the art in spaced repetition, so each practice starts with what you are about to forget.
+
+It also comes with modules for Irish traditional music: import tunes from TheSession.org and irishtune.info, record a session and let Cadence recognise the tunes played, and see which tunes are trending.
+
+SPACED REPETITION
+• Make cards for anything: tunes, songs, pieces, techniques, words, facts…
+• After each review, rate how it went (Again, Hard, Good or Easy). FSRS schedules the next one and brings up first what is slipping away.
+• Organise cards into decks and folders, study one deck, a folder or your whole library, and see at a glance how well you know each card.
+• Rich cards: notes, images, PDFs, recordings, videos, links, and sheet music in ABC notation.
+• Play back sheet music with a metronome and tempo control; slow down a recording and loop the tricky part.
+
+MODULES FOR IRISH TRADITIONAL MUSIC
+• TheSession.org: search tunes by name and import them with all their settings, as ready-made cards. Sets of tunes too.
+• irishtune.info: import tunes, with their audio extracts if you wish.
+• Tune analyser: record a session, or import an audio or video file, and Cadence works out which tunes were played, and when. Recognition runs entirely on your phone, powered by FolkFriend; the audio is never sent anywhere for it. Cut clips straight onto your cards, and log a tune you played as a review.
+• Recording carries on with the screen off or another app in front, with controls on the lock screen.
+• Trending: see which tunes are gaining popularity on TheSession.
+
+YOUR DATA STAYS YOURS
+• No account, no ads, no tracking. Your library lives on your device.
+• Optional sync with your own Google Drive, to use Cadence on several devices — including the web version on a computer.
+• Share a pack of cards, or a recorded session, with someone through a short one-time key.
+• Full backups and exports whenever you want.
+
+Available in English and French. Cadence is free and open source (AGPL).

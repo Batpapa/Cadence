@@ -14,7 +14,9 @@ android {
         applicationId "io.github.batpapa.cadence"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        // Raised by hand for every build sent to Play; 1 = the APKs installed by
+        // hand, so that the first Play build updates them in place.
+        versionCode 2
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

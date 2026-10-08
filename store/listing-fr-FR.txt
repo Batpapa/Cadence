@@ -1,0 +1,29 @@
+=== Short description (max 80) ===
+Répétition espacée pour tout ce que vous apprenez + modules musique irlandaise
+
+=== Full description (max 4000) ===
+Cadence est une application de répétition espacée : elle vous aide à retenir ce que vous apprenez, et à le garder sur la durée. Vos révisions sont planifiées par FSRS, l'état de l'art de la répétition espacée : chaque séance commence par ce que vous êtes sur le point d'oublier.
+
+Elle propose aussi des modules pour la musique traditionnelle irlandaise : importer des morceaux depuis TheSession.org et irishtune.info, enregistrer une session et laisser Cadence reconnaître les morceaux joués, voir les morceaux qui montent.
+
+RÉPÉTITION ESPACÉE
+• Des cartes pour tout : morceaux, chansons, pièces, techniques, vocabulaire, connaissances…
+• Après chaque révision, notez comment elle s'est passée (À revoir, Difficile, Bien ou Facile). FSRS planifie la suivante et fait passer en premier ce qui est en train de s'effacer.
+• Rangez vos cartes en paquets et en dossiers, révisez un paquet, un dossier ou toute la bibliothèque, et voyez d'un coup d'œil votre maîtrise de chaque carte.
+• Des cartes riches : notes, images, PDF, enregistrements, vidéos, liens, et partitions en notation ABC.
+• Écoutez une partition avec métronome et réglage du tempo ; ralentissez un enregistrement et faites tourner en boucle le passage difficile.
+
+MODULES MUSIQUE TRADITIONNELLE IRLANDAISE
+• TheSession.org : cherchez un morceau par son nom et importez-le avec toutes ses versions, en carte prête à l'emploi. Les sets aussi.
+• irishtune.info : importez des morceaux, avec leurs extraits audio si vous le souhaitez.
+• Analyseur de sessions : enregistrez une session, ou importez un fichier audio ou vidéo, et Cadence retrouve quels morceaux ont été joués, et à quel moment. La reconnaissance se fait entièrement sur votre téléphone, grâce à FolkFriend ; l'audio n'est envoyé nulle part pour cela. Découpez des extraits directement sur vos cartes, et comptez un morceau joué comme une révision.
+• L'enregistrement continue écran éteint ou avec une autre application au premier plan, avec des commandes sur l'écran de verrouillage.
+• Tendances : voyez quels morceaux gagnent en popularité sur TheSession.
+
+VOS DONNÉES RESTENT LES VÔTRES
+• Pas de compte, pas de publicité, pas de pistage. Votre bibliothèque reste sur votre appareil.
+• Synchronisation facultative avec votre propre Google Drive, pour utiliser Cadence sur plusieurs appareils — y compris la version web sur ordinateur.
+• Partagez un paquet de cartes ou une session enregistrée avec quelqu'un grâce à une courte clé à usage unique.
+• Sauvegardes complètes et exports quand vous le voulez.
+
+Disponible en français et en anglais. Cadence est gratuite et open source (AGPL).
