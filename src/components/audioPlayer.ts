@@ -1,23 +1,84 @@
-import { SoundTouch, SimpleFilter, WebAudioBufferSource, getWebAudioNode } from '@soundtouchjs/core';
+// The library's own file, as text: an alias in webpack.config.js.
+import signalsmithStretchSource from 'signalsmith-stretch.mjs?raw';
 import type { FileEntry } from '../types';
 import { t } from '../services/i18nService';
 import { playIcon, pauseIcon, stopIcon, repeatIcon } from './playbackIcons';
 
-// ── Global audio context (one at a time) ────────────────────────────────────
+// ── How the sound is made ────────────────────────────────────────────────────
+// Signalsmith Stretch (npm `signalsmith-stretch`, MIT): its author's own Web
+// Audio release, a WebAssembly time-stretcher in an AudioWorklet that plays a
+// buffer by itself — tempo, transposition in (fractional) semitones, an A-B
+// loop, all scheduled in the time the sound is HEARD, its own latency
+// compensated. This player only tells it what to play, and when.
+//
+// History, so nobody walks the same road again (2026-10-09). SoundTouch in a
+// ScriptProcessorNode ran on the page's main thread and crackled throughout
+// on a Galaxy A22. Moved to an AudioWorklet, it crackled for 2-3 s at every
+// start (its JavaScript not yet optimised), clicked at every loop seam, at
+// every stop and every seek — each fixed by hand in turn (warm-up, reserve,
+// gain dips, output fades, deferred suspension) until the user asked whether
+// we were reinventing the wheel. We were: a dedicated engine, compiled ahead
+// of time, handles every one of these itself.
 
 let currentAudioCtx: AudioContext | null = null;
+
+/** `playback`: this is listening, not playing an instrument, so a larger
+ *  output buffer costs nothing and Chrome on Android takes one. */
+function newPlayerContext(): AudioContext {
+  return new AudioContext({ latencyHint: 'playback' });
+}
 let currentDispose: (() => void) | null = null;
 
 export function stopCurrentAudio(): void {
   // Disconnect the node explicitly instead of relying on AudioContext.close()
-  // alone — on some Android/Chrome builds close() doesn't silence an
-  // in-flight ScriptProcessorNode immediately, letting a new instance's
-  // audio overlap the old one for a moment (reported as "duplicated
-  // playback with a slight offset").
+  // alone — on some Android/Chrome builds close() didn't silence an in-flight
+  // node immediately, letting a new instance's audio overlap the old one for
+  // a moment (reported as "duplicated playback with a slight offset").
   currentDispose?.();
   currentAudioCtx?.close();
   currentAudioCtx = null;
   currentDispose = null;
+}
+
+// ── The engine ───────────────────────────────────────────────────────────────
+
+/** What a schedule() call can set (the library's README). Times in seconds:
+ *  `output` on the context's clock, `input` and the loop in the file. */
+interface StretchSchedule {
+  output?: number;
+  active?: boolean;
+  input?: number;
+  rate?: number;
+  semitones?: number;
+  loopStart?: number;
+  loopEnd?: number;
+}
+
+/** The AudioWorkletNode the library returns, with the methods it attaches.
+ *  It ships no types. */
+type StretchNode = AudioWorkletNode & {
+  schedule(change: StretchSchedule): Promise<unknown>;
+  addBuffers(channels: Float32Array[]): Promise<number>;
+  /** Input plus output latency, in seconds: how far ahead a change has to be
+   *  scheduled to be taken exactly on time. */
+  latency(): Promise<number>;
+};
+
+type StretchFactory = (ctx: BaseAudioContext) => Promise<StretchNode>;
+let stretchFactory: Promise<StretchFactory> | null = null;
+
+/** The library, loaded as the very file it ships. It builds its AudioWorklet
+ *  module from its own functions' source text (`${Module}`), which a bundler's
+ *  minifier would rewrite — renamed variables that no longer exist once that
+ *  text runs alone in the worklet. Through a Blob URL it stays untouched, and
+ *  is part of the bundle: nothing for the service worker to miss offline. */
+function loadStretch(): Promise<StretchFactory> {
+  stretchFactory ??= (async () => {
+    const url = URL.createObjectURL(new Blob([signalsmithStretchSource], { type: 'text/javascript' }));
+    const mod = await import(/* webpackIgnore: true */ url) as { default: StretchFactory };
+    return mod.default;
+  })();
+  return stretchFactory;
 }
 
 // ── Slider CSS (injected once) ───────────────────────────────────────────────
@@ -71,11 +132,23 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   injectSliderStyle();
 
   // ── Playback state ──
-  let audioCtx:    AudioContext    | null = null;
-  let buffer:      AudioBuffer     | null = null;
-  let st:          SoundTouch      | null = null;
-  let filter:      SimpleFilter    | null = null;
-  let scriptNode:  ScriptProcessorNode | null = null;
+  let audioCtx: AudioContext | null = null;
+  let buffer:   AudioBuffer  | null = null;
+  let stretch:  StretchNode  | null = null;
+  /** How far ahead changes are scheduled — the node's own latency. */
+  let lead = 0.1;
+
+  // Where playback is, in the file's seconds: `anchorPos` comes out of the
+  // node at context time `anchorOut`, advancing at `anchorRate` — the same
+  // model the node keeps, re-anchored at every change sent to it.
+  // `pausedPos` is the position while nothing plays.
+  let anchorPos  = 0;
+  let anchorOut  = 0;
+  let anchorRate = 1;
+  let pausedPos  = 0;
+  /** The region's natural end without repeat, as a timer: the node only
+   *  falls silent there, and the player has to know it stopped. */
+  let endTimer   = 0;
 
   let playing    = false;
   let repeat     = true;
@@ -88,9 +161,23 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   let transpose = 0;     // semitones
   let pitch     = 0;     // cents
 
-  const sampleRate = () => buffer?.sampleRate ?? 44100;
-  const getCurrentPos = () =>
-    filter ? Math.min(filter.sourcePosition / sampleRate(), regionEnd) : regionStart;
+  const rate = () => tempo / 100;
+  const semitones = () => transpose + pitch / 100;
+  /** The output device's own buffer — large on Android with `playback`. */
+  const deviceLag = () => audioCtx?.outputLatency || audioCtx?.baseLatency || 0;
+
+  /** The position at the node's output at context time `at`. It loops
+   *  between the region's bounds, so the position wraps the same way: past
+   *  regionEnd, back to regionStart. */
+  const positionAt = (at: number) => {
+    if (!playing) return pausedPos;
+    const p = anchorPos + Math.max(0, at - anchorOut) * anchorRate;
+    if (p < regionEnd) return p;
+    if (!repeat) return regionEnd;
+    return regionStart + ((p - regionEnd) % Math.max(regionEnd - regionStart, 1e-3));
+  };
+  /** What is being HEARD — the playhead, and where a marker set "here" goes. */
+  const getCurrentPos = () => (audioCtx ? positionAt(audioCtx.currentTime - deviceLag()) : pausedPos);
 
   // ── UI elements ──
   const root = document.createElement('div');
@@ -255,26 +342,46 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   // ── Waveform render ──
   let waveData: number[] = [];
 
+  // Called on every animation frame while playing, so it does almost nothing
+  // then: the bars are built once per width, and a frame only recolours the
+  // ones whose state changed — usually none, the playhead crossing a bar every
+  // duration/120 seconds. It used to empty the SVG and recreate all 120 bars
+  // sixty times a second, ~7 000 elements a second plus their garbage — on
+  // the thread that, until 2026-10-09, also computed the sound (see the top
+  // of this file). The sound has its own thread now; a phone's main thread
+  // still has better things to do.
+  let bars: SVGRectElement[] = [];
+  let barFills: string[] = [];
+  let barsWidth = -1;
+
   const renderWave = (pos: number) => {
     const n = waveData.length; if (!n) return;
     const W = waveWrap.offsetWidth || 400;
     const H = 56;
-    waveSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    waveSvg.setAttribute('width', String(W));
-    waveSvg.innerHTML = '';
-    const barW = Math.max(1, (W / n) * 0.65);
-    const gap  = W / n;
+    if (W !== barsWidth || bars.length !== n) {
+      barsWidth = W;
+      waveSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      waveSvg.setAttribute('width', String(W));
+      waveSvg.innerHTML = '';
+      const barW = Math.max(1, (W / n) * 0.65);
+      const gap  = W / n;
+      bars = []; barFills = [];
+      for (let i = 0; i < n; i++) {
+        const h = Math.max(3, (waveData[i] ?? 0) * H * 0.8 + H * 0.08);
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', String(i * gap)); rect.setAttribute('y', String((H - h) / 2));
+        rect.setAttribute('width', String(barW)); rect.setAttribute('height', String(h));
+        rect.setAttribute('rx', '1');
+        waveSvg.appendChild(rect);
+        bars.push(rect); barFills.push('');
+      }
+    }
     for (let i = 0; i < n; i++) {
       const t = (i + 0.5) / n * duration;
       const inReg = t >= regionStart && t <= regionEnd;
       const played = t <= pos;
       const fill = inReg && played ? 'var(--color-accent)' : inReg ? 'var(--color-accent-subtle)' : 'var(--color-border)';
-      const h = Math.max(3, (waveData[i] ?? 0) * H * 0.8 + H * 0.08);
-      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x', String(i * gap)); rect.setAttribute('y', String((H - h) / 2));
-      rect.setAttribute('width', String(barW)); rect.setAttribute('height', String(h));
-      rect.setAttribute('rx', '1'); rect.setAttribute('fill', fill);
-      waveSvg.appendChild(rect);
+      if (barFills[i] !== fill) { barFills[i] = fill; bars[i]!.setAttribute('fill', fill); }
     }
   };
 
@@ -304,60 +411,112 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
     }
   };
 
-  // ── SoundTouch pipeline ──
-  const applyEffects = () => {
-    if (!st) return;
-    st.tempo = tempo / 100;
-    st.pitchSemitones = transpose + pitch / 100;
+  // ── Playback ──
+
+  /** Tells the node everything, effective `lead` from now — the node's own
+   *  latency, so the change is taken exactly on time rather than "caught up"
+   *  with. From `from` when given (a seek), else from wherever playback will
+   *  be by then. A schedule() call drops whatever was scheduled after it, the
+   *  region's end included, so this is the one place that schedules, and it
+   *  re-arms that end every time. */
+  const sendState = (from?: number) => {
+    if (!stretch || !audioCtx) return;
+    const out = audioCtx.currentTime + lead;
+    const input = from ?? positionAt(out);
+    anchorPos = input;
+    anchorOut = out;
+    anchorRate = rate();
+    void stretch.schedule({
+      output: out,
+      active: true,
+      input,
+      rate: anchorRate,
+      semitones: semitones(),
+      // Equal bounds disable the loop (library README).
+      loopStart: repeat ? regionStart : 0,
+      loopEnd: repeat ? regionEnd : 0,
+    });
+    clearTimeout(endTimer);
+    if (!repeat) {
+      const end = out + Math.max(0, regionEnd - input) / anchorRate;
+      void stretch.schedule({ output: end, active: false });
+      endTimer = window.setTimeout(handleEnd, (end - audioCtx.currentTime + deviceLag()) * 1000);
+    }
   };
 
+  /** The sliders: taken at once while playing, read at the next play else. */
+  const applyEffects = () => { if (playing) sendState(); };
+
+  let suspendTimer = 0;
+  /** An inactive node still runs its DSP on silence, so the context sleeps
+   *  while nothing plays — a moment after a stop, never with it, so the node
+   *  has faded out first. */
+  const suspendSoon = () => {
+    clearTimeout(suspendTimer);
+    suspendTimer = window.setTimeout(() => {
+      if (!playing && audioCtx?.state === 'running') void audioCtx.suspend();
+    }, 400);
+  };
+
+  /** Pause and stop: the node goes inactive NOW — not `lead` ahead: the
+   *  library then fades out as it catches up, rather than cutting. */
+  const halt = () => {
+    cancelAnimationFrame(rafId);
+    clearTimeout(endTimer);
+    playing = false;
+    if (stretch && audioCtx) void stretch.schedule({ output: audioCtx.currentTime, active: false });
+    updateUI();
+    suspendSoon();
+  };
+
+  /** The region's natural end, without repeat: the node has already stopped
+   *  itself (sendState scheduled it); the player catches up. */
+  const handleEnd = () => {
+    cancelAnimationFrame(rafId);
+    playing = false;
+    pausedPos = regionStart;
+    updateUI();
+    suspendSoon();
+  };
+
+  /** For a change of region or of repeat: carries on from where playback
+   *  is, under the new bounds. */
+  const restartHere = () => { if (playing) sendState(); };
+
   const seek = (offsetSecs: number) => {
-    if (!filter || !buffer) return;
-    const frame = Math.round(Math.max(0, Math.min(offsetSecs, duration)) * sampleRate());
-    filter.sourcePosition = frame; // clears SoundTouch buffers + sets read head
+    const pos = Math.max(0, Math.min(offsetSecs, duration));
+    pausedPos = pos;
+    if (playing) sendState(pos);
   };
 
   const teardown = () => {
     cancelAnimationFrame(rafId);
-    scriptNode?.disconnect();
-    scriptNode = null;
-    filter = null;
-    st = null;
+    clearTimeout(endTimer);
+    clearTimeout(suspendTimer);
+    stretch?.disconnect();
+    stretch = null;
+    playing = false;
   };
 
-  const buildPipeline = () => {
-    teardown();
-    if (!audioCtx || !buffer) return;
+  /** One channel array per channel of the file. Copied into the worklet. */
+  const loadInto = (node: StretchNode, b: AudioBuffer) =>
+    node.addBuffers(Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c)));
 
-    const source = new WebAudioBufferSource(buffer);
-    st = new SoundTouch();
-    applyEffects();
-
-    filter = new SimpleFilter(source, st, () => {
-      // Natural end of buffer
-      handleEnd();
-    });
-
-    seek(regionStart);
-
-    scriptNode = getWebAudioNode(audioCtx, filter, (srcPos) => {
-      // Called from onaudioprocess — check region end
-      if (srcPos / sampleRate() >= regionEnd) handleEnd();
-    });
-    scriptNode.connect(audioCtx.destination);
-  };
-
-  const handleEnd = () => {
-    if (repeat) {
-      seek(regionStart);
-    } else {
-      // Synchronous: update state before any event loop tick can interleave
-      cancelAnimationFrame(rafId);
-      playing = false;
-      seek(regionStart);
-      void audioCtx?.suspend();
-      updateUI();
-    }
+  /** The context and the node — built once, and again if another player's
+   *  stopCurrentAudio() closed them under this one. */
+  const ensureGraph = async () => {
+    if (audioCtx && audioCtx.state !== 'closed' && stretch) return;
+    stopCurrentAudio();
+    const ctx = newPlayerContext();
+    audioCtx = ctx;
+    currentAudioCtx = ctx;
+    currentDispose = teardown;
+    const create = await loadStretch();
+    const node = await create(ctx);
+    node.connect(ctx.destination);
+    stretch = node;
+    lead = await node.latency();
+    if (buffer) await loadInto(node, buffer);
   };
 
   const rafLoop = () => {
@@ -366,45 +525,45 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   };
 
   const doPlay = async () => {
-    if (!audioCtx) {
-      audioCtx = new AudioContext();
-      currentAudioCtx = audioCtx;
-      currentDispose = teardown;
-      buildPipeline();
-    }
-    if (!scriptNode) buildPipeline();
+    await ensureGraph();
+    if (!audioCtx || !stretch || !buffer) return;
+    clearTimeout(suspendTimer);
     if (audioCtx.state === 'suspended') await audioCtx.resume();
+    // Past the region's end there is nothing to play: from its start.
+    if (pausedPos >= regionEnd) pausedPos = regionStart;
     playing = true;
+    sendState(pausedPos);
     rafId = requestAnimationFrame(rafLoop);
     updateUI();
   };
 
-  const doPause = async () => {
-    cancelAnimationFrame(rafId);
-    if (audioCtx?.state === 'running') await audioCtx.suspend();
-    playing = false;
-    updateUI();
+  const doPause = () => {
+    if (!playing) return;
+    pausedPos = getCurrentPos();
+    halt();
   };
 
   const doStop = () => {
-    cancelAnimationFrame(rafId);
-    playing = false;
-    seek(regionStart);
-    void audioCtx?.suspend();
-    updateUI();
+    pausedPos = regionStart;
+    halt();
   };
 
   // ── Controls ──
   stopBtn.onclick  = () => { doStop(); };
-  playBtn.onclick  = () => { playing ? void doPause() : void doPlay(); };
+  playBtn.onclick  = () => { playing ? doPause() : void doPlay(); };
   repeatBtn.onclick = () => {
     repeat = !repeat;
+    restartHere();
     repeatBtn.dataset['active'] = repeat ? '1' : '0';
     repeatBtn.style.borderColor = repeat ? 'var(--color-accent)' : 'var(--color-border)';
     repeatBtn.style.color       = repeat ? 'var(--color-accent)' : 'var(--color-muted)';
   };
   setStartBtn.onclick = () => { regionStart = Math.min(getCurrentPos(), regionEnd - 0.5); seek(regionStart); updateUI(); };
-  setEndBtn.onclick   = () => { regionEnd   = Math.max(getCurrentPos(), regionStart + 0.5); updateUI(); };
+  setEndBtn.onclick   = () => {
+    regionEnd = Math.max(getCurrentPos(), regionStart + 0.5);
+    restartHere();
+    updateUI();
+  };
   resetBtn.onclick    = () => { regionStart = 0; regionEnd = duration; seek(0); updateUI(); };
 
   // Waveform drag → seek (follows pointer while held — Pointer Events cover
@@ -440,7 +599,11 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
         else         regionEnd   = Math.max(pos, regionStart + 0.5);
         updateUI();
       };
-      const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+      // The node gets the new bounds once, on release.
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
+        restartHere();
+      };
       window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
     });
   };
@@ -450,18 +613,14 @@ export function renderAudioPlayer(entry: FileEntry): HTMLElement {
   // ── Init ──
   void (async () => {
     try {
-      stopCurrentAudio();
-      audioCtx = new AudioContext();
-      currentAudioCtx = audioCtx;
-      currentDispose = teardown;
-      await audioCtx.suspend(); // stay silent until user hits play
-
-      buffer   = await decodeAudio(entry, audioCtx);
+      await ensureGraph();
+      buffer   = await decodeAudio(entry, audioCtx!);
       duration = buffer.duration;
       regionEnd = duration;
       waveData = buildWaveformData(buffer);
-
-      buildPipeline();
+      await loadInto(stretch!, buffer);
+      // Silent until the user hits play.
+      suspendSoon();
 
       loading.remove();
       waveSection.style.display    = 'flex';

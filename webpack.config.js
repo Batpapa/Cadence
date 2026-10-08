@@ -197,9 +197,23 @@ module.exports = (env, argv) => {
     },
     resolve: {
       extensions: ['.tsx', '.ts', '.js'],
+      // Signalsmith Stretch's file, imported as text (`?raw`) and run untouched
+      // from a Blob URL (see audioPlayer.ts). Through an alias because the
+      // package's `exports` map refuses a query on its entry point.
+      alias: {
+        'signalsmith-stretch.mjs$': path.resolve(__dirname, 'node_modules/signalsmith-stretch/SignalsmithStretch.mjs'),
+      },
     },
     module: {
       rules: [
+        // `import src from '…?raw'`: the file's text, as a string — Vite's
+        // spelling, so vitest reads the same import. For code run from a Blob
+        // URL (Signalsmith Stretch, see audioPlayer.ts): a separate file
+        // would be one the service worker does not precache.
+        {
+          resourceQuery: /raw/,
+          type: 'asset/source',
+        },
         {
           test: /\.tsx?$/,
           use: 'ts-loader',
