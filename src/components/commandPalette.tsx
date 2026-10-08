@@ -3,8 +3,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { createPortal } from 'preact/compat';
 import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
-import { focusIfDesktop, scoreMatch, scoreWithAliases, NO_SCORE_MATCH } from '../utils';
+import { scoreMatch, scoreWithAliases, NO_SCORE_MATCH } from '../utils';
 import { registerOverlay } from './overlayStack';
+import { getZoom } from '../services/zoomService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,7 +109,34 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
 
   const items = useMemo(() => buildItems(getCtx(), query), [query, getCtx]);
 
-  useLayoutEffect(() => { focusIfDesktop(inputRef.current!); }, []);
+  // Focused on a phone too, unlike the app's other fields (focusIfDesktop):
+  // there the keyboard is held back because it can cover the very window it
+  // opened for, but this one hangs from the top of the screen, and a search
+  // opened to type into is no search until the keyboard is up (2026-10-08,
+  // group feedback). Synchronous, while the tap that opened it still counts as
+  // the user's: a keyboard raised by script needs that.
+  useLayoutEffect(() => { inputRef.current!.focus({ preventScroll: true }); }, []);
+
+  // The results end where the keyboard begins. Their 18rem fit above it on a
+  // tall phone, by a few pixels; on a smaller one the last rows sat under it,
+  // out of reach, the list's own scroll stopping at its hidden bottom edge.
+  // The visual viewport is what the keyboard shrinks (the layout viewport
+  // stays put on Android 15+), and it is measured in the same window pixels as
+  // getBoundingClientRect; the max-height is written in layout pixels, hence
+  // the zoom (see zoomService).
+  const [listMax, setListMax] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const vv = window.visualViewport;
+    const list = listRef.current;
+    if (!vv || !list) return;
+    const fit = () => {
+      const room = vv.offsetTop + vv.height - list.getBoundingClientRect().top - 12;
+      setListMax(Math.max(96, room) / (getZoom() / 100));
+    };
+    fit();
+    vv.addEventListener('resize', fit);
+    return () => vv.removeEventListener('resize', fit);
+  }, []);
   useEffect(() => { setActiveIndex(0); }, [query]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -148,7 +176,7 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
           <span class="text-[10px] text-dim font-mono shrink-0">Esc</span>
         </div>
 
-        <div ref={listRef} class="max-h-72 overflow-y-auto py-1">
+        <div ref={listRef} class="max-h-72 overflow-y-auto py-1" style={listMax !== null ? { maxHeight: `min(18rem, ${listMax}px)` } : undefined}>
           {!query.trim() ? (
             <p class="text-xs text-dim text-center py-6">{t('commandPalette.typeToSearch')}</p>
           ) : items.length === 0 ? (

@@ -8,7 +8,8 @@ import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport } from '../../
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
 import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { copyText, formatBytes } from '../../utils';
-import type { Analysis } from '../model';
+import type { Analysis, Detection } from '../model';
+import { tuneName, useTuneNames } from './sessionUiShared';
 
 // ── Share a session (annotations + optionally the audio) via a short key —
 // same mechanism as card sharing (shareService.ts). showModal/closeModal are
@@ -84,6 +85,12 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   const [upload, setUpload] = useState<UploadState>({ phase: 'idle' });
   const [view, setView] = useState<'root' | 'package' | 'txt'>('root');
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
+  const [detailed, setDetailed] = useState(false);
+  // The names as the screen shows them, not the recogniser's lower case. The
+  // name index is primed here because nothing guarantees a screen that lists
+  // detections ran first (a share from the analysis browser does not).
+  useTuneNames();
+  const nameOf = (d: Detection) => tuneName(d).text;
 
   // The header belongs to the shell, not to this body, so the two levels are
   // kept in step from here — same title-plus-back-arrow the card export modal
@@ -178,31 +185,44 @@ function ShareSessionModal({ session }: { session: Analysis }) {
 
   // TXT has two destinations for the same bytes, so it gets a level of its
   // own — the shape the card export modal already uses for its package.
+  // The short setlist unless the box is ticked — for both destinations, which
+  // carry the same text whichever it is.
   if (view === 'txt') {
     return (
-      <div class="space-y-2">
-        <ShareChoiceCard
-          icon={SHARE_ICON_FILE_UP}
-          label={t('library.export.file')}
-          desc={t('sessions.export.txtDesc')}
-          color="var(--color-warn)"
-          onClick={() => { exportAnalysisTXT(session); closeModal(); }}
-        />
-        <ShareChoiceCard
-          icon={SHARE_ICON_CLIPBOARD}
-          label={copied === 'no' ? t('common.copyToClipboard') : t(copied === 'yes' ? 'common.copied' : 'common.copyFailed')}
-          desc={t('common.copyToClipboardDesc')}
-          color="var(--color-success)"
-          onClick={() => {
-            void copyText(analysisTextReport(session)).then(ok => {
-              setCopied(ok ? 'yes' : 'failed');
-              // Long enough to read the confirmation, short enough not to
-              // feel stuck. A failure keeps the modal open: there is nothing
-              // in the clipboard, so closing would look like success.
-              if (ok) setTimeout(closeModal, 900);
-            });
-          }}
-        />
+      <div class="space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            class="card-checkbox"
+            checked={detailed}
+            onChange={(e) => setDetailed((e.target as HTMLInputElement).checked)}
+          />
+          <span class="text-xs text-muted">{t('sessions.export.txtDetailed')}</span>
+        </label>
+        <div class="space-y-2">
+          <ShareChoiceCard
+            icon={SHARE_ICON_FILE_UP}
+            label={t('library.export.file')}
+            desc={t('sessions.export.txtDesc')}
+            color="var(--color-warn)"
+            onClick={() => { exportAnalysisTXT(session, { detailed, nameOf }); closeModal(); }}
+          />
+          <ShareChoiceCard
+            icon={SHARE_ICON_CLIPBOARD}
+            label={copied === 'no' ? t('common.copyToClipboard') : t(copied === 'yes' ? 'common.copied' : 'common.copyFailed')}
+            desc={t('common.copyToClipboardDesc')}
+            color="var(--color-success)"
+            onClick={() => {
+              void copyText(analysisTextReport(session, { detailed, nameOf })).then(ok => {
+                setCopied(ok ? 'yes' : 'failed');
+                // Long enough to read the confirmation, short enough not to
+                // feel stuck. A failure keeps the modal open: there is nothing
+                // in the clipboard, so closing would look like success.
+                if (ok) setTimeout(closeModal, 900);
+              });
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -288,7 +308,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
         label="CSV"
         desc={t('sessions.export.csvDesc')}
         color="var(--color-success)"
-        onClick={() => { exportAnalysisCSV(session); closeModal(); }}
+        onClick={() => { exportAnalysisCSV(session, nameOf); closeModal(); }}
       />
       <ShareChoiceCard
         icon={SHARE_ICON_TXT}

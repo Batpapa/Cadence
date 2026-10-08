@@ -1521,6 +1521,7 @@
   "sessions.export.cdsDesc": "Paquet réimportable, audio en option",
   "sessions.export.csvDesc": "Format tableur, une ligne par détection",
   "sessions.export.txtDesc": "Liste lisible des morceaux détectés",
+  "sessions.export.txtDetailed": "Inclure le détail (horaires, confiance, mesure)",
   "sessions.share.upload": "Partager",
   "sessions.share.uploading": "Envoi en cours…",
   "sessions.share.wakingServer": "Réveil du serveur de partage, veuillez patienter (jusqu'à 1 min)…",

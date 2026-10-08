@@ -98,9 +98,9 @@ describe('analysis CSV export', () => {
   });
 });
 
-describe('analysis TXT export', () => {
+describe('analysis TXT export, detailed', () => {
   it('writes a header and one line per detection, in time order', () => {
-    exportAnalysisTXT(analysis([det({ start: 90, end: 120, displayName: 'B' }), det({ start: 0, end: 90, displayName: 'A' })]));
+    exportAnalysisTXT(analysis([det({ start: 90, end: 120, displayName: 'B' }), det({ start: 0, end: 90, displayName: 'A' })]), { detailed: true });
     const lines = captured[0]!.split('\r\n');
     expect(lines[0]).toBe('Tocane');
     expect(lines.some(l => l.startsWith('Detections: 2'))).toBe(true);
@@ -111,7 +111,7 @@ describe('analysis TXT export', () => {
   });
 
   it('shows "confirmed" instead of a percentage once the user has vouched for it', () => {
-    exportAnalysisTXT(analysis([det({ userConfirmed: true, liked: true })]));
+    exportAnalysisTXT(analysis([det({ userConfirmed: true, liked: true })]), { detailed: true });
     const line = captured[0]!.split('\r\n').find(l => /^\d\d:/.test(l))!;
     expect(line).toContain('confirmed');
     expect(line).toContain('liked');
@@ -121,7 +121,7 @@ describe('analysis TXT export', () => {
   it('omits the date line when the analysis has none', () => {
     const a = analysis([det({})]);
     a.date = null;
-    exportAnalysisTXT(a);
+    exportAnalysisTXT(a, { detailed: true });
     expect(captured[0]!).not.toContain('Date:');
   });
 });
@@ -133,7 +133,7 @@ describe('the two formats stay in step', () => {
   it('puts every CSV value for a detection somewhere in the TXT line', () => {
     const d = det({ start: 61, end: 125, displayName: 'The Butterfly', dance: 'slip jig', meter: '9/8', liked: true });
     exportAnalysisCSV(analysis([d]));
-    exportAnalysisTXT(analysis([d]));
+    exportAnalysisTXT(analysis([d]), { detailed: true });
     const [start, end, tune, dance, meter, confidence, , liked] = csvRows()[1]!.split(',');
     const line = captured[1]!.split('\r\n').find(l => /^\d\d:/.test(l))!;
     for (const v of [start, end, tune, dance, meter, `${confidence}%`]) expect(line).toContain(v!);
@@ -151,5 +151,44 @@ describe('the clipboard and the file carry the same text', () => {
     const a = analysis([det({}), det({ start: 200, end: 260, displayName: 'B' })]);
     exportAnalysisTXT(a);
     expect(captured[0]).toBe(analysisTextReport(a));
+    exportAnalysisTXT(a, { detailed: true });
+    expect(captured[1]).toBe(analysisTextReport(a, { detailed: true }));
+  });
+});
+describe('analysis TXT export, short (the default)', () => {
+  // What gets pasted into a chat after a session: the tunes and nothing else
+  // (2026-10-08, group feedback). Every detection stays, a doubtful one
+  // included, and a tune played twice is listed twice — it is the setlist.
+  it('lists one "- Name (dance)" line per detection, in time order, under the name and date', () => {
+    const report = analysisTextReport(analysis([
+      det({ start: 300, end: 400, displayName: 'B', dance: 'jig' }),
+      det({ start: 0, end: 90, displayName: 'A', confidence: 0.15, bucket: 'low' }),
+      det({ start: 500, end: 600, displayName: 'A' }),
+    ]));
+    expect(report.split('\r\n')).toEqual(['Tocane (2024-07-21)', '', '- A (reel)', '- B (jig)', '- A (reel)']);
+  });
+
+  it('carries no times, percentages or meters', () => {
+    const report = analysisTextReport(analysis([det({ start: 61, end: 125, userConfirmed: true, liked: true })]));
+    expect(report).not.toMatch(/\d\d:\d\d|%|4\/4|confirmed|liked/);
+  });
+
+  it('drops the date and the dance when there are none', () => {
+    const a = analysis([det({ dance: '' })]);
+    a.date = null;
+    expect(analysisTextReport(a).split('\r\n')).toEqual(['Tocane', '', '- The Maid Behind the Bar']);
+  });
+});
+
+describe('tune names', () => {
+  // The recogniser's names are all lower case; the screens look up the proper
+  // spelling and hand it over, and every format must use it.
+  const nameOf = (d: Detection) => d.displayName.toUpperCase();
+  it('are the ones handed over, in the short list, the detailed report and the CSV', () => {
+    const a = analysis([det({ displayName: 'the silver spear' })]);
+    expect(analysisTextReport(a, { nameOf })).toContain('- THE SILVER SPEAR (reel)');
+    expect(analysisTextReport(a, { detailed: true, nameOf })).toContain('THE SILVER SPEAR (reel, 4/4)');
+    exportAnalysisCSV(a, nameOf);
+    expect(csvRows()[1]).toContain(',THE SILVER SPEAR,');
   });
 });
