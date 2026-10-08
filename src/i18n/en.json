@@ -1521,6 +1521,7 @@
   "sessions.export.cdsDesc": "Reimportable package, audio optional",
   "sessions.export.csvDesc": "Spreadsheet format, one row per detection",
   "sessions.export.txtDesc": "Readable list of detected tunes",
+  "sessions.export.txtDetailed": "Include details (times, confidence, meter)",
   "sessions.share.upload": "Share",
   "sessions.share.uploading": "Uploading…",
   "sessions.share.wakingServer": "Waking up the share server, please wait (up to 1 min)…",

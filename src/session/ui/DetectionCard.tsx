@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
@@ -111,12 +111,22 @@ function fmtLongTime(s: number): string {
 // single remove control. The instant alone used to do that job — see
 // services/reviewEntries.ts for everything that broke while it did.
 
-const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: string; cls: string; labelKey: string }> = [
-  { rating: 'again', glyph: '✗', cls: 'text-danger',  labelKey: 'rating.again' },
-  { rating: 'hard',  glyph: '△', cls: 'text-warn',    labelKey: 'rating.hard' },
-  { rating: 'good',  glyph: '○', cls: 'text-accent',  labelKey: 'rating.good' },
-  { rating: 'easy',  glyph: '✓', cls: 'text-success', labelKey: 'rating.easy' },
+// `btn` is the tint the study screen's rating buttons use. These used to be
+// the bare glyphs at text-xs, about 12 px wide — too small to hit with a
+// finger while playing in a session (2026-10-08, group feedback). Each glyph
+// now sits on a tinted circle the size of the card's play, score and add
+// buttons above it — bigger read as out of place there (user's call).
+const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: string; cls: string; btn: string; labelKey: string }> = [
+  { rating: 'again', glyph: '✗', cls: 'text-danger',  btn: 'bg-danger/10 hover:bg-danger/20 text-danger',    labelKey: 'rating.again' },
+  { rating: 'hard',  glyph: '△', cls: 'text-warn',    btn: 'bg-warn/10 hover:bg-warn/20 text-warn',          labelKey: 'rating.hard' },
+  { rating: 'good',  glyph: '○', cls: 'text-accent',  btn: 'bg-accent/10 hover:bg-accent/20 text-accent',    labelKey: 'rating.good' },
+  { rating: 'easy',  glyph: '✓', cls: 'text-success', btn: 'bg-success/10 hover:bg-success/20 text-success', labelKey: 'rating.easy' },
 ];
+
+/** How long the "remove" control ignores taps after a rating is given. It
+ *  appears where the rating buttons were, so the second tap of a double tap
+ *  would otherwise take the rating straight back. */
+const REMOVE_GUARD_MS = 600;
 
 /** The rating this detection carries, if any. Read from live state, so the
  *  card and the control below always agree on whether there is one. */
@@ -142,6 +152,7 @@ function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
   // is mounted into a detached node by the bridge below, outside the app's
   // main reactive tree, so nothing else would re-render it automatically.
   const [, setTick] = useState(0);
+  const ratedAt = useRef(0);
   const existing = ratingOf(cardId, reviewId, ts);
 
   if (existing) {
@@ -149,9 +160,10 @@ function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
     return (
       <span class="inline-flex items-center gap-1.5">
         <button
-          class="text-xs text-muted cursor-pointer inline-flex items-center gap-1 hover:text-danger"
+          class="text-xs text-muted cursor-pointer inline-flex items-center gap-1 min-h-8 hover:text-danger"
           title={new Date(existing.ts).toLocaleString()}
           onClick={() => {
+            if (Date.now() - ratedAt.current < REMOVE_GUARD_MS) return;
             void ctx.mutate(s => {
               const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
               if (!h) return;
@@ -171,26 +183,32 @@ function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
   // The card's own history is where one can still be added by hand.
   if (ts === null) return null;
 
+  // The glyph alone, its name in the tooltip: a row of four labelled buttons
+  // was tried and outweighed the card itself (2026-10-09, user's call).
   return (
     <span class="inline-flex items-center gap-1.5">
       <span class="text-xs text-dim">{t('sessions.review.log')}</span>
-      {RATING_GLYPHS.map(({ rating, glyph, cls, labelKey }) => (
-        <button
-          key={rating}
-          class={`text-xs cursor-pointer transition-transform hover:scale-125 ${cls}`}
-          title={t(labelKey)}
-          onClick={() => {
-            void ctx.mutate(s => {
-              const key = `${s.currentProfileId}:${cardId}`;
-              if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
-              s.cardWorks[key]!.history.push({ ts, rating, id: reviewId });
-              s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
-            }).then(() => setTick(x => x + 1));
-          }}
-        >
-          {glyph}
-        </button>
-      ))}
+      <span class="inline-flex items-center gap-1">
+        {RATING_GLYPHS.map(({ rating, glyph, btn, labelKey }) => (
+          <button
+            key={rating}
+            class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 text-xs cursor-pointer transition-colors ${btn}`}
+            title={t(labelKey)}
+            aria-label={t(labelKey)}
+            onClick={() => {
+              ratedAt.current = Date.now();
+              void ctx.mutate(s => {
+                const key = `${s.currentProfileId}:${cardId}`;
+                if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
+                s.cardWorks[key]!.history.push({ ts, rating, id: reviewId });
+                s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
+              }).then(() => setTick(x => x + 1));
+            }}
+          >
+            {glyph}
+          </button>
+        ))}
+      </span>
     </span>
   );
 }

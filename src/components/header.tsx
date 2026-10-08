@@ -444,13 +444,6 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
   const modulesActive = route.view === 'modules' || route.view === 'sessions';
   const pinned        = pinnedModule();
 
-  // Lets the legal footer (styles.css) stay clear of the bar only where there
-  // is one: the user selector and the recovery screen have none.
-  useEffect(() => {
-    document.documentElement.classList.add('bottom-nav-shown');
-    return () => document.documentElement.classList.remove('bottom-nav-shown');
-  }, []);
-
   // The keyboard covers the bar rather than carrying it up (softKeyboard.ts).
   if (softKeyboardOpen.value) return null;
 

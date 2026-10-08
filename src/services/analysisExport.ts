@@ -38,8 +38,32 @@ function ordered(session: Analysis): Detection[] {
  *  own end. */
 const endOf = (d: Detection, session: Analysis): number => d.end ?? session.duration;
 
-export function analysisTextReport(session: Analysis): string {
+/** What a detection is called in an export. The detection's own name is the
+ *  recogniser's, all in lower case ("the silver spear"); the screens look the
+ *  proper spelling up (session/ui's tuneName), and pass that lookup here so a
+ *  file reads like the screen it came from. */
+export type NameOf = (d: Detection) => string;
+const rawName: NameOf = d => d.displayName;
+
+export interface TextReportOptions {
+  /** The full report — times, confidence, meter, marks. Without it, the short
+   *  setlist people paste into a chat: "- Morrison's (jig)", one line per tune
+   *  played, a tune played twice listed twice (2026-10-08, group feedback: the
+   *  full report read as noise there). */
+  detailed?: boolean;
+  nameOf?: NameOf;
+}
+
+export function analysisTextReport(session: Analysis, { detailed = false, nameOf = rawName }: TextReportOptions = {}): string {
   const dets = ordered(session);
+  if (!detailed) {
+    const head = session.name || 'Analysis';
+    return [
+      session.date ? `${head} (${session.date.slice(0, 10)})` : head,
+      '',
+      ...dets.map(d => `- ${nameOf(d)}${d.dance ? ` (${d.dance})` : ''}`),
+    ].join('\r\n');
+  }
   const out: string[] = [
     session.name || 'Analysis',
     ...(session.date ? [`Date:       ${session.date.slice(0, 10)}`] : []),
@@ -50,7 +74,7 @@ export function analysisTextReport(session: Analysis): string {
 
   // Widest label in THIS file, so the marker column lines up without a fixed
   // width that a long tune title would blow through anyway.
-  const label = (d: Detection) => `${d.displayName}${d.dance || d.meter ? ` (${[d.dance, d.meter].filter(Boolean).join(', ')})` : ''}`;
+  const label = (d: Detection) => `${nameOf(d)}${d.dance || d.meter ? ` (${[d.dance, d.meter].filter(Boolean).join(', ')})` : ''}`;
   const width = Math.min(56, Math.max(0, ...dets.map(d => label(d).length)));
 
   for (const d of dets) {
@@ -65,8 +89,8 @@ export function analysisTextReport(session: Analysis): string {
 }
 
 /** The same report, as a downloaded file. */
-export function exportAnalysisTXT(session: Analysis): void {
-  downloadTextFile(analysisTextReport(session),
+export function exportAnalysisTXT(session: Analysis, opts: TextReportOptions = {}): void {
+  downloadTextFile(analysisTextReport(session, opts),
     `${safeName(session)}-detections.txt`, 'text/plain;charset=utf-8');
 }
 
@@ -79,8 +103,8 @@ function escape(v: string): string {
   return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** Same fields as the TXT, one row per detection. */
-export function exportAnalysisCSV(session: Analysis): void {
+/** Same fields as the detailed TXT, one row per detection. */
+export function exportAnalysisCSV(session: Analysis, nameOf: NameOf = rawName): void {
   const rows: string[][] = [
     ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked'],
   ];
@@ -89,7 +113,7 @@ export function exportAnalysisCSV(session: Analysis): void {
     rows.push([
       hms(d.start),
       hms(endOf(d, session)),
-      d.displayName,
+      nameOf(d),
       d.dance,
       d.meter,
       String(Math.round(d.confidence * 100)),

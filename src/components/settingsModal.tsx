@@ -1438,6 +1438,15 @@ function AboutSection() {
         </p>
       </div>
 
+      {/* Their only place once a user is open: the static footer of
+          index.html shows on the user selector and recovery screens alone. */}
+      <Sep />
+      <p class="text-xs text-muted">
+        <a href="./privacy.html" rel="noopener" class="text-accent hover:underline">{t('settings.privacyPolicy')}</a>
+        {' · '}
+        <a href="./terms.html" rel="noopener" class="text-accent hover:underline">{t('settings.termsOfService')}</a>
+      </p>
+
       {/* No install offer here any more — the header carries it (both the
           native prompt and the iOS Share-sheet steps), and buried in About it
           was the reason nobody knew Cadence was installable. */}

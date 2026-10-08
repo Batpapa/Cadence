@@ -188,6 +188,23 @@ function LinkBody({ draft, known, saved, lookup, disabled, busy, error, onSubmit
     if (e.key === 'Enter' && !disabled.value) { e.preventDefault(); onSubmit(); }
   };
 
+  // The platform's name stays greyed out — the mark that it is automatic —
+  // until the box is clicked: then it becomes text to edit, with the caret
+  // where the click landed (2026-10-09, user's design). Written into the
+  // field on pointerdown, BEFORE the browser places the caret: the click is
+  // then measured against the very letters that were showing, the placeholder
+  // and the text sharing font, size and padding. Left untouched, it goes back
+  // to grey on the way out, where an empty box means the same name.
+  const autoShown = mode === 'embed' && auto !== '';
+  const revealAuto = (input: HTMLInputElement) => {
+    if (!autoShown || input.value !== '') return;
+    input.value = auto;
+    apply({ name: auto });
+  };
+  const hideAuto = (input: HTMLInputElement) => {
+    if (autoShown && input.value.trim() === auto) apply({ name: '' });
+  };
+
   return (
     <div class="space-y-3">
       <div>
@@ -230,6 +247,11 @@ function LinkBody({ draft, known, saved, lookup, disabled, busy, error, onSubmit
           placeholder={mode === 'link' ? t('embed.namePlaceholder') : auto || t('embed.namePlaceholderAuto')}
           value={name}
           onInput={(e) => apply({ name: (e.target as HTMLInputElement).value })}
+          // Not once inside: a box emptied on purpose stays empty under the next click.
+          onPointerDown={(e) => { if (document.activeElement !== e.currentTarget) revealAuto(e.currentTarget); }}
+          // Reached by Tab rather than a click: the whole name, caret at its end.
+          onFocus={(e) => revealAuto(e.currentTarget)}
+          onBlur={(e) => hideAuto(e.currentTarget)}
           onKeyDown={onKeyDown}
         />
         {/* What the in-app side takes, and only there: a new tab opens
@@ -309,7 +331,8 @@ async function buildEntry(draft: Draft, base: EmbedEntry | undefined, lookup: Lo
 function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | undefined, onDone: (entry: EmbedEntry) => void): void {
   // An embed's box opens empty unless a name was typed over the platform's —
   // a title equal to it being no name of the user's, since an empty box would
-  // save exactly the same entry.
+  // save exactly the same entry. The platform's name shows greyed out, and
+  // turns into text to edit the moment the box is clicked (see LinkBody).
   const baseAuto = base ? embedAutoTitle(base) : undefined;
   const known: KnownAuto | null = base && baseAuto ? { url: base.url, title: baseAuto } : null;
   const draft: Draft = {

@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks';
 import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
@@ -66,6 +66,13 @@ function AppRoot() {
     return isMobileDevice();
   });
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 768);
+
+  // Hides the static legal footer of index.html while a user is open: its
+  // links are in Settings → About here (see styles.css).
+  useLayoutEffect(() => {
+    document.documentElement.classList.add('app-open');
+    return () => document.documentElement.classList.remove('app-open');
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
@@ -475,12 +482,9 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             </div>
           )}
 
+          {/* No privacy/terms links here: index.html's static footer carries
+              them on this screen, and is what the OAuth review reads. */}
           <div class="flex flex-col items-center gap-2.5 mt-5">
-            <div class="flex justify-center gap-3.5">
-              <a href="./privacy.html" rel="noopener" class="text-[10px] text-dim hover:text-muted transition-colors">{t('settings.privacyPolicy')}</a>
-              <a href="./terms.html" rel="noopener" class="text-[10px] text-dim hover:text-muted transition-colors">{t('settings.termsOfService')}</a>
-            </div>
-
             <a
               href="https://github.com/Batpapa/Cadence"
               target="_blank"
