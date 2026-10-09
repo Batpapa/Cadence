@@ -558,19 +558,18 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 }
 .abc-chip-on:hover { @apply text-accent; }
 
-/* The bar that floats over the score in the full-page reader — on the paper,
-   so it takes the paper's own colours rather than the app's. `color-mix` keeps
-   one rule for three papers instead of three rules that can drift apart. */
-.abc-score-tools {
-  background: color-mix(in srgb, var(--abc-paper, #ffffff) 86%, transparent);
-  border: 1px solid color-mix(in srgb, var(--abc-ink, #000000) 14%, transparent);
+/* The full-page toggle in the score's top right corner — in the dialog and in
+   the full-page reader alike (2026-10-10). Small and bare at the user's
+   request: no plate of its own, just the glyph on the paper, in the paper's
+   ink, with a hit area still worth a finger. `color-mix` keeps one rule for
+   three papers instead of three rules that can drift apart. */
+.abc-score-tool-small {
+  min-width: 2rem;
+  min-height: 2rem;
+  background: transparent;
+  color: color-mix(in srgb, var(--abc-ink, #000000) 55%, transparent);
 }
-.abc-score-tool {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  color: color-mix(in srgb, var(--abc-ink, #000000) 72%, transparent);
-}
-.abc-score-tool:hover {
+.abc-score-tool-small:hover {
   color: var(--abc-ink, #000000);
   background: color-mix(in srgb, var(--abc-ink, #000000) 8%, transparent);
 }

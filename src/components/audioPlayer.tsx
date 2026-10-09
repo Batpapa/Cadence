@@ -1,9 +1,16 @@
-import { render } from 'preact';
+import { render, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { FileEntry } from '../types';
+import type { AudioPreset, FileEntry } from '../types';
+import { generateId } from '../utils';
 import { t } from '../services/i18nService';
 import { playIcon, pauseIcon, stopIcon, repeatIcon } from './playbackIcons';
 import { AudioEngine, type AudioEffects } from './audioEngine';
+import { CustomSelect } from './customSelect';
+import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon } from './icons';
+import {
+  AUDIO_LIMITS, MIN_REGION_S, fmtTime, neutralSettings, fitSettings, sameSettings, settingsOf, suggestedPresetName,
+  type AudioSettings, type AudioPresetsBinding,
+} from '../services/audioPresets';
 
 export { stopCurrentAudio } from './audioEngine';
 
@@ -32,15 +39,8 @@ function injectSliderStyle(): void {
   document.head.appendChild(s);
 }
 
-function fmtTime(s: number): string {
-  const m = Math.floor(s / 60);
-  return `${m}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
-}
-
 const MONO = '"IBM Plex Mono",monospace';
 const WAVE_H = 56;
-/** A region is never shorter than this. */
-const MIN_REGION_S = 0.5;
 /** Below this width the three sliders go one under the other (2026-10-10, the
  *  user): side by side, a label and a value such as "TRANSPOSE +12 st" no
  *  longer fit a third of a phone. */
@@ -135,7 +135,7 @@ function Slider({ label, min, max, step, def, color, fmt, value, onChange }: {
             onBlur={commit}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); commit(); }
-              if (e.key === 'Escape') setEditing(null);
+              if (e.key === 'Escape') { e.preventDefault(); setEditing(null); }
             }}
           />
         )}
@@ -151,6 +151,170 @@ function Slider({ label, min, max, step, def, color, fmt, value, onChange }: {
   );
 }
 
+// ── The preset bar ───────────────────────────────────────────────────────────
+
+interface PresetActions {
+  save: () => void;
+  create: (name: string) => void;
+  rename: (name: string) => void;
+  toggleDefault: () => void;
+  remove: () => void;
+}
+
+function IconButton({ title, onClick, children, class: extra = '' }: {
+  title: string; onClick: () => void; children: ComponentChildren; class?: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      class={`p-1.5 rounded inline-flex items-center justify-center cursor-pointer transition-colors hover:bg-elevated ${extra || 'text-muted hover:text-primary'}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** A name being typed: for a new preset, or for the one on screen. */
+type Naming = { mode: 'create' | 'rename'; value: string };
+
+/** The top of the player (2026-10-10, laid out like the score viewer at the
+ *  user's request): the named presets in our own select, "no preset" first,
+ *  with the star and the pencil of the preset on screen — or, while a name is
+ *  being typed, the field for it. Changing preset drops unsaved changes
+ *  without asking, as changing version does in the score viewer. */
+function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, naming, setNaming, onChoose, actions }: {
+  presets: AudioPreset[];
+  currentId: string | null;
+  defaultId: string | undefined;
+  dirty: boolean;
+  suggestedName: string;
+  naming: Naming | null;
+  setNaming: (n: Naming | null) => void;
+  onChoose: (id: string | null) => void;
+  actions: PresetActions;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!naming) return;
+    inputRef.current?.focus({ preventScroll: true });
+    inputRef.current?.select();
+    // Only when naming starts.
+    // eslint-disable-next-line
+  }, [naming === null]);
+
+  const current = presets.find(p => p.id === currentId) ?? null;
+  const confirm = () => {
+    if (!naming) return;
+    if (naming.mode === 'create') actions.create(naming.value); else actions.rename(naming.value);
+    setNaming(null);
+  };
+
+  if (naming) {
+    return (
+      <div class="flex items-center gap-1.5">
+        <input
+          ref={inputRef}
+          type="text"
+          class="flex-1 min-w-0 text-xs bg-bg text-primary border border-accent rounded px-2 py-1.5 outline-none"
+          aria-label={t('audioPlayer.preset.name')}
+          placeholder={suggestedName}
+          value={naming.value}
+          onInput={(e) => setNaming({ ...naming, value: (e.target as HTMLInputElement).value })}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+            // This field, not the dialog: see main.ts's Escape.
+            if (e.key === 'Escape') { e.preventDefault(); setNaming(null); }
+          }}
+        />
+        <IconButton title={t('common.confirm')} onClick={confirm} class="text-accent"><CheckIcon size={14} /></IconButton>
+        <IconButton title={t('common.cancel')} onClick={() => setNaming(null)}><span class="text-sm leading-none">✕</span></IconButton>
+      </div>
+    );
+  }
+
+  return (
+    <div class="flex items-center gap-1">
+      <div class="flex-1 min-w-0 max-w-[18rem]">
+        <CustomSelect
+          value={currentId ?? ''}
+          options={[
+            { value: '', label: t('audioPlayer.preset.none') },
+            ...presets.map(p => ({ value: p.id, label: p.id === defaultId ? `${p.name} ★` : p.name })),
+          ]}
+          onChange={(v) => onChoose(v || null)}
+          renderTrigger={(label, open, toggle) => (
+            <button
+              type="button"
+              class="flex items-center gap-1.5 text-xs bg-bg text-primary border border-border rounded px-2 py-1.5 cursor-pointer hover:border-accent w-full"
+              aria-label={t('audioPlayer.preset.list')}
+              onClick={toggle}
+            >
+              <span class={`truncate flex-1 text-left ${currentId ? '' : 'text-muted'}`}>{label}</span>
+              {dirty && <span class="text-warn shrink-0" title={t('audioPlayer.preset.modified')}>●</span>}
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          )}
+        />
+      </div>
+      {current && (
+        <>
+          <IconButton
+            title={t(current.id === defaultId ? 'audioPlayer.preset.isDefault' : 'audioPlayer.preset.setDefault')}
+            onClick={actions.toggleDefault}
+            class={current.id === defaultId ? 'text-warn' : 'text-muted hover:text-warn'}
+          >
+            <StarIcon size={13} filled={current.id === defaultId} />
+          </IconButton>
+          <IconButton title={t('audioPlayer.preset.rename')} onClick={() => setNaming({ mode: 'rename', value: current.name })}>
+            <PencilIcon size={13} />
+          </IconButton>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The bottom of the player, as under the score viewer's source: what writes
+ *  — a new preset from these settings, and deleting the one on screen —
+ *  grouped on the left; Save on the right, enabled once something differs
+ *  from the preset (always on "no preset", where it asks a name first). */
+function PresetFooter({ current, dirty, suggestedName, setNaming, actions }: {
+  current: AudioPreset | null;
+  dirty: boolean;
+  suggestedName: string;
+  setNaming: (n: Naming | null) => void;
+  actions: PresetActions;
+}) {
+  return (
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      {current ? (
+        <div class="flex items-center gap-1 p-1 bg-bg rounded-lg w-fit">
+          <IconButton title={t('audioPlayer.preset.saveNew.title')} onClick={() => setNaming({ mode: 'create', value: suggestedName })}>
+            <PlusIcon size={13} />
+          </IconButton>
+          <IconButton title={t('audioPlayer.preset.delete')} onClick={actions.remove} class="text-muted hover:text-danger">
+            <TrashIcon size={13} />
+          </IconButton>
+        </div>
+      ) : <span />}
+      <button
+        type="button"
+        class="btn-primary text-xs"
+        disabled={!!current && !dirty}
+        title={t(current ? 'audioPlayer.preset.save.title' : 'audioPlayer.preset.save.titleNone')}
+        onClick={() => { if (current) actions.save(); else setNaming({ mode: 'create', value: suggestedName }); }}
+      >
+        {t('audioPlayer.preset.save')}
+      </button>
+    </div>
+  );
+}
+
 // ── The player ───────────────────────────────────────────────────────────────
 
 type Status =
@@ -160,7 +324,7 @@ type Status =
 
 interface Region { start: number; end: number }
 
-function AudioPlayer({ entry }: { entry: FileEntry }) {
+function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPresetsBinding }) {
   const [playing, setPlaying] = useState(false);
   const engineRef = useRef<AudioEngine | null>(null);
   engineRef.current ??= new AudioEngine(setPlaying);
@@ -225,6 +389,12 @@ function AudioPlayer({ entry }: { entry: FileEntry }) {
         if (!alive) return;
         setRegion({ start: 0, end: r.duration });
         setStatus({ kind: 'ready', ...r });
+        // Opens on the starred preset, if it is still there.
+        const starred = binding?.presets.find(p => p.id === binding.defaultId);
+        if (starred) {
+          setCurrentId(starred.id);
+          applySettings(fitSettings(settingsOf(starred), r.duration));
+        }
       },
       (err: unknown) => { if (alive) setStatus({ kind: 'error', msg: err instanceof Error ? err.message : String(err) }); },
     );
@@ -263,6 +433,72 @@ function AudioPlayer({ entry }: { entry: FileEntry }) {
     effectsRef.current = next;
     setEffectsState(next);
     engine.setEffects(next);
+  };
+
+  // ── Presets (audioPresets.ts) ──
+  // The list is held here while the player is open and sent whole to the
+  // binding at each change: the player is its one writer meanwhile.
+  const [presets, setPresets] = useState<AudioPreset[]>(binding?.presets ?? []);
+  const [defaultId, setDefaultId] = useState<string | undefined>(binding?.defaultId);
+  /** The preset on screen; null is "no preset". */
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  /** Shared by the top, where the name is typed, and the bottom, whose
+   *  buttons ask for one. */
+  const [naming, setNaming] = useState<Naming | null>(null);
+
+  const current: AudioSettings = { start: region.start, end: region.end, ...effects, repeat };
+  const currentPreset = presets.find(p => p.id === currentId) ?? null;
+  const dirty = !!currentPreset && !sameSettings(current, fitSettings(settingsOf(currentPreset), duration));
+
+  /** Everything the screen shows, at once — and playback, if running, carries
+   *  on from the new region's start. */
+  const applySettings = (s: AudioSettings) => {
+    setRegion({ start: s.start, end: s.end });
+    setEffect({ tempo: s.tempo, transpose: s.transpose, pitch: s.pitch });
+    setRepeat(s.repeat);
+    engine.setRepeat(s.repeat);
+    engine.seek(s.start);
+  };
+
+  const choosePreset = (id: string | null) => {
+    setCurrentId(id);
+    const p = presets.find(x => x.id === id);
+    applySettings(p ? fitSettings(settingsOf(p), duration) : neutralSettings(duration));
+  };
+
+  const commitPresets = (next: AudioPreset[], nextDefault: string | undefined) => {
+    setPresets(next);
+    setDefaultId(nextDefault);
+    binding?.onChange(next, nextDefault);
+  };
+
+  const presetActions: PresetActions = {
+    // Over the preset on screen. On "no preset" the bar asks for a name and
+    // calls `create` instead.
+    save: () => {
+      if (!currentPreset) return;
+      commitPresets(presets.map(p => (p.id === currentPreset.id ? { ...p, ...current } : p)), defaultId);
+    },
+    create: (name) => {
+      const p: AudioPreset = { id: generateId(), name: name.trim() || suggestedPresetName(current), ...current };
+      commitPresets([...presets, p], defaultId);
+      setCurrentId(p.id);
+    },
+    rename: (name) => {
+      if (!currentPreset || !name.trim()) return;
+      commitPresets(presets.map(p => (p.id === currentPreset.id ? { ...p, name: name.trim() } : p)), defaultId);
+    },
+    toggleDefault: () => {
+      if (!currentPreset) return;
+      commitPresets(presets, defaultId === currentPreset.id ? undefined : currentPreset.id);
+    },
+    // The settings stay on screen, now as "no preset": deleting a preset is
+    // not a reason to jump somewhere else in the tune.
+    remove: () => {
+      if (!currentPreset) return;
+      commitPresets(presets.filter(p => p.id !== currentPreset.id), defaultId === currentPreset.id ? undefined : defaultId);
+      setCurrentId(null);
+    },
   };
 
   /** A position on the waveform from a pointer's x. */
@@ -341,6 +577,20 @@ function AudioPlayer({ entry }: { entry: FileEntry }) {
 
   return (
     <div style={{ width: '100%', padding: '14px 16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {binding && (
+        <PresetHeader
+          presets={presets}
+          currentId={currentId}
+          defaultId={defaultId}
+          dirty={dirty}
+          suggestedName={suggestedPresetName(current)}
+          naming={naming}
+          setNaming={setNaming}
+          onChoose={choosePreset}
+          actions={presetActions}
+        />
+      )}
+
       {/* Waveform */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div
@@ -414,24 +664,39 @@ function AudioPlayer({ entry }: { entry: FileEntry }) {
         <div style={stacked
           ? { display: 'grid', gridTemplateColumns: '1fr', gap: '10px 0' }
           : { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16px' }}>
-          <Slider label={t('audioPlayer.tempo')} min={30} max={200} step={1} def={100} color="var(--color-accent)"
+          <Slider label={t('audioPlayer.tempo')} min={AUDIO_LIMITS.tempo.min} max={AUDIO_LIMITS.tempo.max} step={1} def={AUDIO_LIMITS.tempo.def} color="var(--color-accent)"
             fmt={v => `${v}%`} value={effects.tempo} onChange={v => setEffect({ tempo: v })} />
-          <Slider label={t('audioPlayer.transpose')} min={-12} max={12} step={1} def={0} color="var(--color-warn)"
+          <Slider label={t('audioPlayer.transpose')} min={AUDIO_LIMITS.transpose.min} max={AUDIO_LIMITS.transpose.max} step={1} def={AUDIO_LIMITS.transpose.def} color="var(--color-warn)"
             fmt={v => `${v >= 0 ? '+' : ''}${v} st`} value={effects.transpose} onChange={v => setEffect({ transpose: v })} />
-          <Slider label={t('audioPlayer.pitch')} min={-100} max={100} step={1} def={0} color="var(--color-success)"
+          <Slider label={t('audioPlayer.pitch')} min={AUDIO_LIMITS.pitch.min} max={AUDIO_LIMITS.pitch.max} step={1} def={AUDIO_LIMITS.pitch.def} color="var(--color-success)"
             fmt={v => `${v >= 0 ? '+' : ''}${v} ¢`} value={effects.pitch} onChange={v => setEffect({ pitch: v })} />
         </div>
       </div>
+
+      {/* Under the sliders, Save and what writes (the user, 2026-10-10) —
+          as under the score viewer's source. */}
+      {binding && (
+        <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '10px' }}>
+          <PresetFooter
+            current={currentPreset}
+            dirty={dirty}
+            suggestedName={suggestedPresetName(current)}
+            setNaming={setNaming}
+            actions={presetActions}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 /** Mounts a player for `entry` into a fresh element. Unmount it with
- *  unmountAudioPlayer when its dialog goes. */
-export function renderAudioPlayer(entry: FileEntry): HTMLElement {
+ *  unmountAudioPlayer when its dialog goes. With `presets`, it has its preset
+ *  bar; without, it is the bare player. */
+export function renderAudioPlayer(entry: FileEntry, presets?: AudioPresetsBinding): HTMLElement {
   const host = document.createElement('div');
   host.style.width = '100%';
-  render(<AudioPlayer entry={entry} />, host);
+  render(<AudioPlayer entry={entry} binding={presets} />, host);
   return host;
 }
 

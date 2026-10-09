@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
-import type { Attachment, FileAttachment, FileEntry, EmbedEntry, Card, CardRef, ResolvableFile } from '../types';
+import type { Attachment, AudioPreset, FileAttachment, FileEntry, EmbedEntry, Card, CardRef, ResolvableFile } from '../types';
+import { identityOf, type AttachmentIdentity, type AudioPresetsBinding } from '../services/audioPresets';
 import { generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance, downloadBlob, base64ToBlob, formatBytes } from '../utils';
 import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
 import { alertModal } from './modal';
@@ -264,9 +265,24 @@ function confirmRemove(name: string, isRef: boolean, remove: () => void): void {
   );
 }
 
+/** An audio attachment's presets as its player takes them, saved back through
+ *  `save` to the same file wherever it has moved. Nothing for any other file. */
+function audioPresetsBinding(
+  att: FileAttachment, i: number,
+  save: (i: number, id: AttachmentIdentity, presets: AudioPreset[], defaultId: string | undefined) => void,
+): AudioPresetsBinding | undefined {
+  if (!att.mimeType.startsWith('audio/')) return undefined;
+  const id = identityOf(att);
+  return {
+    presets: att.audioPresets ?? [],
+    defaultId: att.defaultAudioPreset,
+    onChange: (presets, defaultId) => save(i, id, presets, defaultId),
+  };
+}
+
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, glyph, onOpen, onDownload }: {
+function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, audioPresets, glyph, onOpen, onDownload }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
@@ -274,6 +290,8 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   /** The full new name, extension kept. Absent where a file cannot be renamed. */
   onRename?: (name: string) => void;
   onSetPreferredIndex?: (index: number | undefined) => void;
+  /** An audio file's presets, for its player. */
+  audioPresets?: AudioPresetsBinding;
   /** Replaces the MIME glyph. Used to mark a file the app generates, which is
    *  not the same kind of thing as one the user attached. */
   glyph?: ComponentChild;
@@ -345,7 +363,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
           // Favoriting a version isn't "editing" the card — available regardless of `editable`.
           onClick={!previewable ? undefined : onOpen ?? (() => void withResolvedEntry(entry, resolved => showPreviewModal(resolved, editable ? onSave : undefined, {
             initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex,
-            onRename: editable ? onRename : undefined,
+            onRename: editable ? onRename : undefined, audioPresets,
           })))}
         >
           {entry.name}
@@ -831,6 +849,11 @@ export interface AttachmentListOptions {
    *  even where `editable` is false (study), since it's a viewing preference,
    *  not a content edit. */
   onSetPreferredIndex?: (i: number, index: number | undefined) => void;
+  /** Saves an audio file's presets (audioPresets.ts) — wired where
+   *  `onSetPreferredIndex` is, study included, for the same reason: they are
+   *  how the file is listened to, not what it contains. `id` finds the file
+   *  again should the list have moved under an open player. */
+  onSetAudioPresets?: (i: number, id: AttachmentIdentity, presets: AudioPreset[], defaultId: string | undefined) => void;
   /** Renames a file attachment — the full new name, extension already kept. */
   onRenameFile?: (i: number, name: string) => void;
   /** Saves an edit to a TheSession score as a copy inserted just before it,
@@ -986,6 +1009,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
   const onRenameFile = options.onRenameFile;
   const onCopyFile = options.onCopyFile;
   const onSetPreferredIndex = options.onSetPreferredIndex;
+  const onSetAudioPresets = options.onSetAudioPresets;
   const onUpdateLink = options.onUpdateLink;
   const card = options.card;
 
@@ -1069,6 +1093,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   // Its name is derived from the set's, so it has none of its own to change.
                   onRename={onRenameFile && att.generatedBy !== 'tuneset' ? (name) => onRenameFile(i, name) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
+                  audioPresets={onSetAudioPresets ? audioPresetsBinding(att, i, onSetAudioPresets) : undefined}
                   // A set's fused score has no bytes of its own — see `resolve`
                   // above. Both gestures rebuild it from members whose scores
                   // are actually in hand, and say so when one is not.

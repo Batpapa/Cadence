@@ -32,6 +32,26 @@ export interface ExternalFile {
   bytes: number;
 }
 
+/** One saved setting of the audio player, on the audio attachment it plays.
+ *  Times in seconds of the file; `end` is brought back inside the file's real
+ *  length when it is applied (audioPresets.ts), since the file may have been
+ *  replaced since. */
+export interface AudioPreset {
+  /** Stable: the default preset is named by it, and deleting another preset
+   *  must not move it. */
+  id: string;
+  name: string;
+  start: number;
+  end: number;
+  /** % — 100 is the recording's own speed. */
+  tempo: number;
+  /** Semitones. */
+  transpose: number;
+  /** Cents. */
+  pitch: number;
+  repeat: boolean;
+}
+
 /** What a link attachment DOES when it is opened: `embed` plays it in a modal
  *  iframe, `link` leaves the app for a new tab. Never read off the field
  *  directly — `linkMode()` in embedService is the single reader, because an
@@ -114,6 +134,13 @@ export type Attachment =
        *  through attachmentStore.ts, never by hand: resolving an attachment
        *  means "this device, then Drive", and that decision lives there. */
       external?: ExternalFile;
+      /** Audio files only: settings of the audio player saved by name — a
+       *  part of the tune, slowed down, transposed (2026-10-10). Written by
+       *  the player's "Save", read and cleaned through audioPresets.ts. */
+      audioPresets?: AudioPreset[];
+      /** Which of `audioPresets` the player opens on, by its id. Absent = on
+       *  "no preset", the whole file at neutral settings. */
+      defaultAudioPreset?: string;
     })
   | ({ type: 'embed' } & EmbedEntry)
   | CardReferenceAttachment;
