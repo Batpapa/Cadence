@@ -40,6 +40,7 @@ import {
 } from './sessionStore';
 import { registerCardPanel } from '../../services/cardPanels';
 import { HelpIcon } from '../../components/icons';
+import { CustomSelect } from '../../components/customSelect';
 import { DetectedIn } from './DetectedIn';
 
 // ── Session orchestration ─────────────────────────────────────────────────────
@@ -763,16 +764,19 @@ function BlockTitle({ label, hint }: { label: string; hint: string }) {
  *  (knowsNetworkType). Elsewhere it would be a choice with no effect. */
 function NetworkSelect({ wifiOnly, onChange }: { wifiOnly: boolean; onChange: (wifiOnly: boolean) => void }) {
   if (!knowsNetworkType()) return null;
+  // The app's own select, never a native one: same list everywhere, themed,
+  // and closed by the back gesture like any other overlay.
   return (
-    <select
-      class="text-xs bg-bg text-primary border border-border rounded px-1.5 py-0.5 cursor-pointer"
-      aria-label={t('sessions.download.network')}
+    <CustomSelect
       value={wifiOnly ? 'wifi' : 'always'}
-      onChange={(e) => onChange((e.target as HTMLSelectElement).value === 'wifi')}
-    >
-      <option value="wifi">{t('sessions.download.network.wifi')}</option>
-      <option value="always">{t('sessions.download.network.always')}</option>
-    </select>
+      options={[
+        { value: 'wifi', label: t('sessions.download.network.wifi') },
+        { value: 'always', label: t('sessions.download.network.always') },
+      ]}
+      onChange={(v) => onChange(v === 'wifi')}
+      align="right"
+      triggerClass="flex items-center gap-1.5 text-xs bg-bg text-primary border border-border rounded px-2 py-0.5 cursor-pointer hover:border-accent"
+    />
   );
 }
 

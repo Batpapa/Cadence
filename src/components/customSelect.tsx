@@ -14,12 +14,17 @@ import { registerOverlay } from './overlayStack';
  *  wherever it happens, and anything already wider is untouched. */
 const MIN_PANEL_PX = 180;
 
-export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger }: {
+export function CustomSelect({ value, options, onChange, triggerClass, renderTrigger, align = 'left' }: {
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (v: string) => void;
   triggerClass?: string;
   renderTrigger?: (label: string, open: boolean, toggle: () => void) => ComponentChild;
+  /** Which edge of the trigger the panel lines up with when it is wider than
+   *  the trigger (MIN_PANEL_PX). 'right' for a small trigger at the end of a
+   *  line — the analyser settings' network choice — whose list would
+   *  otherwise hang out past the card it belongs to (2026-10-09). */
+  align?: 'left' | 'right';
 }) {
   const [open, setOpen] = useState(false);
   // Where the panel goes once it is out of the flow — see the portal below.
@@ -71,7 +76,8 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
     const width = Math.max(r.width / z, MIN_PANEL_PX);
     // Pulled back inside when the floor above makes the panel wider than the
     // trigger it hangs from, and that trigger sits near the right edge.
-    const left = Math.max(8, Math.min(r.left / z, window.innerWidth / z - width - 8));
+    const anchor = align === 'right' ? r.right / z - width : r.left / z;
+    const left = Math.max(8, Math.min(anchor, window.innerWidth / z - width - 8));
     setPos({ top: (r.bottom + 4) / z, left, width });
   }, [open]);
 
