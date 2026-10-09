@@ -689,12 +689,15 @@ export function showPreviewModal(
 
   if (m.startsWith('audio/')) {
     body.classList.replace('items-center', 'items-start');
-    import('./audioPlayer').then(({ renderAudioPlayer, stopCurrentAudio }) => {
+    import('./audioPlayer').then(({ renderAudioPlayer, unmountAudioPlayer, stopCurrentAudio }) => {
       // Modal may already have been dismissed while this dynamic import was
       // in flight — don't spin up an AudioContext nobody will ever close.
       if (closed) return;
-      body.appendChild(renderAudioPlayer(entry));
-      stopAudio = stopCurrentAudio;
+      const player = renderAudioPlayer(entry);
+      body.appendChild(player);
+      // The sound first, then the screen: a Preact tree since 2026-10-10,
+      // whose effects (its animation frame, its resize watch) end with it.
+      stopAudio = () => { stopCurrentAudio(); unmountAudioPlayer(player); };
     });
 
   } else if (m.startsWith('video/')) {

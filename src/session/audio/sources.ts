@@ -269,7 +269,7 @@ export class FileSource implements PcmSource {
  *  supported. Never a regression: the fallback is exactly what ran before.
  *  Dynamic import: web-demuxer only needs to load for users who actually
  *  import a file, same convention as the other heavy/occasional deps (abcjs,
- *  audioPlayer.ts) — keeps it out of the eagerly-loaded main bundle. */
+ *  audioPlayer.tsx) — keeps it out of the eagerly-loaded main bundle. */
 export async function createFileSource(file: File): Promise<PcmSource> {
   const { StreamingFileSource } = await import('./streamingFileSource');
   return (await StreamingFileSource.tryCreate(file)) ?? FileSource.fromFile(file);
