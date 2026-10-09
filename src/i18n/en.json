@@ -1487,6 +1487,7 @@
   "sessions.syncAudio.off": "On this device only — click to copy it to Drive",
   "sessions.syncAudio.uploading": "Copying to Drive…",
   "sessions.syncAudio.retry": "Copy to Drive failed — click to try again",
+  "sessions.syncAudio.retryPending": "Copy to Drive failed — it will be tried again automatically, or click to try now",
   "sessions.syncAudio.confirm.title": "Copy to Drive",
   "sessions.syncAudio.confirm.message": "Uploads this audio ({size}) to the cadence-data-ext folder on Drive, so it can be played on other devices. It stays on this device too, and the copy can be removed at any time.",
   "sessions.syncAudio.confirm.ok": "Copy",

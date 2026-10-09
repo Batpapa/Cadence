@@ -7,7 +7,7 @@ import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/pl
 import { confirmModal, alertModal } from '../../components/modal';
 import {
   deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio,
-  uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio,
+  uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio, autoUploadState,
 } from '../db';
 import { isDriveConnected } from '../../services/driveService';
 import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
@@ -76,13 +76,15 @@ const DOUBLE_CLICK_MS = 400;
 
 /** Where this recording's Drive copy stands. Same four readings as the header's
  *  own sync indicator, because it is the same question about a smaller thing. */
-type AudioSyncState = 'off' | 'uploading' | 'on' | 'error';
+type AudioSyncState = 'off' | 'uploading' | 'on' | 'error' | 'waiting';
 
 const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
   off:       'sessions.syncAudio.off',
   uploading: 'sessions.syncAudio.uploading',
   on:        'sessions.syncAudio.on',
   error:     'sessions.syncAudio.retry',
+  // The automatic copy failed and will be tried again on its own (db.ts).
+  waiting:   'sessions.syncAudio.retryPending',
 };
 
 /** Deliberately header.tsx's SyncBtn, one size down: same glyph, same colour
@@ -99,7 +101,7 @@ function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () =
   const cls =
     state === 'uploading' ? 'text-accent animate-pulse cursor-default' :
     state === 'on'        ? 'text-green-500 cursor-pointer' :
-    state === 'error'     ? 'text-danger cursor-pointer' :
+    state === 'error' || state === 'waiting' ? 'text-danger cursor-pointer' :
                             'text-dim hover:text-muted cursor-pointer';
   return (
     <button
@@ -225,8 +227,16 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
 
   const persist = () => { void saveSessionMeta(session); };
 
+  // The automatic copy made when the recording was saved, or its retries: shown
+  // here too, so that a recording stopped a moment ago reads as on its way
+  // rather than as never copied.
+  const autoUpload = synced ? undefined : autoUploadState.value[session.id];
   const audioSyncState: AudioSyncState =
-    busySync ? 'uploading' : syncFailed ? 'error' : synced ? 'on' : 'off';
+    busySync || autoUpload === 'uploading' ? 'uploading'
+      : syncFailed ? 'error'
+      : synced ? 'on'
+      : autoUpload === 'waiting' ? 'waiting'
+      : 'off';
 
   // ── Audio load: streamed via a native <audio> element (no
   // decodeAudioData/waveform — sessions can run for hours). Revokes the

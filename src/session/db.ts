@@ -1,4 +1,5 @@
 import { openDB, type IDBPDatabase } from 'idb';
+import { signal } from '@preact/signals';
 import {
   TUNE_ANALYSER_MODULE_KEY,
   type Analysis, type SyncedAudio, type TuneAnalyserModuleData, type WindowResult,
@@ -522,6 +523,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await d.delete(DRAFT_STORE, sessionId);
   await d.delete(AUDIO_STORE, sessionId);
   await deleteSessionWindows(sessionId);
+  markUploadWanted(sessionId, false);
 }
 
 /** Finalized sessions only (what the library shows) — see saveSessionMeta's
@@ -701,53 +703,183 @@ export async function saveSessionAudio(sessionId: string, audio: Blob, sync?: bo
   void (await import('../services/storageService')).refreshStorageEstimate();
   const wantSync = sync ?? await syncAudioByDefault();
   if (!wantSync) return;
+  // Without Drive there is nothing to retry towards, and nothing is queued: a
+  // recording made before Drive was connected belongs to the backlog, which
+  // only ever goes up on the user's say-so (BackfillRow).
+  if (!(await driveModule()).isDriveConnected()) return;
+  // Remembered BEFORE it is attempted: an app closed mid-upload — the phone
+  // put back in a pocket right after stopping — is a failure too, and the
+  // next launch must know about it.
+  markUploadWanted(sessionId, true);
   // Never interactive: this runs on its own after a recording is saved, and a
   // consent window raised by something the user did not just click is the
   // behaviour the Drive work spent so long removing.
-  void uploadSessionAudio(sessionId, false).catch((e: unknown) => {
-    // Nothing is lost: the recording is on this device, and the summary offers
-    // the upload again whenever the user wants it. But when the only thing
-    // missing was a token, waiting for the user to go and ask by hand is a poor
-    // answer — remember it, and the next gesture that buys a token sends it
-    // (2026-09-17, on the user's remark that this case was not covered).
-    const message = e instanceof Error ? e.message : String(e);
-    if (/needs_auth|auth_failed/.test(message)) queueUploadAwaitingToken(sessionId);
-    console.warn('[sessions] background upload of the recording failed:', e);
-  });
+  void attemptWantedUpload(sessionId);
 }
 
-/** Recordings whose automatic upload found no token. In memory only: the
- *  recording is on this device either way, and the settings' backlog button is
- *  the durable answer — this just spares the user having to find it. */
-const _uploadsAwaitingToken = new Set<string>();
-let _uploadWorkRegistered = false;
+// ── Automatic uploads that failed, tried again (2026-10-09) ───────────────────
+// A user found three recordings that had never reached Drive, weeks later
+// (2026-10-08). The automatic upload after a recording was fired once: a
+// network error was logged and forgotten, and only a missing token was waited
+// out — in memory, so not past a restart either. Nothing was lost, the
+// recordings were on the phone; but the copy that protects them against the
+// browser wiping its storage was quietly not there.
+//
+// So the automatic uploads this device wanted are written down, per user, and
+// stay written down until one goes through: tried again at launch, when the
+// network comes back, when the app returns to the foreground, and when a token
+// arrives. Only those — never the backlog of recordings that predate the
+// option or Drive itself, which stays the backlog button's job (an explicit
+// consent: it can be gigabytes on someone's data plan).
 
-function queueUploadAwaitingToken(sessionId: string): void {
-  _uploadsAwaitingToken.add(sessionId);
-  if (_uploadWorkRegistered) return;
-  _uploadWorkRegistered = true;
+const LS_UPLOADS_WANTED = 'cadence_audio_uploads_wanted';
+
+/** Per user: one device can hold several, each with its own Drive. */
+function wantedKey(): string | null {
+  return _userId ? `${LS_UPLOADS_WANTED}:${_userId}` : null;
+}
+
+function readWanted(): string[] {
+  const key = wantedKey();
+  if (!key) return [];
+  try {
+    const ids = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+  } catch { return []; }
+}
+
+/** Where each recording's automatic upload stands, for the summary's cloud:
+ *  'uploading' while one runs, 'waiting' once one has failed and will be tried
+ *  again. Absent otherwise. */
+export const autoUploadState = signal<Readonly<Record<string, 'uploading' | 'waiting'>>>({});
+
+const _uploading = new Set<string>();
+
+function publishUploadState(): void {
+  const next: Record<string, 'uploading' | 'waiting'> = {};
+  for (const id of readWanted()) next[id] = 'waiting';
+  for (const id of _uploading) if (next[id]) next[id] = 'uploading';
+  autoUploadState.value = next;
+}
+
+function markUploadWanted(sessionId: string, on: boolean): void {
+  const key = wantedKey();
+  if (!key) return;
+  const ids = readWanted().filter(id => id !== sessionId);
+  if (on) ids.push(sessionId);
+  try {
+    if (ids.length) localStorage.setItem(key, JSON.stringify(ids));
+    else localStorage.removeItem(key);
+  } catch { /* storage refused: the summary's own button is still there */ }
+  publishUploadState();
+}
+
+/** The last attempt failed for want of a token. Read synchronously by the
+ *  token renewal (DrivePendingWork.pending), inside a pointerdown: a window
+ *  is only worth raising when something is actually stuck on one — not for a
+ *  recording that fails on a full Drive. */
+let _awaitingToken = false;
+
+/** One attempt at a wanted upload. Never throws, never interactive: what
+ *  happened is in `autoUploadState`. */
+async function attemptWantedUpload(sessionId: string): Promise<void> {
+  _uploading.add(sessionId);
+  publishUploadState();
+  try {
+    await uploadSessionAudio(sessionId, false);
+    // uploadSessionAudio crossed it off, a success being one whoever asked.
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    // Nothing left to send: the session was deleted, or its audio freed
+    // without a Drive copy — both deliberate.
+    if (message === 'no_local_audio') markUploadWanted(sessionId, false);
+    else if (/needs_auth|auth_failed/.test(message)) _awaitingToken = true;
+    console.warn('[sessions] automatic upload of the recording failed:', e);
+  } finally {
+    _uploading.delete(sessionId);
+    publishUploadState();
+  }
+}
+
+let _retryRunning = false;
+
+/** Tries every wanted upload again, one at a time — tens of megabytes each,
+ *  and a burst would only compete with itself. */
+async function retryWantedUploads(): Promise<void> {
+  if (_retryRunning || !_userId) return;
+  const ids = readWanted();
+  if (ids.length === 0) return;
+  const drive = await driveModule();
+  // Disconnected from Drive, or the option switched off since: kept, and
+  // sent if either comes back — they were wanted when they were made.
+  if (!drive.isDriveConnected() || !navigator.onLine || !await syncAudioByDefault()) return;
+  _retryRunning = true;
+  _awaitingToken = false;
+  try {
+    const sessions = (await moduleData()).sessions ?? {};
+    for (const id of ids) {
+      // Not saved yet: a recording writes its audio before its analysis
+      // (liveSession.stop), and a retry can land between the two. The upload
+      // that save started is already under way.
+      if (!sessions[id] || _uploading.has(id)) continue;
+      await attemptWantedUpload(id);
+      // No token: every other one would fail the same way. The next one
+      // that arrives sends them all.
+      if (_awaitingToken) break;
+    }
+  } finally {
+    _retryRunning = false;
+  }
+}
+
+let _retryWired = false;
+const FOREGROUND_RETRY_EVERY_MS = 10 * 60_000;
+
+/** Called once a user is open (main.ts's finishBoot). The launch pass waits a
+ *  little: boot is busy reading Drive, which is also what fetches a token in
+ *  the browser. */
+export function initAudioUploadRetry(): void {
+  publishUploadState();
+  setTimeout(() => { void retryWantedUploads(); }, 8000);
+  if (_retryWired) return;
+  _retryWired = true;
+  const retry = () => { void retryWantedUploads(); };
+  window.addEventListener('online', retry);
+  // Spaced out: a phone comes back to the foreground every few minutes, and an
+  // upload that keeps failing halfway (a weak signal) would spend tens of
+  // megabytes of data each time.
+  let lastForegroundTry = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastForegroundTry < FOREGROUND_RETRY_EVERY_MS) return;
+    lastForegroundTry = Date.now();
+    retry();
+  });
   void driveModule().then(drive => drive.registerDrivePendingWork({
-    pending: () => _uploadsAwaitingToken.size > 0,
-    resume: () => {
-      for (const id of [..._uploadsAwaitingToken]) {
-        _uploadsAwaitingToken.delete(id);
-        void uploadSessionAudio(id, false).catch((e: unknown) => {
-          const message = e instanceof Error ? e.message : String(e);
-          if (/needs_auth|auth_failed/.test(message)) _uploadsAwaitingToken.add(id);
-          console.warn('[sessions] retry of the recording upload failed:', e);
-        });
-      }
-    },
+    pending: () => _awaitingToken && readWanted().length > 0,
+    resume: retry,
   }));
 }
+
+/** Uploads in flight by session, so that two askers share one upload: the
+ *  automatic one and a retry landing together, or a click on the summary's
+ *  cloud during either, would otherwise each put a copy on Drive. */
+const _uploadsInFlight = new Map<string, Promise<void>>();
 
 /** Copies this session's recording to Drive. Resolves once the file is there and
  *  recorded; rejects on any failure, having changed nothing.
  *
  *  `interactive` may raise a consent window, so it is true only when a click led
  *  here — see driveService's getToken. */
-export async function uploadSessionAudio(sessionId: string, interactive = true): Promise<void> {
-  if (await isSessionAudioSynced(sessionId)) return;
+export function uploadSessionAudio(sessionId: string, interactive = true): Promise<void> {
+  const running = _uploadsInFlight.get(sessionId);
+  if (running) return running;
+  const p = runUpload(sessionId, interactive).finally(() => _uploadsInFlight.delete(sessionId));
+  _uploadsInFlight.set(sessionId, p);
+  return p;
+}
+
+async function runUpload(sessionId: string, interactive: boolean): Promise<void> {
+  if (await isSessionAudioSynced(sessionId)) { markUploadWanted(sessionId, false); return; }
   const audio = await (await localDb()).get(AUDIO_STORE, sessionId) as Blob | undefined;
   if (!audio) throw new Error('no_local_audio');
   const meta = await loadSessionMeta(sessionId);
@@ -755,6 +887,7 @@ export async function uploadSessionAudio(sessionId: string, interactive = true):
   const fileId = await (await driveModule())
     .uploadCompanionFile(companionName(sessionId, mimeType), audio, interactive);
   await recordSyncedAudio(sessionId, { fileId, mimeType, bytes: audio.size });
+  markUploadWanted(sessionId, false);
   // The recording is now safe off this device, which is what its live backup
   // was waiting for (liveBackup.ts). Lazy for the same reason as storeModule.
   void import('./liveBackup').then(m => m.settleLiveBackup(sessionId));
@@ -1002,6 +1135,7 @@ export async function fetchSyncedAudio(sessionId: string): Promise<Blob | null> 
  *  which is what its confirmation has to say. */
 export async function forgetSessionAudio(sessionId: string): Promise<void> {
   await (await localDb()).delete(AUDIO_STORE, sessionId);
+  markUploadWanted(sessionId, false);
 }
 
 // ── In-progress crash-recovery scratch data (local-only) ───────────────────────
