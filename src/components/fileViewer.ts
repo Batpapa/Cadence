@@ -15,6 +15,7 @@ import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpe
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { showModal, updateTopModal, confirmModal } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
+import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon } from './playbackIcons';
 import { appState, mutate } from '../store';
 import { registerOverlay } from './overlayStack';
@@ -638,6 +639,9 @@ export interface PreviewModalOpts {
   /** Makes the title renamable (the extension stays as it is). Gets the full
    *  new name; the viewer shows it itself. */
   onRename?: (name: string) => void;
+  /** An audio file's presets (audioPresets.ts). Absent: the player has no
+   *  preset bar — there is nowhere to keep them. */
+  audioPresets?: AudioPresetsBinding;
 }
 
 /** What a save did. `false`: nothing was saved — the user backed out of a
@@ -677,6 +681,9 @@ export function showPreviewModal(
   // Filled in by the ABC branch; the header gear needs a way to re-prime the
   // score once preferences change, and only that branch knows how.
   let reapplyAbcPrefs: (() => void) | null = null;
+  // Same shape, for the header's way out to abcTools: only the score branch
+  // knows which version is on screen.
+  let openInAbcTools: (() => void) | null = null;
   // Same shape, for the dialog's own "Full page": the score branch is the only
   // one that sizes anything against the room the dialog has.
   let onModalExpanded: ((expanded: boolean) => void) | null = null;
@@ -693,7 +700,7 @@ export function showPreviewModal(
       // Modal may already have been dismissed while this dynamic import was
       // in flight — don't spin up an AudioContext nobody will ever close.
       if (closed) return;
-      const player = renderAudioPlayer(entry);
+      const player = renderAudioPlayer(entry, opts?.audioPresets);
       body.appendChild(player);
       // The sound first, then the screen: a Preact tree since 2026-10-10,
       // whose effects (its animation frame, its resize watch) end with it.
@@ -908,38 +915,18 @@ export function showPreviewModal(
       versionNav.insertBefore(starBtn, nextBtn);
     }
 
-    const abcToolsLink = document.createElement('a');
-    abcToolsLink.target = '_blank';
-    abcToolsLink.rel = 'noopener noreferrer';
-    abcToolsLink.title = t('fileViewer.abc.openInAbcTools');
-    abcToolsLink.className = 'abc-tool-btn text-muted hover:text-accent';
-    abcToolsLink.appendChild(iconElement(ExternalLinkIcon, 14));
+    // The way out to abcTools is the dialog header's, beside the gear, since
+    // 2026-10-10 (the user): it acts on the whole tune, like the preferences,
+    // not on the page being read. It opens the version on screen.
+    openInAbcTools = () => { window.open(abcToolsShareUrl(tunes[currentIndex] ?? ''), '_blank', 'noopener,noreferrer'); };
 
     // ── What is left in the row ──────────────────────────────────────────────
     // The paper and the bars per line lived here until the user moved them
     // (2026-09-21): they are set once and then left alone for months, which is
-    // what the gear is for, and two more buttons beside the tabs was two more
-    // things to read past on every score. They are in the preferences now
-    // (showAbcPrefsModal), and this row keeps only what you reach for WHILE
-    // reading: the way out to abcTools, and the full page.
-    const toolGroup = document.createElement('div');
-    toolGroup.className = 'flex items-center gap-1';
-
-    /** One of the row's icon buttons, in the app's own language rather than
-     *  the score's: these sit on the dialog, not on the paper. */
-    const mkToolBtn = (icon: Element, title: string): HTMLButtonElement => {
-      const b = document.createElement('button');
-      b.appendChild(icon);
-      b.title = title;
-      b.className = 'abc-tool-btn text-muted hover:text-primary hover:bg-bg';
-      b.addEventListener('click', () => b.blur());
-      return b;
-    };
-
-    const fullscreenBtn = mkToolBtn(iconElement(ExpandIcon, 14), t('fileViewer.abc.fullscreen'));
-
-    toolGroup.append(abcToolsLink, fullscreenBtn);
-    topRow.append(tabBar, versionNav, toolGroup);
+    // what the gear is for. The way out to abcTools went to the header and the
+    // full page onto the score itself (2026-10-10), so the row is the tabs and
+    // the versions.
+    topRow.append(tabBar, versionNav);
     container.appendChild(topRow);
 
     // ── What abcjs made of the ABC ───────────────────────────────────────────
@@ -1326,6 +1313,21 @@ export function showPreviewModal(
     scoreScroll.className = 'abc-score-paper w-full rounded p-2 overflow-y-auto';
     scoreFrame.appendChild(scoreScroll);
 
+    // Full page, in the score's top right corner, over the paper (2026-10-10,
+    // the user) — where the way back already was once in full page. One button
+    // for both: it belongs to the frame, so it travels into the full-page
+    // overlay with the score and turns into the way out there.
+    const scoreTools = document.createElement('div');
+    scoreTools.className = 'absolute top-1 right-1 z-20 flex items-center';
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.className = 'abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center';
+    fullscreenBtn.title = t('fileViewer.abc.fullscreen');
+    fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreen'));
+    fullscreenBtn.appendChild(iconElement(ExpandIcon, 13));
+    fullscreenBtn.addEventListener('click', () => fullscreenBtn.blur());
+    scoreTools.appendChild(fullscreenBtn);
+    scoreFrame.appendChild(scoreTools);
+
     /** Paper and ink onto the box, and the cursor colour onto the CSS variable
      *  the stylesheet reads. The ink is set on the element too, not only handed
      *  to abcjs: the "format non décodable" text and anything else that lands
@@ -1441,12 +1443,8 @@ export function showPreviewModal(
     // because a reader scrolls the score, and two tap targets over the music
     // were read as settings rather than as a page turn.
 
-    /** The page-turn bands and the exit button: built on the way in, and taken
-     *  out again on the way out. They live on the FRAME, which goes back into
-     *  the dialog — so leaving them behind would hang two tap bands over a
-     *  score that has a toolbar of its own, and add a second pair on the next
-     *  time through. */
-    let fullscreenExtras: HTMLElement[] = [];
+    // Nothing is built for the full page any more: its way out is the very
+    // button that led in (scoreTools), which travels with the frame.
 
     const exitFullscreen = () => {
       if (!fullscreen) return;
@@ -1454,8 +1452,6 @@ export function showPreviewModal(
       unregisterFullscreen = () => {};
       document.removeEventListener('visibilitychange', onVisibility);
       dropWakeLock();
-      for (const el of fullscreenExtras) el.remove();
-      fullscreenExtras = [];
       scoreFrame.classList.remove('flex', 'flex-col', 'flex-1', 'min-h-0');
       scoreScroll.classList.remove('flex-1', 'min-h-0');
       scoreScroll.classList.add('rounded');
@@ -1465,8 +1461,9 @@ export function showPreviewModal(
       fullscreen.remove();
       fullscreen = null;
       capScore();
-      fullscreenBtn.replaceChildren(iconElement(ExpandIcon, 14));
+      fullscreenBtn.replaceChildren(iconElement(ExpandIcon, 13));
       fullscreenBtn.title = t('fileViewer.abc.fullscreen');
+      fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreen'));
       // The box changed width twice over on the way out; the score has to be
       // engraved for the one it ends up in.
       remeasure();
@@ -1488,18 +1485,6 @@ export function showPreviewModal(
       // wearing would hold the score to half a dialog that is no longer there.
       scoreScroll.style.maxHeight = '';
 
-      const exitBar = document.createElement('div');
-      exitBar.className = 'abc-score-tools absolute top-2 right-2 z-20 flex items-center rounded-lg backdrop-blur-sm px-1 py-0.5 shadow-sm';
-      const exitBtn = document.createElement('button');
-      exitBtn.className = 'abc-score-tool rounded transition-colors cursor-pointer flex items-center justify-center';
-      exitBtn.title = t('fileViewer.abc.fullscreenExit');
-      exitBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreenExit'));
-      exitBtn.appendChild(iconElement(CollapseIcon, 15));
-      exitBtn.onclick = () => { exitBtn.blur(); exitFullscreen(); };
-      exitBar.appendChild(exitBtn);
-      scoreFrame.appendChild(exitBar);
-      fullscreenExtras = [exitBar];
-
       // The transport, at the bottom where a thumb is. It keeps its element
       // and its abcjs bindings — only where it sits and what it sits on change.
       transportBar.replaceWith(transportAnchor);
@@ -1508,8 +1493,9 @@ export function showPreviewModal(
       overlay.append(scoreFrame, transportBar);
       document.body.appendChild(overlay);
       fullscreen = overlay;
-      fullscreenBtn.replaceChildren(iconElement(CollapseIcon, 14));
+      fullscreenBtn.replaceChildren(iconElement(CollapseIcon, 13));
       fullscreenBtn.title = t('fileViewer.abc.fullscreenExit');
+      fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreenExit'));
       document.addEventListener('visibilitychange', onVisibility);
       takeWakeLock();
       // Registered as the topmost overlay, which is what makes Escape and the
@@ -1659,7 +1645,6 @@ export function showPreviewModal(
       versionNav.classList.toggle('hidden', versionCount <= 1);
       deleteVersionBtn.classList.toggle('hidden', versionCount <= 1);
       updateStarBtn?.();
-      abcToolsLink.href = abcToolsShareUrl(tunes[currentIndex] ?? '');
       if (currentMode === 'sheet') {
         doRenderTune?.(currentIndex);
       } else {
@@ -2702,12 +2687,15 @@ export function showPreviewModal(
   // an image, a PDF or a recording. A score is the one thing here that a wider
   // frame genuinely re-renders — abcjs lays out to the container, so the extra
   // width buys fewer line breaks rather than a bigger picture.
+  //
+  // And recordings since 2026-10-10, at the user's request: a wider waveform
+  // is a finer one to place the bounds of a part on.
   const isScore = isAbcFile(entry);
   const onRename = opts?.onRename;
   showModal(entry.name, body, [], {
     maxWidth: modalWidth(entry),
     onDismiss,
-    expandable: isScore,
+    expandable: isScore || m.startsWith('audio/'),
     onExpandedChange: (expanded) => onModalExpanded?.(expanded),
     titleEdit: onRename
       ? {
@@ -2721,12 +2709,21 @@ export function showPreviewModal(
           },
         }
       : undefined,
+    // abcTools left of the gear (2026-10-10, the user): both act on the tune as
+    // a whole, and the dialog's own controls (full page, ✕) close the row.
     headerActions: isScore
-      ? [{
-          icon: iconElement(GearIcon, 15),
-          title: t('fileViewer.abc.prefs.title'),
-          onClick: () => showAbcPrefsModal(() => reapplyAbcPrefs?.()),
-        }]
+      ? [
+          {
+            icon: iconElement(ExternalLinkIcon, 15),
+            title: t('fileViewer.abc.openInAbcTools'),
+            onClick: () => openInAbcTools?.(),
+          },
+          {
+            icon: iconElement(GearIcon, 15),
+            title: t('fileViewer.abc.prefs.title'),
+            onClick: () => showAbcPrefsModal(() => reapplyAbcPrefs?.()),
+          },
+        ]
       : [],
   });
 }

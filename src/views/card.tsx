@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'preact/hooks';
 import { Fragment } from 'preact';
 import { appState, navigate, mutate } from '../store';
+import { locateFileAttachment, writeAudioPresets } from '../services/audioPresets';
 import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
 import { copyFileName } from '../services/attachmentNames';
@@ -652,6 +653,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         if (target && target.type === 'file') target.data = data;
       });
     },
+    // Found by identity, not by position alone: see locateFileAttachment.
+    onSetAudioPresets: (i, id, presets, defaultId) => mutate(s => {
+      const atts = s.cards[cardId]?.content.attachments;
+      const att = atts && locateFileAttachment(atts, i, id);
+      if (att) writeAudioPresets(att, presets, defaultId);
+    }),
     onSetPreferredIndex: (i, index) => mutate(s => {
       const att = s.cards[cardId]!.content.attachments[i];
       if (att && att.type === 'file') {

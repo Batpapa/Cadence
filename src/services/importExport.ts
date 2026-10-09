@@ -5,6 +5,7 @@ import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
 import { cardAliases } from './aliasService';
 import { inlineExternalAttachments, type ExportGate } from './attachmentStore';
+import { sanitizeAudioPresets } from './audioPresets';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -208,6 +209,7 @@ function sanitizeAttachment(raw: unknown): unknown {
     if (typeof raw['data'] !== 'string') raw['data'] = '';
     if (typeof raw['mimeType'] !== 'string') raw['mimeType'] = 'text/plain';
     if (typeof raw['name'] !== 'string') raw['name'] = 'file.txt';
+    sanitizeAudioPresets(raw);
   } else if (raw['type'] === 'card') {
     sanitizeCardRef(raw);
   }
