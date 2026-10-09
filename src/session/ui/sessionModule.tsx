@@ -16,7 +16,15 @@ import { readRecordingStart } from '../audio/recordingDate';
 import {
   loadSessionAudio, setSyncAudioByDefault, SYNC_AUDIO_BY_DEFAULT, pendingAudioUploads, uploadPendingAudio,
   setAutoLiveBackup, AUTO_LIVE_BACKUP_BY_DEFAULT, reconcileSyncedAudio,
+  driveOnlyAudio, audioArrivals, audioDownloadProgress,
+  autoUploadState, uploadOnWifiOnly, setUploadOnWifiOnly, type AutoUploadState,
 } from '../db';
+import { knowsNetworkType } from '../network';
+import {
+  audioDownloadMode, downloadOnWifiOnly, setAudioDownloadMode, setDownloadOnWifiOnly,
+  autoDownloadStatus, downloadAllAudio, runAutoDownloads,
+  type AutoDownloadStatus, type DownloadAllResult,
+} from '../audioDownloads';
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
@@ -599,7 +607,9 @@ function BackfillRow() {
   // its separators between BLOCKS (see SessionSettingsBody).
   return (
     <div class="space-y-2">
-      <button class="btn-primary w-full text-sm" disabled={nothingToDo || progress !== null} onClick={run}>
+      {/* The same button as "download everything" below: the two are each
+          other's mirror. */}
+      <button class="btn-ghost border border-border w-full text-sm" disabled={nothingToDo || progress !== null} onClick={run}>
         {progress
           ? t('sessions.syncAudio.backfill.running', { done: String(progress.done), total: String(progress.total) })
           : nothingToDo
@@ -614,6 +624,248 @@ function BackfillRow() {
           {result.failed
             ? t('sessions.syncAudio.backfill.partial', { ok: String(result.ok), failed: String(result.failed) })
             : t('sessions.syncAudio.backfill.done', { ok: String(result.ok) })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** One choice among a few, drawn as a card with its own radio dot — the export
+ *  choice's look (settingsModal.tsx), so the two read as the same control. */
+function ChoiceCard({ selected, label, detail, onSelect, aside, footer }: {
+  selected: boolean; label: string; detail?: string; onSelect: () => void;
+  /** Beside the label — a control of its own, so the card is not a <button>
+   *  (one may not hold another) and that control keeps its clicks. */
+  aside?: ComponentChild;
+  /** Under the detail. */
+  footer?: ComponentChild;
+}) {
+  return (
+    <div
+      role="radio"
+      tabIndex={0}
+      aria-checked={selected}
+      onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
+      class={'w-full text-left rounded-lg border px-3 py-2 transition-colors cursor-pointer '
+        + (selected ? 'border-accent bg-accent/10' : 'border-border bg-bg hover:border-accent/60')}
+    >
+      <div class="flex items-start gap-2">
+        <span
+          class={'mt-[3px] w-3.5 h-3.5 rounded-full border shrink-0 flex items-center justify-center '
+            + (selected ? 'border-accent' : 'border-border')}
+          aria-hidden="true"
+        >
+          {selected && <span class="w-1.5 h-1.5 rounded-full bg-accent" />}
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="flex items-center gap-2">
+            <span class={'text-sm flex-1 min-w-0 ' + (selected ? 'text-accent' : 'text-primary')}>{label}</span>
+            {aside && <span class="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>{aside}</span>}
+          </span>
+          {detail && <span class="block text-xs text-muted leading-snug mt-0.5">{detail}</span>}
+          {footer}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Where the automatic mode stands, in one line under its choices. */
+function autoDownloadLine(s: AutoDownloadStatus | null, progress: Readonly<Record<string, number>>): string | null {
+  if (!s) return null;
+  const left = { count: s.remaining, size: formatBytes(s.bytes) };
+  if (s.current) {
+    const name = (appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)
+      ?.sessions?.[s.current]?.name ?? '';
+    return t('sessions.download.status.downloading', { name, percent: Math.round((progress[s.current] ?? 0) * 100), ...left });
+  }
+  switch (s.blocked) {
+    case 'offline': return t('sessions.download.status.offline', left);
+    case 'wifi':    return t('sessions.download.status.wifi', left);
+    case 'space':   return t('sessions.download.status.space', left);
+    case 'token':   return t('sessions.download.status.token', left);
+    case 'failed':  return t('sessions.download.status.failed', left);
+  }
+  // Everything is here: the button below already says so. What it does not
+  // say is what was left on Drive on purpose.
+  return s.freed > 0 ? t('sessions.download.status.freed', { count: s.freed }) : null;
+}
+
+/** Spelt out rather than built from the mode, so the key check
+ *  (i18nKeys.test.ts) can see every one of them. */
+const DOWNLOAD_MODES = [
+  ['manual', 'sessions.download.mode.manual', 'sessions.download.mode.manual.detail'],
+  ['onDemand', 'sessions.download.mode.onDemand', 'sessions.download.mode.onDemand.detail'],
+  ['auto', 'sessions.download.mode.auto', 'sessions.download.mode.auto.detail'],
+] as const;
+
+/** How the recordings that are on Drive come onto this device (2026-10-09):
+ *  see audioDownloads.ts. Per device, so it says so. */
+function AudioDownloadsBlock() {
+  const mode = audioDownloadMode.value;
+  const line = mode === 'auto' ? autoDownloadLine(autoDownloadStatus.value, audioDownloadProgress.value) : null;
+  // Looked at now, so the line says where things stand rather than nothing
+  // until the next pass — and a pass that had stopped (no Wi-Fi then) gets
+  // another go. One pass at a time, so this cannot start a second.
+  useEffect(() => { if (audioDownloadMode.value === 'auto') void runAutoDownloads(); }, []);
+  return (
+    <div class="space-y-2">
+      <BlockTitle label={t('sessions.download.title')} hint={t('sessions.download.hint')} />
+      <div class="space-y-1.5" role="radiogroup" aria-label={t('sessions.download.title')}>
+        {DOWNLOAD_MODES.map(([m, label, detail]) => (
+          <ChoiceCard
+            key={m}
+            selected={mode === m}
+            label={t(label)}
+            detail={t(detail)}
+            onSelect={() => setAudioDownloadMode(m)}
+            aside={m === 'auto' && mode === 'auto'
+              ? <NetworkSelect wifiOnly={downloadOnWifiOnly.value} onChange={setDownloadOnWifiOnly} />
+              : undefined}
+            footer={m === 'auto' && line ? <StatusLine text={line} /> : undefined}
+          />
+        ))}
+      </div>
+      <DownloadAllRow />
+    </div>
+  );
+}
+
+/** A block's heading, with its explanation on demand — SettingRow's `?`,
+ *  for a block whose choice is not a checkbox. */
+function BlockTitle({ label, hint }: { label: string; hint: string }) {
+  const [hintOpen, setHintOpen] = useState(false);
+  return (
+    <>
+      <div class="flex items-start gap-1.5">
+        <span class="text-sm text-primary flex-1 min-w-0">{label}</span>
+        <button
+          class={`flex items-center p-0.5 rounded-full transition-colors cursor-pointer shrink-0 ${
+            hintOpen ? 'text-accent' : 'text-dim hover:text-primary'
+          }`}
+          title={t('settings.explain')}
+          aria-expanded={hintOpen}
+          onClick={() => setHintOpen(o => !o)}
+        >
+          <HelpIcon size={14} />
+        </button>
+      </div>
+      {hintOpen && (
+        <p class="text-xs text-dim leading-relaxed px-3 py-2 rounded-lg border border-border bg-bg">{hint}</p>
+      )}
+    </>
+  );
+}
+
+/** Wi-Fi only, or any network — beside an "Automatic" choice. Only where it
+ *  can mean something: a device that tells its networks apart
+ *  (knowsNetworkType). Elsewhere it would be a choice with no effect. */
+function NetworkSelect({ wifiOnly, onChange }: { wifiOnly: boolean; onChange: (wifiOnly: boolean) => void }) {
+  if (!knowsNetworkType()) return null;
+  return (
+    <select
+      class="text-xs bg-bg text-primary border border-border rounded px-1.5 py-0.5 cursor-pointer"
+      aria-label={t('sessions.download.network')}
+      value={wifiOnly ? 'wifi' : 'always'}
+      onChange={(e) => onChange((e.target as HTMLSelectElement).value === 'wifi')}
+    >
+      <option value="wifi">{t('sessions.download.network.wifi')}</option>
+      <option value="always">{t('sessions.download.network.always')}</option>
+    </select>
+  );
+}
+
+function StatusLine({ text }: { text: string }) {
+  return <span class="block text-xs text-primary leading-snug mt-1.5">{text}</span>;
+}
+
+/** Where the automatic copies stand, from the per-recording states db.ts
+ *  publishes. Nothing when nothing is pending: the button below says the rest. */
+function autoUploadLine(states: Readonly<Record<string, AutoUploadState>>): string | null {
+  const all = Object.values(states);
+  const count = (s: AutoUploadState) => all.filter(x => x === s).length;
+  if (count('uploading')) return t('sessions.syncAudio.status.uploading', { count: all.length });
+  if (count('wifi')) return t('sessions.syncAudio.status.wifi', { count: count('wifi') });
+  if (count('waiting')) return t('sessions.syncAudio.status.failed', { count: count('waiting') });
+  return null;
+}
+
+/** How this user's new recordings reach Drive (2026-10-09, laid out like the
+ *  way back below at the user's request). The choice itself is the synced
+ *  `syncAudioByDefault` — a user's recordings are protected on all their
+ *  devices or none; the network it may use is this device's (db.ts). */
+function AudioUploadsBlock() {
+  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const auto = mod?.syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT;
+  const line = auto ? autoUploadLine(autoUploadState.value) : null;
+  return (
+    <div class="space-y-2">
+      <BlockTitle label={t('sessions.syncAudio.title')} hint={t('sessions.syncAudio.hint')} />
+      <div class="space-y-1.5" role="radiogroup" aria-label={t('sessions.syncAudio.title')}>
+        <ChoiceCard
+          selected={!auto}
+          label={t('sessions.syncAudio.mode.manual')}
+          detail={t('sessions.syncAudio.mode.manual.detail')}
+          onSelect={() => { void setSyncAudioByDefault(false); }}
+        />
+        <ChoiceCard
+          selected={auto}
+          label={t('sessions.syncAudio.mode.auto')}
+          detail={t('sessions.syncAudio.mode.auto.detail')}
+          onSelect={() => { void setSyncAudioByDefault(true); }}
+          aside={auto ? <NetworkSelect wifiOnly={uploadOnWifiOnly.value} onChange={setUploadOnWifiOnly} /> : undefined}
+          footer={line ? <StatusLine text={line} /> : undefined}
+        />
+      </div>
+      {/* No "N audios on Drive — X MB" line any more (2026-10-09, the user):
+          Settings → Storage already says it. */}
+      <BackfillRow />
+    </div>
+  );
+}
+
+/** Every recording that is on Drive and not here, in one go, whatever the mode
+ *  — promised to a user who wanted everything on the phone before leaving the
+ *  Wi-Fi. The mirror of BackfillRow, and the same discipline: the size is
+ *  stated before anything is spent. Freed recordings included: it is a request. */
+function DownloadAllRow() {
+  const [pending, setPending] = useState<{ count: number; bytes: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [result, setResult] = useState<DownloadAllResult | null>(null);
+
+  const refresh = () => {
+    void driveOnlyAudio().then(list => setPending({ count: list.length, bytes: list.reduce((s, r) => s + r.bytes, 0) }));
+  };
+  // A download landing elsewhere changes the figure too.
+  useEffect(refresh, [appState.value, audioArrivals.value]);
+
+  if (!pending) return null;
+  const nothingToDo = pending.count === 0;
+
+  const run = () => {
+    setResult(null);
+    setProgress({ done: 0, total: pending.count });
+    void downloadAllAudio((done, total) => setProgress({ done, total }))
+      .then(r => { setResult(r); setProgress(null); refresh(); });
+  };
+
+  return (
+    <div class="space-y-2">
+      <button class="btn-ghost border border-border w-full text-sm" disabled={nothingToDo || progress !== null} onClick={run}>
+        {progress
+          ? t('sessions.download.all.running', { done: progress.done, total: progress.total })
+          : nothingToDo
+            ? t('sessions.download.all.allDone')
+            : t('sessions.download.all.action', { count: pending.count, size: formatBytes(pending.bytes) })}
+      </button>
+      {result && (
+        <p class={result.failed || result.stoppedForSpace ? 'text-xs text-warn' : 'text-xs text-success'}>
+          {result.stoppedForSpace
+            ? t('sessions.download.all.space', { ok: result.ok })
+            : result.failed
+              ? t('sessions.download.all.partial', { ok: result.ok, failed: result.failed })
+              : t('sessions.download.all.done', { ok: result.ok })}
         </p>
       )}
     </div>
@@ -731,13 +983,10 @@ function DriveBackupsRow() {
 
 function SessionSettingsBody() {
   // Read straight off appState rather than through db.ts's async accessors:
-  // this component already re-renders on every state change, so the figures
-  // below follow a session being embedded or dropped with nothing to refresh.
+  // this component already re-renders on every state change.
   const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
-  const synced = Object.values(mod?.syncedAudio ?? {});
-  const syncedBytes = synced.reduce((sum, e) => sum + e.bytes, 0);
   // Checked against the folder the moment this panel opens, because this is
-  // where the figure is READ. Until now it reported what the library believed:
+  // where the backlog below is READ. Until now it reported what the library believed:
   // a user who emptied their Drive by hand was told 17 recordings were safe
   // when six were (reported 2026-09-24). A recording whose file is gone
   // rejoins the backlog below, which is the honest place for it.
@@ -785,29 +1034,11 @@ function SessionSettingsBody() {
 
       {driveOn && <hr class="border-border" />}
 
-      {driveOn && (
-        <div class="space-y-2">
-          <SettingRow
-            checked={mod?.syncAudioByDefault ?? SYNC_AUDIO_BY_DEFAULT}
-            label={t('sessions.syncAudio')}
-            hint={t('sessions.syncAudio.hint')}
-            onToggle={(next) => { void setSyncAudioByDefault(next); }}
-          >
-            {/* Only once there is something to weigh: a zero here is noise. And
-                no budget line — the limit is the user's own Drive quota, so this
-                is information, not a gauge. */}
-            {synced.length > 0 && (
-              <p class="text-xs text-muted mt-2 ml-[27px]">
-                {t(synced.length === 1 ? 'sessions.syncAudio.total' : 'sessions.syncAudio.totalPlural', {
-                  count: synced.length,
-                  size: formatBytes(syncedBytes),
-                })}
-              </p>
-            )}
-          </SettingRow>
-          <BackfillRow />
-        </div>
-      )}
+      {driveOn && <AudioUploadsBlock />}
+
+      {/* The way back from Drive: after the way there. */}
+      {driveOn && <hr class="border-border" />}
+      {driveOn && <AudioDownloadsBlock />}
     </div>
   );
 }

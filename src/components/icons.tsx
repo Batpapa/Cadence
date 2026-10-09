@@ -196,6 +196,16 @@ export function CloudDownIcon({ size = 13 }: { size?: number }) {
   );
 }
 
+/** A plain filled cloud, small enough to sit on another glyph as a badge:
+ *  "this is on Drive, not here". */
+export function CloudIcon({ size = 13 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true">
+      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+    </svg>
+  );
+}
+
 export function ChevronDownIcon({ size = 10 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

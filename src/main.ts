@@ -17,6 +17,7 @@ import { isTextField } from './services/softKeyboard';
 import { sessionRecordingSignal } from './session/ui/sessionStore';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName, localSessionAudioStats, initAudioUploadRetry } from './session/db';
+import { initAudioDownloads } from './session/audioDownloads';
 import { initAttachmentDbForUser, rawAttachmentBlobs } from './services/attachmentDb';
 import { initAttachmentSync } from './services/attachmentStore';
 import { buildZip, audioExtension } from './services/zip';
@@ -776,6 +777,8 @@ function finishBoot(root: HTMLElement): void {
   registerCommandPalette(getContext);
   // Recordings whose automatic copy to Drive did not go through, sent again.
   initAudioUploadRetry();
+  // …and, the other way, the ones on Drive brought here if this device asked.
+  initAudioDownloads();
 
   // Alt+← / Alt+→ used to be handled here. Removed on 2026-09-10: they are
   // the browser's OWN shortcut for back and forward, and since the history
