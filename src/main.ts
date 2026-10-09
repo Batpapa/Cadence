@@ -7,7 +7,7 @@ import { ensureCurrentUser, ensureCurrentProfile, welcomeLanguage } from './serv
 import { h, render } from 'preact';
 import { WelcomePrefs } from './components/welcomePrefs';
 import { registerCommandPalette } from './components/commandPalette';
-import { setLanguage, t } from './services/i18nService';
+import { setLanguage, lastShownLanguage, t } from './services/i18nService';
 import { initPWA } from './services/pwaService';
 import { initUpdateCheck } from './services/updateService';
 import { swallowReportedSaveRejections } from './services/saveHealth';
@@ -231,6 +231,19 @@ export async function openUser(id: string, root: HTMLElement): Promise<void> {
 
 (async () => {
   const root = document.getElementById('app')!;
+
+  // The Android app reopened, or pulled to refresh, while a newer version is
+  // deployed: move to it now, rather than wait for the header's pill — what a
+  // PWA gets by itself on both. Nothing below runs then: the switch reloads
+  // the page before this returns.
+  if (isNative()) {
+    // The update screen speaks the language the app last showed, in this
+    // device's theme: no user is loaded yet, and the app is about to open on
+    // the same one. index.html's bootstrap alone falls back to dark.
+    setLanguage(lastShownLanguage() ?? welcomeLanguage());
+    applyTheme();
+    await (await import('./native/otaUpdate')).updateAtPageStart(root);
+  }
 
   // The Android app's system Back, from the very first screen on — the
   // recovery screen included.

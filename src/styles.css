@@ -247,6 +247,20 @@
 .cadence-mark path:nth-child(2) { animation-delay: .5s; animation-duration: 1.7s; }
 .cadence-mark path:nth-child(3) { animation-delay: .95s; }
 @keyframes markDraw { to { stroke-dashoffset: 0; } }
+/* The app's update screen (native/updateOverlay.tsx): the strokes erased and
+   drawn again in their own direction for as long as the download runs. The
+   dash pattern repeats every 2 (a dash of 1, a gap of 1), so 0 and -2 are the
+   same drawn stroke and -1 the erased one: the loop starts drawn, as the mark
+   fades in. `both`: drawn during the delays too, not the base rule's hidden
+   state. */
+.cadence-mark.looping path { animation: markLoop 2.6s cubic-bezier(.5, 0, .2, 1) infinite both; }
+.cadence-mark.looping path:nth-child(2) { animation-delay: .25s; }
+.cadence-mark.looping path:nth-child(3) { animation-delay: .5s; }
+@keyframes markLoop {
+  0%   { stroke-dashoffset: 0; }
+  45%  { stroke-dashoffset: -1; }
+  100% { stroke-dashoffset: -2; }
+}
 
 .mark-in { animation: fadeIn .7s ease-out both; }
 .fade-in { animation: fadeIn .7s ease-out both; }
@@ -278,6 +292,8 @@
     animation-delay: 0ms !important;
   }
   .irish-expand { animation: none; }
+  /* A loop at .01ms would be a flicker: the drawn mark, still. */
+  .cadence-mark.looping path { animation: none; stroke-dashoffset: 0; }
 }
 
 /* Markdown */

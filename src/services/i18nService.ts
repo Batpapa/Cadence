@@ -7,9 +7,22 @@ type Vars = Record<string, string | number>;
 const LANGS: Record<Lang, Record<string, string>> = { en, fr };
 let current: Record<string, string> = en;
 
+/** The language last put on screen, on this device. A user's language lives
+ *  with the user, in IndexedDB; the Android app's update screen shows before
+ *  that is open, and must speak what the app is about to (2026-10-09). */
+const LS_LAST_SHOWN = 'cadence_lastLanguage';
+
 export function setLanguage(lang: Lang): void {
   current = LANGS[lang] ?? en;
   translateStaticMarkup(lang);
+  try { localStorage.setItem(LS_LAST_SHOWN, lang); } catch { /* storage refused: the next launch guesses */ }
+}
+
+export function lastShownLanguage(): Lang | null {
+  try {
+    const lang = localStorage.getItem(LS_LAST_SHOWN) as Lang | null;
+    return lang && lang in LANGS ? lang : null;
+  } catch { return null; }
 }
 
 /** The legal footer is written in raw index.html rather than rendered by the
