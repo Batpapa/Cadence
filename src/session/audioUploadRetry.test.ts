@@ -2,9 +2,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   initSessionDbForUser, saveSessionAudio, deleteSession, autoUploadState, initAudioUploadRetry,
-  uploadSessionAudio,
+  uploadSessionAudio, setUploadOnWifiOnly,
 } from './db';
 import type { TuneAnalyserModuleData } from './model';
+
+// The device's network, one object for the whole file: the app wires its
+// listener to it once, as a browser's own never changes.
+const net = vi.hoisted(() => {
+  const target = new EventTarget() as EventTarget & { type: string };
+  target.type = 'wifi';
+  Object.defineProperty(navigator, 'connection', { configurable: true, value: target });
+  return target;
+});
 
 // The automatic copy of a recording to Drive, and what happens when it fails
 // (2026-10-09): a user found three recordings that had never been copied,
@@ -78,7 +87,9 @@ beforeEach(async () => {
   localStorage.clear();
   store.state = { id: 'u1', modules: { 'tune-analyser': { sessions: {} } } };
   Object.assign(drive, { connected: true, outcomes: [], uploads: 0, gate: null });
+  net.type = 'wifi';
   await initSessionDbForUser('u1');
+  setUploadOnWifiOnly(false);
 });
 
 describe('the automatic upload after a recording', () => {
@@ -197,6 +208,33 @@ describe('two askers at once', () => {
     await settle();
     release();
     await Promise.all([a, b]);
+    expect(drive.uploads).toBe(1);
+  });
+});
+
+describe('Wi-Fi only', () => {
+  it('holds the copy on a mobile connection, and sends it once on Wi-Fi', async () => {
+    addSession('s1');
+    initAudioUploadRetry();
+    await settle();
+    setUploadOnWifiOnly(true);
+    net.type = 'cellular';
+    await saveSessionAudio('s1', audio());
+    await settle();
+    expect(drive.uploads).toBe(0);
+    expect(autoUploadState.value.s1).toBe('wifi');
+    net.type = 'wifi';
+    net.dispatchEvent(new Event('change'));
+    await settle(); await settle();
+    expect(drive.uploads).toBe(1);
+    expect(mod().syncedAudio?.s1).toBeDefined();
+  });
+
+  it('sends at once on any network when told "always" — the default', async () => {
+    addSession('s1');
+    net.type = 'cellular';
+    await saveSessionAudio('s1', audio());
+    await settle();
     expect(drive.uploads).toBe(1);
   });
 });

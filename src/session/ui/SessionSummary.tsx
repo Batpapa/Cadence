@@ -8,6 +8,7 @@ import { confirmModal, alertModal } from '../../components/modal';
 import {
   deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio,
   uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio, autoUploadState,
+  audioDownloadProgress, audioArrivals,
 } from '../db';
 import { isDriveConnected } from '../../services/driveService';
 import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
@@ -76,7 +77,7 @@ const DOUBLE_CLICK_MS = 400;
 
 /** Where this recording's Drive copy stands. Same four readings as the header's
  *  own sync indicator, because it is the same question about a smaller thing. */
-type AudioSyncState = 'off' | 'uploading' | 'on' | 'error' | 'waiting';
+type AudioSyncState = 'off' | 'uploading' | 'on' | 'error' | 'waiting' | 'wifi';
 
 const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
   off:       'sessions.syncAudio.off',
@@ -85,6 +86,8 @@ const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
   error:     'sessions.syncAudio.retry',
   // The automatic copy failed and will be tried again on its own (db.ts).
   waiting:   'sessions.syncAudio.retryPending',
+  // Held until this device is on Wi-Fi, as it was told (db.ts).
+  wifi:      'sessions.syncAudio.waitingWifi',
 };
 
 /** Deliberately header.tsx's SyncBtn, one size down: same glyph, same colour
@@ -102,6 +105,8 @@ function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () =
     state === 'uploading' ? 'text-accent animate-pulse cursor-default' :
     state === 'on'        ? 'text-green-500 cursor-pointer' :
     state === 'error' || state === 'waiting' ? 'text-danger cursor-pointer' :
+    // Not a failure: nothing went wrong, it is waiting as asked.
+    state === 'wifi'      ? 'text-warn cursor-pointer' :
                             'text-dim hover:text-muted cursor-pointer';
   return (
     <button
@@ -236,6 +241,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       : syncFailed ? 'error'
       : synced ? 'on'
       : autoUpload === 'waiting' ? 'waiting'
+      : autoUpload === 'wifi' ? 'wifi'
       : 'off';
 
   // ── Audio load: streamed via a native <audio> element (no
@@ -293,9 +299,26 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     );
   };
 
-  /** Brings a recording made on another device onto this one. Never automatic:
-   *  opening a session summary must not spend tens of megabytes of someone's
-   *  mobile data without being asked. */
+  // Brought here in the background meanwhile (audioDownloads.ts): picked up
+  // without a reload, as the Drive copy itself is.
+  const downloadProgress = audioDownloadProgress.value[session.id];
+  const arrived = audioArrivals.value.has(session.id);
+  useEffect(() => {
+    if (!arrived || audioUrl) return;
+    let cancelled = false;
+    void loadSessionAudio(session.id).then(blob => {
+      if (cancelled || !blob) return;
+      setAudioBytes(blob.size);
+      setAudioUrl(URL.createObjectURL(blob));
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line
+  }, [arrived]);
+
+  /** Brings a recording made on another device onto this one. Never on its own
+   *  from here: opening a session summary must not spend tens of megabytes of
+   *  someone's mobile data without being asked — that is the automatic mode's
+   *  decision to make, where the user made it. */
   const downloadSynced = () => {
     if (busySync) return;
     setBusySync(true);
@@ -897,12 +920,16 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             synced && driveOn ? (
               <button
                 class="text-xs text-accent hover:brightness-110 transition-[filter] cursor-pointer disabled:opacity-40 disabled:cursor-default"
-                disabled={busySync}
+                disabled={busySync || downloadProgress !== undefined}
                 onClick={downloadSynced}
               >
-                {busySync
-                  ? t('sessions.syncAudio.downloading')
-                  : t('sessions.syncAudio.download', { size: formatBytes(synced.bytes) })}
+                {/* The figure whichever download it is — this button's, or the
+                    background one (audioDownloads.ts) that got here first. */}
+                {downloadProgress !== undefined
+                  ? `${t('sessions.syncAudio.downloading')} ${Math.round(downloadProgress * 100)} %`
+                  : busySync
+                    ? t('sessions.syncAudio.downloading')
+                    : t('sessions.syncAudio.download', { size: formatBytes(synced.bytes) })}
               </button>
             ) : (
               <p class="text-xs text-muted">{t('sessions.audioElsewhere')}</p>

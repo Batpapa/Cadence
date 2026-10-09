@@ -69,7 +69,7 @@ export type StorageRisk = 'none' | 'refused' | 'unknown' | 'full';
  *  interrupting someone over. Not a free-space figure in bytes: quotas differ
  *  by two orders of magnitude between a phone and a desktop, so a proportion
  *  travels where a threshold does not. */
-const FULL_RATIO = 0.8;
+export const FULL_RATIO = 0.8;
 
 /** Pure, so the rule can be tested without a browser.
  *

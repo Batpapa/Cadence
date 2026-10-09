@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon } from '../../components/icons';
+import { HeartIcon, CloudIcon } from '../../components/icons';
 import { playIcon, stopIcon } from '../../components/playbackIcons';
-import { loadSessionAudio } from '../db';
-import type { Detection } from '../model';
+import { showModal, closeModal, alertModal } from '../../components/modal';
+import { formatBytes } from '../../utils';
+import { appState } from '../../store';
+import { loadSessionAudio, fetchSyncedAudio, audioDownloadProgress, audioArrivals } from '../db';
+import { audioDownloadMode } from '../audioDownloads';
+import { TUNE_ANALYSER_MODULE_KEY, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
 import { BUCKET_TEXT, ClipControls, fmtLongTime, type ClipSessionRef } from './sessionUiShared';
 import { AbcPreview } from './abcPreview';
 
@@ -26,12 +30,57 @@ export interface SlicePlayer {
   /** Render it once, anywhere in the list: it is hidden. */
   audio: VNode;
   playingId: string | null;
-  /** Keyed by analysis id; absent until probed. */
-  hasAudio: Record<string, boolean>;
+  /** Whether this analysis's recording is on this device — false until
+   *  probed, true as soon as a download brings it. */
+  isHere: (sessionId: string) => boolean;
   /** Looks up which of these analyses still have their recording on this
    *  device. Only ever for what is on screen — never a whole library. */
   probe: (sessionIds: string[]) => void;
+  /** Plays a passage — downloading its recording first if it is only on
+   *  Drive, asking before that in the manual mode (audioDownloads.ts). */
   play: (sessionId: string, detection: Detection) => Promise<void>;
+}
+
+/** The Drive copy of this analysis's recording, read live off the state: it
+ *  arrives with a sync from the device that recorded it. */
+function syncedAudioEntry(sessionId: string): SyncedAudio | null {
+  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  return mod?.syncedAudio?.[sessionId] ?? null;
+}
+
+/** The manual mode's question. Resolves false on any way out of the dialog. */
+function confirmDownload(bytes: number): Promise<boolean> {
+  return new Promise(resolve => {
+    const body = document.createElement('p');
+    body.className = 'text-sm text-muted leading-relaxed';
+    body.textContent = t('sessions.playFromDrive.message', { size: formatBytes(bytes) });
+    showModal(t('sessions.playFromDrive.title'), body, [
+      { label: t('common.cancel'), onClick: () => { closeModal(); resolve(false); } },
+      { label: t('sessions.playFromDrive.ok'), primary: true, onClick: () => { closeModal(); resolve(true); } },
+    ], { onDismiss: () => resolve(false) });
+  });
+}
+
+/** Brings a recording that is only on Drive onto this device, for a passage
+ *  someone just asked to hear. Null when they declined, or it could not be
+ *  had — said in a dialog, since a button that does nothing explains nothing. */
+async function fetchForPlayback(sessionId: string): Promise<Blob | null> {
+  const entry = syncedAudioEntry(sessionId);
+  if (!entry) return null;
+  if (audioDownloadMode.value === 'manual' && !await confirmDownload(entry.bytes)) return null;
+  try {
+    // Interactive: a click led here, and in the browser a sign-in window may
+    // be what stands between the user and the passage.
+    const blob = await fetchSyncedAudio(sessionId);
+    if (!blob) alertModal(t('sessions.syncAudio.gone.title'), t('sessions.syncAudio.gone.message'));
+    return blob;
+  } catch (e) {
+    alertModal(
+      t('sessions.syncAudio.failed.title'),
+      t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
+    );
+    return null;
+  }
 }
 
 /** The rows of one tune come from different evenings, so there is no single
@@ -68,8 +117,12 @@ export function useSlicePlayer(): SlicePlayer {
     if (playingId === detection.id) { a.pause(); a.currentTime = start; setPlayingId(null); return; }
 
     if (loadedRef.current?.sessionId !== sessionId) {
-      const blob = await loadSessionAudio(sessionId);
-      if (!blob) return;
+      let blob = await loadSessionAudio(sessionId);
+      if (!blob) {
+        blob = await fetchForPlayback(sessionId) ?? undefined;
+        if (!blob) return;
+        setHasAudio(prev => ({ ...prev, [sessionId]: true }));
+      }
       if (loadedRef.current) URL.revokeObjectURL(loadedRef.current.url);
       const url = URL.createObjectURL(blob);
       loadedRef.current = { sessionId, url };
@@ -94,7 +147,50 @@ export function useSlicePlayer(): SlicePlayer {
     />
   );
 
-  return { audio, playingId, hasAudio, probe, play };
+  const isHere = (sessionId: string) => !!hasAudio[sessionId] || audioArrivals.value.has(sessionId);
+
+  return { audio, playingId, isHere, probe, play };
+}
+
+/** The play button of a passage. Three looks: the recording is here; it is
+ *  only on Drive (a small cloud on the same button — playing it fetches it);
+ *  it is coming down (a ring filling around the button). */
+function PlayPassButton({ sessionId, detection, player }: {
+  sessionId: string; detection: Detection; player: SlicePlayer;
+}) {
+  const here = player.isHere(sessionId);
+  const onDrive = !here ? syncedAudioEntry(sessionId) : null;
+  const progress = audioDownloadProgress.value[sessionId];
+  if (!here && !onDrive) return null;
+  const playing = player.playingId === detection.id;
+  const downloading = progress !== undefined;
+  const title = downloading
+    ? t('sessions.playFromDrive.downloading', { percent: Math.round(progress * 100) })
+    : onDrive
+      ? t('sessions.playFromDrive.hint', { size: formatBytes(onDrive.bytes) })
+      : t(playing ? 'sessions.stopSlice' : 'sessions.playSlice');
+  return (
+    <span
+      class="relative w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+      // The ring: the button's own disc, drawn over a sweep of the accent.
+      style={downloading ? { background: `conic-gradient(var(--color-accent) ${progress * 360}deg, transparent 0)` } : undefined}
+    >
+      <button
+        class={`${downloading ? 'w-5 h-5 bg-surface text-accent cursor-default' : 'w-6 h-6 cursor-pointer'} p-0 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+          downloading ? '' : playing ? 'bg-accent text-white' : 'bg-accent/10 text-accent hover:bg-accent/20'}`}
+        title={title}
+        aria-label={title}
+        disabled={downloading}
+        dangerouslySetInnerHTML={{ __html: playing ? stopIcon(10) : playIcon(10) }}
+        onClick={() => { void player.play(sessionId, detection); }}
+      />
+      {onDrive && !downloading && (
+        <span class="absolute -right-1 -bottom-0.5 text-accent pointer-events-none drop-shadow-sm">
+          <CloudIcon size={10} />
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function PassRow({ session, detection, cardId, ctx, player, interactive, onOpen, onAttached }: {
@@ -111,7 +207,6 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
   onOpen: (e: MouseEvent) => void;
   onAttached?: () => void;
 }) {
-  const playing = player.playingId === detection.id;
   return (
     // Never wraps. A pass is one line, and its glyphs are columns read
     // downwards — a row that folded would take its columns with it.
@@ -122,15 +217,7 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
           sit under the wrong glyphs of the next. */}
       <div class="shrink-0 flex items-center gap-1.5">
         <span class="w-6 flex items-center justify-center shrink-0">
-          {player.hasAudio[session.id] && (
-            <button
-              class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
-                playing ? 'bg-accent text-white' : 'bg-accent/10 text-accent hover:bg-accent/20'}`}
-              title={t(playing ? 'sessions.stopSlice' : 'sessions.playSlice')}
-              dangerouslySetInnerHTML={{ __html: playing ? stopIcon(10) : playIcon(10) }}
-              onClick={() => { void player.play(session.id, detection); }}
-            />
-          )}
+          <PlayPassButton sessionId={session.id} detection={detection} player={player} />
         </span>
         <AbcPreview settingId={detection.settingId} displayName={detection.displayName} cardId={cardId} ctx={ctx} />
       </div>
@@ -162,7 +249,7 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
         <ClipControls
           ann={detection}
           session={session}
-          audioAvailable={!!player.hasAudio[session.id]}
+          audioAvailable={player.isHere(session.id)}
           getAudio={() => loadSessionAudio(session.id)}
           ctx={ctx}
           onAttached={onAttached}

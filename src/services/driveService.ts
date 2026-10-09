@@ -1254,6 +1254,7 @@ async function uploadIntoFolder(parent: string, name: string, blob: Blob, intera
  *  must read as "no longer there", not as a failure to retry. */
 export async function downloadCompanionFile(
   fileId: string, interactive = false,
+  onProgress?: (loaded: number, total: number | null) => void,
 ): Promise<Blob | null> {
   if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
   const resp = await driveRequest(
@@ -1261,7 +1262,40 @@ export async function downloadCompanionFile(
   );
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`companion_download_failed: ${resp.status}`);
-  return resp.blob();
+  if (!onProgress || !resp.body) return resp.blob();
+  return readWithProgress(resp, onProgress);
+}
+
+/** What `resp.blob()` does, counting as it goes — a recording is hundreds of
+ *  megabytes, and a bar that sits at nothing for a minute reads as stuck.
+ *
+ *  Folded into a Blob every few megabytes rather than kept as a list of chunks
+ *  to join at the end: a Blob made of Blobs refers to them instead of copying,
+ *  and the browser may keep a large one on disk, so this never holds more than
+ *  one fold's worth in JavaScript memory. Joining at the end would hold the
+ *  whole recording twice, on a phone. */
+async function readWithProgress(resp: Response, onProgress: (loaded: number, total: number | null) => void): Promise<Blob> {
+  const FOLD_BYTES = 8 * 1024 * 1024;
+  const type = resp.headers.get('content-type') ?? '';
+  const total = Number(resp.headers.get('content-length')) || null;
+  const reader = resp.body!.getReader();
+  let folded = new Blob([], { type });
+  let pending: Uint8Array[] = [];
+  let pendingBytes = 0, loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending.push(value);
+    pendingBytes += value.byteLength;
+    loaded += value.byteLength;
+    if (pendingBytes >= FOLD_BYTES) {
+      folded = new Blob([folded, ...pending as BlobPart[]], { type });
+      pending = [];
+      pendingBytes = 0;
+    }
+    onProgress(loaded, total);
+  }
+  return new Blob([folded, ...pending as BlobPart[]], { type });
 }
 
 /** Best-effort: a companion file that cannot be deleted right now (offline,
