@@ -1487,6 +1487,7 @@
   "sessions.syncAudio.off": "Sur cet appareil uniquement — cliquer pour le copier sur Drive",
   "sessions.syncAudio.uploading": "Copie sur Drive…",
   "sessions.syncAudio.retry": "Échec de la copie sur Drive — cliquer pour réessayer",
+  "sessions.syncAudio.retryPending": "Échec de la copie sur Drive — nouvel essai automatique, ou cliquer pour réessayer maintenant",
   "sessions.syncAudio.confirm.title": "Copier sur Drive",
   "sessions.syncAudio.confirm.message": "Envoie cet audio ({size}) dans le dossier cadence-data-ext sur Drive, pour qu'il soit écoutable sur les autres appareils. Il reste également sur cet appareil, et la copie peut être supprimée à tout moment.",
   "sessions.syncAudio.confirm.ok": "Copier",
