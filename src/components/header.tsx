@@ -247,8 +247,8 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
   return (
     <header
-      class="relative flex items-center px-2 min-h-10 border-b border-border bg-surface shrink-0"
-      style="padding-top: env(safe-area-inset-top)"
+      class="relative flex items-center px-2 border-b border-border bg-surface shrink-0"
+      style="padding-top: var(--safe-top); min-height: calc(2.5rem + var(--safe-top))"
     >
 
       {/* Left group */}
@@ -448,9 +448,12 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
   if (softKeyboardOpen.value) return null;
 
   return (
+    // The minimum height counts the system bar's margin on top of the 3.5 rem:
+    // `min-h-14` alone included it (border-box), and above a three-button bar
+    // that left the icons a 20 px strip (Android 16, 2026-10-09).
     <nav
-      class="flex items-stretch border-t border-border bg-surface shrink-0 min-h-14"
-      style="padding-bottom: env(safe-area-inset-bottom)"
+      class="flex items-stretch border-t border-border bg-surface shrink-0"
+      style="padding-bottom: var(--safe-bottom); min-height: calc(3.5rem + var(--safe-bottom))"
     >
       <BottomNavBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
         <HomeIcon size={20} />

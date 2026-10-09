@@ -313,7 +313,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
   // w-full: #app is a flex column, where an auto-margined box shrinks to its
   // text — the screen changed width with the language.
   root.innerHTML = `
-    <div class="w-full p-4 sm:p-8 max-w-3xl mx-auto space-y-4" style="padding-top:calc(env(safe-area-inset-top) + 1rem)">
+    <div class="w-full p-4 sm:p-8 max-w-3xl mx-auto space-y-4" style="padding-top:calc(var(--safe-top) + 1rem)">
       <div id="recovery-prefs" class="flex justify-end -mb-2"></div>
       <h1 class="text-lg font-semibold text-center">${escapeHtml(t('recovery.title'))}</h1>
       ${message
