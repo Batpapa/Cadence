@@ -4,7 +4,7 @@
 // JavaScript disabled, and which therefore starts out in English whatever the
 // user's language is. A real document is the whole subject, so jsdom it is.
 import { describe, expect, it, beforeEach } from 'vitest';
-import { setLanguage, t, tIn } from './i18nService';
+import { setLanguage, lastShownLanguage, t, tIn } from './i18nService';
 
 /** The footer as index.html ships it, English text and all. */
 function plantFooter(): void {
@@ -58,5 +58,21 @@ describe('setLanguage and the pre-rendered markup', () => {
   it('still answers in the language last set', () => {
     setLanguage('fr');
     expect(t('settings.privacyPolicy')).toBe('Politique de confidentialité');
+  });
+});
+
+// The Android app's update screen shows before any user is loaded, and must
+// speak what the app is about to: the language last put on screen.
+describe('lastShownLanguage', () => {
+  it('remembers the language last set', () => {
+    setLanguage('fr');
+    expect(lastShownLanguage()).toBe('fr');
+    setLanguage('en');
+    expect(lastShownLanguage()).toBe('en');
+  });
+
+  it('ignores what it does not know', () => {
+    localStorage.setItem('cadence_lastLanguage', 'klingon');
+    expect(lastShownLanguage()).toBeNull();
   });
 });
