@@ -328,7 +328,7 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
     <div class="fixed inset-0 bg-bg flex items-center justify-center overflow-y-auto py-10">
       {/* No Settings before a user exists: language and theme are here. Below
           the status bar where the page runs under it (Android 15+, iOS). */}
-      <div class="fade-in absolute right-3" style="top:calc(env(safe-area-inset-top) + 8px);animation-delay:1s">
+      <div class="fade-in absolute right-3" style="top:calc(var(--safe-top) + 8px);animation-delay:1s">
         <WelcomePrefs onLanguageChange={() => redraw(x => x + 1)} />
       </div>
       <div class="w-full max-w-[352px] mx-4 flex flex-col items-center">

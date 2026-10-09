@@ -19,6 +19,14 @@
 @tailwind utilities;
 
 :root {
+  /* The system bars' insets, in the page's own pixels. The app runs under a
+     CSS zoom on <html> (zoomService: 90 % on a phone), and that zoom shrinks
+     an env() length like any other: a 48 px three-button bar got a 43 px
+     margin and Cadence's bottom bar ran under the buttons (Android 16, One
+     UI 8, 2026-10-09). Dividing by the zoom gives back the real size. Always
+     these, never env(safe-area-inset-*) directly. */
+  --safe-top:    calc(env(safe-area-inset-top, 0px) / var(--zoom-factor, 1));
+  --safe-bottom: calc(env(safe-area-inset-bottom, 0px) / var(--zoom-factor, 1));
   /* Direct hex values — used in inline styles and SVG attributes */
   --color-bg:             #0a0a0a;
   --color-surface:        #141414;
@@ -612,7 +620,7 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 #legal-footer {
   position: fixed;
   /* Above the gesture bar where the page runs under it (Android 15+, iOS). */
-  bottom: calc(env(safe-area-inset-bottom) + 4px);
+  bottom: calc(var(--safe-bottom) + 4px);
   right: 8px;
   font-size: 9px;
   opacity: 0.4;
