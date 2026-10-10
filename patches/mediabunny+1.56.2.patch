@@ -1,0 +1,48 @@
+diff --git a/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-demuxer.js b/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-demuxer.js
+index 575d5ed..af7ad9f 100644
+--- a/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-demuxer.js
++++ b/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-demuxer.js
+@@ -2973,6 +2973,21 @@ const getKeyframeSampleIndexForTimestamp = (sampleTable, timescaleUnits) => {
+         return sampleTable.keySampleIndices[index] ?? -1;
+     }
+ };
++/** Cadence patch: running totals of sampleTable.sampleSizes, cached on the
++ *  table for as long as that array is the one it holds. */
++const sampleSizePrefix = (sampleTable) => {
++    const cached = sampleTable.cadenceSizePrefix;
++    if (cached && cached.of === sampleTable.sampleSizes) {
++        return cached.sums;
++    }
++    const sizes = sampleTable.sampleSizes;
++    const sums = new Float64Array(sizes.length + 1);
++    for (let i = 0; i < sizes.length; i++) {
++        sums[i + 1] = sums[i] + sizes[i];
++    }
++    sampleTable.cadenceSizePrefix = { of: sizes, sums };
++    return sums;
++};
+ const getSampleInfo = (sampleTable, sampleIndex) => {
+     const timingEntryIndex = binarySearchLessOrEqual(sampleTable.sampleTimingEntries, sampleIndex, x => x.startIndex);
+     const timingEntry = sampleTable.sampleTimingEntries[timingEntryIndex];
+@@ -3003,13 +3018,14 @@ const getSampleInfo = (sampleTable, sampleIndex) => {
+         chunkSize += sampleSize * chunkEntry.samplesPerChunk;
+     }
+     else {
+-        for (let i = startSampleIndexOfChunk; i < startSampleIndexOfChunk + chunkEntry.samplesPerChunk; i++) {
+-            const sampleSize = sampleTable.sampleSizes[i];
+-            if (i < sampleIndex) {
+-                sampleOffset += sampleSize;
+-            }
+-            chunkSize += sampleSize;
+-        }
++        // Cadence patch (2026-10-10): prefix sums instead of walking the whole
++        // chunk for every sample. Phone recorders write an M4A as ONE chunk of
++        // every sample (228 643 for 88 min), which made each lookup O(file) —
++        // 66 s to read 75 s of a 5-hour file. Same results, in O(1).
++        const prefix = sampleSizePrefix(sampleTable);
++        const chunkEnd = Math.min(startSampleIndexOfChunk + chunkEntry.samplesPerChunk, sampleTable.sampleSizes.length);
++        sampleOffset += prefix[Math.min(sampleIndex, chunkEnd)] - prefix[startSampleIndexOfChunk];
++        chunkSize = prefix[chunkEnd] - prefix[startSampleIndexOfChunk];
+     }
+     let duration = timingEntry.delta;
+     if (sampleTable.presentationTimestamps) {

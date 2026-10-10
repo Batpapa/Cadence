@@ -1,4 +1,4 @@
-import type { InputFormat, OutputFormat } from 'mediabunny';
+import type { Input, InputFormat, OutputFormat, Source } from 'mediabunny';
 
 // ── Clip extraction: a slice of the session audio, copied packet for packet ──
 // Nothing is decoded and nothing is re-encoded (2026-09-14). The encoded packets
@@ -56,11 +56,17 @@ function containerOf(mb: Mediabunny, format: InputFormat): Container | null {
  *  formats to keep in step with this one, and the whole point of the list is
  *  that it is short and deliberate. */
 export async function openAudioInput(audio: Blob) {
+  return openAudioSource(mb => new mb.BlobSource(audio));
+}
+
+/** The same, over any source — a recording read from Drive a range at a time
+ *  (remotePassage.ts) as well as one held in a Blob. */
+export async function openAudioSource(makeSource: (mb: Mediabunny) => Source) {
   // Lazy: mediabunny has no business in the main bundle for everyone who never
   // cuts a clip.
   const mb = await import('mediabunny');
   const input = new mb.Input({
-    source: new mb.BlobSource(audio),
+    source: makeSource(mb),
     // Named rather than ALL_FORMATS, so the bundle only carries the demuxers of
     // formats a clip can also be written back out to (see containerOf).
     formats: [mb.WEBM, mb.MATROSKA, mb.MP4, mb.QTFF, mb.MP3, mb.OGG, mb.WAVE, mb.FLAC, mb.ADTS],
@@ -162,42 +168,55 @@ export async function extractClip(
 ): Promise<ExtractedClip> {
   const { mb, input } = await openAudioInput(sessionAudio);
   try {
-    const container = containerOf(mb, await input.getFormat());
-    if (!container) throw new Error('clip_format_unsupported');
-
     const from = Math.max(0, start - CLIP_PAD_S);
     const to = Math.min(end + CLIP_PAD_S, await input.computeDuration());
-    if (to <= from) throw new Error('empty clip range');
-
-    const target = new mb.BufferTarget();
-    const output = new mb.Output({ format: container.makeFormat(), target });
-    const conversion = await mb.Conversion.init({
-      input,
-      output,
-      // An imported video carries a picture track; a clip is for listening.
-      video: { discard: true },
-      trim: { start: from, end: to },
-      copy: {
-        // Never re-encode: a track that cannot be copied fails the clip rather
-        // than being silently transcoded.
-        mode: 'forced',
-        // Whole packets around each bound instead of a cut inside one — a few
-        // tens of milliseconds, next to the seconds of padding.
-        boundaryPolicy: 'expand',
-        // Timestamps may be shifted as copying requires: a clip is a file of its
-        // own, nothing expects its timeline to line up with the recording's.
-        shiftTolerance: Infinity,
-      },
-      showWarnings: false,
-    });
-    if (!conversion.isValid) {
-      throw new Error('clip_cannot_copy: ' + conversion.discardedTracks.map(d => d.reason).join(', '));
-    }
-    if (onProgress) conversion.onProgress = ratio => onProgress(ratio);
-    await conversion.execute();
-    if (!target.buffer) throw new Error('clip_empty');
-    return { blob: new Blob([target.buffer], { type: container.mimeType }), extension: container.extension };
+    return await copySlice(mb, input, from, to, onProgress);
   } finally {
     input.dispose();
   }
+}
+
+/** [from, to] of an opened recording, its packets copied into a new file of
+ *  the same container — the cut a clip and a passage played from Drive share
+ *  (remotePassage.ts). Never calls computeDuration: on a recording read from
+ *  Drive that would download all of it. Leaves `input` open. */
+export async function copySlice(
+  mb: Mediabunny,
+  input: Input,
+  from: number,
+  to: number,
+  onProgress?: (ratio: number) => void,
+): Promise<ExtractedClip> {
+  const container = containerOf(mb, await input.getFormat());
+  if (!container) throw new Error('clip_format_unsupported');
+  if (to <= from) throw new Error('empty clip range');
+
+  const target = new mb.BufferTarget();
+  const output = new mb.Output({ format: container.makeFormat(), target });
+  const conversion = await mb.Conversion.init({
+    input,
+    output,
+    // An imported video carries a picture track; a clip is for listening.
+    video: { discard: true },
+    trim: { start: from, end: to },
+    copy: {
+      // Never re-encode: a track that cannot be copied fails the clip rather
+      // than being silently transcoded.
+      mode: 'forced',
+      // Whole packets around each bound instead of a cut inside one — a few
+      // tens of milliseconds, next to the seconds of padding.
+      boundaryPolicy: 'expand',
+      // Timestamps may be shifted as copying requires: a clip is a file of its
+      // own, nothing expects its timeline to line up with the recording's.
+      shiftTolerance: Infinity,
+    },
+    showWarnings: false,
+  });
+  if (!conversion.isValid) {
+    throw new Error('clip_cannot_copy: ' + conversion.discardedTracks.map(d => d.reason).join(', '));
+  }
+  if (onProgress) conversion.onProgress = ratio => onProgress(ratio);
+  await conversion.execute();
+  if (!target.buffer) throw new Error('clip_empty');
+  return { blob: new Blob([target.buffer], { type: container.mimeType }), extension: container.extension };
 }

@@ -15,6 +15,7 @@ import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '.
 import { TUNE_ANALYSER_MODULE_KEY } from '../model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields, insertionIndex } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
+import { useSlicePlayer } from './PassRow';
 import { showShareSessionModal } from './ShareSessionModal';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { detectAudioFile } from '../audio/clipExtract';
@@ -194,6 +195,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const driveOn = isDriveConnected();
   const [playing, setPlaying] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  /** The recording is not here but is on Drive: a card's ▶ plays its passage
+   *  straight from there (2026-10-10), through the same player as the lists of
+   *  passes — the timeline's own element has nothing loaded to seek in. */
+  const drivePlayer = useSlicePlayer();
   playingIdRef.current = playingId;
   const sliceEndRef = useRef(0);
 
@@ -639,8 +644,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
 
   const cardOptsFor = (ann: Detection, i: number): DetectionCardOptions => ({
     ctx,
-    onPlay: audioUrl ? playSlice : undefined,
-    playingId,
+    // No ▶ at all when the recording is neither here nor on Drive.
+    onPlay: audioUrl ? playSlice : synced ? (a) => { void drivePlayer.play(session.id, a); } : undefined,
+    playingId: audioUrl ? playingId : drivePlayer.playingId,
+    playFromDrive: !audioUrl && !!synced,
+    playLoadingId: audioUrl ? null : drivePlayer.loadingId,
     sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
     sessionId: session.id,
     onOpenCard,
@@ -835,6 +843,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       />
 
       <audio ref={audioRef} class="hidden" src={audioUrl ?? undefined} />
+      {drivePlayer.audio}
 
       {/* Transport and timeline travel together, pinned to the top: the strip
           is the reference you navigate BY, and scrolling the list used to take

@@ -3,9 +3,9 @@ import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon } from '../../components/icons';
-import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { findByExternalId } from '../../services/theSessionService';
 import { AbcPreview } from './abcPreview';
+import { PlayDisc, playDiscTitle } from './PassRow';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
 import { getContext } from '../../store';
@@ -32,6 +32,12 @@ export interface DetectionCardOptions {
   /** Play/stop this detection's audio slice; shows a ▶ button when provided. */
   onPlay?: (ann: Detection) => void;
   playingId?: string | null;
+  /** The recording is only on Drive: the ▶ wears a small cloud, and the
+   *  passage is played straight from there (2026-10-10) — the same button as
+   *  the lists of passes (PassRow.tsx's PlayDisc). */
+  playFromDrive?: boolean;
+  /** The detection whose passage is on its way from Drive. */
+  playLoadingId?: string | null;
   /** Extra controls rendered at the bottom of the card (bound-adjust/clip
    *  buttons — finalized annotations only, gated by the caller). */
   extraControls?: () => ComponentChild;
@@ -323,15 +329,10 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
 
-        {opts.onPlay && (
-          <button
-            class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
-              playing ? 'bg-accent text-white' : 'bg-accent/10 text-accent hover:bg-accent/20'}`}
-            title={t('sessions.playSlice')}
-            dangerouslySetInnerHTML={{ __html: playing ? pauseIcon(10) : playIcon(10) }}
-            onClick={(e) => { e.stopPropagation(); opts.onPlay!(ann); }}
-          />
-        )}
+        {opts.onPlay && (() => {
+          const state = { playing: !!playing, fromDrive: !!opts.playFromDrive, loading: opts.playLoadingId === ann.id };
+          return <PlayDisc {...state} title={playDiscTitle(state)} onClick={() => opts.onPlay!(ann)} />;
+        })()}
 
         <AbcPreview settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx} />
 

@@ -13,20 +13,23 @@ import { onUnmeteredNetwork, onNetworkChange } from './network';
 // phone whose recordings are on Drive, and have everything on the phone before
 // leaving the Wi-Fi.
 //
-// Three modes, chosen per device and per user — a phone and a computer of the
+// Two modes, chosen per device and per user — a phone and a computer of the
 // same person have different disks and different data plans, so this is never
 // in the synced state:
-//   - manual (the default, and how it always was): a passage only on Drive
-//     asks before downloading its recording;
-//   - on demand: playing it downloads it, without asking;
+//   - manual (the default): nothing comes down on its own. A passage only on
+//     Drive is played straight from there (remotePassage.ts); downloading a
+//     whole recording asks first;
 //   - automatic: everything comes here in the background, newest first, one at
-//     a time — on Wi-Fi only unless told otherwise — and what has not arrived
-//     yet behaves as on demand.
+//     a time — on Wi-Fi only unless told otherwise.
 // Recordings freed from this device on purpose are left on Drive by the
-// automatic pass (db.ts's audioFreed); the button that downloads everything,
-// and a passage played by hand, take no notice of that: they are requests.
+// automatic pass (db.ts's audioFreed); the button that downloads everything
+// takes no notice of that: it is a request.
+//
+// There was a third, "on demand" — playing a passage downloaded its recording
+// without asking. It went when a passage stopped needing its recording at all
+// (2026-10-10, lot 5 #13); a device that had it reads as manual.
 
-export type AudioDownloadMode = 'manual' | 'onDemand' | 'auto';
+export type AudioDownloadMode = 'manual' | 'auto';
 
 const LS_MODE = 'cadence_audio_download_mode';
 const LS_WIFI_ONLY = 'cadence_audio_download_wifi_only';
@@ -43,7 +46,7 @@ function key(prefix: string): string | null {
 
 function readSettings(): void {
   const mode = (() => { try { return localStorage.getItem(key(LS_MODE) ?? ''); } catch { return null; } })();
-  audioDownloadMode.value = mode === 'onDemand' || mode === 'auto' ? mode : 'manual';
+  audioDownloadMode.value = mode === 'auto' ? mode : 'manual';
   const wifi = (() => { try { return localStorage.getItem(key(LS_WIFI_ONLY) ?? ''); } catch { return null; } })();
   downloadOnWifiOnly.value = wifi !== '0';
 }
