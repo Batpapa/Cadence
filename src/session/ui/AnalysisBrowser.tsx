@@ -60,15 +60,14 @@ function ParentGlyph() {
 }
 
 // ── Drag & drop ──────────────────────────────────────────────────────────────
-// Both kinds move now. An ANALYSIS is reordered among its peers, dropped into a
-// sub-folder, or sent up a level; a FOLDER does the same, and can additionally
-// be dropped INSIDE another folder. Which zones a card offers therefore depends
-// on what is being carried, not only on what is underneath:
+// Both kinds move. An ANALYSIS is dropped into a sub-folder or sent up a level,
+// and that is all: since 2026-10-11 a level lists its analyses in the
+// library's order (sessionTree.ts), so there is no place among them to drop
+// one at. A FOLDER is also reordered among its peers. Which zones a card
+// offers therefore depends on what is being carried, not only on what is
+// underneath:
 //
-//   over an analysis   · carrying an analysis → before / after
-//                      · carrying a folder    → refused: folders and analyses
-//                        are two separate runs, so "between two analyses" is
-//                        not a position a folder can hold.
+//   over an analysis   · refused, whatever is carried
 //   over a folder      · carrying an analysis → into
 //                      · carrying a folder    → before / into / after, the
 //                        sidebar's three zones
@@ -275,14 +274,11 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
 
   const onDrop: Drop = (drag, target, zone) => {
     if (target.kind === 'up') { moveInto(drag, target.id); return; }
-    if (target.kind === 'folder' && zone === 'into') { moveInto(drag, target.id); return; }
-    // Reordering within the level. `applyDrop` settles the visible order first
-    // when nothing has been arranged yet — see settleRoot — and carries the
-    // cycle guard for a folder dropped beside its own descendant.
-    const as: TreeItem = target.kind === 'folder'
-      ? { type: 'folder', id: target.id }
-      : { type: 'session', id: target.id };
-    edit(tr => applyDrop(tr, drag, as, zone, allIds));
+    if (target.kind !== 'folder') return; // an analysis takes no drop
+    if (zone === 'into') { moveInto(drag, target.id); return; }
+    // A folder reordered among its peers. `applyDrop` carries the cycle guard
+    // for a folder dropped beside its own descendant.
+    edit(tr => applyDrop(tr, drag, { type: 'folder', id: target.id }, zone));
   };
 
   /** A folder cannot land in itself, nor anywhere below itself — the model
@@ -292,10 +288,9 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
     drag.type === 'session'
     || (drag.id !== folderIdHere && !isFolderDescendant(tree, drag.id, folderIdHere));
 
-  /** An analysis row is a position, and only an analysis holds a position
-   *  among analyses — see the zone table at the top of this file. */
-  const sessionAccepts = (sessionId: string) => (drag: TreeItem) =>
-    drag.type === 'session' && drag.id !== sessionId;
+  /** An analysis row is no position — see the zone table at the top of this
+   *  file. */
+  const sessionAccepts = () => false;
 
   /** Deletes the folder you are standing in, and everything under it. The
    *  recordings go first — `deleteSession` also drops their audio, locally and
@@ -484,7 +479,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                 onOpen={() => onOpenSession(session.id)}
                 dragItem={{ type: 'session', id: session.id }}
                 target={{ kind: 'session', id: session.id }}
-                accepts={sessionAccepts(session.id)}
+                accepts={sessionAccepts}
                 onDrop={onDrop}
               />
             ))}

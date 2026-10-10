@@ -3,16 +3,22 @@ import { TUNE_ANALYSER_MODULE_KEY, type SessionFolder, type TuneAnalyserModuleDa
 
 // ── Folders over the analyses library ────────────────────────────────────────
 // Same shape as the decks' own folder tree (types.ts's Folder, services/
-// deckService.ts): a parent holds ORDERED lists of its children, because the
-// order is the point — the user arranges the list, they do not just label it.
+// deckService.ts): a parent holds ORDERED lists of its children. For FOLDERS
+// the order is the user's, arranged by hand. For ANALYSES it is not, since
+// 2026-10-11: a level shows its analyses in the library's own order (most
+// recent first, then the undated ones by name), and the lists only say WHICH
+// analyses a level holds. Their stored order is ignored — appending is all
+// any writer does. Decided after an analysis imported into a folder kept most
+// recent first landed at its bottom, and inserting it "at its date" turned out
+// to have no right answer in a folder arranged the other way by hand.
 // Deliberately a copy of that shape rather than a reuse of it: `User.folders`
 // is the decks' tree, it is shown in the sidebar, and putting analyses in it
 // would make every deck folder answer for two unrelated kinds of content.
 //
 // ⚠️ The one rule that is NOT the decks' rule, and the reason this file exists
 // at all: **the list of analyses is the truth, the tree is only an arrangement**.
-// An analysis named by no list still shows up, at the top of the root level
-// (`rootOrder` below). It has to: this whole blob belongs to ONE local user
+// An analysis named by no list still shows up, at the root level (`rootOrder`
+// below). It has to: this whole blob belongs to ONE local user
 // (`modules` is a field of `User`, written per user id by db.ts's saveUser —
 // nothing here is ever shared between two people on the same device), but that
 // one user syncs it across their own devices through Drive, and one of those
@@ -88,37 +94,19 @@ export function editSessionTree(user: AppState, fn: (tree: SessionTree) => void)
 
 // ── Reading the tree ─────────────────────────────────────────────────────────
 
-/** Every analysis id the tree places somewhere — root list included. */
-function placedIds(tree: SessionTree): Set<string> {
-  const placed = new Set(tree.rootSessionIds);
-  for (const f of Object.values(tree.folders)) for (const id of f.sessionIds) placed.add(id);
-  return placed;
-}
-
-/** Analyses the tree says nothing about, in the order they were given. Either
- *  they were never arranged, or they were recorded by a device that does not
- *  know about folders — see this file's header. */
-export function unplacedIds(tree: SessionTree, allIds: string[]): string[] {
-  const placed = placedIds(tree);
-  return allIds.filter(id => !placed.has(id));
-}
-
-/** The root level's analyses: the unarranged ones first, in the order they
- *  came in (the library's own — most recent first), then the arranged ones.
- *
- *  New first, and not the other way round, because "unarranged" is what a
- *  recording made five minutes ago is: it lands where it has always landed,
- *  at the top, rather than below a row of evenings from last winter. */
+/** The root level's analyses — those in no folder, whether the tree names them
+ *  at the root or not at all — in `allIds`' order, which is the library's. */
 export function rootOrder(tree: SessionTree, allIds: string[]): string[] {
-  const known = new Set(allIds);
-  return [...unplacedIds(tree, allIds), ...tree.rootSessionIds.filter(id => known.has(id))];
+  const inFolders = new Set(Object.values(tree.folders).flatMap(f => f.sessionIds));
+  return allIds.filter(id => !inFolders.has(id));
 }
 
-/** A folder's own analyses, in their arranged order, minus anything that no
- *  longer exists. Never picks up unplaced ones — those belong to the root. */
+/** A folder's own analyses, in `allIds`' order (the library's), minus anything
+ *  that no longer exists. Never picks up unplaced ones — those belong to the
+ *  root. */
 export function folderOrder(tree: SessionTree, folderId: string, allIds: string[]): string[] {
-  const known = new Set(allIds);
-  return (tree.folders[folderId]?.sessionIds ?? []).filter(id => known.has(id));
+  const here = new Set(tree.folders[folderId]?.sessionIds ?? []);
+  return allIds.filter(id => here.has(id));
 }
 
 /** Sub-folders of a level, in order. `null` = the root level. */
@@ -208,17 +196,6 @@ function detach(tree: SessionTree, item: TreeItem): void {
   }
 }
 
-/** Freezes the order currently ON SCREEN into the tree, so that everything at
- *  the root level has an explicit position.
- *
- *  Needed before any before/after drop: until the first one, most analyses are
- *  unplaced (see `rootOrder`), and inserting "just above that one" is
- *  meaningless when "that one" is in no list either. Called once, by the first
- *  drag — which is also when the user first expresses an order to keep. */
-export function settleRoot(tree: SessionTree, allIds: string[]): void {
-  tree.rootSessionIds = rootOrder(tree, allIds);
-}
-
 export function createFolder(tree: SessionTree, id: string, name: string, parentId: string | null): void {
   tree.folders[id] = { id, name, folderIds: [], sessionIds: [] };
   if (parentId && tree.folders[parentId]) tree.folders[parentId]!.folderIds.push(id);
@@ -253,7 +230,8 @@ export function deleteFolderTree(tree: SessionTree, folderId: string): void {
   delete tree.folders[folderId];
 }
 
-/** Puts an analysis in a folder (or back at the root), at the end of it. */
+/** Puts an analysis in a folder (or back at the root). At the end of the
+ *  list, for what that is worth: an analysis's place in it is never shown. */
 export function placeSession(tree: SessionTree, sessionId: string, folderId: string | null): void {
   detach(tree, { type: 'session', id: sessionId });
   if (folderId && tree.folders[folderId]) tree.folders[folderId]!.sessionIds.push(sessionId);
@@ -270,45 +248,34 @@ export function moveFolder(tree: SessionTree, folderId: string, parentId: string
   else tree.rootFolderIds.push(folderId);
 }
 
-function insertNextTo(tree: SessionTree, drag: TreeItem, target: TreeItem, before: boolean): void {
-  const listsFor = (type: 'folder' | 'session'): string[][] => [
-    type === 'folder' ? tree.rootFolderIds : tree.rootSessionIds,
-    ...Object.values(tree.folders).map(f => (type === 'folder' ? f.folderIds : f.sessionIds)),
-  ];
-
-  if (drag.type === target.type) {
-    for (const list of listsFor(target.type)) {
-      const idx = list.indexOf(target.id);
-      if (idx === -1) continue;
-      list.splice(before ? idx : idx + 1, 0, drag.id);
-      return;
-    }
+/** A folder dropped before or after another: among that one's siblings. */
+function insertFolderNextTo(tree: SessionTree, folderId: string, targetId: string, before: boolean): void {
+  for (const list of [tree.rootFolderIds, ...Object.values(tree.folders).map(f => f.folderIds)]) {
+    const idx = list.indexOf(targetId);
+    if (idx === -1) continue;
+    list.splice(before ? idx : idx + 1, 0, folderId);
+    return;
   }
-  // Dropped next to a row of the other kind: the position within the level is
-  // meaningless (folders and analyses are two separate runs), so only the
-  // level itself is honoured — the item joins the target's parent.
-  const parentId = parentFolderOf(tree, target);
-  if (drag.type === 'folder') moveFolder(tree, drag.id, parentId);
-  else placeSession(tree, drag.id, parentId);
+  // The target is in no list (a tree damaged by a merge): the root, rather
+  // than nowhere.
+  tree.rootFolderIds.push(folderId);
 }
 
-/** Applies one drop. `allIds` is the library order, used to settle the root
- *  the first time anything is arranged (see `settleRoot`). */
-export function applyDrop(tree: SessionTree, drag: TreeItem, target: TreeItem, zone: DropZone, allIds: string[]): void {
+/** Applies one drop. An analysis only ever goes INTO a folder — it has no
+ *  position of its own to be dropped at; a folder goes into another, or before
+ *  or after one. Anything else changes nothing. */
+export function applyDrop(tree: SessionTree, drag: TreeItem, target: TreeItem, zone: DropZone): void {
   if (drag.id === target.id) return;
-  if (drag.type === 'folder' && target.type === 'folder' && isFolderDescendant(tree, drag.id, target.id)) return;
-  if (drag.type === 'folder' && !tree.folders[drag.id]) return;
-
+  if (target.type !== 'folder' || !tree.folders[target.id]) return;
   if (zone === 'into') {
-    if (target.type !== 'folder' || !tree.folders[target.id]) return;
     if (drag.type === 'folder') moveFolder(tree, drag.id, target.id);
     else placeSession(tree, drag.id, target.id);
     return;
   }
-
-  settleRoot(tree, allIds);
+  if (drag.type !== 'folder' || !tree.folders[drag.id]) return;
+  if (isFolderDescendant(tree, drag.id, target.id)) return;
   detach(tree, drag);
-  insertNextTo(tree, drag, target, zone === 'before');
+  insertFolderNextTo(tree, drag.id, target.id, zone === 'before');
 }
 
 /** Forgets a deleted analysis. Nothing breaks without it — every read filters

@@ -1229,7 +1229,7 @@
   "help.sessions.analyses.1": "Vos analyses, rangées comme des fichiers. L'icône avant le nom indique l'origine : micro, son de l'appareil ou fichier importé.",
   "help.sessions.analyses.2": "« + Dossier » crée un dossier ; appuyez dessus pour y entrer. Pour remonter, utilisez le chemin en haut (Accueil / …) ou la ligne « .. ».",
   "help.sessions.analyses.3": "Depuis l'intérieur d'un dossier, le **crayon** le renomme et la **corbeille** le supprime **avec toutes les analyses qu'il contient**.",
-  "help.sessions.analyses.4": "Glissez-déposez une analyse ou un dossier pour changer l'ordre, le ranger dans un dossier, ou le déposer sur « .. » pour le remonter d'un niveau.",
+  "help.sessions.analyses.4": "Les analyses sont classées par date, la plus récente en haut ; celles sans date viennent ensuite, par ordre alphabétique. Glissez-déposez une analyse sur un dossier pour l'y ranger, ou sur « .. » pour la remonter d'un niveau. Les dossiers, eux, se glissent aussi pour changer leur ordre.",
   "help.sessions.analyses.5": "Une nouvelle analyse est rangée dans le dossier ouvert. La recherche, elle, parcourt toutes les analyses, quel que soit leur dossier.",
   "help.sessions.tunes.heading": "Onglet Morceaux",
   "help.sessions.tunes.1": "Tous les morceaux reconnus, toutes analyses confondues. Le nombre à droite indique combien de fois chacun a été entendu ; appuyez sur la ligne pour voir chaque passage.",

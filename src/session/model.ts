@@ -247,7 +247,8 @@ export interface TuneAnalyserModuleData {
   folders?: Record<string, SessionFolder>;
   /** Top-level folders, in display order. */
   rootFolderIds?: string[];
-  /** Analyses arranged at the top level, in display order. Deliberately NOT
+  /** Analyses put back at the top level (their order is not shown, as in a
+   *  folder). Deliberately NOT
    *  the list of analyses outside a folder: one that appears here nowhere
    *  still shows at the root (sessionTree.ts's `rootOrder`). */
   rootSessionIds?: string[];
@@ -261,7 +262,8 @@ export interface SessionFolder {
   name: string;
   /** Sub-folders, in display order. */
   folderIds: string[];
-  /** Analyses in this folder, in display order. */
+  /** Analyses in this folder. Their order here is not shown: a level lists its
+   *  analyses in library order since 2026-10-11 (sessionTree.ts). */
   sessionIds: string[];
 }
 
