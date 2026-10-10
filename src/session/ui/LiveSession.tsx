@@ -181,12 +181,11 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     ctx,
     onOpenCard,
     onCardAdded: () => setDetections(live.getDetections()),
-    // Logging a practice needs a date and a detection that has CLOSED — that
-    // last part is DetectionCard's own gate, and it is deliberately the only
-    // one. A tune still consolidating can be logged (2026-09-20, user
-    // request): by the time it closes it has been played, which is the whole
-    // of what a review entry claims, and waiting for the decoder to converge
-    // means the moment has passed.
+    // Logging a practice needs a date, nothing more: a tune can be rated —
+    // and confirmed — while it is still playing (2026-10-10, group feedback),
+    // which is when it is in the ear. Waiting for the decoder to converge
+    // means the moment has passed. See DetectionCard for where such a rating
+    // is filed, and detectionState.ts for what a confirmation holds to.
     sessionStartMs: live.startedAt || undefined,
     sessionId: live.sessionId,
     getPinnedDeckIds: () => live.pinnedDeckIds,

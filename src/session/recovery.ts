@@ -5,7 +5,8 @@ import {
 } from './db';
 import { RECORDER_TIMESLICE_MS, ANALYSIS_HOP_S } from './sessionConfig';
 import { IncrementalViterbiSegmenter } from './recognition/viterbiSegmenter';
-import type { Analysis, DetectionEvent, Detection, WindowResult } from './model';
+import type { Analysis, Detection, WindowResult } from './model';
+import { DetectionTracker, type DetectionConfirmation } from './detectionState';
 
 // ── Crash/refresh recovery ─────────────────────────────────────────────────────
 // A live recording writes its audio chunks to IndexedDB continuously (see
@@ -37,24 +38,25 @@ import type { Analysis, DetectionEvent, Detection, WindowResult } from './model'
  *  to trust at all — a crash/refresh loses it entirely, leaving just the raw
  *  windows dump to replay.
  *
- *  Loses any userConfirmed/liked edits made before the crash (including a
- *  manual tune-identity override via selectAlternate(), 2026-08-25 — same
- *  userConfirmed flag) — those only ever lived in the in-memory detection
- *  map, never persisted independently of it. Accepted tradeoff (explicit
- *  user call): correctness of the recognition result matters more than
- *  preserving mid-session manual edits across a crash. */
-export function recomputeDetections(windows: WindowResult[], hopS: number = ANALYSIS_HOP_S): Detection[] {
+ *  The user's confirmations — and so the ratings given from them, which are
+ *  filed under a confirmation's id — survive (2026-10-10): the draft carries
+ *  them, and they are laid over the replay exactly as they were over the live
+ *  detections (detectionState.ts). A confirmation is a range and a tune, not a
+ *  pointer into the old detection map, which is what makes that possible.
+ *  The like marker on an UNconfirmed detection is still lost — accepted
+ *  tradeoff (explicit user call): correctness of the recognition result
+ *  matters more than preserving every mid-session mark across a crash. */
+export function recomputeDetections(
+  windows: WindowResult[],
+  hopS: number = ANALYSIS_HOP_S,
+  confirmations: readonly DetectionConfirmation[] = [],
+): Detection[] {
   const segmenter = new IncrementalViterbiSegmenter(hopS);
-  const store = new Map<string, Detection>();
-  const apply = (events: DetectionEvent[]) => {
-    for (const ev of events) {
-      if (ev.type === 'retract') { store.delete(ev.id); continue; }
-      store.set(ev.detection.id, ev.detection);
-    }
-  };
-  apply(segmenter.feedAll(windows));
-  apply(segmenter.finalize());
-  return [...store.values()].sort((a, b) => a.start - b.start);
+  const tracker = new DetectionTracker();
+  tracker.restore(confirmations);
+  tracker.apply(segmenter.feedAll(windows));
+  tracker.finish(segmenter.finalize());
+  return tracker.list();
 }
 
 async function finalizeOrphan(session: Analysis): Promise<void> {
@@ -88,15 +90,16 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
 
   const windows = await loadSessionWindows(session.id);
   const annotations = windows
-    ? recomputeDetections(windows)
+    ? recomputeDetections(windows, ANALYSIS_HOP_S, session.confirmations)
     // Fallback for a draft persisted before this replay mechanism existed
     // (no windows dump to replay) — same as before: trust the snapshot,
     // just stamp it final so it doesn't reach the summary screen looking
     // like it's still live.
     : session.annotations.map(a => ({ ...a, finalized: true }));
 
+  const { confirmations: _draftOnly, ...saved } = session;
   await saveSessionMeta({
-    ...session,
+    ...saved,
     duration: Math.max(session.duration, durationMs / 1000),
     status: 'done',
     annotations,

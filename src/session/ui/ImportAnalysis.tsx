@@ -127,11 +127,10 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     onAddManualAlternate: (id, tune) => { imp.addManualAlternate(id, tune); setDetections(imp.getDetections()); },
     onRemoveManualAlternate: (id, tuneId) => { imp.removeManualAlternate(id, tuneId); setDetections(imp.getDetections()); },
     getLatestDetection: (id) => imp.getDetections().find(a => a.id === id),
-    // Logging a practice needs a date and a detection that has CLOSED — that
-    // last part is DetectionCard's own gate, and it is deliberately the only
-    // one: a tune still consolidating can be logged (2026-09-20, user
-    // request). The date is the one the file's own modification time guessed,
-    // editable in the row above.
+    // Logging a practice needs a date, nothing more — a detection still
+    // consolidating, or even open, can be rated (2026-10-10, see LiveSession).
+    // The date is the one the file's own modification time guessed, editable
+    // in the row above.
     sessionStartMs: imp.dateOverride ? Date.parse(imp.dateOverride) : undefined,
     sessionId: imp.sessionId,
   };

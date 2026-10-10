@@ -1,6 +1,8 @@
 // ── Session recording & recognition data model ───────────────────────────────
 // Tune IDs are TheSession.org tune IDs (same space as Card.externalId "thesession:{id}").
 
+import type { DetectionConfirmation } from './detectionState';
+
 export type ConfidenceBucket = 'high' | 'medium' | 'low';
 
 export interface DetectionEvidence {
@@ -72,10 +74,11 @@ export interface Detection {
    *  into account, not just this one span's raw mean score. */
   viterbiPick: DetectionAlternate;
   /** True once the user has explicitly vouched for this detection's identity
-   *  via selectAlternate() — freezes tuneId/settingId/displayName/dance/meter
-   *  across future segmenter updates and protects the detection from ever
-   *  being retracted (see viterbiSegmenter.ts's vanish-cleanup and
-   *  DetectionEvent's 'retract' doc).
+   *  via selectAlternate() — or rated it, which vouches too (2026-10-10). While
+   *  the recording runs this is a confirmation laid over the decoder's
+   *  detections rather than a flag on one of them: it holds the user's tune
+   *  and is never retracted, whatever the decoder makes of the stretch — see
+   *  detectionState.ts.
    *
    *  Confirming the algorithm's OWN pick counts (2026-09-04): "this detection
    *  is right" is a statement about the result, not about disagreeing with it,
@@ -117,8 +120,8 @@ export interface Detection {
   liked: boolean;
   /** false while the Viterbi detector could still revise this detection's
    *  bounds or existence as more windows arrive (see viterbiSegmenter.ts) —
-   *  the UI gates destructive/committing actions (delete, merge, attach, SRS
-   *  logging) on this. Always true for file imports (all windows are known
+   *  the UI gates the actions that act on the bounds (delete, merge, edit,
+   *  clip) on this. Rating and confirming do not wait for it (2026-10-10). Always true for file imports (all windows are known
    *  upfront) and for annotations persisted before this field existed
    *  (read as `ann.finalized ?? true`, no migration). */
   finalized: boolean;
@@ -138,9 +141,9 @@ export type DetectionEvent =
    *  superseded — remove it from the detection list entirely, as if it had
    *  never appeared (2026-08-15: `close` with `finalized:false` still left a
    *  permanent, if unconfirmed, entry sitting in the UI — the user explicitly
-   *  wants it gone, not just marked unreliable). Orchestrators should ignore
-   *  this for an id the user has already `userConfirmed` — an explicit user
-   *  choice must never be silently erased. */
+   *  wants it gone, not just marked unreliable). A confirmed detection is never
+   *  erased by it: the confirmation moves onto whatever the decoder now
+   *  shows over its range (detectionState.ts). */
   | { type: 'retract'; id: string };
 
 export interface Analysis {
@@ -176,6 +179,10 @@ export interface Analysis {
    *  argument, including why an IndexedDB migration is a different and easier
    *  question than this one, is in session/db.ts's header. */
   annotations: Detection[];
+  /** A live recording's DRAFT only: the user's confirmations, which a crash
+   *  recovery applies again to the detections it replays (recovery.ts). Never
+   *  on a saved analysis — its detections already carry them. */
+  confirmations?: DetectionConfirmation[];
   // The audio Blob (+ in-progress crash-recovery scratch data) lives in a
   // local-only, non-Drive-synced IndexedDB under the session id — see
   // session/db.ts. This record itself is small (no audio), so it's kept

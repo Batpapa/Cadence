@@ -6,8 +6,7 @@ import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession } from './db';
 import { holdAnalysisLock } from './recovery';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
-import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from './model';
-import { applyDetectionEvents } from './detectionState';
+import { DetectionTracker } from './detectionState';
 import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
@@ -59,7 +58,7 @@ export class LiveSession {
   /** Lets go of this recording's analysis lock — see start(). A no-op until
    *  the lock is granted, and safe to call more than once. */
   private releaseLock: () => void = () => {};
-  private annotations = new Map<string, Detection>();
+  private readonly tracker = new DetectionTracker();
   private pauseStartedAt = 0;
   private pausedAccumMs = 0;
   /** Raw per-window results with a wall-clock cross-reference — doubles as
@@ -116,7 +115,7 @@ export class LiveSession {
   getPhase(): LiveSessionPhase { return this.phase; }
 
   getDetections(): Detection[] {
-    return [...this.annotations.values()].sort((a, b) => a.start - b.start);
+    return this.tracker.list();
   }
 
   /** The MediaRecorder mime type once recording has actually started, '' before
@@ -158,6 +157,9 @@ export class LiveSession {
       source: this.sourceKind === 'device' ? 'device' : 'live',
       status: 'recording',
       annotations: this.getDetections(),
+      // Unlike the snapshot above, these ARE trusted by a recovery: they are
+      // the user's word, applied again to the replayed detections.
+      confirmations: this.tracker.snapshot(),
     };
     void saveSessionMeta(session).catch(() => { /* best-effort — stop() still writes the final copy */ });
   }
@@ -240,10 +242,28 @@ export class LiveSession {
     }
   }
 
-  private applyEvents(events: DetectionEvent[]): void {
-    applyDetectionEvents(this.annotations, events);
+  /** `final` for the decoder's last events, at stop. */
+  private applyEvents(events: DetectionEvent[], final = false): void {
+    if (final) this.tracker.finish(events); else this.tracker.apply(events);
     this.persistDraft();
+    this.followRatings();
     this.cb.onDetections?.(events, this.getDetections());
+    void refreshLiveForeground();
+  }
+
+  /** A rating given while its tune played gets its definitive instant once
+   *  the decoder finalizes the detection — see ratingFollow.ts. */
+  private followRatings(): void {
+    const settled = this.tracker.takeSettled();
+    if (settled.length === 0 || !this.startedAt) return;
+    const session = { id: this.sessionId, date: new Date(this.startedAt).toISOString() };
+    void import('./ratingFollow').then(m => m.repinSettledRatings(session, settled)).catch(() => { /* best-effort */ });
+  }
+
+  /** Something the user did to a detection: the list changed under the screen
+   *  too, and the draft must carry it. */
+  private userChanged(): void {
+    this.persistDraft();
     void refreshLiveForeground();
   }
 
@@ -256,39 +276,30 @@ export class LiveSession {
 
   /** Toggle the "I liked this tune" marker — no bearing on recognition. */
   toggleLike(annotationId: string): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, liked: !ann.liked });
-    this.persistDraft();
+    this.tracker.toggleLike(annotationId);
+    this.userChanged();
   }
 
-  /** Records the user's verdict on this detection's identity: any tune —
-   *  including the decoder's own current pick — freezes it and protects it
-   *  from retraction, `null` hands it back to the decoder. See
-   *  model.ts's alternatePickFields, which owns that rule for all three
-   *  writers (both engines and the finished-session summary). */
+  /** Records the user's verdict on this detection's identity, finalized or
+   *  still playing: any tune — the decoder's own current pick included —
+   *  confirms it, `null` hands it back to the decoder. What a confirmation
+   *  then holds to is detectionState.ts's business. */
   selectAlternate(annotationId: string, pick: DetectionAlternate | null): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, ...alternatePickFields(ann, pick) });
-    this.persistDraft();
+    this.tracker.confirm(annotationId, pick);
+    this.userChanged();
   }
 
   /** Adds a tune named by hand to this detection's variants, choosing nothing
    *  — see model.ts's withManualAlternate. */
   addManualAlternate(annotationId: string, tune: DetectionAlternate): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, manualAlternates: withManualAlternate(ann, tune) });
-    this.persistDraft();
+    this.tracker.addManualAlternate(annotationId, tune);
+    this.userChanged();
   }
 
   /** Removes a hand-named variant — see model.ts's manualAlternateRemovalFields. */
   removeManualAlternate(annotationId: string, tuneId: string): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, ...manualAlternateRemovalFields(ann, tuneId) });
-    this.persistDraft();
+    this.tracker.removeManualAlternate(annotationId, tuneId);
+    this.userChanged();
   }
 
   /** Pauses the whole capture graph (recognition feed + recorder) in one shot —
@@ -347,7 +358,12 @@ export class LiveSession {
     try {
       const fileResult = await this.recorder!.stop();
       const { events, tFinal } = await this.recognition!.stop();
-      this.applyEvents(events);
+      this.applyEvents(events, true);
+      const dominated = this.tracker.dominated();
+      if (dominated.length > 0) {
+        const ref = { id: this.sessionId, date: new Date(this.startedAt).toISOString() };
+        void import('./ratingFollow').then(m => m.settleDominatedRatings(ref, dominated)).catch(() => { /* best-effort */ });
+      }
 
       // this.getDetections() is now trustworthy as the FINAL result, not
       // just a live snapshot: viterbiSegmenter.ts only marks a segment

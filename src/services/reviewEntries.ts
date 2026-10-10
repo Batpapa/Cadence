@@ -63,28 +63,6 @@ export function retargetedHistory(
   return [...rest, { ...entry, ts: next.ts, id: next.id }].sort(byTs);
 }
 
-/** The two histories after an entry changes CARD — a rating lives in the
- *  history of one card, so whatever filed it has to be able to hand it to
- *  another when it decides it was describing a different card all along.
- *
- *  `toHistory` is null when there is no destination card: the entry then goes
- *  rather than stay filed against a card that has just been said to be the
- *  wrong one. The returned `to` is null when the destination needs no write —
- *  either there was none, or it already carries this id. */
-export function movedReviewEntry(
-  fromHistory: readonly SessionEntry[],
-  toHistory: readonly SessionEntry[] | null,
-  id: string,
-  legacyTs: number | null,
-): { from: SessionEntry[]; to: SessionEntry[] | null } | null {
-  const i = reviewEntryIndex(fromHistory, id, legacyTs);
-  if (i === -1) return null;
-  const entry = fromHistory[i]!;
-  const from = fromHistory.filter((_, k) => k !== i).sort(byTs);
-  if (toHistory === null || reviewEntryIndex(toHistory, id, legacyTs) !== -1) return { from, to: null };
-  return { from, to: [...toHistory, { ...entry, id }].sort(byTs) };
-}
-
 /** The history once whatever filed some of these entries is gone: the ratings
  *  STAY — they happened, and nothing about them became false — and lose an id
  *  that now points at nothing. They become what a rating typed on the card
