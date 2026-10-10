@@ -15,15 +15,12 @@ describe('sessionWindowKey', () => {
     expect([...keys].sort()).toEqual(keys);
   });
 
-  it('falls inside the session range, and the legacy bare-id key does not', () => {
+  it('falls inside the session range', () => {
     const low = `${ID}#`;
     const high = `${ID}#\uffff`;
     for (const i of [0, 1, 4000, 99_999_999]) {
       const key = sessionWindowKey(ID, i);
       expect(key > low && key < high).toBe(true);
     }
-    // The pre-2026-09-17 whole-array row lives under the bare id: a range read
-    // must not return it as if it were a window.
-    expect(ID < low).toBe(true);
   });
 });

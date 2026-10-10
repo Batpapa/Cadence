@@ -343,7 +343,7 @@ async function migrateToFinalShape(userId: string): Promise<void> {
     const tx = d.transaction([DRAFT_STORE, AUDIO_STORE, WINDOWS_STORE, CHUNKS_STORE], 'readwrite');
     for (const [k, v] of Object.entries(migratedDrafts)) void tx.objectStore(DRAFT_STORE).put(v, k);
     for (const [id, blob] of migratedAudio) void tx.objectStore(AUDIO_STORE).put(blob, id);
-    for (const [id, w] of migratedWindows) void tx.objectStore(WINDOWS_STORE).put(w, id);
+    for (const [id, w] of migratedWindows) w.forEach((win, i) => { void tx.objectStore(WINDOWS_STORE).put(win, sessionWindowKey(id, i)); });
     for (const c of migratedChunks) void tx.objectStore(CHUNKS_STORE).add(c);
     await tx.done;
   }
@@ -1306,13 +1306,7 @@ export async function putSessionWindows(sessionId: string, windows: WindowResult
 export async function loadSessionWindows(sessionId: string): Promise<WindowResult[] | undefined> {
   const d = await localDb();
   const rows = await d.getAll(WINDOWS_STORE, sessionWindowRange(sessionId)) as WindowResult[];
-  if (rows.length > 0) return rows;
-  // TRANSITIONAL — remove around 2026-10-17 (decided 2026-09-17: one month).
-  // A draft interrupted before the per-window rows shipped still holds the
-  // whole array under the bare id. Past that date no such draft can reasonably
-  // be waiting for recovery any more; drop this read, and the bare-key delete
-  // in deleteSessionWindows with it.
-  return d.get(WINDOWS_STORE, sessionId);
+  return rows.length > 0 ? rows : undefined;
 }
 
 /** Dead weight once a live recording is done (normally or via recovery) —
@@ -1320,7 +1314,6 @@ export async function loadSessionWindows(sessionId: string): Promise<WindowResul
 export async function deleteSessionWindows(sessionId: string): Promise<void> {
   const tx = (await localDb()).transaction(WINDOWS_STORE, 'readwrite');
   void tx.store.delete(sessionWindowRange(sessionId));
-  void tx.store.delete(sessionId); // TRANSITIONAL — see loadSessionWindows
   await tx.done;
 }
 
