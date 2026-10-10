@@ -14,7 +14,7 @@ import { legacyClipTag } from '../../services/attachmentNames';
 import { getContext } from '../../store';
 import type { IndexProgress } from '../recognition/indexStore';
 import type { Detection } from '../model';
-import { retargetedHistory, movedReviewEntry } from '../../services/reviewEntries';
+import { retargetedHistory } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 
 // ── Shared UI helpers ────────────────────────────────────────────────────────
@@ -491,57 +491,6 @@ export async function dropReviewEntry(
   ann: Detection,
 ): Promise<boolean> {
   return retargetReview(ctx, session, ann, ann.end, null);
-}
-
-/** Follows the rating to the card of the tune the detection now names.
- *
- *  A rating lives in the history of a CARD, and which card that is comes from
- *  the detection's tune — so confirming an alternate moves the question to a
- *  different history, where the rating is not, while it stays behind on the
- *  tune the recogniser had got wrong (2026-09-23, user report). The id alone
- *  could not answer this one: it says which detection a rating came from, not
- *  which card to look in.
- *
- *  With no card for the corrected tune there is nowhere to file it, and it
- *  goes rather than stay credited to a tune the user has just said was not
- *  played. Adding that card later and rating again is the way back.
- *
- *  `legacyTs` is where a rating filed before ids existed would sit — the end
- *  has not moved here, only the identity. */
-export async function transferReviewEntry(
-  ctx: AppContext,
-  reviewId: string,
-  previousTuneId: string,
-  nextTuneId: string,
-  legacyTs: number | null,
-): Promise<boolean> {
-  if (previousTuneId === nextTuneId) return false;
-  const cards = getContext().user.cards;
-  const was = findByExternalId(`thesession:${previousTuneId}`, cards);
-  if (!was) return false;
-  const now = findByExternalId(`thesession:${nextTuneId}`, cards);
-
-  let changed = false;
-  await ctx.mutate(s => {
-    const leaving = s.cardWorks[`${s.currentProfileId}:${was.id}`];
-    if (!leaving) return;
-    const arrivingKey = now ? `${s.currentProfileId}:${now.id}` : null;
-    const moved = movedReviewEntry(
-      leaving.history,
-      arrivingKey ? (s.cardWorks[arrivingKey]?.history ?? []) : null,
-      reviewId,
-      legacyTs,
-    );
-    if (!moved) return;
-    leaving.history = moved.from;
-    if (moved.to && arrivingKey && now) {
-      const arriving = s.cardWorks[arrivingKey]
-        ?? (s.cardWorks[arrivingKey] = { profileId: s.currentProfileId, cardId: now.id, history: [] });
-      arriving.history = moved.to;
-    }
-    changed = true;
-  });
-  return changed;
 }
 
 /** Moves every rating of a session when the session's own date moves — the

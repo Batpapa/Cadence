@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionEntry } from '../types';
-import { reviewEntryIndex, retargetedHistory, movedReviewEntry, strippedReviewIds } from './reviewEntries';
+import { reviewEntryIndex, retargetedHistory, strippedReviewIds } from './reviewEntries';
 
 // The id is opaque here — these are the mechanics of a history whose entries
 // may be owned by something that outlives the giving of the rating. See
@@ -82,39 +82,6 @@ describe('retargetedHistory', () => {
     const before = [entry(T0 + 60_000, 'good', 'a')];
     retargetedHistory(before, 'a', null, { id: 'a', ts: T0 + 61_000 });
     expect(before).toEqual([entry(T0 + 60_000, 'good', 'a')]);
-  });
-});
-
-describe('movedReviewEntry', () => {
-  it('takes the entry out of one history and files it in the other', () => {
-    const from = [entry(T0, 'again'), entry(T0 + 60_000, 'easy', 'a')];
-    const to = [entry(T0 + 10_000, 'good')];
-    expect(movedReviewEntry(from, to, 'a', null)).toEqual({
-      from: [entry(T0, 'again')],
-      to: [entry(T0 + 10_000, 'good'), entry(T0 + 60_000, 'easy', 'a')],
-    });
-  });
-
-  it('carries a legacy entry over, stamped', () => {
-    expect(movedReviewEntry([entry(T0 + 60_000, 'hard')], [], 'a', T0 + 60_000)).toEqual({
-      from: [],
-      to: [entry(T0 + 60_000, 'hard', 'a')],
-    });
-  });
-
-  it('drops the entry when there is no destination history', () => {
-    expect(movedReviewEntry([entry(T0 + 60_000, 'good', 'a')], null, 'a', null))
-      .toEqual({ from: [], to: null });
-  });
-
-  it('writes nothing when the destination already carries this id', () => {
-    const to = [entry(T0 + 60_000, 'easy', 'a')];
-    expect(movedReviewEntry([entry(T0 + 60_000, 'good', 'a')], to, 'a', null))
-      .toEqual({ from: [], to: null });
-  });
-
-  it('is a no-op when the source history has nothing under that id', () => {
-    expect(movedReviewEntry([entry(T0)], [], 'a', null)).toBeNull();
   });
 });
 

@@ -7,11 +7,12 @@ import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { findByExternalId } from '../../services/theSessionService';
 import { AbcPreview } from './abcPreview';
 import { showAlternatesPopover } from './AlternatesPopover';
-import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton, transferReviewEntry } from './sessionUiShared';
+import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
 import { getContext } from '../../store';
 import { viterbiPickOf, type Detection, type DetectionAlternate } from '../model';
 import { reviewEntryIndex } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
+import { currentPick, provisionalEnd } from '../detectionState';
 
 // ── DetectionCard ────────────────────────────────────────────────────────────
 // The central unit of the session feed/summary: one recognised tune, with its
@@ -75,8 +76,8 @@ export interface DetectionCardOptions {
   /** Records the user's verdict on this detection's identity — makes the
    *  confidence badge clickable (it opens the "explore alternatives" picker).
    *  A tune confirms it, `null` un-confirms and hands it back to the decoder.
-   *  Choosing anything is only allowed once the detection is finalized
-   *  (see the picker's own doc) — requires `getLatestDetection` too. */
+   *  Open to a detection still playing (2026-10-10). Rating a detection calls
+   *  it too, with the tune shown: a rating says THIS tune was played. */
   onSelectAlternate?: (annotationId: string, pick: DetectionAlternate | null) => void;
   /** Adds a tune named by hand to the picker's list, choosing nothing — it is
    *  ticked afterwards like any other variant. Without it the picker offers no
@@ -137,7 +138,18 @@ function ratingOf(cardId: string, reviewId: string, ts: number | null) {
   return at === -1 ? undefined : history[at];
 }
 
-function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
+/** Takes this detection's rating off the card's history — the remove control's
+ *  job, and what un-confirming the detection does too (below). */
+function removeRating(ctx: AppContext, cardId: string, reviewId: string, ts: number | null): Promise<void> {
+  return ctx.mutate(s => {
+    const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
+    if (!h) return;
+    const i = reviewEntryIndex(h, reviewId, ts);
+    if (i !== -1) h.splice(i, 1);
+  });
+}
+
+function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
   cardId: string;
   /** What this rating is filed under — opaque to the card's history, built by
    *  this module (reviewLink.ts). */
@@ -146,6 +158,8 @@ function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
    *  instant is the rating's only place in time. */
   ts: number | null;
   ctx: AppContext;
+  /** After a rating is given — the card confirms the detection there. */
+  onRated?: () => void;
 }) {
   // Local re-render trigger after a mutation — mirrors the original's
   // `.then(render)` self-refresh exactly (not signal-driven): this card tree
@@ -164,12 +178,7 @@ function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
           title={new Date(existing.ts).toLocaleString()}
           onClick={() => {
             if (Date.now() - ratedAt.current < REMOVE_GUARD_MS) return;
-            void ctx.mutate(s => {
-              const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
-              if (!h) return;
-              const i = reviewEntryIndex(h, reviewId, ts);
-              if (i !== -1) h.splice(i, 1);
-            }).then(() => setTick(x => x + 1));
+            void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1));
           }}
         >
           <span class={glyph?.cls ?? ''}>{glyph?.glyph ?? ''}</span>
@@ -197,6 +206,7 @@ function ReviewLogControl({ cardId, reviewId, ts, ctx }: {
             aria-label={t(labelKey)}
             onClick={() => {
               ratedAt.current = Date.now();
+              onRated?.();
               void ctx.mutate(s => {
                 const key = `${s.currentProfileId}:${cardId}`;
                 if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
@@ -269,23 +279,37 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
       ? `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)} · ${t('sessions.consolidating')}`
       : `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)}`;
 
-  // Closed is enough — a detection still consolidating gets the rating
-  // buttons too (2026-09-20, user request). It is only the EDIT controls that
-  // wait for `finalized`, because those act on bounds the decoder can still
-  // move; having played the tune is already true the moment it closes.
+  // Any detection can be rated, even one still playing (2026-10-10, group
+  // feedback: rate it while it is in the ear). It is only the EDIT controls
+  // that wait for `finalized`, because those act on bounds the decoder can
+  // still move.
   //
-  // The rating's instant follows the detection's end (repinReviewEntry), and
-  // the detection it names is what finds it again — so a rating survives a
-  // bound edit, a date change, a merge and a corrected tune alike. The card
-  // still needs an end: that is what "the tune was played" is measured from.
+  // A rating is filed where the detection ends — and a detection still playing
+  // has no end yet, so it is filed at the last window that heard it, then moved
+  // to the definitive end once the decoder finalizes it (ratingFollow.ts). The
+  // detection it names is what finds it again, so it survives a bound edit, a
+  // date change, a merge and a corrected tune alike.
+  //
+  // Rating CONFIRMS the detection (user's rule, 2026-10-10): it says this tune
+  // was played, and that keeps the decoder from handing the stretch to another
+  // tune — or retracting it — with the rating left on the wrong card.
   const reviewId = detectionReviewId(opts.sessionId, ann.id);
-  const reviewTs = opts.sessionStartMs !== undefined && ann.end !== null
-    ? reviewEntryTs(opts.sessionStartMs, ann.end)
+  const reviewTs = opts.sessionStartMs !== undefined
+    ? reviewEntryTs(opts.sessionStartMs, provisionalEnd(ann))
     : null;
+  // Where a rating filed before ids existed would sit — only a closed
+  // detection can have one.
+  const legacyTs = ann.end !== null ? reviewTs : null;
+  // Read where it is needed rather than once per render: the rating row
+  // redraws itself after a rating, not this card, so a value read here would
+  // still say "not rated" afterwards (2026-10-10, user test).
+  const isRated = () => !!known && !!ratingOf(known.id, reviewId, legacyTs);
   // A dateless session shows the row only when it already holds a rating —
   // there is one to take back, but no new one to give.
-  const showReviewLog = !!known && ann.end !== null
-    && (reviewTs !== null || !!ratingOf(known.id, reviewId, null));
+  const showReviewLog = !!known && (reviewTs !== null || isRated());
+  const confirmOnRating = opts.onSelectAlternate && !ann.userConfirmed
+    ? () => opts.onSelectAlternate!(ann.id, currentPick(ann))
+    : undefined;
 
   // Read once, shown in up to three places (the two halves of the badge and
   // its aria-label) — and the dynamic key is built in exactly one spot, which
@@ -350,6 +374,13 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
           aria-label={ann.userConfirmed ? t('sessions.alternates.confirmed') : `${bucketWord} ${confidencePct}`}
           onClick={opts.onSelectAlternate ? (e) => {
             e.stopPropagation();
+            // The card the rating is on, if any: the one of the tune shown
+            // when the picker opened.
+            const ratedCard = known;
+            const unrate = () => {
+              if (!ratedCard) return;
+              void removeRating(opts.ctx, ratedCard.id, reviewId, legacyTs).then(() => setReviewTick(x => x + 1));
+            };
             showAlternatesPopover(
               ann,
               opts.getLatestDetection ? () => opts.getLatestDetection!(ann.id) : undefined,
@@ -359,22 +390,34 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
                 // object (Object.assign on the detection it found in the
                 // session), and the live and import engines do the same to
                 // theirs — so a line below reads the tune that is ARRIVING,
-                // never the one leaving, and the transfer would compare a value
+                // never the one leaving, and the test below would compare a value
                 // with itself (2026-09-23, user debugging).
                 const leaving = ann.tuneId;
                 const arriving = (pick ?? viterbiPickOf(ann)).tuneId;
                 opts.onSelectAlternate!(ann.id, pick);
-                // A rating lives in the history of the CARD this detection
-                // points at, so correcting the tune moves it to another card —
-                // otherwise it stays credited to the one the recogniser got
-                // wrong, and the corrected tune offers to be rated afresh
-                // (2026-09-23, user report). `null` hands the detection back to
-                // the decoder, whose own pick is then the tune.
-                void transferReviewEntry(opts.ctx, reviewId, leaving, arriving, reviewTs)
-                  .then(moved => { if (moved) setReviewTick(x => x + 1); });
+                // The rating goes whenever the TUNE changes (user's rule,
+                // 2026-10-10): it said that tune was played here, and the
+                // user has just said otherwise. Ticking another variant, or
+                // un-ticking one the decoder had not proposed, changes it.
+                // Confirming the recommendation, or un-ticking it, does not:
+                // the tune shown stays the same, and so does the rating.
+                //
+                // This replaces moving the rating to the corrected tune's card
+                // (2026-09-23): a rating given for the wrong tune says nothing
+                // about how the right one was played.
+                if (leaving !== arriving) unrate();
               },
               opts.onAddManualAlternate ? (tune) => opts.onAddManualAlternate!(ann.id, tune) : undefined,
-              opts.onRemoveManualAlternate ? (tuneId) => opts.onRemoveManualAlternate!(ann.id, tuneId) : undefined,
+              opts.onRemoveManualAlternate ? (tuneId) => {
+                // Removing the hand-named tune it is confirmed as also
+                // un-confirms it (manualAlternateRemovalFields), handing it
+                // back to the decoder's pick — the same rule as above.
+                const changesTune = ann.userConfirmed && ann.tuneId === tuneId
+                  && viterbiPickOf(ann).tuneId !== tuneId;
+                opts.onRemoveManualAlternate!(ann.id, tuneId);
+                if (changesTune) unrate();
+              } : undefined,
+              isRated(),
             );
           } : undefined}
         >
@@ -444,7 +487,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
 
       {showReviewLog && (
         <div class="flex items-center gap-3 flex-wrap">
-          <ReviewLogControl cardId={known!.id} reviewId={reviewId} ts={reviewTs} ctx={opts.ctx} />
+          <ReviewLogControl cardId={known!.id} reviewId={reviewId} ts={reviewTs} ctx={opts.ctx} onRated={confirmOnRating} />
         </div>
       )}
 

@@ -5,8 +5,7 @@ import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
-import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields } from './model';
-import { applyDetectionEvents } from './detectionState';
+import { DetectionTracker } from './detectionState';
 import type { IndexProgress } from './recognition/indexStore';
 
 // ── Import session orchestrator ───────────────────────────────────────────────
@@ -93,7 +92,7 @@ export class ImportSession {
   private recognition: RecognitionClient | null = null;
   private source: PcmSource | null = null;
   private wakeLock = new WakeLockManager();
-  private annotations = new Map<string, Detection>();
+  private readonly tracker = new DetectionTracker();
   /** Raw per-window results — the detectionTemporalConfig.ts calibration dump. */
   readonly windows: WindowResult[] = [];
   private cancelRequested = false;
@@ -154,7 +153,7 @@ export class ImportSession {
   getPhase(): ImportPhase { return this.phase; }
 
   getDetections(): Detection[] {
-    return [...this.annotations.values()].sort((a, b) => a.start - b.start);
+    return this.tracker.list();
   }
 
   /** Closed annotations — what a partial keep after cancellation would retain. */
@@ -220,12 +219,12 @@ export class ImportSession {
       this.analyzedDurationS = tFinal;
 
       if (this.cancelRequested) {
-        this.applyEvents(events);
+        this.applyEvents(events, true);
         this.setPhase('cancelled');
         return null;
       }
 
-      this.applyEvents(events);
+      this.applyEvents(events, true);
       return await this.save();
     } catch (err) {
       this.setPhase('error');
@@ -277,39 +276,42 @@ export class ImportSession {
     this.cb.onProgress?.({ analyzedS, totalS, etaS });
   }
 
-  private applyEvents(events: DetectionEvent[]): void {
-    applyDetectionEvents(this.annotations, events);
+  /** `final` for the decoder's last events. Ratings follow their detections
+   *  as LiveSession's do — see ratingFollow.ts. */
+  private applyEvents(events: DetectionEvent[], final = false): void {
+    if (final) this.tracker.finish(events); else this.tracker.apply(events);
+    const settled = this.tracker.takeSettled();
+    const dominated = final ? this.tracker.dominated() : [];
+    if (this.dateOverride !== null && (settled.length > 0 || dominated.length > 0)) {
+      const ref = { id: this.sessionId, date: this.dateOverride };
+      void import('./ratingFollow').then(async m => {
+        await m.repinSettledRatings(ref, settled);
+        await m.settleDominatedRatings(ref, dominated);
+      }).catch(() => { /* best-effort */ });
+    }
     this.cb.onDetections?.(events, this.getDetections());
   }
 
   /** Toggle the "I liked this tune" marker — no bearing on recognition. */
   toggleLike(annotationId: string): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, liked: !ann.liked });
+    this.tracker.toggleLike(annotationId);
   }
 
   /** Records the user's verdict on this detection's identity — see
    *  LiveSession's identical method for the full doc. */
   selectAlternate(annotationId: string, pick: DetectionAlternate | null): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, ...alternatePickFields(ann, pick) });
+    this.tracker.confirm(annotationId, pick);
   }
 
   /** Adds a tune named by hand to this detection's variants, choosing nothing
    *  — see model.ts's withManualAlternate. */
   addManualAlternate(annotationId: string, tune: DetectionAlternate): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, manualAlternates: withManualAlternate(ann, tune) });
+    this.tracker.addManualAlternate(annotationId, tune);
   }
 
   /** Removes a hand-named variant — see model.ts's manualAlternateRemovalFields. */
   removeManualAlternate(annotationId: string, tuneId: string): void {
-    const ann = this.annotations.get(annotationId);
-    if (!ann) return;
-    this.annotations.set(annotationId, { ...ann, ...manualAlternateRemovalFields(ann, tuneId) });
+    this.tracker.removeManualAlternate(annotationId, tuneId);
   }
 
   /** Filename without extension — the default name shown/persisted until renamed. */

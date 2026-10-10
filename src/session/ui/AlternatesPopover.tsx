@@ -37,11 +37,13 @@ import type { DetectionAlternate, Detection } from '../model';
 // apart by what it is not — neither the decoder's pick nor an alternate —
 // which is why it shows "manual" instead of a score it never had.
 //
-// Browsable but not choosable until finalized (2026-08-25, user request): a
-// live/import detection can still be revised — or vanish outright — while
-// this is open, so the picker polls `getLatest` (when given) and reacts:
-// updates the list on a revision, shows a "no longer valid" message on
-// retraction, and only enables actually picking once finalized. `getLatest`
+// Choosable at any time, a detection still playing included (2026-10-10 —
+// it was browse-only until finalized from 2026-08-25): a confirmation is laid
+// over the decoder's detections and holds whatever the decoder does next
+// (detectionState.ts). A live/import detection can still be revised — or, if
+// unconfirmed, vanish outright — while this is open, so the picker polls
+// `getLatest` (when given) and reacts: updates the list on a revision, shows a
+// "no longer valid" message on retraction. `getLatest`
 // reads straight off the ENGINE (LiveSession/ImportSession.getDetections()),
 // not the container's own React state — that only updates on its next
 // re-render, this popover is a separate render() tree that wouldn't see it.
@@ -76,12 +78,13 @@ function optionsFor(ann: Detection, viterbiPick: DetectionAlternate): DetectionA
   return options;
 }
 
-function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
+function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rated }: {
   initial: Detection;
   getLatest?: () => Detection | undefined;
   onSelect: (pick: DetectionAlternate | null) => void;
   onAdd?: (tune: DetectionAlternate) => void;
   onRemove?: (tuneId: string) => void;
+  rated: boolean;
 }) {
   // undefined = retracted (only reachable once getLatest is polled and comes
   // back empty — `initial` is always a real detection the card just showed).
@@ -98,7 +101,6 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
     return <p class="text-sm text-dim text-center py-6 px-5">{t('sessions.alternates.retracted')}</p>;
   }
 
-  const canChoose = ann.finalized;
   const viterbiPick = viterbiPickOf(ann);
   const options = optionsFor(ann, viterbiPick);
   /** Everything the recogniser actually scored. An option outside it can only
@@ -115,7 +117,11 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
   /** Un-ticking hands a detection back to the decoder — which only means
    *  something when a decoder had an opinion. On a hand-added one there is
    *  nothing to fall back to, so the ticked line stays ticked and the way to
-   *  change the tune is to pick another (or name one). */
+   *  change the tune is to pick another (or name one).
+   *
+   *  On a RATED one, any pick that changes the tune — un-ticking a variant
+   *  the decoder had not proposed included — removes the rating (user's rule,
+   *  2026-10-10 — DetectionCard does it): the line at the top says so. */
   const canUntick = !ann.manual;
 
   /** Stores the tune, and shows it here at once: a finished session has no
@@ -133,15 +139,15 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
 
   return (
     <div class="-mx-5 -my-4">
-      {/* One line, always: the gesture is not self-evident either way. While the
-          result consolidates it says why nothing can be picked yet; once it can,
-          it says that picking IS the confirmation — and that picking the same
-          entry again undoes it. Neither was written anywhere before 2026-09-09,
-          and a user reported being unable to find how to confirm at all. */}
+      {/* One line, always: the gesture is not self-evident. It says that
+          picking IS the confirmation — and that picking the same entry again
+          undoes it, or why it cannot. None of it was written anywhere before
+          2026-09-09, and a user reported being unable to find how to confirm
+          at all. */}
       <p class="text-xs text-dim text-center py-2 px-5 border-b border-border/50">
-        {t(!canChoose ? 'sessions.alternates.notFinalizedYet'
-          : canUntick ? 'sessions.alternates.howToPick'
-          : 'sessions.alternates.howToPickManual')}
+        {t(ann.manual ? 'sessions.alternates.howToPickManual'
+          : rated ? 'sessions.alternates.howToPickRated'
+          : 'sessions.alternates.howToPick')}
       </p>
       <div class="divide-y divide-border/50">
         {options.map(opt => {
@@ -156,16 +162,16 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
           // button, and nesting <button> inside <button> is invalid HTML
           // (unpredictable click/focus behavior across browsers). AbcPreview's
           // own onClick already stops propagation, so it stays independently
-          // clickable regardless of canChoose without any extra wiring here.
+          // clickable without any extra wiring here.
           return (
             <div
               key={opt.tuneId}
-              role={canChoose ? 'button' : undefined}
-              tabIndex={canChoose ? 0 : undefined}
+              role="button"
+              tabIndex={0}
               class={`w-full flex items-center gap-3 px-5 py-2.5 transition-colors ${
-                isSelected ? 'bg-accent/10' : canChoose ? 'hover:bg-bg cursor-pointer' : ''} ${!canChoose ? 'opacity-70' : ''}`}
-              onClick={canChoose ? () => { if (!isSelected || canUntick) onSelect(isSelected ? null : opt); } : undefined}
-              onKeyDown={canChoose ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isSelected || canUntick) onSelect(isSelected ? null : opt); } } : undefined}
+                isSelected ? 'bg-accent/10' : 'hover:bg-bg cursor-pointer'}`}
+              onClick={() => { if (!isSelected || canUntick) onSelect(isSelected ? null : opt); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isSelected || canUntick) onSelect(isSelected ? null : opt); } }}
             >
               <span class="w-4 shrink-0 text-accent text-sm leading-none">{isSelected ? '✓' : ''}</span>
               <AbcPreview settingId={opt.settingId} displayName={opt.displayName} size={11} />
@@ -212,7 +218,7 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove }: {
           );
         })}
       </div>
-      {canChoose && onAdd && <ManualTunePick onAdd={add} />}
+      {onAdd && <ManualTunePick onAdd={add} />}
     </div>
   );
 }
@@ -232,6 +238,9 @@ export function showAlternatesPopover(
   onSelect: (pick: DetectionAlternate | null) => void,
   onAdd?: (tune: DetectionAlternate) => void,
   onRemove?: (tuneId: string) => void,
+  /** The detection carries a rating, which goes if the tune changes — the top
+   *  line says so. */
+  rated = false,
 ): void {
   const body = document.createElement('div');
   // showModal's closeModal() only removes the overlay from the DOM — it has
@@ -252,6 +261,6 @@ export function showAlternatesPopover(
     cleanup();
   };
   // Adding keeps the modal open: the tune is then ticked from the list.
-  render(<AlternatesPopover initial={ann} getLatest={getLatest} onSelect={handleSelect} onAdd={onAdd} onRemove={onRemove} />, body);
+  render(<AlternatesPopover initial={ann} getLatest={getLatest} onSelect={handleSelect} onAdd={onAdd} onRemove={onRemove} rated={rated} />, body);
   showModal(t('sessions.alternates.title'), body, [], { maxWidth: '420px', onDismiss: cleanup });
 }
