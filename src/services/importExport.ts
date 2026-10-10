@@ -201,6 +201,7 @@ function sanitizeAttachment(raw: unknown): unknown {
     // reader recognises is the sort of thing a later version mistakes for a
     // deliberate choice.
     if (raw['mode'] !== 'link' && raw['mode'] !== 'embed') delete raw['mode'];
+    sanitizeAudioPresets(raw);
   } else if (raw['type'] === 'file') {
     if (typeof raw['data'] !== 'string' && typeof raw['text'] === 'string') {
       raw['data'] = arrayBufferToBase64(new TextEncoder().encode(raw['text']).buffer);

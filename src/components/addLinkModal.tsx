@@ -293,7 +293,8 @@ function LinkBody({ draft, known, saved, lookup, disabled, busy, error, onSubmit
  *  makes a mode change a real change: an embed turned into a link loses the
  *  `embedUrl` and `autoTitle` that would otherwise still be sitting there.
  *  The id is the one thing carried over — it identifies the attachment, not
- *  its contents.
+ *  its contents — along with the player's presets, which are the user's and
+ *  not the link's (see EmbedEntry.audioPresets).
  *
  *  An embed whose URL has not moved keeps what oEmbed said the first time
  *  instead of asking again: nothing the platform could answer has changed, and
@@ -304,6 +305,7 @@ async function buildEntry(draft: Draft, base: EmbedEntry | undefined, lookup: Lo
   if (!url) return null;
   const id = base?.id ?? generateId();
   const name = draft.name.trim();
+  const presets = presetsOf(base);
 
   if (!safeExternalUrl(url)) { error.value = t('embed.badUrl'); return null; }
   const unchanged = base !== undefined && base.url === url && linkMode(base) === draft.mode;
@@ -313,19 +315,26 @@ async function buildEntry(draft: Draft, base: EmbedEntry | undefined, lookup: Lo
       const answer = await lookup(url, 'link');
       if (!answer.ok) { error.value = refusalMessage(answer.refusal); return null; }
     }
-    return { id, url, title: name, mode: 'link' };
+    return { id, url, title: name, mode: 'link', ...presets };
   }
 
   // `title` holds the label whatever it came from, so that a device on an
   // older bundle, which reads nothing else, still shows the user's name.
   if (unchanged && base.embedUrl) {
     const autoTitle = embedAutoTitle(base) ?? '';
-    return { id, url, title: name || autoTitle, autoTitle, embedUrl: base.embedUrl, mode: 'embed' };
+    return { id, url, title: name || autoTitle, autoTitle, embedUrl: base.embedUrl, mode: 'embed', ...presets };
   }
 
   const answer = await lookup(url, 'embed');
   if (!answer.ok) { error.value = refusalMessage(answer.refusal); return null; }
-  return { id, url, title: name || answer.title, autoTitle: answer.title, embedUrl: answer.embedUrl, mode: 'embed' };
+  return { id, url, title: name || answer.title, autoTitle: answer.title, embedUrl: answer.embedUrl, mode: 'embed', ...presets };
+}
+
+function presetsOf(base: EmbedEntry | undefined): Pick<EmbedEntry, 'audioPresets' | 'defaultAudioPreset'> {
+  return {
+    ...(base?.audioPresets ? { audioPresets: base.audioPresets } : {}),
+    ...(base?.defaultAudioPreset ? { defaultAudioPreset: base.defaultAudioPreset } : {}),
+  };
 }
 
 function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | undefined, onDone: (entry: EmbedEntry) => void): void {

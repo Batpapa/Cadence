@@ -1,6 +1,6 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, leaveStudy } from '../store';
-import { locateFileAttachment, writeAudioPresets } from '../services/audioPresets';
+import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets';
 import { pickRandom, pickOptimal, pickStochastic, pickSequential, advanceSkips, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -274,10 +274,10 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
     attachments: card.content.attachments,
     card,
     editable: false,
-    // Found by identity, not by position alone: see locateFileAttachment.
+    // Found by identity, not by position alone: see locatePresetHolder.
     onSetAudioPresets: (i, id, presets, defaultId) => mutate(s => {
       const atts = s.cards[cardId!]?.content.attachments;
-      const att = atts && locateFileAttachment(atts, i, id);
+      const att = atts && locatePresetHolder(atts, i, id);
       if (att) writeAudioPresets(att, presets, defaultId);
     }),
     onSetPreferredIndex: (i, index) => mutate(s => {

@@ -82,6 +82,12 @@ export interface EmbedEntry {
   embedUrl?: string;
   /** Written explicitly on both sides since 2026-09-22 — see LinkMode. */
   mode?: LinkMode;
+  /** A link to an audio FILE only (`isFileEmbed`): the player's presets, as on
+   *  an attached audio file (2026-10-10). On the link for the same reason —
+   *  they travel with the card. Kept through an edit of the link, its URL
+   *  included: the player brings each one inside the file it finds. */
+  audioPresets?: AudioPreset[];
+  defaultAudioPreset?: string;
 }
 
 /** A pointer to another card, independent of the role that pointer plays.
