@@ -5,7 +5,7 @@ import {
   allFolderIds, applyDrop, childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
   editSessionTree, emptyTree, folderChain, folderOrder, folderPathOf, forgetSession,
   isFolderDescendant, moveFolder, parentFolderOf, placeSession, renameFolder, rootOrder,
-  sessionTreeOf, settleRoot, unplacedIds, type SessionTree,
+  sessionTreeOf, type SessionTree,
 } from './sessionTree';
 
 /** A tree with two folders and nothing arranged at the root. */
@@ -57,9 +57,9 @@ describe('rootOrder', () => {
     expect(rootOrder(emptyTree(), ['s1', 's2', 's3'])).toEqual(['s1', 's2', 's3']);
   });
 
-  it('puts the unarranged ones FIRST, so a new recording stays on top', () => {
+  it('is the library order whatever the stored list says', () => {
     const t = emptyTree();
-    t.rootSessionIds = ['s2', 's1'];
+    t.rootSessionIds = ['s1', 's2'];
     // s3 is the one a device that knows nothing about folders just recorded.
     expect(rootOrder(t, ['s3', 's2', 's1'])).toEqual(['s3', 's2', 's1']);
   });
@@ -76,10 +76,15 @@ describe('rootOrder', () => {
     expect(rootOrder(t, ['s1'])).toEqual(['s1']);
   });
 
-  it('reports what it holds no opinion about', () => {
+});
+
+describe('folderOrder', () => {
+  it('is the library order, not the order analyses were put in', () => {
+    // Reported 2026-10-11: the newest import went to the BOTTOM of a folder
+    // kept most recent first, because it was appended.
     const t = tree();
-    placeSession(t, 's1', 'f2');
-    expect(unplacedIds(t, ['s1', 's2'])).toEqual(['s2']);
+    for (const id of ['s2', 's1', 's3']) placeSession(t, id, 'f1');
+    expect(folderOrder(t, 'f1', ['s3', 's2', 's1'])).toEqual(['s3', 's2', 's1']);
   });
 });
 
@@ -208,77 +213,69 @@ describe('placeSession', () => {
 describe('applyDrop', () => {
   const all = ['s1', 's2', 's3'];
 
-  it('freezes the visible order the first time anything is reordered', () => {
-    const t = emptyTree();
-    applyDrop(t, { type: 'session', id: 's3' }, { type: 'session', id: 's1' }, 'before', all);
-    expect(rootOrder(t, all)).toEqual(['s3', 's1', 's2']);
-  });
-
-  it('drops after a target', () => {
-    const t = emptyTree();
-    applyDrop(t, { type: 'session', id: 's1' }, { type: 'session', id: 's3' }, 'after', all);
-    expect(rootOrder(t, all)).toEqual(['s2', 's3', 's1']);
-  });
-
-  it('reorders inside a folder', () => {
-    const t = tree();
-    placeSession(t, 's1', 'f1');
-    placeSession(t, 's2', 'f1');
-    applyDrop(t, { type: 'session', id: 's2' }, { type: 'session', id: 's1' }, 'before', all);
-    expect(folderOrder(t, 'f1', all)).toEqual(['s2', 's1']);
-  });
-
   it('drops an analysis INTO a folder', () => {
     const t = tree();
-    applyDrop(t, { type: 'session', id: 's1' }, { type: 'folder', id: 'f1' }, 'into', all);
+    applyDrop(t, { type: 'session', id: 's1' }, { type: 'folder', id: 'f1' }, 'into');
     expect(folderOrder(t, 'f1', all)).toEqual(['s1']);
     expect(rootOrder(t, all)).toEqual(['s2', 's3']);
+  });
+
+  it('gives an analysis no position: before or after anything changes nothing', () => {
+    const t = tree();
+    placeSession(t, 's1', 'f1');
+    const before = JSON.stringify(t);
+    applyDrop(t, { type: 'session', id: 's2' }, { type: 'session', id: 's1' }, 'before');
+    applyDrop(t, { type: 'session', id: 's2' }, { type: 'folder', id: 'f2' }, 'after');
+    expect(JSON.stringify(t)).toBe(before);
   });
 
   it('drops a folder INTO a folder', () => {
     const t = emptyTree();
     createFolder(t, 'f1', 'A', null);
     createFolder(t, 'f2', 'B', null);
-    applyDrop(t, { type: 'folder', id: 'f2' }, { type: 'folder', id: 'f1' }, 'into', all);
+    applyDrop(t, { type: 'folder', id: 'f2' }, { type: 'folder', id: 'f1' }, 'into');
     expect(childFolderIds(t, 'f1')).toEqual(['f2']);
   });
 
-  it('refuses a folder into its own descendant', () => {
+  it('reorders folders among their peers', () => {
+    const t = emptyTree();
+    for (const [id, name] of [['f1', 'A'], ['f2', 'B'], ['f3', 'C']]) createFolder(t, id!, name!, null);
+    applyDrop(t, { type: 'folder', id: 'f3' }, { type: 'folder', id: 'f1' }, 'before');
+    expect(childFolderIds(t, null)).toEqual(['f3', 'f1', 'f2']);
+    applyDrop(t, { type: 'folder', id: 'f3' }, { type: 'folder', id: 'f2' }, 'after');
+    expect(childFolderIds(t, null)).toEqual(['f1', 'f2', 'f3']);
+  });
+
+  it('reorders inside a folder, and moves a folder to its target\'s level', () => {
+    const t = tree(); // f2 inside f1
+    createFolder(t, 'f3', 'C', null);
+    applyDrop(t, { type: 'folder', id: 'f3' }, { type: 'folder', id: 'f2' }, 'before');
+    expect(childFolderIds(t, 'f1')).toEqual(['f3', 'f2']);
+    expect(childFolderIds(t, null)).toEqual(['f1']);
+  });
+
+  it('refuses a folder into, or beside, its own descendant', () => {
     const t = tree();
-    applyDrop(t, { type: 'folder', id: 'f1' }, { type: 'folder', id: 'f2' }, 'into', all);
+    applyDrop(t, { type: 'folder', id: 'f1' }, { type: 'folder', id: 'f2' }, 'into');
+    applyDrop(t, { type: 'folder', id: 'f1' }, { type: 'folder', id: 'f2' }, 'before');
     expect(childFolderIds(t, null)).toEqual(['f1']);
     expect(childFolderIds(t, 'f1')).toEqual(['f2']);
   });
 
   it('ignores a drop on itself', () => {
-    const t = emptyTree();
-    applyDrop(t, { type: 'session', id: 's1' }, { type: 'session', id: 's1' }, 'before', all);
-    expect(t.rootSessionIds).toEqual([]);
-  });
-
-  it('reads a drop beside a row of the other kind as "join that level"', () => {
     const t = tree();
-    placeSession(t, 's1', 'f1');
-    // Dropped just above the folder f2, which lives in f1: the analysis joins f1.
-    applyDrop(t, { type: 'session', id: 's2' }, { type: 'folder', id: 'f2' }, 'before', all);
-    expect(folderOrder(t, 'f1', all)).toEqual(['s1', 's2']);
+    applyDrop(t, { type: 'folder', id: 'f1' }, { type: 'folder', id: 'f1' }, 'before');
+    expect(childFolderIds(t, null)).toEqual(['f1']);
   });
 
   it('does not resurrect a folder that no longer exists', () => {
-    const t = emptyTree();
-    applyDrop(t, { type: 'folder', id: 'ghost' }, { type: 'session', id: 's1' }, 'before', all);
-    expect(t.rootFolderIds).toEqual([]);
+    const t = tree();
+    applyDrop(t, { type: 'folder', id: 'ghost' }, { type: 'folder', id: 'f1' }, 'before');
+    expect(t.rootFolderIds).toEqual(['f1']);
   });
 });
 
-describe('settleRoot / forgetSession', () => {
-  it('settling twice changes nothing', () => {
-    const t = emptyTree();
-    settleRoot(t, ['s1', 's2']);
-    settleRoot(t, ['s1', 's2']);
-    expect(t.rootSessionIds).toEqual(['s1', 's2']);
-  });
-
+describe('forgetSession', () => {
   it('forgets a deleted analysis wherever it was', () => {
     const t = tree();
     placeSession(t, 's1', 'f2');

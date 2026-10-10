@@ -1229,7 +1229,7 @@
   "help.sessions.analyses.1": "Your analyses, arranged like files. The icon before the name shows where it came from: microphone, device sound, or imported file.",
   "help.sessions.analyses.2": "“+ Folder” creates a folder; tap it to go in. To go back up, use the path at the top (Home / …) or the “..” row.",
   "help.sessions.analyses.3": "From inside a folder, the **pencil** renames it and the **bin** deletes it **along with every analysis it contains**.",
-  "help.sessions.analyses.4": "Drag and drop an analysis or folder to change the order, put it in a folder, or drop it on “..” to move it up one level.",
+  "help.sessions.analyses.4": "Analyses are listed by date, most recent first; those without a date come after, in alphabetical order. Drag and drop an analysis onto a folder to put it there, or onto “..” to move it up one level. Folders can also be dragged to change their order.",
   "help.sessions.analyses.5": "A new analysis is filed in the open folder. Search, however, looks through every analysis, whatever its folder.",
   "help.sessions.tunes.heading": "Tunes tab",
   "help.sessions.tunes.1": "Every recognised tune, across all analyses. The number on the right says how many times it was heard; tap the row to see each passage.",
