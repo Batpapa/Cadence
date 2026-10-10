@@ -697,7 +697,6 @@ function autoDownloadLine(s: AutoDownloadStatus | null, progress: Readonly<Recor
  *  (i18nKeys.test.ts) can see every one of them. */
 const DOWNLOAD_MODES = [
   ['manual', 'sessions.download.mode.manual', 'sessions.download.mode.manual.detail'],
-  ['onDemand', 'sessions.download.mode.onDemand', 'sessions.download.mode.onDemand.detail'],
   ['auto', 'sessions.download.mode.auto', 'sessions.download.mode.auto.detail'],
 ] as const;
 

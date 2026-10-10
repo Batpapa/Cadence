@@ -1266,6 +1266,28 @@ export async function downloadCompanionFile(
   return readWithProgress(resp, onProgress);
 }
 
+/** Thrown by readCompanionRange when the file is no longer on Drive. */
+export const COMPANION_GONE = 'companion_gone';
+
+/** Bytes [start, end) of a companion file — a passage of a recording, read
+ *  without the rest of it (session/audio/remotePassage.ts). Drive answers a
+ *  Range with 206; anything else is an error here, so that a server ignoring
+ *  the Range never pours a whole recording into a read of 64 KB. */
+export async function readCompanionRange(fileId: string, start: number, end: number, interactive = false): Promise<Uint8Array> {
+  if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
+  const resp = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { Range: `bytes=${start}-${end - 1}` } },
+    interactive,
+  );
+  if (resp.status === 404) throw new Error(COMPANION_GONE);
+  if (resp.status !== 206) {
+    void resp.body?.cancel();
+    throw new Error(`companion_range_failed: ${resp.status}`);
+  }
+  return new Uint8Array(await resp.arrayBuffer());
+}
+
 /** What `resp.blob()` does, counting as it goes — a recording is hundreds of
  *  megabytes, and a bar that sits at nothing for a minute reads as stuck.
  *
