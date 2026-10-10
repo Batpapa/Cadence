@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   fitSettings, sameSettings, neutralSettings, suggestedPresetName, sanitizeAudioPresets,
-  identityOf, locateFileAttachment,
+  identityOf, locatePresetHolder,
 } from './audioPresets';
 import type { Attachment, FileAttachment } from '../types';
 
@@ -84,24 +84,38 @@ describe('finding the attachment a save belongs to', () => {
 
   it('at its place', () => {
     const a = audio('a.mp3', 'AAAA');
-    expect(locateFileAttachment([a], 0, identityOf(a))).toBe(a);
+    expect(locatePresetHolder([a], 0, identityOf(a))).toBe(a);
   });
 
   it('where it moved to, renamed or not', () => {
     const a = audio('a.mp3', 'AAAA');
     const id = identityOf(a);
     const moved: Attachment[] = [audio('b.mp3', 'BB'), { ...a, name: 'renamed.mp3' }];
-    expect(locateFileAttachment(moved, 0, id)).toBe(moved[1]);
+    expect(locatePresetHolder(moved, 0, id)).toBe(moved[1]);
   });
 
   it('by its external id when its bytes are elsewhere', () => {
     const a = audio('a.mp3', '', { external: { id: 'ext-1', bytes: 9 } });
     const other = audio('b.mp3', '', { external: { id: 'ext-2', bytes: 9 } });
-    expect(locateFileAttachment([other, a], 0, identityOf(a))).toBe(a);
+    expect(locatePresetHolder([other, a], 0, identityOf(a))).toBe(a);
   });
 
   it('nowhere, once it is gone', () => {
     const a = audio('a.mp3', 'AAAA');
-    expect(locateFileAttachment([audio('b.mp3', 'BB')], 0, identityOf(a))).toBeNull();
+    expect(locatePresetHolder([audio('b.mp3', 'BB')], 0, identityOf(a))).toBeNull();
+  });
+
+  it('a link to an audio file by its id, wherever it moved and whatever its URL became', () => {
+    const link: Attachment = { type: 'embed', id: 'l1', url: 'https://example.org/a.mp3' };
+    const other: Attachment = { type: 'embed', id: 'l2', url: 'https://example.org/a.mp3' };
+    const edited: Attachment = { ...link, url: 'https://example.org/b.mp3' };
+    expect(locatePresetHolder([other, audio('a.mp3', 'AAAA'), edited], 0, { embedId: 'l1' })).toBe(edited);
+    expect(locatePresetHolder([other], 0, { embedId: 'l1' })).toBeNull();
+  });
+
+  it('never a file for a link, nor a link for a file', () => {
+    const a = audio('a.mp3', 'AAAA');
+    expect(locatePresetHolder([a], 0, { embedId: 'l1' })).toBeNull();
+    expect(locatePresetHolder([{ type: 'embed', id: 'l1', url: 'x' }], 0, identityOf(a))).toBeNull();
   });
 });

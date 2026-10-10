@@ -97,7 +97,8 @@ function cleanPreset(raw: unknown): AudioPreset | null {
   };
 }
 
-/** Cleans a file attachment's presets in place, for an import: drops what is
+/** Cleans an attachment's presets in place (an audio file, or a link to one),
+ *  for an import: drops what is
  *  not a preset (and duplicate ids), and a default that names none of them. */
 export function sanitizeAudioPresets(att: Record<string, unknown>): void {
   if ('audioPresets' in att) {
@@ -115,16 +116,19 @@ export function sanitizeAudioPresets(att: Record<string, unknown>): void {
 
 /** What the player is handed: the presets as they are, and where to send the
  *  whole list each time the user saves, renames, stars or deletes one. Absent
- *  where there is no attachment to keep them on (a link to a remote file). */
+ *  where there is nowhere to keep them. */
 export interface AudioPresetsBinding {
   presets: AudioPreset[];
   defaultId?: string;
   onChange: (presets: AudioPreset[], defaultId: string | undefined) => void;
 }
 
+/** What presets are kept on: an audio file, or a link to one (2026-10-10). */
+export type PresetHolder = FileAttachment | Extract<Attachment, { type: 'embed' }>;
+
 /** The list replaces what was there, both fields written or removed: absent
  *  means none, as everywhere an optional field is read here. */
-export function writeAudioPresets(att: FileAttachment, presets: AudioPreset[], defaultId: string | undefined): void {
+export function writeAudioPresets(att: PresetHolder, presets: AudioPreset[], defaultId: string | undefined): void {
   if (presets.length) att.audioPresets = presets; else delete att.audioPresets;
   if (defaultId && presets.some(p => p.id === defaultId)) att.defaultAudioPreset = defaultId;
   else delete att.defaultAudioPreset;
@@ -133,8 +137,10 @@ export function writeAudioPresets(att: FileAttachment, presets: AudioPreset[], d
 /** What tells an attachment apart, taken when the player opens: its position
  *  in the card's list is how it is written back, but a sync arriving during a
  *  long practice can reorder that list, and a save must not land on another
- *  file. */
-export interface AttachmentIdentity { mimeType: string; externalId?: string; dataLength: number }
+ *  file. A link has an id of its own, kept through its edits. */
+export type AttachmentIdentity =
+  | { mimeType: string; externalId?: string; dataLength: number }
+  | { embedId: string };
 
 /** Not the name: the player's own title renames the file, and the presets
  *  saved after that must still find it. */
@@ -142,7 +148,8 @@ export function identityOf(att: FileAttachment): AttachmentIdentity {
   return { mimeType: att.mimeType, externalId: att.external?.id, dataLength: att.data.length };
 }
 
-function matches(att: Attachment | undefined, id: AttachmentIdentity): att is FileAttachment {
+function matches(att: Attachment | undefined, id: AttachmentIdentity): att is PresetHolder {
+  if ('embedId' in id) return att?.type === 'embed' && att.id === id.embedId;
   if (att?.type !== 'file') return false;
   if (id.externalId) return att.external?.id === id.externalId;
   return !att.external && att.mimeType === id.mimeType && att.data.length === id.dataLength;
@@ -151,8 +158,8 @@ function matches(att: Attachment | undefined, id: AttachmentIdentity): att is Fi
 /** The attachment the player was opened on: at `index` if it is still there,
  *  else wherever it moved to. Null when it is gone — the save is then dropped
  *  rather than written to whatever took its place. */
-export function locateFileAttachment(atts: Attachment[], index: number, id: AttachmentIdentity): FileAttachment | null {
+export function locatePresetHolder(atts: Attachment[], index: number, id: AttachmentIdentity): PresetHolder | null {
   const there = atts[index];
   if (matches(there, id)) return there;
-  return atts.find((a): a is FileAttachment => matches(a, id)) ?? null;
+  return atts.find((a): a is PresetHolder => matches(a, id)) ?? null;
 }

@@ -83,14 +83,15 @@ function showFetchingModal(name: string): void {
 
 /** Opens an in-app link that is a plain file (remoteFile.ts) in the viewer an
  *  attached one would get — read-only, since none of it is stored here: no
- *  save, no rename, no favourite version.
+ *  save, no rename, no favourite version. Presets are the exception: they are
+ *  how the file is listened to, and they are kept on the link itself.
  *
  *  Waits like withResolvedEntry, with two differences. The waiting dialog
  *  shows how much has come down, a file on someone's server being anything
  *  from a page of ABC to an hour of audio. And dismissing it CANCELS: an
  *  attachment coming down from Drive is worth finishing, since it lands on the
  *  device, whereas this one would only open a viewer nobody is waiting for. */
-function openRemoteFile(entry: EmbedEntry): void {
+function openRemoteFile(entry: EmbedEntry, audioPresets?: AudioPresetsBinding): void {
   const ctrl = new AbortController();
   let shown = false;
   let walkedAway = false;
@@ -124,7 +125,8 @@ function openRemoteFile(entry: EmbedEntry): void {
     },
   }).then((file) => {
     stop();
-    if (!walkedAway) showPreviewModal(file);
+    // Its type is only known now, sniffed from the bytes if need be.
+    if (!walkedAway) showPreviewModal(file, undefined, file.mimeType.startsWith('audio/') ? { audioPresets } : undefined);
   }).catch((e: unknown) => {
     stop();
     if (walkedAway) return;
@@ -280,6 +282,21 @@ function audioPresetsBinding(
   };
 }
 
+/** The same for a link to a file, kept on the link: whether it is audio is
+ *  only known once it is read, so the player decides (see openRemoteFile). */
+function linkPresetsBinding(
+  entry: EmbedEntry, i: number,
+  save: (i: number, id: AttachmentIdentity, presets: AudioPreset[], defaultId: string | undefined) => void,
+): AudioPresetsBinding | undefined {
+  if (!isFileEmbed(entry)) return undefined;
+  const id: AttachmentIdentity = { embedId: entry.id };
+  return {
+    presets: entry.audioPresets ?? [],
+    defaultId: entry.defaultAudioPreset,
+    onChange: (presets, defaultId) => save(i, id, presets, defaultId),
+  };
+}
+
 // ── Row content ──────────────────────────────────────────────────────────────
 
 function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, audioPresets, glyph, onOpen, onDownload }: {
@@ -405,11 +422,13 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   );
 }
 
-function EmbedRowContent({ entry, onRemove, onEdit, editable }: {
+function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets }: {
   entry: EmbedEntry;
   onRemove: () => void;
   onEdit?: () => void;
   editable: boolean;
+  /** A link to an audio file's presets, for its player. */
+  audioPresets?: AudioPresetsBinding;
 }) {
   const mode = linkMode(entry);
   const platform = detectPlatform(entry.url);
@@ -428,7 +447,7 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable }: {
   // gets here. A file's is the way out to the raw file: to download it, or
   // when its server has stopped letting Cadence read it.
   const href = mode === 'link' || file ? safeExternalUrl(entry.url) : null;
-  const play = () => (file ? openRemoteFile(entry) : showEmbedModal(entry));
+  const play = () => (file ? openRemoteFile(entry, audioPresets) : showEmbedModal(entry));
 
   let label = entry.title;
   if (!label) {
@@ -1111,6 +1130,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                 <EmbedRowContent
                   entry={att} onRemove={() => onRemove(i)} editable={editable}
                   onEdit={onUpdateLink ? () => showEditLinkModal(att, (next) => onUpdateLink(i, next)) : undefined}
+                  audioPresets={onSetAudioPresets ? linkPresetsBinding(att, i, onSetAudioPresets) : undefined}
                 />
               )}
             </AttachmentRow>
