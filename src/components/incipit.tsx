@@ -12,6 +12,7 @@ import { hydratedEntry } from '../services/attachmentStore';
 import { playIcon, stopIcon } from './playbackIcons';
 import { MusicNoteIcon, ExpandIcon } from './icons';
 import { t } from '../services/i18nService';
+import { unlockAbcjsAudio } from '../services/audioSession';
 
 // ── The opening bars, in place ───────────────────────────────────────────────
 // Asked for from the field (2026-09-10): in a session, looking at a set, a
@@ -451,6 +452,8 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
    *  by `onEnded`, which is why it is wired at init — and it goes INSIDE
    *  `options`, see below. */
   const toggle = async () => {
+    // Before the first await: it has to happen inside the tap (audioSession.ts).
+    unlockAbcjsAudio();
     const abcjs = await import('abcjs');
     const { visualObj } = audio.current;
     if (!visualObj) return;

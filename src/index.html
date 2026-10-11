@@ -26,11 +26,48 @@
     <meta name="twitter:title" content="Cadence — Spaced repetition for anything you want to remember" />
     <meta name="twitter:description" content="Learn and retain anything — words, concepts, tunes, and more — with spaced repetition. Includes extra tools for Irish traditional musicians." />
     <meta name="twitter:image" content="https://batpapa.github.io/Cadence/icons/icon-512.png" />
+    <!-- Plain ES5 on purpose: this runs before anything else, on browsers too
+         old for the bundle, whose job is precisely to say so. -->
     <script>
       (function(){
-        var t=localStorage.getItem('cadence_theme')||'dark';
-        document.documentElement.dataset.theme=t;
-        document.documentElement.style.background=t==='light'?'#ffffff':t==='green'?'#f7faf5':'#0a0a0a';
+        var d=document.documentElement, nav=navigator, ua=nav.userAgent;
+        function meta(name){ return document.querySelector('meta[name="'+name+'"]'); }
+        // Same default as themeService.getTheme(): light on a phone, dark elsewhere.
+        var t=null; try { t=localStorage.getItem('cadence_theme'); } catch(e) {}
+        t=t||(innerWidth<768&&nav.maxTouchPoints>0?'light':'dark');
+        d.dataset.theme=t;
+        d.style.background=t==='light'?'#ffffff':t==='green'?'#f7faf5':'#0a0a0a';
+        // The header's colour, so the browser's own bar matches it; kept in step by
+        // themeService.applyTheme(). The status bar of an installed iOS app is read
+        // at launch: white text over a dark theme, dark text over a light one.
+        meta('theme-color').content=t==='light'?'#f5f5f5':t==='green'?'#edf4e8':'#141414';
+        meta('apple-mobile-web-app-status-bar-style').content=t==='dark'?'black-translucent':'default';
+        // iPhone, iPad (whose Safari claims to be a Mac) and iPod. iOS zooms into any
+        // text field rendered under 16 px and never zooms back out; maximum-scale
+        // stops that, while iOS keeps pinch-zoom regardless since iOS 10. Not on
+        // Android, where it would really forbid pinch-zoom.
+        if (/iPad|iPhone|iPod/.test(ua)||(nav.maxTouchPoints>1&&/Macintosh/.test(ua))) {
+          d.classList.add('ios');
+          meta('viewport').content+=', maximum-scale=1';
+          // Safari on iOS only applies :active to an element with a touch listener
+          // somewhere above it.
+          document.addEventListener('touchstart',function(){},{passive:true});
+        }
+        // What the app cannot start without (Safari 15.4, 2022). Below that, a plain
+        // message instead of an app that breaks at the first edit; main.ts stops at
+        // the flag, and the message goes in once the page is parsed.
+        if (!(window.crypto&&crypto.randomUUID&&window.structuredClone&&[].at)) {
+          d.dataset.unsupported='1';
+          document.addEventListener('DOMContentLoaded',function(){
+            var fr=/^fr/i.test(nav.language||'');
+            var app=document.getElementById('app'), p=document.createElement('p');
+            p.style.cssText='margin:auto;max-width:28rem;padding:24px;text-align:center;font:16px/1.5 sans-serif';
+            p.textContent=fr
+              ? "Ce navigateur est trop ancien pour Cadence (iOS ou Safari 15.4 au minimum). Mettre à jour l'appareil, ou utiliser un navigateur plus récent."
+              : 'This browser is too old for Cadence (iOS or Safari 15.4 at least). Update the device, or use a more recent browser.';
+            if (app) app.appendChild(p);
+          });
+        }
       })();
     </script>
     <link rel="manifest" href="manifest.json" />

@@ -1,6 +1,7 @@
 // The library's own file, as text: an alias in webpack.config.js.
 import signalsmithStretchSource from 'signalsmith-stretch.mjs?raw';
 import type { FileEntry } from '../types';
+import { preferPlaybackSession } from '../services/audioSession';
 
 // ── How the sound is made ────────────────────────────────────────────────────
 // Signalsmith Stretch (npm `signalsmith-stretch`, MIT): its author's own Web
@@ -267,11 +268,17 @@ export class AudioEngine {
   }
 
   async play(): Promise<void> {
+    // First and synchronously: on an iPhone, Web Audio is otherwise muted by
+    // the silent switch (audioSession.ts).
+    preferPlaybackSession();
     await this.ensureGraph();
     const { audioCtx, stretch, buffer } = this;
     if (!audioCtx || !stretch || !buffer) return;
     clearTimeout(this.suspendTimer);
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    // 'interrupted' is WebKit's state after a phone call, Siri, another app
+    // taking the sound: play would otherwise run on a frozen clock, silent.
+    const state = audioCtx.state as string;
+    if (state === 'suspended' || state === 'interrupted') await audioCtx.resume();
     // Past the region's end there is nothing to play: from its start.
     if (this.pausedPos >= this.regionEnd) this.pausedPos = this.regionStart;
     // Playing BEFORE scheduling (sendState reads it), but told to the screen

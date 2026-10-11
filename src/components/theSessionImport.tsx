@@ -3,7 +3,7 @@ import { render } from 'preact';
 import { createPortal } from 'preact/compat';
 import type { ComponentChild, RefObject } from 'preact';
 import type { AppContext, Card } from '../types';
-import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
+import { generateId, focusIfDesktop, sortByRelevance, ownFormatAccept } from '../utils';
 import { parseCardPackage } from '../services/importExport';
 import { externaliseIncoming, uploadAttachmentSoon, mutateWithRule } from '../services/attachmentStore';
 import { downloadShare } from '../services/shareService';
@@ -1318,7 +1318,9 @@ function JsonFileStep({ getChosenDeckIds, withDeckChoice }: {
         class="btn-primary w-full text-sm"
         disabled={busy}
         onClick={() => {
-          const fileInp = document.createElement('input'); fileInp.type = 'file'; fileInp.accept = '.cdc';
+          const fileInp = document.createElement('input'); fileInp.type = 'file';
+          const accept = ownFormatAccept('.cdc');
+          if (accept) fileInp.accept = accept;
           fileInp.onchange = () => {
             const file = fileInp.files?.[0]; if (!file) return;
             void doImportFile(file);

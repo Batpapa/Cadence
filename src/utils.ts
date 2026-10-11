@@ -60,6 +60,32 @@ export function isMobileDevice(): boolean {
   return window.innerWidth < 768 && navigator.maxTouchPoints > 0;
 }
 
+/** iPhone, iPad or iPod, whatever the browser (all of them are Safari's engine
+ *  there). iPadOS's Safari has introduced itself as a Mac since iPadOS 13; a
+ *  Mac has no touch screen, so more than one touch point gives the iPad away. */
+export function isAppleTouchDevice(): boolean {
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+}
+
+/** The `accept` filter of a file picker for one of Cadence's own formats
+ *  (.cdb, .cds, .cdc). iOS filters by the types it knows, and greys out every
+ *  file for an extension it has none for — a backup could not even be picked
+ *  to restore it. No filter there: the import checks what it is given anyway. */
+export function ownFormatAccept(extensions: string): string | undefined {
+  return isAppleTouchDevice() ? undefined : extensions;
+}
+
+/** Safari on a Mac recent enough to install a site as an app (File → Add to
+ *  Dock, Safari 17, 2023), which offers no prompt a page could trigger. */
+export function isMacSafariInstallable(): boolean {
+  const ua = navigator.userAgent;
+  if (!/Macintosh/.test(ua) || navigator.maxTouchPoints > 1) return false;
+  if (/Chrome|Chromium|Edg\/|Firefox|OPR\//.test(ua)) return false;
+  const v = /Version\/(\d+)[\d.]* Safari\//.exec(ua);
+  return !!v && Number(v[1]) >= 17;
+}
+
 /** Focus an input only on desktop (mouse+hover device). Prevents keyboard popup on mobile. */
 export function focusIfDesktop(el: HTMLElement): void {
   if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
@@ -265,6 +291,29 @@ export async function copyText(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** copyText for a text not ready yet — built after the press, out of the
+ *  database or the network. Safari only lets a page write the clipboard
+ *  during the press itself, which is long over by the time the text exists:
+ *  the copy failed there. A ClipboardItem takes the content as a promise, so
+ *  the write starts within the press and completes when the text arrives
+ *  (Safari 13.1+). Wherever that is missing or refused, the text is awaited
+ *  and handed to copyText, which works where the press need not be live.
+ *  Null from `text`: nothing to copy, and false. */
+export async function copyTextWhenReady(text: Promise<string | null>): Promise<boolean> {
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    try {
+      const blob = text.then(t => {
+        if (t === null) throw new Error('nothing to copy');
+        return new Blob([t], { type: 'text/plain' });
+      });
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+      return true;
+    } catch { /* refused, or a browser that wants the content itself: below */ }
+  }
+  const t = await text;
+  return t === null ? false : copyText(t);
 }
 
 export function formatBytes(bytes: number): string {
@@ -510,8 +559,15 @@ export function rankByRelevance<T extends { name: string; aliases?: readonly str
 // ── Touch drag & drop support ─────────────────────────────────────────────────
 // Translates touchstart/touchmove/touchend into synthetic DragEvents so that
 // existing dragstart/dragover/drop handlers work on mobile without changes.
+//
+// Once per element: several callers attach it from an inline `ref`, which
+// Preact calls again at every render, and each call stacked another set of
+// listeners — as many ghosts as renders, under the finger at once.
+const touchDragAttached = new WeakSet<HTMLElement>();
 
 export function addTouchDragSupport(el: HTMLElement): void {
+  if (touchDragAttached.has(el)) return;
+  touchDragAttached.add(el);
   const LONG_PRESS_MS = 250;
   const MOVE_CANCEL_PX = 8;
 

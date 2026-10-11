@@ -2,7 +2,7 @@ import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
-import { focusIfDesktop, formatBytes, isMobileDevice } from '../../utils';
+import { focusIfDesktop, formatBytes, isMobileDevice, isAppleTouchDevice, ownFormatAccept } from '../../utils';
 import { showModal, closeModal, closeAllModals, renderModalBody, alertModal, confirmModal } from '../../components/modal';
 import { LiveSession } from '../liveSession';
 import { editSessionTree, placeSession } from '../sessionTree';
@@ -145,7 +145,8 @@ function ImportSessionBody({ ctx }: { ctx: AppContext }) {
           closeModal();
           const inp = document.createElement('input');
           inp.type = 'file';
-          inp.accept = '.cds';
+          const accept = ownFormatAccept('.cds');
+          if (accept) inp.accept = accept;
           inp.onchange = () => {
             const file = inp.files?.[0];
             if (!file) return;
@@ -293,7 +294,9 @@ async function preflightImport(ctx: AppContext, file: File, folderId: string | n
   // whole-file decode that a desktop survives for an hour and a half kills a
   // phone tab in a quarter of an hour. A single number warned nobody on the
   // machine that needed it — see sessionConfig's derivation.
-  const warnMinutes = importWarnMinutes(isMobileDevice());
+  // An iPad is wide enough to pass for a desktop by its width, and its tab
+  // dies as early as a phone's.
+  const warnMinutes = importWarnMinutes(isMobileDevice() || isAppleTouchDevice());
 
   let wholeFileWarning: WholeFileWarning | undefined;
   if (!canStream && duration !== null && duration > warnMinutes * 60) {

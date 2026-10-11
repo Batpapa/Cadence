@@ -8,6 +8,7 @@ import { showSettingsModal, showProfileModal } from './settingsModal';
 import { showModal, closeModal } from './modal';
 import { registerOverlay } from './overlayStack';
 import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
+import { isMacSafariInstallable } from '../utils';
 import { t } from '../services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from '../services/updateService';
 import { saveFailure } from '../services/saveHealth';
@@ -81,13 +82,14 @@ function SyncBtn({ status }: { status: DriveStatus }) {
  *  app runs standalone and the button is gone. */
 function InstallBtn() {
   const canPrompt = canInstallSignal.value;
-  if (isStandalone() || (!canPrompt && !isIOS())) return null;
+  const ios = isIOS();
+  if (isStandalone() || (!canPrompt && !ios && !isMacSafariInstallable())) return null;
 
   const onClick = () => {
     if (canPrompt) { void triggerInstall(); return; }
     const body = document.createElement('p');
     body.className = 'text-sm text-muted leading-relaxed';
-    body.textContent = t('settings.installIOS');
+    body.textContent = t(ios ? 'settings.installIOS' : 'settings.installMac');
     showModal(t('settings.install'), body, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
   };
 
@@ -236,8 +238,8 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
       if (dropdownRef.current?.contains(e.target as Node)) return;
       setProfileOpen(false);
     };
-    document.addEventListener('mousedown', onOutside);
-    return () => document.removeEventListener('mousedown', onOutside);
+    document.addEventListener('pointerdown', onOutside);
+    return () => document.removeEventListener('pointerdown', onOutside);
   }, [profileOpen]);
 
   const homeActive    = route.view === 'folder' && route.folderId === null;

@@ -58,12 +58,13 @@ class FakeOAuth {
 
 let storage: MemoryStorage;
 let oauth: FakeOAuth;
-let pointerHandlers: Array<() => void>;
+type PointerHandler = (e: { pointerType: string }) => void;
+let pointerHandlers: Record<'pointerdown' | 'pointerup', PointerHandler[]>;
 
 function installBrowser(): void {
   storage = new MemoryStorage();
   oauth = new FakeOAuth();
-  pointerHandlers = [];
+  pointerHandlers = { pointerdown: [], pointerup: [] };
   vi.stubGlobal('localStorage', storage);
   vi.stubGlobal('google', {
     accounts: {
@@ -85,8 +86,8 @@ function installBrowser(): void {
     getElementById: () => ({}),          // pretend the GIS script tag is already there
     createElement: () => ({}),
     head: { appendChild: () => {} },
-    addEventListener: (type: string, fn: () => void) => {
-      if (type === 'pointerdown') pointerHandlers.push(fn);
+    addEventListener: (type: string, fn: PointerHandler) => {
+      if (type === 'pointerdown' || type === 'pointerup') pointerHandlers[type].push(fn);
     },
   });
   vi.stubGlobal('crypto', { randomUUID: () => 'device-1' });
@@ -116,7 +117,11 @@ async function openApp(minutes: number | null, unsynced = true): Promise<typeof 
   return mod;
 }
 
-const click = () => { for (const h of pointerHandlers) h(); };
+const press = (type: 'pointerdown' | 'pointerup', pointerType: string) => {
+  for (const h of pointerHandlers[type]) h({ pointerType });
+};
+/** A mouse click, as far as the renewal can tell: the press. */
+const click = () => press('pointerdown', 'mouse');
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 beforeEach(installBrowser);
@@ -137,6 +142,26 @@ describe('renewing from a gesture', () => {
     expect(oauth.calls).toBe(1);
     // The renewal is the point, not the ceremony: the stored token is replaced.
     expect(storage.getItem('cadence_access_token')).toBe('tok-1');
+  });
+
+  it('renews from a finger on release, not on touch-down', async () => {
+    // HTML counts a touch as a gesture at pointerup: a window opened at the
+    // pointerdown of a finger is blocked (Safari on iOS, Chrome on Android).
+    await openApp(5);
+    press('pointerdown', 'touch');
+    await settle();
+    expect(oauth.calls).toBe(0);
+    press('pointerup', 'touch');
+    await settle();
+    expect(oauth.calls).toBe(1);
+  });
+
+  it('renews from a mouse on press, not again on release', async () => {
+    await openApp(5);
+    press('pointerdown', 'mouse');
+    press('pointerup', 'mouse');
+    await settle();
+    expect(oauth.calls).toBe(1);
   });
 
   it('renews when there is no token at all', async () => {

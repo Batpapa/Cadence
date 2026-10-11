@@ -15,8 +15,16 @@ export function setTheme(theme: Theme): void {
   applyTheme();
 }
 
+/** The header's colour per theme (--color-surface), for the browser's own bar:
+ *  Safari's tab bar and status bar, Chrome's address bar on Android. The same
+ *  table lives in index.html's bootstrap, which sets it before first paint. */
+const BAR_COLOR: Record<Theme, string> = { dark: '#141414', light: '#f5f5f5', green: '#edf4e8' };
+
 export function applyTheme(): void {
-  document.documentElement.dataset.theme = getTheme();
+  const theme = getTheme();
+  document.documentElement.dataset.theme = theme;
+  const bar = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (bar) bar.content = BAR_COLOR[theme] ?? BAR_COLOR.dark;
   // The Android app's system bars follow the theme (native/systemBars.ts).
   if (isNative()) void import('../native/systemBars').then(m => m.syncSystemBars());
 }

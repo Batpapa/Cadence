@@ -35,6 +35,10 @@ export function createLongPressHandlers(
   const clear = () => { if (refs.timer.current) { clearTimeout(refs.timer.current); refs.timer.current = null; } };
 
   return {
+    // Marks the element for styles.css: on iOS, a long press is also the
+    // system's own gesture — it selects the word under the finger, or opens a
+    // link's preview — and it came first, the app's menu opening behind it.
+    'data-long-press': '',
     onTouchStart: (e: TouchEvent) => {
       refs.fired.current = false;
       const touch = e.touches[0];
@@ -50,6 +54,9 @@ export function createLongPressHandlers(
       const dy = touch.clientY - refs.start.current.y;
       if (Math.hypot(dx, dy) > moveTolerance) clear();
     },
+    // The system taking the touch over (a scroll, the edge-swipe back): the
+    // timer would otherwise still fire, under a finger long gone.
+    onTouchCancel: clear,
     onTouchEnd: (e: TouchEvent) => {
       clear();
       // Suppress the synthetic click / native follow-up a touch release

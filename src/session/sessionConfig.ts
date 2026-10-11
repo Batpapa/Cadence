@@ -47,6 +47,10 @@ export const ANALYSIS_WINDOW_S = 10;
  *  (~700 MB/h decoded) is what IMPORT_WARN_MINUTES guards against. */
 export const ANALYSIS_SAMPLE_RATE = 48000;
 
+/** The rates FolkFriend accepts (`set_sample_rate` refuses anything else). */
+export const FF_SAMPLE_RATE_MIN = 3952;
+export const FF_SAMPLE_RATE_MAX = 66974;
+
 // ── The whole-file decode, and when to warn about it ─────────────────────────
 // Only ever reached when StreamingFileSource cannot handle the file: the
 // chunked decoder holds a few seconds at a time and does not care how long the

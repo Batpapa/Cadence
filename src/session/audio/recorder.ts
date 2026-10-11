@@ -37,6 +37,9 @@ export function pickRecorderMime(): string {
  *  This is also why converting these files to MP3 would not shrink them: MP3
  *  loses to Opus at equal rate. The lever on size is the rate and the channel
  *  count, both of which are set right here. */
+/** How long stop() waits for the recorder to say it has stopped. */
+const STOP_TIMEOUT_MS = 5000;
+
 function recorderBitrate(mime: string): number {
   return mime.includes('mp4') ? 96_000 : 64_000;
 }
@@ -73,7 +76,15 @@ export class SessionFileRecorder {
   start(): void {
     this.startedAt = Date.now();
     this.recorder.start(RECORDER_TIMESLICE_MS);
+    document.addEventListener('visibilitychange', this.flushWhenHidden);
   }
+
+  /** The page going out of sight is the last moment it surely runs: iOS may
+   *  suspend it, or end it, right after. What the recorder holds since its
+   *  last chunk (up to RECORDER_TIMESLICE_MS) goes to the database now. */
+  private flushWhenHidden = () => {
+    if (document.visibilityState === 'hidden' && this.recorder.state === 'recording') this.recorder.requestData();
+  };
 
   pause(): void {
     if (this.recorder.state !== 'recording') return;
@@ -93,8 +104,14 @@ export class SessionFileRecorder {
     // needs the trailing pause gap folded in.
     if (this.recorder.state === 'paused') this.pausedMs += Date.now() - this.pausedAt;
 
-    const stopped = new Promise<void>(resolve => {
+    document.removeEventListener('visibilitychange', this.flushWhenHidden);
+    // A recorder already inactive — it stopped on its own, on an error — has
+    // fired its `stop` already, and waiting for it hung the session in
+    // "stopping" for good. And one that never answers is given a limit: the
+    // chunks are in the database either way.
+    const stopped = this.recorder.state === 'inactive' ? Promise.resolve() : new Promise<void>(resolve => {
       this.recorder.onstop = () => resolve();
+      setTimeout(resolve, STOP_TIMEOUT_MS);
     });
     if (this.recorder.state !== 'inactive') this.recorder.stop();
     await stopped;

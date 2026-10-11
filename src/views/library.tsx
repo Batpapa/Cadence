@@ -302,8 +302,8 @@ export function LibraryView() {
     const onOutside = (e: MouseEvent) => {
       if (!sortRef.current?.contains(e.target as Node)) setSortOpen(false);
     };
-    document.addEventListener('mousedown', onOutside);
-    return () => document.removeEventListener('mousedown', onOutside);
+    document.addEventListener('pointerdown', onOutside);
+    return () => document.removeEventListener('pointerdown', onOutside);
   }, [sortOpen]);
 
   useEffect(() => {

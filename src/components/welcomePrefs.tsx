@@ -41,10 +41,10 @@ function PrefMenu({ title, button, children }: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); close(); }
     };
-    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('pointerdown', onOutside);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', onOutside);
+      document.removeEventListener('pointerdown', onOutside);
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
