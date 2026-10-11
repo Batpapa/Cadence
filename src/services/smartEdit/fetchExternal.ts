@@ -4,17 +4,17 @@ import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '
 import { tuneFetchStatus, withTuneIdentity } from '../tuneFetchError';
 import type { OpError } from './ops';
 
-// ── Tunes an AI asks for by their source id ─────────────────────────────────
+// ── Tunes created by their source id ─────────────────────────────────────────
 // Moved here from the "Generate with an AI" tab of the new-card window, which
-// the assistant replaced (2026-10-11). The source is authoritative for a
-// tune's identity and its score — the whole reason for fetching: an AI that
-// recalls an id from memory is often wrong, and its id is only accepted
-// because the user gave it. What the AI adds on top is merged in ops.ts.
+// smart edit replaced (2026-10-11). The source is authoritative for a tune's
+// identity and its score — the whole reason for fetching: an id recalled from
+// memory is often wrong, and one is only accepted because the user gave it.
+// What the operation adds on top is merged in ops.ts.
 //
 // Run at Verify, before the batch: the batch itself never waits on the
 // network, so the same fetched cards serve the check and the real run.
 
-/** `preferredSetting` from an AI: a 1-based position ("the 2nd setting"), or
+/** `preferredSetting` in an operation: a 1-based position ("the 2nd setting"), or
  *  {"settingId": N} — a real TheSession setting id. Resolved against the
  *  settings actually fetched, never trusted blindly. */
 function preferredSettingIndex(pref: unknown, settings: TuneSetting[]): number | undefined {

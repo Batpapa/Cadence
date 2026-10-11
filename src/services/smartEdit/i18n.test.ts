@@ -4,7 +4,7 @@ import path from 'node:path';
 import fr from '../../i18n/fr.json';
 import en from '../../i18n/en.json';
 
-// The assistant's window builds three families of keys at run time — an error
+// The smart edit window builds three families of keys at run time — an error
 // code, a summary line, a field name — which the general i18n test cannot
 // follow. Every value they can take is checked here instead, read off the
 // sources so that a new code cannot be added without its words.
@@ -30,18 +30,18 @@ function fields(): string[] {
 
 const has = (key: string) => key in (fr as Record<string, string>) && key in (en as Record<string, string>);
 
-describe('the assistant\'s dynamic keys', () => {
+describe('smart edit\'s dynamic keys', () => {
   it('has words for every error code, in both languages', () => {
     const all = codes();
     expect(all.length).toBeGreaterThanOrEqual(30);
-    expect(all.filter(c => !has(`aiAssistant.error.${c}`))).toEqual([]);
+    expect(all.filter(c => !has(`smartEdit.error.${c}`))).toEqual([]);
   });
 
   it('has words for every summary line and field', () => {
-    const lines = ['card', 'deck', 'folder', 'profile'].flatMap(k => ['create', 'update', 'delete'].map(a => `aiAssistant.change.${k}.${a}`));
+    const lines = ['card', 'deck', 'folder', 'profile'].flatMap(k => ['create', 'update', 'delete'].map(a => `smartEdit.change.${k}.${a}`));
     expect(lines.filter(k => !has(k))).toEqual([]);
     const f = fields();
     expect(f).toContain('tags');
-    expect(f.filter(x => !has(`aiAssistant.field.${x}`))).toEqual([]);
+    expect(f.filter(x => !has(`smartEdit.field.${x}`))).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { AppState, Card } from '../../types';
-import { applyOps, parseAnswer, prepare, hasDeletions, type ApplyContext } from './ops';
+import { applyOps, parseAnswer, prepare, hasDeletions, OPS_FORMAT, type ApplyContext } from './ops';
 
 const card = (id: string, name: string, extra: Partial<Card> = {}): Card => ({
   id, guid: `g-${id}`, name, defaultImportance: 1, tags: [], content: { notes: '', attachments: [] }, ...extra,
@@ -43,18 +43,24 @@ function run(ops: unknown[], s = state(), fetched = new Map<string, Card>()) {
 
 describe('reading the answer', () => {
   it('takes the fenced block out of a chatty answer', () => {
-    const r = parseAnswer('Here you go:\n```json\n{"operations": [{"op": "deleteDeck", "id": "d1"}]}\n```\nDone.');
+    const r = parseAnswer('Here you go:\n```json\n{"format": "cadence-smart-ops-1", "operations": [{"op": "deleteDeck", "id": "d1"}]}\n```\nDone.');
     expect('ops' in r && r.ops).toEqual([{ op: 'deleteDeck', id: 'd1' }]);
   });
 
   it('takes bare JSON too', () => {
-    expect('ops' in parseAnswer('{"operations": []}')).toBe(true);
+    expect('ops' in parseAnswer('{"format": "cadence-smart-ops-1", "operations": []}')).toBe(true);
+  });
+
+  it('refuses a list that does not state its format, or states another', () => {
+    expect(parseAnswer('{"operations": []}')).toEqual({ error: { op: 0, code: 'noFormat', params: { expected: OPS_FORMAT } } });
+    expect(parseAnswer('{"format": "cadence-smart-ops-0", "operations": []}'))
+      .toEqual({ error: { op: 0, code: 'badFormat', params: { found: 'cadence-smart-ops-0', expected: OPS_FORMAT } } });
   });
 
   it('says what is wrong with the rest', () => {
     expect(parseAnswer('no json here')).toEqual({ error: { op: 0, code: 'noJson' } });
     expect('error' in parseAnswer('{"operations": [}') && (parseAnswer('{"operations": [}') as { error: { code: string } }).error.code).toBe('badJson');
-    expect(parseAnswer('{"ops": []}')).toEqual({ error: { op: 0, code: 'noOperations' } });
+    expect(parseAnswer('{"format": "cadence-smart-ops-1", "ops": []}')).toEqual({ error: { op: 0, code: 'noOperations' } });
   });
 });
 

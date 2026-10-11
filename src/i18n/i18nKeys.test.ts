@@ -78,10 +78,10 @@ describe('i18n keys', () => {
   // slip past the test.
   it('lists the keys built dynamically, which nothing here can verify', () => {
     const { dynamic } = collect();
-    // 18 since 2026-10-11: the AI assistant's window builds an error code's
-    // words, a summary line and a field name (`aiAssistant.error.${code}`,
+    // 18 since 2026-10-11: the smart edit window builds an error code's
+    // words, a summary line and a field name (`smartEdit.error.${code}`,
     // `.change.${kind}.${action}`, `.field.${f}`). Every value they can take
-    // is checked in both locales by services/aiAssistant/i18n.test.ts.
+    // is checked in both locales by services/smartEdit/i18n.test.ts.
     //
     // 15 since 2026-09-24: opening an attachment whose bytes are elsewhere
     // builds `attachment.missing.${reason}.title` and `.message`. Raised

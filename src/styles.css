@@ -175,6 +175,7 @@
 @layer components {
   .btn        { @apply px-3 py-1.5 text-sm font-medium rounded transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed; }
   .btn-ghost  { @apply btn text-muted hover:text-primary hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted disabled:hover:bg-transparent; }
+  .btn-soft   { @apply btn bg-accent-dim text-primary hover:bg-accent/25 disabled:opacity-40 disabled:cursor-not-allowed; }
   .btn-primary { @apply btn bg-accent hover:bg-accent-hover text-white; }
   .btn-danger { @apply btn bg-danger/10 hover:bg-danger/20 text-danger; }
   .btn-success { @apply btn bg-success/10 hover:bg-success/20 text-success; }

@@ -21,6 +21,8 @@ module.exports = {
         primary:        'rgb(var(--color-primary-ch) / <alpha-value>)',
         accent:         'rgb(var(--color-accent-ch) / <alpha-value>)',
         'accent-hover': 'var(--color-accent-hover)',
+        // Already translucent in every theme (rgba): no opacity modifier.
+        'accent-dim':   'var(--color-accent-dim)',
         danger:         'rgb(var(--color-danger-ch) / <alpha-value>)',
         success:        'rgb(var(--color-success-ch) / <alpha-value>)',
         warn:           'rgb(var(--color-warn-ch) / <alpha-value>)',
