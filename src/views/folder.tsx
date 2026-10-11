@@ -1,7 +1,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon, StarIcon, LibraryIcon } from '../components/icons';
+import { TrashIcon, StarIcon, LibraryIcon, SparklesIcon } from '../components/icons';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
@@ -463,6 +463,18 @@ export function FolderView({ folderId }: { folderId: string | null }) {
           )}
         </div>
         <div class="flex gap-2 shrink-0">
+          {/* Home only: the assistant works on the whole library, not on the
+              folder it would be opened from. Loaded on demand. */}
+          {!folderId && (
+            <button
+              class="btn-ghost border border-border px-3 inline-flex items-center gap-1.5"
+              title={t('aiAssistant.openTitle')}
+              onClick={() => { void import('../components/aiAssistant').then(m => m.showAiAssistant()); }}
+            >
+              <SparklesIcon size={14} />
+              {t('aiAssistant.open')}
+            </button>
+          )}
           {/* Only the folder view carries the tooltip: its label was shortened
               to "Study", while the home button keeps the self-explanatory
               "Study all" and a tooltip there would just repeat the label. */}

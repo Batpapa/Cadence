@@ -141,6 +141,16 @@ export function HomeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** Sparkles — the AI assistant, on Home. */
+export function SparklesIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 3.5 11.6 8a2 2 0 0 0 1.4 1.4l4.5 1.6-4.5 1.6a2 2 0 0 0-1.4 1.4L10 18.5 8.4 14a2 2 0 0 0-1.4-1.4L2.5 11 7 9.4A2 2 0 0 0 8.4 8Z"/>
+      <path d="M18.5 3v4M16.5 5h4M18 16.5v3M16.5 18h3"/>
+    </svg>
+  );
+}
+
 export function LibraryIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

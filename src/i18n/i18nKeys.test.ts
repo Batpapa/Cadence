@@ -78,6 +78,11 @@ describe('i18n keys', () => {
   // slip past the test.
   it('lists the keys built dynamically, which nothing here can verify', () => {
     const { dynamic } = collect();
+    // 18 since 2026-10-11: the AI assistant's window builds an error code's
+    // words, a summary line and a field name (`aiAssistant.error.${code}`,
+    // `.change.${kind}.${action}`, `.field.${f}`). Every value they can take
+    // is checked in both locales by services/aiAssistant/i18n.test.ts.
+    //
     // 15 since 2026-09-24: opening an attachment whose bytes are elsewhere
     // builds `attachment.missing.${reason}.title` and `.message`. Raised
     // deliberately, which is the point of the ceiling — the six keys those two
@@ -87,6 +92,6 @@ describe('i18n keys', () => {
     // 13 since 2026-09-12: the tune ranking's sort menu builds
     // `sessions.ranking.sort.${mode}`, the same shape the card library's own
     // sort menu already contributes.
-    expect(dynamic.length).toBeLessThanOrEqual(15);
+    expect(dynamic.length).toBeLessThanOrEqual(18);
   });
 });
