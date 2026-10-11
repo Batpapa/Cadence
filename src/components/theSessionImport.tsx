@@ -3,8 +3,8 @@ import { render } from 'preact';
 import { createPortal } from 'preact/compat';
 import type { ComponentChild, RefObject } from 'preact';
 import type { AppContext, Card } from '../types';
-import { generateId, focusIfDesktop, sortByRelevance, copyText } from '../utils';
-import { parseCardPackage, parseCardPackageFromText } from '../services/importExport';
+import { generateId, focusIfDesktop, sortByRelevance } from '../utils';
+import { parseCardPackage } from '../services/importExport';
 import { externaliseIncoming, uploadAttachmentSoon, mutateWithRule } from '../services/attachmentStore';
 import { downloadShare } from '../services/shareService';
 import { mutate, appState } from '../store';
@@ -12,88 +12,17 @@ import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers, fetchTunesByIds,
   tuneResultToCard, findByExternalId, fetchMemberSets, buildSetCards, setExternalId, MemberUnavailableError,
   fetchMemberBookmarks, fetchMemberBookmarkCount, buildTuneCardWithSetting,
-  type MemberSearchResult, type TuneSetting,
+  type MemberSearchResult,
 } from '../services/theSessionService';
 import { defaultTuneRepeat } from '../services/abcService';
-import { describeTune, tuneFetchStatus, TuneUnavailableError, withTuneIdentity, type SkippedTune } from '../services/tuneFetchError';
+import { describeTune, tuneFetchStatus, TuneUnavailableError, type SkippedTune } from '../services/tuneFetchError';
 import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
 import { t } from '../services/i18nService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
 import { showDeckChoiceModal, hasAnyDeck } from './deckSelector';
-import { AI_IMPORT_PROMPT } from './aiImportPrompt';
-import { fetchTuneById as fetchIriTuneById, tuneToCard as iriTuneToCard } from '../services/irishTuneInfoService';
 import { CheckIcon } from './icons';
 import { registerOverlay } from './overlayStack';
-
-/** Merges the AI-authored card onto the real fetched one: the fetch is always
- *  authoritative for the tune's identity/ABC (never trust the AI for that —
- *  the whole reason this hydration exists, see the id-hallucination note
- *  below), but the AI's own touches are kept on top rather than discarded —
- *  title override, notes override, tags/attachments appended. Deliberately
- *  NOT merged: defaultImportance — sanitizeCard() always backfills it to 1
- *  when absent, so there's no way to tell "the AI wrote 1" from "the AI wrote
- *  nothing", and silently overriding a genuine 1 would be worse than not
- *  merging it at all. */
-/** AI-authored, consumed here only — never persisted as its own field, just
- *  its effect (Attachment.preferredIndex on the merged ABC). Two forms, same
- *  "only if explicitly given, never guessed" rule as externalId itself: a
- *  plain number (1-based position — "the 2nd setting listed", for when the
- *  user told the AI which one by position) or {"settingId": N} (a real
- *  TheSession setting id, e.g. from a #settingN URL the user gave) — resolved
- *  by searching the real fetched settings, never trusted blindly. */
-function resolvePreferredSettingIndex(pref: unknown, settings: TuneSetting[]): number | undefined {
-  if (typeof pref === 'number') {
-    const idx = Math.trunc(pref) - 1;
-    return idx >= 0 && idx < settings.length ? idx : undefined;
-  }
-  if (pref && typeof pref === 'object' && 'settingId' in pref) {
-    const settingId = Number((pref as { settingId: unknown }).settingId);
-    const idx = settings.findIndex(s => s.id === settingId);
-    return idx === -1 ? undefined : idx;
-  }
-  return undefined;
-}
-
-async function hydrateExternalCard(card: Card): Promise<Card> {
-  const ext = card.externalId;
-  if (!ext) return card;
-  const sep = ext.indexOf(':');
-  const source = ext.slice(0, sep);
-  const id = parseInt(ext.slice(sep + 1), 10);
-  if (isNaN(id)) return card;
-  // A failure here aborts the whole paste (see doImportPasted) rather than
-  // quietly dropping this one card, so it has to say which card it was on —
-  // and an AI package can mix both sources, hence the full externalId.
-  return withTuneIdentity(ext, card.name || undefined, async () => {
-    let fetched: Card | null = null;
-    if (source === 'thesession') {
-      const tune = await fetchTuneById(id);
-      fetched = tuneResultToCard(tune);
-      const preferredIndex = resolvePreferredSettingIndex((card as { preferredSetting?: unknown }).preferredSetting, tune.settings);
-      if (preferredIndex !== undefined) {
-        const abcAttachment = fetched.content.attachments.find(a => a.type === 'file');
-        if (abcAttachment && abcAttachment.type === 'file') abcAttachment.preferredIndex = preferredIndex;
-      }
-    } else if (source === 'irishtuneinfo') {
-      fetched = iriTuneToCard(await fetchIriTuneById(id));
-    }
-    // An externalId naming a source this build doesn't know is not a failure —
-    // there is simply nothing to hydrate it with.
-    if (!fetched) return card;
-    return {
-      ...fetched,
-      id: card.id,
-      guid: card.guid,
-      name: card.name || fetched.name,
-      tags: [...new Set([...fetched.tags, ...card.tags])],
-      content: {
-        notes: card.content.notes || fetched.content.notes,
-        attachments: [...fetched.content.attachments, ...card.content.attachments],
-      },
-    };
-  });
-}
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
 // Dedupes on externalId when present (two independent shares of the same
@@ -1228,12 +1157,12 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
 
 // ── New Card modal (hierarchical flow) ─────────────────────────────────────────
 
-type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json' | 'json-file' | 'share' | 'ai';
+type Step = 'root' | 'create' | 'import' | 'thesession' | 'irishtuneinfo' | 'json' | 'json-file' | 'share';
 
 const BACK_PARENT: Partial<Record<Step, Step>> = {
   create: 'root', import: 'root',
   thesession: 'import', irishtuneinfo: 'import', json: 'import',
-  'json-file': 'json', share: 'json', ai: 'json',
+  'json-file': 'json', share: 'json',
 };
 
 function ChoiceCard({ icon, label, desc, accentColor, onClick }: {
@@ -1262,7 +1191,6 @@ const ICON_TS = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" str
 const ICON_ITI = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
 const ICON_JSON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 const ICON_SHARE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
-const ICON_AI = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>`;
 
 function RootStep({ navigate }: { navigate: (s: Step) => void }) {
   return (
@@ -1352,7 +1280,6 @@ function JsonStep({ navigate }: { navigate: (s: Step) => void }) {
     <>
       <ChoiceCard icon={ICON_JSON}  label={t('library.export.file')} desc={t('newCard.importJsonDesc')} accentColor="var(--color-warn)"    onClick={() => navigate('json-file')} />
       <ChoiceCard icon={ICON_SHARE} label={t('newCard.share.label')} desc={t('newCard.share.desc')}     accentColor="var(--color-accent)"  onClick={() => navigate('share')} />
-      <ChoiceCard icon={ICON_AI}    label={t('newCard.tabAi')}       desc={t('newCard.aiDesc')}         accentColor="var(--color-success)" onClick={() => navigate('ai')} />
     </>
   );
 }
@@ -1464,76 +1391,6 @@ function ShareStep({ getChosenDeckIds, withDeckChoice }: {
   );
 }
 
-function AiStep({ getChosenDeckIds, withDeckChoice }: {
-  getChosenDeckIds: () => Set<string>;
-  withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
-}) {
-  const [pasted, setPasted] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('');
-  const [copied, setCopied] = useState(false);
-
-  const doImportPasted = async () => {
-    setBusy(true);
-    setStatus(t('newCard.import.importing'));
-    try {
-      const cards = parseCardPackageFromText(pasted);
-      const toHydrate = cards.filter(c => c.externalId);
-      const hydrated: Card[] = cards.filter(c => !c.externalId);
-      // All-or-nothing, like every other batch path: the first tune that won't
-      // fetch aborts the whole paste and nothing reaches the library. A
-      // half-imported package is the worse outcome — the user can't tell which
-      // half they got, and re-pasting would then double up what did land.
-      for (let i = 0; i < toHydrate.length; i++) {
-        if (toHydrate.length > 1) setStatus(t('theSession.status.fetchingTunes', { loaded: i, total: toHydrate.length }));
-        hydrated.push(await hydrateExternalCard(toHydrate[i]!));
-      }
-      if (hydrated.length === 0) { setStatus(t('newCard.import.empty')); setBusy(false); return; }
-      withDeckChoice(
-        () => { void (async () => {
-          try { setStatus(await importCardPackage(hydrated, getChosenDeckIds())); }
-          catch (e) { setStatus(tuneFetchStatus(e, 'theSession.error')); }
-          finally { setBusy(false); }
-        })(); },
-        () => { setStatus(''); setBusy(false); },
-      );
-    } catch (e) {
-      setStatus(tuneFetchStatus(e, 'theSession.error'));
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <p class="text-xs text-muted leading-relaxed">{t('newCard.ai.intro')}</p>
-      <pre class="text-[11px] font-mono text-primary/80 bg-bg border border-border rounded-lg p-3 max-h-48 overflow-y-auto whitespace-pre-wrap">{AI_IMPORT_PROMPT}</pre>
-      <button
-        class="btn-primary w-full text-sm"
-        onClick={() => {
-          void copyText(AI_IMPORT_PROMPT).then(ok => {
-            if (!ok) return;
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          });
-        }}
-      >
-        {copied ? t('newCard.ai.copied') : t('newCard.ai.copy')}
-      </button>
-      <label class="label">{t('newCard.ai.pasteLabel')}</label>
-      <textarea
-        class="input text-xs font-mono min-h-[6rem] resize-y"
-        placeholder={t('newCard.ai.pastePlaceholder')}
-        value={pasted}
-        onInput={(e) => setPasted((e.target as HTMLTextAreaElement).value)}
-      />
-      <button class="btn-primary w-full text-sm" disabled={busy || !pasted.trim()} onClick={() => void doImportPasted()}>
-        {t('newCard.ai.pasteBtn')}
-      </button>
-      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
-    </>
-  );
-}
-
 /** Opens the modal straight on one source's lookup, already filled in.
  *
  *  The only caller today is the repair of a broken card reference, which knows
@@ -1594,7 +1451,6 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
     json:         t('newCard.tabImportJson'),
     'json-file':  t('newCard.tabImportJson'),
     share:        t('newCard.tabImportJson'),
-    ai:           t('newCard.tabAi'),
   };
 
   const onOpenCard = (cardId: string) => { ctx.navigate({ view: 'card', cardId }); onClose(); };
@@ -1632,7 +1488,6 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
           {step === 'json' && <JsonStep navigate={setStep} />}
           {step === 'json-file' && <JsonFileStep getChosenDeckIds={() => chosenDeckIdsRef.current} withDeckChoice={withDeckChoice} />}
           {step === 'share' && <ShareStep getChosenDeckIds={() => chosenDeckIdsRef.current} withDeckChoice={withDeckChoice} />}
-          {step === 'ai' && <AiStep getChosenDeckIds={() => chosenDeckIdsRef.current} withDeckChoice={withDeckChoice} />}
         </div>
       </div>
     </div>

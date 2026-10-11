@@ -28,11 +28,14 @@ function isValidBackup(data: unknown): data is Record<string, unknown> {
  *  opens in a text editor. Anyone who does can run it through a prettifier.
  *  On a phone it also doubled the peak memory an export has to hold at once,
  *  which is the resource the .cdbf size ceiling exists to protect. */
-export async function exportBackup(user: AppState, gate: ExportGate): Promise<void> {
+export async function exportBackup(user: AppState, gate: ExportGate): Promise<boolean> {
   const state = await inlinedState(user, gate);
-  if (!state) return;
+  if (!state) return false;
   const { id: _id, ...data } = state;
   download(JSON.stringify(data), `cadence-backup-${toDateStr(new Date())}.cdb`);
+  // Launched, not finished: a browser never says when a download is done —
+  // which is why the AI assistant asks the user to confirm it themselves.
+  return true;
 }
 
 /** Same format as exportBackup, for a stored safety-net snapshot: restoring
