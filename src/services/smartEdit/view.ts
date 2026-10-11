@@ -5,12 +5,13 @@ import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection, type TuneAnaly
 import { folderPathOf, parentFolderOf, sessionTreeOf } from '../../session/sessionTree';
 import { detectionReviewId } from '../../session/reviewLink';
 
-// ── What the AI is shown of the library (2026-10-11) ─────────────────────────
-// The user's own data as a plain document: cards, decks, folders, profiles and
-// review history, plus the tune analyser's analyses to READ — "put the tunes
-// detected more than three times in a deck" — which no operation can change.
-// The settings are deliberately left out, and the AI cannot touch what it is
-// not shown.
+// ── Smart edit: the view of the library (2026-10-11) ─────────────────────────
+// What an external tool (a script, an AI) is given: the user's own data as a
+// plain document — cards, decks, folders, profiles and review history, plus
+// the tune analyser's analyses to READ ("put the tunes detected more than
+// three times in a deck"), which no operation can change. A view made for
+// smart edit, not the database itself: the settings are deliberately left
+// out, and what is not shown cannot be touched.
 //
 // Attachments come in two sizes, the user's choice: by name and size only, or
 // with their content — text as text, anything else in base64. Measured on a
@@ -20,14 +21,16 @@ import { detectionReviewId } from '../../session/reviewLink';
 // Ids are the real ones. Long, but the same on every device the library syncs
 // to, and an AI copies them faithfully; one it gets wrong is refused at Verify.
 
-const VIEW_FORMAT = 'cadence-ai-1';
+/** The view's format, written into it. It may change; the instructions name
+ *  the one they describe. */
+export const VIEW_FORMAT = 'cadence-smart-view-1';
 
 type AttachmentView =
   | { index: number; type: 'file'; name: string; mimeType: string; bytes: number; generated?: true; text?: string; base64?: string }
   | { index: number; type: 'embed'; url: string; mode: 'embed' | 'link'; title?: string }
   | { index: number; type: 'card'; cardId: string; title: string };
 
-export interface AiView {
+export interface SmartView {
   format: string;
   exportedAt: string;
   attachmentContentIncluded: boolean;
@@ -131,7 +134,7 @@ function attachmentView(att: Attachment, index: number, cards: Record<string, Ca
     ...(generated ? { generated: true as const } : {}),
   };
   // `data` is filled in for an externalised file only when the content was
-  // asked for (the copy was inlined first, see buildAiView).
+  // asked for (the copy was inlined first, see buildData).
   if (withContent && att.data && !generated) {
     if (isTextual(att.mimeType, att.name)) view.text = base64ToText(att.data);
     else view.base64 = att.data;
@@ -141,8 +144,8 @@ function attachmentView(att: Attachment, index: number, cards: Record<string, Ca
 
 /** The view of `state`. `cards` replaces the state's own when the caller has
  *  inlined a copy (attachment content asked for). */
-export function aiView(state: AppState, withContent: boolean, cards: Record<string, Card> = state.cards, now = Date.now()): AiView {
-  const folders: AiView['folders'] = [];
+export function smartView(state: AppState, withContent: boolean, cards: Record<string, Card> = state.cards, now = Date.now()): SmartView {
+  const folders: SmartView['folders'] = [];
   const seen = new Set<string>();
   const walk = (ids: string[], parentId: string | null) => {
     for (const id of ids) {
@@ -210,7 +213,7 @@ export function aiView(state: AppState, withContent: boolean, cards: Record<stri
 /** The view as JSON an AI reads easily and a person can scan: one profile,
  *  folder, deck, card or review list per line, and nothing indented beyond
  *  that — indentation would cost tokens on every line of a large library. */
-export function viewJson(view: AiView): string {
+export function viewJson(view: SmartView): string {
   const lines: string[] = ['{'];
   const entries = Object.entries(view);
   entries.forEach(([key, value], i) => {

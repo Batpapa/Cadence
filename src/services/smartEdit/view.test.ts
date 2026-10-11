@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { AppState } from '../../types';
-import { aiView, viewJson } from './view';
-import { aiDocument } from './instructions';
+import { smartView, viewJson, VIEW_FORMAT } from './view';
+import { smartEditInstructions } from './instructions';
+import { OPS_FORMAT, parseAnswer } from './ops';
 
 function state(): AppState {
   return {
@@ -31,14 +32,14 @@ function state(): AppState {
 
 describe('what the AI is shown', () => {
   it('flattens folders in tree order and places decks', () => {
-    const v = aiView(state(), false);
+    const v = smartView(state(), false);
     expect(v.folders).toEqual([{ id: 'f1', name: 'Irish', parentId: null }, { id: 'f2', name: 'Sub', parentId: 'f1' }]);
     expect(v.decks).toEqual([{ id: 'd1', name: 'Jigs', folderId: 'f2', favorite: true, cards: [{ cardId: 'c1', importance: 2 }] }]);
     expect(v.profiles).toEqual([{ id: 'p1', name: 'Me', current: true }]);
   });
 
   it('shows attachments by name and size only, unless content is asked for', () => {
-    const without = aiView(state(), false).cards[0]!['attachments'];
+    const without = smartView(state(), false).cards[0]!['attachments'];
     expect(without).toEqual([
       { index: 0, type: 'file', name: 'kesh.abc', mimeType: 'text/plain', bytes: 7 },
       { index: 1, type: 'file', name: 'kesh.mp3', mimeType: 'audio/mpeg', bytes: 12345 },
@@ -47,13 +48,13 @@ describe('what the AI is shown', () => {
     const s = state();
     const inlined = structuredClone(s.cards);
     (inlined['c1']!.content.attachments[1] as { data: string }).data = btoa('ID3');
-    const withContent = aiView(s, true, inlined).cards[0]!['attachments'] as Array<Record<string, unknown>>;
+    const withContent = smartView(s, true, inlined).cards[0]!['attachments'] as Array<Record<string, unknown>>;
     expect(withContent[0]!['text']).toBe('X:1\nK:G');
     expect(withContent[1]!['base64']).toBe(btoa('ID3'));
   });
 
   it('marks reviews that came from the analyser, and leaves the analyses and settings out', () => {
-    const v = aiView(state(), false);
+    const v = smartView(state(), false);
     expect(v.reviews).toEqual([{ profileId: 'p1', cardId: 'c1', entries: [
       ['2026-01-01T10:00:00.000Z', 'good'], ['2026-02-01T10:00:00.000Z', 'easy', 'linked'],
     ] }]);
@@ -79,7 +80,7 @@ describe('what the AI is shown', () => {
       folders: { af: { id: 'af', name: '2026', folderIds: [], sessionIds: ['old'] } }, rootFolderIds: ['af'],
     } } as never;
     s.cardWorks['p1:c1']!.history.push({ ts: Date.parse('2026-01-02T00:00:00.000Z'), rating: 'hard', id: 'analysis:old:d2' });
-    const v = aiView(s, false);
+    const v = smartView(s, false);
     expect(v.analyses.map(a => a.name)).toEqual(['New', 'Old']);
     expect(v.analyses[1]).toMatchObject({ duration: 3600, source: 'live', folder: '2026' });
     expect(v.analyses[1]!.detections).toEqual([
@@ -88,10 +89,21 @@ describe('what the AI is shown', () => {
     ]);
   });
 
-  it('puts the data at the end of the instructions, as one parsable block', () => {
-    const doc = aiDocument(aiView(state(), false));
-    const block = doc.slice(doc.lastIndexOf('```json') + 7, doc.lastIndexOf('```'));
-    expect(JSON.parse(block).cards).toHaveLength(2);
-    expect(doc.indexOf('## Operations')).toBeLessThan(doc.lastIndexOf('```json'));
+  it('is plain JSON that states its format', () => {
+    const data = JSON.parse(viewJson(smartView(state(), false)));
+    expect(data.format).toBe(VIEW_FORMAT);
+    expect(data.cards).toHaveLength(2);
+  });
+
+  it('is described by instructions that name both formats', () => {
+    const doc = smartEditInstructions();
+    expect(doc).toContain(`\`${VIEW_FORMAT}\``);
+    expect(doc).toContain(`"format": "${OPS_FORMAT}"`);
+  });
+
+  it('gives an example that parses as it stands', () => {
+    const doc = smartEditInstructions();
+    const example = doc.slice(doc.indexOf('## Example'));
+    expect('ops' in parseAnswer(example)).toBe(true);
   });
 });

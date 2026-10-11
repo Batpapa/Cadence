@@ -7,11 +7,13 @@ import { findSetsContaining } from '../cardRefService';
 import { safeExternalUrl } from '../embedService';
 import { typeFromUrl } from '../remoteFile';
 
-// ── The AI assistant's operations (2026-10-11) ───────────────────────────────
-// What an AI sends back is a LIST OF OPERATIONS, never the whole library
-// rewritten: an AI that returns a document shortens or abridges it, and every
-// card it dropped would read as a deletion. Here, whatever is not named stays
-// as it is, and a deletion is always an operation of its own.
+// ── Smart edit: the operations (2026-10-11) ──────────────────────────────────
+// What an external tool (a script, an AI) sends back is a LIST OF OPERATIONS,
+// never the whole library rewritten: the data goes out as a view of the
+// library, and what comes back transforms it. A rewritten document gets
+// shortened or abridged — by an AI especially — and every card dropped would
+// read as a deletion. Here, whatever is not named stays as it is, and a
+// deletion is always an operation of its own.
 //
 // All or nothing, decided by the user: the batch is run first on a copy of the
 // state ("Verify"), and the smallest invalid operation blocks the whole of it.
@@ -71,6 +73,11 @@ type Op = Raw & { op: string };
 
 // ── Reading the answer ───────────────────────────────────────────────────────
 
+/** The format of a list of operations, required in every one. The format may
+ *  change: a list written for another version — a script kept since, an
+ *  answer built on old instructions — is refused rather than misread. */
+export const OPS_FORMAT = 'cadence-smart-ops-1';
+
 /** The operations in what was pasted: a fenced ```json block if there is one
  *  (an AI often talks around it), else the outermost braces. */
 export function parseAnswer(text: string): { ops: Op[] } | { error: OpError } {
@@ -86,6 +93,9 @@ export function parseAnswer(text: string): { ops: Op[] } | { error: OpError } {
   try { data = JSON.parse(body); } catch (e) {
     return { error: { op: 0, code: 'badJson', params: { message: e instanceof Error ? e.message : String(e) } } };
   }
+  const format = (data as Raw | null)?.['format'];
+  if (format === undefined) return { error: { op: 0, code: 'noFormat', params: { expected: OPS_FORMAT } } };
+  if (format !== OPS_FORMAT) return { error: { op: 0, code: 'badFormat', params: { found: String(format), expected: OPS_FORMAT } } };
   const ops = (data as Raw | null)?.['operations'];
   if (!Array.isArray(ops)) return { error: { op: 0, code: 'noOperations' } };
   return { ops: ops as Op[] };
@@ -535,7 +545,7 @@ class Runner {
     this.s.cards[id] = card;
     const fetchedTags = card.tags;
     this.common(card, op, []);
-    // A fetched tune keeps its source's tags, the AI's are added to them.
+    // A fetched tune keeps its source's tags, the operation's are added to them.
     if (externalId && op['tags'] !== undefined) card.tags = [...new Set([...fetchedTags, ...card.tags])];
     if (op['attachments'] !== undefined) {
       card.content.attachments.push(...list(op, 'attachments').map(a => this.attachment(a)));

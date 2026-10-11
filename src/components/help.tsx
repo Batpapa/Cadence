@@ -67,7 +67,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
           { style: 'metrics',    heading: t('help.home.stats.heading'),    items: [t('help.home.stats.1'), t('help.home.stats.2'), t('help.home.stats.3'), t('help.home.stats.4'), t('help.home.stats.5')] },
           { style: 'logic',      heading: t('help.home.study.heading'),    items: [t('help.home.study.1'), t('help.home.study.2')] },
           { style: 'logic',      heading: t('help.home.organize.heading'), items: [t('help.home.organize.1'), t('help.home.organize.2'), t('help.home.organize.3'), t('help.home.organize.4')] },
-          { style: 'logic',      heading: t('help.home.ai.heading'),       items: [t('help.home.ai.1'), t('help.home.ai.2'), t('help.home.ai.3')] },
+          { style: 'logic',      heading: t('help.home.smartEdit.heading'), items: [t('help.home.smartEdit.1'), t('help.home.smartEdit.2'), t('help.home.smartEdit.3')] },
           { style: 'metrics',    heading: t('help.home.dots.heading'),     items: [t('help.home.dots.1'), t('help.home.dots.2'), t('help.home.dots.3')] },
         ],
       };
