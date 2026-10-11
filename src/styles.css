@@ -151,6 +151,14 @@
   /* What a long press opens a menu on (longPress.ts): no word selected, no
      link preview, competing with it. */
   html.ios [data-long-press] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  /* Installed on an iPhone, the status bar is see-through with WHITE text
+     (black-translucent, index.html): unreadable over a light header. A dark
+     band the status bar's height goes under it, on every screen, above
+     everything. Nothing at all where there is no status bar inset. */
+  html.ios.standalone:not([data-theme="dark"]) body::before {
+    content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--safe-top);
+    background: #141414; z-index: 2147483647; pointer-events: none;
+  }
   /* Prevent double-tap zoom on interactive elements (major cause of keyboard flicker on Android) */
   button, input, select, textarea, a, label, [role="button"] { touch-action: manipulation; }
   input[type=number]::-webkit-inner-spin-button,
