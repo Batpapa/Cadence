@@ -3,12 +3,12 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { render, Fragment } from 'preact';
 import type { ComponentChildren } from 'preact';
 import type { AppContext, IncipitDisplay } from '../types';
-import { generateId, emptyState } from '../utils';
+import { generateId, emptyState, ownFormatAccept } from '../utils';
 import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, freeSyncedSessionAudio } from '../session/db';
 import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
 import { TrashIcon, ResetIcon, HelpIcon } from './icons';
 import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal } from './modal';
-import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW } from '../services/zoomService';
+import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW, zoomWorks } from '../services/zoomService';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
 import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { applyExternalData } from '../services/migration';
@@ -24,7 +24,7 @@ import { findDriveOrphans, trashDriveOrphans, driveStorageUsage, OrphanScanUnava
 import { listSnapshots, getSnapshotState, clearSnapshotsForUser, deleteSnapshot, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
 import { APP_BUILD, commitUrl } from '../services/updateService';
-import { isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
+import { initDriveClient, isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
 import { appState, getContext } from '../store';
@@ -323,6 +323,11 @@ function DriveRow() {
   // Re-read after subscribing — see header.tsx: a status change between first
   // render and this effect would otherwise never reach the component.
   useEffect(() => { setStatus(getDriveStatus()); return onStatusChange(setStatus); }, []);
+  // Google's sign-in script, loaded as soon as this row shows rather than by
+  // the press on "Connect": the sign-in window has to open within the press,
+  // and Safari only allows that for about a second after it — less than the
+  // script can take to arrive. Same as the welcome screen (appRoot.tsx).
+  useEffect(() => { void initDriveClient().catch(() => { /* retried by the press itself */ }); }, []);
 
   const handleConnect = async (allowSharedAccount = false) => {
     try {
@@ -660,7 +665,7 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
         <span class="inline-flex items-center" dangerouslySetInnerHTML={{ __html: IMPORT_SVG }} />
         <input
           type="file"
-          accept=".cdb,.cdbf"
+          accept={ownFormatAccept('.cdb,.cdbf')}
           class="hidden"
           disabled={busy}
           onChange={(e) => {
@@ -1263,14 +1268,18 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
 
   return (
     <>
-      <Row label={t('settings.zoom')}>
-        <div class="flex items-center gap-1">
-          <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomOut()} onClick={() => { zoomOut(); bump(x => x + 1); redrawShell(); }}>−</button>
-          <span class="text-sm font-mono w-12 text-center tabular-nums">{getZoom()}%</span>
-          <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomIn()} onClick={() => { zoomIn(); bump(x => x + 1); redrawShell(); }}>+</button>
-        </div>
-      </Row>
-      <Sep />
+      {/* No zoom row where the browser's CSS zoom is the old kind: Cadence
+          stays at 100 % there (zoomService.zoomWorks). */}
+      {zoomWorks() && <>
+        <Row label={t('settings.zoom')}>
+          <div class="flex items-center gap-1">
+            <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomOut()} onClick={() => { zoomOut(); bump(x => x + 1); redrawShell(); }}>−</button>
+            <span class="text-sm font-mono w-12 text-center tabular-nums">{getZoom()}%</span>
+            <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomIn()} onClick={() => { zoomIn(); bump(x => x + 1); redrawShell(); }}>+</button>
+          </div>
+        </Row>
+        <Sep />
+      </>}
 
       <Row label={t('settings.theme')}>
         <div style="flex:0 0 auto">

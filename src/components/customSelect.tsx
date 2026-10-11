@@ -35,6 +35,8 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
 
   useEffect(() => {
     if (!open) return;
+    // pointerdown, not mousedown: Safari on iOS only sends mouse events to what
+    // it deems clickable, so a tap on empty space left the list open.
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
       // BOTH, because the panel is no longer a descendant of the wrapper:
@@ -43,17 +45,20 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
       // nothing.
       if (!ref.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false);
     };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
 
   // The panel is placed once, in viewport coordinates, so anything that moves
   // the trigger afterwards would leave it stranded beside nothing. Closing is
   // the honest answer — a select is a moment, not a state to maintain. Capture
   // phase because the scrolling is usually a container's, not the window's.
+  //
+  // Except the list's own scrolling — a long list scrolled to reach an option
+  // closed under the finger. Capture phase sees that one too.
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
+    const close = (e: Event) => { if (!panelRef.current?.contains(e.target as Node)) setOpen(false); };
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {

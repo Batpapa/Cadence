@@ -1,6 +1,6 @@
 import LZString from 'lz-string';
 import type { AbcOpenMode, AbcPaper, FileEntry } from '../types';
-import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop, downloadBlob } from '../utils';
+import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop, downloadBlob, isAppleTouchDevice } from '../utils';
 import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
@@ -8,6 +8,7 @@ import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, Pl
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingTripletIcon, SwingDottedIcon,
   WarningTriangleIcon } from './icons';
 import { t } from '../services/i18nService';
+import { unlockAbcjsAudio } from '../services/audioSession';
 import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwing, meterCanSwing,
   ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
@@ -709,6 +710,8 @@ export function showPreviewModal(
 
   } else if (m.startsWith('video/')) {
     const video = document.createElement('video'); video.controls = true; video.className = 'max-w-full rounded';
+    // In the dialog, not taken over to full screen the moment it plays (iPhone).
+    video.playsInline = true;
     video.style.maxHeight = mediaMaxH;
     video.src = entryToObjectUrl(entry);
     body.appendChild(video);
@@ -746,7 +749,13 @@ export function showPreviewModal(
   } else if (m === 'application/pdf') {
     // `!== false`, not truthy: a browser too old to have the property at all
     // is a desktop one with its viewer, and keeps getting the frame it had.
-    if (navigator.pdfViewerEnabled !== false) {
+    //
+    // Not on an iPhone or an iPad, which say they have a viewer and, in a
+    // frame, show the first page alone with no way to scroll to the next. They
+    // get pdf.js — when they can run it: pdf.js 6 needs Promise.withResolvers
+    // (Safari 17.4) and does not polyfill it; older ones keep the first page.
+    const pdfJsRuns = typeof (Promise as { withResolvers?: unknown }).withResolvers === 'function';
+    if (navigator.pdfViewerEnabled !== false && !(isAppleTouchDevice() && pdfJsRuns)) {
       // An <embed> loading a blob: URL is governed by the page's object-src —
       // which must keep allowing blob: (webpack.config.js's CSP). With 'none'
       // this rendered an empty frame and said nothing (2026-09-06 to 14).
@@ -996,6 +1005,9 @@ export function showPreviewModal(
     const controls = document.createElement('div');
     controls.id = `abc-controls-${uid}`;
     controls.className = 'shrink-0';
+    // Capture phase: before abcjs's own handlers, still inside the tap — the
+    // only moment Safari lets its audio start (audioSession.ts).
+    controls.addEventListener('click', unlockAbcjsAudio, true);
     transportBar.appendChild(controls);
 
     // The rest of the row: the key, the speed, the click and the swing, in the
@@ -2271,6 +2283,15 @@ export function showPreviewModal(
         if (visualObj && visualObj.length > 0) {
           if (!synthControl) {
             synthControl = new abcjs.synth.SynthController();
+            // `go()` prepares the sound, and the tune is handed over with
+            // userAction=true, so it runs as soon as the score is drawn — out
+            // of any tap, where Safari refuses to start audio. abcjs then left
+            // `isLoading` set for good, and its play button waited on it
+            // forever (runWhenReady sleeps while it is set). Cleared on
+            // failure, the next press prepares it again, from inside the tap.
+            // abcjs calls `self.go()`, so replacing the property is enough.
+            const go = synthControl.go.bind(synthControl);
+            synthControl.go = () => go().catch((err: unknown) => { synthControl.isLoading = false; throw err; });
             stopAudio = () => { try { synthControl.pause(); } catch { /* ignore */ } };
             synthControl.load(`#${controls.id}`, cursorControl, {
               displayLoop: true,
@@ -2365,6 +2386,12 @@ export function showPreviewModal(
             // the tune back where it was) raced it.
             if (synthControl.warp !== tempoPercent) return synthControl.setWarp(tempoPercent);
             return undefined;
+          }).catch(() => {
+            // Preparing the sound was refused: Safari, outside a tap (see the
+            // `go` wrapper above). It is prepared again at the first press,
+            // at whatever speed `warp` says then, so the speed is set here by
+            // hand, and the loop below still goes on.
+            synthControl.warp = tempoPercent;
           }).then(() => {
             // Looping on by default — a score is opened to be practised
             // against, and reaching for the button on every pass is friction.
@@ -2392,6 +2419,7 @@ export function showPreviewModal(
         const tag = active?.tagName.toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || active?.isContentEditable) return;
         e.preventDefault(); // or the page scrolls under the modal
+        unlockAbcjsAudio();
         void synthControl?.play();
       };
       document.addEventListener('keydown', onKeyDown);

@@ -966,7 +966,7 @@ let gestureRenewalRefused = false;
  * the request inside a genuine activation. With consent already granted and a
  * live Google session, GIS closes its own window.
  *
- * Deliberately pointerdown only, not keydown: typing is not a decision, and a
+ * Deliberately a press only, not keydown: typing is not a decision, and a
  * window opening mid-sentence would be worse than the problem it fixes.
  */
 /** Work that needs Drive but does not live in this module: a live recording's
@@ -975,7 +975,7 @@ let gestureRenewalRefused = false;
  *
  *  Registered rather than imported, because the renewal below has to know
  *  whether ANY of it is waiting without this module learning what a recording
- *  is. `pending` must be synchronous and cheap: it is asked inside a pointerdown
+ *  is. `pending` must be synchronous and cheap: it is asked inside a press
  *  handler. */
 export interface DrivePendingWork {
   pending: () => boolean;
@@ -997,7 +997,12 @@ export function initDriveTokenRenewal(): void {
   // The Android app renews silently whenever a token is needed
   // (requestNativeToken): there is no window to smuggle into a click.
   if (isNative()) return;
-  document.addEventListener('pointerdown', () => {
+  // The press that counts as a gesture depends on the pointer (HTML's
+  // "activation-triggering input event"): pointerdown for a mouse, but
+  // pointerup for a finger or a pen. On a touch screen the pointerdown came
+  // too early — the popup was blocked, and the hourly renewal never happened
+  // by touch (Safari on iOS, Chrome on Android alike).
+  const renew = () => {
     if (gestureRenewalRefused || tokenRequest) return;
     if (!isDriveConnected() || conflictPending) return;
     if (document.visibilityState !== 'visible') return;
@@ -1027,7 +1032,9 @@ export function initDriveTokenRenewal(): void {
       },
       () => { gestureRenewalRefused = true; },
     );
-  }, true);
+  };
+  document.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') renew(); }, true);
+  document.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') renew(); }, true);
 }
 
 export function initDriveVisibilitySync(): void {

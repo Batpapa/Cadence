@@ -27,6 +27,9 @@
      these, never env(safe-area-inset-*) directly. */
   --safe-top:    calc(env(safe-area-inset-top, 0px) / var(--zoom-factor, 1));
   --safe-bottom: calc(env(safe-area-inset-bottom, 0px) / var(--zoom-factor, 1));
+  /* The notch and the Dynamic Island sit on a side in landscape. */
+  --safe-left:   calc(env(safe-area-inset-left, 0px) / var(--zoom-factor, 1));
+  --safe-right:  calc(env(safe-area-inset-right, 0px) / var(--zoom-factor, 1));
   /* Direct hex values — used in inline styles and SVG attributes */
   --color-bg:             #0a0a0a;
   --color-surface:        #141414;
@@ -137,7 +140,17 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   /* Tracks the live visual viewport (dvh reacts natively to mobile browser chrome
      showing/hiding) instead of a JS snapshot of window.innerHeight — see zoomService.ts. */
-  #app { height: calc(100dvh / var(--zoom-factor, 1)); }
+  #app { height: calc(100dvh / var(--zoom-factor, 1)); padding-left: var(--safe-left); padding-right: var(--safe-right); }
+  /* iOS (class set by index.html's bootstrap). The shell never scrolls, only
+     panes inside it: without these, a pane pulled past its end hands the drag
+     on to the page, which rubber-bands the whole app when installed and, in a
+     Safari tab, can pull to refresh — a reload in the middle of a live. And no
+     double-tap zoom on text either; pinching still zooms. */
+  html.ios, html.ios body { overscroll-behavior: none; touch-action: manipulation; }
+  html.ios .overflow-y-auto, html.ios .overflow-auto { overscroll-behavior-y: contain; }
+  /* What a long press opens a menu on (longPress.ts): no word selected, no
+     link preview, competing with it. */
+  html.ios [data-long-press] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   /* Prevent double-tap zoom on interactive elements (major cause of keyboard flicker on Android) */
   button, input, select, textarea, a, label, [role="button"] { touch-action: manipulation; }
   input[type=number]::-webkit-inner-spin-button,
@@ -215,20 +228,23 @@
   .card-checkbox {
     appearance: none; -webkit-appearance: none;
     @apply w-3.5 h-3.5 rounded cursor-pointer shrink-0 relative border border-muted bg-transparent transition-colors;
-    &:checked { @apply bg-accent border-accent; }
-    &:checked::after {
-      content: '';
-      position: absolute; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4l3 3 5-6' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: center; background-size: 75%;
-    }
-    &:indeterminate { @apply bg-accent border-accent; }
-    &:indeterminate::after {
-      content: '';
-      position: absolute; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 2' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='2' y1='1' x2='8' y2='1' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: center; background-size: 75%;
-    }
+  }
+  /* Flat selectors, not `&:checked` nesting: the build does not flatten CSS
+     nesting, and Safari before 16.5 drops a nested rule — the box never
+     looked checked. */
+  .card-checkbox:checked { @apply bg-accent border-accent; }
+  .card-checkbox:checked::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4l3 3 5-6' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center; background-size: 75%;
+  }
+  .card-checkbox:indeterminate { @apply bg-accent border-accent; }
+  .card-checkbox:indeterminate::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 2' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='2' y1='1' x2='8' y2='1' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center; background-size: 75%;
   }
 }
 

@@ -9,6 +9,11 @@
   },
   "private": true,
   "license": "AGPL-3.0-or-later",
+  "browserslist": [
+    "defaults",
+    "safari >= 15.4",
+    "ios_saf >= 15.4"
+  ],
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack serve --mode development",

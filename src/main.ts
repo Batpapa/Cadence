@@ -32,6 +32,10 @@ import { anyOverlayOpen, closeTopOverlay } from './components/overlayStack';
 import { isNative } from './native/platform';
 import type { User } from './types';
 
+// index.html's bootstrap found a browser too old to run Cadence and is putting
+// up a message instead; nothing below may start (see the check there).
+if (document.documentElement.dataset.unsupported) throw new Error('Cadence: browser too old');
+
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
 }
@@ -63,7 +67,10 @@ initPWA();
 // best-effort storage means and why this exists at all.
 void ensurePersistentStorage();
 
-screen.orientation?.unlock?.();
+// Safari (16.4+) throws, synchronously, when the page is not visible: a tab
+// opened in the background, a reload while hidden. Uncaught here, that ended
+// the whole module before boot — a blank page, not even the recovery screen.
+try { screen.orientation?.unlock?.(); } catch { /* nothing was locked */ }
 
 function blankUser(): User {
   const user = emptyState();

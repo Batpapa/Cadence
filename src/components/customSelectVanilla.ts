@@ -109,10 +109,10 @@ export function mkCustomSelect(
   trigger.onclick = (e) => { e.stopPropagation(); isOpen ? close() : open(); };
 
   const onOutside = (e: MouseEvent) => {
-    if (!wrap.isConnected) { close(); document.removeEventListener('mousedown', onOutside); return; }
+    if (!wrap.isConnected) { close(); document.removeEventListener('pointerdown', onOutside); return; }
     if (!wrap.contains(e.target as Node) && !dropdown.contains(e.target as Node)) close();
   };
-  document.addEventListener('mousedown', onOutside);
+  document.addEventListener('pointerdown', onOutside);
 
   renderLabel();
   renderItems();

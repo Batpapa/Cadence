@@ -3,7 +3,7 @@ import { appState } from '../store';
 import { showModal, renderModalBody, closeModal } from './modal';
 import { askIncompleteExport } from './incompleteExportModal';
 import { t } from '../services/i18nService';
-import { copyText, downloadTextFile, toDateStr } from '../utils';
+import { copyText, copyTextWhenReady, downloadTextFile, toDateStr } from '../utils';
 import { inlineExternalAttachments, mutateWithRule } from '../services/attachmentStore';
 import { exportBackup } from '../services/importExport';
 import { aiView } from '../services/aiAssistant/view';
@@ -78,9 +78,18 @@ function AiAssistant({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const copy = () => withDocument(async (doc) => {
-    if (await copyText(doc)) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
-  });
+  // Not through withDocument: the copy has to START within the press, before
+  // the document is built (copyTextWhenReady says why).
+  const copy = async () => {
+    setPreparing(true);
+    try {
+      const doc = buildDocument(withContent);
+      void doc.then(d => { if (d !== null) setSize(d.length); }, () => { /* reported by the copy below */ });
+      if (await copyTextWhenReady(doc)) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    } finally {
+      setPreparing(false);
+    }
+  };
   const download = () => withDocument(doc => downloadTextFile(doc, `cadence-ia-${toDateStr(new Date())}.md`, 'text/markdown'));
 
   const changeAnswer = (text: string) => {

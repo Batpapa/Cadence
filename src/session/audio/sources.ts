@@ -1,6 +1,7 @@
 import { openMicForMusic, openDeviceAudio } from './capture';
 import { attachPcmWorklet } from './pcmWorklet';
-import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE, DEBUG_LIVE_AUDIO } from '../sessionConfig';
+import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE, DEBUG_LIVE_AUDIO, FF_SAMPLE_RATE_MIN, FF_SAMPLE_RATE_MAX } from '../sessionConfig';
+import { beginCaptureSession, endCaptureSession } from '../../services/audioSession';
 
 // ── PCM source abstraction ────────────────────────────────────────────────────
 // The recognition pipeline consumes a stream of mono PCM chunks and its own
@@ -46,6 +47,7 @@ export abstract class LiveStreamSource implements PcmSource {
   private recordingDest: MediaStreamAudioDestinationNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private stopping = false;
+  private capturing = false;
 
   /** Acquires the stream. The only microphone/tab-specific step. */
   protected abstract openStream(): Promise<MediaStream>;
@@ -58,8 +60,27 @@ export abstract class LiveStreamSource implements PcmSource {
   onEnded: (() => void) | null = null;
 
   async open(): Promise<void> {
-    this._stream = await this.openStream();
+    // Synchronously, still inside the gesture: the iPhone's audio session must
+    // allow recording before the microphone is asked for (audioSession.ts).
+    this.capturing = true;
+    beginCaptureSession();
+    try {
+      this._stream = await this.openStream();
+    } catch (err) {
+      this.capturing = false;
+      endCaptureSession();
+      throw err;
+    }
     this.audioContext = new AudioContext();
+    // The context runs at the output device's rate, and FolkFriend refuses a
+    // rate outside its range — silently: it went on assuming its default, and
+    // a Mac whose audio interface was set to 88.2 or 96 kHz got recognition
+    // computed on the wrong pitch. Such a device gets a 48 kHz context, which
+    // the browser resamples into.
+    if (this.audioContext.sampleRate < FF_SAMPLE_RATE_MIN || this.audioContext.sampleRate > FF_SAMPLE_RATE_MAX) {
+      void this.audioContext.close().catch(() => { /* never started */ });
+      this.audioContext = new AudioContext({ sampleRate: ANALYSIS_SAMPLE_RATE });
+    }
     // Some browsers create suspended contexts outside a user gesture chain.
     if (this.audioContext.state === 'suspended') await this.audioContext.resume();
 
@@ -160,7 +181,10 @@ export abstract class LiveStreamSource implements PcmSource {
     // The context should never have stopped, but a browser may suspend it on
     // its own (backgrounded tab, autoplay policy) — resuming an already-running
     // context is a no-op, so this stays as a safety net.
-    if (this.audioContext?.state === 'suspended') await this.audioContext.resume();
+    // 'interrupted' too: WebKit's own state for a context the system took over
+    // (a phone call, Siri, an alarm), which never reads 'suspended'.
+    const state = this.audioContext?.state as string | undefined;
+    if (state === 'suspended' || state === 'interrupted') await this.audioContext!.resume();
     if (DEBUG_LIVE_AUDIO) console.log(`[live] resume: ctx=${this.audioContext?.state} node=${!!this.workletNode} track=${this.trackState()}`);
     this.workletNode?.port.postMessage({ paused: false });
   }
@@ -174,6 +198,7 @@ export abstract class LiveStreamSource implements PcmSource {
   stop(): void {
     this.stopping = true;
     this.onEnded = null;
+    if (this.capturing) { this.capturing = false; endCaptureSession(); }
     this._stream?.getTracks().forEach(trk => trk.stop());
     this._stream = null;
     this.workletNode?.disconnect();
@@ -277,18 +302,29 @@ export async function createFileSource(file: File): Promise<PcmSource> {
 
 // ── File helpers ──────────────────────────────────────────────────────────────
 
+/** How long the duration probe may take before the answer is "unknown". */
+const PROBE_TIMEOUT_MS = 10_000;
+
 /** Duration in seconds via metadata only (no decode) — for the memory guard.
- *  Returns null when the browser cannot read the file's metadata. */
+ *  Returns null when the browser cannot read the file's metadata — or does
+ *  not say within PROBE_TIMEOUT_MS: Safari on iOS may answer a blob URL with
+ *  neither `loadedmetadata` nor `error`, and the import waited for ever. */
 export function probeAudioDuration(file: Blob): Promise<number | null> {
   return new Promise(resolve => {
     const url = URL.createObjectURL(file);
     const audio = new Audio();
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (duration: number | null) => {
+      clearTimeout(timer);
+      audio.onloadedmetadata = null;
+      audio.onerror = null;
       URL.revokeObjectURL(url);
-      resolve(Number.isFinite(audio.duration) ? audio.duration : null);
+      resolve(duration);
     };
-    audio.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => done(Number.isFinite(audio.duration) ? audio.duration : null);
+    audio.onerror = () => done(null);
+    timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
     audio.src = url;
   });
 }

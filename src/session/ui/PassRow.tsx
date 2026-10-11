@@ -127,6 +127,7 @@ export function useSlicePlayer(): SlicePlayer {
   /** The latest play asked for: a passage that arrives after another one was
    *  asked for must not start playing. */
   const requestRef = useRef(0);
+  const unlockedRef = useRef(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [hasAudio, setHasAudio] = useState<Record<string, boolean>>({});
@@ -191,6 +192,18 @@ export function useSlicePlayer(): SlicePlayer {
     // under a minute, so there is nothing to come back to in the middle of it,
     // and pressing it again plays it from its own start.
     if (playingId === detection.id) { a.pause(); setPlayingId(null); return; }
+
+    // Safari lets an <audio> start only from inside the tap, and the real
+    // play() below comes after reading the recording, or fetching the passage
+    // from Drive — the tap long gone, a NotAllowedError swallowed by the catch:
+    // the first press did nothing, and a Drive passage never played. A play()
+    // made during a tap lifts that restriction from the element for good, even
+    // one that fails for want of a source, so the first press makes one.
+    if (!unlockedRef.current) {
+      unlockedRef.current = true;
+      void a.play().catch(() => { /* no source yet: the unlock is all it was for */ });
+      a.pause();
+    }
 
     let start = Math.max(0, detection.start);
     let end = detection.end ?? Infinity;

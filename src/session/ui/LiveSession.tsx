@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
-import { isTouchPrimaryDevice } from '../../utils';
+import { isTouchPrimaryDevice, isAppleTouchDevice } from '../../utils';
 import { isNative } from '../../native/platform';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
@@ -134,7 +134,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   // #17: background warning, touch-primary devices only — see the original's
   // own doc (still true here) on why this is unfixable code-side and only a
   // reminder past a real threshold.
-  const isTouchPrimary = isTouchPrimaryDevice();
+  // An iPad with a trackpad or a keyboard case reads as a mouse device, and
+  // suspends a page in the background like any iPad.
+  const isTouchPrimary = isTouchPrimaryDevice() || isAppleTouchDevice();
   const native = isNative();
   useEffect(() => {
     if (!isTouchPrimary || native) return;
