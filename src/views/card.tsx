@@ -5,7 +5,8 @@ import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets'
 import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
 import { copyFileName } from '../services/attachmentNames';
-import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, PlusIcon, GearIcon } from '../components/icons';
+import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, EyeOffIcon, SaveIcon, PlusIcon, GearIcon } from '../components/icons';
+import { selectionIsHidden, toggleSpoiler } from '../components/spoilerToggle';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
 import { AttachmentList, CardRefList, showCardPicker, cardToRef, openCardScore, hasScore,
@@ -467,6 +468,41 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   useEffect(() => {
     if (isEditingNotes && notesRef.current) focusIfDesktop(notesRef.current);
   }, [isEditingNotes]);
+
+  // The hidden-text button (spoilerToggle.ts): there while text is selected in
+  // the notes, and which way it goes. Read off the textarea on every selection
+  // change rather than kept in sync by hand. Left as it is when the textarea
+  // loses focus: a press on the button itself must still find it there.
+  const [notesSel, setNotesSel] = useState<null | 'hide' | 'show'>(null);
+  const readNotesSel = useCallback(() => {
+    const ta = notesRef.current;
+    if (!ta || document.activeElement !== ta) return;
+    const { selectionStart: s, selectionEnd: e } = ta;
+    setNotesSel(s === e ? null : selectionIsHidden(ta.value, s, e) ? 'show' : 'hide');
+  }, []);
+  useEffect(() => {
+    if (!isEditingNotes) { setNotesSel(null); return; }
+    document.addEventListener('selectionchange', readNotesSel);
+    return () => document.removeEventListener('selectionchange', readNotesSel);
+  }, [isEditingNotes, readNotesSel]);
+
+  /** Applies the button's edit as one insertion, so a single undo takes it
+   *  back; a browser refusing `insertText` gets the new text set instead. */
+  const toggleNotesSpoiler = () => {
+    const ta = notesRef.current;
+    if (!ta) return;
+    const edit = toggleSpoiler(ta.value, ta.selectionStart, ta.selectionEnd);
+    if (!edit) return;
+    ta.focus({ preventScroll: true });
+    ta.setSelectionRange(edit.from, edit.to);
+    if (!document.execCommand('insertText', false, edit.insert)) {
+      const next = ta.value.slice(0, edit.from) + edit.insert + ta.value.slice(edit.to);
+      ta.value = next;
+      setNotesDraft(next);
+    }
+    ta.setSelectionRange(edit.selStart, edit.selEnd);
+    readNotesSel();
+  };
 
   useLayoutEffect(() => {
     if (isEditingImportance && importanceRef.current) {
@@ -1016,16 +1052,37 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       <div class="space-y-2">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.notes')}</span>
+          {/* The hidden-text button sits OUT of the flow, just left of the eye:
+              appearing and vanishing with the selection, it must never change
+              the row's height and push the textarea under the finger. */}
+          <div class="relative">
+          {isEditingNotes && notesSel && (
+            <button
+              type="button"
+              class="btn-ghost px-2 py-1 inline-flex items-center gap-1 text-xs leading-none whitespace-nowrap absolute right-full mr-1 top-1/2 -translate-y-1/2"
+              title={t(notesSel === 'hide' ? 'card.notes.hideTitle' : 'card.notes.showTitle')}
+              // Kept from taking the focus: the selection it acts on is the
+              // textarea's, and on a phone a tap that blurs it would end the
+              // selection before the click arrives.
+              onPointerDown={(e) => e.preventDefault()}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={toggleNotesSpoiler}
+            >
+              {notesSel === 'hide' ? <EyeOffIcon size={13} /> : <EyeIcon size={13} />}
+              {t(notesSel === 'hide' ? 'card.notes.hide' : 'card.notes.show')}
+            </button>
+          )}
           <button
             class="btn-ghost px-2"
-            title={isEditingNotes ? t('card.previewNotes') : t('card.editNotes')}
+            title={isEditingNotes ? t('card.saveNotes') : t('card.editNotes')}
             onClick={() => {
               if (isEditingNotes) void mutate(s => { s.cards[cardId]!.content.notes = notesDraft; });
               setIsEditingNotes(v => !v);
             }}
           >
-            {isEditingNotes ? <EyeIcon size={13} /> : <PencilIcon size={13} />}
+            {isEditingNotes ? <SaveIcon size={13} /> : <PencilIcon size={13} />}
           </button>
+          </div>
         </div>
         {isEditingNotes ? (
           <textarea
@@ -1034,6 +1091,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
             class="input w-full font-mono text-xs resize-none"
             rows={12}
             onInput={(e) => setNotesDraft((e.target as HTMLTextAreaElement).value)}
+            // Besides `selectionchange`, which not every engine fires for a
+            // textarea's own selection.
+            onSelect={readNotesSel}
+            onKeyUp={readNotesSel}
+            onMouseUp={readNotesSel}
+            onTouchEnd={readNotesSel}
             onBlur={(e) => {
               const val = (e.target as HTMLTextAreaElement).value;
               setNotesDraft(val);
