@@ -802,7 +802,7 @@ export function TuneSetIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-/** Pencil — "edit this". Paired with EyeIcon on the notes toggle. */
+/** Pencil — "edit this". Paired with SaveIcon on the notes toggle. */
 export function PencilIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -824,12 +824,35 @@ export function PromoteIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-/** Eye — "show me the rendered result". The other half of the notes toggle. */
+/** Eye — "show this". With EyeOffIcon, the notes' hidden-text button. */
 export function EyeIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
       <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+/** Eye struck through — "hide this", the notes' hidden-text button. */
+export function EyeOffIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9.9 5.2A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-3.2 4.1"/>
+      <path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/>
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+      <path d="m2 2 20 20"/>
+    </svg>
+  );
+}
+
+/** Floppy disk — "save". Closes the notes editor, which is what saves them. */
+export function SaveIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/>
+      <path d="M7 3v5h8V3"/>
+      <path d="M7 21v-7h10v7"/>
     </svg>
   );
 }
