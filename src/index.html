@@ -38,16 +38,19 @@
         d.dataset.theme=t;
         d.style.background=t==='light'?'#ffffff':t==='green'?'#f7faf5':'#0a0a0a';
         // The header's colour, so the browser's own bar matches it; kept in step by
-        // themeService.applyTheme(). The status bar of an installed iOS app is read
-        // at launch: white text over a dark theme, dark text over a light one.
+        // themeService.applyTheme().
         meta('theme-color').content=t==='light'?'#f5f5f5':t==='green'?'#edf4e8':'#141414';
-        meta('apple-mobile-web-app-status-bar-style').content=t==='dark'?'black-translucent':'default';
         // iPhone, iPad (whose Safari claims to be a Mac) and iPod. iOS zooms into any
         // text field rendered under 16 px and never zooms back out; maximum-scale
         // stops that, while iOS keeps pinch-zoom regardless since iOS 10. Not on
         // Android, where it would really forbid pinch-zoom.
         if (/iPad|iPhone|iPod/.test(ua)||(nav.maxTouchPoints>1&&/Macintosh/.test(ua))) {
           d.classList.add('ios');
+          // Launched from the home screen. Its status bar stays black-translucent
+          // whatever the theme: 'default' for the light themes (2026-10-11) left the
+          // app a status bar's height short of the bottom of the screen. Its white
+          // text gets a dark band to sit on instead (styles.css, html.standalone).
+          if (nav.standalone===true) d.classList.add('standalone');
           meta('viewport').content+=', maximum-scale=1';
           // Safari on iOS only applies :active to an element with a touch listener
           // somewhere above it.
