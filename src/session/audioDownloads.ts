@@ -100,7 +100,7 @@ export interface AutoDownloadStatus {
 export const autoDownloadStatus = signal<AutoDownloadStatus | null>(null);
 
 let _running = false;
-/** "Download everything" is running: the automatic pass stands aside rather
+/** "Download all" is running: the automatic pass stands aside rather
  *  than download a second recording alongside it. */
 let _allRunning = false;
 let _awaitingToken = false;
