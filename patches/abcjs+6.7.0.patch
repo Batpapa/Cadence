@@ -1,0 +1,121 @@
+diff --git a/node_modules/abcjs/src/data/abc_tune.js b/node_modules/abcjs/src/data/abc_tune.js
+index 4e830f0..7876340 100644
+--- a/node_modules/abcjs/src/data/abc_tune.js
++++ b/node_modules/abcjs/src/data/abc_tune.js
+@@ -452,6 +452,7 @@ var Tune = function() {
+ 			var voiceTimeMilliseconds = Math.round(voiceTime * 1000);
+ 			var startingRepeatElem = 0;
+ 			var endingRepeatElem = -1;
++			var repeatOpen = true; // [Cadence patch] see below
+ 			var elements = voices[v];
+ 			var bpm = startingBpm;
+ 			timeDivider = this.getBeatLength() * bpm / 60;
+@@ -477,6 +478,15 @@ var Tune = function() {
+ 					var endRepeat = (barType === "bar_right_repeat" || barType === "bar_dbl_repeat");
+ 					var startEnding = (element.abcelem.startEnding === '1');
+ 					var startRepeat = (barType === "bar_left_repeat" || barType === "bar_dbl_repeat" || barType === "bar_right_repeat");
++					// [Cadence patch] A part whose |: was left out starts at the last || (or |] or [|) after
++					// the previous :| — the same rule as synth/repeats.js addImplicitStarts, so the
++					// cursor and the sound go round the repeats in the same order.
++					if (!repeatOpen && (barType === "bar_thin_thin" || barType === "bar_thin_thick" || barType === "bar_thick_thin"))
++						startRepeat = true;
++					if (barType === "bar_left_repeat" || barType === "bar_dbl_repeat")
++						repeatOpen = true;
++					else if (barType === "bar_right_repeat")
++						repeatOpen = false;
+ 					if (endRepeat) {
+ 						// Force the end of the previous note to the position of the measure - the cursor won't go past the end repeat
+ 						if (elem > 0) {
+diff --git a/node_modules/abcjs/src/synth/repeats.js b/node_modules/abcjs/src/synth/repeats.js
+index 0bf99b5..4a74ea0 100644
+--- a/node_modules/abcjs/src/synth/repeats.js
++++ b/node_modules/abcjs/src/synth/repeats.js
+@@ -2,12 +2,16 @@ const parseCommon = require("../parse/abc_common");
+ 
+ function Repeats(voice) {
+ 	this.sections = [{type: 'startRepeat', index: -1}]
++	// [Cadence patch] Where a section whose |: was left out may start: see addImplicitStarts.
++	this.implicitStarts = []
++	var repeatOpen = true // The tune itself opens a repeat; :| closes it, |: opens one again.
+ 
+ 	this.addBar = function(elem) {
+ 		// Record the "interesting" parts for analysis at the end.
+ 		var thisIndex = voice.length - 1
+ 		var isStartRepeat = elem.type === "bar_left_repeat" || elem.type === "bar_dbl_repeat"
+ 		var isEndRepeat = elem.type === "bar_right_repeat" || elem.type === "bar_dbl_repeat"
++		var isSectionEnd = elem.type === "bar_thin_thin" || elem.type === "bar_thin_thick" || elem.type === "bar_thick_thin"
+ 		var startEnding = elem.startEnding ? startEndingNumbers(elem.startEnding) : undefined
+ 		if (isEndRepeat) {
+ 			// If there are two endRepeats in a row, that is a notation error, but we'll recover by pretending there was a startRepeat right before it.
+@@ -19,9 +23,71 @@ function Repeats(voice) {
+ 			this.sections.push({type:"startEnding", index: thisIndex, endings: startEnding})
+ 		if (isStartRepeat)
+ 			this.sections.push({type:"startRepeat", index: thisIndex})
++		if (isEndRepeat && !isStartRepeat) {
++			repeatOpen = false
++			this.implicitStarts.push({index: thisIndex, after: "endRepeat"})
++		} else if (isStartRepeat)
++			repeatOpen = true
++		else if (isSectionEnd && !repeatOpen)
++			this.implicitStarts.push({index: thisIndex, after: "sectionEnd"})
++	}
++
++	// [Cadence patch] A part that ends with :| (or with its own 1st and 2nd
++	// endings) but never opened with |: — "|: A |1 :|2 || B |1 :|2 ||", as
++	// TheSession is full of. Without this, B's endings were taken as more
++	// endings of A's repeat and B itself was never played. The part starts at
++	// the last || (or |] or [|) since the previous :|, or failing one, right
++	// after that :| — the place the timing callbacks (abc_tune.js setupEvents,
++	// patched to match) already sent the cursor.
++	//
++	// A start after a :| is only taken for a new set of endings: followed by
++	// another :|, it is the 2nd of three endings ("|1 :|2 :|3"), which already
++	// played right.
++	this.addImplicitStarts = function() {
++		if (this.implicitStarts.length === 0)
++			return
++		var merged = []
++		var s = 0
++		for (var i = 0; i < this.implicitStarts.length; i++) {
++			var imp = this.implicitStarts[i]
++			while (s < this.sections.length && this.sections[s].index <= imp.index)
++				merged.push(this.sections[s++])
++			merged.push({type: "implicitStart", index: imp.index, after: imp.after})
++		}
++		while (s < this.sections.length)
++			merged.push(this.sections[s++])
++
++		var out = []
++		var lastStart = -1
++		for (var j = 0; j < merged.length; j++) {
++			var section = merged[j]
++			if (section.type !== "implicitStart") {
++				if (section.type === "startRepeat")
++					lastStart = Math.max(lastStart, section.index)
++				out.push(section)
++				continue
++			}
++			var next = null
++			for (var k = j + 1; k < merged.length && !next; k++) {
++				if (merged[k].type === "implicitStart")
++					break // a later candidate is nearer to the part it would start
++				next = merged[k]
++			}
++			if (!next || section.index <= lastStart)
++				continue
++			var opens = section.after === "sectionEnd" ?
++				(next.type === "endRepeat" || next.type === "startEnding") :
++				next.type === "startEnding"
++			if (opens) {
++				out.push({type: "startRepeat", index: section.index})
++				lastStart = section.index
++			}
++		}
++		this.sections = out
+ 	}
+ 
+ 	this.resolveRepeats = function() {
++		this.addImplicitStarts()
+ 		// this.sections contain all the interesting bars - start and end repeats.
+ 		var e
+ 
