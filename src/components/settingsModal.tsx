@@ -6,7 +6,7 @@ import type { AppContext, IncipitDisplay } from '../types';
 import { generateId, emptyState, ownFormatAccept } from '../utils';
 import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, freeSyncedSessionAudio } from '../session/db';
 import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
-import { TrashIcon, ResetIcon, HelpIcon } from './icons';
+import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon } from './icons';
 import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW, zoomWorks } from '../services/zoomService';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
@@ -1475,6 +1475,9 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
   const [section, setSection] = useState<SectionId>('study');
   const [, bumpDialog] = useState(0);
   const mouseDownOnOverlay = useRef(false);
+  // The same toggle as showModal's `expandable`, and like it not remembered:
+  // a way to have more room now, on a phone above all, not a preference.
+  const [expanded, setExpanded] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const [compactNav, setCompactNav] = useState(false);
@@ -1510,14 +1513,25 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
     >
       <div
         ref={dialogRef}
-        class="bg-elevated border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ width: '660px', maxWidth: modalMaxW(0.9), height: '520px', maxHeight: modalMaxH(0.9) }}
+        class={`bg-elevated shadow-2xl flex flex-col overflow-hidden ${
+          expanded ? 'w-full h-full safe-area-pad' : 'border border-border rounded-xl'
+        }`}
+        style={expanded ? undefined : { width: '660px', maxWidth: modalMaxW(0.9), height: '520px', maxHeight: modalMaxH(0.9) }}
       >
         <div class="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
           <span class="text-sm font-semibold text-primary truncate">
             {t('settings.title')} — {t(SECTIONS.find(s => s.id === section)!.labelKey)}
           </span>
-          <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={onClose}>✕</button>
+          <div class="flex items-center gap-3 shrink-0">
+            <button
+              class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
+              title={t(expanded ? 'modal.collapse' : 'modal.expand')}
+              onClick={() => setExpanded(e => !e)}
+            >
+              {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+            </button>
+            <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={onClose}>✕</button>
+          </div>
         </div>
 
         <div class="flex flex-1 overflow-hidden" style="min-height:0">
