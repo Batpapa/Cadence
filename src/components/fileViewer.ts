@@ -1484,10 +1484,13 @@ export function showPreviewModal(
     const enterFullscreen = () => {
       if (fullscreen) return;
       const overlay = document.createElement('div');
-      // The score's own paper, so the page reads as one sheet rather than a
-      // picture of one.
-      overlay.className = 'fixed inset-0 z-[100] flex flex-col';
-      overlay.style.background = ABC_PAPERS[paper].paper;
+      // The paper is the score box's own background, and that box fills the
+      // column, so the page still reads as one sheet. What shows of the
+      // overlay itself is only the bands under the system bars: the dialog
+      // colour there, not the paper — the bars' icons are picked for the theme
+      // (native/systemBars.ts), and white ones vanish on a cream sheet.
+      overlay.className = 'fixed inset-0 z-[100] flex flex-col safe-area-pad';
+      overlay.style.background = 'var(--color-elevated)';
 
       scoreFrame.replaceWith(scoreAnchor);
       scoreFrame.classList.add('flex', 'flex-col', 'flex-1', 'min-h-0');
@@ -2551,7 +2554,6 @@ export function showPreviewModal(
         paper = abcPaper(appState.value);
         barsPerLine = abcBarsPerLine(appState.value);
         applyPaper();
-        if (fullscreen) fullscreen.style.background = ABC_PAPERS[paper].paper;
         // A derived score may have just been rebuilt differently under us.
         const fresh = opts?.reloadEntry?.();
         const freshText = fresh ? decodeAbc(fresh) : null;
