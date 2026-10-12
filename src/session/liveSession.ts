@@ -302,6 +302,12 @@ export class LiveSession {
     this.userChanged();
   }
 
+  /** Paused with the microphone given back to the system (iPhone): the
+   *  camera can film until Resume. */
+  get micReleased(): boolean {
+    return this.source.micReleased;
+  }
+
   /** Pauses the whole capture graph (recognition feed + recorder) in one shot —
    *  the worker's sample clock simply stops advancing, no offset bookkeeping needed. */
   async pause(): Promise<void> {
@@ -344,6 +350,10 @@ export class LiveSession {
     // inside LIVE_DEFICIT_SAFETY_MARGIN_S.
     this.recognition?.notifyLiveResume();
 
+    // On an iPhone this reopens the microphone the pause gave back, and may
+    // throw (refused, unreadable). Nothing below has run then: still paused,
+    // recorder included, and Resume can be pressed again — the anchor above
+    // is simply set again by that next attempt.
     await this.source.resume();
     this.recorder?.resume();
     this.pausedAccumMs += Date.now() - this.pauseStartedAt;

@@ -2,6 +2,7 @@ import { openMicForMusic, openDeviceAudio } from './capture';
 import { attachPcmWorklet } from './pcmWorklet';
 import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE, DEBUG_LIVE_AUDIO, FF_SAMPLE_RATE_MIN, FF_SAMPLE_RATE_MAX } from '../sessionConfig';
 import { beginCaptureSession, endCaptureSession } from '../../services/audioSession';
+import { isAppleTouchDevice } from '../../utils';
 
 // ── PCM source abstraction ────────────────────────────────────────────────────
 // The recognition pipeline consumes a stream of mono PCM chunks and its own
@@ -46,13 +47,24 @@ export abstract class LiveStreamSource implements PcmSource {
   private analyser: AnalyserNode | null = null;
   private recordingDest: MediaStreamAudioDestinationNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
+  /** The stream's two source nodes: one feeding the VU meter and the
+   *  recording, one feeding the recognition worklet. Held so that a released
+   *  pause can unplug them and plug a new stream in their place. */
+  private recordInput: MediaStreamAudioSourceNode | null = null;
+  private workletInput: MediaStreamAudioSourceNode | null = null;
   private stopping = false;
   private capturing = false;
+  private released = false;
 
   /** Acquires the stream. The only microphone/tab-specific step. */
   protected abstract openStream(): Promise<MediaStream>;
   /** Tag for debug logging. */
   protected abstract get label(): string;
+  /** Whether a pause gives the microphone back — see suspend(). */
+  protected get releasesOnPause(): boolean { return false; }
+
+  /** Paused with the microphone given back to the system. */
+  get micReleased(): boolean { return this.released; }
 
   /** Fired when the stream dies on its own — the user pressing the browser's
    *  own "Stop sharing" button, the shared tab closing, a device unplugged.
@@ -87,14 +99,10 @@ export abstract class LiveStreamSource implements PcmSource {
     const track = this._stream.getAudioTracks()[0];
     console.debug(`[${this.label}] track:`, track?.label, JSON.stringify(track?.getSettings?.() ?? {}));
 
-    // The source ending under us is a normal event for a captured surface (the
-    // browser's sharing bar has its own stop button) and an accident for a
-    // microphone — same handling either way. Our own stop() sets `stopping`
-    // first: track.stop() is specified NOT to fire this, but a source dying
-    // in the same tick for its own reasons would be indistinguishable.
-    if (track) track.addEventListener('ended', () => { if (!this.stopping) this.onEnded?.(); });
+    this.watchTrack(track);
 
     const src = this.audioContext.createMediaStreamSource(this._stream);
+    this.recordInput = src;
 
     // VU meter tap (main thread, independent from the recognition path).
     this.analyser = this.audioContext.createAnalyser();
@@ -120,6 +128,19 @@ export abstract class LiveStreamSource implements PcmSource {
     this.recordingDest.channelCountMode = 'explicit';
     this.recordingDest.channelInterpretation = 'speakers';
     src.connect(this.recordingDest);
+  }
+
+  /** The source ending under us is a normal event for a captured surface (the
+   *  browser's sharing bar has its own stop button) and an accident for a
+   *  microphone — same handling either way. Our own stop() sets `stopping`
+   *  first: track.stop() is specified NOT to fire this, but a source dying
+   *  in the same tick for its own reasons would be indistinguishable. Only
+   *  the CURRENT track counts: one given back by a released pause is history. */
+  private watchTrack(track: MediaStreamTrack | undefined): void {
+    if (!track) return;
+    track.addEventListener('ended', () => {
+      if (!this.stopping && this._stream?.getAudioTracks()[0] === track) this.onEnded?.();
+    });
   }
 
   get sampleRate(): number {
@@ -155,7 +176,10 @@ export abstract class LiveStreamSource implements PcmSource {
     if (!this._stream || !this.audioContext) throw new Error('source not opened');
     const channel = new MessageChannel();
     sink.connectWorkletPort(channel.port1);
-    this.workletNode = await attachPcmWorklet(this.audioContext, this._stream, channel.port2);
+    // A source node of its own, as before: the worklet never shared the one
+    // feeding the meter and the recording.
+    this.workletInput = this.audioContext.createMediaStreamSource(this._stream);
+    this.workletNode = await attachPcmWorklet(this.audioContext, this.workletInput, channel.port2);
   }
 
   /** Pause/resume gate the WORKLET, not the AudioContext.
@@ -175,9 +199,75 @@ export abstract class LiveStreamSource implements PcmSource {
   async suspend(): Promise<void> {
     if (DEBUG_LIVE_AUDIO) console.log(`[live] suspend: ctx=${this.audioContext?.state} node=${!!this.workletNode}`);
     this.workletNode?.port.postMessage({ paused: true });
+    if (this.releasesOnPause) await this.releaseMic();
+  }
+
+  /** iPhone: a pause gives the microphone back, so the camera can film.
+   *
+   *  While a page captures the microphone, WebKit puts iOS's audio session in
+   *  PlayAndRecord with the VideoChat mode — a video call, as far as the
+   *  system is concerned — and the camera refuses to film "during a call"
+   *  (tester, 2026-10-12: impossible during a live, paused or not; fine after
+   *  Stop). Android gives the microphone to the app in front and hands
+   *  the one behind silence, so filming already works there.
+   *
+   *  What WebKit looks at (MediaSessionManagerCocoa.mm, updateSessionState):
+   *  an active capture source, a session type forced by the page — our own
+   *  navigator.audioSession 'play-and-record' — or audio playing while the
+   *  category is still PlayAndRecord, which a running context counts as. So
+   *  all three go: the tracks are stopped, the session type handed back, and
+   *  the context suspended. That last one is safe HERE and nowhere else: the
+   *  reason this class never suspends (see above) is a stream source that
+   *  does not deliver again, and this pause replaces the source anyway.
+   *
+   *  The recorder is untouched: it reads `recordingDest`, which stays, so the
+   *  file goes on where it stopped once a new microphone is plugged in. */
+  private async releaseMic(): Promise<void> {
+    if (this.released || !this._stream) return;
+    this.released = true;
+    this.recordInput?.disconnect();
+    this.workletInput?.disconnect();
+    this.recordInput = null;
+    this.workletInput = null;
+    const old = this._stream;
+    this._stream = null;            // before stop(): its 'ended', if any, is history
+    old.getTracks().forEach(trk => trk.stop());
+    if (this.capturing) { this.capturing = false; endCaptureSession(); }
+    await this.audioContext?.suspend().catch(() => { /* closed under us: stop() is coming */ });
+    if (DEBUG_LIVE_AUDIO) console.log(`[live] micro rendu: ctx=${this.audioContext?.state}`);
+  }
+
+  /** The other half of releaseMic(). Reached synchronously from the Resume
+   *  tap, like open(): the session type has to allow recording before the
+   *  microphone is asked for. Throws as getUserMedia does — refused, or
+   *  NotReadableError, which iOS has been seen to raise on a second capture —
+   *  leaving the pause as it was, so Resume can be tried again or Stop pressed. */
+  private async reacquireMic(): Promise<void> {
+    const ctx = this.audioContext;
+    if (!ctx) throw new Error('source not opened');
+    this.capturing = true;
+    beginCaptureSession();
+    let stream: MediaStream;
+    try {
+      stream = await this.openStream();
+    } catch (err) {
+      this.capturing = false;
+      endCaptureSession();
+      throw err;
+    }
+    if (ctx.state !== 'running') await ctx.resume();
+    this._stream = stream;
+    this.watchTrack(stream.getAudioTracks()[0]);
+    this.recordInput = ctx.createMediaStreamSource(stream);
+    if (this.analyser) this.recordInput.connect(this.analyser);
+    if (this.recordingDest) this.recordInput.connect(this.recordingDest);
+    this.workletInput = ctx.createMediaStreamSource(stream);
+    if (this.workletNode) this.workletInput.connect(this.workletNode);
+    this.released = false;
   }
 
   async resume(): Promise<void> {
+    if (this.released) await this.reacquireMic();
     // The context should never have stopped, but a browser may suspend it on
     // its own (backgrounded tab, autoplay policy) — resuming an already-running
     // context is a no-op, so this stays as a safety net.
@@ -201,6 +291,9 @@ export abstract class LiveStreamSource implements PcmSource {
     if (this.capturing) { this.capturing = false; endCaptureSession(); }
     this._stream?.getTracks().forEach(trk => trk.stop());
     this._stream = null;
+    this.recordInput = null;
+    this.workletInput = null;
+    this.released = false;
     this.workletNode?.disconnect();
     this.workletNode = null;
     void this.audioContext?.close().catch(() => { /* already closed */ });
@@ -213,6 +306,9 @@ export abstract class LiveStreamSource implements PcmSource {
 export class MicSource extends LiveStreamSource {
   protected openStream(): Promise<MediaStream> { return openMicForMusic(); }
   protected get label(): string { return 'mic'; }
+  /** iPhone and iPad only — see releaseMic(). Elsewhere the pause keeps the
+   *  microphone, which is what the resume was built around. */
+  protected get releasesOnPause(): boolean { return isAppleTouchDevice(); }
 }
 
 /** A browser tab, a window, or a whole screen's system audio — whatever the

@@ -1548,6 +1548,8 @@
   "sessions.pause": "Pause",
   "sessions.resume": "Resume",
   "sessions.paused": "PAUSED",
+  "sessions.pausedMicReleased": "Microphone released while paused",
+  "sessions.resumeMicFailed": "The microphone could not be reopened. The recording stays paused, with nothing lost: try Resume again, or stop it.",
   "sessions.like": "I liked this tune",
   "sessions.unlike": "Unmark as liked",
   "sessions.share.checking": "Checking…",
