@@ -249,9 +249,14 @@ afterEach(() => {
 });
 
 // ── 1. The hypothesis: an acknowledgement that never came back ───────────────
+// Confirmed, and since 2026-10-12 recognised: the upload is noted before it
+// leaves (recogniseOwnLandedWrite), so a read that finds exactly it on Drive
+// records the sync point that was missed instead of asking. Until then each of
+// these ended on the conflict screen — identical and same device at a reboot,
+// a real difference as soon as anything was edited after the lost write.
 
 describe('a write that landed on Drive without being recorded locally', () => {
-  it('the connection dies on the way back: next boot shows the reported screen', async () => {
+  it('the connection dies on the way back: the next boot recognises it, nothing is asked', async () => {
     const s = await connectedAndInSync();
     advance(60_000);
     edit(s, u => { u.note = 'second'; });
@@ -264,7 +269,7 @@ describe('a write that landed on Drive without being recorded locally', () => {
 
     advance(60_000);
     const reboot = await openTab(s.local);
-    expect(await reconcile(reboot)).toEqual(SAME_DEVICE_IDENTICAL);
+    expect(await reconcile(reboot)).toEqual({ screen: 'none' });
   });
 
   it('a 5xx after the bytes landed reads the same way', async () => {
@@ -276,7 +281,7 @@ describe('a write that landed on Drive without being recorded locally', () => {
     expect(drive.commits).toBe(2);
 
     const reboot = await openTab(s.local);
-    expect(await reconcile(reboot)).toEqual(SAME_DEVICE_IDENTICAL);
+    expect(await reconcile(reboot)).toEqual({ screen: 'none' });
   });
 
   it('the tab is killed between the commit and recordSyncPoint', async () => {
@@ -289,10 +294,10 @@ describe('a write that landed on Drive without being recorded locally', () => {
     expect(drive.commits).toBe(2);
 
     const reboot = await openTab(s.local);
-    expect(await reconcile(reboot)).toEqual(SAME_DEVICE_IDENTICAL);
+    expect(await reconcile(reboot)).toEqual({ screen: 'none' });
   });
 
-  it('comes back at every boot until it is answered — which is what users report', async () => {
+  it('settles at the first read for good, and nothing is pushed twice', async () => {
     const s = await connectedAndInSync();
     advance(60_000);
     edit(s, u => { u.note = 'second'; });
@@ -301,31 +306,75 @@ describe('a write that landed on Drive without being recorded locally', () => {
 
     for (let i = 0; i < 3; i++) {
       const reboot = await openTab(s.local);
-      expect(await reconcile(reboot)).toEqual(SAME_DEVICE_IDENTICAL);
+      expect(await reconcile(reboot)).toEqual({ screen: 'none' });
     }
-    // And nothing ever pushes in the meantime: the precondition sends every
-    // flush back through the same reconciliation.
     expect(drive.commits).toBe(2);
+    expect(driveNote()).toBe('second');
   });
 
-  it('resolves for good once the sync point is recorded — what the silent fix does', async () => {
+  it('an edit made after the lost write is kept and pushed, without a question', async () => {
     const s = await connectedAndInSync();
     advance(60_000);
     edit(s, u => { u.note = 'second'; });
     drive.nextUpload = 'commit-then-network-error';
     await s.mod.manualSync();
+    advance(60_000);
+    edit(s, u => { u.note = 'third'; });      // never reached Drive yet
 
     const reboot = await openTab(s.local);
-    const file = await reboot.mod.readDriveFile(true);
-    const result = reboot.mod.reconcileDriveData(file);
-    expect(result.action).toBe('conflict');
-    if (result.action !== 'conflict') return;
+    expect(await reconcile(reboot)).toEqual({ screen: 'none' });
+    await reboot.mod.manualSync();
+    expect(driveNote()).toBe('third');
+    expect(reboot.duringFlush).toEqual([]);
+  });
 
-    // RESOLVE_IDENTICAL_SILENTLY's whole body: adopt, apply nothing.
-    reboot.mod.markSyncedAfterApply(result.driveTs, result.version);
+  it('the same page, never reloaded: the next flush recognises it — an iPhone live evening', async () => {
+    // A detection confirmed, off to the camera (the flush on hiding leaves and
+    // its answer is lost), back, another one confirmed. Four times. Each cycle
+    // used to put the conflict screen up mid-session (2026-10-12).
+    const s = await connectedAndInSync();
+    for (let i = 1; i <= 4; i++) {
+      advance(5 * 60_000);
+      edit(s, u => { u.note = `confirmed ${i}`; });
+      drive.nextUpload = 'commit-then-network-error';
+      await s.mod.manualSync();
+      expect(driveNote()).toBe(`confirmed ${i}`);
+      advance(2 * 60_000);
+      edit(s, u => { u.note = `confirmed ${i} bis`; });
+      await s.mod.manualSync();
+      expect(driveNote()).toBe(`confirmed ${i} bis`);
+    }
+    expect(s.duringFlush.filter(v => v.screen === 'conflict')).toEqual([]);
+  });
 
-    expect(await reconcile(await openTab(reboot.local))).toEqual({ screen: 'none' });
-    expect(driveNote()).toBe('second');   // nothing was lost or overwritten
+  it('another device writing after our lost write is still a real conflict', async () => {
+    const s = await connectedAndInSync();
+    advance(60_000);
+    edit(s, u => { u.note = 'mine'; });
+    drive.nextUpload = 'commit-then-network-error';
+    await s.mod.manualSync();
+    advance(60_000);
+    drive.writeAs(state({ note: 'theirs' }), 'other-device', Date.now());
+
+    expect(await reconcile(await openTab(s.local)))
+      .toEqual({ screen: 'conflict', identical: false, sameDevice: false });
+  });
+
+  it('a tab already open when another one\'s answer was lost still asks: its copy may differ', async () => {
+    // The two tabs share the device id and the note of the upload. Adopting tab
+    // A's write would let tab B push its own copy over it, silently dropping
+    // what only A had.
+    const s = await connectedAndInSync();
+    const other = await openTab(structuredClone(s.local));
+    advance(60_000);
+    edit(s, u => { u.note = 'only in tab A'; });
+    drive.nextUpload = 'commit-then-network-error';
+    await s.mod.manualSync();
+    edit(other, u => { u.note = 'only in tab B'; });
+    await other.mod.manualSync();
+
+    expect(other.duringFlush).toEqual([{ screen: 'conflict', identical: false, sameDevice: true }]);
+    expect(driveNote()).toBe('only in tab A');   // B did not write over it
   });
 });
 
@@ -507,9 +556,10 @@ describe('the other routes to identical + same device', () => {
   it('"keep local" whose follow-up push never happened, then a phantom bump', async () => {
     const s = await connectedAndInSync();
     advance(60_000);
-    edit(s, u => { u.note = 'second'; });
-    drive.nextUpload = 'commit-then-network-error';
-    await s.mod.manualSync();
+    // A same-device write nothing recorded — an older build in another tab; a
+    // lost answer of our own no longer gets this far (section 1).
+    drive.writeAs(s.local, 'device-here', Date.now());
+    edit(s, () => {});
 
     const reboot = await openTab(s.local);
     const file = await reboot.mod.readDriveFile(true);
@@ -517,7 +567,10 @@ describe('the other routes to identical + same device', () => {
     expect(result.action).toBe('conflict');
     if (result.action !== 'conflict') return;
 
-    // The user answers "keep local"; the push it triggers dies offline.
+    // The user answers "keep local"; the push it triggers dies offline. A
+    // second later: under the frozen test clock, its stamp would otherwise be
+    // that very write's, which no real clock produces.
+    advance(1_000);
     reboot.mod.adoptDriveVersionAsBase(result.version);
     drive.nextUpload = 'error-before-commit';
     reboot.mod.syncToCloud(reboot.local);
@@ -578,13 +631,16 @@ describe('the other routes to identical + same device', () => {
 
 // ── 4. Is the silent resolution safe? ───────────────────────────────────────
 
+// The same-device write nothing recorded is an older build's here (another tab
+// still running it): a lost answer of our own is recognised before any of this
+// (section 1), but that one never left a note to recognise.
+
 describe('flipping RESOLVE_IDENTICAL_SILENTLY would not hide a real difference', () => {
-  it('an edit made AFTER the lost write keeps the copies different, so the user is still asked', async () => {
+  it('an edit made AFTER the unrecorded write keeps the copies different, so the user is still asked', async () => {
     const s = await connectedAndInSync();
     advance(60_000);
     edit(s, u => { u.note = 'second'; });
-    drive.nextUpload = 'commit-then-network-error';
-    await s.mod.manualSync();
+    drive.writeAs(s.local, 'device-here', Date.now());
     advance(60_000);
     edit(s, u => { u.note = 'third'; });      // never reached Drive
 
@@ -597,8 +653,7 @@ describe('flipping RESOLVE_IDENTICAL_SILENTLY would not hide a real difference',
     const s = await connectedAndInSync();
     advance(60_000);
     edit(s, u => { u.note = 'second'; });
-    drive.nextUpload = 'commit-then-network-error';
-    await s.mod.manualSync();
+    drive.writeAs(s.local, 'device-here', Date.now());
 
     const reboot = await openTab(s.local);
     const file = await reboot.mod.readDriveFile(true);

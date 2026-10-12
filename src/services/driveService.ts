@@ -10,10 +10,10 @@ export type ReconcileResult =
   | { action: 'none' }
   | { action: 'apply';    state: AppState; driveTs: number; version: string; driveDeviceId: string | null }  // fast-forward from Drive
   // Both sides moved — ask the user. `driveDeviceId` is who WROTE the Drive
-  // copy: when it is this very device, the "conflict" is almost certainly our
-  // own push whose acknowledgement never came back (the tab died between
-  // Drive committing the write and recordSyncPoint running), not a second
-  // writer. The conflict screen says so, because it changes how to read it.
+  // copy: when it is this very device, it is another tab, an older build, a
+  // revision restored by hand — or our own push whose acknowledgement never
+  // came back and that recogniseOwnLandedWrite could not vouch for. The
+  // conflict screen says so, because it changes how to read it.
   | { action: 'conflict'; state: AppState; driveTs: number; version: string; driveDeviceId: string | null };
 
 export type ConnectResult =
@@ -105,6 +105,8 @@ const lsSyncedVersion = (uid = _state.userId) => `cadence_drive_synced_version_$
  *  clock-free answer to "has local moved since we last agreed?". */
 const lsEditSeq   = (uid = _state.userId) => `cadence_edit_seq_${uid}`;
 const lsSyncedSeq = (uid = _state.userId) => `cadence_synced_seq_${uid}`;
+/** The upload sent and not yet acknowledged — see recogniseOwnLandedWrite. */
+const lsInflight  = (uid = _state.userId) => `cadence_drive_inflight_${uid}`;
 
 function getSyncedVersion(): string | null { return localStorage.getItem(lsSyncedVersion()); }
 function getEditSeq(uid = _state.userId): number { return parseInt(localStorage.getItem(lsEditSeq(uid)) ?? '0'); }
@@ -117,6 +119,60 @@ function bumpEditSeq(): void { localStorage.setItem(lsEditSeq(), String(getEditS
  *  third write landing in between still fails it and re-raises the question. */
 export function adoptDriveVersionAsBase(version: string): void {
   localStorage.setItem(lsSyncedVersion(), version);
+}
+
+// ── An upload that landed without its answer ──────────────────────────────────
+// Drive can commit a write whose answer never reaches us: the connection drops
+// on the way back, or the page is suspended or killed first — iOS does both to
+// Safari the moment it goes to the background, and the flush on hiding sends
+// an upload at exactly that moment. Nothing was recorded, so the next read saw
+// a Drive that moved for no known reason and, with any edit made since, raised
+// the conflict screen: "écrit par cet appareil", a question about our own
+// write. An iPhone tester got it again and again over a weekend of live
+// recordings (2026-10-12; driveSync.simulation.test.ts walks it through).
+//
+// So the upload is noted BEFORE it is sent, and a read that finds exactly that
+// content on Drive records it as the sync point it should have been.
+
+interface InflightWrite {
+  /** The `_lastModified` stamped into the payload — unique to that upload. */
+  ts: number;
+  /** The edit counter for the content uploaded. */
+  seq: number;
+  /** The page that sent it. */
+  page: string;
+}
+
+/** This page: a reload or a second tab is another one. Not randomUUID, which
+ *  the tests stub to the device id. */
+const PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+/** Before this page read anything from IndexedDB. */
+const PAGE_STARTED_AT = Date.now();
+
+function readInflight(): InflightWrite | null {
+  try {
+    const w = JSON.parse(localStorage.getItem(lsInflight()) ?? 'null') as InflightWrite | null;
+    return w && typeof w.ts === 'number' && typeof w.seq === 'number' && typeof w.page === 'string' ? w : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Drive holds our own unacknowledged upload: make it the sync point.
+ *
+ *  Adopting it says "this page's data contains that content", which is only
+ *  certain for the page that sent it, or for a page started after it was sent —
+ *  that one loaded its data from IndexedDB, where every edit had been saved
+ *  before being uploaded. A second tab already open when the upload left may
+ *  hold something else: it is still asked, as before, rather than allowed to
+ *  push its own copy over that write. */
+function recogniseOwnLandedWrite(data: { _lastModified?: number; _deviceId?: string }, version: string): void {
+  const w = readInflight();
+  if (!w || data._lastModified !== w.ts || data._deviceId !== getDeviceId()) return;
+  if (w.page !== PAGE_ID && w.ts > PAGE_STARTED_AT) return;
+  if (w.seq < getSyncedSeq()) return;   // a later sync point exists: not ours to rewind
+  console.info('[drive] envoi arrivé sur Drive sans sa réponse — adopté comme point de synchro');
+  recordSyncPoint(w.ts, version, w.seq);
 }
 
 // ── Session-level state (shared across users in the same tab) ─────────────────
@@ -271,6 +327,7 @@ export function adoptDriveConnection(fromUid: string, toUid: string): void {
   localStorage.removeItem(lsSyncedTs(toUid));
   localStorage.removeItem(lsSyncedVersion(toUid));
   localStorage.removeItem(lsFailed(toUid));
+  localStorage.removeItem(lsInflight(toUid));
 }
 
 export function clearDriveOwner(): void {
@@ -288,6 +345,7 @@ export function clearDriveStateForUser(userId: string): void {
   localStorage.removeItem(lsSyncedVersion(userId));
   localStorage.removeItem(lsEditSeq(userId));
   localStorage.removeItem(lsSyncedSeq(userId));
+  localStorage.removeItem(lsInflight(userId));
 }
 
 export function getDeviceId(): string {
@@ -339,6 +397,9 @@ function recordSyncPoint(driveTs: number, version: string | null, syncedSeq: num
   if (version !== null) localStorage.setItem(lsSyncedVersion(), version);
   else localStorage.removeItem(lsSyncedVersion());
   localStorage.removeItem(lsFailed());
+  // Whatever upload was waiting for its answer is now either this sync point or
+  // behind it.
+  localStorage.removeItem(lsInflight());
 }
 
 /** After Drive's copy was applied locally: local now IS the Drive content, so
@@ -377,6 +438,8 @@ export function resumePendingSync(state: AppState): void {
  *  decision table lives in reconcilePolicy.ts (pure, exhaustively unit-tested);
  *  this only feeds it from the durable bookkeeping and applies its verdict. */
 export function reconcileDriveData(read: DriveFileRead): ReconcileResult {
+  // First, so the decision below reads the bookkeeping it should have found.
+  if (read.status === 'ok') recogniseOwnLandedWrite(read.data, read.version);
   const driveTs = read.status === 'ok' ? (read.data._lastModified ?? 0) : 0;
   const decision = decideReconcile({
     hasData:       read.status === 'ok',
@@ -709,6 +772,7 @@ export async function connectDrive(allowSharedAccount = false): Promise<ConnectR
   localStorage.removeItem(lsSyncedTs());
   localStorage.removeItem(lsSyncedVersion());
   localStorage.removeItem(lsFailed());
+  localStorage.removeItem(lsInflight());
   try {
     const token = await requestToken('consent');
     // Who the account is, from Drive's own about.get — which the drive.file
@@ -866,6 +930,9 @@ async function flushSync(interactive = false): Promise<void> {
     // _lastModified/_deviceId still stamped: clients running the pre-redesign
     // code read them, and the transitional reconcile path does too.
     const payload = JSON.stringify({ ...stateWithoutId, _lastModified: ts, _deviceId: getDeviceId() });
+    // Noted before it leaves: if Drive commits it and the answer is lost, the
+    // next read can still tell it is ours (recogniseOwnLandedWrite).
+    localStorage.setItem(lsInflight(), JSON.stringify({ ts, seq, page: PAGE_ID } satisfies InflightWrite));
     const resp = await driveRequest(
       `https://www.googleapis.com/upload/drive/v3/files/${_state.fileId}?uploadType=media&fields=version`,
       { method: 'PATCH', body: payload, headers: { 'Content-Type': 'application/json' } },
