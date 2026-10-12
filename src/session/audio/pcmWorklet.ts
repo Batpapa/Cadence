@@ -77,9 +77,12 @@ let moduleUrl: string | null = null;
  * `workerPort` should be one end of a MessageChannel whose other end went to
  * the recognition worker.
  */
+/** `input` is the stream's source node, made by the caller: on an iPhone a
+ *  pause gives the microphone back and the resume plugs a new one in its place
+ *  (sources.ts), so the caller has to be the one holding it. */
 export async function attachPcmWorklet(
   audioContext: AudioContext,
-  stream: MediaStream,
+  input: AudioNode,
   workerPort: MessagePort,
 ): Promise<AudioWorkletNode> {
   if (!moduleUrl) {
@@ -87,7 +90,6 @@ export async function attachPcmWorklet(
   }
   await audioContext.audioWorklet.addModule(moduleUrl);
 
-  const source = audioContext.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(audioContext, PROCESSOR_NAME, {
     numberOfInputs: 1,
     numberOfOutputs: 0,
@@ -103,6 +105,6 @@ export async function attachPcmWorklet(
     processorOptions: { chunkSize: WORKLET_CHUNK_SAMPLES, debug: DEBUG_LIVE_AUDIO },
   });
   node.port.postMessage({ port: workerPort }, [workerPort]);
-  source.connect(node);
+  input.connect(node);
   return node;
 }

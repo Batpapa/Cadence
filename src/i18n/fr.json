@@ -1548,6 +1548,8 @@
   "sessions.pause": "Pause",
   "sessions.resume": "Reprendre",
   "sessions.paused": "PAUSE",
+  "sessions.pausedMicReleased": "Micro libéré pendant la pause",
+  "sessions.resumeMicFailed": "Le micro n'a pas pu être rouvert. L'enregistrement reste en pause, sans rien perdre : réessayer « Reprendre », ou l'arrêter.",
   "sessions.like": "J'ai aimé ce morceau",
   "sessions.unlike": "Retirer le marqueur",
   "sessions.share.checking": "Vérification…",

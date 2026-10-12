@@ -4,6 +4,7 @@ import type { AppContext } from '../../types';
 import { isTouchPrimaryDevice, isAppleTouchDevice } from '../../utils';
 import { isNative } from '../../native/platform';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
+import { alertModal } from '../../components/modal';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
@@ -204,7 +205,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
 
   const onPauseClick = () => {
     if (phase === 'recording') void live.pause();
-    else if (phase === 'paused') void live.resume();
+    // On an iPhone the resume reopens the microphone, which can be refused;
+    // the recording stays paused then, everything so far kept.
+    else if (phase === 'paused') void live.resume().catch(() => alertModal(t('sessions.resume'), t('sessions.resumeMicFailed')));
   };
 
   return (
@@ -253,6 +256,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
             {t('sessions.stop')}
           </button>
         </div>
+        {/* iPhone: the pause gave the microphone back, for another app to use
+            (the camera, to film). Said, because nothing else on screen shows it. */}
+        {paused && live.micReleased && <p class="text-xs text-dim mt-2">{t('sessions.pausedMicReleased')}</p>}
         {/* Only once something is being recorded: before that there is nothing
             to send, and no session to name in meta.json. */}
         {(phase === 'recording' || phase === 'paused') && <LiveBackupIndicator live={live} />}
