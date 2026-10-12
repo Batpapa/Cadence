@@ -378,7 +378,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
     >
       <div
         class={`bg-elevated shadow-2xl overflow-hidden flex flex-col ${
-          expanded ? 'w-full h-full' : 'border border-border rounded-xl w-full mx-4'
+          expanded ? 'w-full h-full safe-area-pad' : 'border border-border rounded-xl w-full mx-4'
         }`}
         style={expanded ? undefined : { maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85) }}
       >

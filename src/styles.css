@@ -30,6 +30,9 @@
   /* The notch and the Dynamic Island sit on a side in landscape. */
   --safe-left:   calc(env(safe-area-inset-left, 0px) / var(--zoom-factor, 1));
   --safe-right:  calc(env(safe-area-inset-right, 0px) / var(--zoom-factor, 1));
+  /* The scheme the browser draws its own controls in — see the date fields in
+     the base layer. */
+  --native-scheme: dark;
   /* Direct hex values — used in inline styles and SVG attributes */
   --color-bg:             #0a0a0a;
   --color-surface:        #141414;
@@ -63,6 +66,7 @@
 }
 
 [data-theme="green"] {
+  --native-scheme: light;
   --color-bg:             #f7faf5;
   --color-surface:        #edf4e8;
   --color-elevated:       #ffffff;
@@ -92,6 +96,7 @@
 }
 
 [data-theme="light"] {
+  --native-scheme: light;
   --color-bg:             #ffffff;
   --color-surface:        #f5f5f5;
   --color-elevated:       #ececec;
@@ -164,6 +169,15 @@
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+  /* Date and time fields drawn in the theme's scheme. Without it Chromium
+     draws them for a light page: a black calendar icon on our dark field,
+     invisible — and on Chrome Android 155 (not 145, measured 2026-10-12) these
+     fields became the desktop ones, where that icon is the only way to the
+     picker. Only these fields: on the whole page, color-scheme would also
+     change how embedded frames are backed. */
+  input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"] {
+    color-scheme: var(--native-scheme);
+  }
   /* Prevent text selection on draggable elements */
   [draggable="true"] { user-select: none; -webkit-user-select: none; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -181,6 +195,12 @@
   .btn-success { @apply btn bg-success/10 hover:bg-success/20 text-success; }
   .input      { @apply w-full bg-bg border border-border rounded px-3 py-2 text-sm text-primary
                        placeholder-dim focus:outline-none focus:border-accent transition-colors; }
+  /* A layer that covers the whole screen keeps its content off the system
+     bars. The app is drawn behind them on Android 15+ and in an installed
+     iPhone app, so what sat at the very top went under the clock (Android 16,
+     the expanded audio player's header, 2026-10-12). Padding, not margin: the
+     layer's own background still fills the bars' area. */
+  .safe-area-pad { padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); }
   .label      { @apply block text-xs font-medium text-muted uppercase tracking-wider mb-1; }
   .card-block { @apply bg-elevated border border-border rounded-lg p-4; }
   .section-title { @apply text-xs font-semibold text-muted uppercase tracking-widest; }

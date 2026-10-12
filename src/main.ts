@@ -1,7 +1,7 @@
 import './styles.css';
 import 'abcjs/abcjs-audio.css';
 import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyState, deleteLegacyState, loadAllUsers, getLastUserId, setLastUserId, touchUserOrder } from './db';
-import { emptyState, formatBytes, downloadCadenceFile, downloadBlob } from './utils';
+import { emptyState, formatBytes, downloadCadenceFile, downloadBlob, isTouchPrimaryDevice, isAppleTouchDevice } from './utils';
 import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, welcomeLanguage } from './services/userService';
 import { h, render } from 'preact';
@@ -807,4 +807,28 @@ function finishBoot(root: HTMLElement): void {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
     if (closeTopOverlay()) e.preventDefault();
   });
+
+  // A tap anywhere on a date field opens its picker. Chrome Android 155 draws
+  // these fields as the desktop ones (145 did not; measured 2026-10-12): a tap
+  // on the text selects the day or the year, and only the small calendar icon
+  // opens the picker — "touching the date opens nothing". Touch only: with a
+  // mouse, clicking into the text to type is the point of that UI. Not iOS,
+  // whose field is a single button that opens its own wheel anyway.
+  //
+  // The click's default is cancelled only once showPicker() has opened the
+  // picker, so that the browser's own opening — the old Android field opens
+  // on that same tap — does not try for a second one. If it throws, the tap is
+  // left to do whatever it did before.
+  if (isTouchPrimaryDevice() && !isAppleTouchDevice()) {
+    document.addEventListener('click', (e) => {
+      const el = e.target;
+      if (e.defaultPrevented || !(el instanceof HTMLInputElement)) return;
+      if (!/^(date|datetime-local|time|month)$/.test(el.type) || el.disabled || el.readOnly) return;
+      if (typeof el.showPicker !== 'function') return;
+      try {
+        el.showPicker();
+        e.preventDefault();
+      } catch { /* left to the browser */ }
+    });
+  }
 }
