@@ -11,6 +11,7 @@ import { IncipitRow } from '../components/incipit';
 import { TuneIcon } from '../components/icons';
 import { STRATEGY_ICONS } from '../components/studyModal';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
+import { fmtDate } from '../services/dateFormat';
 
 const STRATEGY_LABEL_KEYS: Record<StudyStrategy, string> = {
   random: 'study.strategy.random', optimal: 'study.strategy.optimal', stochastic: 'study.strategy.stochastic',
@@ -406,7 +407,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
                     <div
                       key={i}
                       style={{ width: '10px', height: '10px', borderRadius: '2px', background: colors[entry.rating] ?? 'var(--color-dim)', opacity: 0.75, flexShrink: 0 }}
-                      title={`${new Date(entry.ts).toLocaleDateString()} — ${entry.rating}`}
+                      title={`${fmtDate(entry.ts)} — ${entry.rating}`}
                     />
                   ))}
                 </div>

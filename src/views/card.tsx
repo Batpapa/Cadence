@@ -33,6 +33,8 @@ import { t } from '../services/i18nService';
 import { CustomSelect } from '../components/customSelect';
 import { showDeckPickerPopover } from '../components/deckSelector';
 import type { Card, SessionRating } from '../types';
+import { fmtDate, fieldValueToDate } from '../services/dateFormat';
+import { mountDateField } from '../components/dateField';
 
 // ── Local bridges ─────────────────────────────────────────────────────────────
 
@@ -124,7 +126,10 @@ function mkSessionForm(defaultTs: number, defaultRating: SessionRating) {
   let selected: SessionRating = defaultRating;
   const body      = document.createElement('div'); body.className = 'space-y-4';
   const dtLbl     = document.createElement('label'); dtLbl.className = 'label'; dtLbl.textContent = t('card.logReview.dateLabel');
-  const inp       = document.createElement('input'); inp.type = 'datetime-local'; inp.value = toInputVal(defaultTs); inp.className = 'input';
+  // In the date format of the settings (dateField.tsx); never left empty —
+  // a review has a moment.
+  const dtHost    = document.createElement('div');
+  const dt        = mountDateField(dtHost, { value: toInputVal(defaultTs), withTime: true, allowEmpty: false, class: 'input' });
   const ratingLbl = document.createElement('div'); ratingLbl.className = 'label'; ratingLbl.textContent = t('card.logReview.qualityLabel');
   const ratingRow = document.createElement('div'); ratingRow.className = 'grid grid-cols-4 gap-2';
   for (const def of RATING_DEFS) {
@@ -140,8 +145,8 @@ function mkSessionForm(defaultTs: number, defaultRating: SessionRating) {
     };
     ratingRow.appendChild(btn);
   }
-  body.append(dtLbl, inp, ratingLbl, ratingRow);
-  return { body, inp, getRating: () => selected };
+  body.append(dtLbl, dtHost, ratingLbl, ratingRow);
+  return { body, dt, dtHost, getRating: () => selected };
 }
 
 function openSessionModal(
@@ -150,17 +155,20 @@ function openSessionModal(
   onSave: (ts: number, rating: SessionRating) => void,
   onDelete?: () => void,
 ) {
-  const { body, inp, getRating } = mkSessionForm(defaultTs, defaultRating);
+  const { body, dt, dtHost, getRating } = mkSessionForm(defaultTs, defaultRating);
+  // The field is a Preact tree of its own: down with the dialog, whichever way
+  // it goes (a footer button closes without running onDismiss).
+  const close = () => { closeModal(); dt.unmount(); };
   showModal(onDelete ? t('card.logReview.editTitle') : t('card.logReview.title'), body, [
-    ...(onDelete ? [{ label: '', icon: iconElement(TrashIcon), danger: true, align: 'start' as const, onClick: () => { closeModal(); onDelete(); } }] : []),
-    { label: t('common.cancel'), onClick: closeModal },
+    ...(onDelete ? [{ label: '', icon: iconElement(TrashIcon), danger: true, align: 'start' as const, onClick: () => { close(); onDelete(); } }] : []),
+    { label: t('common.cancel'), onClick: close },
     { label: t('common.save'), primary: true, onClick: () => {
-      const ts = inp.value ? new Date(inp.value).getTime() : defaultTs;
-      if (isNaN(ts)) return;
-      closeModal(); onSave(ts, getRating());
+      const ts = fieldValueToDate(dt.getValue())?.getTime() ?? defaultTs;
+      close(); onSave(ts, getRating());
     }},
-  ]);
-  focusIfDesktop(inp);
+  ], { onDismiss: () => dt.unmount() });
+  const field = dtHost.querySelector('input');
+  if (field) focusIfDesktop(field);
 }
 
 function showManageDecksModal(cardId: string) {
@@ -1272,7 +1280,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 <div
                   key={i}
                   style={{ width: '10px', height: '10px', borderRadius: '2px', background: RATING_COLORS[entry.rating] ?? 'var(--color-dim)', opacity: 0.75, cursor: 'pointer', flexShrink: 0 }}
-                  title={`${new Date(entry.ts).toLocaleDateString()} — ${RATING_LABELS[entry.rating] ?? entry.rating}`}
+                  title={`${fmtDate(entry.ts)} — ${RATING_LABELS[entry.rating] ?? entry.rating}`}
                   onClick={() => openSessionModal(entry.ts, entry.rating,
                     (ts, rating) => mutate(s => {
                       const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;

@@ -9,6 +9,7 @@ import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/att
 import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon } from './icons';
 import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW, zoomWorks } from '../services/zoomService';
+import { playbackVolumePercent, setPlaybackVolumePercent, DEFAULT_VOLUME_PERCENT } from '../services/playbackVolume';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
 import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
 import { applyExternalData } from '../services/migration';
@@ -35,6 +36,9 @@ import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../servic
 import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
 import { formatBytes } from '../utils';
 import { registerOverlay } from './overlayStack';
+import { fmtDateTime, dateFormatOf, DATE_FORMATS, type DateFormat } from '../services/dateFormat';
+import { renameGeneratedNames } from '../session/sessionNaming';
+import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from '../session/model';
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
@@ -438,7 +442,7 @@ function SnapshotsRow({ userId }: { userId: string }) {
 
   const remove = (s: SnapshotMeta) => confirmModal(
     t('settings.snapshots.delete.title'),
-    t('settings.snapshots.delete.message', { date: new Date(s.ts).toLocaleString() }),
+    t('settings.snapshots.delete.message', { date: fmtDateTime(s.ts, { seconds: true }) }),
     t('common.delete'),
     () => {
       void deleteSnapshot(s.key)
@@ -466,7 +470,7 @@ function SnapshotsRow({ userId }: { userId: string }) {
             <div key={s.key} class="flex flex-col pl-2.5 pr-1 py-1 rounded-lg border border-border bg-bg">
               <div class="flex items-center gap-2">
                 <span class="text-xs text-muted flex-1 min-w-0 truncate">
-                  {new Date(s.ts).toLocaleString()} · {t(`settings.snapshots.reason.${s.reason}`)}
+                  {fmtDateTime(s.ts, { seconds: true })} · {t(`settings.snapshots.reason.${s.reason}`)}
                 </span>
                 {/* Explicit download button: the whole line used to BE the button,
                     which gave no clue that clicking it saved a file. */}
@@ -1308,8 +1312,44 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
         </div>
       </Row>
       <Sep />
+
+      <Row label={t('settings.dateFormat')} hint={t('settings.dateFormatHint')}>
+        <div style="flex:0 0 auto">
+          <CustomSelect
+            value={dateFormatOf(user.dateFormat)}
+            options={DATE_FORMATS.map(f => ({ value: f, label: `${dateFormatLabel(f)} · ${fmtDateTime(DATE_FORMAT_SAMPLE, {}, f)}` }))}
+            onChange={(next) => void ctx.mutate(s => {
+              const from = dateFormatOf(s.dateFormat);
+              const to = dateFormatOf(next);
+              // Absent for the default, like the other preferences.
+              if (to === 'auto') delete s.dateFormat; else s.dateFormat = to;
+              // In the same write: the names Cadence generated follow the
+              // format they were written in (sessionNaming.ts).
+              const mod = s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+              if (mod?.sessions) renameGeneratedNames(Object.values(mod.sessions), from, to);
+            })}
+            triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent min-w-[13rem]"
+          />
+        </div>
+      </Row>
+      <Sep />
     </>
   );
+}
+
+/** The date each format is shown with in the menu: a day past the 12th, so
+ *  day-first and month-first cannot be mistaken for each other, and an evening
+ *  hour, so the 12-hour clock shows itself. */
+const DATE_FORMAT_SAMPLE = new Date(2026, 11, 24, 18, 30);
+
+/** Literal keys, so the i18n test can see them. */
+function dateFormatLabel(f: DateFormat): string {
+  switch (f) {
+    case 'dmy': return t('settings.dateFormat.dmy');
+    case 'mdy': return t('settings.dateFormat.mdy');
+    case 'ymd': return t('settings.dateFormat.ymd');
+    default:    return t('settings.dateFormat.auto');
+  }
 }
 
 // ── Misc. section ─────────────────────────────────────────────────────────────
@@ -1378,6 +1418,28 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
           // the very choice it is offering.
           triggerClass="flex items-center gap-2 min-w-[10.5rem] text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent"
         />
+      </Row>
+      <Sep />
+
+      {/* This device's, not the user's (playbackVolume.ts): applied while the
+          slider moves, to whatever is playing right now. */}
+      <Row label={t('settings.playbackVolume')} hint={t('settings.playbackVolumeHint')} stacked>
+        <div class="flex items-center gap-2 w-full">
+          <span class="text-sm font-mono w-12 text-right tabular-nums shrink-0">{playbackVolumePercent.value}%</span>
+          <input
+            type="range" min="0" max="100" step="5"
+            class="flex-1 accent-accent cursor-pointer"
+            value={playbackVolumePercent.value}
+            onInput={(e) => setPlaybackVolumePercent(parseInt((e.target as HTMLInputElement).value, 10))}
+          />
+          <button
+            class="btn-ghost p-0.5 text-dim hover:text-primary shrink-0"
+            title={t('settings.playbackVolume.reset')}
+            onClick={() => setPlaybackVolumePercent(DEFAULT_VOLUME_PERCENT)}
+          >
+            <ResetIcon size={13} />
+          </button>
+        </div>
       </Row>
       <Sep />
     </>

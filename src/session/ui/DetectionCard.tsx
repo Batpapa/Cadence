@@ -13,6 +13,7 @@ import { viterbiPickOf, type Detection, type DetectionAlternate } from '../model
 import { reviewEntryIndex } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { currentPick, provisionalEnd } from '../detectionState';
+import { fmtDateTime } from '../../services/dateFormat';
 
 // ── DetectionCard ────────────────────────────────────────────────────────────
 // The central unit of the session feed/summary: one recognised tune, with its
@@ -181,7 +182,7 @@ function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
       <span class="inline-flex items-center gap-1.5">
         <button
           class="text-xs text-muted cursor-pointer inline-flex items-center gap-1 min-h-8 hover:text-danger"
-          title={new Date(existing.ts).toLocaleString()}
+          title={fmtDateTime(existing.ts, { seconds: true })}
           onClick={() => {
             if (Date.now() - ratedAt.current < REMOVE_GUARD_MS) return;
             void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1));

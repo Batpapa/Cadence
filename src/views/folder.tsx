@@ -12,6 +12,7 @@ import { removeCards } from '../services/cardService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork, DeckEntry } from '../types';
+import { fmtDayMonth } from '../services/dateFormat';
 
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
   const minH  = period === '1y' ? 2 : 4;
   const total = data.length;
 
-  const fmtDate = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const fmtDate = (d: Date) => fmtDayMonth(d);
 
   const lo = range ? Math.min(range.anchor, range.end) : -1;
   const hi = range ? Math.max(range.anchor, range.end) : -1;

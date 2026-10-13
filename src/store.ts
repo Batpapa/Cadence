@@ -5,6 +5,7 @@ import { saveUser } from './db';
 import { syncToCloud } from './services/driveService';
 import { saveFailure, reportSaveFailure, reportSaveRecovered } from './services/saveHealth';
 import { normaliseState } from './services/stateNormalise';
+import { setDateFormatPref } from './services/dateFormat';
 import { closeTopOverlay } from './components/overlayStack';
 
 export const appState    = signal<AppState>(emptyState());
@@ -313,6 +314,9 @@ let _swallowNextPop = 0;
  *  a pass and changes nothing. */
 export function commitState(next: AppState): void {
   normaliseState(next);
+  // Here, at the one point every state passes through, rather than at each
+  // writer: a format changed on another device arrives by Drive.
+  setDateFormatPref(next.dateFormat);
   appState.value = next;
 }
 

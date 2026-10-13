@@ -13,6 +13,7 @@ import { playIcon, stopIcon } from './playbackIcons';
 import { MusicNoteIcon, ExpandIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio } from '../services/audioSession';
+import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 
 // ── The opening bars, in place ───────────────────────────────────────────────
 // Asked for from the field (2026-09-10): in a session, looking at a set, a
@@ -348,7 +349,12 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
   const [failed, setFailed] = useState(false);
   // Everything the play button needs, filled in by the render below. A ref,
   // not state: nothing on screen depends on it until the button is pressed.
-  const audio = useRef<{ visualObj: TuneObject | null; synth: MidiBuffer | null }>({ visualObj: null, synth: null });
+  // `primedWith`: the instrument and volume the synth's sound was built with.
+  // abcjs bakes both into the buffer at prime(), so a synth kept from an
+  // earlier press plays the OLD ones — which is how the volume setting had no
+  // effect here (2026-10-13): this page stays mounted while the settings
+  // change around it.
+  const audio = useRef<{ visualObj: TuneObject | null; synth: MidiBuffer | null; primedWith: string }>({ visualObj: null, synth: null, primedWith: '' });
   const [playing, setPlaying] = useState(false);
   const [audible, setAudible] = useState(false);
   /** How much room the stave actually has, in layout pixels. */
@@ -396,7 +402,7 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
     setPlaying(false);
     return () => {
       try { audio.current.synth?.stop(); } catch { /* never started */ }
-      audio.current = { visualObj: null, synth: null };
+      audio.current = { visualObj: null, synth: null, primedWith: '' };
     };
   }, [abc]);
 
@@ -458,7 +464,16 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
     const { visualObj } = audio.current;
     if (!visualObj) return;
 
-    const synth = audio.current.synth;
+    const program = appState.value.abcInstrument;
+    const volume = abcjsVolumeMultiplier();
+    const wanted = `${program ?? ''}|${volume}`;
+    let synth = audio.current.synth;
+    // Built with other settings: dropped, and built again below.
+    if (synth && audio.current.primedWith !== wanted) {
+      try { synth.stop(); } catch { /* not playing */ }
+      audio.current.synth = synth = null;
+      setPlaying(false);
+    }
     if (synth) {
       // STOP, not pause (the user's call, 2026-09-11): two bars are over in
       // three seconds, so there is nothing to come back to in the middle of
@@ -471,7 +486,6 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
 
     try {
       const created = new abcjs.synth.CreateSynth();
-      const program = appState.value.abcInstrument;
       await created.init({
         visualObj,
         // `onEnded` belongs INSIDE `options`, and the typing lies about it:
@@ -480,10 +494,15 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
         // `options.options.onEnded`. Passed at the top level it is silently
         // dropped, the end of the sound is never announced, and the button
         // stays on ⏹ forever.
-        options: { ...(program !== undefined ? { program } : {}), onEnded: () => setPlaying(false) },
+        options: {
+          ...(program !== undefined ? { program } : {}),
+          soundFontVolumeMultiplier: volume,
+          onEnded: () => setPlaying(false),
+        },
       });
       await created.prime();
       audio.current.synth = created;
+      audio.current.primedWith = wanted;
       created.start();
       setPlaying(true);
     } catch {

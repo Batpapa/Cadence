@@ -29,6 +29,7 @@ import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import { appState } from '../../store';
 import { headPosition, withGaps } from './timelineModel';
+import { useMediaVolume } from '../../components/useMediaVolume';
 
 // ── Screen: summary ───────────────────────────────────────────────────────────
 // A finished session: audio player, clickable segment timeline, detection
@@ -134,6 +135,8 @@ interface SessionSummaryProps {
 export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotationId }: SessionSummaryProps) {
   const listWrapRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // At the app's playback volume (Settings → Misc., per device).
+  useMediaVolume(audioRef);
   const timeLblRef = useRef<HTMLSpanElement>(null);
   const playingIdRef = useRef<string | null>(null);
   // The timeline IS the seek bar now — one axis, so there is nothing left to

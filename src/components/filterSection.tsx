@@ -3,6 +3,7 @@ import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
 import { ChevronDownIcon, FolderIcon, VennAndIcon, VennOrIcon } from './icons';
 import { matchesSearch } from '../utils';
+import { DateField } from './dateField';
 
 export type FilterMap = Map<string, FilterState>;
 
@@ -149,22 +150,22 @@ export function ReviewedRangeSection({ from, to, onChange }: {
       </div>
       {open && (
         <div class="flex flex-wrap items-center gap-1.5 pt-1">
-          <input
-            type="date"
+          {/* In the date format of the settings (dateField.tsx), not the
+              browser's: read when the field is left, or picked. */}
+          <DateField
             class="input py-0.5 px-2 text-xs w-auto"
             value={from}
             max={to || undefined}
             title={t('library.filterReviewed.from')}
-            onInput={(e) => onChange((e.target as HTMLInputElement).value, to)}
+            onChange={(v) => onChange(v, to)}
           />
           <span class="text-xs text-dim">–</span>
-          <input
-            type="date"
+          <DateField
             class="input py-0.5 px-2 text-xs w-auto"
             value={to}
             min={from || undefined}
             title={t('library.filterReviewed.to')}
-            onInput={(e) => onChange(from, (e.target as HTMLInputElement).value)}
+            onChange={(v) => onChange(from, v)}
           />
           {active && (
             <button

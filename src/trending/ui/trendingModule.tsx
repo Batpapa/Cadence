@@ -14,6 +14,7 @@ import { appState, mutate, navigate, replaceRoute } from '../../store';
 import { timeAgo, externalSourceLink } from '../../utils';
 import { Sparkline } from './sparkline';
 import { mutateWithRule } from '../../services/attachmentStore';
+import { DateField } from '../../components/dateField';
 
 export interface TrendingRouteParams {
   from?: string;
@@ -409,50 +410,50 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
         <div class="flex flex-wrap items-center gap-3 mb-3">
           <div class="flex items-center gap-1.5">
             <span class="text-xs text-dim">{t('trending.from')}</span>
-            <input
-              type="date"
+            {/* A DateField (2026-10-13): read once the field is left or the
+                calendar picks, so the mid-typing dates that made the native
+                field jump never reach this. The field itself shows the
+                date the user CHOSE, never the snapshot it lands on, and goes
+                back to the last accepted one when this refuses. */}
+            <DateField
+              // A period has two ends: neither can be cleared.
+              allowEmpty={false}
               class="text-xs px-2 py-1 rounded border border-border bg-bg text-primary"
               min={toDateInputValue(dbState.snapshots[0]!)}
               // Never past the other end: a period that runs backwards is not
               // a period.
               max={toText || toDateInputValue(dbState.snapshots[dbState.snapshots.length - 1]!)}
               value={fromText}
-              onChange={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                setFromText(v);
-                // Mid-typing, or after the other end: shown, not acted on.
-                if (!inHistory(dbState, v) || v > acceptedToRef.current) return;
+              onChange={(v) => {
+                if (!inHistory(dbState, v) || v > acceptedToRef.current) return false;
                 acceptFrom(v);
                 const si = Math.min(closestSnapshotIndex(dbState.snapshots, new Date(v).getTime()), endIdx);
                 setStartIdx(si);
                 recompute(dbState, gainMode, threshValue, si, endIdx);
                 pushRoute(dbState, gainMode, threshValue, si, endIdx);
+                return true;
               }}
-              onBlur={() => setFromText(acceptedFromRef.current)}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             />
           </div>
 
           <div class="flex items-center gap-1.5">
             <span class="text-xs text-dim">{t('trending.to')}</span>
-            <input
-              type="date"
+            <DateField
+              // A period has two ends: neither can be cleared.
+              allowEmpty={false}
               class="text-xs px-2 py-1 rounded border border-border bg-bg text-primary"
               min={fromText || toDateInputValue(dbState.snapshots[0]!)}
               max={toDateInputValue(dbState.snapshots[dbState.snapshots.length - 1]!)}
               value={toText}
-              onChange={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                setToText(v);
-                if (!inHistory(dbState, v) || v < acceptedFromRef.current) return;
+              onChange={(v) => {
+                if (!inHistory(dbState, v) || v < acceptedFromRef.current) return false;
                 acceptTo(v);
                 const ei = Math.max(closestSnapshotIndex(dbState.snapshots, new Date(v).getTime()), startIdx);
                 setEndIdx(ei);
                 recompute(dbState, gainMode, threshValue, startIdx, ei);
                 pushRoute(dbState, gainMode, threshValue, startIdx, ei);
+                return true;
               }}
-              onBlur={() => setToText(acceptedToRef.current)}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             />
           </div>
 
