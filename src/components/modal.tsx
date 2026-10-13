@@ -232,6 +232,40 @@ export function promptModal(title: string, label: string, defaultValue: string, 
   focusIfDesktop(input);
 }
 
+/** "Unsaved changes": save, discard, or stay — for a dialog holding an edit
+ *  that leaving would lose (ModalOptions.guardDismiss is how it asks).
+ *  `proceed` runs after a save that went through or after a discard; a save
+ *  that did not (refused, failed) and Cancel both leave everything where it
+ *  was. Escape and the ✕ are Cancel. `message` names what was being edited. */
+export function askUnsavedChanges({ message, save, discard, proceed, canSave = true, saveLabel }: {
+  message: string;
+  /** The keeping button's word: the dialog's own, so "Add" where the dialog
+   *  adds. Default "Save". */
+  saveLabel?: string;
+  save: () => Promise<boolean>;
+  discard: () => void;
+  proceed: () => void;
+  /** False when what is on screen could not be saved as it is (a link with
+   *  no name): the question then offers only to drop it or to stay. */
+  canSave?: boolean;
+}): void {
+  const body = document.createElement('p');
+  body.className = 'text-sm text-muted leading-relaxed';
+  body.textContent = message;
+  // Save, Discard, Cancel, left to right (the user's order, 2026-10-13): the
+  // one that keeps the work first.
+  showModal(t('unsaved.title'), body, [
+    ...(canSave ? [{
+      label: saveLabel ?? t('common.save'), primary: true,
+      // Closed first: a save may ask a question of its own (a TheSession score
+      // is saved as a copy), which must not open under this one.
+      onClick: async () => { closeModal(); if (await save()) proceed(); },
+    }] : []),
+    { label: t('unsaved.discard'), danger: true, onClick: () => { closeModal(); discard(); proceed(); } },
+    { label: t('common.cancel'), onClick: closeModal },
+  ]);
+}
+
 export function confirmModal(title: string, message: string, confirmLabel: string, onConfirm: () => void): void {
   const body = document.createElement('p');
   body.className = 'text-sm text-muted leading-relaxed';

@@ -1,8 +1,9 @@
 import { render } from 'preact';
+import { signal } from '@preact/signals';
 import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, closeModal } from '../../components/modal';
+import { showModal, closeModal, askUnsavedChanges } from '../../components/modal';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { ResetIcon } from '../../components/icons';
 import type { Detection } from '../model';
@@ -1042,6 +1043,12 @@ export function showBoundEditor(opts: {
   // Seeded with no twins: the editor reports them on its first change, and
   // saving without touching anything must not write to a neighbour.
   let draft: BoundEdit = { start: opts.ann.start, end: opts.ann.end ?? opts.duration, twins: [] };
+  // Moved bounds are work: leaving any other way than the two buttons asks
+  // first, and Save is greyed while nothing has moved (both 2026-10-13). Same
+  // threshold as the editor's own "changed" mark.
+  const moved = () => Math.abs(draft.start - opts.ann.start) > .004
+    || Math.abs(draft.end - (opts.ann.end ?? opts.duration)) > .004;
+  const unchanged = signal(true);
 
   render(
     <BoundEditor
@@ -1049,13 +1056,22 @@ export function showBoundEditor(opts: {
       anns={opts.anns}
       duration={opts.duration}
       getAudio={opts.getAudio}
-      onDraft={(edit) => { draft = edit; }}
+      onDraft={(edit) => { draft = edit; unchanged.value = !moved(); }}
     />,
     body,
   );
 
+  const save = () => { closeModal(); cleanup(); opts.onSave(draft); };
   showModal(t('sessions.bounds.title'), body, [
     { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
-    { label: t('common.save'), primary: true, onClick: () => { closeModal(); cleanup(); opts.onSave(draft); } },
-  ], { maxWidth: '34rem', onDismiss: cleanup });
+    { label: t('common.save'), primary: true, disabled: unchanged, onClick: save },
+  ], {
+    maxWidth: '34rem',
+    onDismiss: cleanup,
+    guardDismiss: (dismiss) => {
+      if (!moved()) return false;
+      askUnsavedChanges({ message: t('unsaved.message.bounds'), save: async () => { save(); return true; }, discard: () => {}, proceed: dismiss });
+      return true;
+    },
+  });
 }
