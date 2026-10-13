@@ -477,6 +477,14 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets }: {
         <span class={`${labelClass} cursor-pointer`} title={entry.url} onClick={play}>{label}</span>
       )}
 
+      {/* Editing first, then what the row does, then removing — the order
+          of a file's row (rename, download, remove), so the pencil sits in
+          the same place on every row of the list. */}
+      {editable && onEdit && (
+        <button class={actionClass} title={t('embed.edit')} onClick={onEdit}>
+          <PencilIcon size={11} />
+        </button>
+      )}
       {mode === 'embed' && (
         <button class={`${actionClass} text-xs`} title={t('embed.play')} onClick={play}>▶</button>
       )}
@@ -484,12 +492,6 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets }: {
         <a href={href} target="_blank" rel="noopener noreferrer" class={actionClass} title={t('embed.open')}>
           <ExternalLinkIcon size={11} />
         </a>
-      )}
-
-      {editable && onEdit && (
-        <button class={actionClass} title={t('embed.edit')} onClick={onEdit}>
-          <PencilIcon size={11} />
-        </button>
       )}
       {editable && (
         <button

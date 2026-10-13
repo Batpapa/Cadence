@@ -2,10 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import type { Attachment, EmbedEntry, LinkMode } from '../types';
 import { generateId, focusIfDesktop } from '../utils';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
 import { t } from '../services/i18nService';
 import { checkEmbed, checkLink, detectPlatform, safeExternalUrl, linkMode, embedAutoTitle, type LinkCheck, type EmbedPlatform } from '../services/embedService';
-import { refusalMessage } from '../services/remoteFile';
+import { refusalMessage, type RemoteRefusal } from '../services/remoteFile';
 
 // ── Adding, and editing, a link attachment ───────────────────────────────────
 // A link does one of two things when it is opened, and until 2026-09-22 it
@@ -62,7 +62,11 @@ type Lookup = (url: string, mode: LinkMode) => Promise<LinkCheck>;
 type Check =
   | { url: string; mode: LinkMode; state: 'pending' }
   | { url: string; mode: LinkMode; state: 'ok'; title: string }
-  | { url: string; mode: LinkMode; state: 'bad'; message: string };
+  | { url: string; mode: LinkMode; state: 'bad'; message: string; why: RemoteRefusal['why'] };
+
+/** What the body knows about the edit, for the dialog around it to read when
+ *  it is being left: written on every render. */
+interface EditState { dirty: boolean; savable: boolean }
 
 /** Long enough that typing a URL by hand is one request, short enough that a
  *  paste reads as answered at once. */
@@ -79,8 +83,11 @@ const MODES: ReadonlyArray<readonly [LinkMode, string]> = [
   ['link',  'embed.mode.link'],
 ];
 
-function LinkBody({ draft, known, saved, lookup, disabled, busy, error, onSubmit }: {
+function LinkBody({ draft, initial, state, known, saved, lookup, disabled, busy, error, onSubmit }: {
   draft: Draft;
+  /** The draft as the dialog opened on it — what "changed" is measured from. */
+  initial: Draft;
+  state: EditState;
   known: KnownAuto | null;
   saved: Saved | null;
   lookup: Lookup;
@@ -126,7 +133,7 @@ function LinkBody({ draft, known, saved, lookup, disabled, busy, error, onSubmit
       void lookup(trimmed, mode).then((answer) => {
         if (shown.current.url !== trimmed || shown.current.mode !== mode) return;
         setCheck(answer.ok ? { url: trimmed, mode, state: 'ok', title: answer.title }
-          : { url: trimmed, mode, state: 'bad', message: refusalMessage(answer.refusal) });
+          : { url: trimmed, mode, state: 'bad', message: refusalMessage(answer.refusal), why: answer.refusal.why });
       });
     }, CHECK_DELAY_MS);
     return () => clearTimeout(timer);
@@ -177,12 +184,30 @@ function LinkBody({ draft, known, saved, lookup, disabled, busy, error, onSubmit
 
     draft.url = nextUrl; draft.name = nextName; draft.mode = nextMode;
     setUrl(nextUrl); setName(nextName); setMode(nextMode);
-    // A link with no name is the row's label missing: an external one shows
-    // the name and nothing else, and the URL it would fall back to is exactly
-    // what the name exists to replace.
-    disabled.value = nextUrl.trim() === '' || (nextMode === 'link' && nextName.trim() === '');
     error.value = '';
   };
+
+  // ── Whether Save means anything (2026-10-13: greyed when not valid, or when
+  // nothing changed) ──
+  // The name as it would be SAVED: over an embed, the platform's own name in
+  // the box is the same entry as an empty box (see showLinkModal's draft).
+  const savedName = (m: LinkMode, n: string, a: string) => (m === 'embed' && n.trim() === a ? '' : n.trim());
+  const modified = saved === null
+    ? trimmed !== '' || name.trim() !== ''
+    : trimmed !== initial.url.trim() || mode !== initial.mode
+      || savedName(mode, name, auto) !== savedName(initial.mode, initial.name, auto);
+  // Refusals that typing again will not change. NOT 'nowhere', which is also
+  // what a dropped connection reads as: there, Save is the way to try again.
+  const refused = current?.state === 'bad' && current.why !== 'nowhere';
+  // A link with no name is the row's label missing: an external one shows
+  // the name and nothing else, and the URL it would fall back to is exactly
+  // what the name exists to replace.
+  const savable = trimmed !== '' && safeExternalUrl(trimmed) !== null && !refused
+    && !(mode === 'link' && name.trim() === '');
+  state.dirty = modified;
+  state.savable = savable;
+  // After render, every render: the footer reads this signal in another tree.
+  useLayoutEffect(() => { disabled.value = busy.value || !savable || !modified; });
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !disabled.value) { e.preventDefault(); onSubmit(); }
@@ -349,9 +374,11 @@ function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | u
     mode: base ? linkMode(base) : 'embed',
     name: base?.title && base.title !== baseAuto ? base.title : '',
   };
-  // Starts refused when there is nothing to act on — an addition always, an
-  // edit never, its entry having passed this same test once already.
-  const disabled = signal(draft.url.trim() === '' || (draft.mode === 'link' && draft.name.trim() === ''));
+  // Refused until something changes: an addition has nothing yet, an edit
+  // nothing new. The body keeps it up to date from then on.
+  const disabled = signal(true);
+  const initial: Draft = { ...draft };
+  const state: EditState = { dirty: false, savable: false };
   const busy = signal(false);
   const error = signal('');
 
@@ -376,25 +403,44 @@ function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | u
   // Barred while the oEmbed request is out, by the guard and by the greyed
   // button both: Enter and the footer reach the same place, and a slow answer
   // used to mean one fetch per impatient press.
-  const commit = async () => {
-    if (busy.value) return;
+  const commit = async (): Promise<boolean> => {
+    if (busy.value) return false;
     busy.value = true; disabled.value = true; error.value = '';
     const entry = await buildEntry(draft, base, lookup, error);
     busy.value = false;
-    if (!entry) { disabled.value = false; return; } // error on screen, dialog stays open
+    if (!entry) return false; // error on screen, dialog stays open
     leave();
     onDone(entry);
+    return true;
   };
 
   const { el, cleanup } = renderModalBody(
-    <LinkBody draft={draft} known={known} saved={base ? { url: base.url, mode: linkMode(base) } : null} lookup={lookup} disabled={disabled} busy={busy} error={error} onSubmit={() => { void commit(); }} />,
+    <LinkBody draft={draft} initial={initial} state={state} known={known} saved={base ? { url: base.url, mode: linkMode(base) } : null} lookup={lookup} disabled={disabled} busy={busy} error={error} onSubmit={() => { void commit(); }} />,
   );
   leave = () => { closeModal(); cleanup(); };
 
   showModal(title, el, [
     { label: t('common.cancel'), onClick: leave },
     { label: confirmLabel, primary: true, disabled, onClick: () => { void commit(); } },
-  ], { maxWidth: '26rem', onDismiss: cleanup });
+  ], {
+    maxWidth: '26rem',
+    onDismiss: cleanup,
+    // Leaving with an edit not saved asks first — the ✕, Escape, a click
+    // outside, the back gesture. Not the Cancel button: that one IS the
+    // answer "drop it", and asking it back would be a question about itself.
+    guardDismiss: (dismiss) => {
+      if (!state.dirty) return false;
+      askUnsavedChanges({
+        message: t('unsaved.message.link'),
+        saveLabel: confirmLabel,
+        canSave: state.savable,
+        save: commit,
+        discard: () => {},
+        proceed: dismiss,
+      });
+      return true;
+    },
+  });
 }
 
 /** The "Link" entry of the attachment list's "+" menu. */

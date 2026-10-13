@@ -15,7 +15,7 @@ import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpe
   ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
   SWING_CHOICES, NO_SWING } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
-import { showModal, closeModal, updateTopModal, confirmModal } from './modal';
+import { showModal, updateTopModal, confirmModal, askUnsavedChanges } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon } from './playbackIcons';
@@ -601,29 +601,6 @@ function showTransposeModal(current: number, limit: number, onPick: (semitones: 
 }
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
-
-/** "Unsaved changes": save, discard, or stay. `proceed` runs after a save that
- *  went through or after a discard; a save that did not (refused, failed) and
- *  Cancel both leave everything where it was. Escape and the ✕ are Cancel. */
-function askUnsaved({ save, discard, proceed }: {
-  save: () => Promise<boolean>;
-  discard: () => void;
-  proceed: () => void;
-}): void {
-  const body = document.createElement('p');
-  body.className = 'text-sm text-muted leading-relaxed';
-  body.textContent = t('fileViewer.unsaved.message');
-  showModal(t('fileViewer.unsaved.title'), body, [
-    { label: t('common.cancel'), onClick: closeModal },
-    { label: t('fileViewer.unsaved.discard'), danger: true, onClick: () => { closeModal(); discard(); proceed(); } },
-    {
-      label: t('common.save'), primary: true,
-      // Closed first: a save may ask a question of its own (a TheSession score
-      // is saved as a copy), which must not open under this one.
-      onClick: async () => { closeModal(); if (await save()) proceed(); },
-    },
-  ]);
-}
 
 function modalWidth(entry: FileEntry): string {
   const m = entry.mimeType;
@@ -1695,7 +1672,7 @@ export function showPreviewModal(
       dot.className = 'text-warn ml-1';
       dot.textContent = '●';
       textTabBtn.appendChild(dot);
-      textTabBtn.title = t('fileViewer.unsaved.title');
+      textTabBtn.title = t('unsaved.title');
     };
 
     // Assigned by the editable branch below; a viewer without onSave has
@@ -1706,7 +1683,8 @@ export function showPreviewModal(
      *  none, otherwise after asking whether to save it, drop it or stay. */
     function settleDraft(proceed: () => void): void {
       if (!draft) { proceed(); return; }
-      askUnsaved({
+      askUnsavedChanges({
+        message: t('unsaved.message.text'),
         save: () => saveDraft(),
         discard: () => {
           draft = null;
@@ -2772,7 +2750,7 @@ export function showPreviewModal(
       saveBtn.onclick = () => { void saveText(); };
       guardClose = (dismiss) => {
         if (textarea.value === text) return false;
-        askUnsaved({ save: saveText, discard: () => { textarea.value = text; }, proceed: dismiss });
+        askUnsavedChanges({ message: t('unsaved.message.text'), save: saveText, discard: () => { textarea.value = text; }, proceed: dismiss });
         return true;
       };
 

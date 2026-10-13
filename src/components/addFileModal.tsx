@@ -5,7 +5,7 @@ import type { Attachment } from '../types';
 import { fileToEntry, focusIfDesktop } from '../utils';
 import { attachmentFor } from '../services/attachmentStore';
 import { appState } from '../store';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
 import { CustomSelect } from './customSelect';
 import { FileIcon, ClipboardIcon } from './icons';
 import { t } from '../services/i18nService';
@@ -190,6 +190,31 @@ function showPasteTextModal(onAdd: (a: Attachment) => void): void {
 
   const { el, cleanup } = renderModalBody(<PasteTextBody draft={draft} disabled={disabled} />);
   const leave = () => { closeModal(); cleanup(); };
+  const add = () => {
+    leave();
+    const entry = textAttachment(draft.base, draft.text, draft.format);
+    void attachmentFor({ name: entry.name, data: entry.data, mimeType: entry.mimeType }, appState.value)
+      .then(onAdd);
+  };
+  /** A text typed or pasted is work: leaving asks first (2026-10-13), by the
+   *  ✕, Escape, a click outside, the back gesture — and the ← to the sources,
+   *  which drops the text just the same. An empty box has nothing to lose. */
+  // `afterAdd`: whether `proceed` still runs once the text was added from the
+  // question — yes for leaving, which is then already done; NOT for the ←,
+  // which would reopen the sources over a text just added.
+  const settle = (proceed: () => void, afterAdd = true): boolean => {
+    if (draft.text === '') return false;
+    askUnsavedChanges({
+      message: t('unsaved.message.paste'),
+      saveLabel: t('common.add'),
+      canSave: !disabled.value,
+      save: async () => { add(); return afterAdd; },
+      discard: () => {},
+      proceed,
+    });
+    return true;
+  };
+  const back = () => { leave(); showAddFileModal(onAdd); };
 
   // Deliberately no floor on the TEXT: an empty file with a name is a usable
   // thing now that a .txt and a .md can be written in the viewer — a blank
@@ -207,18 +232,14 @@ function showPasteTextModal(onAdd: (a: Attachment) => void): void {
       // synced blob whatever its size and whatever the threshold said. Only
       // visible at a low threshold or on a long paste, but the rule is meant
       // to have one door (services/attachmentStore.ts) and this was a second.
-      onClick: () => {
-        leave();
-        const entry = textAttachment(draft.base, draft.text, draft.format);
-        void attachmentFor({ name: entry.name, data: entry.data, mimeType: entry.mimeType }, appState.value)
-          .then(onAdd);
-      },
+      onClick: add,
     },
   ], {
     maxWidth: '34rem',
     onDismiss: cleanup,
     // Back to the two sources: this dialog is the second half of one choice,
     // and picking the wrong half should cost an arrow rather than a reopening.
-    onBack: () => { leave(); showAddFileModal(onAdd); },
+    onBack: () => { if (!settle(back, false)) back(); },
+    guardDismiss: (dismiss) => settle(dismiss),
   });
 }
