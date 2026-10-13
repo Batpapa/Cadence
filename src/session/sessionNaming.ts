@@ -1,5 +1,5 @@
 import { t, tIn, type Lang } from '../services/i18nService';
-import { fmtDateTime, type DateFormat } from '../services/dateFormat';
+import { fmtDateTime, browserLocale, AUTO_LOCALE, type DateFormat } from '../services/dateFormat';
 import type { Analysis } from './model';
 
 // ── What a session is called ─────────────────────────────────────────────────
@@ -48,13 +48,25 @@ export function generatedSessionName(source: Analysis['source'], dateIso: string
 
 const GENERATED_KEYS = ['sessions.defaultName.mic', 'sessions.defaultName.device'] as const;
 const NAME_LANGS: Lang[] = ['en', 'fr'];
-/** What `auto` may have written: this browser's convention, and the ones the
- *  people using Cadence are most likely to have had on another device. */
-const AUTO_LOCALES: (string | undefined)[] = [undefined, 'en-US', 'en-GB', 'fr-FR'];
+/** What `auto` may have written: what it means in each language today, and
+ *  what it meant before 2026-10-13 — the browser's own convention, this one's
+ *  or the ones the people using Cadence most likely had on another device. */
+function autoLocales(): string[] {
+  return [...new Set([...Object.values(AUTO_LOCALE), browserLocale(), 'en-US', 'en-GB', 'fr-FR'])];
+}
 
 function whenCandidates(dateIso: string, fmt: DateFormat): string[] {
   if (fmt !== 'auto') return [fmtDateTime(dateIso, {}, fmt)];
-  return [...new Set(AUTO_LOCALES.map(locale => fmtDateTime(dateIso, {}, 'auto', locale)))];
+  return [...new Set(autoLocales().map(locale => fmtDateTime(dateIso, {}, 'auto', locale)))];
+}
+
+/** Every way Cadence may have written this date into a name: each explicit
+ *  format, and each convention `auto` has stood for. */
+function anyWhen(dateIso: string): string[] {
+  return [...new Set([
+    ...whenCandidates(dateIso, 'auto'),
+    ...(['dmy', 'mdy', 'ymd'] as const).flatMap(f => whenCandidates(dateIso, f)),
+  ])];
 }
 
 /** Rewrites, in place, the generated names among `sessions` from format `from`
@@ -84,9 +96,14 @@ export function renameGeneratedNames(sessions: Analysis[], from: DateFormat, to:
 /** The date, for a place that prints the name in full and wants the date on a
  *  separate line — the library row. Empty when the name already carries it,
  *  which the generated names do, so a default-named session says it once and a
- *  renamed one still shows when it was recorded. */
+ *  renamed one still shows when it was recorded.
+ *
+ *  "Carries it" in ANY of the ways a date was ever written into a name, not
+ *  only today's: a name generated on another device, or before the format
+ *  setting, says it in another convention — and printing it again beside, in
+ *  this one, read as two different dates (2026-10-13). */
 export function dateBesideName(name: string, dateIso: string | null): string {
   if (!dateIso) return '';
-  const when = fmtSessionDateTime(dateIso);
-  return name.includes(when) ? '' : when;
+  if (anyWhen(dateIso).some(w => name.includes(w))) return '';
+  return fmtSessionDateTime(dateIso);
 }

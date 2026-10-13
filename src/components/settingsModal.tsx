@@ -1337,10 +1337,11 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
   );
 }
 
-/** The date each format is shown with in the menu: a day past the 12th, so
- *  day-first and month-first cannot be mistaken for each other, and an evening
- *  hour, so the 12-hour clock shows itself. */
-const DATE_FORMAT_SAMPLE = new Date(2026, 11, 24, 18, 30);
+/** The date each format is shown with in the menu: the author's birth, 20
+ *  August 1992 at 10:30 (a wink, asked for on 2026-10-13). It also does the
+ *  job: a day past the 12th, so day-first and month-first cannot be mistaken
+ *  for each other, and the 12-hour clock still shows itself by its AM. */
+const DATE_FORMAT_SAMPLE = new Date(1992, 7, 20, 10, 30);
 
 /** Literal keys, so the i18n test can see them. */
 function dateFormatLabel(f: DateFormat): string {

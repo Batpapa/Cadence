@@ -86,6 +86,11 @@ Jamais de tutoiement. Interface impersonnelle (« Ajouter une carte », pas « A
 les clés `help.*` qui vouvoient. Apostrophes droites. Toute clé ajoutée l'est dans **les deux**
 fichiers.
 
+**Ajouter une langue** : décider aussi ce que veut dire le format de date « Auto » pour elle
+(`AUTO_LOCALE` dans `services/dateFormat.ts` : la convention jour/mois, l'heure sur 12 ou 24 h).
+Le typage l'impose (table indexée par `Lang`), mais c'est un choix à faire, pas un nom de locale à
+recopier : l'anglais y est délibérément britannique (jour/mois, 24 h), pas américain.
+
 ## Mémoire
 
 L'historique des décisions, les mesures et les arbitrages déjà tranchés sont dans les fichiers
