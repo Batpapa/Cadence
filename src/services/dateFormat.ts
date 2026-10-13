@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { currentLanguage } from './i18nService';
+import { currentLanguage, type Lang } from './i18nService';
 
 // ── How dates and times are written ──────────────────────────────────────────
 // Until 2026-10-13 every screen called toLocaleDateString() with no locale,
@@ -8,8 +8,14 @@ import { currentLanguage } from './i18nService';
 // 10/12/2026 and 6 PM, with no way out short of changing their whole system.
 //
 // One setting now, on the user (synced: it describes how they read, like the
-// language), and one place that writes a date. `auto` is exactly what the app
-// did before, so nobody who leaves it alone sees anything move.
+// language), and one place that writes a date.
+//
+// `auto` follows the interface's LANGUAGE, not the browser (the user's call,
+// 2026-10-13): the language is the user's and synced, so every device of theirs
+// writes dates alike — the browser's convention made a phone and a laptop
+// disagree, and with it the dates written into analysis names. English reads
+// day-first on a 24-hour clock, the convention of Cadence's public (Ireland,
+// Britain, Europe); someone in the US picks "Month/day" once, for all devices.
 //
 // The setting lives in a signal of its own rather than being read off the
 // store: this module is imported by code the store's own import chain reaches
@@ -22,7 +28,7 @@ export const DATE_FORMATS: readonly DateFormat[] = ['auto', 'dmy', 'mdy', 'ymd']
 export const dateFormatPref = signal<DateFormat>('auto');
 
 /** The stored value as a format: absent, or one a later build may add, reads
- *  as `auto` — the behaviour from before the setting existed. */
+ *  as `auto`. */
 export function dateFormatOf(value: string | undefined): DateFormat {
   return DATE_FORMATS.includes(value as DateFormat) ? value as DateFormat : 'auto';
 }
@@ -38,15 +44,43 @@ const asDate = (d: When): Date => (d instanceof Date ? d : new Date(d));
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** The two explicit numeric conventions borrow a locale that writes exactly
- *  them; the third is ISO, written by hand since no locale is guaranteed to.
- *  `undefined` is the browser's own, for `auto`. */
-const LOCALE: Record<DateFormat, string | undefined> = { auto: undefined, dmy: 'en-GB', mdy: 'en-US', ymd: undefined };
+ *  them; the third is ISO, written by hand since no locale is guaranteed to. */
+const LOCALE: Record<Exclude<DateFormat, 'auto' | 'ymd'>, string> = { dmy: 'en-GB', mdy: 'en-US' };
+
+/** What `auto` means, language by language: the locale whose convention it
+ *  writes dates in. Keyed by `Lang` on purpose, so a language added to the
+ *  interface does not compile until someone has decided this for it.
+ *
+ *  English: day first, 24-hour clock — Ireland's and Britain's, the public
+ *  Cadence has (decided 2026-10-13), rather than the United States'. */
+export const AUTO_LOCALE: Record<Lang, string> = {
+  en: 'en-GB',
+  fr: 'fr-FR',
+};
+
+function autoLocale(): string {
+  return AUTO_LOCALE[currentLanguage()] ?? AUTO_LOCALE.en;
+}
+
+/** The locale a format writes with. `locale` overrides it for `auto` alone:
+ *  how the renaming of generated names (sessionNaming.ts) recognises what
+ *  another convention wrote. */
+function localeOf(fmt: DateFormat, locale?: string): string | undefined {
+  if (fmt === 'auto') return locale ?? autoLocale();
+  return fmt === 'ymd' ? undefined : LOCALE[fmt];
+}
+
+/** The browser's own convention — what every screen wrote before the setting,
+ *  and so what an analysis named then carries. */
+export function browserLocale(): string {
+  return new Intl.DateTimeFormat().resolvedOptions().locale;
+}
 
 /** The date alone: 12/10/2026, 10/12/2026, 2026-10-12. */
 export function fmtDate(d: When, fmt: DateFormat = dateFormatPref.value, locale?: string): string {
   const date = asDate(d);
   if (fmt === 'ymd') return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  return date.toLocaleDateString(fmt === 'auto' ? locale : LOCALE[fmt]);
+  return date.toLocaleDateString(localeOf(fmt, locale));
 }
 
 /** The time of day, to the minute unless `seconds`: 18:00, 6:00 PM. */
@@ -57,9 +91,7 @@ export function fmtTime(d: When, opts: { seconds?: boolean } = {}, fmt: DateForm
     const hm = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
     return opts.seconds ? `${hm}:${pad(date.getSeconds())}` : hm;
   }
-  // `[]` and not undefined for `auto`: what session naming always passed, and
-  // the migration of generated names compares against exactly that string.
-  return date.toLocaleTimeString(fmt === 'auto' ? (locale ?? []) : LOCALE[fmt], parts);
+  return date.toLocaleTimeString(localeOf(fmt, locale), parts);
 }
 
 /** Date and time, joined by a space — the shape generated analysis names have
@@ -77,13 +109,13 @@ export function fmtDateTime(d: When, opts: { seconds?: boolean } = {}, fmt: Date
 
 type Part = 'd' | 'm' | 'y';
 
-/** The order the three numbers come in, for a format. `auto` asks the
- *  browser, through the same locale fmtDate writes with. */
+/** The order the three numbers come in, for a format. `auto` asks the same
+ *  locale fmtDate writes with. */
 export function dateOrder(fmt: DateFormat = dateFormatPref.value): Part[] {
   if (fmt === 'dmy') return ['d', 'm', 'y'];
   if (fmt === 'mdy') return ['m', 'd', 'y'];
   if (fmt === 'ymd') return ['y', 'm', 'd'];
-  const order = new Intl.DateTimeFormat(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const order = new Intl.DateTimeFormat(autoLocale(), { day: '2-digit', month: '2-digit', year: 'numeric' })
     .formatToParts(new Date(2026, 11, 24))
     .map(p => (p.type === 'day' ? 'd' : p.type === 'month' ? 'm' : p.type === 'year' ? 'y' : null))
     .filter((p): p is Part => p !== null);
@@ -94,7 +126,7 @@ export function dateOrder(fmt: DateFormat = dateFormatPref.value): Part[] {
 export function dateSeparator(fmt: DateFormat = dateFormatPref.value): string {
   if (fmt === 'ymd') return '-';
   if (fmt !== 'auto') return '/';
-  const lit = new Intl.DateTimeFormat(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const lit = new Intl.DateTimeFormat(autoLocale(), { day: '2-digit', month: '2-digit', year: 'numeric' })
     .formatToParts(new Date(2026, 11, 24)).find(p => p.type === 'literal');
   return lit?.value.trim() || '/';
 }
@@ -103,7 +135,7 @@ export function dateSeparator(fmt: DateFormat = dateFormatPref.value): string {
 export function uses12Hour(fmt: DateFormat = dateFormatPref.value): boolean {
   if (fmt === 'mdy') return true;
   if (fmt !== 'auto') return false;
-  const opts = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions();
+  const opts = new Intl.DateTimeFormat(autoLocale(), { hour: 'numeric' }).resolvedOptions();
   return opts.hour12 ?? (opts.hourCycle === 'h11' || opts.hourCycle === 'h12');
 }
 
@@ -178,7 +210,7 @@ export function parseFieldText(text: string, withTime: boolean, fmt: DateFormat 
  *  NAME is in the interface's language; only its place follows the setting. */
 export function fmtDayMonth(d: When, fmt: DateFormat = dateFormatPref.value): string {
   const date = asDate(d);
-  if (fmt === 'auto') return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  if (fmt === 'auto') return date.toLocaleDateString(autoLocale(), { day: 'numeric', month: 'short' });
   const month = date.toLocaleDateString(currentLanguage(), { month: 'short' });
   return fmt === 'mdy' ? `${month} ${date.getDate()}` : `${date.getDate()} ${month}`;
 }

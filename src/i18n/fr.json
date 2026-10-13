@@ -508,7 +508,7 @@
   "settings.language": "Langue",
   "settings.dateFormat": "Format des dates",
   "settings.dateFormatHint": "Sur tous les appareils. Les noms d'analyses générés par Cadence passent au nouveau format ; les noms modifiés à la main ne changent pas.",
-  "settings.dateFormat.auto": "Comme le navigateur",
+  "settings.dateFormat.auto": "Auto",
   "settings.dateFormat.dmy": "Jour/mois",
   "settings.dateFormat.mdy": "Mois/jour",
   "settings.dateFormat.ymd": "ISO",

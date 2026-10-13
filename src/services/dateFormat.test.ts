@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { fmtDate, fmtTime, fmtDateTime, fmtDayMonth, dateFormatOf, setDateFormatPref, dateFormatPref, parseFieldText, fieldValueText, fieldValueToDate, dateToFieldValue } from './dateFormat';
+import { fmtDate, fmtTime, fmtDateTime, fmtDayMonth, dateFormatOf, setDateFormatPref, dateFormatPref, parseFieldText, fieldValueText, fieldValueToDate, dateToFieldValue, AUTO_LOCALE } from './dateFormat';
+import { setLanguage } from './i18nService';
 
 // Built from LOCAL components, so the expectations hold in whatever time zone
 // the suite runs.
@@ -27,12 +28,20 @@ describe('dateFormat', () => {
     expect(fmtDateTime(EVENING, {}, 'dmy')).toBe('24/12/2026 18:30');
   });
 
-  it('auto is exactly what the screens wrote before the setting', () => {
-    expect(fmtDate(EVENING, 'auto')).toBe(EVENING.toLocaleDateString());
-    expect(fmtDateTime(EVENING, {}, 'auto')).toBe(
-      `${EVENING.toLocaleDateString()} ${EVENING.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-    );
-    expect(fmtDayMonth(EVENING, 'auto')).toBe(EVENING.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }));
+  it('auto follows the interface language, never the browser', () => {
+    setLanguage('en');
+    expect(fmtDateTime(EVENING, {}, 'auto')).toBe('24/12/2026 18:30');
+    expect(fmtDayMonth(EVENING, 'auto')).toBe('24 Dec');
+    expect(parseFieldText('24/12/2026', false, 'auto')).toBe('2026-12-24');
+    setLanguage('fr');
+    expect(fmtDateTime(EVENING, {}, 'auto')).toBe('24/12/2026 18:30');
+    expect(fmtDayMonth(EVENING, 'auto')).toBe('24 déc.');
+    setLanguage('en');
+  });
+
+  it('defines auto for every language of the interface', () => {
+    // The type already refuses a missing one; this says why it matters.
+    for (const lang of ['en', 'fr'] as const) expect(AUTO_LOCALE[lang]).toMatch(/^[a-z]{2}-[A-Z]{2}$/);
   });
 
   it('places the day and the month name by the setting', () => {
@@ -95,6 +104,6 @@ describe('dateFormat', () => {
     expect(dateFormatPref.value).toBe('ymd');
     expect(fmtDate(EVENING)).toBe('2026-12-24');
     setDateFormatPref('nonsense');
-    expect(fmtDate(EVENING)).toBe(EVENING.toLocaleDateString());
+    expect(fmtDate(EVENING)).toBe('24/12/2026'); // auto, in English
   });
 });
