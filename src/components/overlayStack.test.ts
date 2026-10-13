@@ -104,4 +104,21 @@ describe('overlayStack', () => {
     expect(closed).toEqual([]);
     unregister();
   });
+
+  // An unsaved edit (2026-10-13): the dialog refuses in order to ask, and the
+  // question it opens is what the next Escape must reach.
+  it('puts a refusing overlay back BENEATH what its closer opened', () => {
+    const closed: string[] = [];
+    let unregisterQuestion = () => {};
+    const unregisterDialog = registerOverlay(() => {
+      unregisterQuestion = registerOverlay(() => { closed.push('question'); unregisterQuestion(); });
+      return false;
+    });
+    closeTopOverlay();
+    expect(overlayCount()).toBe(2);
+    closeTopOverlay();
+    expect(closed).toEqual(['question']);
+    expect(overlayCount()).toBe(1);
+    unregisterDialog();
+  });
 });

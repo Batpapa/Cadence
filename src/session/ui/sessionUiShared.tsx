@@ -16,6 +16,8 @@ import type { IndexProgress } from '../recognition/indexStore';
 import type { Detection } from '../model';
 import { retargetedHistory } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
+import { DateField } from '../../components/dateField';
+import { fieldValueToDate } from '../../services/dateFormat';
 
 // ── Shared UI helpers ────────────────────────────────────────────────────────
 // Small pieces used by more than one of the session containers
@@ -238,18 +240,18 @@ export function DateRow({ getDate, setDate, onChange }: {
 
   return (
     <div class="flex items-center gap-2 mt-2">
-      <input
-        type="datetime-local"
+      <DateField
+        withTime
         class="input text-sm"
         value={date ? toLocalInput(date) : ''}
         max={toLocalInput(new Date().toISOString())}
-        onChange={(e) => {
-          const el = e.target as HTMLInputElement;
-          if (!el.value) { apply(null); return; }
-          // 'YYYY-MM-DDTHH:mm' without offset parses as local time — what the picker shows.
-          const ms = Date.parse(el.value);
-          if (Number.isNaN(ms) || ms > Date.now()) { el.value = date ? toLocalInput(date) : ''; return; }
-          apply(new Date(ms).toISOString());
+        onChange={(v) => {
+          if (!v) { apply(null); return true; }
+          // A local time, read as such — never Date.parse on the bare string.
+          const at = fieldValueToDate(v);
+          if (!at || at.getTime() > Date.now()) return false;
+          apply(at.toISOString());
+          return true;
         }}
       />
       {date ? (

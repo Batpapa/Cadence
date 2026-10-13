@@ -306,6 +306,18 @@ export function HourglassIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** The glyph a native date field shows at its right (Material's
+ *  "calendar_today", Apache 2.0), so the app's own date field reads as the
+ *  field it replaced (components/dateField.tsx). Solid, unlike the stroked
+ *  icons around it, because the native one is. */
+export function CalendarFieldIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor">
+      <path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10z"/>
+    </svg>
+  );
+}
+
 export function CalendarPlusIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

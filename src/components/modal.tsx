@@ -87,6 +87,15 @@ export interface ModalOptions {
    *  the caller decides whether it is a new name, persists it, and shows it with
    *  `updateTopModal`. */
   titleEdit?: { suffix: string; onCommit: (value: string) => void };
+  /** Asked before a USER dismissal (✕, Escape, the back gesture, a click
+   *  outside) goes through. Return true to hold it — an edit not yet saved,
+   *  typically, whose owner asks first — and call `dismiss` once the answer
+   *  allows it; the dialog stays open, and nothing has been torn down, until
+   *  then. False lets the dismissal happen now.
+   *
+   *  Not consulted by `closeModal` / `closeAllModals`: those are the code's
+   *  own way of closing, and a body that calls them knows what it is doing. */
+  guardDismiss?: (dismiss: () => void) => boolean;
 }
 
 interface ModalEntry {
@@ -102,6 +111,7 @@ interface ModalEntry {
   onExpandedChange?: (expanded: boolean) => void;
   onBack?: () => void;
   titleEdit?: ModalOptions['titleEdit'];
+  guardDismiss?: ModalOptions['guardDismiss'];
 }
 
 let nextId = 0;
@@ -158,9 +168,23 @@ function dismissModalById(id: number): boolean {
   const stack = modalStack.value;
   const top = stack[stack.length - 1];
   if (!top || top.id !== id || !top.dismissable) return false;
-  closeModal();
-  top.onDismiss?.();
+  // Held: still open, and whatever its guard put on top is the topmost layer
+  // now. Counted as a refusal, so the gesture goes no further.
+  if (top.guardDismiss?.(() => completeDismiss(top))) return false;
+  completeDismiss(top);
   return true;
+}
+
+/** The end of a user dismissal, by id rather than by "the top": a guarded one
+ *  completes after a question of its own has been opened and closed above it,
+ *  and possibly after a save that asked something too — by then nothing says
+ *  the dialog is still on top, only that it is still there. */
+function completeDismiss(entry: ModalEntry): void {
+  if (!modalStack.value.some(e => e.id === entry.id)) return;
+  _unregisterByModalId.get(entry.id)?.();
+  _unregisterByModalId.delete(entry.id);
+  modalStack.value = modalStack.value.filter(e => e.id !== entry.id);
+  entry.onDismiss?.();
 }
 
 export function showModal(title: string, body: HTMLElement, actions: ModalAction[], opts: ModalOptions = {}): void {
@@ -184,6 +208,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     expandable: opts.expandable ?? false,
     onExpandedChange: opts.onExpandedChange,
     onBack: opts.onBack,
+    guardDismiss: opts.guardDismiss,
   }];
 }
 
@@ -356,7 +381,10 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
   // this is not remembered. ModalHost keys on entry.id, so the state survives
   // every re-render of the stack and only that.
   const [expanded, setExpanded] = useState(false);
-  const dismiss = () => { closeModal(); entry.onDismiss?.(); };
+  const dismiss = () => {
+    if (entry.guardDismiss?.(() => completeDismiss(entry))) return;
+    completeDismiss(entry);
+  };
 
   // Before the browser paints, not after: the body sizes itself against this,
   // and an effect-driven answer would show one frame at the wrong height.

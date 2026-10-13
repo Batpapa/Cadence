@@ -14,6 +14,7 @@ import { fetchRemotePassage } from '../audio/remotePassage';
 import { TUNE_ANALYSER_MODULE_KEY, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
 import { BUCKET_TEXT, ClipControls, fmtLongTime, type ClipSessionRef } from './sessionUiShared';
 import { AbcPreview } from './abcPreview';
+import { useMediaVolume } from '../../components/useMediaVolume';
 
 // ── One pass through a tune, wherever a list of them is shown ─────────────────
 // The analyser's tunes tab and a card's "Detected in" panel list the same
@@ -119,6 +120,8 @@ const PASSAGES_KEPT = 8;
  *  plays from its start. */
 export function useSlicePlayer(): SlicePlayer {
   const audioRef = useRef<HTMLAudioElement>(null);
+  // At the app's playback volume (Settings → Misc., per device).
+  useMediaVolume(audioRef);
   /** What the element holds: a whole recording (its URL is ours to revoke) or
    *  a passage (its URL belongs to the cache below). */
   const loadedRef = useRef<{ key: string; url: string; whole: boolean } | null>(null);

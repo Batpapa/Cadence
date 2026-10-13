@@ -1,4 +1,5 @@
-import { t } from '../services/i18nService';
+import { t, tIn, type Lang } from '../services/i18nService';
+import { fmtDateTime, type DateFormat } from '../services/dateFormat';
 import type { Analysis } from './model';
 
 // ── What a session is called ─────────────────────────────────────────────────
@@ -16,8 +17,7 @@ import type { Analysis } from './model';
  *  apart. A festival day produces several, so the date alone identifies
  *  nothing. */
 export function fmtSessionDateTime(dateIso: string): string {
-  const d = new Date(dateIso);
-  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return fmtDateTime(dateIso);
 }
 
 /** The name a newly saved session gets, naming what it actually is: captured
@@ -30,6 +30,55 @@ export function generatedSessionName(source: Analysis['source'], dateIso: string
   const when = dateIso ? fmtSessionDateTime(dateIso) : '';
   const key = source === 'device' ? 'sessions.defaultName.device' : 'sessions.defaultName.mic';
   return when ? t(key, { when }) : t(`${key}.undated`);
+}
+
+// ── When the date format changes ─────────────────────────────────────────────
+// A generated name is stored with the date written INTO it, in the format of
+// the day it was saved. Changing the format would leave every one of them in
+// the old convention — and `dateBesideName` below, no longer finding the date
+// in the name, would print it a second time beside each of them.
+//
+// So the names Cadence wrote itself are rewritten, at the moment the setting
+// changes (the user's rule, 2026-10-13) and never as a standing repair: a name
+// is rewritten only if it is EXACTLY what the generator produced under the old
+// format, in either language. Anything typed by hand differs by at least a
+// character and is never touched; an analysis named on a device whose
+// convention is not among the candidates keeps its name, and shows its date
+// beside it like a renamed one.
+
+const GENERATED_KEYS = ['sessions.defaultName.mic', 'sessions.defaultName.device'] as const;
+const NAME_LANGS: Lang[] = ['en', 'fr'];
+/** What `auto` may have written: this browser's convention, and the ones the
+ *  people using Cadence are most likely to have had on another device. */
+const AUTO_LOCALES: (string | undefined)[] = [undefined, 'en-US', 'en-GB', 'fr-FR'];
+
+function whenCandidates(dateIso: string, fmt: DateFormat): string[] {
+  if (fmt !== 'auto') return [fmtDateTime(dateIso, {}, fmt)];
+  return [...new Set(AUTO_LOCALES.map(locale => fmtDateTime(dateIso, {}, 'auto', locale)))];
+}
+
+/** Rewrites, in place, the generated names among `sessions` from format `from`
+ *  to format `to`; returns how many changed. Call it inside the mutate that
+ *  stores the new setting, so the two land together. */
+export function renameGeneratedNames(sessions: Analysis[], from: DateFormat, to: DateFormat): number {
+  if (from === to) return 0;
+  let renamed = 0;
+  for (const s of sessions) {
+    if (!s.date || !s.name) continue;
+    const olds = whenCandidates(s.date, from);
+    search: for (const lang of NAME_LANGS) {
+      for (const key of GENERATED_KEYS) {
+        const template = tIn(lang, key);
+        for (const when of olds) {
+          if (s.name !== template.split('{when}').join(when)) continue;
+          const next = template.split('{when}').join(fmtDateTime(s.date, {}, to));
+          if (next !== s.name) { s.name = next; renamed++; }
+          break search;
+        }
+      }
+    }
+  }
+  return renamed;
 }
 
 /** The date, for a place that prints the name in full and wants the date on a

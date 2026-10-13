@@ -9,12 +9,13 @@ import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, Pl
   WarningTriangleIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio } from '../services/audioSession';
+import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwing, meterCanSwing,
   ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
   SWING_CHOICES, NO_SWING } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
-import { showModal, updateTopModal, confirmModal } from './modal';
+import { showModal, closeModal, updateTopModal, confirmModal } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon } from './playbackIcons';
@@ -601,6 +602,29 @@ function showTransposeModal(current: number, limit: number, onPick: (semitones: 
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
 
+/** "Unsaved changes": save, discard, or stay. `proceed` runs after a save that
+ *  went through or after a discard; a save that did not (refused, failed) and
+ *  Cancel both leave everything where it was. Escape and the ✕ are Cancel. */
+function askUnsaved({ save, discard, proceed }: {
+  save: () => Promise<boolean>;
+  discard: () => void;
+  proceed: () => void;
+}): void {
+  const body = document.createElement('p');
+  body.className = 'text-sm text-muted leading-relaxed';
+  body.textContent = t('fileViewer.unsaved.message');
+  showModal(t('fileViewer.unsaved.title'), body, [
+    { label: t('common.cancel'), onClick: closeModal },
+    { label: t('fileViewer.unsaved.discard'), danger: true, onClick: () => { closeModal(); discard(); proceed(); } },
+    {
+      label: t('common.save'), primary: true,
+      // Closed first: a save may ask a question of its own (a TheSession score
+      // is saved as a copy), which must not open under this one.
+      onClick: async () => { closeModal(); if (await save()) proceed(); },
+    },
+  ]);
+}
+
 function modalWidth(entry: FileEntry): string {
   const m = entry.mimeType;
   if (m.startsWith('audio/') || (isText(entry) && !isAbcFile(entry))) return '560px';
@@ -688,6 +712,9 @@ export function showPreviewModal(
   // Same shape, for the dialog's own "Full page": the score branch is the only
   // one that sizes anything against the room the dialog has.
   let onModalExpanded: ((expanded: boolean) => void) | null = null;
+  // Same shape again: the branches that edit text decide whether closing has
+  // to ask first (see ModalOptions.guardDismiss).
+  let guardClose: ((dismiss: () => void) => boolean) | null = null;
 
   const m = entry.mimeType;
   // 0.85 (not 0.9) to match the shared modal shell's own dialog max-height
@@ -814,6 +841,18 @@ export function showPreviewModal(
     let versionCount = tunes.length;
     let currentIndex = Math.max(0, Math.min(versionCount - 1, opts?.initialIndex ?? 0));
     let favoriteIndex = opts?.favoriteIndex;
+    // The edit typed in the source box and not saved yet, for the version it
+    // was typed in. It outlives the box: the stave draws it (the score on
+    // screen is the one being written, saved or not), and leaving the version
+    // or the dialog asks what to do with it instead of dropping it — which is
+    // what both did, silently, until 2026-10-13.
+    let draft: { index: number; body: string } | null = null;
+    /** What a version reads as right now — its edit when it has one. Every
+     *  reader of the TUNE goes through this (the stave, its sound, the swing
+     *  chip, abcTools); only what WRITES the file reads `tunes` itself. */
+    function shownBlock(index: number): string {
+      return draft && draft.index === index ? withXLine(index, draft.body) : (tunes[index] ?? '');
+    }
     // Where this score lands, from the user's preference — the stave unless
     // they said otherwise. Read once, at opening: the tabs below reassign it
     // freely and never write it back.
@@ -888,8 +927,9 @@ export function showPreviewModal(
     const versionLabel = document.createElement('span');
     versionLabel.className = 'px-1 text-xs font-medium text-muted tabular-nums';
     const nextBtn = mkNavBtn('→');
-    prevBtn.onclick = () => goToVersion(currentIndex - 1);
-    nextBtn.onclick = () => goToVersion(currentIndex + 1);
+    // Leaving a version with an edit pending asks first — see `draft`.
+    prevBtn.onclick = () => settleDraft(() => goToVersion(currentIndex - 1));
+    nextBtn.onclick = () => settleDraft(() => goToVersion(currentIndex + 1));
     versionNav.append(prevBtn, versionLabel, nextBtn);
 
     // ★ "set as default version" — independent of onSave, works read-only too
@@ -927,7 +967,7 @@ export function showPreviewModal(
     // The way out to abcTools is the dialog header's, beside the gear, since
     // 2026-10-10 (the user): it acts on the whole tune, like the preferences,
     // not on the page being read. It opens the version on screen.
-    openInAbcTools = () => { window.open(abcToolsShareUrl(tunes[currentIndex] ?? ''), '_blank', 'noopener,noreferrer'); };
+    openInAbcTools = () => { window.open(abcToolsShareUrl(shownBlock(currentIndex)), '_blank', 'noopener,noreferrer'); };
 
     // ── What is left in the row ──────────────────────────────────────────────
     // The paper and the bars per line lived here until the user moved them
@@ -1263,7 +1303,7 @@ export function showPreviewModal(
       75: SwingDottedIcon,
     };
     /** Whether this tune's metre swings at all — see meterCanSwing. */
-    const swingApplies = () => meterCanSwing(parseAbcBlock(tunes[currentIndex] ?? '').meter);
+    const swingApplies = () => meterCanSwing(parseAbcBlock(shownBlock(currentIndex)).meter);
     const updateSwing = () => {
       // GONE, not greyed out, where the metre cannot swing: abcjs simply has
       // no way to swing a jig (see meterCanSwing), so the control has nothing
@@ -1641,12 +1681,52 @@ export function showPreviewModal(
       return xLine ? `${xLine}\n${clean}` : clean;
     };
 
-    /** Text mode only: what the box holds, when it differs from what was loaded
-     *  into it. In sheet mode the textarea still shows whatever version was
-     *  last opened in text mode (goToVersion only refills it in text mode), so
-     *  its content is not a pending edit of the current version. */
+    /** The current version's unsaved edit, on either face — see `draft`. */
     const pendingBody = (): string | null =>
-      currentMode === 'text' && textarea.value !== currentBody() ? textarea.value : null;
+      draft && draft.index === currentIndex ? draft.body : null;
+
+    /** The ● on the ABC tab: the stave may be showing an edit, and nothing
+     *  else on that face would say so. */
+    const markDraft = (): void => {
+      textTabBtn.replaceChildren(document.createTextNode(t('fileViewer.abc.textTab')));
+      textTabBtn.title = '';
+      if (!draft) return;
+      const dot = document.createElement('span');
+      dot.className = 'text-warn ml-1';
+      dot.textContent = '●';
+      textTabBtn.appendChild(dot);
+      textTabBtn.title = t('fileViewer.unsaved.title');
+    };
+
+    // Assigned by the editable branch below; a viewer without onSave has
+    // nothing to save and so never a draft to ask about.
+    let saveDraft: () => Promise<boolean> = async () => false;
+
+    /** Runs `proceed` once no edit is pending: straight away when there is
+     *  none, otherwise after asking whether to save it, drop it or stay. */
+    function settleDraft(proceed: () => void): void {
+      if (!draft) { proceed(); return; }
+      askUnsaved({
+        save: () => saveDraft(),
+        discard: () => {
+          draft = null;
+          markDraft();
+          saveBtn.disabled = true;
+          // The stave was drawing the edit: stale now. Whatever proceeds next
+          // redraws it straight away when it is on screen, or the dialog is
+          // going away.
+          sheetNeedsRerender = true;
+          if (currentMode === 'text') textarea.value = currentBody();
+        },
+        proceed,
+      });
+    }
+    // Read-only viewers never have a draft, so this holds nothing for them.
+    guardClose = (dismiss) => {
+      if (!draft) return false;
+      settleDraft(dismiss);
+      return true;
+    };
 
     function goToVersion(index: number): void {
       currentIndex = Math.max(0, Math.min(versionCount - 1, index));
@@ -1663,8 +1743,8 @@ export function showPreviewModal(
       if (currentMode === 'sheet') {
         doRenderTune?.(currentIndex);
       } else {
-        textarea.value = currentBody();
-        saveBtn.disabled = true;
+        textarea.value = pendingBody() ?? currentBody();
+        saveBtn.disabled = pendingBody() === null;
         saveStatus.textContent = '';
       }
     }
@@ -1695,8 +1775,8 @@ export function showPreviewModal(
         doRenderTune?.(currentIndex);
       }
       if (mode === 'text') {
-        textarea.value = currentBody();
-        saveBtn.disabled = true;
+        textarea.value = pendingBody() ?? currentBody();
+        saveBtn.disabled = pendingBody() === null;
         saveStatus.textContent = '';
         // No focus, and no preview drawn: switching to the source face is
         // often just a look, and stealing the caret put a keyboard over half a
@@ -1735,6 +1815,10 @@ export function showPreviewModal(
         tunes = nextTunes;
         abcText = nextText;
         versionCount = tunes.length;
+        // Every writer folds the edit in (or deletes its version), so once the
+        // file is written there is nothing pending any more.
+        draft = null;
+        markDraft();
         if (typeof result === 'string') {
           shownName = result;
           updateTopModal({ title: result });
@@ -1793,20 +1877,28 @@ export function showPreviewModal(
       }
 
       textarea.addEventListener('input', () => {
-        saveBtn.disabled = textarea.value === currentBody();
+        const body = textarea.value;
+        draft = body === currentBody() ? null : { index: currentIndex, body };
+        markDraft();
+        saveBtn.disabled = draft === null;
         saveStatus.textContent = '';
+        // The stave is drawn from the draft, so it is stale from now on.
+        sheetNeedsRerender = true;
       });
 
-      saveBtn.onclick = async () => {
+      saveDraft = async () => {
+        if (!draft) return true;
         const nextTunes = [...tunes];
-        nextTunes[currentIndex] = withXLine(currentIndex, textarea.value);
+        nextTunes[draft.index] = withXLine(draft.index, draft.body);
         saveBtn.disabled = true;
         if (!await persist(nextTunes, currentIndex)) {
-          saveBtn.disabled = textarea.value === currentBody();
-          return;
+          saveBtn.disabled = pendingBody() === null;
+          return false;
         }
         saveStatus.textContent = t('fileViewer.abc.saved');
+        return true;
       };
+      saveBtn.onclick = () => { void saveDraft(); };
 
       addVersionBtn.onclick = async () => {
         const nextTunes = tunesWithPendingEdit();
@@ -2243,7 +2335,7 @@ export function showPreviewModal(
 
       const renderTune = (index: number) => {
         const ink = ABC_PAPERS[paper].ink;
-        const source = injectDefaultTempo(stripForRender(tunes[index] ?? ''));
+        const source = injectDefaultTempo(stripForRender(shownBlock(index)));
         // A bookmark points into THIS text: another tune, another version or
         // an edit, and the place it names is gone or somewhere else.
         if (source !== bookmarkSource) {
@@ -2351,6 +2443,8 @@ export function showPreviewModal(
           // is the only thing the note stamps are built from — see
           // injectDefaultTempo for what happened when it did not.
           if (selectedProgram !== undefined) audioParams.program = selectedProgram;
+          // The app's volume, read at every preparation (playbackVolume.ts).
+          audioParams.soundFontVolumeMultiplier = abcjsVolumeMultiplier();
           if (transpose !== 0) {
             // `visualTranspose` alone moves the DOTS and leaves the sound where
             // it was: abc_midi_sequencer subtracts it back out again on the way
@@ -2363,7 +2457,7 @@ export function showPreviewModal(
             audioParams.midiTranspose = transpose;
           }
           if (metronome) {
-            const meter = parseAbcBlock(tunes[index] ?? '').meter;
+            const meter = parseAbcBlock(shownBlock(index)).meter;
             audioParams.drum = drumPattern(beatsPerBar(meter));
             audioParams.drumBars = 1;
           }
@@ -2644,7 +2738,8 @@ export function showPreviewModal(
         saveStatus.textContent = '';
       });
 
-      saveBtn.onclick = async () => {
+      /** Saves what the box holds; true once it is written. */
+      const saveText = async (): Promise<boolean> => {
         const next = textarea.value;
         saveBtn.disabled = true;
         // Awaited, then applied: a save may ask something first and be
@@ -2656,11 +2751,11 @@ export function showPreviewModal(
           console.warn('[viewer] save failed', e);
           saveStatus.textContent = t('fileViewer.saveFailed');
           saveBtn.disabled = false;
-          return;
+          return false;
         }
         if (result === false) {
           saveBtn.disabled = textarea.value === text;
-          return;
+          return false;
         }
         text = next;
         if (typeof result === 'string') {
@@ -2672,6 +2767,13 @@ export function showPreviewModal(
         // repainted even while hidden: unlike a score's SVG, markdown costs
         // nothing to redraw and has no layout to reflow visibly.
         if (markdown) paint();
+        return true;
+      };
+      saveBtn.onclick = () => { void saveText(); };
+      guardClose = (dismiss) => {
+        if (textarea.value === text) return false;
+        askUnsaved({ save: saveText, discard: () => { textarea.value = text; }, proceed: dismiss });
+        return true;
       };
 
       if (!markdown) {
@@ -2725,6 +2827,7 @@ export function showPreviewModal(
   showModal(entry.name, body, [], {
     maxWidth: modalWidth(entry),
     onDismiss,
+    guardDismiss: (dismiss) => guardClose?.(dismiss) ?? false,
     expandable: isScore || m.startsWith('audio/'),
     onExpandedChange: (expanded) => onModalExpanded?.(expanded),
     titleEdit: onRename

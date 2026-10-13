@@ -70,10 +70,14 @@ export function overlayCount(): number {
 export function closeTopOverlay(): boolean {
   const top = stack.pop();
   if (!top) return false;
+  const at = stack.length;
   // Popped first so a closer that forgets to unregister cannot leave an entry
-  // nothing can ever close again; put straight back when it refuses, since it
-  // is still the topmost thing on screen.
-  if (top.close() === false) stack.push(top);
+  // nothing can ever close again; put back when it refuses — at the place it
+  // had, BENEATH anything its closer opened. A dialog that refuses in order to
+  // ask a question (an unsaved edit, 2026-10-13) registers that question
+  // during close(); pushed back on top, it sat above its own question, and the
+  // next Escape asked again instead of answering.
+  if (top.close() === false) stack.splice(at, 0, top);
   // Popped above, so the closer's own unregister finds nothing to remove and
   // says nothing: report it here.
   changed();

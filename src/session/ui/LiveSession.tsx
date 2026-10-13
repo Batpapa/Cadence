@@ -16,6 +16,7 @@ import { LiveBackupIndicator } from './LiveBackupIndicator';
 import { generatedSessionName } from '../sessionNaming';
 import { setActiveLive, lastLiveDump } from './sessionStore';
 import { setPitchShiftSetting } from './sessionModule';
+import { fmtDateTime } from '../../services/dateFormat';
 
 // ── Screen: live recording ───────────────────────────────────────────────────
 // Uses <DetectionCard>/<PitchShiftControl> directly as JSX, never the
@@ -45,7 +46,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   const effectiveDate = () => new Date(live.startedAt || Date.now()).toISOString();
 
   const [phase, setPhase] = useState<LiveSessionPhase>(() => live.getPhase());
-  const [dateText, setDateText] = useState(() => new Date(effectiveDate()).toLocaleString());
+  const [dateText, setDateText] = useState(() => fmtDateTime(effectiveDate(), { seconds: true }));
   const [initStatus, setInitStatus] = useState(() => (live.getPhase() === 'initializing' ? t('sessions.initializing') : ''));
   const [annotations, setDetections] = useState<Detection[]>(() => live.getDetections());
   const [stateZoneText, setStateZoneText] = useState('');
@@ -76,7 +77,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         setPhase(p);
         if (p === 'recording') {
           setInitStatus('');
-          setDateText(new Date(effectiveDate()).toLocaleString()); // startedAt is now the real value
+          setDateText(fmtDateTime(effectiveDate(), { seconds: true })); // startedAt is now the real value
         }
       },
       onIndexProgress: (p) => setInitStatus(indexProgressText(p)),

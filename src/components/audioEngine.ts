@@ -1,7 +1,9 @@
 // The library's own file, as text: an alias in webpack.config.js.
 import signalsmithStretchSource from 'signalsmith-stretch.mjs?raw';
 import type { FileEntry } from '../types';
+import { effect } from '@preact/signals';
 import { preferPlaybackSession } from '../services/audioSession';
+import { playbackGain, playbackVolumePercent } from '../services/playbackVolume';
 
 // ── How the sound is made ────────────────────────────────────────────────────
 // Signalsmith Stretch (npm `signalsmith-stretch`, MIT): its author's own Web
@@ -111,6 +113,10 @@ export class AudioEngine {
   private audioCtx: AudioContext | null = null;
   private buffer: AudioBuffer | null = null;
   private stretch: StretchNode | null = null;
+  /** The app's playback volume (playbackVolume.ts), between the node and the
+   *  speakers — followed live, so the settings slider is heard as it moves. */
+  private gain: GainNode | null = null;
+  private unwatchVolume: (() => void) | null = null;
   /** How far ahead changes are scheduled — the node's own latency. */
   private lead = 0.1;
 
@@ -229,6 +235,10 @@ export class AudioEngine {
     clearTimeout(this.suspendTimer);
     this.stretch?.disconnect();
     this.stretch = null;
+    this.gain?.disconnect();
+    this.gain = null;
+    this.unwatchVolume?.();
+    this.unwatchVolume = null;
     this.setPlaying(false);
   }
 
@@ -248,7 +258,12 @@ export class AudioEngine {
     currentDispose = () => this.teardown();
     const create = await loadStretch();
     const node = await create(ctx);
-    node.connect(ctx.destination);
+    const gain = ctx.createGain();
+    gain.gain.value = playbackGain();
+    node.connect(gain);
+    gain.connect(ctx.destination);
+    this.gain = gain;
+    this.unwatchVolume = effect(() => { gain.gain.value = playbackGain(playbackVolumePercent.value); });
     this.stretch = node;
     this.lead = await node.latency();
     if (this.buffer) await this.loadInto(node, this.buffer);

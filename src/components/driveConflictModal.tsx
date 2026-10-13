@@ -13,6 +13,7 @@ import { copyText } from '../utils';
 import { saveSnapshot, countReviews, type SnapshotReason } from '../services/snapshotService';
 import { reuploadResurrected } from '../services/attachmentStore';
 import { statesEqual, diffStates, statePathDiff, briefValue, type StateDiff, type CollectionDiff, type PathDiff } from '../services/stateDiff';
+import { fmtDateTime } from '../services/dateFormat';
 
 // ── Shared Drive-state application + conflict resolution ─────────────────────
 // Used by both the settings connect flow and the startup reconciliation, so a
@@ -170,7 +171,7 @@ function ExhaustiveDiff({ local, drive }: { local: AppState; drive: AppState }) 
 
 function DiffBody({ diff, driveDeviceId, identical, local, drive }: { diff: StateDiff; driveDeviceId: string | null; identical: boolean; local: AppState; drive: AppState }) {
   const sameDevice = driveDeviceId !== null && driveDeviceId === getDeviceId();
-  const fmtDate = (ts: number | null) => (ts ? new Date(ts).toLocaleString() : null);
+  const fmtDate = (ts: number | null) => (ts ? fmtDateTime(ts, { seconds: true }) : null);
   const moduleTotals = diff.modules.reduce(
     (a, m) => ({ local: a.local + m.onlyLocal, drive: a.drive + m.onlyDrive, changed: a.changed + m.changed }),
     { local: 0, drive: 0, changed: 0 },
@@ -303,7 +304,7 @@ function SideCard({ side, state, ts, choice, deviceNote }: {
       </div>
       <div class="text-xs text-dim mt-0.5 ml-[22px]">
         {ts > 0
-          ? t('settings.sync.conflict.lastModified', { date: new Date(ts).toLocaleString() })
+          ? t('settings.sync.conflict.lastModified', { date: fmtDateTime(ts, { seconds: true }) })
           : t('settings.sync.conflict.lastModifiedUnknown')}
       </div>
       {deviceNote && <div class="text-xs text-dim mt-0.5 ml-[22px]">{deviceNote}</div>}

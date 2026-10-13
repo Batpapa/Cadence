@@ -6,6 +6,7 @@ type Vars = Record<string, string | number>;
 
 const LANGS: Record<Lang, Record<string, string>> = { en, fr };
 let current: Record<string, string> = en;
+let currentLang: Lang = 'en';
 
 /** The language last put on screen, on this device. A user's language lives
  *  with the user, in IndexedDB; the Android app's update screen shows before
@@ -14,8 +15,14 @@ const LS_LAST_SHOWN = 'cadence_lastLanguage';
 
 export function setLanguage(lang: Lang): void {
   current = LANGS[lang] ?? en;
+  currentLang = lang in LANGS ? lang : 'en';
   translateStaticMarkup(lang);
   try { localStorage.setItem(LS_LAST_SHOWN, lang); } catch { /* storage refused: the next launch guesses */ }
+}
+
+/** The language the interface is in right now. */
+export function currentLanguage(): Lang {
+  return currentLang;
 }
 
 export function lastShownLanguage(): Lang | null {

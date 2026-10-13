@@ -15,6 +15,7 @@ import {
   makePeakBuffer, readInto, isRead, levelOver,
   type PeakBuffer, type WaveRead,
 } from '../audio/localWaveform';
+import { useMediaVolume } from '../../components/useMediaVolume';
 
 // ── Bound editor ─────────────────────────────────────────────────────────────
 // Replaced the two ±5 s steppers that used to sit on every detection card
@@ -243,6 +244,8 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   const readsRef = useRef<WaveRead[]>([]);
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  // At the app's playback volume (Settings → Misc., per device).
+  useMediaVolume(audioRef);
   const ctxBoxRef = useRef<HTMLDivElement>(null);
   const ctxCvRef = useRef<HTMLCanvasElement>(null);
   const loupeBoxRef = useRef<HTMLDivElement>(null);
