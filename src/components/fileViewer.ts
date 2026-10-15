@@ -19,6 +19,7 @@ import {
   playableSource, sourceIndex, playPlan, noteRanges, resumeInside, passOf, eventAt,
   notesOf, startNoteAt, boxRange, type ParsedNote, type PlayableSource, type TimingEvent,
 } from '../services/abcTextPlayback';
+import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
 import { showModal, updateTopModal, confirmModal, askUnsavedChanges } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
@@ -422,6 +423,18 @@ export function showAbcPrefsModal(onApply: () => void): void {
       .then(() => onApply());
   });
 
+  // ── A tapped note, heard ──
+  // Saved only: it is read at each tap, so the score on screen follows it
+  // without being re-primed.
+  const tapBox = document.createElement('input');
+  tapBox.type = 'checkbox';
+  tapBox.className = 'card-checkbox';
+  tapBox.checked = tapPlaysNote(appState.value);
+  tapBox.addEventListener('change', () => {
+    const on = tapBox.checked;
+    void mutate(st => { if (on) delete st.abcTapPlaysNote; else st.abcTapPlaysNote = false; });
+  });
+
   // ── Which face a score opens on ──
   // Saved only, like the speed: it describes the NEXT score to be opened, and
   // flipping the one already on screen would answer a question nobody asked —
@@ -485,6 +498,7 @@ export function showAbcPrefsModal(onApply: () => void): void {
     row('fileViewer.abc.paper', paperSelect),
     row('fileViewer.abc.prefs.barsPerLine', densitySelect),
     row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
+    row('fileViewer.abc.prefs.tapPlaysNote', tapBox),
     row('fileViewer.abc.prefs.openOn', openSelect),
   );
 
@@ -2547,7 +2561,24 @@ export function showPreviewModal(
         // The bookmark's flag has a click of its own: it removes the bookmark.
         if ((e.target as Element | null)?.closest?.('.abc-bookmark')) return;
         const startChar = noteAt(e.clientX, e.clientY);
-        if (startChar !== null) seekToNote(startChar);
+        if (startChar === null) return;
+        // Read before the seek, which does not start anything but is the
+        // last word on where the tune stands.
+        const playing = !!synthControl?.isStarted;
+        seekToNote(startChar);
+        // Heard only while the music is stopped: playing, the tap already
+        // means "from here", and the tune goes on from that very note.
+        if (!playing && tapPlaysNote(appState.value)) {
+          const ev = passesOf(startChar)[0];
+          const visual = synthControl?.visualObj;
+          if (!ev?.midiPitches?.length || !visual) return;
+          // One event holds every voice sounding at that moment; the note
+          // tapped is the one written at this place.
+          const pitches = (ev.midiPitches as (MidiPitch & { startChar?: number })[])
+            .filter(p => p.startChar === undefined || p.startChar === startChar);
+          unlockAbcjsAudio();
+          playTap(abcjs, tapTracks(pitches, ev.midiGraceNotePitches, secondsPerWhole(visual, tempoPercent), selectedProgram));
+        }
       };
       notation.addEventListener('pointerup', onScoreTap);
 
@@ -2911,6 +2942,7 @@ export function showPreviewModal(
       } | null) => {
         // One tune at a time: the stave's, hidden behind this face, stops.
         pauseIfPlaying();
+        stopTap();
         const id = ++textRunId;
         const caret: [number, number] = resume?.caret ?? [textarea.selectionStart, textarea.selectionEnd];
         const ps = playableSource(splitXLine(tunes[currentIndex] ?? '').xLine, textarea.value);
@@ -3024,6 +3056,66 @@ export function showPreviewModal(
       document.addEventListener('selectionchange', onSelectionChange);
       for (const type of ['select', 'keyup', 'mouseup', 'input', 'focus']) textarea.addEventListener(type, schedulePreview);
       previewText = schedulePreview;
+
+      // ── A tapped note, heard ──
+      // The caret lands on the nearest gap between two characters, so a tap
+      // on the right half of a `d` puts it AFTER the `d` — before the next
+      // note, which is the one the start mark then shows. The note meant is
+      // the character under the finger: of the two around the caret, the one
+      // whose box holds the tap, measured on the layer behind the box, which
+      // lays out the very same text.
+      const charBox = (index: number): DOMRect | null => {
+        const walker = document.createTreeWalker(textBackdrop, NodeFilter.SHOW_TEXT);
+        let offset = 0;
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const length = node.textContent?.length ?? 0;
+          if (index < offset + length) {
+            const range = document.createRange();
+            range.setStart(node, index - offset);
+            range.setEnd(node, index - offset + 1);
+            return range.getBoundingClientRect();
+          }
+          offset += length;
+        }
+        return null;
+      };
+      // Read with `setUpAudio`, which leaves each note's pitches on it. Kept
+      // for as long as the text and what changes the pitches are the same.
+      let tapKey: string | null = null;
+      let tapTune: unknown = null;
+      let tapPs: PlayableSource | null = null;
+      textarea.addEventListener('click', (e) => {
+        if (currentMode !== 'text' || (textState !== 'idle' && textState !== 'paused')) return;
+        if (!tapPlaysNote(appState.value)) return;
+        const caret = textarea.selectionStart;
+        if (textarea.selectionEnd !== caret) return;
+        const text = textarea.value;
+        const index = [caret - 1, caret].find(i => {
+          if (i < 0 || i >= text.length || /\s/.test(text[i]!)) return false;
+          const box = charBox(i);
+          return !!box && e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
+        });
+        if (index === undefined) return;
+        const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
+        const key = `${transpose}|${selectedProgram ?? ''}|${xLine}\n${text}`;
+        if (key !== tapKey) {
+          tapKey = key;
+          tapPs = playableSource(xLine, text);
+          tapTune = null;
+          try {
+            const tune = abcjs.parseOnly(tapPs.source)[0];
+            // As the run builds it, so that the pitch is the one play gives.
+            tune?.setUpAudio({ ...(selectedProgram !== undefined ? { program: selectedProgram } : {}), ...(transpose !== 0 ? { midiTranspose: transpose } : {}) });
+            tapTune = tune ?? null;
+          } catch { /* text abcjs cannot read: nothing to play */ }
+        }
+        if (!tapTune || !tapPs) return;
+        const note = tappedNote(tapTune, sourceIndex(tapPs, index));
+        if (!note) return;
+        unlockAbcjsAudio();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        playTap(abcjs, tapTracks(note.pitches, note.graces, secondsPerWhole(tapTune as any, tempoPercent), selectedProgram));
+      });
 
       textTransport = {
         playPause: () => {
