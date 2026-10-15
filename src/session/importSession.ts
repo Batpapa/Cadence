@@ -118,6 +118,10 @@ export class ImportSession {
    *  a live recording re-processed this way still shows as "live" in the
    *  library, not "import". null = the normal fresh-import behavior. */
   sourceOverride: Analysis['source'] | null = null;
+  /** The notes of the analysis being re-analyzed, carried over by save() —
+   *  which builds the Analysis from scratch and would otherwise drop them.
+   *  Undefined for a fresh import. */
+  notes: string | undefined = undefined;
   /** Decks PINNED in the deck choice modal while this import is open — they
    *  come back ticked on the next add or link, and that is all they do. Purely
    *  in-memory and never persisted: picking a destination is a decision about
@@ -430,6 +434,7 @@ export class ImportSession {
       mimeType: this.playbackFile.type || 'application/octet-stream',
       source: this.sourceOverride ?? 'import',
       annotations: this.getDetections(),
+      ...(this.notes ? { notes: this.notes } : {}),
     };
     // A video's picture is dropped before anything is stored — see
     // extractAudioOnly for what is and is not allowed to happen to the file.

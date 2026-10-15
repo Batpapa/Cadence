@@ -1200,12 +1200,9 @@ export function showPreviewModal(
     /** The loop, one for both faces. On by default, as the stave's always was:
      *  a score is opened to be practised against. */
     let looping = true;
-    /** Late-bound: the text's marks show whether the loop is on. */
-    let onLoopChange: () => void = () => {};
     const setLooping = (on: boolean): void => {
       looping = on;
       textLoopBtn.classList.toggle('abcjs-pushed', on);
-      onLoopChange();
     };
     setLooping(true);
     /** The text face's player — assigned once abcjs has loaded. */
@@ -1724,8 +1721,9 @@ export function showPreviewModal(
     // The box over a layer that marks its text, since a textarea cannot
     // colour part of its own (2026-10-15): where play will start — a bar in
     // the colour of the stave's cursor, which is the same answer to the same
-    // question — the passage a selection plays, tinted and, while the loop is
-    // on, dashed underneath, and the note sounding. The layer copies the box's
+    // question — the passage a selection plays, tinted, and the note sounding.
+    // (A dashed line under the passage while looping was tried and dropped,
+    // 2026-10-15: it seemed to crawl as the playing note went by.) The layer copies the box's
     // text in the same font, padding and wrapping, transparent; the box is
     // see-through over it, and the layer paints the background.
     const textBox = document.createElement('div');
@@ -1796,11 +1794,23 @@ export function showPreviewModal(
       for (const r of [range, start, ...current]) if (r) { cuts.add(Math.min(r[0], text.length)); cuts.add(Math.min(r[1], text.length)); }
       const points = [...cuts].sort((a, b) => a - b);
       const parts: Node[] = [];
+      // The passage is ONE element, holding its pieces, so its tint is drawn
+      // in one go rather than as one box per piece.
+      let passage: HTMLSpanElement | null = null;
       for (let i = 0; i + 1 < points.length; i++) {
         const p = points[i]!, q = points[i + 1]!;
         const piece = text.slice(p, q);
         const classes: string[] = [];
-        if (range && p >= range[0] && q <= range[1]) classes.push('abc-text-range', ...(looping ? ['abc-text-loop'] : []));
+        const inPassage = !!range && p >= range[0] && q <= range[1];
+        const into = (node: Node) => {
+          if (!inPassage) { passage = null; parts.push(node); return; }
+          if (!passage) {
+            passage = document.createElement('span');
+            passage.className = 'abc-text-range';
+            parts.push(passage);
+          }
+          passage.appendChild(node);
+        };
         if (start && p === start[0]) classes.push('abc-text-start');
         const sounding = current.find(([a, b]) => p >= a && q <= b);
         if (sounding) {
@@ -1809,14 +1819,14 @@ export function showPreviewModal(
           // Where the note is in the text, for whoever needs to know (tests).
           if (p === sounding[0]) mark.dataset['at'] = String(p);
           mark.textContent = piece;
-          parts.push(mark);
+          into(mark);
         } else if (classes.length) {
           const span = document.createElement('span');
           span.className = classes.join(' ');
           span.textContent = piece;
-          parts.push(span);
+          into(span);
         } else {
-          parts.push(document.createTextNode(piece));
+          into(document.createTextNode(piece));
         }
       }
       // A trailing newline collapses in a div and not in a textarea: one more
@@ -1833,7 +1843,6 @@ export function showPreviewModal(
       }
       textBackdrop.scrollTop = textarea.scrollTop;
     };
-    onLoopChange = () => paintText();
 
     /** The notes sounding, or none. */
     const lightText = (ranges: [number, number][]): void => {
@@ -2834,6 +2843,11 @@ export function showPreviewModal(
         playedTo: number;
         /** The note sounding, for picking up there after a rebuild. */
         last: TimingEvent | null;
+        /** The caret or selection it was started from, in the box — see
+         *  caretMoved. */
+        caret: [number, number];
+        /** What it marks: its passage and its start note. */
+        hints: { range: [number, number] | null; start: [number, number] | null };
       }
       let textRun: TextRun | null = null;
       /** Bumped by every start and every stop, so a preparation that comes
@@ -2892,10 +2906,13 @@ export function showPreviewModal(
 
       /** Builds and starts a run on the box's text: from the caret or the
        *  selection, or — after a setting changed — at `resume`. */
-      const startTextRun = (resume: { char: number; pass: number; sel: [number, number] | null; playedTo: number; paused: boolean } | null) => {
+      const startTextRun = (resume: {
+        char: number; pass: number; sel: [number, number] | null; playedTo: number; paused: boolean; caret: [number, number];
+      } | null) => {
         // One tune at a time: the stave's, hidden behind this face, stops.
         pauseIfPlaying();
         const id = ++textRunId;
+        const caret: [number, number] = resume?.caret ?? [textarea.selectionStart, textarea.selectionEnd];
         const ps = playableSource(splitXLine(tunes[currentIndex] ?? '').xLine, textarea.value);
         const from = sourceIndex(ps, textarea.selectionStart);
         const to = textarea.selectionEnd > textarea.selectionStart ? sourceIndex(ps, textarea.selectionEnd) : null;
@@ -2934,12 +2951,13 @@ export function showPreviewModal(
             const at = resume ? eventAt(timings, resume.char, resume.pass) ?? plan.start : plan.start;
             run = {
               id, synth, timer, ps, timings, start: plan.start, sel, inside: plan.inside,
-              playedTo: resume ? resume.playedTo : -1, last: null,
+              playedTo: resume ? resume.playedTo : -1, last: null, caret,
+              hints: { range: sel ? boxRange(ps, sel[0], sel[1]) : null, start: noteRanges(ps, plan.start)[0] ?? null },
             };
             textRun = run;
             // What this run plays, marked for as long as it lasts — the caret
             // may wander off meanwhile.
-            setTextHints({ range: sel ? boxRange(ps, sel[0], sel[1]) : null, start: noteRanges(ps, plan.start)[0] ?? null });
+            setTextHints(run.hints);
             const seekTo = Math.max(0, at.milliseconds - SEEK_BACKOFF_MS) / 1000;
             synth.seek(seekTo, 'seconds');
             if (resume?.paused) {
@@ -2958,13 +2976,29 @@ export function showPreviewModal(
         })();
       };
 
+      /** Whether the caret or the selection is no longer the one the run
+       *  was started from. */
+      const caretMoved = (run: TextRun): boolean =>
+        textarea.selectionStart !== run.caret[0] || textarea.selectionEnd !== run.caret[1];
+
       // ── Before play: where it will start, from the caret ──
       // Parsed, never engraved (abcTextPlayback.ts): this runs at every caret
       // move. The parse is kept for as long as the text is the same.
       let parsedKey: string | null = null;
       let parsed: { ps: PlayableSource; notes: ParsedNote[] } | null = null;
       const refreshTextPreview = () => {
-        if (textState !== 'idle') return;
+        if (textState === 'loading' || textState === 'playing') return;
+        // Paused: the run's marks while the caret is where the run began —
+        // play resumes it — and the caret's own once it has moved, since play
+        // then starts there (see playPause).
+        if (textState === 'paused' && textRun) {
+          if (!caretMoved(textRun)) {
+            textCurrent = textRun.last ? noteRanges(textRun.ps, textRun.last) : [];
+            setTextHints(textRun.hints);
+            return;
+          }
+          textCurrent = [];
+        }
         if (currentMode !== 'text') { setTextHints({ range: null, start: null }); return; }
         const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
         const key = `${xLine}\n${textarea.value}`;
@@ -3000,6 +3034,12 @@ export function showPreviewModal(
           if (textState === 'playing') {
             try { run.synth.pause(); run.timer.pause(); } catch { /* ended */ }
             setTextState('paused');
+          } else if (caretMoved(run)) {
+            // Paused, then another passage chosen: play means THAT passage
+            // (reported 2026-10-15 — it resumed the first one). Left where
+            // it began, it resumes.
+            stopTextPlay();
+            startTextRun(null);
           } else {
             run.synth.start();
             run.timer.start();
@@ -3037,6 +3077,7 @@ export function showPreviewModal(
             sel: run.sel,
             playedTo: run.playedTo,
             paused: textState === 'paused',
+            caret: run.caret,
           };
           const old = run;
           textRun = null;

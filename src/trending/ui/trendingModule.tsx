@@ -163,7 +163,9 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
   };
 
   return (
-    <div class="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-bg">
+    // A card: `surface`; none yet: the page's `bg` — as a detection in an
+    // analysis (see DetectionCard).
+    <div class={`flex items-center gap-3 p-2.5 rounded-lg border border-border ${known ? 'bg-surface' : 'bg-bg'}`}>
       <span class="text-xs text-dim w-6 text-right shrink-0">{rank}</span>
 
       {/* Icons to the left of the name, same order/placement as the session
@@ -209,8 +211,9 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
               {row.name}
             </span>
           ) : (
+            // Muted, as in an analysis and the detection library: no card yet.
             <a
-              class="text-sm text-primary truncate hover:text-accent transition-colors"
+              class="text-sm text-muted truncate hover:text-accent transition-colors"
               href={externalSourceLink(externalId)!.url}
               target="_blank"
               rel="noopener"

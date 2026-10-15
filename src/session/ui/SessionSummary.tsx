@@ -17,6 +17,7 @@ import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields,
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { useSlicePlayer } from './PassRow';
 import { showShareSessionModal } from './ShareSessionModal';
+import { showAnalysisNotesModal } from './AnalysisNotesModal';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { detectAudioFile } from '../audio/clipExtract';
 import { audioExtension } from '../../services/zip';
@@ -827,6 +828,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         onRename={(val) => { session.name = val; persist(); }}
         onDelete={() => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); }}
         onShare={() => showShareSessionModal(session)}
+        hasNotes={!!session.notes?.trim()}
+        onNotes={() => showAnalysisNotesModal(session.notes ?? '', (notes) => {
+          if (notes.trim()) session.notes = notes; else delete session.notes;
+          persist();
+          bump();
+        })}
       />
       <AnalysisFolderPicker ctx={ctx} sessionId={session.id} />
       <DateRow

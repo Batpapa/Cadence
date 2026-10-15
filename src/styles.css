@@ -649,15 +649,8 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
    the same answer. A shadow, not a border: a border would move the text, and
    the layer must keep every character exactly under the box's. */
 .abc-text-start { box-shadow: -2px 0 0 0 var(--abc-cursor, #e11d48); }
-/* The passage a selection plays — and, dashed underneath, that it goes round
-   again. The text is transparent, so the line takes its own colour. */
+/* The passage a selection plays. */
 .abc-text-range { background-color: rgb(var(--color-accent-ch) / 0.14); }
-.abc-text-loop {
-  text-decoration-line: underline;
-  text-decoration-style: dashed;
-  text-decoration-color: rgb(var(--color-accent-ch));
-  text-underline-offset: 3px;
-}
 
 /* The note being played, in the ABC source face's highlight layer
    (fileViewer.ts, 2026-10-15). The layer's text is transparent and stays so:

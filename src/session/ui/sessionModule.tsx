@@ -464,6 +464,7 @@ export async function startReanalyze(ctx: AppContext, session: Analysis): Promis
     imp.name = session.name;
     imp.dateOverride = session.date;
     imp.sourceOverride = session.source;
+    imp.notes = session.notes;
     // The setting as it is NOW, not as it was for the first analysis: this
     // re-runs the recording with what the user currently says about it.
     imp.pitchShift = pitchShiftSetting(appState.value);

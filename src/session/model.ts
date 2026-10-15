@@ -183,6 +183,11 @@ export interface Analysis {
    *  recovery applies again to the detections it replays (recovery.ts). Never
    *  on a saved analysis — its detections already carry them. */
   confirmations?: DetectionConfirmation[];
+  /** The user's free notes on the analysis, markdown (2026-10-15). Absent = no
+   *  note; a cleared note is deleted rather than stored empty. Everything that
+   *  builds an Analysis from scratch over an existing one must carry it — a
+   *  re-analysis does (startReanalyze → ImportSession.notes). */
+  notes?: string;
   // The audio Blob (+ in-progress crash-recovery scratch data) lives in a
   // local-only, non-Drive-synced IndexedDB under the session id — see
   // session/db.ts. This record itself is small (no audio), so it's kept
