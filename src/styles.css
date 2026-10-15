@@ -178,8 +178,10 @@
   input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"] {
     color-scheme: var(--native-scheme);
   }
-  /* Prevent text selection on draggable elements */
-  [draggable="true"] { user-select: none; -webkit-user-select: none; }
+  /* Prevent text selection on draggable elements. `data-touch-drag` too: the
+     touch polyfill (utils.ts) turns `draggable` off for the length of a touch,
+     and a long press would otherwise select the word under the finger. */
+  [draggable="true"], [data-touch-drag] { user-select: none; -webkit-user-select: none; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }

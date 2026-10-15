@@ -522,7 +522,7 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
             />
           </div>
 
-          <span class="text-xs text-dim ml-auto">{t('trending.rowCount', { n: allRows.length })}</span>
+          <span class="text-xs text-dim ml-auto">{t(allRows.length === 1 ? 'trending.rowCount' : 'trending.rowCountPlural', { n: allRows.length })}</span>
         </div>
       )}
 

@@ -53,9 +53,10 @@ export async function renderPdfPages(host: HTMLElement, bytes: Uint8Array<ArrayB
   const doc = await loadingTask.promise;
   if (cancelled()) { void loadingTask.destroy(); return () => {}; }
 
-  const width = host.clientWidth || 600;
+  let width = host.clientWidth || 600;
   const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
   const slots = new Map<Element, Slot>();
+  const heightFor = (base: { width: number; height: number }) => `${(width * base.height) / base.width}px`;
 
   // Every page gets its place at once, sized from its own proportions, so the
   // scrollbar is right from the start and nothing jumps as pages are drawn.
@@ -66,7 +67,7 @@ export async function renderPdfPages(host: HTMLElement, bytes: Uint8Array<ArrayB
     const base = page.getViewport({ scale: 1 });
     const canvas = document.createElement('canvas');
     canvas.className = 'block w-full bg-white rounded mb-2';
-    canvas.style.height = `${(width * base.height) / base.width}px`;
+    canvas.style.height = heightFor(base);
     host.appendChild(canvas);
     slots.set(canvas, { page, canvas, task: null });
   }
@@ -99,7 +100,35 @@ export async function renderPdfPages(host: HTMLElement, bytes: Uint8Array<ArrayB
   }, { root: host, rootMargin: '100% 0px' });
   for (const canvas of slots.keys()) observer.observe(canvas);
 
+  // The box can change width under the pages: the dialog given the whole
+  // page, the reading page (2026-10-15), a phone turned sideways. Pages drawn
+  // for the old width would be stretched blurry or left small, so each is
+  // re-placed and the ones holding pixels redrawn; the rest are drawn at the
+  // new width when they come near. Settled first: a window dragged wider is
+  // one redraw, not one per frame.
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  const resizeObserver = new ResizeObserver(() => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resizeTimer = null;
+      const next = host.clientWidth;
+      // 0 is the box between two places (moved into the reading page's overlay).
+      if (!next || Math.abs(next - width) < 2) return;
+      // The reader's place, as a share of the whole: every height scales with the width.
+      const at = host.scrollTop / Math.max(1, host.scrollHeight);
+      width = next;
+      for (const slot of slots.values()) {
+        slot.canvas.style.height = heightFor(slot.page.getViewport({ scale: 1 }));
+        if (slot.task) { release(slot); draw(slot); }
+      }
+      host.scrollTop = at * host.scrollHeight;
+    }, 150);
+  });
+  resizeObserver.observe(host);
+
   return () => {
+    resizeObserver.disconnect();
+    if (resizeTimer) clearTimeout(resizeTimer);
     observer.disconnect();
     for (const slot of slots.values()) slot.task?.cancel();
     void loadingTask.destroy();

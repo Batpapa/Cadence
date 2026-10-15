@@ -105,9 +105,11 @@ async function fetchOEmbed(platform: EmbedPlatform, url: string): Promise<{ titl
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /** What the link dialog learns about a URL, on either side of its toggle. An
- *  external link has no title to learn and no iframe, hence the empty ones. */
+ *  external link has no title to learn and no iframe, hence the empty ones.
+ *  `unverified`: accepted, though whether anything is there could not be
+ *  learnt (see checkLinkTarget) — the dialog says so without refusing. */
 export type LinkCheck =
-  | { ok: true; title: string; embedUrl: string }
+  | { ok: true; title: string; embedUrl: string; unverified?: true }
   | { ok: false; refusal: RemoteRefusal };
 
 /** Whether `url` plays in the app, and under what name — oEmbed for the four
@@ -131,6 +133,7 @@ export async function checkEmbed(url: string): Promise<LinkCheck> {
 
 /** Whether an external link leads anywhere — the one thing a new tab needs. */
 export async function checkLink(url: string): Promise<LinkCheck> {
-  const refusal = await checkLinkTarget(url);
-  return refusal ? { ok: false, refusal } : { ok: true, title: '', embedUrl: '' };
+  const verdict = await checkLinkTarget(url);
+  if (verdict === 'unverified') return { ok: true, title: '', embedUrl: '', unverified: true };
+  return verdict ? { ok: false, refusal: verdict } : { ok: true, title: '', embedUrl: '' };
 }

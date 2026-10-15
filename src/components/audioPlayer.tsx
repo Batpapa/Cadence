@@ -6,10 +6,10 @@ import { t } from '../services/i18nService';
 import { playIcon, pauseIcon, stopIcon, repeatIcon } from './playbackIcons';
 import { AudioEngine, type AudioEffects } from './audioEngine';
 import { CustomSelect } from './customSelect';
-import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon } from './icons';
+import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon, AddClipIcon } from './icons';
 import {
   AUDIO_LIMITS, MIN_REGION_S, fmtTime, neutralSettings, fitSettings, sameSettings, settingsOf, suggestedPresetName,
-  type AudioSettings, type AudioPresetsBinding,
+  neutralEffects, type AudioSettings, type AudioPresetsBinding,
 } from '../services/audioPresets';
 
 export { stopCurrentAudio } from './audioEngine';
@@ -161,15 +161,16 @@ interface PresetActions {
   remove: () => void;
 }
 
-function IconButton({ title, onClick, children, class: extra = '' }: {
-  title: string; onClick: () => void; children: ComponentChildren; class?: string;
+function IconButton({ title, onClick, children, class: extra = '', disabled }: {
+  title: string; onClick: () => void; children: ComponentChildren; class?: string; disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       title={title}
       aria-label={title}
-      class={`p-1.5 rounded inline-flex items-center justify-center cursor-pointer transition-colors hover:bg-elevated ${extra || 'text-muted hover:text-primary'}`}
+      disabled={disabled}
+      class={`p-1.5 rounded inline-flex items-center justify-center cursor-pointer transition-colors hover:bg-elevated disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent ${extra || 'text-muted hover:text-primary'}`}
       onClick={onClick}
     >
       {children}
@@ -280,26 +281,42 @@ function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, nam
 }
 
 /** The bottom of the player, as under the score viewer's source: what writes
- *  — a new preset from these settings, and deleting the one on screen —
- *  grouped on the left; Save on the right, enabled once something differs
- *  from the preset (always on "no preset", where it asks a name first). */
-function PresetFooter({ current, dirty, suggestedName, setNaming, actions }: {
+ *  — a clip of the region, a new preset from these settings, and deleting the
+ *  one on screen — grouped on the left; Save on the right, enabled once
+ *  something differs from the preset (always on "no preset", where it asks a
+ *  name first). */
+function PresetFooter({ current, dirty, suggestedName, setNaming, actions, onExtract }: {
   current: AudioPreset | null;
   dirty: boolean;
   suggestedName: string;
   setNaming: (n: Naming | null) => void;
   actions: PresetActions;
+  /** Absent: no clip button. Null: one, greyed — the clip would be the file. */
+  onExtract?: (() => void) | null;
 }) {
   return (
     <div class="flex items-center justify-between gap-2 flex-wrap">
-      {current ? (
+      {current || onExtract !== undefined ? (
         <div class="flex items-center gap-1 p-1 bg-bg rounded-lg w-fit">
-          <IconButton title={t('audioPlayer.preset.saveNew.title')} onClick={() => setNaming({ mode: 'create', value: suggestedName })}>
-            <PlusIcon size={13} />
-          </IconButton>
-          <IconButton title={t('audioPlayer.preset.delete')} onClick={actions.remove} class="text-muted hover:text-danger">
-            <TrashIcon size={13} />
-          </IconButton>
+          {onExtract !== undefined && (
+            <IconButton
+              title={t(onExtract ? 'audioPlayer.clip.title' : 'audioPlayer.clip.whole')}
+              onClick={() => onExtract?.()}
+              disabled={!onExtract}
+            >
+              <AddClipIcon size={13} />
+            </IconButton>
+          )}
+          {current && (
+            <>
+              <IconButton title={t('audioPlayer.preset.saveNew.title')} onClick={() => setNaming({ mode: 'create', value: suggestedName })}>
+                <PlusIcon size={13} />
+              </IconButton>
+              <IconButton title={t('audioPlayer.preset.delete')} onClick={actions.remove} class="text-muted hover:text-danger">
+                <TrashIcon size={13} />
+              </IconButton>
+            </>
+          )}
         </div>
       ) : <span />}
       <button
@@ -501,6 +518,15 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
     },
   };
 
+  /** The clip of what is on screen (2026-10-15): the region, with the
+   *  effects carried by a preset if they were changed. Greyed when the clip
+   *  would be the file itself, unchanged. */
+  const wholeFile = region.start < 0.05 && region.end > duration - 0.05;
+  const onExtractClip = binding?.onExtractClip;
+  const extract = !onExtractClip ? undefined
+    : wholeFile && neutralEffects(current) ? null
+    : () => onExtractClip({ entry, settings: current, presetName: currentPreset?.name ?? null });
+
   /** A position on the waveform from a pointer's x. */
   const posAt = (clientX: number) => {
     const rect = waveWrapRef.current!.getBoundingClientRect();
@@ -683,6 +709,7 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
             suggestedName={suggestedPresetName(current)}
             setNaming={setNaming}
             actions={presetActions}
+            onExtract={extract}
           />
         </div>
       )}

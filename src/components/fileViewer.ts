@@ -602,6 +602,46 @@ function showTransposeModal(current: number, limit: number, onPick: (semitones: 
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
 
+/** Keeps the screen on while a page is read from without being touched — a
+ *  score or a PDF given the whole page, on a music stand.
+ *
+ *  Every step is optional: the API is absent on some browsers, the request
+ *  is refused when the page is not visible, and the lock is dropped by the
+ *  system whenever the tab goes to the background — which is why it is
+ *  re-taken on `visibilitychange` rather than assumed to hold. */
+function screenWakeLock(): { hold: () => void; release: () => void } {
+  let wanted = false;
+  let lock: { release: () => Promise<void> } | null = null;
+  const take = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nav = navigator as any;
+    if (!nav.wakeLock?.request || document.visibilityState !== 'visible') return;
+    nav.wakeLock.request('screen')
+      // A lock that arrives after the page was left is released at once,
+      // rather than held for a reader who is no longer reading.
+      .then((l: { release: () => Promise<void> }) => {
+        if (wanted) lock = l; else void l.release().catch(() => {});
+      })
+      .catch(() => { /* refused: the page is readable all the same */ });
+  };
+  const onVisibility = () => { if (wanted && !document.hidden) take(); };
+  return {
+    hold: () => {
+      if (wanted) return;
+      wanted = true;
+      document.addEventListener('visibilitychange', onVisibility);
+      take();
+    },
+    release: () => {
+      wanted = false;
+      document.removeEventListener('visibilitychange', onVisibility);
+      const held = lock;
+      lock = null;
+      void held?.release().catch(() => {});
+    },
+  };
+}
+
 function modalWidth(entry: FileEntry): string {
   const m = entry.mimeType;
   if (m.startsWith('audio/') || (isText(entry) && !isAbcFile(entry))) return '560px';
@@ -759,14 +799,59 @@ export function showPreviewModal(
     // get pdf.js — when they can run it: pdf.js 6 needs Promise.withResolvers
     // (Safari 17.4) and does not polyfill it; older ones keep the first page.
     const pdfJsRuns = typeof (Promise as { withResolvers?: unknown }).withResolvers === 'function';
-    if (navigator.pdfViewerEnabled !== false && !(isAppleTouchDevice() && pdfJsRuns)) {
+    const useEmbed = navigator.pdfViewerEnabled !== false && !(isAppleTouchDevice() && pdfJsRuns);
+
+    // ── The reading page (2026-10-15, group feedback: "PDFs in full screen,
+    // like the scores") ──
+    // Two ways to more room. The dialog's own "Full page" (modal.tsx), which
+    // keeps its header; and this, the score's reading page: the PDF alone on
+    // the page, its way out the very button that led in, the screen kept on.
+    // Neither viewer offers one to call: the browser's, in an <embed>, takes
+    // no orders from the page, and pdf.js is used without its viewer app —
+    // its presentation mode lives in that app, not in the library.
+    //
+    // The PDF and its button travel together, MOVED into an overlay on
+    // document.body for the reason the score's comment gives: the dialog
+    // around them would clip anything merely pinned in place. Moving an
+    // <embed> reloads it, which for a blob: URL costs nothing but the page
+    // the reader was on.
+    const pdfFrame = document.createElement('div');
+    pdfFrame.className = 'relative w-full';
+    body.appendChild(pdfFrame);
+    const pdfAnchor = document.createComment('pdf');
+    let pdfFullscreen: HTMLElement | null = null;
+    let pdfModalExpanded = false;
+    let unregisterPdfFullscreen = () => {};
+    const pdfWakeLock = screenWakeLock();
+
+    /** The viewer: the browser's <embed>, or the box pdf.js draws pages into. */
+    let viewer: HTMLElement;
+    /** Its height: the dialog's room, more of it once the dialog itself has
+     *  the page (its header and padding still take theirs), and none set on
+     *  the reading page, whose column sizes it. */
+    const sizePdf = () => {
+      const height = pdfFullscreen ? ''
+        : pdfModalExpanded ? `calc(${modalMaxH(1)} - 6rem - var(--safe-top) - var(--safe-bottom))`
+        : mediaMaxH;
+      if (useEmbed) viewer.style.height = height; else viewer.style.maxHeight = height;
+    };
+
+    if (useEmbed) {
       // An <embed> loading a blob: URL is governed by the page's object-src —
       // which must keep allowing blob: (webpack.config.js's CSP). With 'none'
       // this rendered an empty frame and said nothing (2026-09-06 to 14).
-      const embed = document.createElement('embed'); embed.src = entryToObjectUrl(entry);
-      embed.type = 'application/pdf'; embed.className = 'w-full rounded';
-      embed.style.height = mediaMaxH;
-      body.appendChild(embed);
+      //
+      // `#navpanes=0`: the page thumbnails closed at opening (2026-10-15, the
+      // user) — they took a third of a dialog's width from the page itself.
+      // Adobe's open parameter, which Chrome's viewer reads too (its
+      // open_pdf_params_parser.ts: navpanes alone hides the side panel and
+      // keeps the toolbar); the panel's own button still opens it. Firefox
+      // opens with it closed anyway; a viewer that knows nothing of it
+      // ignores a fragment.
+      const embed = document.createElement('embed'); embed.src = `${entryToObjectUrl(entry)}#navpanes=0`;
+      embed.type = 'application/pdf'; embed.className = 'block w-full rounded';
+      viewer = embed;
+      pdfFrame.appendChild(embed);
     } else {
       // No inline PDF viewer here — Chrome on Android, first of all — so an
       // <embed> would stay an empty frame. The pages are drawn with pdf.js
@@ -774,12 +859,12 @@ export function showPreviewModal(
       // device was tried first and turned down: on the phone it downloaded.
       const frame = document.createElement('div');
       frame.className = 'w-full overflow-y-auto';
-      frame.style.maxHeight = mediaMaxH;
+      viewer = frame;
       const loading = document.createElement('p');
       loading.className = 'text-sm text-muted text-center py-6';
       loading.textContent = t('fileViewer.pdf.loading');
       frame.appendChild(loading);
-      body.appendChild(frame);
+      pdfFrame.appendChild(frame);
 
       import('./pdfCanvas')
         .then(({ renderPdfPages }) => renderPdfPages(frame, entryToBytes(entry), () => closed))
@@ -807,6 +892,79 @@ export function showPreviewModal(
           frame.replaceChildren(box);
         });
     }
+    sizePdf();
+    onModalExpanded = (expanded) => { pdfModalExpanded = expanded; sizePdf(); };
+
+    // The score's own button (2026-10-15, the user: "the same as for the ABC
+    // scores"), top right of where the pages are. Its class reads its colours
+    // from the paper it sits on (--abc-ink); a PDF has no paper of ours, so it
+    // gets a white patch of one — black ink on it reads over a white page, the
+    // dialog of either theme, and the browser viewer's grey alike.
+    //
+    // Over pdf.js, the frame's corner is the first page's. Over the browser's
+    // viewer, the top of the frame is the viewer's own toolbar (download,
+    // print, its menu, at the right): the button goes under it, and left of
+    // its scrollbar. 56 px is Chrome's toolbar; Firefox's is lower and
+    // Safari's floats at the bottom, where both leave the button in the
+    // grey around the page.
+    const pdfFullscreenBtn = document.createElement('button');
+    pdfFullscreenBtn.className = 'abc-score-tool-small absolute z-20 rounded transition-colors cursor-pointer flex items-center justify-center';
+    pdfFullscreenBtn.style.setProperty('--abc-ink', '#000000');
+    pdfFullscreenBtn.style.background = 'rgba(255, 255, 255, 0.85)';
+    Object.assign(pdfFullscreenBtn.style, useEmbed
+      ? { top: '3.75rem', right: '1.25rem' }
+      : { top: '0.25rem', right: '0.25rem' });
+    const labelPdfButton = () => {
+      const key = pdfFullscreen ? 'fileViewer.pdf.fullscreenExit' : 'fileViewer.pdf.fullscreen';
+      pdfFullscreenBtn.replaceChildren(iconElement(pdfFullscreen ? CollapseIcon : ExpandIcon, 13));
+      pdfFullscreenBtn.title = t(key);
+      pdfFullscreenBtn.setAttribute('aria-label', t(key));
+    };
+    labelPdfButton();
+    pdfFrame.appendChild(pdfFullscreenBtn);
+
+    const exitPdfFullscreen = () => {
+      if (!pdfFullscreen) return;
+      unregisterPdfFullscreen();
+      unregisterPdfFullscreen = () => {};
+      pdfWakeLock.release();
+      pdfFrame.classList.remove('flex', 'flex-col', 'flex-1', 'min-h-0');
+      viewer.classList.remove('flex-1', 'min-h-0');
+      viewer.classList.add('rounded');
+      pdfAnchor.replaceWith(pdfFrame);
+      pdfFullscreen.remove();
+      pdfFullscreen = null;
+      sizePdf();
+      labelPdfButton();
+    };
+    const enterPdfFullscreen = () => {
+      if (pdfFullscreen) return;
+      const overlay = document.createElement('div');
+      // The score's overlay, to the class: the dialog colour shows only in
+      // the bands under the system bars.
+      overlay.className = 'fixed inset-0 z-[100] flex flex-col safe-area-pad';
+      overlay.style.background = 'var(--color-elevated)';
+      pdfFrame.replaceWith(pdfAnchor);
+      pdfFrame.classList.add('flex', 'flex-col', 'flex-1', 'min-h-0');
+      viewer.classList.remove('rounded');
+      viewer.classList.add('flex-1', 'min-h-0');
+      overlay.appendChild(pdfFrame);
+      document.body.appendChild(overlay);
+      pdfFullscreen = overlay;
+      sizePdf();
+      labelPdfButton();
+      pdfWakeLock.hold();
+      // Topmost overlay: Escape and the Android back gesture leave the
+      // reading page, not the viewer underneath it.
+      unregisterPdfFullscreen = registerOverlay(exitPdfFullscreen);
+    };
+    pdfFullscreenBtn.addEventListener('click', () => {
+      pdfFullscreenBtn.blur();
+      if (pdfFullscreen) exitPdfFullscreen(); else enterPdfFullscreen();
+    });
+    // The viewer can be taken down from elsewhere while the PDF has the page
+    // (closeAllModals): the overlay must not outlive it.
+    releaseFullscreen = exitPdfFullscreen;
 
   } else if (isAbcFile(entry)) {
     body.classList.replace('items-center', 'items-start');
@@ -1440,32 +1598,7 @@ export function showPreviewModal(
     const transportAnchor = document.createComment('abc-transport');
     let unregisterFullscreen = () => {};
 
-    /** Keeps the screen on while the score owns the page — the one place in
-     *  the app where somebody is looking at the screen without touching it.
-     *
-     *  Every step is optional: the API is absent on some browsers, the request
-     *  is refused when the page is not visible, and the lock is dropped by the
-     *  system whenever the tab goes to the background — which is why it is
-     *  re-taken on `visibilitychange` rather than assumed to hold. */
-    let wakeLock: { release: () => Promise<void> } | null = null;
-    const takeWakeLock = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nav = navigator as any;
-      if (!nav.wakeLock?.request || document.visibilityState !== 'visible') return;
-      nav.wakeLock.request('screen')
-        // A lock that arrives after full page was left is released at once,
-        // rather than held for a reader who is no longer reading.
-        .then((lock: { release: () => Promise<void> }) => {
-          if (fullscreen) wakeLock = lock; else void lock.release().catch(() => {});
-        })
-        .catch(() => { /* refused: the score is readable all the same */ });
-    };
-    const onVisibility = () => { if (fullscreen && !document.hidden) takeWakeLock(); };
-    const dropWakeLock = () => {
-      const held = wakeLock;
-      wakeLock = null;
-      void held?.release().catch(() => {});
-    };
+    const wakeLock = screenWakeLock();
 
     // No page-turn bands here on purpose. The full-page reader had a band down
     // each side that scrolled by a screenful; it was dropped on 2026-09-22
@@ -1479,8 +1612,7 @@ export function showPreviewModal(
       if (!fullscreen) return;
       unregisterFullscreen();
       unregisterFullscreen = () => {};
-      document.removeEventListener('visibilitychange', onVisibility);
-      dropWakeLock();
+      wakeLock.release();
       scoreFrame.classList.remove('flex', 'flex-col', 'flex-1', 'min-h-0');
       scoreScroll.classList.remove('flex-1', 'min-h-0');
       scoreScroll.classList.add('rounded');
@@ -1528,8 +1660,7 @@ export function showPreviewModal(
       fullscreenBtn.replaceChildren(iconElement(CollapseIcon, 13));
       fullscreenBtn.title = t('fileViewer.abc.fullscreenExit');
       fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreenExit'));
-      document.addEventListener('visibilitychange', onVisibility);
-      takeWakeLock();
+      wakeLock.hold();
       // Registered as the topmost overlay, which is what makes Escape and the
       // Android back gesture leave full page rather than close the viewer
       // underneath it.
@@ -2793,20 +2924,21 @@ export function showPreviewModal(
     }
   }
 
-  // Scores only: neither the preferences nor the room to spread out applies to
-  // an image, a PDF or a recording. A score is the one thing here that a wider
+  // Scores first: neither the preferences nor the room to spread out applied
+  // to an image, a PDF or a recording. A score is the one thing here that a wider
   // frame genuinely re-renders — abcjs lays out to the container, so the extra
   // width buys fewer line breaks rather than a bigger picture.
   //
   // And recordings since 2026-10-10, at the user's request: a wider waveform
-  // is a finer one to place the bounds of a part on.
+  // is a finer one to place the bounds of a part on. PDFs since 2026-10-15
+  // (group feedback): a page read at the dialog's size is a page read small.
   const isScore = isAbcFile(entry);
   const onRename = opts?.onRename;
   showModal(entry.name, body, [], {
     maxWidth: modalWidth(entry),
     onDismiss,
     guardDismiss: (dismiss) => guardClose?.(dismiss) ?? false,
-    expandable: isScore || m.startsWith('audio/'),
+    expandable: isScore || m.startsWith('audio/') || m === 'application/pdf',
     onExpandedChange: (expanded) => onModalExpanded?.(expanded),
     titleEdit: onRename
       ? {

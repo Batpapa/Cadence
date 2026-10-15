@@ -42,6 +42,7 @@ import { registerCardPanel } from '../../services/cardPanels';
 import { HelpIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
 import { DetectedIn } from './DetectedIn';
+import { showLinkImportModal } from './LinkImportModal';
 
 // ── Session orchestration ─────────────────────────────────────────────────────
 // Actions that start/stop/import a session — everything that used to also
@@ -225,6 +226,14 @@ export async function startImport(ctx: AppContext, file: File, folderId: string 
   } finally {
     importStarting.value = false;
   }
+}
+
+/** "Import a link": the recording is downloaded first, then imported exactly
+ *  as a picked file. Refused up front when a job is running, rather than
+ *  after a download that could take minutes. */
+export function startLinkImport(ctx: AppContext, folderId: string | null = null): void {
+  if (recognitionBusy()) { alertModal(t('sessions.import'), t('sessions.alreadyRunning')); return; }
+  showLinkImportModal((file) => { void startImport(ctx, file, folderId); });
 }
 
 /** What the "too long for this browser" warning told the user, kept so that
