@@ -17,9 +17,10 @@ import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import {
   playableSource, sourceIndex, playPlan, noteRanges, resumeInside, passOf, eventAt,
-  notesOf, startNoteAt, boxRange, type ParsedNote, type PlayableSource, type TimingEvent,
+  notesOf, startNoteAt, boxRange, bodyIndex, isNote, touches, type ParsedNote, type PlayableSource, type TimingEvent,
 } from '../services/abcTextPlayback';
 import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
+import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds } from '../services/abcBounds';
 import { showModal, updateTopModal, confirmModal, askUnsavedChanges } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
@@ -292,16 +293,6 @@ function isMarkdown(entry: FileEntry): boolean {
 /** How far before a clicked note to seek — see the click handler for why an
  *  exact seek lands on the wrong note. */
 const SEEK_BACKOFF_MS = 10;
-
-/** How soon a second press of the back button must follow one that went to
- *  the bookmark to go on to the start, the way "previous" works on any
- *  player. Wall-clock time between two PRESSES — not a distance from the
- *  bookmark: that was the first version, and anywhere in the bookmarked bar
- *  of a jig (a second long at the default tempo) read as a second press and
- *  went to the start (reported 2026-09-29 on The Kesh). Half a second, as
- *  asked after trying it: 1.5 s caught presses that were meant as a fresh
- *  "back to the bookmark". */
-const REWIND_GRACE_MS = 500;
 
 /** How far from a note a tap may land and still mean it, in window pixels —
  *  across, to the nearest note of the system, and above or below the system.
@@ -1200,7 +1191,7 @@ export function showPreviewModal(
     const textPlayBtn = mkTextBtn('abcjs-midi-start',
       withClass(playIcon(15), 'abcjs-play-svg') + withClass(pauseIcon(15), 'abcjs-pause-svg') + LOADING_SVG,
       t('fileViewer.abc.listen.title'), () => textTransport.playPause());
-    const textRewindBtn = mkTextBtn('abc-midi-rewind', rewindIcon(15), t('fileViewer.abc.listen.rewind'), () => textTransport.rewind());
+    const textRewindBtn = mkTextBtn('abc-midi-rewind', rewindIcon(15), t('fileViewer.abc.rewindStart'), () => textTransport.rewind());
     const textStopBtn = mkTextBtn('abcjs-midi-reset', stopIcon(15), t('fileViewer.abc.listen.stop'), () => textTransport.stop());
     const textLoopBtn = mkTextBtn('abcjs-midi-loop', repeatIcon(15), t('fileViewer.abc.listen.loop'), () => setLooping(!looping));
     textControls.append(textPlayBtn, textRewindBtn, textStopBtn, textLoopBtn);
@@ -1230,6 +1221,76 @@ export function showPreviewModal(
     /** Re-marks where play would start — assigned once abcjs has loaded. */
     let previewText: () => void = () => {};
 
+    // ── The passage (2026-10-15) ──
+    // A start and an end, each set at the cursor with a button of its own, as
+    // the audio player's region is, and SHARED by the two faces: a flag on
+    // the stave, a mark in the text. Clicking only ever moves the cursor; the
+    // passage changes through these buttons alone (the user). See
+    // services/abcBounds.ts for what a bound is.
+    /** Positions in the box's text of the version on screen, null = the
+     *  tune's own start or end. Never saved: where you practise today, not
+     *  something the score is. */
+    let bounds: Bounds = { in: null, out: null };
+    /** The text and the version the bounds were placed against — see
+     *  syncBounds, which follows an edit made since. */
+    let boundsBody = '';
+    let boundsIndex = -1;
+    /** The note the cursor is on, as a position in the box's text, on either
+     *  face: what a bound is set at, and what the other face picks up. Null
+     *  is the start. */
+    let cursorAt: number | null = null;
+    /** Late-bound, once abcjs has loaded: what is "here" needs the notes. */
+    let setBoundHere: (side: 'in' | 'out') => void = () => {};
+    /** Flags and marks drawn again — late-bound for the same reason. */
+    let redrawBounds: () => void = () => {};
+    /** The cursor carried onto the face being opened — late-bound too. */
+    let shareCursor: (mode: 'sheet' | 'text') => void = () => {};
+
+    const boundsGroup = document.createElement('div');
+    boundsGroup.className = 'flex items-center rounded-lg border border-border bg-bg shrink-0';
+    const mkBoundBtn = (label: string, cls: string, title: string, onClick: () => void): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `abc-tool-btn text-xs font-mono font-semibold ${cls}`;
+      b.textContent = label;
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.onclick = () => { b.blur(); onClick(); };
+      return b;
+    };
+    const boundInBtn = mkBoundBtn('[←', 'abc-bound-btn-in', t('fileViewer.abc.bounds.setIn'), () => setBoundHere('in'));
+    const boundOutBtn = mkBoundBtn('→]', 'abc-bound-btn-out', t('fileViewer.abc.bounds.setOut'), () => setBoundHere('out'));
+    const boundClearBtn = mkBoundBtn('✕', 'text-muted hover:text-primary disabled:opacity-30 disabled:cursor-default disabled:hover:text-muted',
+      t('fileViewer.abc.bounds.clear'), () => { bounds = { in: null, out: null }; boundsChanged(); });
+    // Nothing to clear yet. Not through paintBoundControls, which reads the
+    // stave's back button, declared further down.
+    boundClearBtn.disabled = true;
+    boundsGroup.append(boundInBtn, boundOutBtn, boundClearBtn);
+    transportBar.appendChild(boundsGroup);
+    /** Just before the stave starts: from the start of the passage when the
+     *  cursor is outside it — late-bound, it needs the timer. */
+    let beforeScorePlay: () => void = () => {};
+
+    /** What the controls say: whether there is anything to clear, and where
+     *  "back" goes. */
+    const paintBoundControls = (): void => {
+      boundClearBtn.disabled = bounds.in === null && bounds.out === null;
+      const title = t(bounds.in !== null ? 'fileViewer.abc.rewindIn' : 'fileViewer.abc.rewindStart');
+      for (const b of [rewindBtn, textRewindBtn]) {
+        if (!b) continue;
+        b.title = title;
+        b.setAttribute('aria-label', title);
+      }
+    };
+
+    /** After the bounds were set: they now refer to the text on screen. */
+    const boundsChanged = (): void => {
+      boundsBody = shownBody();
+      boundsIndex = currentIndex;
+      paintBoundControls();
+      redrawBounds();
+    };
+
     // The rest of the row: the key, the speed, the click and the swing, in the
     // app's own language. All of it has been one option away in abcjs since
     // the beginning and none of it was ever asked for.
@@ -1252,6 +1313,9 @@ export function showPreviewModal(
       if (!root) return;
       const classed = (svg: string, cls: string) => svg.replace('<svg ', `<svg class="${cls}" `);
       const start = root.querySelector('.abcjs-midi-start');
+      // Capturing: before abcjs's own handler starts the timer from where the
+      // cursor stands.
+      start?.addEventListener('click', () => beforeScorePlay(), true);
       if (start) {
         // Kept, not rebuilt: it is the one glyph here that is not ours.
         const loading = start.querySelector('.abcjs-loading-svg')?.outerHTML ?? '';
@@ -1283,9 +1347,9 @@ export function showPreviewModal(
       rewind.type = 'button';
       rewind.className = 'abcjs-btn abc-midi-rewind';
       rewind.innerHTML = rewindIcon(15);
-      rewind.addEventListener('click', () => rewindToMark());
+      rewind.addEventListener('click', () => rewindScore());
       rewindBtn = rewind;
-      setRewindTitle(false);
+      paintBoundControls();
       // Play, back, stop, repeat — the audio player's order, with the one
       // control it has no counterpart for next to play. abcjs builds loop /
       // restart / play, so everything moves.
@@ -1302,17 +1366,10 @@ export function showPreviewModal(
      *  first half of what the stop button does, the rewind being abcjs's own.
      *  Late-bound for the same reason: the controller lives inside the import. */
     let pauseIfPlaying: () => void = () => {};
-    /** Back to the bookmark, or to the start — see `rewindToMark` where it is
+    /** Back to the start of the passage — see `rewindScore` where it is
      *  assigned. Late-bound like the two above. */
-    let rewindToMark: () => void = () => {};
+    let rewindScore: () => void = () => {};
     let rewindBtn: HTMLButtonElement | null = null;
-    /** The button says where it will go, since that depends on a bookmark. */
-    const setRewindTitle = (hasMark: boolean) => {
-      if (!rewindBtn) return;
-      const title = t(hasMark ? 'fileViewer.abc.rewindBookmark' : 'fileViewer.abc.rewindStart');
-      rewindBtn.title = title;
-      rewindBtn.setAttribute('aria-label', title);
-    };
 
     /** A group of three: down, the value, up. The value itself is a button and
      *  resets — a stepper you can only walk back one press at a time is the
@@ -1565,13 +1622,14 @@ export function showPreviewModal(
      *  to abcjs: the "format non décodable" text and anything else that lands
      *  in this box has to be readable on the paper it lands on. */
     const applyPaper = () => {
-      const { paper: bg, ink, cursor, bookmark } = ABC_PAPERS[paper];
+      const { paper: bg, ink, cursor, boundIn, boundOut } = ABC_PAPERS[paper];
       // On the FRAME, so the controls that float over the score inherit them
       // too — they sit on the paper, not on the dialog.
       scoreFrame.style.setProperty('--abc-paper', bg);
       scoreFrame.style.setProperty('--abc-ink', ink);
       scoreFrame.style.setProperty('--abc-cursor', cursor);
-      scoreFrame.style.setProperty('--abc-bookmark', bookmark);
+      scoreFrame.style.setProperty('--abc-in', boundIn);
+      scoreFrame.style.setProperty('--abc-out', boundOut);
       scoreScroll.style.background = bg;
       scoreScroll.style.color = ink;
     };
@@ -1781,11 +1839,12 @@ export function showPreviewModal(
     const exitBeforeBackdrop = releaseFullscreen;
     releaseFullscreen = () => { exitBeforeBackdrop(); backdropRo.disconnect(); };
 
-    /** What the layer marks, as ranges of the box's text: the passage and the
-     *  start note (from the caret before play, from the run during it), and
-     *  the notes sounding. */
-    let textHints: { range: [number, number] | null; start: [number, number] | null } = { range: null, start: null };
+    /** What the layer marks, as ranges of the box's text: the cursor's note
+     *  (from the caret before play, from the run during it), the notes
+     *  sounding, and the passage's first and last notes. */
+    let textHints: { start: [number, number] | null } = { start: null };
     let textCurrent: [number, number][] = [];
+    let textBoundMarks: { in: [number, number] | null; out: [number, number] | null } = { in: null, out: null };
 
     /** abcjs ends a note after the spaces that follow it: marked, "A3 " looks
      *  like a note and a gap. */
@@ -1802,30 +1861,26 @@ export function showPreviewModal(
     const paintText = (follow = false): void => {
       const text = textarea.value;
       const current = textCurrent.map(r => trimNote(text, r)).filter((r): r is [number, number] => !!r);
-      const start = trimNote(text, textHints.start);
-      const range = textHints.range;
+      // The cursor's bar: on the notes sounding while there are any — it
+      // follows the music, as the stave's cursor does (the user, 2026-10-15)
+      // — else on the caret's note.
+      const caretNote = trimNote(text, textHints.start);
+      const cursors = current.length ? current : caretNote ? [caretNote] : [];
+      // The passage's start against its first note's left edge, its end
+      // against its last note's right edge: it reads as [ … ].
+      const markIn = trimNote(text, textBoundMarks.in);
+      const markOut = trimNote(text, textBoundMarks.out);
       const cuts = new Set<number>([0, text.length]);
-      for (const r of [range, start, ...current]) if (r) { cuts.add(Math.min(r[0], text.length)); cuts.add(Math.min(r[1], text.length)); }
+      for (const r of [caretNote, markIn, markOut, ...current]) if (r) { cuts.add(Math.min(r[0], text.length)); cuts.add(Math.min(r[1], text.length)); }
       const points = [...cuts].sort((a, b) => a - b);
       const parts: Node[] = [];
-      // The passage is ONE element, holding its pieces, so its tint is drawn
-      // in one go rather than as one box per piece.
-      let passage: HTMLSpanElement | null = null;
       for (let i = 0; i + 1 < points.length; i++) {
         const p = points[i]!, q = points[i + 1]!;
         const piece = text.slice(p, q);
         const classes: string[] = [];
-        const inPassage = !!range && p >= range[0] && q <= range[1];
-        const into = (node: Node) => {
-          if (!inPassage) { passage = null; parts.push(node); return; }
-          if (!passage) {
-            passage = document.createElement('span');
-            passage.className = 'abc-text-range';
-            parts.push(passage);
-          }
-          passage.appendChild(node);
-        };
-        if (start && p === start[0]) classes.push('abc-text-start');
+        if (cursors.some(r => p === r[0])) classes.push('abc-text-start');
+        if (markIn && p === markIn[0]) classes.push('abc-text-in');
+        if (markOut && q === markOut[1]) classes.push('abc-text-out');
         const sounding = current.find(([a, b]) => p >= a && q <= b);
         if (sounding) {
           const mark = document.createElement('mark');
@@ -1833,14 +1888,14 @@ export function showPreviewModal(
           // Where the note is in the text, for whoever needs to know (tests).
           if (p === sounding[0]) mark.dataset['at'] = String(p);
           mark.textContent = piece;
-          into(mark);
+          parts.push(mark);
         } else if (classes.length) {
           const span = document.createElement('span');
           span.className = classes.join(' ');
           span.textContent = piece;
-          into(span);
+          parts.push(span);
         } else {
-          into(document.createTextNode(piece));
+          parts.push(document.createTextNode(piece));
         }
       }
       // A trailing newline collapses in a div and not in a textarea: one more
@@ -1863,7 +1918,7 @@ export function showPreviewModal(
       textCurrent = ranges;
       paintText(ranges.length > 0);
     };
-    /** Where play starts and what it plays. */
+    /** Where play starts. */
     const setTextHints = (hints: typeof textHints): void => {
       textHints = hints;
       paintText();
@@ -2000,6 +2055,31 @@ export function showPreviewModal(
     const pendingBody = (): string | null =>
       draft && draft.index === currentIndex ? draft.body : null;
 
+    /** The text of the version on screen, on either face: its edit, if any. */
+    const shownBody = (): string => pendingBody() ?? currentBody();
+
+    /** The bounds and the cursor brought up to the text on screen: moved
+     *  along by an edit made since they were placed, dropped with the note
+     *  they named, and gone with the version they were placed in. Called
+     *  before every reading of them, so no path that changes the text —
+     *  typing, a draft thrown away, a save — has to remember to. */
+    const syncBounds = (): void => {
+      const body = shownBody();
+      if (boundsIndex === currentIndex && boundsBody === body) return;
+      const before = { ...bounds };
+      if (boundsIndex !== currentIndex) {
+        bounds = { in: null, out: null };
+        cursorAt = null;
+      } else {
+        const shift = (x: number | null) => (x === null ? null : shiftPosition(x, boundsBody, body));
+        bounds = { in: shift(bounds.in), out: shift(bounds.out) };
+        cursorAt = shift(cursorAt);
+      }
+      boundsBody = body;
+      boundsIndex = currentIndex;
+      if (before.in !== bounds.in || before.out !== bounds.out) paintBoundControls();
+    };
+
     /** The ● on the ABC tab: the stave may be showing an edit, and nothing
      *  else on that face would say so. */
     const markDraft = (): void => {
@@ -2097,6 +2177,8 @@ export function showPreviewModal(
         saveGroup.style.display = mode === 'text' ? '' : 'none';
       }
       layoutBottomRow();
+      // Before a redraw, which then places it once primed.
+      if (mode === 'sheet') shareCursor('sheet');
       if (mode === 'sheet' && sheetNeedsRerender) {
         sheetNeedsRerender = false;
         doRenderTune?.(currentIndex);
@@ -2105,6 +2187,7 @@ export function showPreviewModal(
         textarea.value = pendingBody() ?? currentBody();
         saveBtn.disabled = pendingBody() === null;
         saveStatus.textContent = '';
+        shareCursor('text');
         // No focus, and no preview drawn: switching to the source face is
         // often just a look, and stealing the caret put a keyboard over half a
         // phone screen for someone who had not asked to type. Both are one tap
@@ -2336,18 +2419,36 @@ export function showPreviewModal(
         return cursor;
       };
 
-      // ── The bookmark ──────────────────────────────────────────────────────
-      // The note last clicked, which the back button returns to. Held as WHERE
-      // THE NOTE IS IN THE TEXT and which time round it was — never as a time:
-      // a time is only right for the speed it was taken at, and the speed
-      // stepper re-times the whole performance under it. The text and the
-      // passes survive a speed change, a resize, a transposition, a new
-      // instrument — every redraw that keeps the tune. Only a different text
-      // (another tune, another version, an edit) makes it mean nothing, and
-      // `renderTune` drops it then. Never saved: it is where you are
-      // practising today, not something the score is.
-      let bookmark: { startChar: number; pass: number } | null = null;
-      let bookmarkSource: string | null = null;
+      // ── The notes, for the passage and the cursor ─────────────────────────
+      // The version on screen as abcjs reads it, parsed — never engraved —
+      // once per text. Both faces read it: the stave's source and the box's
+      // are the same text (abcTextPlayback's playableSource), so a position in
+      // one is a position in the other.
+      let readKey: string | null = null;
+      let readCache: { ps: PlayableSource; notes: ParsedNote[] } | null = null;
+      const readShown = (): { ps: PlayableSource; notes: ParsedNote[] } => {
+        syncBounds();
+        const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
+        const body = shownBody();
+        const key = `${xLine}\n${body}`;
+        if (key !== readKey || !readCache) {
+          readKey = key;
+          const ps = playableSource(xLine, body);
+          let notes: ParsedNote[] = [];
+          try { notes = notesOf(abcjs.parseOnly(ps.source)[0]); } catch { /* text abcjs cannot read: no notes */ }
+          readCache = { ps, notes };
+        }
+        return readCache;
+      };
+      /** The passage, as a range of the source — or null, without bounds. */
+      const shownRegion = () => {
+        const { ps, notes } = readShown();
+        const at = (x: number | null) => (x === null ? null : sourceIndex(ps, x));
+        return regionOf(notes, at(bounds.in), at(bounds.out));
+      };
+      /** Where a note of the source is in the box, for the shared cursor. */
+      const boxPosition = (srcChar: number | undefined): number | null =>
+        (typeof srcChar === 'number' ? bodyIndex(readShown().ps, srcChar) : null);
 
       /** Every time a note is played, as the controller's timer has it: one
        *  event per pass round the repeats, in time order. The timer is the
@@ -2362,95 +2463,146 @@ export function showPreviewModal(
           && Array.isArray(ev.startCharArray) && ev.startCharArray.includes(startChar));
       };
 
-      /** The timing event of the bookmarked note, on this pass round the
-       *  repeats — read off the controller's own timer, which is both the time
-       *  base a seek is measured in and where the note sits on the page. */
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const bookmarkEvent = (): any | null => {
-        if (!bookmark) return null;
-        const passes = passesOf(bookmark.startChar);
-        return passes[Math.min(bookmark.pass, passes.length - 1)] ?? null;
+      // ── The passage on the stave ──────────────────────────────────────────
+      /** The furthest character played inside the passage — see resumeInside,
+       *  the same rule as the source face's. */
+      let scorePlayedTo = -1;
+      const scoreTimings = (): TimingEvent[] => {
+        const timings = synthControl?.timer?.noteTimings;
+        return Array.isArray(timings) ? timings as TimingEvent[] : [];
+      };
+      /** The first note of the passage in time, or null for an empty one. */
+      const scoreRegionStart = (region: { from: number; to: number }): TimingEvent | null =>
+        playPlan(scoreTimings(), region.from, region.to)?.start ?? null;
+      /** To a note — a hair before it, an exact seek landing on the next. */
+      const seekScoreTo = (ev: TimingEvent) => {
+        try { synthControl.seek(Math.max(0, ev.milliseconds - SEEK_BACKOFF_MS) / 1000, 'seconds'); }
+        catch { /* not primed yet */ }
       };
 
-      /** Puts the flag on the page — or takes it off. A dashed pole down the
-       *  bookmarked note's staff, at the cursor's own offset, and a pennant at
-       *  its top; kept INSIDE the staff's extent, since the score's viewBox is
-       *  cropped to its ink (cropToInk) and anything above the first staff
-       *  would be cut. The pennant is the one part that takes a click: the
-       *  pole crosses the note it marks, and must not steal the click on it. */
-      const drawBookmark = () => {
-        const svg = notation.querySelector('svg');
-        svg?.querySelectorAll('.abc-bookmark').forEach(el => el.remove());
-        const ev = bookmarkEvent();
-        setRewindTitle(!!ev);
-        if (!svg || !ev) return;
+      /** Keeps a playing stave inside the passage. Called on every note, before
+       *  it is shown: true when the note was outside and the music was sent
+       *  elsewhere — on to the passage, back to its start, or to a stop there
+       *  without the loop. The timer allows a seek from inside its callback
+       *  (abc_timing_callbacks' doTiming re-reads its clock after one). */
+      const keepInRegion = (ev: TimingEvent): boolean => {
+        if (!synthControl?.isStarted || !isNote(ev)) return false;
+        const region = shownRegion();
+        if (!region) return false;
+        if (touches(ev, region.from, region.to)) {
+          scorePlayedTo = Math.max(scorePlayedTo, ...ev.startCharArray);
+          return false;
+        }
+        const next = resumeInside(scoreTimings(), ev.milliseconds, scorePlayedTo, region.from, region.to);
+        if (next) { seekScoreTo(next); return true; }
+        const start = scoreRegionStart(region);
+        scorePlayedTo = -1;
+        if (!looping) pauseIfPlaying();
+        if (start) seekScoreTo(start);
+        return true;
+      };
+
+      /** One bound's flag: a dashed pole down the staff and a pennant at its
+       *  top, kept INSIDE the staff's extent — the score's viewBox is cropped
+       *  to its ink (cropToInk), and anything above the first staff would be
+       *  cut. The start's stands before its note and points on into the
+       *  passage, the end's after its note and points back: [ … ]. Only the
+       *  pennant takes a click, which takes the bound away: the pole crosses
+       *  the note it marks, and must not steal the tap on it. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const boundFlag = (ev: any, side: 'in' | 'out'): SVGGElement => {
         const NS = 'http://www.w3.org/2000/svg';
-        const x = ev.left - 4;
+        const x = side === 'in' ? ev.left - 4 : ev.left + (ev.width ?? 8) + 3;
         const top = ev.top as number;
+        const dir = side === 'in' ? 1 : -1;
         const g = document.createElementNS(NS, 'g');
-        g.setAttribute('class', 'abc-bookmark');
+        g.setAttribute('class', `abc-bound abc-bound-${side}`);
         const pole = document.createElementNS(NS, 'line');
         pole.setAttribute('x1', String(x)); pole.setAttribute('x2', String(x));
         pole.setAttribute('y1', String(top)); pole.setAttribute('y2', String(top + ev.height));
         g.appendChild(pole);
         const flag = document.createElementNS(NS, 'g');
-        flag.setAttribute('class', 'abc-bookmark-flag');
+        flag.setAttribute('class', 'abc-bound-flag');
         const pennant = document.createElementNS(NS, 'polygon');
-        pennant.setAttribute('points', `${x},${top} ${x + 9},${top + 4} ${x},${top + 8}`);
+        pennant.setAttribute('points', `${x},${top} ${x + 9 * dir},${top + 4} ${x},${top + 8}`);
         // Bigger than the pennant, so a finger can find it.
         const hit = document.createElementNS(NS, 'rect');
-        hit.setAttribute('class', 'abc-bookmark-hit');
-        hit.setAttribute('x', String(x - 4)); hit.setAttribute('y', String(top - 2));
+        hit.setAttribute('class', 'abc-bound-hit');
+        hit.setAttribute('x', String(side === 'in' ? x - 4 : x - 12)); hit.setAttribute('y', String(top - 2));
         hit.setAttribute('width', '16'); hit.setAttribute('height', '14');
         const title = document.createElementNS(NS, 'title');
-        title.textContent = t('fileViewer.abc.bookmarkRemove');
+        title.textContent = t(side === 'in' ? 'fileViewer.abc.bounds.removeIn' : 'fileViewer.abc.bounds.removeOut');
         flag.append(pennant, hit, title);
         // abcjs reads its clicks off the whole <svg>, on mousedown and
-        // touchstart, and snaps any press to the nearest note within 12 px —
-        // the bookmarked note is right there, so a press on the flag would
-        // re-set the bookmark instead of removing it. Stopped here, below the
-        // <svg>, abcjs never hears of it.
+        // touchstart, and snaps any press to the nearest note within 12 px.
+        // Stopped here, below the <svg>, abcjs never hears of it.
         const swallow = (e: Event) => e.stopPropagation();
         flag.addEventListener('mousedown', swallow);
         flag.addEventListener('touchstart', swallow, { passive: true });
         flag.addEventListener('click', (e) => {
           e.stopPropagation();
-          bookmark = null;
-          drawBookmark();
+          bounds = { ...bounds, [side]: null };
+          boundsChanged();
         });
         g.appendChild(flag);
-        svg.appendChild(g);
+        return g;
       };
 
-      /** When the last press went to the bookmark, or null if it did not. */
-      let lastRewindToMarkAt: number | null = null;
-
-      /** Back to the bookmark if the tune is past it, else to the very start;
-       *  playing or not, and without stopping. A press right after one that
-       *  went to the bookmark goes on to the start — see REWIND_GRACE_MS. */
-      rewindToMark = () => {
-        const timer = synthControl?.timer;
-        if (!timer) return; // nothing primed: already at the start
-        const ev = bookmarkEvent();
-        const pressedAt = performance.now();
-        const secondPress = lastRewindToMarkAt !== null && pressedAt - lastRewindToMarkAt < REWIND_GRACE_MS;
-        lastRewindToMarkAt = null;
-        let target = 0;
-        if (ev && !secondPress) {
-          const now = typeof timer.currentMillisecond === 'function' ? timer.currentMillisecond() : 0;
-          // Past it by any amount. Sitting ON it — a click leaves the tune
-          // SEEK_BACKOFF_MS short of the note — is not past it, and "back"
-          // from there is the start; so is a bookmark still ahead, since
-          // going to it would be going forward.
-          if (now > ev.milliseconds) {
-            target = Math.max(0, ev.milliseconds - SEEK_BACKOFF_MS);
-            lastRewindToMarkAt = pressedAt;
-          }
-        }
-        try { synthControl.seek(target / 1000, 'seconds'); } catch { /* not primed yet */ }
+      /** The two flags put on the page, where there are bounds — none for a
+       *  missing one, which is the tune's own start or end. On the first time
+       *  round: the page draws a repeated bar once. */
+      const drawBoundFlags = () => {
+        const svg = notation.querySelector('svg');
+        svg?.querySelectorAll('.abc-bound').forEach(el => el.remove());
+        if (!svg) return;
+        const region = shownRegion();
+        if (!region) return;
+        if (region.first) { const ev = passesOf(region.first.start)[0]; if (ev) svg.appendChild(boundFlag(ev, 'in')); }
+        if (region.last) { const ev = passesOf(region.last.start)[0]; if (ev) svg.appendChild(boundFlag(ev, 'out')); }
       };
 
-      /** Play from this note, and bookmark it.
+      /** Back to the start of the passage — the tune's, without one — playing
+       *  or not, and without stopping. */
+      rewindScore = () => {
+        if (!synthControl?.timer) return; // nothing primed: already at the start
+        const region = shownRegion();
+        const start = region ? scoreRegionStart(region) : null;
+        scorePlayedTo = -1;
+        if (start) seekScoreTo(start);
+        else try { synthControl.seek(0, 'seconds'); } catch { /* not primed yet */ }
+      };
+
+      /** The note the stave's cursor last stood on, null at the start. */
+      let scoreAt: TimingEvent | null = null;
+      // Played from where the cursor is when it is inside the passage, else
+      // from its start — sought BEFORE the music starts: left to keepInRegion,
+      // the first note outside it would sound for a moment first.
+      beforeScorePlay = () => {
+        if (!synthControl?.timer || synthControl.isStarted) return;
+        const region = shownRegion();
+        if (!region) return;
+        if (scoreAt && isNote(scoreAt) && touches(scoreAt, region.from, region.to)) return;
+        const start = scoreRegionStart(region);
+        scorePlayedTo = -1;
+        if (start) seekScoreTo(start);
+      };
+
+      /** The shared cursor put on the stave, coming from the source face — not
+       *  while it plays, which has a place of its own. Waits for the tune to
+       *  be primed when it is not yet. */
+      let cursorPending = false;
+      const placeScoreCursor = () => {
+        cursorPending = false;
+        if (cursorAt === null || synthControl?.isStarted) return;
+        const { ps, notes } = readShown();
+        const note = boundNote(notes, sourceIndex(ps, cursorAt), 'in');
+        const ev = note ? passesOf(note.start)[0] : null;
+        if (!ev) { cursorPending = !synthControl?.timer; return; }
+        scorePlayedTo = -1;
+        seekScoreTo(ev);
+      };
+
+      /** Move the cursor to this note.
        *
        *  When the note is played is read off the controller's timer: one event
        *  per time round, in the time base both the cursor and the audio are
@@ -2465,7 +2617,10 @@ export function showPreviewModal(
        *  first sent every click on a repeated bar back to the first time round
        *  (reported 2026-09-21). The pass nearest where the tune is NOW is the
        *  one meant: clicking a bar during the second time through means that
-       *  bar, this time round. Stopped at the start, that is the first pass. */
+       *  bar, this time round. Stopped at the start, that is the first pass.
+       *
+       *  The cursor only: the passage changes through its own buttons alone
+       *  (the user, 2026-10-15) — this used to set a bookmark too. */
       const seekToNote = (startChar: number) => {
         if (!synthControl) return;
         const passes = passesOf(startChar);
@@ -2476,19 +2631,14 @@ export function showPreviewModal(
         const nowMs = (synthControl.percent ?? 0) * (synthControl.timer?.lastMoment ?? 0);
         const pass = passes.reduce((best: number, cur: { milliseconds: number }, i: number) =>
           (Math.abs(cur.milliseconds - nowMs) < Math.abs(passes[best]!.milliseconds - nowMs) ? i : best), 0);
-        const at = passes[pass]!.milliseconds;
-        // Every note clicked is where you want to come back to: clicking is
-        // already "play from here", and the bookmark is that, kept.
-        bookmark = { startChar, pass };
-        drawBookmark();
+        scorePlayedTo = -1;
         // Land just BEFORE the note, never exactly on it. abcjs picks the
         // current event with a strict `milliseconds < currentTime`, and a seek
         // goes out in seconds and comes back in milliseconds — when the round
         // trip leaves it a hair higher, an exact seek steps past the note and
         // selects the next one. A few milliseconds is far below the shortest
         // note in this music (a sixteenth in a fast reel is about 80 ms).
-        try { synthControl.seek(Math.max(0, at - SEEK_BACKOFF_MS) / 1000, 'seconds'); }
-        catch { /* not primed yet */ }
+        seekScoreTo(passes[pass]!);
       };
 
       /** The note a tap at this point means, as its `startChar` — or null for
@@ -2558,8 +2708,8 @@ export function showPreviewModal(
         pressAt = null;
         if (!from || !e.isPrimary) return;
         if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > TAP_SLOP_PX) return;
-        // The bookmark's flag has a click of its own: it removes the bookmark.
-        if ((e.target as Element | null)?.closest?.('.abc-bookmark')) return;
+        // A bound's flag has a click of its own: it removes the bound.
+        if ((e.target as Element | null)?.closest?.('.abc-bound')) return;
         const startChar = noteAt(e.clientX, e.clientY);
         if (startChar === null) return;
         // Read before the seek, which does not start anything but is the
@@ -2585,8 +2735,11 @@ export function showPreviewModal(
       const cursorControl = {
         beatSubdivisions: 2,
         // After every priming — a new tune, and each speed change, which
-        // rebuilds the timer the bookmark is read from.
-        onReady: () => drawBookmark(),
+        // rebuilds the timer the flags are read from.
+        onReady: () => {
+          drawBoundFlags();
+          if (cursorPending) placeScoreCursor();
+        },
         onStart: () => {
           lastCursorTop = null;
           ensureCursor();
@@ -2594,6 +2747,11 @@ export function showPreviewModal(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onEvent: (ev: any) => {
           if (ev.measureStart && ev.left === null) return; // 2nd half of a tie across a measure line
+          // Sent elsewhere: the note it was sent to comes through here too.
+          if (keepInRegion(ev as TimingEvent)) return;
+          scoreAt = ev as TimingEvent;
+          const at = boxPosition(ev.startCharArray?.[0]);
+          if (at !== null) cursorAt = at;
           notation.querySelectorAll('.abcjs-highlight').forEach(el => el.classList.remove('abcjs-highlight'));
           for (const note of ev.elements ?? []) {
             for (const el of note) el.classList.add('abcjs-highlight');
@@ -2609,6 +2767,10 @@ export function showPreviewModal(
         },
         onFinished: () => {
           lastCursorTop = null;
+          // Back at the start, which is where the cursor now is.
+          cursorAt = null;
+          scoreAt = null;
+          scorePlayedTo = -1;
           notation.querySelectorAll('.abcjs-highlight').forEach(el => el.classList.remove('abcjs-highlight'));
           const cursor = notation.querySelector('.abcjs-cursor');
           cursor?.setAttribute('x1', '0'); cursor?.setAttribute('x2', '0');
@@ -2680,13 +2842,6 @@ export function showPreviewModal(
       const renderTune = (index: number) => {
         const ink = ABC_PAPERS[paper].ink;
         const source = injectDefaultTempo(stripForRender(shownBlock(index)));
-        // A bookmark points into THIS text: another tune, another version or
-        // an edit, and the place it names is gone or somewhere else.
-        if (source !== bookmarkSource) {
-          bookmark = null;
-          bookmarkSource = source;
-          setRewindTitle(false);
-        }
         lastEngravedWidth = engraveWidth();
         const visualObj = abcjs.renderAbc(notation.id, source, {
           ...engraveOptions({ width: lastEngravedWidth, barsPerLine, ink, transpose }),
@@ -2866,19 +3021,13 @@ export function showPreviewModal(
         timer: any;
         ps: PlayableSource;
         timings: TimingEvent[];
-        start: TimingEvent;
-        /** The selection, in the source, or null from the caret. */
-        sel: [number, number] | null;
-        inside: ((ev: TimingEvent) => boolean) | null;
-        /** The furthest character played — see resumeInside. */
+        /** The furthest character played inside the passage — see
+         *  resumeInside. */
         playedTo: number;
         /** The note sounding, for picking up there after a rebuild. */
         last: TimingEvent | null;
-        /** The caret or selection it was started from, in the box — see
-         *  caretMoved. */
-        caret: [number, number];
-        /** What it marks: its passage and its start note. */
-        hints: { range: [number, number] | null; start: [number, number] | null };
+        /** The cursor it was started from — see caretMoved. */
+        caret: string;
       }
       let textRun: TextRun | null = null;
       /** Bumped by every start and every stop, so a preparation that comes
@@ -2906,11 +3055,22 @@ export function showPreviewModal(
         if (rearm) { run.timer.reset(); run.timer.start(at, 'seconds'); } else run.timer.setProgress(at, 'seconds');
       };
 
-      /** The end of what was asked for: round again with the loop, else stop. */
+      /** The passage, read again at each use — the bounds may move while it
+       *  plays — or the whole tune without one. */
+      const textRegion = (): { from: number; to: number } => shownRegion() ?? { from: 0, to: Infinity };
+      /** The first note of the passage in time. */
+      const textRegionStart = (run: TextRun): TimingEvent | null => {
+        const region = textRegion();
+        return playPlan(run.timings, region.from, region.to)?.start ?? null;
+      };
+
+      /** The end of the passage: round again with the loop, else stop. */
       const endTextRun = (run: TextRun, rearm: boolean) => {
         if (!looping) { stopTextPlay(); return; }
         run.playedTo = -1;
-        seekText(run, run.start, rearm);
+        const start = textRegionStart(run);
+        if (start) seekText(run, start, rearm);
+        else stopTextPlay();
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2922,32 +3082,61 @@ export function showPreviewModal(
           endTextRun(run, true);
           return looping ? 'continue' : undefined;
         }
-        if (run.sel && run.inside && !run.inside(ev as TimingEvent)) {
-          const next = resumeInside(run.timings, ev.milliseconds, run.playedTo, run.sel[0], run.sel[1]);
+        const tev = ev as TimingEvent;
+        const region = textRegion();
+        if (isNote(tev) && !touches(tev, region.from, region.to)) {
+          const next = resumeInside(run.timings, tev.milliseconds, run.playedTo, region.from, region.to);
           if (next) seekText(run, next);
           else endTextRun(run, false);
           return undefined;
         }
-        const chars = (ev as TimingEvent).startCharArray ?? [];
+        const chars = tev.startCharArray ?? [];
         run.playedTo = Math.max(run.playedTo, ...chars);
-        run.last = ev as TimingEvent;
-        lightText(noteRanges(run.ps, ev as TimingEvent));
+        run.last = tev;
+        const at = boxPosition(chars[0]);
+        if (at !== null) cursorAt = at;
+        lightText(noteRanges(run.ps, tev));
         return undefined;
       };
 
-      /** Builds and starts a run on the box's text: from the caret or the
-       *  selection, or — after a setting changed — at `resume`. */
+      // ── The cursor, on this face ──
+      // The note the caret is on — or the one clicked: the caret lands on the
+      // nearest gap between two characters, so a click on the right half of
+      // a `d` puts it AFTER the `d`, before the next note. The note meant is
+      // the character under the finger: of the two around the caret, the one
+      // whose box holds the click, measured on the layer behind the box,
+      // which lays out the very same text. Remembered for as long as the
+      // caret stays where that click put it.
+      let clickedAt: { caret: number; index: number } | null = null;
+      textarea.addEventListener('input', () => { clickedAt = null; });
+      const textCursorNote = (): ParsedNote | null => {
+        const { ps, notes } = readShown();
+        const a = textarea.selectionStart, b = textarea.selectionEnd;
+        if (b === a && clickedAt && clickedAt.caret === a) {
+          const s = sourceIndex(ps, clickedAt.index);
+          const hit = notes.find(n => s >= n.start && s < n.end);
+          if (hit) return hit;
+        }
+        return startNoteAt(notes, sourceIndex(ps, a), b > a ? sourceIndex(ps, b) : null);
+      };
+      /** What says the cursor moved since a run began. */
+      const caretKey = (): string =>
+        `${textarea.selectionStart},${textarea.selectionEnd},${clickedAt && clickedAt.caret === textarea.selectionStart ? clickedAt.index : ''}`;
+      const caretMoved = (run: TextRun): boolean => caretKey() !== run.caret;
+
+      /** Builds and starts a run on the box's text: from the cursor when it is
+       *  inside the passage, from the passage's start when it is not — or,
+       *  after a setting changed, at `resume`. */
       const startTextRun = (resume: {
-        char: number; pass: number; sel: [number, number] | null; playedTo: number; paused: boolean; caret: [number, number];
+        char: number; pass: number; playedTo: number; paused: boolean; caret: string;
       } | null) => {
         // One tune at a time: the stave's, hidden behind this face, stops.
         pauseIfPlaying();
         stopTap();
         const id = ++textRunId;
-        const caret: [number, number] = resume?.caret ?? [textarea.selectionStart, textarea.selectionEnd];
+        const caret = resume?.caret ?? caretKey();
         const ps = playableSource(splitXLine(tunes[currentIndex] ?? '').xLine, textarea.value);
-        const from = sourceIndex(ps, textarea.selectionStart);
-        const to = textarea.selectionEnd > textarea.selectionStart ? sourceIndex(ps, textarea.selectionEnd) : null;
+        const cursorNote = resume ? null : textCursorNote();
         setTextState('loading');
         void (async () => {
           try {
@@ -2977,19 +3166,25 @@ export function showPreviewModal(
               eventCallback: (ev: any) => onTextEvent(run, ev),
             });
             const timings = timer.noteTimings as TimingEvent[];
-            const sel = resume ? resume.sel : to !== null ? [from, to] as [number, number] : null;
-            const plan = playPlan(timings, sel ? sel[0] : from, sel ? sel[1] : null);
-            if (!plan) { stopTextPlay(); return; }
-            const at = resume ? eventAt(timings, resume.char, resume.pass) ?? plan.start : plan.start;
+            const region = textRegion();
+            const regionStart = playPlan(timings, region.from, region.to)?.start;
+            if (!regionStart) { stopTextPlay(); return; }
+            let at = regionStart;
+            if (resume) at = eventAt(timings, resume.char, resume.pass) ?? regionStart;
+            else if (cursorNote) {
+              // The cursor's note, its first time round.
+              const here = playPlan(timings, cursorNote.start, null)?.start;
+              if (here && touches(here, region.from, region.to)) at = here;
+            }
             run = {
-              id, synth, timer, ps, timings, start: plan.start, sel, inside: plan.inside,
+              id, synth, timer, ps, timings,
               playedTo: resume ? resume.playedTo : -1, last: null, caret,
-              hints: { range: sel ? boxRange(ps, sel[0], sel[1]) : null, start: noteRanges(ps, plan.start)[0] ?? null },
             };
             textRun = run;
-            // What this run plays, marked for as long as it lasts — the caret
-            // may wander off meanwhile.
-            setTextHints(run.hints);
+            // The cursor onto the note it starts on, before the first one
+            // sounds; from there it follows the music (see paintText).
+            textCurrent = noteRanges(ps, at);
+            setTextHints({ start: null });
             const seekTo = Math.max(0, at.milliseconds - SEEK_BACKOFF_MS) / 1000;
             synth.seek(seekTo, 'seconds');
             if (resume?.paused) {
@@ -3008,43 +3203,35 @@ export function showPreviewModal(
         })();
       };
 
-      /** Whether the caret or the selection is no longer the one the run
-       *  was started from. */
-      const caretMoved = (run: TextRun): boolean =>
-        textarea.selectionStart !== run.caret[0] || textarea.selectionEnd !== run.caret[1];
-
-      // ── Before play: where it will start, from the caret ──
-      // Parsed, never engraved (abcTextPlayback.ts): this runs at every caret
-      // move. The parse is kept for as long as the text is the same.
-      let parsedKey: string | null = null;
-      let parsed: { ps: PlayableSource; notes: ParsedNote[] } | null = null;
+      // ── Before play: where it will start, from the cursor ──
+      /** The passage's marks in the text, from the bounds as they now stand. */
+      const markTextBounds = () => {
+        const region = shownRegion();
+        const { ps } = readShown();
+        textBoundMarks = {
+          in: region?.first ? boxRange(ps, region.first.start, region.first.end) : null,
+          out: region?.last ? boxRange(ps, region.last.start, region.last.end) : null,
+        };
+      };
       const refreshTextPreview = () => {
-        if (textState === 'loading' || textState === 'playing') return;
-        // Paused: the run's marks while the caret is where the run began —
-        // play resumes it — and the caret's own once it has moved, since play
-        // then starts there (see playPause).
+        if (currentMode !== 'text') return;
+        markTextBounds();
+        if (textState === 'loading' || textState === 'playing') { paintText(); return; }
+        // Paused: the cursor on the note it stopped at while the caret is
+        // where the run began — play resumes there — and on the caret's once
+        // it has moved, since play then starts there (see playPause).
         if (textState === 'paused' && textRun) {
           if (!caretMoved(textRun)) {
             textCurrent = textRun.last ? noteRanges(textRun.ps, textRun.last) : [];
-            setTextHints(textRun.hints);
+            paintText();
             return;
           }
           textCurrent = [];
         }
-        if (currentMode !== 'text') { setTextHints({ range: null, start: null }); return; }
-        const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
-        const key = `${xLine}\n${textarea.value}`;
-        if (key !== parsedKey || !parsed) {
-          parsedKey = key;
-          const ps = playableSource(xLine, textarea.value);
-          let notes: ParsedNote[] = [];
-          try { notes = notesOf(abcjs.parseOnly(ps.source)[0]); } catch { /* text abcjs cannot read: nothing to mark */ }
-          parsed = { ps, notes };
-        }
-        const { ps, notes } = parsed;
-        const a = textarea.selectionStart, b = textarea.selectionEnd;
-        const note = startNoteAt(notes, sourceIndex(ps, a), b > a ? sourceIndex(ps, b) : null);
-        setTextHints({ range: b > a ? [a, b] : null, start: note ? boxRange(ps, note.start, note.end) : null });
+        const { ps } = readShown();
+        const note = textCursorNote();
+        cursorAt = note ? bodyIndex(ps, note.start) : null;
+        setTextHints({ start: note ? boxRange(ps, note.start, note.end) : null });
       };
       // At most once a frame — a drag-select fires this at every pixel.
       let previewRaf = 0;
@@ -3057,13 +3244,40 @@ export function showPreviewModal(
       for (const type of ['select', 'keyup', 'mouseup', 'input', 'focus']) textarea.addEventListener(type, schedulePreview);
       previewText = schedulePreview;
 
+      // ── The passage: set here, drawn on both faces ──
+      /** Where "here" is on this face, for one bound: the note sounding while
+       *  it plays (or paused where it was), else the cursor's; a selection
+       *  gives the start its first note and the end its last. */
+      const textBoundAt = (side: 'in' | 'out'): number | null => {
+        const { ps, notes } = readShown();
+        const run = textRun;
+        if (run && (textState === 'playing' || (textState === 'paused' && !caretMoved(run)))) {
+          return boxPosition(run.last?.startCharArray?.[0]);
+        }
+        const a = textarea.selectionStart, b = textarea.selectionEnd;
+        if (b > a) {
+          const across = notesAcross(notes, sourceIndex(ps, a), sourceIndex(ps, b));
+          return across ? bodyIndex(ps, (side === 'in' ? across.first : across.last).start) : null;
+        }
+        const note = textCursorNote();
+        return note ? bodyIndex(ps, note.start) : null;
+      };
+      setBoundHere = (side) => {
+        syncBounds();
+        // On the stave, the note sounding or the one tapped — nothing yet is
+        // the start of the tune.
+        const at = currentMode === 'text' ? textBoundAt(side) : cursorAt;
+        // An end at the start of the tune would hold nothing.
+        if (at === null && side === 'out') return;
+        bounds = setBound(bounds, side, at);
+        boundsChanged();
+      };
+      redrawBounds = () => {
+        drawBoundFlags();
+        if (currentMode === 'text') refreshTextPreview();
+      };
+
       // ── A tapped note, heard ──
-      // The caret lands on the nearest gap between two characters, so a tap
-      // on the right half of a `d` puts it AFTER the `d` — before the next
-      // note, which is the one the start mark then shows. The note meant is
-      // the character under the finger: of the two around the caret, the one
-      // whose box holds the tap, measured on the layer behind the box, which
-      // lays out the very same text.
       const charBox = (index: number): DOMRect | null => {
         const walker = document.createTreeWalker(textBackdrop, NodeFilter.SHOW_TEXT);
         let offset = 0;
@@ -3085,8 +3299,7 @@ export function showPreviewModal(
       let tapTune: unknown = null;
       let tapPs: PlayableSource | null = null;
       textarea.addEventListener('click', (e) => {
-        if (currentMode !== 'text' || (textState !== 'idle' && textState !== 'paused')) return;
-        if (!tapPlaysNote(appState.value)) return;
+        clickedAt = null;
         const caret = textarea.selectionStart;
         if (textarea.selectionEnd !== caret) return;
         const text = textarea.value;
@@ -3096,6 +3309,12 @@ export function showPreviewModal(
           return !!box && e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
         });
         if (index === undefined) return;
+        // The cursor is on the note clicked, whichever side of it the caret
+        // went — see textCursorNote.
+        clickedAt = { caret, index };
+        schedulePreview();
+        if (currentMode !== 'text' || (textState !== 'idle' && textState !== 'paused')) return;
+        if (!tapPlaysNote(appState.value)) return;
         const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
         const key = `${transpose}|${selectedProgram ?? ''}|${xLine}\n${text}`;
         if (key !== tapKey) {
@@ -3117,6 +3336,24 @@ export function showPreviewModal(
         playTap(abcjs, tapTracks(note.pitches, note.graces, secondsPerWhole(tapTune as any, tempoPercent), selectedProgram));
       });
 
+      // ── One cursor for both faces ──
+      // Leaving one face for the other, the cursor goes along: onto the caret
+      // in the box — without focusing it, which would put a keyboard over
+      // half a phone screen for someone who had not asked to type — or onto
+      // the stave, once it is primed.
+      shareCursor = (mode) => {
+        syncBounds();
+        if (cursorAt === null) return;
+        if (mode === 'text') {
+          if (cursorAt > textarea.value.length) return;
+          clickedAt = null;
+          textarea.setSelectionRange(cursorAt, cursorAt);
+          return;
+        }
+        if (synthControl?.timer && !sheetNeedsRerender) placeScoreCursor();
+        else cursorPending = true;
+      };
+
       textTransport = {
         playPause: () => {
           if (textState === 'idle') { startTextRun(null); return; }
@@ -3127,9 +3364,9 @@ export function showPreviewModal(
             try { run.synth.pause(); run.timer.pause(); } catch { /* ended */ }
             setTextState('paused');
           } else if (caretMoved(run)) {
-            // Paused, then another passage chosen: play means THAT passage
-            // (reported 2026-10-15 — it resumed the first one). Left where
-            // it began, it resumes.
+            // Paused, then the cursor moved: play means from THERE (reported
+            // 2026-10-15 — it resumed where it was). Left where it began, it
+            // resumes.
             stopTextPlay();
             startTextRun(null);
           } else {
@@ -3138,12 +3375,13 @@ export function showPreviewModal(
             setTextState('playing');
           }
         },
-        // Back to where it started, playing or not, without stopping.
+        // Back to the start of the passage, playing or not, without stopping.
         rewind: () => {
           const run = textRun;
           if (!run || textState === 'loading') return;
           run.playedTo = -1;
-          seekText(run, run.start);
+          const start = textRegionStart(run);
+          if (start) seekText(run, start);
         },
         stop: () => {
           textRunId++;
@@ -3157,16 +3395,15 @@ export function showPreviewModal(
           textCurrent = [];
           refreshTextPreview();
         },
-        // The same note, the same time round, the same selection — rebuilt.
+        // The same note, the same time round — rebuilt.
         retime: () => {
           if (textState === 'idle') return;
           const run = textRun;
           if (textState === 'loading' || !run) { startTextRun(null); return; }
-          const at = run.last ?? run.start;
+          const at = run.last ?? textRegionStart(run);
           const resume = {
-            char: at.startCharArray?.[0] ?? 0,
-            pass: passOf(run.timings, at),
-            sel: run.sel,
+            char: at?.startCharArray?.[0] ?? 0,
+            pass: at ? passOf(run.timings, at) : 0,
             playedTo: run.playedTo,
             paused: textState === 'paused',
             caret: run.caret,
@@ -3191,6 +3428,7 @@ export function showPreviewModal(
         e.preventDefault(); // or the page scrolls under the modal
         if (currentMode === 'text') { unlockAbcjsAudio(); textTransport.playPause(); return; }
         unlockAbcjsAudio();
+        beforeScorePlay();
         void synthControl?.play();
       };
       document.addEventListener('keydown', onKeyDown);
