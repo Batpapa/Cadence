@@ -1,3 +1,28 @@
+diff --git a/node_modules/abcjs/src/api/abc_timing_callbacks.js b/node_modules/abcjs/src/api/abc_timing_callbacks.js
+index 0406642..4a49440 100644
+--- a/node_modules/abcjs/src/api/abc_timing_callbacks.js
++++ b/node_modules/abcjs/src/api/abc_timing_callbacks.js
+@@ -326,6 +326,12 @@ var TimingCallbacks = function(target, params) {
+ 			self.reportNext = true;
+ 		}
+ 		requestAnimationFrame(self.doTiming);
++		// [Cadence patch] One jogger at a time: start() and setProgress() each
++		// armed a new one without clearing the one already running, so every
++		// pass round a loop (SynthController.finished -> timer.start(0)) and
++		// every seek left one more chain calling doTiming every 60 ms, for as
++		// long as the score stayed open.
++		clearTimeout(self.joggerTimer);
+ 		self.joggerTimer = setTimeout(self.animationJogger, JOGGING_INTERVAL);
+ 	};
+ 	self.pause = function() {
+@@ -414,6 +420,7 @@ var TimingCallbacks = function(target, params) {
+ 		if (self.lineEndCallback)
+ 			self.lineEndCallback(self.lineEndTimings[self.currentLine], self.noteTimings[self.currentEvent], { line: self.currentLine, endTimings: self.lineEndTimings });
+ 
++		clearTimeout(self.joggerTimer); // [Cadence patch] see start()
+ 		self.joggerTimer = setTimeout(self.animationJogger, JOGGING_INTERVAL);
+ 	};
+ };
 diff --git a/node_modules/abcjs/src/data/abc_tune.js b/node_modules/abcjs/src/data/abc_tune.js
 index 4e830f0..7876340 100644
 --- a/node_modules/abcjs/src/data/abc_tune.js

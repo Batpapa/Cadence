@@ -10,11 +10,15 @@ import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, Pl
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
-import { TUNE_TEMPOS, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
+import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwing, meterCanSwing,
   ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
   SWING_CHOICES, NO_SWING } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
+import {
+  playableSource, sourceIndex, playPlan, noteRanges, resumeInside, passOf, eventAt,
+  notesOf, startNoteAt, boxRange, type ParsedNote, type PlayableSource, type TimingEvent,
+} from '../services/abcTextPlayback';
 import { showModal, updateTopModal, confirmModal, askUnsavedChanges } from './modal';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
@@ -83,8 +87,19 @@ const TEMPO_STEP_PERCENT = 5;
  *  padding is part of its scrollport, so content passes visibly through it and
  *  a bar stuck at `bottom-0` would leave a 16 px strip of score showing under
  *  itself. Offset by exactly the padding, it lands flush with the edge.
- *  Opaque background and a stacking order, or the notation shows through. */
-const TRANSPORT_CLASS = 'abc-transport sticky -bottom-4 z-10 bg-elevated py-2 flex items-center justify-center gap-2 flex-wrap';
+ *  Opaque background and a stacking order, or the notation shows through.
+ *
+ *  All of that is on the ROW the transport sits in since 2026-10-15
+ *  (BOTTOM_ROW_CLASS): the source face's version and save buttons share its
+ *  line, and a sticky element only sticks within its parent — on the
+ *  transport, inside a row its own height, it would no longer stick at all. */
+const TRANSPORT_CLASS = 'abc-transport flex items-center justify-center gap-2 flex-wrap';
+/** The bottom row: the transport in the middle, the source face's version
+ *  buttons on its left and Save on its right — on one line while they fit,
+ *  the transport on a line of its own above them when they do not (the user,
+ *  2026-10-15; laid out by `.abc-bottom-row` in styles.css, decided by
+ *  `layoutBottomRow`). */
+const BOTTOM_ROW_CLASS = 'abc-bottom-row sticky -bottom-4 z-10 bg-elevated py-2';
 
 function abcTempoPercent(): number {
   const stored = appState.value.abcTempoPercent;
@@ -272,48 +287,6 @@ function isMarkdown(entry: FileEntry): boolean {
   return entry.mimeType === 'text/markdown' || entry.name.endsWith('.md');
 }
 
-
-/** Gives a tune a `Q:` when it has none, from what its `R:` says it is — which
- *  is the normal case for TheSession's ABC.
- *
- *  It was taken OUT for a few hours on 2026-09-21, to buy back the 27 px a
- *  tempo mark reserves above the first staff, with the speed handed to the
- *  synth as `audioParams.qpm` instead. That was wrong, and measured wrong:
- *  the `Q:` is what the MIDI flattener stamps `currentTrackMilliseconds` from,
- *  and those stamps are what clicking a note seeks to. Without it they came
- *  out at 111 ms per quaver instead of 167 — while the audio kept the right
- *  speed, because SynthController takes that from `millisecondsPerMeasure()`
- *  by a different route. Two clocks, one score: every click on a note landed
- *  somewhere else.
- *
- *  `qpm` does not rescue it — passing it changed nothing in the stamps
- *  (measured both ways). So the `Q:` stays, and the 27 px are taken back by
- *  hiding the tempo MARK in CSS: `cropToInk` measures ink, and an element with
- *  `display:none` has none. */
-function injectDefaultTempo(abc: string): string {
-  if (/^Q:/m.test(abc)) return abc;
-  const rMatch = abc.match(/^R:\s*(.+)/m);
-  const tempo = rMatch ? TUNE_TEMPOS[rMatch[1]!.trim().toLowerCase()] : undefined;
-  if (!tempo) return abc;
-  return abc.replace(/^(K:[^\n]*)/m, `$1\nQ: ${tempo}`);
-}
-
-/** The header fields dropped before a score is ENGRAVED. The file on disk keeps
- *  every one of them; this is only what the reader is shown.
- *
- *  `S:` is a URL back to TheSession and `Z:` is who transcribed it: both are
- *  facts about where the setting came from, not things to read while playing,
- *  and the card's own source pin already says the first. `settingIndexInScore`
- *  reads `S:` off the FILE, which is untouched.
- *
- *  The fields that stay (`T:`, `R:`, `C:`) are silenced with zero-sized fonts
- *  in engraveOptions instead — that works for them because they sit in a block
- *  whose height collapses with their text. */
-const STRIPPED_FOR_RENDER = /^[SZ]:/;
-
-function stripForRender(abc: string): string {
-  return abc.split('\n').filter(l => !STRIPPED_FOR_RENDER.test(l)).join('\n');
-}
 
 /** How far before a clicked note to seek — see the click handler for why an
  *  exact seek lands on the wrong note. */
@@ -1185,6 +1158,67 @@ export function showPreviewModal(
     controls.addEventListener('click', unlockAbcjsAudio, true);
     transportBar.appendChild(controls);
 
+    // ── The source face's transport (2026-10-15) ──
+    // On the ABC face, the stave's own four buttons, copied: abcjs's widget
+    // only exists once a stave has been drawn — never, for a score opened on
+    // its source — and drives the stave's synth alone. Same classes, so the
+    // same look (styles.css, `.abc-transport .abcjs-inline-audio`), and the
+    // same row: the practice controls beside them are SHARED by both faces
+    // (the user, 2026-10-15), and so is the loop. What they play here is the
+    // text in the box — see `textTransport` where it is assigned.
+    const textControls = document.createElement('div');
+    textControls.className = 'abcjs-inline-audio shrink-0';
+    textControls.style.display = 'none';
+    const withClass = (svg: string, cls: string) => svg.replace('<svg ', `<svg class="${cls}" `);
+    // abcjs's own spinner (synth/images/loading.svg.js), which its CSS turns.
+    const LOADING_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="abcjs-loading-svg"><circle cx="50" cy="50" fill="none" stroke-width="20" r="35" stroke-dasharray="160 55"></circle></svg>';
+    const mkTextBtn = (cls: string, html: string, title: string, onClick: () => void): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `abcjs-btn ${cls}`;
+      b.innerHTML = html;
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      // Inside the tap, for Safari: see unlockAbcjsAudio.
+      b.onclick = () => { b.blur(); unlockAbcjsAudio(); onClick(); };
+      return b;
+    };
+    const textPlayBtn = mkTextBtn('abcjs-midi-start',
+      withClass(playIcon(15), 'abcjs-play-svg') + withClass(pauseIcon(15), 'abcjs-pause-svg') + LOADING_SVG,
+      t('fileViewer.abc.listen.title'), () => textTransport.playPause());
+    const textRewindBtn = mkTextBtn('abc-midi-rewind', rewindIcon(15), t('fileViewer.abc.listen.rewind'), () => textTransport.rewind());
+    const textStopBtn = mkTextBtn('abcjs-midi-reset', stopIcon(15), t('fileViewer.abc.listen.stop'), () => textTransport.stop());
+    const textLoopBtn = mkTextBtn('abcjs-midi-loop', repeatIcon(15), t('fileViewer.abc.listen.loop'), () => setLooping(!looping));
+    textControls.append(textPlayBtn, textRewindBtn, textStopBtn, textLoopBtn);
+    transportBar.appendChild(textControls);
+    type TextPlayState = 'idle' | 'loading' | 'playing' | 'paused';
+    /** How the text face's play button looks — abcjs's classes, abcjs's CSS. */
+    const paintTextPlay = (state: TextPlayState): void => {
+      textPlayBtn.classList.toggle('abcjs-pushed', state === 'playing');
+      textPlayBtn.classList.toggle('abcjs-loading', state === 'loading');
+    };
+    /** The loop, one for both faces. On by default, as the stave's always was:
+     *  a score is opened to be practised against. */
+    let looping = true;
+    /** Late-bound: the text's marks show whether the loop is on. */
+    let onLoopChange: () => void = () => {};
+    const setLooping = (on: boolean): void => {
+      looping = on;
+      textLoopBtn.classList.toggle('abcjs-pushed', on);
+      onLoopChange();
+    };
+    setLooping(true);
+    /** The text face's player — assigned once abcjs has loaded. */
+    let textTransport = {
+      playPause: () => {}, rewind: () => {}, stop: () => {},
+      /** A setting changed: picks up at the same note, rebuilt. */
+      retime: () => {},
+    };
+    /** Typing, another face, another version and the dialog going stop it. */
+    const stopTextPlay = (): void => textTransport.stop();
+    /** Re-marks where play would start — assigned once abcjs has loaded. */
+    let previewText: () => void = () => {};
+
     // The rest of the row: the key, the speed, the click and the swing, in the
     // app's own language. All of it has been one option away in abcjs since
     // the beginning and none of it was ever asked for.
@@ -1480,9 +1514,9 @@ export function showPreviewModal(
     const scoreFrame = document.createElement('div');
     scoreFrame.className = 'relative w-full';
     container.appendChild(scoreFrame);
-    // The transport goes UNDER the score, which is why it is appended here and
-    // not where it was built (see TRANSPORT_CLASS).
-    container.appendChild(transportBar);
+    // The transport goes UNDER the score, which is why it is not appended where
+    // it was built (see TRANSPORT_CLASS) — nor here: under the ABC source as
+    // well, so after the box (2026-10-15). One of the two is always hidden.
 
     // The score's own scrolling viewport, capped well below the modal's
     // height: the score is the only thing that should move while the cursor
@@ -1681,12 +1715,136 @@ export function showPreviewModal(
     // ── Raw ABC text of the SELECTED tune only — editable and saved back to
     // the attachment when the caller passed a save callback (card view);
     // read-only otherwise (study).
+    // ── The source face's player (2026-10-15, a TheSession user editing ABC
+    // by ear): the transport under the box plays the text in it — from the
+    // caret, or only the selection — and lights each note in the text as it
+    // sounds. Nothing is drawn; see abcTextPlayback.ts. On every viewer, the
+    // read-only one too: listening is not editing.
+
+    // The box over a layer that marks its text, since a textarea cannot
+    // colour part of its own (2026-10-15): where play will start — a bar in
+    // the colour of the stave's cursor, which is the same answer to the same
+    // question — the passage a selection plays, tinted and, while the loop is
+    // on, dashed underneath, and the note sounding. The layer copies the box's
+    // text in the same font, padding and wrapping, transparent; the box is
+    // see-through over it, and the layer paints the background.
+    const textBox = document.createElement('div');
+    textBox.className = 'relative';
+    textBox.style.display = 'none';
+    const textBackdrop = document.createElement('div');
+    textBackdrop.setAttribute('aria-hidden', 'true');
+    textBackdrop.className = 'absolute left-0 top-0 font-mono text-xs p-3 border border-transparent rounded-lg bg-bg text-transparent overflow-hidden whitespace-pre-wrap break-words pointer-events-none';
+
+    // ── Raw ABC text of the SELECTED tune only — editable and saved back to
+    // the attachment when the caller passed a save callback (card view);
+    // read-only otherwise (study).
     const textarea = document.createElement('textarea');
-    textarea.className = 'hidden w-full h-72 font-mono text-xs p-3 border border-border rounded-lg bg-bg text-primary resize-y outline-none focus:border-accent';
+    textarea.className = 'relative block w-full h-72 font-mono text-xs p-3 border border-border rounded-lg bg-transparent text-primary resize-y outline-none focus:border-accent';
     textarea.spellcheck = false;
     textarea.readOnly = !onSave;
     textarea.value = tunes[0] ?? '';
-    container.appendChild(textarea);
+    textBox.append(textBackdrop, textarea);
+    container.appendChild(textBox);
+    const bottomRow = document.createElement('div');
+    bottomRow.className = BOTTOM_ROW_CLASS;
+    bottomRow.appendChild(transportBar);
+    container.appendChild(bottomRow);
+    // The positions marked are positions in the text as it was: a keystroke
+    // makes them wrong, so typing stops it.
+    textarea.addEventListener('input', () => stopTextPlay());
+    textarea.addEventListener('scroll', () => { textBackdrop.scrollTop = textarea.scrollTop; });
+
+    /** The layer at the box's size, less its scrollbar: wrapped at another
+     *  width, its lines would not be the box's. Followed as the box is
+     *  resized by its handle. */
+    const sizeBackdrop = (): void => {
+      const cs = getComputedStyle(textarea);
+      const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+      textBackdrop.style.width = `${textarea.clientWidth + borders}px`;
+      textBackdrop.style.height = `${textarea.offsetHeight}px`;
+      textBackdrop.scrollTop = textarea.scrollTop;
+    };
+    const backdropRo = new ResizeObserver(sizeBackdrop);
+    backdropRo.observe(textarea);
+    const exitBeforeBackdrop = releaseFullscreen;
+    releaseFullscreen = () => { exitBeforeBackdrop(); backdropRo.disconnect(); };
+
+    /** What the layer marks, as ranges of the box's text: the passage and the
+     *  start note (from the caret before play, from the run during it), and
+     *  the notes sounding. */
+    let textHints: { range: [number, number] | null; start: [number, number] | null } = { range: null, start: null };
+    let textCurrent: [number, number][] = [];
+
+    /** abcjs ends a note after the spaces that follow it: marked, "A3 " looks
+     *  like a note and a gap. */
+    const trimNote = (text: string, r: [number, number] | null): [number, number] | null => {
+      if (!r) return null;
+      let [a, b] = r;
+      while (b > a && /\s/.test(text[b - 1]!)) b--;
+      return b > a ? [a, b] : null;
+    };
+
+    /** Redraws the layer. `follow` brings the note sounding into view when it
+     *  has scrolled out of it — never the caret's marks: the reader is
+     *  looking at the caret already. */
+    const paintText = (follow = false): void => {
+      const text = textarea.value;
+      const current = textCurrent.map(r => trimNote(text, r)).filter((r): r is [number, number] => !!r);
+      const start = trimNote(text, textHints.start);
+      const range = textHints.range;
+      const cuts = new Set<number>([0, text.length]);
+      for (const r of [range, start, ...current]) if (r) { cuts.add(Math.min(r[0], text.length)); cuts.add(Math.min(r[1], text.length)); }
+      const points = [...cuts].sort((a, b) => a - b);
+      const parts: Node[] = [];
+      for (let i = 0; i + 1 < points.length; i++) {
+        const p = points[i]!, q = points[i + 1]!;
+        const piece = text.slice(p, q);
+        const classes: string[] = [];
+        if (range && p >= range[0] && q <= range[1]) classes.push('abc-text-range', ...(looping ? ['abc-text-loop'] : []));
+        if (start && p === start[0]) classes.push('abc-text-start');
+        const sounding = current.find(([a, b]) => p >= a && q <= b);
+        if (sounding) {
+          const mark = document.createElement('mark');
+          mark.className = ['abc-text-playing', ...classes].join(' ');
+          // Where the note is in the text, for whoever needs to know (tests).
+          if (p === sounding[0]) mark.dataset['at'] = String(p);
+          mark.textContent = piece;
+          parts.push(mark);
+        } else if (classes.length) {
+          const span = document.createElement('span');
+          span.className = classes.join(' ');
+          span.textContent = piece;
+          parts.push(span);
+        } else {
+          parts.push(document.createTextNode(piece));
+        }
+      }
+      // A trailing newline collapses in a div and not in a textarea: one more
+      // character keeps the last line's height the same in both.
+      parts.push(document.createTextNode(' '));
+      textBackdrop.replaceChildren(...parts);
+      sizeBackdrop();
+      const mark = follow ? textBackdrop.querySelector('mark') : null;
+      if (mark) {
+        const top = mark.offsetTop;
+        if (top < textarea.scrollTop || top + mark.offsetHeight > textarea.scrollTop + textarea.clientHeight) {
+          textarea.scrollTop = top - textarea.clientHeight / 2;
+        }
+      }
+      textBackdrop.scrollTop = textarea.scrollTop;
+    };
+    onLoopChange = () => paintText();
+
+    /** The notes sounding, or none. */
+    const lightText = (ranges: [number, number][]): void => {
+      textCurrent = ranges;
+      paintText(ranges.length > 0);
+    };
+    /** Where play starts and what it plays. */
+    const setTextHints = (hints: typeof textHints): void => {
+      textHints = hints;
+      paintText();
+    };
 
     // ── The source face's preview ────────────────────────────────────────────
     // The half of the ABC editor that was missing: the box above says what the
@@ -1706,16 +1864,13 @@ export function showPreviewModal(
     // as you type by PARSING the text and drawing nothing at all (see
     // `checkWarnings`). A mistake is still named the moment it is made.
 
-    const saveRow = document.createElement('div');
-    saveRow.className = 'hidden flex items-center justify-between gap-2 flex-wrap';
-
     // ── Adding / deleting a version ───────────────────────────────────────────
-    // On the save row rather than beside the version nav: these two write to the
-    // file, like Save and unlike the nav, and this row is already exactly where
-    // "editable, and looking at the source" is decided — it only ever shows in
-    // text mode, and only when the caller passed a save callback.
+    // On the bottom row rather than beside the version nav: these two write to
+    // the file, like Save and unlike the nav. Shown on the source face only,
+    // and only when the caller passed a save callback.
     const versionEdit = document.createElement('div');
-    versionEdit.className = 'flex items-center gap-1 p-1 bg-bg rounded-lg w-fit';
+    versionEdit.className = 'abc-bottom-start flex items-center gap-1 p-1 bg-bg rounded-lg w-fit';
+    versionEdit.style.display = 'none';
     const mkEditBtn = (icon: Element, title: string, danger: boolean): HTMLButtonElement => {
       const b = document.createElement('button');
       b.appendChild(icon);
@@ -1728,10 +1883,10 @@ export function showPreviewModal(
     versionEdit.append(addVersionBtn, deleteVersionBtn);
 
     const saveGroup = document.createElement('div');
-    // Takes what the version buttons leave and keeps the primary action against
-    // the right edge; `min-w-0` lets the status text wrap inside it rather than
-    // pushing Save off the row.
-    saveGroup.className = 'flex items-center gap-2 flex-1 min-w-0 justify-end';
+    // Against the right edge; `min-w-0` lets the status text wrap inside it
+    // rather than pushing Save off the row.
+    saveGroup.className = 'abc-bottom-end flex items-center gap-2 min-w-0 justify-end';
+    saveGroup.style.display = 'none';
     const saveStatus = document.createElement('span');
     saveStatus.className = 'text-xs text-dim';
     const saveBtn = document.createElement('button');
@@ -1739,8 +1894,37 @@ export function showPreviewModal(
     saveBtn.textContent = t('fileViewer.abc.save');
     saveBtn.disabled = true;
     saveGroup.append(saveStatus, saveBtn);
-    saveRow.append(versionEdit, saveGroup);
-    container.appendChild(saveRow);
+    bottomRow.prepend(versionEdit);
+    bottomRow.appendChild(saveGroup);
+
+    /** One line or two: the transport keeps its natural width in the middle
+     *  and each side gets the room of the wider one, so it stays centred —
+     *  the whole has to fit, or the transport goes up a line of its own. Read
+     *  off the pieces' natural widths, never off the layout they are in, so
+     *  switching does not change the answer and cannot flicker. */
+    const layoutBottomRow = (): void => {
+      const gap = parseFloat(getComputedStyle(bottomRow).columnGap) || 0;
+      const sideW = (el: HTMLElement) => (el.style.display === 'none' ? 0 : el.scrollWidth);
+      const side = Math.max(sideW(versionEdit), sideW(saveGroup));
+      const prev = transportBar.style.width;
+      transportBar.style.width = 'max-content';
+      const middle = transportBar.offsetWidth;
+      transportBar.style.width = prev;
+      const need = middle + (side > 0 ? 2 * (side + gap) : 0);
+      bottomRow.classList.toggle('abc-bottom-stacked', need > bottomRow.clientWidth);
+    };
+    let bottomRaf = 0;
+    const bottomRo = new ResizeObserver(() => {
+      cancelAnimationFrame(bottomRaf);
+      bottomRaf = requestAnimationFrame(layoutBottomRow);
+    });
+    // The row's width, and what decides the pieces' own: a chip showing up, a
+    // value growing, a "Saved." beside Save.
+    for (const el of [bottomRow, versionEdit, saveGroup, practiceRow]) bottomRo.observe(el);
+    // Taken down with the dialog — on the hook assigned once, above, rather
+    // than releaseKeys, which the abcjs branch reassigns.
+    const exitFullscreenFirst = releaseFullscreen;
+    releaseFullscreen = () => { exitFullscreenFirst(); cancelAnimationFrame(bottomRaf); bottomRo.disconnect(); };
 
     body.appendChild(container);
 
@@ -1838,6 +2022,7 @@ export function showPreviewModal(
     };
 
     function goToVersion(index: number): void {
+      stopTextPlay();
       currentIndex = Math.max(0, Math.min(versionCount - 1, index));
       prevBtn.disabled = currentIndex === 0;
       nextBtn.disabled = currentIndex === versionCount - 1;
@@ -1868,7 +2053,11 @@ export function showPreviewModal(
       // Sheet + synth toolbar fully hidden in text mode, not just visually behind
       // it — inline style.display, not just the 'hidden' class: abcjs's own
       // resize handling can otherwise leave the notation SVG visibly reflowing.
-      transportBar.style.display = mode === 'sheet' ? 'flex' : 'none';
+      // Both faces have the transport now; each its own buttons, the practice
+      // row shared.
+      transportBar.style.display = 'flex';
+      controls.style.display = mode === 'sheet' ? '' : 'none';
+      textControls.style.display = mode === 'text' ? '' : 'none';
       // The frame, not the score inside it: the reading tools act on the
       // picture and would otherwise stay hanging over the ABC source.
       scoreFrame.style.display = mode === 'sheet' ? '' : 'none';
@@ -1876,9 +2065,15 @@ export function showPreviewModal(
       // screen. The link to abcTools is not one of them: it hands the TUNE
       // over, whichever face you were reading.
       fullscreenBtn.style.display = mode === 'sheet' ? '' : 'none';
-      textarea.style.display = mode === 'text' ? 'block' : 'none';
+      textBox.style.display = mode === 'text' ? '' : 'none';
+      if (mode !== 'text') stopTextPlay();
+      else previewText();
 
-      if (onSave) saveRow.style.display = mode === 'text' ? 'flex' : 'none';
+      if (onSave) {
+        versionEdit.style.display = mode === 'text' ? '' : 'none';
+        saveGroup.style.display = mode === 'text' ? '' : 'none';
+      }
+      layoutBottomRow();
       if (mode === 'sheet' && sheetNeedsRerender) {
         sheetNeedsRerender = false;
         doRenderTune?.(currentIndex);
@@ -2520,6 +2715,9 @@ export function showPreviewModal(
               displayWarp: true,
             });
             dressTransport();
+            // The stave's loop button sets the shared loop: abcjs has toggled
+            // its own by the time this runs (its listener came first).
+            controls.querySelector('.abcjs-midi-loop')?.addEventListener('click', () => setLooping(!!synthControl?.isLooping));
           } else {
             // Switching tunes on an already-used controller: if playback ever
             // started, abcjs can keep the previous tune's primed audio bound
@@ -2603,7 +2801,7 @@ export function showPreviewModal(
             // against, and reaching for the button on every pass is friction.
             // `setTune` resets isLooping to false, so this belongs here, after
             // every re-prime, and the check keeps it idempotent.
-            if (!synthControl.isLooping) {
+            if (synthControl.isLooping !== looping) {
               try { synthControl.toggleLoop(); } catch { /* ignore */ }
             }
             warmAudioOutput();
@@ -2613,6 +2811,239 @@ export function showPreviewModal(
 
       doRenderTune = renderTune;
 
+      // ── The source face's player ──────────────────────────────────────────
+      // A synth and a timer of its own, built the way SynthController.go()
+      // builds the stave's (synth-controller.js), with the shared settings —
+      // speed, click, swing, key, instrument, volume — but from the box's text,
+      // engraved off screen (renderAbc's "*" target: a hidden div, drawn and
+      // removed), since the timing of each note is only known once abcjs has
+      // laid the tune out. Built at each start: the text may have changed.
+      interface TextRun {
+        id: number;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        synth: any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        timer: any;
+        ps: PlayableSource;
+        timings: TimingEvent[];
+        start: TimingEvent;
+        /** The selection, in the source, or null from the caret. */
+        sel: [number, number] | null;
+        inside: ((ev: TimingEvent) => boolean) | null;
+        /** The furthest character played — see resumeInside. */
+        playedTo: number;
+        /** The note sounding, for picking up there after a rebuild. */
+        last: TimingEvent | null;
+      }
+      let textRun: TextRun | null = null;
+      /** Bumped by every start and every stop, so a preparation that comes
+       *  back after either is dropped rather than started. */
+      let textRunId = 0;
+      let textState: TextPlayState = 'idle';
+      const setTextState = (state: TextPlayState) => { textState = state; paintTextPlay(state); };
+
+      /** The run moved to a note — a hair before it: an exact seek lands on
+       *  the one after (see SEEK_BACKOFF_MS). `rearm` restarts the timer's own
+       *  loop, which has ended once the tune is played out. */
+      const seekText = (run: TextRun, ev: TimingEvent, rearm = false) => {
+        const at = Math.max(0, ev.milliseconds - SEEK_BACKOFF_MS) / 1000;
+        if (textState === 'paused') {
+          run.synth.seek(at, 'seconds');
+          run.timer.setProgress(at, 'seconds');
+          return;
+        }
+        // Stopped, sought, started: abcjs's own seek restarts the sound only
+        // while it thinks it is running, which it may no longer think at the
+        // end of the buffer.
+        try { run.synth.stop(); } catch { /* not started */ }
+        run.synth.seek(at, 'seconds');
+        run.synth.start();
+        if (rearm) { run.timer.reset(); run.timer.start(at, 'seconds'); } else run.timer.setProgress(at, 'seconds');
+      };
+
+      /** The end of what was asked for: round again with the loop, else stop. */
+      const endTextRun = (run: TextRun, rearm: boolean) => {
+        if (!looping) { stopTextPlay(); return; }
+        run.playedTo = -1;
+        seekText(run, run.start, rearm);
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const onTextEvent = (run: TextRun, ev: any): 'continue' | undefined => {
+        if (run.id !== textRunId) return undefined;
+        if (!ev) {
+          // Played out. "continue" keeps the timer from stopping itself over
+          // the restart (abc_timing_callbacks' shouldStop).
+          endTextRun(run, true);
+          return looping ? 'continue' : undefined;
+        }
+        if (run.sel && run.inside && !run.inside(ev as TimingEvent)) {
+          const next = resumeInside(run.timings, ev.milliseconds, run.playedTo, run.sel[0], run.sel[1]);
+          if (next) seekText(run, next);
+          else endTextRun(run, false);
+          return undefined;
+        }
+        const chars = (ev as TimingEvent).startCharArray ?? [];
+        run.playedTo = Math.max(run.playedTo, ...chars);
+        run.last = ev as TimingEvent;
+        lightText(noteRanges(run.ps, ev as TimingEvent));
+        return undefined;
+      };
+
+      /** Builds and starts a run on the box's text: from the caret or the
+       *  selection, or — after a setting changed — at `resume`. */
+      const startTextRun = (resume: { char: number; pass: number; sel: [number, number] | null; playedTo: number; paused: boolean } | null) => {
+        // One tune at a time: the stave's, hidden behind this face, stops.
+        pauseIfPlaying();
+        const id = ++textRunId;
+        const ps = playableSource(splitXLine(tunes[currentIndex] ?? '').xLine, textarea.value);
+        const from = sourceIndex(ps, textarea.selectionStart);
+        const to = textarea.selectionEnd > textarea.selectionStart ? sourceIndex(ps, textarea.selectionEnd) : null;
+        setTextState('loading');
+        void (async () => {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const visualObj: any = abcjs.renderAbc('*', ps.source, {})[0];
+            if (!visualObj) throw new Error('no tune');
+            const audioParams: Record<string, unknown> = { soundFontVolumeMultiplier: abcjsVolumeMultiplier() };
+            if (selectedProgram !== undefined) audioParams.program = selectedProgram;
+            // The sound of the key the stave is transposed to, the dots being
+            // the text's own here — see the stave's `midiTranspose`.
+            if (transpose !== 0) audioParams.midiTranspose = transpose;
+            const meter = parseAbcBlock(ps.source).meter;
+            if (metronome) { audioParams.drum = drumPattern(beatsPerBar(meter)); audioParams.drumBars = 1; }
+            if (swing !== NO_SWING && meterCanSwing(meter)) audioParams.swing = swing;
+            // As SynthController.go() does it, at the shared speed.
+            const millisecondsPerMeasure = visualObj.millisecondsPerMeasure() * 100 / tempoPercent;
+            const qpm = Math.round(visualObj.getBeatsPerMeasure() / millisecondsPerMeasure * 60000);
+            const synth = new abcjs.synth.CreateSynth();
+            await synth.init({ visualObj, options: audioParams, millisecondsPerMeasure });
+            await synth.prime();
+            if (id !== textRunId) return;
+            // eslint-disable-next-line prefer-const
+            let run: TextRun;
+            const timer = new abcjs.TimingCallbacks(visualObj, {
+              qpm,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              eventCallback: (ev: any) => onTextEvent(run, ev),
+            });
+            const timings = timer.noteTimings as TimingEvent[];
+            const sel = resume ? resume.sel : to !== null ? [from, to] as [number, number] : null;
+            const plan = playPlan(timings, sel ? sel[0] : from, sel ? sel[1] : null);
+            if (!plan) { stopTextPlay(); return; }
+            const at = resume ? eventAt(timings, resume.char, resume.pass) ?? plan.start : plan.start;
+            run = {
+              id, synth, timer, ps, timings, start: plan.start, sel, inside: plan.inside,
+              playedTo: resume ? resume.playedTo : -1, last: null,
+            };
+            textRun = run;
+            // What this run plays, marked for as long as it lasts — the caret
+            // may wander off meanwhile.
+            setTextHints({ range: sel ? boxRange(ps, sel[0], sel[1]) : null, start: noteRanges(ps, plan.start)[0] ?? null });
+            const seekTo = Math.max(0, at.milliseconds - SEEK_BACKOFF_MS) / 1000;
+            synth.seek(seekTo, 'seconds');
+            if (resume?.paused) {
+              setTextState('paused');
+              timer.setProgress(seekTo, 'seconds');
+              return;
+            }
+            setTextState('playing');
+            synth.start();
+            timer.start(seekTo, 'seconds');
+          } catch (err) {
+            if (id !== textRunId) return;
+            console.warn('[abc] could not play the text', err);
+            stopTextPlay();
+          }
+        })();
+      };
+
+      // ── Before play: where it will start, from the caret ──
+      // Parsed, never engraved (abcTextPlayback.ts): this runs at every caret
+      // move. The parse is kept for as long as the text is the same.
+      let parsedKey: string | null = null;
+      let parsed: { ps: PlayableSource; notes: ParsedNote[] } | null = null;
+      const refreshTextPreview = () => {
+        if (textState !== 'idle') return;
+        if (currentMode !== 'text') { setTextHints({ range: null, start: null }); return; }
+        const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
+        const key = `${xLine}\n${textarea.value}`;
+        if (key !== parsedKey || !parsed) {
+          parsedKey = key;
+          const ps = playableSource(xLine, textarea.value);
+          let notes: ParsedNote[] = [];
+          try { notes = notesOf(abcjs.parseOnly(ps.source)[0]); } catch { /* text abcjs cannot read: nothing to mark */ }
+          parsed = { ps, notes };
+        }
+        const { ps, notes } = parsed;
+        const a = textarea.selectionStart, b = textarea.selectionEnd;
+        const note = startNoteAt(notes, sourceIndex(ps, a), b > a ? sourceIndex(ps, b) : null);
+        setTextHints({ range: b > a ? [a, b] : null, start: note ? boxRange(ps, note.start, note.end) : null });
+      };
+      // At most once a frame — a drag-select fires this at every pixel.
+      let previewRaf = 0;
+      const schedulePreview = () => {
+        cancelAnimationFrame(previewRaf);
+        previewRaf = requestAnimationFrame(refreshTextPreview);
+      };
+      const onSelectionChange = () => { if (document.activeElement === textarea) schedulePreview(); };
+      document.addEventListener('selectionchange', onSelectionChange);
+      for (const type of ['select', 'keyup', 'mouseup', 'input', 'focus']) textarea.addEventListener(type, schedulePreview);
+      previewText = schedulePreview;
+
+      textTransport = {
+        playPause: () => {
+          if (textState === 'idle') { startTextRun(null); return; }
+          if (textState === 'loading') { stopTextPlay(); return; }
+          const run = textRun;
+          if (!run) return;
+          if (textState === 'playing') {
+            try { run.synth.pause(); run.timer.pause(); } catch { /* ended */ }
+            setTextState('paused');
+          } else {
+            run.synth.start();
+            run.timer.start();
+            setTextState('playing');
+          }
+        },
+        // Back to where it started, playing or not, without stopping.
+        rewind: () => {
+          const run = textRun;
+          if (!run || textState === 'loading') return;
+          run.playedTo = -1;
+          seekText(run, run.start);
+        },
+        stop: () => {
+          textRunId++;
+          const run = textRun;
+          textRun = null;
+          if (run) {
+            try { run.timer.stop(); } catch { /* already stopped */ }
+            try { run.synth.stop(); } catch { /* never started */ }
+          }
+          if (textState !== 'idle') setTextState('idle');
+          textCurrent = [];
+          refreshTextPreview();
+        },
+        // The same note, the same time round, the same selection — rebuilt.
+        retime: () => {
+          if (textState === 'idle') return;
+          const run = textRun;
+          if (textState === 'loading' || !run) { startTextRun(null); return; }
+          const at = run.last ?? run.start;
+          const resume = {
+            char: at.startCharArray?.[0] ?? 0,
+            pass: passOf(run.timings, at),
+            sel: run.sel,
+            playedTo: run.playedTo,
+            paused: textState === 'paused',
+          };
+          const old = run;
+          textRun = null;
+          try { old.timer.stop(); old.synth.stop(); } catch { /* ended */ }
+          startTextRun(resume);
+        },
+      };
       // Space toggles playback, the way it does in every player.
       //
       // Ignored while a field or a button has focus: a button already answers
@@ -2625,6 +3056,7 @@ export function showPreviewModal(
         const tag = active?.tagName.toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || active?.isContentEditable) return;
         e.preventDefault(); // or the page scrolls under the modal
+        if (currentMode === 'text') { unlockAbcjsAudio(); textTransport.playPause(); return; }
         unlockAbcjsAudio();
         void synthControl?.play();
       };
@@ -2747,6 +3179,14 @@ export function showPreviewModal(
       // a whole score alive with it.
       const stopKeys = releaseKeys;
       releaseKeys = () => { stopKeys(); releaseResize(); };
+      // The source face's player goes with the dialog too.
+      const stopWithText = releaseKeys;
+      releaseKeys = () => {
+        stopWithText();
+        stopTextPlay();
+        document.removeEventListener('selectionchange', onSelectionChange);
+        cancelAnimationFrame(previewRaf);
+      };
 
       // Changing instrument without losing your place.
       reapplyAbcPrefs = () => redrawPreservingPlayback(() => {
@@ -2778,6 +3218,20 @@ export function showPreviewModal(
       // notation at all.
       if (currentMode === 'sheet') renderTune(currentIndex);
       else sheetNeedsRerender = true;
+
+      // The practice row is shared by both faces (2026-10-15). On the source
+      // face a change reaches the text's player, and the stave — hidden — is
+      // only marked to be redrawn when it is next shown, which is what
+      // `sheetNeedsRerender` is for.
+      const redrawSheet = redrawScore;
+      redrawScore = () => {
+        if (currentMode === 'text') { sheetNeedsRerender = true; textTransport.retime(); return; }
+        redrawSheet();
+      };
+      const warpSheet = applyWarp;
+      applyWarp = (percent) => { warpSheet(percent); textTransport.retime(); };
+      const prefsSheet = reapplyAbcPrefs;
+      reapplyAbcPrefs = () => { prefsSheet?.(); textTransport.retime(); };
     }).catch(() => {
       const err = document.createElement('p');
       err.className = 'text-sm text-dim italic';
