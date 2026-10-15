@@ -1379,6 +1379,8 @@
   "sessions.source.device.hint": "The sound the device is playing: a tab, a window, or the whole computer.",
   "sessions.source.device.noAudio": "No audio was shared. In the browser's picker: select a tab, then tick \"Also share tab audio\" before confirming. To capture the whole computer's sound: select an entire screen and tick \"Share system audio\" — Windows only. Firefox and Safari cannot capture tab audio at all; on those browsers, only the microphone and file import are available.",
   "sessions.source.device.unsupported": "This browser cannot capture the device's audio. Capture requires Chrome or Edge on a computer; the microphone and file import remain available here.",
+  "sessions.source.device.hintApp": "The sound the phone's other apps are playing: a video, music. Some apps forbid capture; nothing is heard from them.",
+  "sessions.source.device.unsupportedApp": "Capturing the phone's sound requires Android 10 or later. The microphone and file import remain available.",
   "sessions.sourceEnded": "Sharing stopped — saving the analysis…",
   "sessions.recoveryFailed.title": "Recovery failed",
   "sessions.recoveryFailed.intro": "This recording was interrupted, and rebuilding it failed:",

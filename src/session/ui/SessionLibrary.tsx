@@ -8,6 +8,7 @@ import { showRecoveryFailures } from './RecoveryFailureModal';
 import { showLiveBackupOffers } from './LiveBackupOfferModal';
 import { sweepLiveBackups } from '../liveBackup';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
+import { isNative } from '../../native/platform';
 import { activeLive } from './sessionStore';
 import { useTuneNames } from './sessionUiShared';
 import { AnalysisBrowser } from './AnalysisBrowser';
@@ -107,7 +108,8 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
   const [importFrom, setImportFrom] = useState<'file' | 'link'>('file');
   useTuneNames();
 
-  // Hidden entirely where getDisplayMedia does not exist (iOS, Android) —
+  // Hidden entirely where getDisplayMedia does not exist (iOS, Android's
+  // browsers; the Android app has its own capture, see canCaptureDeviceAudio) —
   // the button then looks exactly as it always did. Firefox and Safari desktop
   // DO have the API and silently return no audio track, which no feature test
   // can predict; that case is caught after the picker, as NoCapturedAudioError.
@@ -216,7 +218,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
               class="btn-primary w-full justify-center flex items-center gap-2"
               // "Appareil" is short enough to fit the selector but vague on its
               // own — the tooltip says which sounds it actually covers.
-              title={source === 'device' ? t('sessions.source.device.hint') : undefined}
+              title={source === 'device' ? t(isNative() ? 'sessions.source.device.hintApp' : 'sessions.source.device.hint') : undefined}
               onClick={() => onStartLive(source, destinationFolder)}
             >
               {source === 'device' ? <DeviceAudioIcon size={14} /> : <MicIcon size={14} />}

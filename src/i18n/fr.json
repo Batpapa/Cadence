@@ -1379,6 +1379,8 @@
   "sessions.source.device.hint": "Le son joué par l'appareil : un onglet, une fenêtre, ou l'ordinateur entier.",
   "sessions.source.device.noAudio": "Aucun son n'a été partagé. Dans le sélecteur du navigateur : sélectionner un onglet, puis cocher « Partager aussi l'audio de l'onglet » avant de valider. Pour capturer le son de tout l'ordinateur : sélectionner un écran entier et cocher « Partager l'audio système » — Windows uniquement. Firefox et Safari ne savent pas capturer le son d'un onglet ; sur ces navigateurs, seuls le micro et l'import de fichier sont disponibles.",
   "sessions.source.device.unsupported": "Ce navigateur ne sait pas capturer le son de l'appareil. La capture demande Chrome ou Edge sur ordinateur ; le micro et l'import de fichier restent disponibles ici.",
+  "sessions.source.device.hintApp": "Le son joué par les autres applications du téléphone : une vidéo, de la musique. Certaines applications interdisent la capture ; on n'en entend alors rien.",
+  "sessions.source.device.unsupportedApp": "La capture du son du téléphone demande Android 10 ou plus récent. Le micro et l'import de fichier restent disponibles.",
   "sessions.sourceEnded": "Le partage a été interrompu — l'analyse est en cours de sauvegarde…",
   "sessions.recoveryFailed.title": "Récupération impossible",
   "sessions.recoveryFailed.intro": "Cet enregistrement a été interrompu, et sa reconstruction a échoué :",

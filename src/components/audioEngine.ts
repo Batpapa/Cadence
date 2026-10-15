@@ -2,7 +2,7 @@
 import signalsmithStretchSource from 'signalsmith-stretch.mjs?raw';
 import type { FileEntry } from '../types';
 import { effect } from '@preact/signals';
-import { preferPlaybackSession } from '../services/audioSession';
+import { preferPlaybackSession, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { playbackGain, playbackVolumePercent } from '../services/playbackVolume';
 
 // ── How the sound is made ────────────────────────────────────────────────────
@@ -210,8 +210,12 @@ export class AudioEngine {
   private setPlaying(playing: boolean): void {
     if (this.playing === playing) return;
     this.playing = playing;
+    if (!playing) releaseAudioFocus(this.pauseForFocus);
     this.onPlayingChange(playing);
   }
+
+  /** Another app took the sound (Android app): as the pause button does. */
+  private readonly pauseForFocus = (): void => this.pause();
 
   /** Pause and stop: the node goes inactive NOW — not `lead` ahead: the
    *  library then fades out as it catches up, rather than cutting. */
@@ -286,6 +290,7 @@ export class AudioEngine {
     // First and synchronously: on an iPhone, Web Audio is otherwise muted by
     // the silent switch (audioSession.ts).
     preferPlaybackSession();
+    claimAudioFocus(this.pauseForFocus);
     await this.ensureGraph();
     const { audioCtx, stretch, buffer } = this;
     if (!audioCtx || !stretch || !buffer) return;

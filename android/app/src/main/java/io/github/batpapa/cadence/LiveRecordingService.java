@@ -1,5 +1,6 @@
 package io.github.batpapa.cadence;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -12,6 +13,8 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -29,6 +32,8 @@ import androidx.core.content.ContextCompat;
  * Three jobs:
  *   - type microphone: Android keeps the microphone of an app that leaves the
  *     screen only under such a service;
+ *     and for a live on what the phone itself plays, type mediaProjection too,
+ *     which a playback capture needs, and the capture itself (startCapture);
  *   - a partial wake lock for the length of the recording, as the plugin this
  *     replaced held (the 47-minute screen-off test of 2026-10-05 ran with it);
  *   - the recording's lock-screen control.
@@ -65,6 +70,8 @@ public class LiveRecordingService extends Service {
     static final String ACTION_PAUSE = "io.github.batpapa.cadence.live.PAUSE";
     static final String ACTION_RESUME = "io.github.batpapa.cadence.live.RESUME";
     static final String ACTION_STOP = "io.github.batpapa.cadence.live.STOP";
+    /** SHOW, for a live on the phone's own sound: see startCapture(). */
+    static final String ACTION_CAPTURE = "io.github.batpapa.cadence.live.CAPTURE";
 
     static final String EXTRA_TITLE = "title";
     static final String EXTRA_TEXT = "text";
@@ -74,6 +81,8 @@ public class LiveRecordingService extends Service {
     static final String EXTRA_LABEL_RESUME = "labelResume";
     static final String EXTRA_LABEL_STOP = "labelStop";
     static final String EXTRA_CHANNEL_NAME = "channelName";
+    private static final String EXTRA_CONSENT_CODE = "consentCode";
+    private static final String EXTRA_CONSENT_DATA = "consentData";
 
     private static final String CHANNEL_ID = "live_recording";
     private static final int NOTIFICATION_ID = 1;
@@ -92,6 +101,10 @@ public class LiveRecordingService extends Service {
     private long anchorMs = 0;
     private long pausedElapsedMs = 0;
     private boolean paused = false;
+    /** Started for a playback capture: the service carries the mediaProjection
+     *  type, and holds the capture. */
+    private boolean projecting = false;
+    @Nullable private SystemAudioCapture capture;
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -119,6 +132,28 @@ public class LiveRecordingService extends Service {
         context.stopService(new Intent(context, LiveRecordingService.class));
     }
 
+    /**
+     * Starts the service for a live on the phone's own sound, then the capture.
+     * The order is Android 14's: the user's consent first (the plugin got it),
+     * then this service in the foreground with the mediaProjection type, and
+     * only then the projection, which a running service of that type is the
+     * condition for. Reported back through SystemAudioCapturePlugin.
+     */
+    static void startCapture(Context context, Intent extras, int consentCode, Intent consentData) {
+        Intent intent = new Intent(context, LiveRecordingService.class)
+            .setAction(ACTION_CAPTURE)
+            .putExtras(extras)
+            .putExtra(EXTRA_CONSENT_CODE, consentCode)
+            .putExtra(EXTRA_CONSENT_DATA, consentData);
+        ContextCompat.startForegroundService(context, intent);
+    }
+
+    /** The page's own stop. The service itself stays until the live ends. */
+    static void stopCapture() {
+        LiveRecordingService running = current;
+        if (running != null) running.main.post(running::endCapture);
+    }
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -131,7 +166,8 @@ public class LiveRecordingService extends Service {
         if (ACTION_PAUSE.equals(action)) { LiveNotificationPlugin.dispatchAction("pause"); return START_NOT_STICKY; }
         if (ACTION_RESUME.equals(action)) { LiveNotificationPlugin.dispatchAction("resume"); return START_NOT_STICKY; }
         if (ACTION_STOP.equals(action)) { LiveNotificationPlugin.dispatchAction("stop"); return START_NOT_STICKY; }
-        if (intent == null || !ACTION_SHOW.equals(action)) {
+        boolean capturing = ACTION_CAPTURE.equals(action);
+        if (intent == null || !(ACTION_SHOW.equals(action) || capturing)) {
             // Restarted by the system with no recording behind it: nothing to show.
             stopSelf();
             return START_NOT_STICKY;
@@ -141,8 +177,10 @@ public class LiveRecordingService extends Service {
         // Each startForegroundService() must be answered by startForeground():
         // reset so apply() calls it again even if a second start slipped in.
         started = false;
+        if (capturing) projecting = true;
         apply(intent);
         acquireWakeLock();
+        if (capturing) beginCapture(intent);
         // Not sticky: a recording cannot be resumed by restarting this service,
         // so a service brought back on its own would only show a lie.
         return START_NOT_STICKY;
@@ -151,6 +189,7 @@ public class LiveRecordingService extends Service {
     @Override
     public void onDestroy() {
         current = null;
+        endCapture();
         main.removeCallbacks(tick);
         if (session != null) {
             session.setActive(false);
@@ -189,7 +228,14 @@ public class LiveRecordingService extends Service {
         session.setPlaybackState(playbackState());
         Notification notification = buildNotification();
         if (!started) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (projecting && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Microphone as well: a playback capture is an AudioRecord, which
+                // Android lets a background app keep only under the microphone type.
+                startForeground(NOTIFICATION_ID, notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else if (projecting && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
             } else {
                 startForeground(NOTIFICATION_ID, notification);
@@ -200,6 +246,40 @@ public class LiveRecordingService extends Service {
         }
         main.removeCallbacks(tick);
         if (!paused) main.postDelayed(tick, 1000);
+    }
+
+    @SuppressLint("MissingPermission") // RECORD_AUDIO: checked by the plugin before the consent
+    private void beginCapture(Intent intent) {
+        endCapture();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            SystemAudioCapturePlugin.reportStarted("Playback capture needs Android 10");
+            return;
+        }
+        try {
+            Intent consent = intent.getParcelableExtra(EXTRA_CONSENT_DATA);
+            int code = intent.getIntExtra(EXTRA_CONSENT_CODE, 0);
+            MediaProjectionManager manager = getSystemService(MediaProjectionManager.class);
+            MediaProjection projection = consent == null ? null : manager.getMediaProjection(code, consent);
+            if (projection == null) throw new IllegalStateException("No media projection");
+            SystemAudioCapture next = new SystemAudioCapture(projection, new SystemAudioCapture.Sink() {
+                @Override public void onChunk(String base64) { SystemAudioCapturePlugin.dispatchChunk(base64); }
+                @Override public void onEnded() {
+                    capture = null;
+                    SystemAudioCapturePlugin.dispatchEnded();
+                }
+            });
+            next.start();
+            capture = next;
+            SystemAudioCapturePlugin.reportStarted(null);
+        } catch (Exception e) {
+            SystemAudioCapturePlugin.reportStarted(String.valueOf(e.getMessage()));
+        }
+    }
+
+    private void endCapture() {
+        SystemAudioCapture running = capture;
+        capture = null;
+        if (running != null) running.stop();
     }
 
     private long elapsedNow() {
