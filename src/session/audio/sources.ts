@@ -3,6 +3,7 @@ import { attachPcmWorklet } from './pcmWorklet';
 import { FILE_CHUNK_S, ANALYSIS_SAMPLE_RATE, DEBUG_LIVE_AUDIO, FF_SAMPLE_RATE_MIN, FF_SAMPLE_RATE_MAX } from '../sessionConfig';
 import { beginCaptureSession, endCaptureSession } from '../../services/audioSession';
 import { isAppleTouchDevice } from '../../utils';
+import { isNative, hasNativePlugin } from '../../native/platform';
 
 // ── PCM source abstraction ────────────────────────────────────────────────────
 // The recognition pipeline consumes a stream of mono PCM chunks and its own
@@ -313,10 +314,30 @@ export class MicSource extends LiveStreamSource {
 
 /** A browser tab, a window, or a whole screen's system audio — whatever the
  *  user picks in the browser's own share dialog. Chromium only; see
- *  openDeviceAudio() for what the other browsers do instead. */
+ *  openDeviceAudio() for what the other browsers do instead.
+ *  In the Android app: what the phone's other apps play, through the app's own
+ *  plugin (native/systemAudioCapture.ts). */
 export class DeviceAudioSource extends LiveStreamSource {
-  protected openStream(): Promise<MediaStream> { return openDeviceAudio(); }
+  /** Ends the app's capture, which stopping the stream's track cannot reach. */
+  private releaseNative: (() => void) | null = null;
+
+  protected async openStream(): Promise<MediaStream> {
+    // The browser's branch first and without an await before it: the share
+    // picker needs the tap's transient activation (see openDeviceAudio).
+    if (!isNative()) return openDeviceAudio();
+    const { openSystemAudio } = await import('../../native/systemAudioCapture');
+    const capture = await openSystemAudio();
+    this.releaseNative = capture.stop;
+    return capture.stream;
+  }
+
   protected get label(): string { return 'device'; }
+
+  stop(): void {
+    super.stop();
+    this.releaseNative?.();
+    this.releaseNative = null;
+  }
 }
 
 /** The two live sources, as chosen in the UI. A file import is not one of
@@ -328,10 +349,13 @@ export function createLiveSource(kind: LiveSourceKind): LiveStreamSource {
 }
 
 /** Whether the device-audio option is worth offering at all. False on iOS and
- *  Android, where getDisplayMedia does not exist. True in Firefox and Safari
- *  desktop, which HAVE the API but silently return no audio track — that case
- *  can only be caught after the fact, as NoCapturedAudioError. */
+ *  Android's browsers, where getDisplayMedia does not exist. True in Firefox
+ *  and Safari desktop, which HAVE the API but silently return no audio track —
+ *  that case can only be caught after the fact, as NoCapturedAudioError.
+ *  True in the Android app once its native side has the capture (an older
+ *  install running today's page over the air does not). */
 export function canCaptureDeviceAudio(): boolean {
+  if (isNative()) return hasNativePlugin('SystemAudioCapture');
   return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
 }
 

@@ -523,6 +523,13 @@ export function startLiveSession(ctx: AppContext, kind: LiveSourceKind = 'mic', 
       alertModal(t('sessions.source'), t('sessions.source.device.unsupported'));
       return;
     }
+    // The Android app's capture, on Android 9 or older. By name: the class
+    // lives in a native-only module this one does not load.
+    if (name === 'SystemAudioUnsupportedError') {
+      setActiveLive(null);
+      alertModal(t('sessions.source'), t('sessions.source.device.unsupportedApp'));
+      return;
+    }
     /* anything else: surfaced via the onError callback, as before */
   });
 }

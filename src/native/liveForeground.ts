@@ -56,10 +56,21 @@ async function currentTuneText(detections: Detection[]): Promise<string | null> 
 async function stateFrom(s: LiveSnapshot): Promise<LiveNotificationState> {
   const tune = await currentTuneText(s.detections);
   return {
+    ...initialLiveNotification(),
     title: s.paused ? t('native.live.titlePaused') : t('native.live.title'),
     text: tune ?? t('native.live.listening'),
     elapsedMs: Math.round(s.elapsedMs),
     paused: s.paused,
+  };
+}
+
+/** What the notification shows before the live has a state of its own: a
+ *  capture of the phone's sound starts the service ahead of the live
+ *  (systemAudioCapture.ts). */
+export function initialLiveNotification(): Omit<LiveNotificationState, 'elapsedMs' | 'paused'> {
+  return {
+    title: t('native.live.title'),
+    text: t('native.live.listening'),
     labels: { pause: t('native.live.pause'), resume: t('native.live.resume'), stop: t('native.live.stop') },
     channelName: t('native.live.channel'),
   };

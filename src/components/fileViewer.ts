@@ -8,7 +8,7 @@ import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, Pl
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingTripletIcon, SwingDottedIcon,
   WarningTriangleIcon } from './icons';
 import { t } from '../services/i18nService';
-import { unlockAbcjsAudio } from '../services/audioSession';
+import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwing, meterCanSwing,
@@ -1366,6 +1366,9 @@ export function showPreviewModal(
      *  first half of what the stop button does, the rewind being abcjs's own.
      *  Late-bound for the same reason: the controller lives inside the import. */
     let pauseIfPlaying: () => void = () => {};
+    /** Another app took the sound (Android app). One function for the whole
+     *  dialog, so a release finds the claim it made. */
+    const pauseScoreForFocus = (): void => pauseIfPlaying();
     /** Back to the start of the passage — see `rewindScore` where it is
      *  assigned. Late-bound like the two above. */
     let rewindScore: () => void = () => {};
@@ -2743,6 +2746,7 @@ export function showPreviewModal(
         onStart: () => {
           lastCursorTop = null;
           ensureCursor();
+          claimAudioFocus(pauseScoreForFocus);
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onEvent: (ev: any) => {
@@ -2886,7 +2890,10 @@ export function showPreviewModal(
             // abcjs calls `self.go()`, so replacing the property is enough.
             const go = synthControl.go.bind(synthControl);
             synthControl.go = () => go().catch((err: unknown) => { synthControl.isLoading = false; throw err; });
-            stopAudio = () => { try { synthControl.pause(); } catch { /* ignore */ } };
+            stopAudio = () => {
+              try { synthControl.pause(); } catch { /* ignore */ }
+              releaseAudioFocus(pauseScoreForFocus);
+            };
             synthControl.load(`#${controls.id}`, cursorControl, {
               displayLoop: true,
               displayRestart: true,
@@ -3034,7 +3041,14 @@ export function showPreviewModal(
        *  back after either is dropped rather than started. */
       let textRunId = 0;
       let textState: TextPlayState = 'idle';
-      const setTextState = (state: TextPlayState) => { textState = state; paintTextPlay(state); };
+      /** Another app took the sound (Android app): as the pause button does. */
+      const pauseTextForFocus = (): void => { if (textState === 'playing') textTransport.playPause(); };
+      const setTextState = (state: TextPlayState) => {
+        textState = state;
+        paintTextPlay(state);
+        if (state === 'playing') claimAudioFocus(pauseTextForFocus);
+        else if (state === 'idle') releaseAudioFocus(pauseTextForFocus);
+      };
 
       /** The run moved to a note — a hair before it: an exact seek lands on
        *  the one after (see SEEK_BACKOFF_MS). `rearm` restarts the timer's own

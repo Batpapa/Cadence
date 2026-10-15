@@ -14,6 +14,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LiveNotificationPlugin.class);
         registerPlugin(PullToRefreshPlugin.class);
         registerPlugin(SystemBarsColorPlugin.class);
+        registerPlugin(AudioFocusPlugin.class);
+        registerPlugin(SystemAudioCapturePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
