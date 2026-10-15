@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext, Card } from '../../types';
 import { t } from '../../services/i18nService';
-import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon } from '../../components/icons';
+import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
@@ -152,7 +152,7 @@ const SHARE_ICON_TRIGGER = '<svg width="13" height="13" viewBox="0 0 24 24" fill
  *  heading that turns into an input on click, plus a delete button — no back
  *  arrow. `getName`/`getDefaultName` abstract over Analysis/LiveSession/
  *  ImportSession, which don't share a base type. */
-export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare }: {
+export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare, onNotes, hasNotes }: {
   getName: () => string;
   getDefaultName: () => string;
   onRename: (name: string) => void;
@@ -160,6 +160,11 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare 
   /** Only the finished-session summary offers sharing — shows a button left
    *  of delete when set. */
   onShare?: () => void;
+  /** The analysis's notes — a button left of share, same reason: only a saved
+   *  analysis has somewhere to keep them. */
+  onNotes?: () => void;
+  /** Lights the notes button, so a note is known to be there without opening it. */
+  hasNotes?: boolean;
 }) {
   // The deck-target button that used to sit here is gone (2026-09-06). It set a
   // destination once for the whole page, which every later add then applied in
@@ -198,6 +203,16 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare 
         >
           {getName() || getDefaultName()}
         </h1>
+      )}
+
+      {onNotes && (
+        <button
+          class={`btn-ghost px-2 shrink-0 inline-flex items-center justify-center ${hasNotes ? 'text-accent' : ''}`}
+          title={t(hasNotes ? 'sessions.notes.open' : 'sessions.notes.add')}
+          onClick={onNotes}
+        >
+          <NotesIcon size={13} />
+        </button>
       )}
 
       {onShare && (
