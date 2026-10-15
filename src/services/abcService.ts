@@ -292,6 +292,10 @@ export function abcDurationUnits(music: string): number {
 
 /** How many `L:` units fill one bar of `meter`, or null when unreadable. */
 function barUnits(meter: string, unitLength: string): number | null {
+  // The two meters ABC writes as symbols: common time and cut time.
+  const m = meter.trim();
+  if (m === 'C') return barUnits('4/4', unitLength);
+  if (m === 'C|') return barUnits('2/2', unitLength);
   const [mn, md] = meter.split('/').map(n => parseInt(n, 10));
   const [un, ud] = (unitLength || '1/8').split('/').map(n => parseInt(n, 10));
   if (!mn || !md || !un || !ud) return null;
@@ -310,28 +314,119 @@ function barUnits(meter: string, unitLength: string): number | null {
  *  Repeat marks are dropped: an incipit ends mid-tune, so a `|:` kept here
  *  would open a repeat nothing ever closes. */
 export function musicIncipit(music: string, meter: string, unitLength: string, bars = INCIPIT_BARS): string {
-  const full = barUnits(meter, unitLength);
-  const pieces = music.split(BAR_LINE).map(s => s.trim()).filter(s => s.length > 0);
+  // Inline fields are set aside while the bars are split, then put back:
+  // `[M:C|]` holds a bar line of its own, and `[K:D]` would otherwise be
+  // half-eaten by the `[|` branch.
+  const fields: string[] = [];
+  const masked = inlineFieldLines(music).replace(INLINE_FIELD, f => `\u0000${fields.push(f) - 1}\u0000`);
+  const unmask = (s: string) => s.replace(/\u0000(\d+)\u0000/g, (_, i: string) => fields[Number(i)]!);
+  const pieces = masked.split(BAR_LINE).map(s => s.trim()).filter(s => s.length > 0);
   // Odd indices are the separators the split kept; even ones are music.
   const segments: string[] = [];
   for (const piece of pieces) {
     if (BAR_LINE.test(piece) && /^[|:\][]+$/.test(piece)) continue;
-    if (piece) segments.push(piece);
+    // One line: a line break inside a bar — left there by a field line made
+    // inline, or a source that breaks lines mid-bar — is a second staff to
+    // abcjs, and an incipit is one short staff.
+    if (piece) segments.push(unmask(piece).replace(/\s*\n\s*/g, ' '));
   }
   if (segments.length === 0) return music.trim();
 
   const out: string[] = [];
   let taken = 0;
+  let meterNow = meter;
+  let unitNow = unitLength;
+  // Fields with no music after them before the next bar line: they ride with
+  // the next stretch rather than standing as a bar of their own.
+  let carried = '';
   for (const segment of segments) {
+    for (const f of segment.matchAll(INLINE_FIELD)) {
+      const [letter, value] = [f[0][1], f[0].slice(3, -1).trim()];
+      if (letter === 'M') meterNow = value;
+      if (letter === 'L') unitNow = value;
+    }
+    if (segment.replace(INLINE_FIELD, '').trim() === '') { carried = `${carried} ${segment}`.trim(); continue; }
+    const full = barUnits(meterNow, unitNow);
     // A short OPENING stretch is a pickup: it comes along for free, and the
     // count of real bars starts after it. Anywhere else, a short stretch is
     // just a bar this parser could not read, and it counts.
     const isPickup = out.length === 0 && full !== null && abcDurationUnits(segment) < full * 0.9;
-    out.push(segment);
+    out.push(carried ? `${carried} ${segment}` : segment);
+    carried = '';
     if (!isPickup) taken++;
     if (taken >= bars) break;
   }
   return `${out.join(' | ')} |`;
+}
+
+/** An inline field: `[M:6/8]`, `[K:Ador]`. Not a chord — `[CEG]` has no colon
+ *  after its first letter. */
+const INLINE_FIELD = /\[[A-Za-z]:[^\]]*\]/g;
+
+/** A field LINE inside the music: `M:12/8` on a line of its own. Upper-case
+ *  letters, and the few lower-case ones ABC uses for fields; never followed
+ *  by a bar or repeat mark, which is what tells `G:|` — a note and a repeat —
+ *  from a field. */
+const FIELD_LINE = /^([A-Zmrsw]):(?![|:])(.*)$/;
+
+/** The fields that change how the following notes READ, and so survive into an
+ *  incipit; the rest (voices, parts, words, notes) are dropped from it. `U:`
+ *  because it defines what a letter in the music means (`U:w=!wedge!`). */
+const READING_FIELDS = new Set(['M', 'L', 'K', 'U']);
+
+/** A field written straight after a bar or repeat mark, on the same line —
+ *  `|:P:A`, `|:S:`. Not ABC strictly speaking, but in TheSession's scores, and
+ *  read as a field by abcjs. Never `[`, which opens an inline field. */
+const BARS_THEN_FIELD = /^((?:\|\||\|:|:\||::|\||:)+)\s*([A-Zmrsw]:(?![|:]).*)$/;
+
+/** The music's lines, with a field glued to an opening bar mark put on a line
+ *  of its own. */
+function fieldAwareLines(music: string): string[] {
+  return music.split('\n').flatMap((line) => {
+    const m = BARS_THEN_FIELD.exec(line.trim());
+    return m ? [m[1]!, m[2]!] : [line];
+  });
+}
+
+/** A line holding nothing but bar and repeat marks. */
+const BARS_ONLY = /^[|:\][\s]+$/;
+
+/** The music with its field lines turned into inline fields — how abcjs reads
+ *  them in the full score: from that point on — or dropped, along with
+ *  comment lines.
+ *
+ *  Left as lines, an incipit glued them to the bars that follow it
+ *  (`M:12/8 | E2 E GFE…`), and abcjs then read that whole line as a field,
+ *  holding no notes at all: an empty incipit. 754 of TheSession's 55 532
+ *  settings (2026-10-15, found by a user on tune 562, version 9). */
+function inlineFieldLines(music: string): string {
+  return fieldAwareLines(music).flatMap((line) => {
+    const t = line.trim();
+    if (t.startsWith('%')) return [];
+    const f = FIELD_LINE.exec(t);
+    if (!f) return [line];
+    return READING_FIELDS.has(f[1]!) ? [`[${f[1]}:${f[2]!.trim()}]`] : [];
+  }).join('\n');
+}
+
+/** The field lines that open the music, before its first note, as letter →
+ *  value, and the music after them. TheSession lets a setting restate its own
+ *  meter, unit or key there (`M:12/8` under a waltz's 3/4), and that is the
+ *  setting's real one. */
+function leadingFields(music: string): { fields: Map<string, string>; rest: string } {
+  const lines = fieldAwareLines(music);
+  const fields = new Map<string, string>();
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    // An opening `|:` before the fields says nothing an incipit keeps: it
+    // drops repeat marks anyway.
+    if (t === '' || t.startsWith('%') || BARS_ONLY.test(t)) continue;
+    const f = FIELD_LINE.exec(t);
+    if (!f) break;
+    fields.set(f[1]!, f[2]!.trim());
+  }
+  return { fields, rest: lines.slice(i).join('\n') };
 }
 
 /** The only header fields an incipit keeps: the ones that change how the
@@ -360,9 +455,25 @@ export function abcIncipit(abc: string, bars = INCIPIT_BARS): string {
   const header = lines
     .slice(0, keyIndex + 1)
     .filter(l => INCIPIT_HEADER_FIELDS.test(l) && !/^Q:/.test(l));
+  // The music's own opening fields win over the header's: they are the
+  // setting's real meter, unit and key. Restated IN the header, rather than
+  // left as a change at the first note, which would draw a 3/4 and a 12/8 side
+  // by side at the head of two bars of 12/8.
+  const { fields, rest } = leadingFields(block.music);
+  let { meter, unitLength } = block;
+  for (const letter of READING_FIELDS) {
+    const value = fields.get(letter);
+    if (value === undefined) continue;
+    if (letter === 'M') meter = value;
+    if (letter === 'L') unitLength = value;
+    const at = header.findIndex(l => l.startsWith(`${letter}:`));
+    if (at !== -1) header[at] = `${letter}: ${value}`;
+    // Before K:, the last line, which closes the header.
+    else header.splice(Math.max(0, header.length - 1), 0, `${letter}: ${value}`);
+  }
   // Before K:, which closes the header — a field after it is music.
   if (tempo) header.splice(Math.max(0, header.length - 1), 0, `Q: ${tempo}`);
-  return `${header.join('\n')}\n${musicIncipit(block.music, block.meter, block.unitLength, bars)}\n`;
+  return `${header.join('\n')}\n${musicIncipit(rest, meter, unitLength, bars)}\n`;
 }
 
 /** Shown above the staff where a tune has no score. Not translated: it lives

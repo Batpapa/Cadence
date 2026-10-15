@@ -408,6 +408,31 @@ describe('musicIncipit — le rappel de deux mesures', () => {
       .toBe('D2 | EBBA B2 EB |');
   });
 
+  it('fait d une ligne de champ dans la musique un champ en ligne, sur la meme portee', () => {
+    // Left as a line, the field was glued to the bars after it and abcjs read
+    // the whole line as a field: no notes. And a line break left inside a bar
+    // is a second staff to abcjs.
+    expect(reel('EBBA B2 EB|\nK:G\nB2 AB dBAG|FDAD BDAD|'))
+      .toBe('EBBA B2 EB | [K:G] B2 AB dBAG |');
+  });
+
+  it('laisse tomber les champs qui ne changent pas la lecture, et les commentaires', () => {
+    expect(reel('EBBA B2 EB|\nP:B\n% second part\nB2 AB dBAG|FDAD BDAD|'))
+      .toBe('EBBA B2 EB | B2 AB dBAG |');
+  });
+
+  it('ne coupe pas un champ en ligne qui contient une barre', () => {
+    // [M:C|] is cut time, not a bar line.
+    expect(reel('[M:C|]D2|EBBA B2 EB|B2 AB dBAG|FDAD BDAD|'))
+      .toBe('[M:C|]D2 | EBBA B2 EB | B2 AB dBAG |');
+  });
+
+  it('mesure la levee avec la metrique que la musique se donne', () => {
+    // Measured against the header's 4/4, a 2/4 bar looked like a pickup and
+    // the incipit ran to three bars.
+    expect(reel('[M:2/4]E2 G>B|A>c e2|E2 G>B|')).toBe('[M:2/4]E2 G>B | A>c e2 |');
+  });
+
   it('ne compte pas les ornements comme de la duree', () => {
     // Grace notes, decorations and annotations carry no time; counting them
     // would turn a full bar into a false pickup.
@@ -483,6 +508,30 @@ describe('abcIncipit — ce que la partition garde', () => {
   it('coupe bien le corps', () => {
     expect(abcIncipit(full)).toContain('D2 | EBBA B2 EB | B2 AB dBAG |');
     expect(abcIncipit(full)).not.toContain('FDAD BDAD');
+  });
+
+  it('prend la metrique que la musique se donne en ouvrant (TheSession 562, version 9)', () => {
+    // A waltz setting whose music opens on `M:12/8`: the import writes the
+    // tune type's 3/4 in the header, the setting restates its own meter on
+    // the first line. The incipit came out as `M:12/8 | E2 E GFE…`, which
+    // abcjs reads as one field line holding no notes: an empty incipit, for
+    // 754 of TheSession's 55 532 settings (2026-10-15).
+    const crestedHens = [
+      'X: 9', 'T: Crested Hens', 'R: waltz', 'M: 3/4', 'L: 1/8', 'K: Edor',
+      'M:12/8', '|:E2 E GFE B3 B2 c|dcB edc dcB AGF|', 'E2 E GFE B3 B2c|dcB AGAB3 GFD|',
+    ].join('\n');
+    const out = abcIncipit(crestedHens);
+    expect(out).toContain('M: 12/8');
+    expect(out).not.toContain('M: 3/4');
+    expect(out.trim().split('\n').at(-1)).toBe('E2 E GFE B3 B2 c | dcB edc dcB AGF |');
+  });
+
+  it('lit un champ colle a la reprise qui ouvre la musique', () => {
+    const glued = full.replace('D2|EBBA', '|:P:A\nK:G\nD2|EBBA');
+    const out = abcIncipit(glued);
+    expect(out).toContain('K: G');
+    expect(out).not.toContain('P:');
+    expect(out.trim().split('\n').at(-1)).toBe('D2 | EBBA B2 EB | B2 AB dBAG |');
   });
 });
 
