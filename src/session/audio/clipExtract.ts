@@ -176,6 +176,31 @@ export async function extractClip(
   }
 }
 
+/** Exactly [from, to] of an audio file, no padding — the region of the audio
+ *  player, cut into a file of its own (2026-10-15). With the clip's real
+ *  length, which the packets taken whole around each bound make a little
+ *  longer than `to - from`. Throws as extractClip does. */
+export async function extractRange(
+  audio: Blob,
+  from: number,
+  to: number,
+  onProgress?: (ratio: number) => void,
+): Promise<ExtractedClip & { duration: number }> {
+  const { mb, input } = await openAudioInput(audio);
+  let clip: ExtractedClip;
+  try {
+    clip = await copySlice(mb, input, Math.max(0, from), Math.min(to, await input.computeDuration()), onProgress);
+  } finally {
+    input.dispose();
+  }
+  const out = (await openAudioInput(clip.blob)).input;
+  try {
+    return { ...clip, duration: await out.computeDuration() };
+  } finally {
+    out.dispose();
+  }
+}
+
 /** [from, to] of an opened recording, its packets copied into a new file of
  *  the same container — the cut a clip and a passage played from Drive share
  *  (remotePassage.ts). Never calls computeDuration: on a recording read from

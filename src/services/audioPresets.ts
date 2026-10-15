@@ -1,4 +1,4 @@
-import type { Attachment, AudioPreset, FileAttachment } from '../types';
+import type { Attachment, AudioPreset, FileAttachment, FileEntry } from '../types';
 
 // ── Audio presets (2026-10-10) ──────────────────────────────────────────────
 // Settings of the audio player saved by name on the audio attachment itself —
@@ -121,6 +121,38 @@ export interface AudioPresetsBinding {
   presets: AudioPreset[];
   defaultId?: string;
   onChange: (presets: AudioPreset[], defaultId: string | undefined) => void;
+  /** Cuts what the player has on screen into a clip of its own (2026-10-15).
+   *  Absent: no button — there is no card to put it on. */
+  onExtractClip?: (req: ClipRequest) => void;
+}
+
+/** What the player hands over to extract a clip: the file it plays, its
+ *  settings at that moment, and the preset they came from, if any. */
+export interface ClipRequest {
+  entry: FileEntry;
+  settings: AudioSettings;
+  /** Null on "no preset". */
+  presetName: string | null;
+}
+
+/** Whether the effects are the recording's own — what a clip keeps without a
+ *  preset to carry them. */
+export function neutralEffects(s: AudioSettings): boolean {
+  return s.tempo === AUDIO_LIMITS.tempo.def && s.transpose === AUDIO_LIMITS.transpose.def && s.pitch === AUDIO_LIMITS.pitch.def;
+}
+
+/** The presets a clip arrives with (the user's rule, 2026-10-13): none, since
+ *  the clip IS the region — unless the effects were changed, which the file
+ *  cannot hold. Those go in one preset over the whole clip, starred, so the
+ *  clip opens the way it was being listened to. */
+export function clipPresets(
+  s: AudioSettings, name: string, clipDuration: number, id: string,
+): Pick<FileAttachment, 'audioPresets' | 'defaultAudioPreset'> {
+  if (neutralEffects(s)) return {};
+  return {
+    audioPresets: [{ id, name, start: 0, end: clipDuration, tempo: s.tempo, transpose: s.transpose, pitch: s.pitch, repeat: s.repeat }],
+    defaultAudioPreset: id,
+  };
 }
 
 /** What presets are kept on: an audio file, or a link to one (2026-10-10). */

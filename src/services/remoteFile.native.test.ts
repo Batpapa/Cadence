@@ -9,10 +9,12 @@ vi.mock('../native/platform', () => ({ isNative: () => true }));
 const nativeGet = vi.fn<(url: string, opts: { headers?: Record<string, string>; timeoutMs: number }) => Promise<NativeGetResult>>();
 vi.mock('../native/nativeHttp', () => ({ nativeGet: (...a: Parameters<typeof nativeGet>) => nativeGet(...a) }));
 
-const { probeRemoteFile, fetchRemoteFile, RemoteFileError, MAX_REMOTE_FILE_BYTES } = await import('./remoteFile');
+const { probeRemoteFile, fetchRemoteFile, checkLinkTarget, RemoteFileError, MAX_REMOTE_FILE_BYTES } = await import('./remoteFile');
 
 const MP3_HEAD = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0, 0, 0, 0, 0, 0]); // "ID3"
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
+/** A fetched file's bytes, as base64, to compare with what was served. */
+const blobB64 = async (p: Promise<{ blob: Blob }>) => b64(new Uint8Array(await (await p).blob.arrayBuffer()));
 
 function answer(status: number, headers: Record<string, string>, body: Uint8Array = new Uint8Array(0), url = 'https://box.tail.ts.net/a.mp3'): NativeGetResult {
   return { status, url, headers: new Map(Object.entries(headers)), base64: b64(body) };
@@ -35,9 +37,12 @@ describe('remote files in the app (native HTTP)', () => {
   });
 
   it('never answers "cors": a server that answers is read', async () => {
-    nativeGet.mockResolvedValue(answer(200, { 'content-type': 'audio/mpeg' }, MP3_HEAD));
-    const entry = await fetchRemoteFile('https://example.org/reel.mp3', 'Reel.mp3');
-    expect(entry).toEqual({ name: 'Reel.mp3', mimeType: 'audio/mpeg', data: b64(MP3_HEAD) });
+    nativeGet.mockResolvedValue(answer(200, { 'content-type': 'audio/mpeg', 'last-modified': 'Mon, 13 Oct 2026 20:41:00 GMT' }, MP3_HEAD, 'https://example.org/reel.mp3'));
+    const file = await fetchRemoteFile('https://example.org/reel.mp3');
+    expect(file.name).toBe('reel.mp3');
+    expect(file.blob.type).toBe('audio/mpeg');
+    expect(file.lastModified).toBe(Date.UTC(2026, 9, 13, 20, 41));
+    expect(b64(new Uint8Array(await file.blob.arrayBuffer()))).toBe(b64(MP3_HEAD));
   });
 
   it('turns an HTTP refusal and a dead host into the same refusals as the web', async () => {
@@ -46,7 +51,17 @@ describe('remote files in the app (native HTTP)', () => {
     nativeGet.mockResolvedValue(answer(404, {}));
     expect(await refusalOf(probeRemoteFile('https://x.org/a.mp3'))).toEqual({ why: 'nowhere' });
     nativeGet.mockRejectedValue(new Error('UnknownHostException'));
-    expect(await refusalOf(fetchRemoteFile('https://x.org/a.mp3', 'a.mp3'))).toEqual({ why: 'nowhere' });
+    expect(await refusalOf(fetchRemoteFile('https://x.org/a.mp3'))).toEqual({ why: 'nowhere' });
+  });
+
+  it('checks a tab link by its status: a bot check passes, a 404 or a dead host does not', async () => {
+    nativeGet.mockResolvedValue(answer(403, { 'cf-mitigated': 'challenge' }));
+    expect(await checkLinkTarget('https://www.folktunefinder.com/tunes/63035')).toBeNull();
+    expect(nativeGet.mock.calls[0]![1].headers?.['Range']).toBe('bytes=0-0');
+    nativeGet.mockResolvedValue(answer(404, {}));
+    expect(await checkLinkTarget('https://x.org/typo')).toEqual({ why: 'nowhere' });
+    nativeGet.mockRejectedValue(new Error('UnknownHostException'));
+    expect(await checkLinkTarget('https://no-such-host.invalid/')).toEqual({ why: 'nowhere' });
   });
 
   it('reads the whole size from Content-Range, not the partial length', async () => {
@@ -57,7 +72,7 @@ describe('remote files in the app (native HTTP)', () => {
 
   it('refuses a web page', async () => {
     nativeGet.mockResolvedValue(answer(200, { 'content-type': 'text/html; charset=utf-8' }, new TextEncoder().encode('<!doctype html>')));
-    expect(await refusalOf(fetchRemoteFile('https://thesession.org/discussions/1', 'x'))).toEqual({ why: 'unsupported' });
+    expect(await refusalOf(fetchRemoteFile('https://thesession.org/discussions/1'))).toEqual({ why: 'unsupported' });
   });
 
   /** A server honouring Range over `file`, optionally sending shorter pieces
@@ -83,12 +98,11 @@ describe('remote files in the app (native HTTP)', () => {
     return f;
   };
 
-  it('opens a file piece by piece, with progress, into the same base64 as the whole', async () => {
+  it('opens a file piece by piece, with progress, into the same bytes as the whole', async () => {
     const file = bigFile();
     rangeServer(file);
     const progress: Array<[number, number | null]> = [];
-    const entry = await fetchRemoteFile('https://x.org/big.mp3', 'big.mp3', { onProgress: (r, t) => progress.push([r, t]) });
-    expect(entry.data).toBe(b64(file));
+    expect(await blobB64(fetchRemoteFile('https://x.org/big.mp3', { onProgress: (r, t) => progress.push([r, t]) }))).toBe(b64(file));
     expect(nativeGet.mock.calls.length).toBeGreaterThan(2);
     expect(progress.at(-1)).toEqual([file.length, file.length]);
     expect(progress.length).toBe(nativeGet.mock.calls.length);
@@ -97,26 +111,26 @@ describe('remote files in the app (native HTTP)', () => {
   it('keeps going without a total until a short piece', async () => {
     const file = bigFile();
     rangeServer(file, { hideTotal: true });
-    expect((await fetchRemoteFile('https://x.org/big.mp3', 'big.mp3')).data).toBe(b64(file));
+    expect(await blobB64(fetchRemoteFile('https://x.org/big.mp3'))).toBe(b64(file));
   });
 
-  it('rejoins correctly when the server sends shorter pieces than asked', async () => {
+  it('keeps every byte when the server sends shorter pieces than asked', async () => {
     const file = bigFile();
     rangeServer(file, { maxPiece: 100_001 });
-    expect((await fetchRemoteFile('https://x.org/big.mp3', 'big.mp3')).data).toBe(b64(file));
+    expect(await blobB64(fetchRemoteFile('https://x.org/big.mp3'))).toBe(b64(file));
   });
 
   it('takes the whole file at once from a server that ignores Range', async () => {
     const file = bigFile();
     nativeGet.mockResolvedValue(answer(200, { 'content-type': 'audio/mpeg' }, file));
-    expect((await fetchRemoteFile('https://x.org/big.mp3', 'big.mp3')).data).toBe(b64(file));
+    expect(await blobB64(fetchRemoteFile('https://x.org/big.mp3'))).toBe(b64(file));
     expect(nativeGet).toHaveBeenCalledTimes(1);
   });
 
   it('stops waiting when cancelled', async () => {
     nativeGet.mockReturnValue(new Promise(() => {}));
     const ctrl = new AbortController();
-    const p = fetchRemoteFile('https://x.org/a.mp3', 'a.mp3', { signal: ctrl.signal });
+    const p = fetchRemoteFile('https://x.org/a.mp3', { signal: ctrl.signal });
     ctrl.abort();
     await expect(p).rejects.toMatchObject({ name: 'AbortError' });
   });

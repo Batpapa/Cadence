@@ -1,5 +1,4 @@
-import type { FileEntry } from '../types';
-import { arrayBufferToBase64, formatBytes } from '../utils';
+import { formatBytes } from '../utils';
 import { needsAudioSniff, sniffAudioMime, SNIFF_BYTES } from './audioSniff';
 import { t } from './i18nService';
 import { isNative } from '../native/platform';
@@ -22,6 +21,12 @@ import { isNative } from '../native/platform';
 //
 // Nothing is kept: the server is where the file lives, so a file changed there
 // is the one read next time, and the synced state holds a URL and a name.
+//
+// Read into a Blob, never into one array or one string (2026-10-15): the same
+// download feeds the tune analyser since then, whose files run to hours, and a
+// Blob built as the pieces arrive does not hold the whole file in the page's
+// own memory. The viewers, which take base64, convert at the end — what they
+// did before, in another place.
 
 /** Why a URL cannot be used — as specific as the browser lets it be
  *  (categories asked for by the user, 2026-09-29):
@@ -64,8 +69,9 @@ export class RemoteFileError extends Error {
   }
 }
 
-/** The refusal in words, for the link dialog and for an opening that failed. */
-export function refusalMessage(r: RemoteRefusal): string {
+/** The refusal in words, for the link dialog and for an opening that failed.
+ *  `maxBytes`: the limit the request was made under, which "too big" quotes. */
+export function refusalMessage(r: RemoteRefusal, maxBytes = MAX_REMOTE_FILE_BYTES): string {
   switch (r.why) {
     case 'scheme':      return t('embed.badUrl');
     case 'nowhere':     return t('embed.err.nowhere');
@@ -73,7 +79,7 @@ export function refusalMessage(r: RemoteRefusal): string {
     case 'forbidden':   return t('embed.err.forbidden');
     case 'cors':        return t('embed.err.cors');
     case 'insecure':    return t('embed.err.insecure');
-    case 'too-big':     return t('embed.file.tooBig', { size: formatBytes(r.bytes), max: formatBytes(MAX_REMOTE_FILE_BYTES) });
+    case 'too-big':     return t('embed.file.tooBig', { size: formatBytes(r.bytes), max: formatBytes(maxBytes) });
   }
 }
 
@@ -116,32 +122,58 @@ async function reachable(url: string): Promise<boolean> {
 }
 
 
+/** The statuses that count against a tab: nothing there. A 401 or 403 is
+ *  usually a login page, which the tab, carrying the user's cookies, gets past
+ *  — or a bot check, which a person in a tab answers. */
+const isGone = (status: number) => status === 404 || status === 410;
+
 /** Whether an external link leads anywhere, for the "Open in a new tab" side
- *  of the dialog. Null is "fine" — or "cannot tell", which must not block
- *  anyone: offline, where every URL would look dead, and mixed content, which
- *  never leaves the browser. A tab has no CORS and no file type to care about,
- *  so this is the only question worth asking about it.
+ *  of the dialog. Null is "fine" — or "cannot tell" where that is certain not
+ *  to be news: offline, where every URL would look dead, and mixed content,
+ *  which never leaves the browser. 'unverified' is "cannot tell" for this
+ *  URL: said, but not in the way. A tab has no CORS and no file type to care
+ *  about, so this is the only question worth asking about it.
  *
  *  A plain read first, for the servers that allow one: their 404 is then
- *  readable. Only 404 and 410 count against a tab — a 401 or 403 is usually a
- *  login page, which the tab, carrying the user's cookies, gets past. Without
- *  CORS, "something answered" is all there is to know. The media check is
- *  deliberately NOT used here: a real file in a format this browser cannot
- *  decode would fail it, and refusing a good link is worse than accepting a
- *  dead one. */
-export async function checkLinkTarget(url: string): Promise<RemoteRefusal | null> {
+ *  readable. Without CORS, "something answered" is all there is to know — and
+ *  not always even that: a response sent with `Cross-Origin-Resource-Policy:
+ *  same-origin` fails the `no-cors` request too, exactly like a host that is
+ *  not there. Cloudflare's bot check sends one, so folktunefinder.com was
+ *  refused as "nothing at this address" (2026-10-13, group feedback). A dead
+ *  host and such a server cannot be told apart from a page; the link is
+ *  therefore let through with a word of doubt, refusing a good link being
+ *  worse than accepting a dead one. The media check is deliberately NOT used
+ *  here either: a real file in a format this browser cannot decode would fail
+ *  it.
+ *
+ *  The app asks through Android's HTTP instead, which neither CORS nor CORP
+ *  applies to: there, a failure IS a host that did not answer. */
+export async function checkLinkTarget(url: string): Promise<RemoteRefusal | 'unverified' | null> {
   if (!safeHttpUrl(url)) return { why: 'scheme' };
   if (isMixedContent(url) || (typeof navigator !== 'undefined' && navigator.onLine === false)) return null;
+  if (isNative()) return checkLinkNative(url);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), REACH_TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: ctrl.signal });
-    return res.status === 404 || res.status === 410 ? { why: 'nowhere' } : null;
+    return isGone(res.status) ? { why: 'nowhere' } : null;
   } catch {
-    return (await reachable(url)) ? null : { why: 'nowhere' };
+    return (await reachable(url)) ? null : 'unverified';
   } finally {
     clearTimeout(timer);
     ctrl.abort();
+  }
+}
+
+async function checkLinkNative(url: string): Promise<RemoteRefusal | null> {
+  const { nativeGet } = await import('../native/nativeHttp');
+  try {
+    // One byte asked for: a web page's whole body is not worth fetching to
+    // learn its status. A server that ignores Range sends it all the same.
+    const res = await nativeGet(url, { headers: { Range: 'bytes=0-0' }, timeoutMs: REACH_TIMEOUT_MS });
+    return isGone(res.status) ? { why: 'nowhere' } : null;
+  } catch {
+    return { why: 'nowhere' };
   }
 }
 
@@ -161,6 +193,12 @@ function safeHttpUrl(url: string): boolean {
  *  Attached files have no such limit only because a file picked on this device
  *  is one somebody chose; a link can point at anything. */
 export const MAX_REMOTE_FILE_BYTES = 200 * 1024 * 1024;
+
+/** The same limit for a recording handed to the tune analyser, which reads it
+ *  as a Blob and decodes it in pieces — no base64, no whole-file PCM. A local
+ *  file has no limit at all; a link, again, can point at anything, and on a
+ *  phone a gigabyte is already a deliberate choice. */
+export const MAX_REMOTE_ANALYSIS_BYTES = 1024 * 1024 * 1024;
 
 /** How long the server may take to START answering. A host that is not there
  *  — a machine off the tailnet — can otherwise hold the connection for a
@@ -302,7 +340,7 @@ function isAbort(e: unknown): boolean {
 /** The response, once its headers are in. Throws RemoteFileError for anything
  *  the server or the browser refused, and the caller's own AbortError as is —
  *  a cancel is not a refusal and must not be reported as one. */
-async function openResponse(url: string, signal: AbortSignal | undefined, ctrl: AbortController): Promise<Response> {
+async function openResponse(url: string, signal: AbortSignal | undefined, ctrl: AbortController, maxBytes: number): Promise<Response> {
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
   if (isMixedContent(url)) throw new RemoteFileError({ why: 'insecure' });
   const forward = () => ctrl.abort();
@@ -313,7 +351,7 @@ async function openResponse(url: string, signal: AbortSignal | undefined, ctrl: 
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) { ctrl.abort(); throw new RemoteFileError(statusRefusal(res.status)); }
     const length = Number(res.headers.get('content-length'));
-    if (length > MAX_REMOTE_FILE_BYTES) { ctrl.abort(); throw new RemoteFileError({ why: 'too-big', bytes: length }); }
+    if (length > maxBytes) { ctrl.abort(); throw new RemoteFileError({ why: 'too-big', bytes: length }); }
     return res;
   } catch (e) {
     if (e instanceof RemoteFileError) throw e;
@@ -328,39 +366,86 @@ async function openResponse(url: string, signal: AbortSignal | undefined, ctrl: 
   }
 }
 
-/** Reads the body, up to `limit` bytes when one is given (then stops the
- *  download), with progress along the way. */
-async function readBody(
-  res: Response, ctrl: AbortController, limit: number | null,
+/** The body's first `n` bytes, then the download is stopped. */
+async function readHead(res: Response, ctrl: AbortController, n: number): Promise<Uint8Array> {
+  const reader = res.body?.getReader();
+  if (!reader) return new Uint8Array(await res.arrayBuffer()).subarray(0, n);
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    while (received < n) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+    }
+  } catch (e) {
+    if (isAbort(e)) throw e;
+    throw new RemoteFileError({ why: 'nowhere' });
+  } finally {
+    ctrl.abort();
+  }
+  return concatBytes(chunks).subarray(0, n);
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(chunks.reduce((sum, c) => sum + c.length, 0));
+  let at = 0;
+  for (const c of chunks) { out.set(c, at); at += c.length; }
+  return out;
+}
+
+/** What a Blob is built from as it grows: past this, the pieces are folded
+ *  into it, which hands them to the browser's blob storage (on disk, for a big
+ *  one) rather than keeping them in the page's memory. */
+const FOLD_BYTES = 8 * 1024 * 1024;
+
+/** A Blob that is added to piece by piece, folding as it goes. */
+function blobBuilder() {
+  let blob = new Blob([]);
+  let pending: Uint8Array<ArrayBuffer>[] = [];
+  let pendingBytes = 0;
+  return {
+    add(piece: Uint8Array<ArrayBuffer>) {
+      pending.push(piece);
+      pendingBytes += piece.length;
+      if (pendingBytes >= FOLD_BYTES) { blob = new Blob([blob, ...pending]); pending = []; pendingBytes = 0; }
+    },
+    done: (type: string) => new Blob([blob, ...pending], { type }),
+  };
+}
+
+/** The whole body, with progress along the way. */
+async function readBlob(
+  res: Response, maxBytes: number,
   onProgress?: (received: number, total: number | null) => void,
-): Promise<Uint8Array> {
+): Promise<Blob> {
   const total = Number(res.headers.get('content-length')) || null;
   const reader = res.body?.getReader();
-  if (!reader) return new Uint8Array(await res.arrayBuffer());
-  const chunks: Uint8Array[] = [];
+  if (!reader) {
+    const whole = await res.blob();
+    if (whole.size > maxBytes) throw new RemoteFileError({ why: 'too-big', bytes: whole.size });
+    return whole;
+  }
+  const builder = blobBuilder();
   let received = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
+      builder.add(value);
       received += value.length;
       // A server that sends no length can still send too much.
-      if (received > MAX_REMOTE_FILE_BYTES) throw new RemoteFileError({ why: 'too-big', bytes: received });
+      if (received > maxBytes) throw new RemoteFileError({ why: 'too-big', bytes: received });
       onProgress?.(received, total);
-      if (limit !== null && received >= limit) break;
     }
   } catch (e) {
-    if (e instanceof RemoteFileError || isAbort(e)) throw e;
+    if (e instanceof RemoteFileError) { void reader.cancel().catch(() => {}); throw e; }
+    if (isAbort(e)) throw e;
     // The connection dropped mid-file: for this file, the same as no server.
     throw new RemoteFileError({ why: 'nowhere' });
-  } finally {
-    if (limit !== null) ctrl.abort();
   }
-  const out = new Uint8Array(received);
-  let at = 0;
-  for (const c of chunks) { out.set(c, at); at += c.length; }
-  return out;
+  return builder.done('');
 }
 
 export interface RemoteFileHead {
@@ -374,36 +459,71 @@ export interface RemoteFileHead {
  *  few kilobytes in for a file that has to be recognised by its content. For
  *  the link dialog, which says so while the link is still in front of the
  *  user rather than at the first click on it. */
-export async function probeRemoteFile(url: string, signal?: AbortSignal): Promise<RemoteFileHead> {
-  if (isNative()) return probeNative(url, signal);
+export async function probeRemoteFile(url: string, opts: {
+  signal?: AbortSignal;
+  /** MAX_REMOTE_FILE_BYTES unless said: a file the viewers are to open. */
+  maxBytes?: number;
+} = {}): Promise<RemoteFileHead> {
+  const maxBytes = opts.maxBytes ?? MAX_REMOTE_FILE_BYTES;
+  if (isNative()) return probeNative(url, opts.signal, maxBytes);
   const ctrl = new AbortController();
-  const res = await openResponse(url, signal, ctrl);
+  const res = await openResponse(url, opts.signal, ctrl, maxBytes);
   const declared = declaredType(res, url);
   if (!worthReading(declared)) { ctrl.abort(); throw new RemoteFileError({ why: 'unsupported' }); }
   const needsHead = GENERIC_TYPES.has(declared) || needsAudioSniff(declared);
-  const head = needsHead ? await readBody(res, ctrl, SNIFF_BYTES) : new Uint8Array(0);
+  const head = needsHead ? await readHead(res, ctrl, SNIFF_BYTES) : new Uint8Array(0);
   if (!needsHead) ctrl.abort();
   const type = finalType(declared, head);
   if (!type) throw new RemoteFileError({ why: 'unsupported' });
   return { name: fileNameOf(res, url), mimeType: type };
 }
 
-/** The whole file, as the viewers take it. Asked again at every opening rather
- *  than trusted from the dialog's probe: the server may have changed its mind,
- *  or the file, since. `name` is what the viewer's title shows. */
-export async function fetchRemoteFile(url: string, name: string, opts: {
+export interface RemoteFile {
+  /** Typed with what the file turned out to be, sniffed from its first bytes
+   *  where the server and the name said nothing useful. */
+  blob: Blob;
+  /** The file's own name, from the server or the URL. */
+  name: string;
+  /** The server's Last-Modified, in ms, when it says one (it is among the
+   *  headers CORS always lets a page read). What a local file's
+   *  `lastModified` is to an import: when the recording was finished. */
+  lastModified: number | null;
+}
+
+/** The whole file. Asked again at every opening rather than trusted from the
+ *  dialog's probe: the server may have changed its mind, or the file, since. */
+export async function fetchRemoteFile(url: string, opts: {
   signal?: AbortSignal;
   onProgress?: (received: number, total: number | null) => void;
-} = {}): Promise<FileEntry> {
-  if (isNative()) return fetchNative(url, name, opts);
+  /** MAX_REMOTE_FILE_BYTES unless said: a file the viewers are to open. */
+  maxBytes?: number;
+} = {}): Promise<RemoteFile> {
+  const maxBytes = opts.maxBytes ?? MAX_REMOTE_FILE_BYTES;
+  if (isNative()) return fetchNative(url, { ...opts, maxBytes });
   const ctrl = new AbortController();
-  const res = await openResponse(url, opts.signal, ctrl);
+  const res = await openResponse(url, opts.signal, ctrl, maxBytes);
   const declared = declaredType(res, url);
   if (!worthReading(declared)) { ctrl.abort(); throw new RemoteFileError({ why: 'unsupported' }); }
-  const bytes = await readBody(res, ctrl, null, opts.onProgress);
-  const mimeType = finalType(declared, bytes.subarray(0, SNIFF_BYTES));
+  // The caller's cancel reaches the body too, not only the wait for the
+  // headers (openResponse's own forwarding ends with them): a long recording
+  // cancelled halfway must stop downloading, not merely stop being waited for.
+  const forward = () => ctrl.abort();
+  opts.signal?.addEventListener('abort', forward);
+  let blob: Blob;
+  try {
+    blob = await readBlob(res, maxBytes, opts.onProgress);
+  } finally {
+    opts.signal?.removeEventListener('abort', forward);
+  }
+  const head = new Uint8Array(await blob.slice(0, SNIFF_BYTES).arrayBuffer());
+  const mimeType = finalType(declared, head);
   if (!mimeType) throw new RemoteFileError({ why: 'unsupported' });
-  return { name, mimeType, data: arrayBufferToBase64(bytes.buffer as ArrayBuffer) };
+  return { blob: new Blob([blob], { type: mimeType }), name: fileNameOf(res, url), lastModified: lastModifiedOf(res) };
+}
+
+function lastModifiedOf(res: ResponseFacts): number | null {
+  const ms = Date.parse(res.headers.get('last-modified') ?? '');
+  return Number.isFinite(ms) ? ms : null;
 }
 
 // ── In the app: Android's own HTTP ───────────────────────────────────────────
@@ -445,7 +565,7 @@ function totalSize(headers: Map<string, string>, status: number): number {
   return Number(headers.get('content-length')) || 0;
 }
 
-async function openNative(url: string, signal: AbortSignal | undefined, headers?: Record<string, string>) {
+async function openNative(url: string, signal: AbortSignal | undefined, maxBytes: number, headers?: Record<string, string>) {
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
   // Cleartext http is refused by Android itself, as it is by an https page.
   if (isMixedContent(url)) throw new RemoteFileError({ why: 'insecure' });
@@ -461,24 +581,17 @@ async function openNative(url: string, signal: AbortSignal | undefined, headers?
   }
   if (res.status < 200 || res.status >= 300) throw new RemoteFileError(statusRefusal(res.status));
   const total = totalSize(res.headers, res.status);
-  if (total > MAX_REMOTE_FILE_BYTES) throw new RemoteFileError({ why: 'too-big', bytes: total });
+  if (total > maxBytes) throw new RemoteFileError({ why: 'too-big', bytes: total });
   const facts: ResponseFacts = { url: res.url, headers: { get: (n) => res.headers.get(n.toLowerCase()) ?? null } };
   return { facts, base64: res.base64, ranged: res.status === 206, total };
 }
 
-/** Bytes per request when opening a file in the app. A multiple of 3, so
- *  that each piece's base64 ends on a whole group and the pieces join as
- *  text, without decoding anything. */
+/** Bytes per request when opening a file in the app. Each piece's base64 is
+ *  decoded on arrival and folded into the Blob. */
 const CHUNK_BYTES = 3 * 256 * 1024;
 
-/** The byte count of an unpadded-or-padded base64 string. */
-function base64Bytes(b64: string): number {
-  const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
-  return Math.floor(b64.length * 3 / 4) - pad;
-}
-
-async function probeNative(url: string, signal?: AbortSignal): Promise<RemoteFileHead> {
-  const { facts, base64 } = await openNative(url, signal, { Range: `bytes=0-${SNIFF_BYTES - 1}` });
+async function probeNative(url: string, signal: AbortSignal | undefined, maxBytes: number): Promise<RemoteFileHead> {
+  const { facts, base64 } = await openNative(url, signal, maxBytes, { Range: `bytes=0-${SNIFF_BYTES - 1}` });
   const declared = declaredType(facts, url);
   if (!worthReading(declared)) throw new RemoteFileError({ why: 'unsupported' });
   const type = finalType(declared, base64Head(base64, SNIFF_BYTES));
@@ -486,52 +599,54 @@ async function probeNative(url: string, signal?: AbortSignal): Promise<RemoteFil
   return { name: fileNameOf(facts, url), mimeType: type };
 }
 
-async function fetchNative(url: string, name: string, opts: {
+async function fetchNative(url: string, opts: {
   signal?: AbortSignal;
   onProgress?: (received: number, total: number | null) => void;
-}): Promise<FileEntry> {
+  maxBytes: number;
+}): Promise<RemoteFile> {
   // Piece by piece (Range requests), because the native call only answers
   // once a request is complete: one request for the whole file showed
   // nothing for seconds, which reads as a hang (2026-10-09, user's call). A
   // piece at a time gives the progress line, and a cancel that takes effect
   // at the next piece. A server that ignores Range answers the first request
   // with the whole file — no progress for it, nothing worse.
-  const first = await openNative(url, opts.signal, { Range: `bytes=0-${CHUNK_BYTES - 1}` });
+  const first = await openNative(url, opts.signal, opts.maxBytes, { Range: `bytes=0-${CHUNK_BYTES - 1}` });
   const declared = declaredType(first.facts, url);
   // Decided on the first piece: a web page is not downloaded any further.
   if (!worthReading(declared)) throw new RemoteFileError({ why: 'unsupported' });
-  const pieces = [first.base64];
-  let received = base64Bytes(first.base64);
+  const firstBytes = decodeBase64(first.base64);
+  const head = firstBytes.subarray(0, SNIFF_BYTES);
+  const builder = blobBuilder();
+  builder.add(firstBytes);
+  let received = firstBytes.length;
   let last = received;
   // Unknown when a ranged answer gives no total: then a short piece is the end.
   const total = first.ranged ? first.total : received;
   opts.onProgress?.(received, total || null);
   while (first.ranged && (total ? received < total : last === CHUNK_BYTES)) {
-    const next = await openNative(url, opts.signal, { Range: `bytes=${received}-${received + CHUNK_BYTES - 1}` });
-    last = base64Bytes(next.base64);
+    const next = await openNative(url, opts.signal, opts.maxBytes, { Range: `bytes=${received}-${received + CHUNK_BYTES - 1}` });
     // Nothing more, or the server has stopped honouring Range: what is
     // already here is all there will be.
-    if (!next.ranged || last === 0) break;
-    pieces.push(next.base64);
+    if (!next.ranged) break;
+    const piece = decodeBase64(next.base64);
+    last = piece.length;
+    if (last === 0) break;
+    builder.add(piece);
     received += last;
+    // A server that said no length can still send too much.
+    if (received > opts.maxBytes) throw new RemoteFileError({ why: 'too-big', bytes: received });
     opts.onProgress?.(received, total || null);
   }
-  // A server that said no length can still have sent too much.
-  if (received > MAX_REMOTE_FILE_BYTES) throw new RemoteFileError({ why: 'too-big', bytes: received });
-  // Joined as text when every piece but the last ends on a whole base64
-  // group — always, unless a server sent shorter pieces than asked for;
-  // then decoded and encoded again.
-  const aligned = pieces.slice(0, -1).every(p => base64Bytes(p) % 3 === 0);
-  const data = aligned ? pieces.join('') : rejoin(pieces);
-  const mimeType = finalType(declared, base64Head(data, SNIFF_BYTES));
+  if (received > opts.maxBytes) throw new RemoteFileError({ why: 'too-big', bytes: received });
+  const mimeType = finalType(declared, head);
   if (!mimeType) throw new RemoteFileError({ why: 'unsupported' });
-  return { name, mimeType, data };
+  return { blob: builder.done(mimeType), name: fileNameOf(first.facts, url), lastModified: lastModifiedOf(first.facts) };
 }
 
-function rejoin(pieces: string[]): string {
-  const parts = pieces.map(p => base64Head(p, base64Bytes(p)));
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) { out.set(p, at); at += p.length; }
-  return arrayBufferToBase64(out.buffer);
+/** A whole base64 body as bytes. */
+function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(base64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < out.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }

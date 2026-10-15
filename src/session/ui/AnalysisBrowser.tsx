@@ -505,5 +505,5 @@ function analysisDetail(session: Analysis): string {
   // A renamed analysis shows its date here; a default-named one would only
   // repeat itself.
   const beside = dateBesideName(session.name, session.date);
-  return `${beside ? `${beside} · ` : ''}${fmtLongTime(session.duration)} · ${t('sessions.tunesCount', { n: session.annotations.length })}`;
+  return `${beside ? `${beside} · ` : ''}${fmtLongTime(session.duration)} · ${t(session.annotations.length === 1 ? 'sessions.tunesCount' : 'sessions.tunesCountPlural', { n: session.annotations.length })}`;
 }

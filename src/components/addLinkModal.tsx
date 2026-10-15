@@ -61,7 +61,7 @@ type Lookup = (url: string, mode: LinkMode) => Promise<LinkCheck>;
  *  them: a verdict for the tab side says nothing about the in-app one. */
 type Check =
   | { url: string; mode: LinkMode; state: 'pending' }
-  | { url: string; mode: LinkMode; state: 'ok'; title: string }
+  | { url: string; mode: LinkMode; state: 'ok'; title: string; unverified?: true }
   | { url: string; mode: LinkMode; state: 'bad'; message: string; why: RemoteRefusal['why'] };
 
 /** What the body knows about the edit, for the dialog around it to read when
@@ -132,7 +132,7 @@ function LinkBody({ draft, initial, state, known, saved, lookup, disabled, busy,
     const timer = setTimeout(() => {
       void lookup(trimmed, mode).then((answer) => {
         if (shown.current.url !== trimmed || shown.current.mode !== mode) return;
-        setCheck(answer.ok ? { url: trimmed, mode, state: 'ok', title: answer.title }
+        setCheck(answer.ok ? { url: trimmed, mode, state: 'ok', title: answer.title, ...(answer.unverified ? { unverified: true } as const : {}) }
           : { url: trimmed, mode, state: 'bad', message: refusalMessage(answer.refusal), why: answer.refusal.why });
       });
     }, CHECK_DELAY_MS);
@@ -307,7 +307,9 @@ function LinkBody({ draft, initial, state, known, saved, lookup, disabled, busy,
       {busy.value || current?.state === 'pending'
         ? <p class="text-xs text-dim">{t('embed.checking')}</p>
         : error.value !== '' ? <p class="text-xs text-danger">{error.value}</p>
-        : current?.state === 'bad' && <p class="text-xs text-danger">{current.message}</p>}
+        : current?.state === 'bad' ? <p class="text-xs text-danger">{current.message}</p>
+        // A doubt, not a refusal: in the warning colour, and Save stays on.
+        : current?.state === 'ok' && current.unverified && <p class="text-xs text-warn">{t('embed.warn.unverified')}</p>}
     </div>
   );
 }

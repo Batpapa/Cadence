@@ -102,23 +102,66 @@ describe('probeRemoteFile', () => {
 });
 
 describe('fetchRemoteFile', () => {
-  it('returns the bytes as a FileEntry, with progress along the way', async () => {
-    serve(MP3_HEAD, { 'content-type': 'audio/mpeg', 'content-length': String(MP3_HEAD.length) });
+  it('returns the bytes as a typed Blob, with progress along the way', async () => {
+    serve(MP3_HEAD, {
+      'content-type': 'audio/mpeg', 'content-length': String(MP3_HEAD.length),
+      'last-modified': 'Mon, 13 Oct 2026 20:41:00 GMT',
+    });
     const seen: Array<[number, number | null]> = [];
-    const entry = await fetchRemoteFile('https://x.org/a.mp3', 'Silver Spear.mp3', {
+    const file = await fetchRemoteFile('https://x.org/sets/silver-spear.mp3', {
       onProgress: (r, t) => seen.push([r, t]),
     });
-    expect(entry.name).toBe('Silver Spear.mp3');
-    expect(entry.mimeType).toBe('audio/mpeg');
-    expect(Uint8Array.from(atob(entry.data), c => c.charCodeAt(0))).toEqual(MP3_HEAD);
+    expect(file.name).toBe('silver-spear.mp3');
+    expect(file.blob.type).toBe('audio/mpeg');
+    expect(new Uint8Array(await file.blob.arrayBuffer())).toEqual(MP3_HEAD);
+    expect(file.lastModified).toBe(Date.UTC(2026, 9, 13, 20, 41));
     expect(seen.at(-1)).toEqual([MP3_HEAD.length, MP3_HEAD.length]);
+  });
+
+  it('types a file the server says nothing about by its first bytes', async () => {
+    serve(MP3_HEAD, { 'content-type': 'application/octet-stream' });
+    const file = await fetchRemoteFile('https://x.org/dl?id=7');
+    expect(file.blob.type).toBe('audio/mpeg');
+    expect(file.lastModified).toBeNull();
+  });
+
+  it('keeps every byte, in order, across many pieces and past a fold', async () => {
+    // 10 MB in 1 MB pieces: the Blob is folded at 8 MB along the way.
+    const piece = (i: number) => { const p = new Uint8Array(1024 * 1024); p.fill(i); if (i === 0) p.set(MP3_HEAD); return p; };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+      start(c) { for (let i = 0; i < 10; i++) c.enqueue(piece(i)); c.close(); },
+    }), { headers: { 'content-type': 'audio/mpeg' } })));
+    const bytes = new Uint8Array(await (await fetchRemoteFile('https://x.org/long.mp3', { maxBytes: 20 * 1024 * 1024 })).blob.arrayBuffer());
+    expect(bytes.length).toBe(10 * 1024 * 1024);
+    for (let i = 1; i < 10; i++) expect(bytes[i * 1024 * 1024 + 5]).toBe(i);
+    expect(bytes.subarray(0, MP3_HEAD.length)).toEqual(MP3_HEAD);
+  });
+
+  it('stops at the size the caller allows, said or not said by the server', async () => {
+    serve(new Uint8Array(100), { 'content-type': 'audio/mpeg', 'content-length': '100' });
+    expect(await refusal(fetchRemoteFile('https://x.org/a.mp3', { maxBytes: 50 }))).toEqual({ why: 'too-big', bytes: 100 });
+    serve(new Uint8Array(100), { 'content-type': 'audio/mpeg' });
+    expect(await refusal(fetchRemoteFile('https://x.org/a.mp3', { maxBytes: 50 }))).toMatchObject({ why: 'too-big' });
+  });
+
+  it('stops the download itself when cancelled halfway, not only the wait', async () => {
+    // A server like fetch's: its body errors once the request's signal aborts.
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => new Response(new ReadableStream({
+      start(c) {
+        c.enqueue(MP3_HEAD);
+        init?.signal?.addEventListener('abort', () => c.error(new DOMException('aborted', 'AbortError')));
+      },
+    }), { headers: { 'content-type': 'audio/mpeg' } })));
+    const ctrl = new AbortController();
+    const p = fetchRemoteFile('https://x.org/long.mp3', { signal: ctrl.signal, onProgress: () => ctrl.abort() });
+    await expect(p).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   it('lets a cancel through as a cancel, not as a refusal', async () => {
     serve(MP3_HEAD, { 'content-type': 'audio/mpeg' });
     const ctrl = new AbortController();
     ctrl.abort();
-    await expect(fetchRemoteFile('https://x.org/a.mp3', 'a.mp3', { signal: ctrl.signal }))
+    await expect(fetchRemoteFile('https://x.org/a.mp3', { signal: ctrl.signal }))
       .rejects.toMatchObject({ name: 'AbortError' });
   });
 });
@@ -172,8 +215,15 @@ describe('checkEmbed and isFileEmbed', () => {
   it('asks an external link only whether anything answers', async () => {
     serve(new Uint8Array(0), { 'content-type': 'text/html' });
     expect(await checkLink('https://thesession.org/discussions/1')).toEqual({ ok: true, title: '', embedUrl: '' });
+  });
+
+  it('lets through, with a doubt, a link nothing can be learnt about', async () => {
+    // Both requests failing is a dead host — or a server sending
+    // Cross-Origin-Resource-Policy: same-origin, which fails the no-cors one
+    // too (Cloudflare's bot check, folktunefinder.com, 2026-10-13). A page
+    // cannot tell which, so it does not refuse.
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
-    expect(await checkLink('https://no-such-host.invalid/')).toEqual({ ok: false, refusal: { why: 'nowhere' } });
+    expect(await checkLink('https://www.folktunefinder.com/tunes/63035')).toEqual({ ok: true, title: '', embedUrl: '', unverified: true });
   });
 
   it('reads a 404 when the server lets it be read, and lets a login page through', async () => {

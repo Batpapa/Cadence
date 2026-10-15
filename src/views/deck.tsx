@@ -1,6 +1,7 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
-import { pct, timeAgo, availabilityColor, addTouchDragSupport, rankByRelevance } from '../utils';
+import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
+import { CardSearchField } from '../components/cardSearchField';
 import { TrashIcon, StarIcon, PlusIcon, LibraryIcon } from '../components/icons';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
@@ -44,9 +45,6 @@ export function DeckView({ deckId }: { deckId: string }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName]           = useState('');
 
-  // Quick-link dropdown
-  const [linkQuery, setLinkQuery] = useState('');
-
   // Inline deck importance editing
   const [editingImportanceId, setEditingImportanceId] = useState<string | null>(null);
   const [importanceDraft, setImportanceDraft] = useState('');
@@ -74,13 +72,8 @@ export function DeckView({ deckId }: { deckId: string }) {
   const noCards     = deck.entries.length === 0;
   const allMastered = !noCards && candidates === 0;
 
-  // ── Quick-link matches ────────────────────────────────────────────────────────
+  // ── Quick link: the cards not in this deck yet ───────────────────────────────
   const alreadyInDeck = new Set(deck.entries.map(e => e.cardId));
-  // Names and aliases, best match first — a name heard in a session finds the
-  // card however the library happens to title it.
-  const linkMatches   = linkQuery
-    ? rankByRelevance(Object.values(user.cards).filter(c => !alreadyInDeck.has(c.id)), linkQuery).slice(0, 12)
-    : [];
 
   // ── Drag handlers ─────────────────────────────────────────────────────────────
   const onDragStart = (cardId: string, e: DragEvent) => {
@@ -285,36 +278,17 @@ export function DeckView({ deckId }: { deckId: string }) {
         </div>
 
         <div class="flex items-center gap-2">
-          <div class="relative w-44">
-            <input
-              type="text"
-              value={linkQuery}
+          {/* The field every card search uses (cardSearchField.tsx), with the
+              wording of this one: it links, it does not just search. */}
+          <div class="w-44">
+            <CardSearchField
+              floating
+              compact
               placeholder={t('deck.quickLink.placeholder')}
-              class="w-full h-6 text-xs bg-transparent text-dim placeholder:text-dim/50 outline-none px-2 border border-dashed border-border rounded hover:border-accent/50 focus:border-accent transition-colors"
-              onInput={(e) => setLinkQuery((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') setLinkQuery(''); }}
-              onBlur={() => setTimeout(() => setLinkQuery(''), 100)}
+              noMatch={t('deck.quickLink.noMatch')}
+              eligible={(c) => !alreadyInDeck.has(c.id)}
+              onPick={(card) => mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); })}
             />
-            {linkQuery && (
-            <div class="absolute z-10 left-0 right-0 top-full mt-1 bg-surface border border-border rounded shadow-lg max-h-52 overflow-y-auto">
-              {linkMatches.length === 0 ? (
-                <p class="text-sm text-dim italic px-3 py-2">{t('deck.quickLink.noMatch')}</p>
-              ) : linkMatches.map(({ item: card, via }) => (
-                <div
-                  key={card.id}
-                  class="px-3 py-2 text-sm text-primary hover:bg-elevated cursor-pointer transition-colors"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); });
-                    setLinkQuery('');
-                  }}
-                >
-                  <span class="block truncate">{card.name}</span>
-                  {via !== undefined && <span class="block truncate text-xs text-dim">{t('search.viaAlias', { alias: via })}</span>}
-                </div>
-              ))}
-            </div>
-            )}
           </div>
           <button
             type="button"

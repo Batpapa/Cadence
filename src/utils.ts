@@ -563,11 +563,23 @@ export function rankByRelevance<T extends { name: string; aliases?: readonly str
 // Once per element: several callers attach it from an inline `ref`, which
 // Preact calls again at every render, and each call stacked another set of
 // listeners — as many ghosts as renders, under the finger at once.
+//
+// The element stops being `draggable` while a finger is on it. Chrome on
+// Android starts a NATIVE drag of a draggable element on its own long press
+// (~500 ms), and cancels the touch to do so: this drag, armed at 250 ms, was
+// then dropped where it started and ended, and the native one went on with
+// nothing accepting it — the card flew back to its place. Whether a drag
+// worked came down to moving before or after the system's threshold: "one
+// time in two" (2026-10-14, group feedback; the source card at full opacity
+// in the tester's video gave it away, confirmed on the user's phone
+// 2026-10-15). A mouse never goes through here, so desktop drag is untouched.
 const touchDragAttached = new WeakSet<HTMLElement>();
 
 export function addTouchDragSupport(el: HTMLElement): void {
   if (touchDragAttached.has(el)) return;
   touchDragAttached.add(el);
+  // Keeps the text unselectable while `draggable` is off (styles.css).
+  el.dataset.touchDrag = '';
   const LONG_PRESS_MS = 250;
   const MOVE_CANCEL_PX = 8;
 
@@ -576,6 +588,15 @@ export function addTouchDragSupport(el: HTMLElement): void {
   let dragging = false;
   let ghost: HTMLElement | null = null;
   let lastDragTarget: Element | null = null;
+  /** Whether this touch is what turned `draggable` off — so that only this
+   *  puts it back, never over a caller that turned it off itself (the
+   *  attachment row does while its name is being edited). */
+  let suspendedNative = false;
+
+  const resumeNative = () => {
+    if (suspendedNative) el.draggable = true;
+    suspendedNative = false;
+  };
 
   const dispatchDrag = (type: string, target: Element, clientX: number, clientY: number) =>
     target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX, clientY }));
@@ -603,6 +624,7 @@ export function addTouchDragSupport(el: HTMLElement): void {
     if (e.touches.length !== 1) return;
     const touch = e.touches[0]!;
     startX = touch.clientX; startY = touch.clientY;
+    if (el.draggable) { el.draggable = false; suspendedNative = true; }
     pressTimer = setTimeout(() => activate(touch), LONG_PRESS_MS);
   }, { passive: true });
 
@@ -629,16 +651,20 @@ export function addTouchDragSupport(el: HTMLElement): void {
     if (target) dispatchDrag('dragover', target, touch.clientX, touch.clientY);
   }, { passive: false });
 
-  const endDrag = (clientX: number, clientY: number) => {
+  /** The finger lifted (`drop`), or the system took the touch over: then
+   *  nothing is dropped — a cancel is not a release, and dropping there is what
+   *  landed a card on itself while the system's own drag went on. */
+  const endDrag = (clientX: number, clientY: number, drop: boolean) => {
     clearTimeout(pressTimer!); pressTimer = null;
+    resumeNative();
     if (!dragging) return;
     if (ghost) ghost.style.visibility = 'hidden';
-    const target = document.elementFromPoint(clientX, clientY);
+    const target = drop ? document.elementFromPoint(clientX, clientY) : null;
     cleanup();
     if (target) dispatchDrag('drop', target, clientX, clientY);
     dispatchDrag('dragend', el, clientX, clientY);
   };
 
-  el.addEventListener('touchend',    (e) => { const tc = e.changedTouches[0]!; endDrag(tc.clientX, tc.clientY); });
-  el.addEventListener('touchcancel', (e) => { const tc = e.changedTouches[0]!; endDrag(tc.clientX, tc.clientY); });
+  el.addEventListener('touchend',    (e) => { const tc = e.changedTouches[0]!; endDrag(tc.clientX, tc.clientY, true); });
+  el.addEventListener('touchcancel', (e) => { const tc = e.changedTouches[0]!; endDrag(tc.clientX, tc.clientY, false); });
 }

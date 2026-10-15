@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject, ComponentChild } from 'preact';
 import type { Attachment, AudioPreset, FileAttachment, FileEntry, EmbedEntry, Card, CardRef, ResolvableFile } from '../types';
 import { identityOf, type AttachmentIdentity, type AudioPresetsBinding } from '../services/audioPresets';
-import { generateId, focusIfDesktop, addTouchDragSupport, rankByRelevance, downloadBlob, base64ToBlob, formatBytes } from '../utils';
+import { generateId, addTouchDragSupport, downloadBlob, base64ToBlob, formatBytes, fileToEntry } from '../utils';
 import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
 import { alertModal } from './modal';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon } from './icons';
@@ -19,6 +19,7 @@ import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAb
 import { isTuneset, hasTunesetScore, CARD_TYPE_TUNE } from '../services/cardTypeService';
 import { appState, navigate, getContext, mutate } from '../store';
 import { showModal, closeModal, confirmModal, renderModalBody } from './modal';
+import { CardSearchField } from './cardSearchField';
 import { showNewCardModal, type NewCardPreset } from './theSessionImport';
 import { t } from '../services/i18nService';
 import { downloadIcon } from './playbackIcons';
@@ -118,12 +119,13 @@ function openRemoteFile(entry: EmbedEntry, audioPresets?: AudioPresetsBinding): 
   // success is not mistaken for the user walking away.
   const stop = () => { clearTimeout(patience); if (shown && !walkedAway) closeModal(); };
 
-  fetchRemoteFile(entry.url, name, {
+  fetchRemoteFile(entry.url, {
     signal: ctrl.signal,
     onProgress: (received, total) => {
       progress.textContent = total ? `${formatBytes(received)} / ${formatBytes(total)}` : formatBytes(received);
     },
-  }).then((file) => {
+  // The viewers take base64; `name` is what their title shows.
+  }).then((remote) => fileToEntry(new File([remote.blob], name, { type: remote.blob.type }))).then((file) => {
     stop();
     // Its type is only known now, sniffed from the bytes if need be.
     if (!walkedAway) showPreviewModal(file, undefined, file.mimeType.startsWith('audio/') ? { audioPresets } : undefined);
@@ -272,6 +274,7 @@ function confirmRemove(name: string, isRef: boolean, remove: () => void): void {
 function audioPresetsBinding(
   att: FileAttachment, i: number,
   save: (i: number, id: AttachmentIdentity, presets: AudioPreset[], defaultId: string | undefined) => void,
+  card: Card | undefined,
 ): AudioPresetsBinding | undefined {
   if (!att.mimeType.startsWith('audio/')) return undefined;
   const id = identityOf(att);
@@ -279,6 +282,7 @@ function audioPresetsBinding(
     presets: att.audioPresets ?? [],
     defaultId: att.defaultAudioPreset,
     onChange: (presets, defaultId) => save(i, id, presets, defaultId),
+    onExtractClip: clipExtractor(card),
   };
 }
 
@@ -287,6 +291,7 @@ function audioPresetsBinding(
 function linkPresetsBinding(
   entry: EmbedEntry, i: number,
   save: (i: number, id: AttachmentIdentity, presets: AudioPreset[], defaultId: string | undefined) => void,
+  card: Card | undefined,
 ): AudioPresetsBinding | undefined {
   if (!isFileEmbed(entry)) return undefined;
   const id: AttachmentIdentity = { embedId: entry.id };
@@ -294,6 +299,16 @@ function linkPresetsBinding(
     presets: entry.audioPresets ?? [],
     defaultId: entry.defaultAudioPreset,
     onChange: (presets, defaultId) => save(i, id, presets, defaultId),
+    onExtractClip: clipExtractor(card),
+  };
+}
+
+/** The player's clip button, offering the card it was opened from first.
+ *  Lazy: the dialog is only wanted by whoever presses it. */
+function clipExtractor(card: Card | undefined): AudioPresetsBinding['onExtractClip'] {
+  if (!card) return undefined;
+  return (req) => {
+    void import('./extractClipModal').then(m => m.showExtractClipModal({ ...req, defaultCardId: card.id }));
   };
 }
 
@@ -673,72 +688,29 @@ function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action, r
   );
 }
 
-// ── Add-card picker (its own small modal — vanilla body, same as before) ───────
+// ── Add-card picker (its own small modal) ────────────────────────────────────
 
-/** Search-and-pick one card from the library.
+/** Search-and-pick one card from the library, through the field every card
+ *  search uses (cardSearchField.tsx): nothing listed until something is typed
+ *  — a dialog that opened on the whole library was hundreds of rows to scroll.
  *
  *  `eligible` narrows the candidates (a tuneset offers only what may be one of
- *  its tunes); `titleKey` names the modal, since "add a reference" and "add a
- *  tune" are not the same act even though they pick the same way. */
+ *  its tunes), and `emptyKey` then says why a name finds nothing; `titleKey`
+ *  names the modal, since "add a reference" and "add a tune" are not the same
+ *  act even though they pick the same way. */
 export function showCardPicker(
   onPick: (card: Card) => void,
   opts: { titleKey?: string; eligible?: (card: Card) => boolean; emptyKey?: string } = {},
 ): void {
-  const body = document.createElement('div');
-  body.className = 'space-y-2';
-
-  const inp = document.createElement('input');
-  inp.type = 'text';
-  inp.placeholder = t('fileViewer.cardRef.search');
-  inp.className = 'input text-sm';
-
-  const listEl = document.createElement('div');
-  listEl.className = 'max-h-60 overflow-y-auto space-y-0.5';
-
-  const renderList = (query: string) => {
-    listEl.innerHTML = '';
-    const q = query.trim().toLowerCase();
-    const cards = Object.values(appState.value.cards).filter(opts.eligible ?? (() => true));
-    // Aliases searched with the name; one that found a card is shown under it.
-    const sorted = q
-      ? rankByRelevance(cards, q)
-      : [...cards].sort((a, b) => a.name.localeCompare(b.name)).map(item => ({ item, via: undefined }));
-    for (const { item: card, via } of sorted) {
-      const item = document.createElement('button');
-      item.className = 'w-full text-left text-sm px-2 py-1.5 rounded hover:bg-accent/10 transition-colors cursor-pointer';
-      const name = document.createElement('span');
-      name.className = 'block truncate';
-      name.textContent = card.name;
-      item.appendChild(name);
-      if (via !== undefined) {
-        const alias = document.createElement('span');
-        alias.className = 'block truncate text-xs text-dim';
-        alias.textContent = t('search.viaAlias', { alias: via });
-        item.appendChild(alias);
-      }
-      item.onclick = () => {
-        onPick(card);
-        closeModal();
-      };
-      listEl.appendChild(item);
-    }
-    // An eligibility filter can empty the list for a reason the user cannot
-    // see — "only tunes appear here" is invisible when every candidate was
-    // filtered out. Say it rather than showing a blank box.
-    if (sorted.length === 0 && opts.emptyKey) {
-      const note = document.createElement('p');
-      note.className = 'text-xs text-dim px-2 py-1.5';
-      note.textContent = t(opts.emptyKey);
-      listEl.appendChild(note);
-    }
-  };
-
-  renderList('');
-  inp.addEventListener('input', () => renderList(inp.value));
-  body.append(inp, listEl);
-
-  showModal(t(opts.titleKey ?? 'fileViewer.cardRef.title'), body, []);
-  focusIfDesktop(inp);
+  const { el, cleanup } = renderModalBody(
+    <CardSearchField
+      autoFocus
+      eligible={opts.eligible}
+      noMatch={opts.emptyKey ? t(opts.emptyKey) : undefined}
+      onPick={(card) => { closeModal(); cleanup(); onPick(card); }}
+    />,
+  );
+  showModal(t(opts.titleKey ?? 'fileViewer.cardRef.title'), el, [], { onDismiss: cleanup });
 }
 
 /** The reference payload of a card — what both roles store about a target. */
@@ -885,9 +857,9 @@ export interface AttachmentListOptions {
    *  an embed to an external link drops its `embedUrl`, and the entry that
    *  comes back is already built (see showEditLinkModal). */
   onUpdateLink?: (i: number, entry: EmbedEntry) => void;
-  /** The card these attachments belong to. Only needed to resolve a set's
-   *  generated score, whose stored `data` is empty by design — everything else
-   *  here works from the attachments alone. */
+  /** The card these attachments belong to. Needed to resolve a set's
+   *  generated score, whose stored `data` is empty by design, and as the card
+   *  the audio player's clips go to by default. Without it, no clip button. */
   card?: Card;
 }
 
@@ -1114,7 +1086,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   // Its name is derived from the set's, so it has none of its own to change.
                   onRename={onRenameFile && att.generatedBy !== 'tuneset' ? (name) => onRenameFile(i, name) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
-                  audioPresets={onSetAudioPresets ? audioPresetsBinding(att, i, onSetAudioPresets) : undefined}
+                  audioPresets={onSetAudioPresets ? audioPresetsBinding(att, i, onSetAudioPresets, card) : undefined}
                   // A set's fused score has no bytes of its own — see `resolve`
                   // above. Both gestures rebuild it from members whose scores
                   // are actually in hand, and say so when one is not.
@@ -1132,7 +1104,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                 <EmbedRowContent
                   entry={att} onRemove={() => onRemove(i)} editable={editable}
                   onEdit={onUpdateLink ? () => showEditLinkModal(att, (next) => onUpdateLink(i, next)) : undefined}
-                  audioPresets={onSetAudioPresets ? linkPresetsBinding(att, i, onSetAudioPresets) : undefined}
+                  audioPresets={onSetAudioPresets ? linkPresetsBinding(att, i, onSetAudioPresets, card) : undefined}
                 />
               )}
             </AttachmentRow>

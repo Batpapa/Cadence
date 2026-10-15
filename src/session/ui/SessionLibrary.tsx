@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon } from '../../components/icons';
+import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, LinkIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
 import { listSessions } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
@@ -52,6 +52,8 @@ interface SessionLibraryProps {
    *  throttled effect, so it can still be a keystroke behind. */
   onStartLive: (source: LiveSourceKind, folderId: string | null) => void;
   onImportFile: (file: File, folderId: string | null) => void;
+  /** "Import a link": the dialog that downloads a recording, then imports it. */
+  onImportLink: (folderId: string | null) => void;
   onImportSession: () => void;
   onOpenSession: (sessionId: string) => void;
   /** What the screen starts as, from the route — so coming back to it restores
@@ -70,7 +72,7 @@ interface SessionLibraryProps {
   initialModes?: [string, FilterState][];
 }
 
-export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes }: SessionLibraryProps) {
+export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes }: SessionLibraryProps) {
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
   /** Whether `allSessions` has been read at least once. The tunes tab waits for
    *  it: its chips ignore any analysis they cannot find, and before the first
@@ -99,6 +101,9 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
     modes: new Map(initialModes ?? []),
   }));
   const [source, setSource] = useState<LiveSourceKind>('mic');
+  // Where an import comes from, chosen the same way and kept the same way:
+  // for now, not as a preference (see the live source's split button below).
+  const [importFrom, setImportFrom] = useState<'file' | 'link'>('file');
   const fileInputRef = useRef<HTMLInputElement>(null);
   useTuneNames();
 
@@ -110,6 +115,10 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
   const sourceOptions = [
     { value: 'mic', label: t('sessions.source.mic') },
     { value: 'device', label: t('sessions.source.device') },
+  ];
+  const importOptions = [
+    { value: 'file', label: t('sessions.importFrom.file') },
+    { value: 'link', label: t('sessions.importFrom.link') },
   ];
 
   // Deleting a folder deletes the recordings it holds, and that is the only
@@ -256,14 +265,44 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportSession
           if (file) onImportFile(file, destinationFolder);
         }}
       />
-      <button
-        class="btn-ghost w-full justify-center flex items-center gap-2 mt-2 border border-border"
-        title={t('sessions.importHint')}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <FileAudioIcon size={13} />
-        <span>{t('sessions.import')}</span>
-      </button>
+      {/* The live button's split shape, on the import (2026-10-15, the user:
+         "exactly like mic vs capture"): the main half imports from the source
+         its icon shows, the chevron changes it. Offered everywhere, unlike the
+         live source — a download works on every device. */}
+      <div class="mt-2">
+        <CustomSelect
+          value={importFrom}
+          options={importOptions}
+          onChange={(v) => setImportFrom(v as 'file' | 'link')}
+          renderTrigger={(_label, open, toggle) => (
+            <>
+              <button
+                class="btn-ghost w-full justify-center flex items-center gap-2 border border-border"
+                title={t(importFrom === 'link' ? 'sessions.importLinkHint' : 'sessions.importHint')}
+                onClick={() => {
+                  if (importFrom === 'link') onImportLink(destinationFolder);
+                  else fileInputRef.current?.click();
+                }}
+              >
+                {importFrom === 'link' ? <LinkIcon size={13} /> : <FileAudioIcon size={13} />}
+                <span>{t(importFrom === 'link' ? 'sessions.importLink' : 'sessions.import')}</span>
+              </button>
+              {/* Over the right edge, for the reason the live button's says. */}
+              <button
+                type="button"
+                class="absolute inset-y-0 right-0 px-2.5 flex items-center rounded-r
+                       border-l border-border text-dim hover:text-primary hover:bg-elevated transition-colors cursor-pointer"
+                title={t('sessions.importFrom')}
+                aria-label={t('sessions.importFrom')}
+                aria-expanded={open}
+                onClick={toggle}
+              >
+                <ChevronDownIcon size={10} />
+              </button>
+            </>
+          )}
+        />
+      </div>
 
       <button class="btn-ghost w-full justify-center flex items-center gap-2 mt-2 border border-border" onClick={onImportSession}>
         <ImportTrayIcon size={13} />

@@ -593,7 +593,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
     try {
       const info = await fetchMemberInfo(memberId);
       if (!fresh()) return;
-      const size = t('theSession.member.tuneCount', { n: info.tunebook });
+      const size = t(info.tunebook === 1 ? 'theSession.member.tuneCount' : 'theSession.member.tuneCountPlural', { n: info.tunebook });
       setInfo(byId ? `${info.name} · ${size}` : size);
       // An empty tunebook is a perfectly ordinary account, not an error —
       // say so, and leave nothing to press.

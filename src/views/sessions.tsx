@@ -9,7 +9,7 @@ import { SessionLibrary } from '../session/ui/SessionLibrary';
 import { LiveSessionScreen } from '../session/ui/LiveSession';
 import { ImportAnalysis } from '../session/ui/ImportAnalysis';
 import { SessionSummary } from '../session/ui/SessionSummary';
-import { startLiveSession, startImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive, setPitchShiftSetting } from '../session/ui/sessionModule';
+import { startLiveSession, startImport, startLinkImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive, setPitchShiftSetting } from '../session/ui/sessionModule';
 import { PitchShiftControl } from '../session/ui/PitchShiftControl';
 import { pitchShiftSetting } from '../session/detections';
 import { GearIcon } from '../components/icons';
@@ -101,6 +101,7 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
           ctx={ctx}
           onStartLive={(kind, destination) => startLiveSession(ctx, kind, destination)}
           onImportFile={(file, destination) => { void startImport(ctx, file, destination); }}
+          onImportLink={(destination) => startLinkImport(ctx, destination)}
           onImportSession={() => showImportSessionModal(ctx)}
           onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}
           initialSearch={search}

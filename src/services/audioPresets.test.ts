@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   fitSettings, sameSettings, neutralSettings, suggestedPresetName, sanitizeAudioPresets,
-  identityOf, locatePresetHolder,
+  identityOf, locatePresetHolder, clipPresets,
 } from './audioPresets';
 import type { Attachment, FileAttachment } from '../types';
 
@@ -118,4 +118,21 @@ describe('finding the attachment a save belongs to', () => {
     expect(locatePresetHolder([a], 0, { embedId: 'l1' })).toBeNull();
     expect(locatePresetHolder([{ type: 'embed', id: 'l1', url: 'x' }], 0, identityOf(a))).toBeNull();
   });
+});
+
+describe('a clip cut from the player', () => {
+  const region = { ...neutralSettings(120), start: 12, end: 45.5 };
+
+  it('arrives with no preset when the effects are the recording\'s own', () => {
+    expect(clipPresets(region, 'B part', 33.6, 'x')).toEqual({});
+  });
+
+  it('carries changed effects in one starred preset over the whole clip', () => {
+    const s = { ...region, tempo: 80, transpose: -2, repeat: false };
+    expect(clipPresets(s, 'B part', 33.6, 'x')).toEqual({
+      audioPresets: [{ id: 'x', name: 'B part', start: 0, end: 33.6, tempo: 80, transpose: -2, pitch: 0, repeat: false }],
+      defaultAudioPreset: 'x',
+    });
+  });
+
 });
