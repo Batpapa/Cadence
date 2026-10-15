@@ -4,12 +4,12 @@ import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon } from '../../components/icons';
 import { findByExternalId } from '../../services/theSessionService';
-import { AbcPreview, useSettingMeta } from './abcPreview';
+import { AbcPreview, TuneFacts } from './abcPreview';
 import { PlayDisc, playDiscTitle } from './PassRow';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
 import { getContext } from '../../store';
-import { viterbiPickOf, type Detection, type DetectionAlternate } from '../model';
+import { viterbiPickOf, hasRecognisedSetting, type Detection, type DetectionAlternate } from '../model';
 import { reviewEntryIndex } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { currentPick, provisionalEnd } from '../detectionState';
@@ -265,7 +265,6 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // Makes this card re-render once the cached name index has been read, so the
   // recogniser's lower-case name is replaced by TheSession's own spelling.
   useTuneNames();
-  const mode = useSettingMeta(ann.settingId)?.mode;
   // A rating that moved to another card, after this detection's tune was
   // corrected: the container's own bump happens before that write lands, so
   // the row would otherwise keep offering its four buttons until something
@@ -476,11 +475,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
       </div>
 
       <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
-        {/* The key comes from the recognition index, looked up by setting
-            rather than stored on the detection: every analysis already saved
-            gets it too. Spelled as TheSession does ("Dmajor"), like the key
-            chips of the detection library. */}
-        <span>{ann.dance} · {ann.meter} ·{mode && <> {mode} ·</>}</span>
+        <span><TuneFacts dance={ann.dance} meter={ann.meter} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} /> ·</span>
         {opts.onEditBounds ? (
           <button
             class="inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 font-mono tabular-nums text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer group"

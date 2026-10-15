@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { alternatePickFields, viterbiPickOf, withManualAlternate, manualAlternateRemovalFields } from './model';
+import { alternatePickFields, viterbiPickOf, withManualAlternate, manualAlternateRemovalFields, hasRecognisedSetting } from './model';
 import type { DetectionAlternate, Detection } from './model';
 
 const alt = (tuneId: string, displayName: string): DetectionAlternate => ({
@@ -108,5 +108,30 @@ describe('confirming a detection', () => {
     const legacy = detection({ viterbiPick: undefined as unknown as DetectionAlternate, userConfirmed: true });
     expect(viterbiPickOf(legacy).tuneId).toBe('1');
     expect(alternatePickFields(legacy, null).tuneId).toBe('1');
+  });
+});
+
+describe('hasRecognisedSetting — whether the setting (and so the key) was heard', () => {
+  it('holds for the decoder\'s pick and for a scored alternate picked instead', () => {
+    expect(hasRecognisedSetting(detection())).toBe(true);
+    expect(hasRecognisedSetting(detection({ ...alternatePickFields(detection(), OTHER) }))).toBe(true);
+  });
+
+  it('fails for a detection added by hand', () => {
+    expect(hasRecognisedSetting(detection({ manual: true }))).toBe(false);
+  });
+
+  it('fails for a tune named by hand, which carries TheSession\'s first setting', () => {
+    const named = alt('3', 'The Bucks of Oranmore');
+    expect(hasRecognisedSetting(detection({ ...alternatePickFields(detection(), named) }))).toBe(false);
+  });
+
+  it('fails when the tune was scored but under another setting than the one held', () => {
+    // Named by hand first (its first setting), scored later under another.
+    expect(hasRecognisedSetting(detection({ tuneId: OTHER.tuneId, settingId: 'first-on-thesession' }))).toBe(false);
+  });
+
+  it('holds on a session saved before viterbiPick existed', () => {
+    expect(hasRecognisedSetting(detection({ viterbiPick: undefined as unknown as DetectionAlternate }))).toBe(true);
   });
 });

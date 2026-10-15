@@ -67,6 +67,26 @@ export function useSettingMeta(settingId: string): SettingAbcMeta | null | undef
   return loaded?.settingId === settingId ? loaded.meta : undefined;
 }
 
+/** "reel · 4/4 · Dmajor" — a tune's type, meter and key, wherever a detection
+ *  or a candidate is described. The key comes from the recognition index by
+ *  setting rather than being stored on the detection, so analyses saved before
+ *  it was shown (2026-10-15) get it too; it is left out while the index loads
+ *  and for a setting the index does not hold. Spelled as TheSession does, like
+ *  the key chips of the detection library.
+ *
+ *  `settingId` only when the recogniser matched that setting (see
+ *  model.ts's hasRecognisedSetting): a key is a property of a VERSION, and a
+ *  tune named by hand has none that was heard. Without it: type and meter.
+ *
+ *  A component rather than a bare hook so a list can use it per row. Text
+ *  only: the caller's element carries the styling. */
+export function TuneFacts({ dance, meter, settingId }: { dance: string; meter: string; settingId?: string }) {
+  // Called either way: a hook may not be skipped. '' resolves to nothing.
+  const meta = useSettingMeta(settingId ?? '');
+  const mode = settingId ? meta?.mode : undefined;
+  return <>{dance} · {meter}{mode && <> · {mode}</>}</>;
+}
+
 /** The card's OWN score, opened on the version that was just played.
  *
  *  Preferred over the index-built stand-in whenever it exists, because it is

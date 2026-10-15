@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
-import { AbcPreview } from './abcPreview';
+import { AbcPreview, TuneFacts } from './abcPreview';
 import { ManualTunePick } from './ManualTunePick';
 import { BUCKET_TEXT, tuneName } from './sessionUiShared';
 import { bucketOf } from '../recognition/viterbiSegmenter';
@@ -185,7 +185,7 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rate
                     </span>
                   )}
                 </div>
-                <div class="text-xs text-dim truncate">{opt.dance} · {opt.meter}</div>
+                <div class="text-xs text-dim truncate"><TuneFacts dance={opt.dance} meter={opt.meter} settingId={isManual(opt) ? undefined : opt.settingId} /></div>
               </div>
 
               {/* A hand-picked tune was never scored: the percentage beside it

@@ -5,6 +5,7 @@ import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
 import { BoundEditor, type BoundEdit, type TwinEdit } from './BoundEditor';
 import { TuneLookupField } from './ManualTunePick';
+import { TuneFacts } from './abcPreview';
 import { fmtTime } from './sessionUiShared';
 import { manualDetection } from '../model';
 import type { Detection, DetectionAlternate } from '../model';
@@ -81,7 +82,8 @@ function AddDetectionBody({ seed, anns, duration, getAudio, onDraft, onTune }: {
           {/* Not focused on opening: the first thing to do here is listen. */}
           <TuneLookupField onResolved={pick} autoFocus={false} />
           <p class="text-xs text-muted">
-            {tune ? `${tune.dance} · ${tune.meter} · ` : ''}
+            {/* No key: a tune named here has no setting that was heard. */}
+            {tune && <><TuneFacts dance={tune.dance} meter={tune.meter} /> · </>}
             {t('sessions.bounds.length', { d: fmtTime(draft.end - draft.start) })}
           </p>
         </div>
