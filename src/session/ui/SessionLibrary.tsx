@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, LinkIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
@@ -15,6 +15,7 @@ import { TuneRankingPanel, type TuneViewState } from './TuneRankingPanel';
 import { TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
 import { replaceRoute } from '../../store';
 import { mayHoldAudio } from '../../services/audioSniff';
+import { pickFiles } from '../../services/filePicker';
 import type { AppContext, FilterState, TuneSort } from '../../types';
 import type { Analysis } from '../model';
 
@@ -104,7 +105,6 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
   // Where an import comes from, chosen the same way and kept the same way:
   // for now, not as a preference (see the live source's split button below).
   const [importFrom, setImportFrom] = useState<'file' | 'link'>('file');
-  const fileInputRef = useRef<HTMLInputElement>(null);
   useTuneNames();
 
   // Hidden entirely where getDisplayMedia does not exist (iOS, Android) —
@@ -247,24 +247,6 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
         )}
       />
 
-      {/* No `accept` filter: on iOS Safari it's known to hide some m4a containers
-         depending on provenance (iCloud/Messages/third-party apps) — the card
-         attachment picker (attachmentList.tsx) has never had this filter either. */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        class="hidden"
-        onChange={() => {
-          const input = fileInputRef.current;
-          const file = input?.files?.[0];
-          // Cleared straight away, or picking the SAME file again fires no
-          // change event at all — the value has not changed — and the second
-          // attempt does nothing, with nothing to say why. Which is exactly
-          // what a user does after a first import that did not go their way.
-          if (input) input.value = '';
-          if (file) onImportFile(file, destinationFolder);
-        }}
-      />
       {/* The live button's split shape, on the import (2026-10-15, the user:
          "exactly like mic vs capture"): the main half imports from the source
          its icon shows, the chevron changes it. Offered everywhere, unlike the
@@ -281,7 +263,13 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
                 title={t(importFrom === 'link' ? 'sessions.importLinkHint' : 'sessions.importHint')}
                 onClick={() => {
                   if (importFrom === 'link') onImportLink(destinationFolder);
-                  else fileInputRef.current?.click();
+                  // Back in the folder used last, where the browser can
+                  // (filePicker.ts). No type filter: on iOS Safari one hides
+                  // some m4a depending on where they came from. A fresh picker
+                  // each time, so the same file can be picked again after an
+                  // import that did not go well.
+                  else void pickFiles({ id: 'analysis-import', startIn: 'music' })
+                    .then(([file]) => { if (file) onImportFile(file, destinationFolder); });
                 }}
               >
                 {importFrom === 'link' ? <LinkIcon size={13} /> : <FileAudioIcon size={13} />}

@@ -4,6 +4,7 @@ import type { ComponentChild } from 'preact';
 import type { Attachment } from '../types';
 import { fileToEntry, focusIfDesktop } from '../utils';
 import { attachmentFor } from '../services/attachmentStore';
+import { pickFiles } from '../services/filePicker';
 import { appState } from '../store';
 import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
 import { CustomSelect } from './customSelect';
@@ -27,21 +28,17 @@ import {
 // file comes from is a different question, asked only once the first is
 // settled.
 
-/** The device's own picker, several files at a time — each stored exactly as
- *  it arrives, with fileToEntry deciding its type (see audioSniff). */
-function pickFiles(onAdd: (a: Attachment) => void): void {
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.multiple = true;
-  inp.onchange = async () => {
-    for (const file of Array.from(inp.files ?? [])) {
-      const entry = await fileToEntry(file);
-      // Not `{ type: 'file', ...entry }` any more: above the size threshold the
-      // bytes are kept out of the synced blob, and attachmentFor is the one
-      // place that decides (services/attachmentStore.ts).
-      onAdd(await attachmentFor(entry, appState.value));
-    }
-  };
-  inp.click();
+/** The device's own picker, several files at a time, back in the folder used
+ *  last where the browser can (filePicker.ts) — each stored exactly as it
+ *  arrives, with fileToEntry deciding its type (see audioSniff). */
+async function addFromDevice(onAdd: (a: Attachment) => void): Promise<void> {
+  for (const file of await pickFiles({ id: 'attachments', multiple: true })) {
+    const entry = await fileToEntry(file);
+    // Not `{ type: 'file', ...entry }` any more: above the size threshold the
+    // bytes are kept out of the synced blob, and attachmentFor is the one
+    // place that decides (services/attachmentStore.ts).
+    onAdd(await attachmentFor(entry, appState.value));
+  }
 }
 
 /** One source, named and nothing more: "from the device" and "from the
@@ -76,7 +73,7 @@ export function showAddFileModal(onAdd: (a: Attachment) => void): void {
       <SourceRow
         icon={<FileIcon size={18} />}
         label={t('fileViewer.source.device')}
-        onClick={() => { leave(); pickFiles(onAdd); }}
+        onClick={() => { leave(); void addFromDevice(onAdd); }}
       />
       <SourceRow
         icon={<ClipboardIcon size={18} />}
