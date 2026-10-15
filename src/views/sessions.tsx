@@ -27,7 +27,8 @@ import { GearIcon } from '../components/icons';
 
 
 function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; sessionId: string; annotationId?: string }) {
-  const [session, setSession] = useState<Analysis | null>(null);
+  // `missing` once the lookup came back empty, as distinct from still loading.
+  const [session, setSession] = useState<Analysis | 'missing' | null>(null);
 
   // Keyed on sessionId alone (not e.g. a generation counter) is deliberate:
   // re-analyzing an existing session can navigate here again with the SAME
@@ -38,15 +39,19 @@ function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; 
     let cancelled = false;
     setSession(null);
     void loadSessionMeta(sessionId).then(s => {
-      if (cancelled) return;
-      if (!s) { ctx.navigate({ view: 'sessions' }); return; }
-      setSession(s);
+      if (!cancelled) setSession(s ?? 'missing');
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line
   }, [sessionId]);
 
   if (!session) return null;
+  // Said on the spot, as a deleted card is — never a redirect. Back lands
+  // here after a deletion, and a navigate() from this point pushed a fresh
+  // library entry on top of it: each back landed on the deleted analysis,
+  // which pushed the library again, and nothing before it could be reached
+  // any more (reported 2026-10-15).
+  if (session === 'missing') return <p class="text-sm text-dim">{t('sessions.notFound')}</p>;
 
   return (
     <SessionSummary

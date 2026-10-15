@@ -296,6 +296,10 @@ export interface User {
    *  Someone who edits ABC by hand all day sets it once instead of pressing
    *  the same tab on every score. */
   abcOpenMode?: AbcOpenMode;
+  /** Tapping a note while nothing plays sounds it — on the score and in the
+   *  ABC text alike. Absent = on; turning it off is written as an explicit
+   *  `false`. */
+  abcTapPlaysNote?: boolean;
 
   // Score engraving — how ABC READS. Measured on 2026-09-21: with no
   // `staffwidth` abcjs lays every score out at its own default of 740 units
