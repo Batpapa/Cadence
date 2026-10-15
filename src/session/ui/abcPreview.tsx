@@ -42,6 +42,31 @@ function showAbcPreview(displayName: string, settingId: string, meta: SettingAbc
 }
 
 
+/** A setting's entry in the recognition index: undefined while the index is
+ *  loading, null when the setting is not in it.
+ *
+ *  Feeds re-render on every recognition event, so the entry is read
+ *  synchronously once the map is loaded and nothing flashes. And it is read on
+ *  EVERY render rather than kept in state, which is what AbcPreview did until
+ *  2026-10-15: a detection's setting changes under the same component when
+ *  another tune is picked for it, and the state still held the first one's —
+ *  its score included. */
+export function useSettingMeta(settingId: string): SettingAbcMeta | null | undefined {
+  const sync = getSettingAbcMetaSync(settingId);
+  // Only for the wait: what the load returned, tagged with the setting it was
+  // for, so an answer that lands after the setting changed is not shown.
+  const [loaded, setLoaded] = useState<{ settingId: string; meta: SettingAbcMeta | null } | null>(null);
+  const pending = sync === undefined;
+  useEffect(() => {
+    if (!pending) return;
+    let cancelled = false;
+    void getSettingAbcMeta(settingId).then(meta => { if (!cancelled) setLoaded({ settingId, meta }); });
+    return () => { cancelled = true; };
+  }, [settingId, pending]);
+  if (!pending) return sync;
+  return loaded?.settingId === settingId ? loaded.meta : undefined;
+}
+
 /** The card's OWN score, opened on the version that was just played.
  *
  *  Preferred over the index-built stand-in whenever it exists, because it is
@@ -116,19 +141,7 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx }: {
   cardId?: string;
   ctx?: AppContext;
 }) {
-  // Feeds re-render on every recognition event: draw the final state
-  // synchronously once the map is loaded, so the button never flashes —
-  // same reasoning the old imperative version had for checking the sync
-  // getter first and only falling back to the async one.
-  const [meta, setMeta] = useState<SettingAbcMeta | null | undefined>(() => getSettingAbcMetaSync(settingId));
-
-  useEffect(() => {
-    if (meta !== undefined) return; // already resolved synchronously above
-    let cancelled = false;
-    void getSettingAbcMeta(settingId).then(m => { if (!cancelled) setMeta(m); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line
-  }, [settingId]);
+  const meta = useSettingMeta(settingId);
 
   const base = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
   // The glyph's visual mass sits right of its geometric centre — nudge left.
