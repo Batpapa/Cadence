@@ -156,6 +156,9 @@
   /* What a long press opens a menu on (longPress.ts): no word selected, no
      link preview, competing with it. */
   html.ios [data-long-press] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  /* A press held a moment on a button selected its label, with the magnifier
+     and the blue handles (iOS simulator, 2026-10-15): a control is not text. */
+  html.ios button, html.ios [role="button"] { -webkit-user-select: none; user-select: none; }
   /* Installed on an iPhone, the status bar is see-through with WHITE text
      (black-translucent, index.html): unreadable over a light header. A dark
      band the status bar's height goes under it, on every screen, above
@@ -164,6 +167,12 @@
     content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--safe-top);
     background: #141414; z-index: 2147483647; pointer-events: none;
   }
+  /* Installed, with that see-through status bar, WebKit's 100dvh wanders
+     between the full screen (852 on an iPhone 16) and the screen minus the
+     status bar (793 = svh): a white strip as tall as the status bar was seen
+     at the bottom (iOS 18.6 and 26.5 simulators, 2026-10-15). No browser bars
+     come and go in an installed app: the large viewport is the screen. */
+  html.ios.standalone #app { height: calc(100lvh / var(--zoom-factor, 1)); }
   /* Prevent double-tap zoom on interactive elements (major cause of keyboard flicker on Android) */
   button, input, select, textarea, a, label, [role="button"] { touch-action: manipulation; }
   input[type=number]::-webkit-inner-spin-button,
