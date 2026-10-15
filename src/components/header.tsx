@@ -79,8 +79,12 @@ function SyncBtn({ status }: { status: DriveStatus }) {
  *  rendered when it can actually do something — a live `beforeinstallprompt`
  *  (Chrome/Edge/Android), or iOS where the prompt does not exist and the
  *  Share-sheet steps have to be spelled out. Self-erasing: once installed the
- *  app runs standalone and the button is gone. */
-function InstallBtn() {
+ *  app runs standalone and the button is gone.
+ *
+ *  Icon-only on a portrait phone, like the pills after it: at 100 % zoom (an
+ *  iPhone before iOS 26.4, zoomService) the label ran under the centred
+ *  profile chip — seen in the iOS 18.6 simulator, 2026-10-15. */
+function InstallBtn({ compact }: { compact: boolean }) {
   const canPrompt = canInstallSignal.value;
   const ios = isIOS();
   if (isStandalone() || (!canPrompt && !ios && !isMacSafariInstallable())) return null;
@@ -100,7 +104,7 @@ function InstallBtn() {
       onClick={onClick}
     >
       <InstallIcon size={14} />
-      <span class="text-xs font-medium">{t('sidebar.install')}</span>
+      {!compact && <span class="text-xs font-medium">{t('sidebar.install')}</span>}
     </button>
   );
 }
@@ -303,7 +307,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
         <HeaderBtn title={t('shareApp.title')} onClick={showShareAppModal}>
           <ShareIcon size={14} />
         </HeaderBtn>
-        <InstallBtn />
+        <InstallBtn compact={isPortraitPhone} />
         <UpdateBtn compact={isPortraitPhone} />
       </div>
 

@@ -599,7 +599,9 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                   </span>
                   <span class="text-sm text-primary flex-1 truncate">{sub.name}</span>
-                  <span class="text-xs text-dim shrink-0">{t('folder.meta', { folders: sub.folderIds.length, decks: sub.deckIds.length })}</span>
+                  <span class="text-xs text-dim shrink-0">{t(sub.folderIds.length === 1 ? 'folder.meta.folders' : 'folder.meta.foldersPlural', { count: sub.folderIds.length })}
+                    {' · '}
+                    {t(sub.deckIds.length === 1 ? 'folder.meta.decks' : 'folder.meta.decksPlural', { count: sub.deckIds.length })}</span>
                 </div>
               );
             })}
@@ -660,7 +662,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   <span class="text-xs font-mono text-dim shrink-0">
                     {lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}
                   </span>
-                  <span class="text-xs text-dim shrink-0">{t('folder.deckMeta', { count: deck.entries.length })}</span>
+                  <span class="text-xs text-dim shrink-0">{t(deck.entries.length === 1 ? 'folder.deckMeta' : 'folder.deckMetaPlural', { count: deck.entries.length })}</span>
                 </div>
               );
             })}
