@@ -84,12 +84,12 @@ export interface TimingEvent {
   endCharArray?: number[];
 }
 
-const isNote = (ev: TimingEvent): ev is TimingEvent & { startCharArray: number[]; endCharArray: number[] } =>
+export const isNote = (ev: TimingEvent): ev is TimingEvent & { startCharArray: number[]; endCharArray: number[] } =>
   ev.type === 'event' && Array.isArray(ev.startCharArray) && ev.startCharArray.length > 0
   && Array.isArray(ev.endCharArray);
 
 /** Whether a note event has a character in [from, to). */
-function touches(ev: TimingEvent, from: number, to: number): boolean {
+export function touches(ev: TimingEvent, from: number, to: number): boolean {
   if (!isNote(ev)) return false;
   return ev.startCharArray.some((start, i) => start < to && (ev.endCharArray[i] ?? start + 1) > from);
 }

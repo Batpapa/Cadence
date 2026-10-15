@@ -698,13 +698,14 @@ export function abcPaperSetting(user: { abcPaper?: AbcPaper }): string {
  *
  *  The cursor is not one colour for all three: the rose the viewer has always
  *  used reads well on white and on sepia, and washes out against the dark
- *  surface, where a lighter tint of the same hue carries better. The bookmark
- *  is blue for the opposite reason — it sits on the staff while the cursor
- *  runs past it, and the two must never be mistaken for one another. */
-export const ABC_PAPERS: Record<AbcPaper, { paper: string; ink: string; cursor: string; bookmark: string }> = {
-  dark:  { paper: '#141414', ink: '#e8e8e8', cursor: '#fb7185', bookmark: '#60a5fa' },
-  sepia: { paper: '#f6efe2', ink: '#2b2418', cursor: '#be123c', bookmark: '#1d4ed8' },
-  white: { paper: '#ffffff', ink: '#111111', cursor: '#e11d48', bookmark: '#2563eb' },
+ *  surface, where a lighter tint of the same hue carries better. The passage's
+ *  bounds are green (its start) and blue (its end) for the opposite reason —
+ *  they sit on the staff while the cursor runs past them, and must never be
+ *  mistaken for it (the user's colours, 2026-10-15). */
+export const ABC_PAPERS: Record<AbcPaper, { paper: string; ink: string; cursor: string; boundIn: string; boundOut: string }> = {
+  dark:  { paper: '#141414', ink: '#e8e8e8', cursor: '#fb7185', boundIn: '#4ade80', boundOut: '#60a5fa' },
+  sepia: { paper: '#f6efe2', ink: '#2b2418', cursor: '#be123c', boundIn: '#15803d', boundOut: '#1d4ed8' },
+  white: { paper: '#ffffff', ink: '#111111', cursor: '#e11d48', boundIn: '#16a34a', boundOut: '#2563eb' },
 };
 
 export function addTunesetAbcOnConvert(user: { addTunesetAbcOnConvert?: boolean }): boolean {

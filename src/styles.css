@@ -581,18 +581,26 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 .abcjs-cursor { stroke: var(--abc-cursor, #e11d48); stroke-width: 2px; }
 .abcjs-highlight { fill: var(--abc-cursor, #e11d48) !important; }
 
-/* The bookmark (fileViewer's drawBookmark): a dashed pole in the paper's own
-   bookmark colour, so it never reads as the solid cursor passing it. Only the
-   flag at the top answers a click — see drawBookmark for why the pole must
-   not. */
-.abc-bookmark line {
-  stroke: var(--abc-bookmark, #2563eb);
+/* The passage's bounds on the stave (fileViewer's drawBoundFlags): a dashed
+   pole in the paper's own colour for each — green for the start, blue for the
+   end — so neither reads as the solid cursor passing it. Only the pennant at
+   the top answers a click — see boundFlag for why the pole must not. */
+.abc-bound line {
   stroke-width: 1.5px;
   stroke-dasharray: 3 2;
   pointer-events: none;
 }
-.abc-bookmark polygon { fill: var(--abc-bookmark, #2563eb); pointer-events: none; }
-.abc-bookmark .abc-bookmark-hit { fill: transparent; pointer-events: all; cursor: pointer; }
+.abc-bound-in line { stroke: var(--abc-in, #16a34a); }
+.abc-bound-out line { stroke: var(--abc-out, #2563eb); }
+.abc-bound polygon { pointer-events: none; }
+.abc-bound-in polygon { fill: var(--abc-in, #16a34a); }
+.abc-bound-out polygon { fill: var(--abc-out, #2563eb); }
+.abc-bound .abc-bound-hit { fill: transparent; pointer-events: all; cursor: pointer; }
+/* The two buttons that set them, in the same colours. Off the paper, on the
+   dialog: mid tones, readable on the light theme and on the dark. */
+.abc-bound-btn-in { color: #22c55e; }
+.abc-bound-btn-out { color: #3b82f6; }
+.abc-bound-btn-in:hover, .abc-bound-btn-out:hover { background-color: rgb(var(--color-accent-ch) / 0.1); }
 
 /* ── The score viewer's own controls ───────────────────────────────────────
    An icon button in the viewer's toolbar row. 36 layout px, which the app's
@@ -649,16 +657,38 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
    the same answer. A shadow, not a border: a border would move the text, and
    the layer must keep every character exactly under the box's. */
 .abc-text-start { box-shadow: -2px 0 0 0 var(--abc-cursor, #e11d48); }
-/* The passage a selection plays. */
-.abc-text-range { background-color: rgb(var(--color-accent-ch) / 0.14); }
+/* The passage: a [ before its first note, a ] after its last, in the
+   colours of the stave's flags (the user, 2026-10-15). Drawn by pseudo-
+   elements taken out of the flow, so that not a character of the layer moves
+   from under the box's; a little taller than the line, to read as brackets.
+   The upright stands right against the note, outside it, where the plain
+   bars were. The cursor's bar wins where both are on one note (the user,
+   2026-10-15): the bracket is painted above the bar's shadow, so its upright
+   is made see-through there, and the red shows where it stood. */
+.abc-text-in, .abc-text-out { position: relative; }
+.abc-text-in::before, .abc-text-out::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  box-sizing: border-box;
+  width: 4px;
+  border-style: solid;
+  border-width: 1.5px;
+  pointer-events: none;
+}
+.abc-text-in::before { left: -1.5px; border-color: var(--abc-in, #22c55e); border-right-width: 0; }
+.abc-text-start.abc-text-in::before { border-left-color: transparent; }
+.abc-text-out::after { right: -1.5px; border-color: var(--abc-out, #3b82f6); border-left-width: 0; }
 
-/* The note being played, in the ABC source face's highlight layer
-   (fileViewer.ts, 2026-10-15). The layer's text is transparent and stays so:
-   the box over it draws the letters, this only the colour behind them. */
+/* The note being played, in the ABC source face's layer (fileViewer.ts,
+   2026-10-15). Not tinted any more: the cursor's bar moves onto it instead,
+   as the stave's cursor does (the user, 2026-10-15). Still a <mark>, which the
+   layer scrolls into view — so the browser's own yellow is taken off, and the
+   layer's text stays transparent, the box over it drawing the letters. */
 .abc-text-playing {
   color: transparent;
-  background-color: rgb(var(--color-accent-ch) / 0.35);
-  border-radius: 2px;
+  background-color: transparent;
 }
 
 /* The full-page toggle in the score's top right corner — in the dialog and in
