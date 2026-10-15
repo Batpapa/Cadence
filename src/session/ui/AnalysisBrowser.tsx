@@ -11,9 +11,9 @@ import type { Analysis } from '../model';
 import { deleteSession } from '../db';
 import { showBatchProgress, type BatchStep } from './batchRunner';
 import {
-  applyDrop, childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
-  editSessionTree, folderChain, folderOrder, isFolderDescendant, moveFolder, parentFolderOf,
-  placeSession, renameFolder, rootOrder, sessionTreeOf, type TreeItem,
+  childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
+  editSessionTree, folderChain, folderOrder, isFolderDescendant, levelItems, moveFolder, parentFolderOf,
+  placeSession, renameFolder, sessionTreeOf, type TreeItem,
 } from '../sessionTree';
 
 // ── Browsing the analyses, one folder at a time ──────────────────────────────
@@ -60,36 +60,32 @@ function ParentGlyph() {
 }
 
 // ── Drag & drop ──────────────────────────────────────────────────────────────
-// Both kinds move. An ANALYSIS is dropped into a sub-folder or sent up a level,
-// and that is all: since 2026-10-11 a level lists its analyses in the
-// library's order (sessionTree.ts), so there is no place among them to drop
-// one at. A FOLDER is also reordered among its peers. Which zones a card
-// offers therefore depends on what is being carried, not only on what is
-// underneath:
+// Both kinds move, and only ever INTO something: a sub-folder, or the ".."
+// card, meaning "up one level". A level is sorted by date, folders and
+// analyses together (sessionTree.ts's levelItems), so there is no place among
+// them to drop anything at. Folders could still be reordered by hand among
+// their peers until 2026-10-15; they sort by their most recent analysis now.
 //
 //   over an analysis   · refused, whatever is carried
-//   over a folder      · carrying an analysis → into
-//                      · carrying a folder    → before / into / after, the
-//                        sidebar's three zones
-//   over the ".." card · either               → into, meaning "up one level"
+//   over a folder      · into
+//   over the ".." card · into, meaning "up one level"
 //
 // Plain module variables and direct classList work, not state: dragover fires
 // many times a second and all it ever does is move one outline. Same mechanism
-// and same CSS classes as components/sidebar.tsx (.drop-before / .drop-after /
-// .drop-into in styles.css).
+// and same CSS class as components/sidebar.tsx (.drop-into in styles.css).
 
 let dragItem: TreeItem | null = null;
 let indicatorEl: HTMLElement | null = null;
 
 function clearIndicator(): void {
-  indicatorEl?.classList.remove('drop-before', 'drop-after', 'drop-into');
+  indicatorEl?.classList.remove('drop-into');
   indicatorEl = null;
 }
 
-function setIndicator(el: HTMLElement, zone: 'before' | 'after' | 'into'): void {
-  if (indicatorEl === el && el.classList.contains(`drop-${zone}`)) return;
+function setIndicator(el: HTMLElement): void {
+  if (indicatorEl === el) return;
   clearIndicator();
-  el.classList.add(`drop-${zone}`);
+  el.classList.add('drop-into');
   indicatorEl = el;
 }
 
@@ -103,8 +99,7 @@ type DropTarget =
   | { kind: 'folder'; id: string }
   | { kind: 'up'; id: string | null };
 
-type DropZone = 'before' | 'after' | 'into';
-type Drop = (drag: TreeItem, target: DropTarget, zone: DropZone) => void;
+type Drop = (drag: TreeItem, target: DropTarget) => void;
 
 function useCardDrag(ref: RefObject<HTMLElement>, opts: {
   dragItem?: TreeItem;
@@ -129,18 +124,6 @@ function useCardDrag(ref: RefObject<HTMLElement>, opts: {
     const el = ref.current;
     if (!el) return;
 
-    const zoneOf = (e: DragEvent, drag: TreeItem): DropZone => {
-      const here = targetRef.current;
-      if (here.kind === 'up') return 'into';
-      if (here.kind === 'folder' && drag.type === 'session') return 'into';
-      const rect = el.getBoundingClientRect();
-      const rel = (e.clientY - rect.top) / rect.height;
-      if (here.kind === 'session') return rel < 0.5 ? 'before' : 'after';
-      if (rel < 0.33) return 'before';
-      if (rel > 0.67) return 'after';
-      return 'into';
-    };
-
     const onDragStart = (e: DragEvent) => {
       if (!mine) return;
       dragItem = mine;
@@ -158,7 +141,7 @@ function useCardDrag(ref: RefObject<HTMLElement>, opts: {
       if (!dragItem || !acceptsRef.current(dragItem)) return;
       e.preventDefault();
       e.stopPropagation();
-      setIndicator(el, zoneOf(e, dragItem));
+      setIndicator(el);
     };
     const onDragLeave = (e: DragEvent) => {
       if (!el.contains(e.relatedTarget as Node)) clearIndicator();
@@ -168,11 +151,10 @@ function useCardDrag(ref: RefObject<HTMLElement>, opts: {
       e.preventDefault();
       e.stopPropagation();
       const moved = dragItem;
-      const zone = zoneOf(e, moved);
       clearIndicator();
       dragItem = null;
       if (!acceptsRef.current(moved)) return;
-      dropRef.current(moved, targetRef.current, zone);
+      dropRef.current(moved, targetRef.current);
     };
 
     if (mine) {
@@ -262,23 +244,18 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
   const current = here === null ? null : tree.folders[here] ?? null;
   const parentId = here === null ? null : parentFolderOf(tree, { type: 'folder', id: here });
 
-  const subFolders = childFolderIds(tree, here).map(id => tree.folders[id]!);
-  const analysisIds = here === null ? rootOrder(tree, allIds) : folderOrder(tree, here, allIds);
-  const analyses = analysisIds.map(id => byId.get(id)).filter((s): s is Analysis => !!s);
+  const items = levelItems(tree, here, sessions);
 
-  /** Moving something INTO a folder, wherever that folder came from. */
+  /** Moving something INTO a folder, wherever that folder came from. The
+   *  model carries the cycle guard too (moveFolder). */
   const moveInto = (drag: TreeItem, into: string | null) => edit(tr => {
     if (drag.type === 'folder') moveFolder(tr, drag.id, into);
     else placeSession(tr, drag.id, into);
   });
 
-  const onDrop: Drop = (drag, target, zone) => {
-    if (target.kind === 'up') { moveInto(drag, target.id); return; }
-    if (target.kind !== 'folder') return; // an analysis takes no drop
-    if (zone === 'into') { moveInto(drag, target.id); return; }
-    // A folder reordered among its peers. `applyDrop` carries the cycle guard
-    // for a folder dropped beside its own descendant.
-    edit(tr => applyDrop(tr, drag, { type: 'folder', id: target.id }, zone));
+  const onDrop: Drop = (drag, target) => {
+    if (target.kind === 'session') return; // an analysis takes no drop
+    moveInto(drag, target.id);
   };
 
   /** A folder cannot land in itself, nor anywhere below itself — the model
@@ -447,29 +424,34 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
           />
         )}
 
-        {subFolders.length === 0 && analyses.length === 0 ? (
+        {items.length === 0 ? (
           <p class="text-xs text-dim text-center py-4">
             {here === null ? t('sessions.empty') : t('sessions.folder.empty')}
           </p>
         ) : (
-          <>
-            {/* Folders first, then analyses — the order every file explorer
-                uses, and the one that keeps a long list of evenings from
-                burying the way further down. */}
-            {subFolders.map(folder => (
-              <Card
-                key={folder.id}
-                icon={<FolderGlyph />}
-                name={folder.name}
-                detail={folderDetail(childFolderIds(tree, folder.id).length, folderOrder(tree, folder.id, allIds).length)}
-                onOpen={() => onOpenFolder(folder.id)}
-                dragItem={{ type: 'folder', id: folder.id }}
-                target={{ kind: 'folder', id: folder.id }}
-                accepts={folderAccepts(folder.id)}
-                onDrop={onDrop}
-              />
-            ))}
-            {analyses.map(session => (
+          // Folders and analyses MIXED, by date (2026-10-15, the user's rule):
+          // a folder sits where its most recent analysis would — not above
+          // everything, as in a file explorer, which buried this week's
+          // recording under every folder ever made. See levelItems.
+          items.map(item => {
+            if (item.type === 'folder') {
+              const folder = tree.folders[item.id]!;
+              return (
+                <Card
+                  key={folder.id}
+                  icon={<FolderGlyph />}
+                  name={folder.name}
+                  detail={folderDetail(childFolderIds(tree, folder.id).length, folderOrder(tree, folder.id, allIds).length)}
+                  onOpen={() => onOpenFolder(folder.id)}
+                  dragItem={{ type: 'folder', id: folder.id }}
+                  target={{ kind: 'folder', id: folder.id }}
+                  accepts={folderAccepts(folder.id)}
+                  onDrop={onDrop}
+                />
+              );
+            }
+            const session = byId.get(item.id)!;
+            return (
               <Card
                 key={session.id}
                 icon={SOURCE_BADGE[session.source].icon}
@@ -482,8 +464,8 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                 accepts={sessionAccepts}
                 onDrop={onDrop}
               />
-            ))}
-          </>
+            );
+          })
         )}
       </div>
     </>

@@ -5,7 +5,7 @@ import {
   type Analysis, type SyncedAudio, type TuneAnalyserModuleData, type WindowResult,
 } from './model';
 import { generatedSessionName } from './sessionNaming';
-import { editSessionTree, forgetSession } from './sessionTree';
+import { compareByDateThenName, editSessionTree, forgetSession } from './sessionTree';
 import { strippedReviewIds } from '../services/reviewEntries';
 import { isAnalysisReviewId } from './reviewLink';
 import { onNetworkChange, onUnmeteredNetwork } from './network';
@@ -545,12 +545,11 @@ export async function listSessions(): Promise<Analysis[]> {
  *  is what a library of thirty recordings needs.
  *
  *  Exported for its test — it is the one piece of listSessions that has a rule
- *  worth stating, and the rest of that function needs a store to run at all. */
+ *  worth stating, and the rest of that function needs a store to run at all.
+ *  The rule itself lives in sessionTree.ts since 2026-10-15, because folders
+ *  sort by it too, mixed with the analyses. */
 export function compareSessionsForLibrary(a: Analysis, b: Analysis): number {
-  if (a.date && b.date) return b.date.localeCompare(a.date);
-  if (a.date) return -1;
-  if (b.date) return 1;
-  return (a.name || '').localeCompare(b.name || '');
+  return compareByDateThenName(a, b);
 }
 
 /** In-progress recording drafts (status:'recording') — used exclusively by

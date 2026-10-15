@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { AppState } from '../types';
 import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from './model';
 import {
-  allFolderIds, applyDrop, childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
-  editSessionTree, emptyTree, folderChain, folderOrder, folderPathOf, forgetSession,
-  isFolderDescendant, moveFolder, parentFolderOf, placeSession, renameFolder, rootOrder,
+  allFolderIds, childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
+  editSessionTree, emptyTree, folderChain, folderDate, folderOrder, folderPathOf, forgetSession,
+  isFolderDescendant, levelItems, moveFolder, parentFolderOf, placeSession, renameFolder, rootOrder,
   sessionTreeOf, type SessionTree,
 } from './sessionTree';
 
@@ -210,68 +210,72 @@ describe('placeSession', () => {
   });
 });
 
-describe('applyDrop', () => {
-  const all = ['s1', 's2', 's3'];
+describe('a level\'s order — folders and analyses together, by date', () => {
+  const s = (id: string, date: string | null, name = id) => ({ id, date, name });
+  const ids = (t: SessionTree, folderId: string | null, sessions: ReturnType<typeof s>[]) =>
+    levelItems(t, folderId, sessions).map(i => i.id);
 
-  it('drops an analysis INTO a folder', () => {
-    const t = tree();
-    applyDrop(t, { type: 'session', id: 's1' }, { type: 'folder', id: 'f1' }, 'into');
-    expect(folderOrder(t, 'f1', all)).toEqual(['s1']);
-    expect(rootOrder(t, all)).toEqual(['s2', 's3']);
-  });
-
-  it('gives an analysis no position: before or after anything changes nothing', () => {
-    const t = tree();
-    placeSession(t, 's1', 'f1');
-    const before = JSON.stringify(t);
-    applyDrop(t, { type: 'session', id: 's2' }, { type: 'session', id: 's1' }, 'before');
-    applyDrop(t, { type: 'session', id: 's2' }, { type: 'folder', id: 'f2' }, 'after');
-    expect(JSON.stringify(t)).toBe(before);
-  });
-
-  it('drops a folder INTO a folder', () => {
-    const t = emptyTree();
-    createFolder(t, 'f1', 'A', null);
-    createFolder(t, 'f2', 'B', null);
-    applyDrop(t, { type: 'folder', id: 'f2' }, { type: 'folder', id: 'f1' }, 'into');
-    expect(childFolderIds(t, 'f1')).toEqual(['f2']);
-  });
-
-  it('reorders folders among their peers', () => {
-    const t = emptyTree();
-    for (const [id, name] of [['f1', 'A'], ['f2', 'B'], ['f3', 'C']]) createFolder(t, id!, name!, null);
-    applyDrop(t, { type: 'folder', id: 'f3' }, { type: 'folder', id: 'f1' }, 'before');
-    expect(childFolderIds(t, null)).toEqual(['f3', 'f1', 'f2']);
-    applyDrop(t, { type: 'folder', id: 'f3' }, { type: 'folder', id: 'f2' }, 'after');
-    expect(childFolderIds(t, null)).toEqual(['f1', 'f2', 'f3']);
-  });
-
-  it('reorders inside a folder, and moves a folder to its target\'s level', () => {
+  it('dates a folder by its most recent analysis, sub-folders included', () => {
     const t = tree(); // f2 inside f1
-    createFolder(t, 'f3', 'C', null);
-    applyDrop(t, { type: 'folder', id: 'f3' }, { type: 'folder', id: 'f2' }, 'before');
-    expect(childFolderIds(t, 'f1')).toEqual(['f3', 'f2']);
-    expect(childFolderIds(t, null)).toEqual(['f1']);
+    placeSession(t, 'old', 'f1');
+    placeSession(t, 'new', 'f2');
+    const dates: Record<string, string> = { old: '2026-01-01T20:00:00.000Z', new: '2026-09-01T20:00:00.000Z' };
+    expect(folderDate(t, 'f1', id => dates[id])).toBe('2026-09-01T20:00:00.000Z');
+    expect(folderDate(t, 'f2', id => dates[id])).toBe('2026-09-01T20:00:00.000Z');
   });
 
-  it('refuses a folder into, or beside, its own descendant', () => {
+  it('leaves a folder undated when it is empty, or holds nothing dated', () => {
     const t = tree();
-    applyDrop(t, { type: 'folder', id: 'f1' }, { type: 'folder', id: 'f2' }, 'into');
-    applyDrop(t, { type: 'folder', id: 'f1' }, { type: 'folder', id: 'f2' }, 'before');
-    expect(childFolderIds(t, null)).toEqual(['f1']);
-    expect(childFolderIds(t, 'f1')).toEqual(['f2']);
+    expect(folderDate(t, 'f1', () => null)).toBeNull();
+    placeSession(t, 'u', 'f2');
+    expect(folderDate(t, 'f1', () => null)).toBeNull();
   });
 
-  it('ignores a drop on itself', () => {
-    const t = tree();
-    applyDrop(t, { type: 'folder', id: 'f1' }, { type: 'folder', id: 'f1' }, 'before');
-    expect(childFolderIds(t, null)).toEqual(['f1']);
+  it('mixes folders among the analyses, most recent first', () => {
+    const t = emptyTree();
+    createFolder(t, 'f1', 'Été', null);
+    placeSession(t, 'in', 'f1');
+    const sessions = [
+      s('newest', '2026-10-01T20:00:00.000Z'),
+      s('in', '2026-08-01T20:00:00.000Z'),
+      s('oldest', '2026-05-01T20:00:00.000Z'),
+    ];
+    expect(ids(t, null, sessions)).toEqual(['newest', 'f1', 'oldest']);
   });
 
-  it('does not resurrect a folder that no longer exists', () => {
+  it('puts the undated last — folders and analyses alike — alphabetically', () => {
+    const t = emptyTree();
+    createFolder(t, 'fE', 'Empty', null);
+    createFolder(t, 'fB', 'Bag', null);
+    placeSession(t, 'u2', 'fB'); // holds only an undated analysis
+    const sessions = [
+      s('zebra', null, 'Zebra'),
+      s('dated', '2026-09-01T20:00:00.000Z', 'Dated'),
+      s('apple', null, 'Apple'),
+      s('u2', null, 'Inside'),
+    ];
+    expect(ids(t, null, sessions)).toEqual(['dated', 'apple', 'fB', 'fE', 'zebra']);
+  });
+
+  it('sorts inside a folder by the same rule', () => {
+    const t = tree(); // f2 inside f1
+    placeSession(t, 'a', 'f1');
+    placeSession(t, 'b', 'f2');
+    const sessions = [s('a', '2026-01-01T20:00:00.000Z'), s('b', '2026-03-01T20:00:00.000Z')];
+    expect(ids(t, 'f1', sessions)).toEqual(['f2', 'a']);
+  });
+
+  it('ignores an id that no longer exists — it neither shows nor dates a folder', () => {
     const t = tree();
-    applyDrop(t, { type: 'folder', id: 'ghost' }, { type: 'folder', id: 'f1' }, 'before');
-    expect(t.rootFolderIds).toEqual(['f1']);
+    placeSession(t, 'gone', 'f1');
+    expect(ids(t, 'f1', [])).toEqual(['f2']);
+    expect(ids(t, null, [s('x', '2026-01-01T20:00:00.000Z')])).toEqual(['x', 'f1']);
+  });
+
+  it('survives a cycle left by a merge', () => {
+    const t = tree();
+    t.folders['f2']!.folderIds.push('f1');
+    expect(folderDate(t, 'f1', () => null)).toBeNull();
   });
 });
 

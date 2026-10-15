@@ -386,6 +386,21 @@ export function viterbiPickOf(ann: Detection): DetectionAlternate {
   };
 }
 
+/** Whether the detection's setting is one the recogniser actually matched —
+ *  the only case where it names the VERSION that was played. A tune named by
+ *  hand (an added detection, a manual alternate) carries TheSession's first
+ *  setting for want of one, which says nothing about what was heard: anything
+ *  read off the setting, its key above all, must not be shown for it
+ *  (2026-10-15, the user's rule).
+ *
+ *  Matched on tune AND setting: a tune named by hand before the recogniser
+ *  came to score it keeps the hand-picked setting, not the scored one. */
+export function hasRecognisedSetting(ann: Detection): boolean {
+  if (ann.manual) return false;
+  return [viterbiPickOf(ann), ...(ann.alternates ?? [])]
+    .some(o => o.tuneId === ann.tuneId && o.settingId === ann.settingId);
+}
+
 /** What choosing an identity writes onto a detection.
  *
  *  A tune — ANY of them, the algorithm's own current pick included — means the

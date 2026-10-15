@@ -6,7 +6,7 @@ import { t } from '../../services/i18nService';
 import { showModal, closeModal, askUnsavedChanges } from '../../components/modal';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { ResetIcon } from '../../components/icons';
-import type { Detection } from '../model';
+import { hasRecognisedSetting, type Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
   snapMarks, findSnap, findTwin, clampLinked, missingRanges,
@@ -17,6 +17,7 @@ import {
   type PeakBuffer, type WaveRead,
 } from '../audio/localWaveform';
 import { useMediaVolume } from '../../components/useMediaVolume';
+import { TuneFacts } from './abcPreview';
 
 // ── Bound editor ─────────────────────────────────────────────────────────────
 // Replaced the two ±5 s steppers that used to sit on every detection card
@@ -824,7 +825,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
         <div>
           <p class="text-sm font-semibold text-primary capitalize truncate">{ann.displayName}</p>
           <p class="text-xs text-muted">
-            {ann.dance} · {ann.meter} · {t('sessions.bounds.length', { d: fmtShort(draft.end - draft.start) })}
+            <TuneFacts dance={ann.dance} meter={ann.meter} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} /> · {t('sessions.bounds.length', { d: fmtShort(draft.end - draft.start) })}
           </p>
         </div>
       )}

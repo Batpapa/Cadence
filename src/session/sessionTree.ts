@@ -3,14 +3,14 @@ import { TUNE_ANALYSER_MODULE_KEY, type SessionFolder, type TuneAnalyserModuleDa
 
 // ── Folders over the analyses library ────────────────────────────────────────
 // Same shape as the decks' own folder tree (types.ts's Folder, services/
-// deckService.ts): a parent holds ORDERED lists of its children. For FOLDERS
-// the order is the user's, arranged by hand. For ANALYSES it is not, since
-// 2026-10-11: a level shows its analyses in the library's own order (most
-// recent first, then the undated ones by name), and the lists only say WHICH
-// analyses a level holds. Their stored order is ignored — appending is all
-// any writer does. Decided after an analysis imported into a folder kept most
-// recent first landed at its bottom, and inserting it "at its date" turned out
-// to have no right answer in a folder arranged the other way by hand.
+// deckService.ts): a parent holds lists of its children. Those lists only say
+// WHICH things a level holds, never in what order: a level is sorted, folders
+// and analyses together, by date (`levelItems`). Analyses stopped being
+// ordered by hand on 2026-10-11, after one imported into a folder kept most
+// recent first landed at its bottom; folders followed on 2026-10-15, at the
+// user's request — a folder dates from its most recent analysis, and takes its
+// place among the analyses by that date. Stored order is ignored; appending is
+// all any writer does.
 // Deliberately a copy of that shape rather than a reuse of it: `User.folders`
 // is the decks' tree, it is shown in the sidebar, and putting analyses in it
 // would make every deck folder answer for two unrelated kinds of content.
@@ -38,12 +38,8 @@ export interface SessionTree {
   rootSessionIds: string[];
 }
 
-/** What a drag is carrying, and what it is being dropped on. */
+/** A folder or an analysis — what a level lists, and what a drag carries. */
 export type TreeItem = { type: 'folder' | 'session'; id: string };
-
-/** Where a drop lands relative to the row under the pointer — `into` only ever
- *  applies to a folder. Same three zones as the sidebar's tree. */
-export type DropZone = 'before' | 'after' | 'into';
 
 export function emptyTree(): SessionTree {
   return { folders: {}, rootFolderIds: [], rootSessionIds: [] };
@@ -109,7 +105,79 @@ export function folderOrder(tree: SessionTree, folderId: string, allIds: string[
   return allIds.filter(id => here.has(id));
 }
 
-/** Sub-folders of a level, in order. `null` = the root level. */
+/** The library's order, for anything with a date and a name: dated first, most
+ *  recent first; the undated after them, alphabetically. Analyses have sorted
+ *  this way since 2026-09-08 (see db.ts's compareSessionsForLibrary, which is
+ *  this); folders since 2026-10-15, by `folderDate`. */
+export function compareByDateThenName(
+  a: { date: string | null; name: string },
+  b: { date: string | null; name: string },
+): number {
+  if (a.date && b.date) return b.date.localeCompare(a.date);
+  if (a.date) return -1;
+  if (b.date) return 1;
+  return (a.name || '').localeCompare(b.name || '');
+}
+
+/** A folder's date: that of the most recent dated analysis anywhere under it,
+ *  sub-folders included — a sub-folder's own date being exactly that, the
+ *  recursion is the rule rather than an extra. Null when nothing under it is
+ *  dated, an empty folder included: it then sorts with the undated, by name.
+ *
+ *  Guards against a cycle, as folderChain does: this walks merged user data. */
+export function folderDate(
+  tree: SessionTree,
+  folderId: string,
+  dateOf: (sessionId: string) => string | null | undefined,
+  seen: Set<string> = new Set(),
+): string | null {
+  if (seen.has(folderId)) return null;
+  seen.add(folderId);
+  const folder = tree.folders[folderId];
+  if (!folder) return null;
+  let newest: string | null = null;
+  for (const id of folder.sessionIds) {
+    const d = dateOf(id);
+    if (d && (!newest || d > newest)) newest = d;
+  }
+  for (const subId of folder.folderIds) {
+    const d = folderDate(tree, subId, dateOf, seen);
+    if (d && (!newest || d > newest)) newest = d;
+  }
+  return newest;
+}
+
+/** What one level shows, folders and analyses MIXED, in the library's order
+ *  (compareByDateThenName, a folder dated by `folderDate`). `null` = the root.
+ *
+ *  `sessions` is every analysis that exists: the tree is only an arrangement
+ *  of them (see this file's header), so an analysis it does not name shows at
+ *  the root, and an id it names that no longer exists shows nowhere — and
+ *  dates nothing. On a tie, the folder comes first. */
+export function levelItems(
+  tree: SessionTree,
+  folderId: string | null,
+  sessions: { id: string; date: string | null; name: string }[],
+): TreeItem[] {
+  const byId = new Map(sessions.map(s => [s.id, s]));
+  const allIds = sessions.map(s => s.id);
+  const dateOf = (id: string) => byId.get(id)?.date;
+  const folders = childFolderIds(tree, folderId).map(id => ({
+    item: { type: 'folder' as const, id },
+    date: folderDate(tree, id, dateOf),
+    name: tree.folders[id]!.name,
+  }));
+  const analyses = (folderId === null ? rootOrder(tree, allIds) : folderOrder(tree, folderId, allIds)).map(id => ({
+    item: { type: 'session' as const, id },
+    date: byId.get(id)!.date,
+    name: byId.get(id)!.name,
+  }));
+  // Folders first into a stable sort: that is the whole tie rule.
+  return [...folders, ...analyses].sort(compareByDateThenName).map(e => e.item);
+}
+
+/** Sub-folders of a level, in stored order — which is shown nowhere since
+ *  2026-10-15 (see levelItems). `null` = the root level. */
 export function childFolderIds(tree: SessionTree, folderId: string | null): string[] {
   const ids = folderId === null ? tree.rootFolderIds : tree.folders[folderId]?.folderIds ?? [];
   return ids.filter(id => !!tree.folders[id]);
@@ -162,7 +230,8 @@ export function folderChain(tree: SessionTree, folderId: string | null): Session
   return chain;
 }
 
-/** Every folder in the tree, in display order — what "collapse all" needs. */
+/** Every folder in the tree, depth first in stored order — what "collapse
+ *  all" needs. */
 export function allFolderIds(tree: SessionTree): string[] {
   const out: string[] = [];
   const visit = (ids: string[]) => {
@@ -246,36 +315,6 @@ export function moveFolder(tree: SessionTree, folderId: string, parentId: string
   detach(tree, { type: 'folder', id: folderId });
   if (parentId && tree.folders[parentId]) tree.folders[parentId]!.folderIds.push(folderId);
   else tree.rootFolderIds.push(folderId);
-}
-
-/** A folder dropped before or after another: among that one's siblings. */
-function insertFolderNextTo(tree: SessionTree, folderId: string, targetId: string, before: boolean): void {
-  for (const list of [tree.rootFolderIds, ...Object.values(tree.folders).map(f => f.folderIds)]) {
-    const idx = list.indexOf(targetId);
-    if (idx === -1) continue;
-    list.splice(before ? idx : idx + 1, 0, folderId);
-    return;
-  }
-  // The target is in no list (a tree damaged by a merge): the root, rather
-  // than nowhere.
-  tree.rootFolderIds.push(folderId);
-}
-
-/** Applies one drop. An analysis only ever goes INTO a folder — it has no
- *  position of its own to be dropped at; a folder goes into another, or before
- *  or after one. Anything else changes nothing. */
-export function applyDrop(tree: SessionTree, drag: TreeItem, target: TreeItem, zone: DropZone): void {
-  if (drag.id === target.id) return;
-  if (target.type !== 'folder' || !tree.folders[target.id]) return;
-  if (zone === 'into') {
-    if (drag.type === 'folder') moveFolder(tree, drag.id, target.id);
-    else placeSession(tree, drag.id, target.id);
-    return;
-  }
-  if (drag.type !== 'folder' || !tree.folders[drag.id]) return;
-  if (isFolderDescendant(tree, drag.id, target.id)) return;
-  detach(tree, drag);
-  insertFolderNextTo(tree, drag.id, target.id, zone === 'before');
 }
 
 /** Forgets a deleted analysis. Nothing breaks without it — every read filters
