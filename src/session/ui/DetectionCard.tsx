@@ -237,7 +237,9 @@ function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard }: {
   // tuneName in sessionUiShared. No CSS `capitalize` any more: it was what
   // produced "Mcgoldrick's", and each of the three sources above is already
   // cased properly.
-  const cls = 'text-sm font-semibold text-primary truncate flex-1 cursor-pointer hover:text-accent transition-colors';
+  // A tune with no card is muted (2026-10-15, user's request): the eye picks
+  // out what is already in the collection without reading the deck button.
+  const cls = `text-sm font-semibold ${knownCardId ? 'text-primary' : 'text-muted'} truncate flex-1 cursor-pointer hover:text-accent transition-colors`;
   label = tuneName({ tuneId, displayName: label }).text;
   if (knownCardId) {
     return <span class={cls} title={t('sessions.openCard')} onClick={() => onOpenCard?.(knownCardId)}>{label}</span>;

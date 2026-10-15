@@ -705,8 +705,9 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                         {name}
                       </span>
                     ) : (
+                      // Muted, as in an analysis: no card yet.
                       <a
-                        class={`text-sm text-primary truncate ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
+                        class={`text-sm text-muted truncate ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
                         title={t('sessions.viewOnTheSession')}
                         href={`https://thesession.org/tunes/${row.tuneId}`}
                         target="_blank"

@@ -27,6 +27,52 @@ export const TUNE_TEMPOS: Record<string, string> = {
   march:        '1/4=190',
 };
 
+/** Gives a tune a `Q:` when it has none, from what its `R:` says it is — which
+ *  is the normal case for TheSession's ABC.
+ *
+ *  It was taken OUT for a few hours on 2026-09-21, to buy back the 27 px a
+ *  tempo mark reserves above the first staff, with the speed handed to the
+ *  synth as `audioParams.qpm` instead. That was wrong, and measured wrong:
+ *  the `Q:` is what the MIDI flattener stamps `currentTrackMilliseconds` from,
+ *  and those stamps are what clicking a note seeks to. Without it they came
+ *  out at 111 ms per quaver instead of 167 — while the audio kept the right
+ *  speed, because SynthController takes that from `millisecondsPerMeasure()`
+ *  by a different route. Two clocks, one score: every click on a note landed
+ *  somewhere else.
+ *
+ *  `qpm` does not rescue it — passing it changed nothing in the stamps
+ *  (measured both ways). So the `Q:` stays, and the 27 px are taken back by
+ *  hiding the tempo MARK in CSS: `cropToInk` measures ink, and an element with
+ *  `display:none` has none.
+ *
+ *  Here rather than in the viewer (2026-10-15): the ABC face's player builds
+ *  the same source from the text being typed, and maps its notes back into it
+ *  (abcTextPlayback.ts) — two copies of these would drift. */
+export function injectDefaultTempo(abc: string): string {
+  if (/^Q:/m.test(abc)) return abc;
+  const rMatch = abc.match(/^R:\s*(.+)/m);
+  const tempo = rMatch ? TUNE_TEMPOS[rMatch[1]!.trim().toLowerCase()] : undefined;
+  if (!tempo) return abc;
+  return abc.replace(/^(K:[^\n]*)/m, `$1\nQ: ${tempo}`);
+}
+
+/** The header fields dropped before a score is ENGRAVED. The file on disk keeps
+ *  every one of them; this is only what the reader is shown.
+ *
+ *  `S:` is a URL back to TheSession and `Z:` is who transcribed it: both are
+ *  facts about where the setting came from, not things to read while playing,
+ *  and the card's own source pin already says the first. `settingIndexInScore`
+ *  reads `S:` off the FILE, which is untouched.
+ *
+ *  The fields that stay (`T:`, `R:`, `C:`) are silenced with zero-sized fonts
+ *  in engraveOptions instead — that works for them because they sit in a block
+ *  whose height collapses with their text. */
+const STRIPPED_FOR_RENDER = /^[SZ]:/;
+
+export function stripForRender(abc: string): string {
+  return abc.split('\n').filter(l => !STRIPPED_FOR_RENDER.test(l)).join('\n');
+}
+
 export function isAbcFile(entry: { name: string; mimeType: string }): boolean {
   return entry.name.endsWith('.abc') || entry.mimeType === 'text/vnd.abc';
 }
