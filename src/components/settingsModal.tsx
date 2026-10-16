@@ -37,8 +37,6 @@ import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/
 import { formatBytes } from '../utils';
 import { registerOverlay } from './overlayStack';
 import { fmtDateTime, dateFormatOf, DATE_FORMATS, type DateFormat } from '../services/dateFormat';
-import { renameGeneratedNames } from '../session/sessionNaming';
-import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from '../session/model';
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
@@ -1319,14 +1317,12 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
             value={dateFormatOf(user.dateFormat)}
             options={DATE_FORMATS.map(f => ({ value: f, label: `${dateFormatLabel(f)} · ${fmtDateTime(DATE_FORMAT_SAMPLE, {}, f)}` }))}
             onChange={(next) => void ctx.mutate(s => {
-              const from = dateFormatOf(s.dateFormat);
               const to = dateFormatOf(next);
               // Absent for the default, like the other preferences.
               if (to === 'auto') delete s.dateFormat; else s.dateFormat = to;
-              // In the same write: the names Cadence generated follow the
-              // format they were written in (sessionNaming.ts).
-              const mod = s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
-              if (mod?.sessions) renameGeneratedNames(Object.values(mod.sessions), from, to);
+              // Analysis names are NOT rewritten (2026-10-16): a generated
+              // name is written once, at creation, and stays — see
+              // sessionNaming.ts.
             })}
             triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent min-w-[13rem]"
           />

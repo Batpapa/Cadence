@@ -222,6 +222,16 @@ export interface TuneAnalyserModuleData {
    *  starts, and read at the start of a live recording, an import and a
    *  re-analysis alike. Read it through `pitchShiftSetting()`. */
   pitchShift?: number;
+  /** The user's template for the name of a new live recording or capture —
+   *  see sessionNaming.ts. Absent = the usual name ("Recording of …"), and
+   *  removed rather than emptied when set back. Read it through
+   *  `nameTemplateSetting()`. */
+  nameTemplate?: string;
+  /** The template for a recording started outside any folder, when
+   *  `nameTemplate` uses {folder} — see sessionNaming.ts. Absent = that one,
+   *  {folder} as nothing. Kept, unused, when {folder} leaves `nameTemplate`, so
+   *  putting it back finds it again. */
+  nameTemplateNoFolder?: string;
   /** Copy the recording to Drive for sessions saved from now on, so they can be
    *  played on the user's other devices — and so the device is not holding the
    *  only copy of them.

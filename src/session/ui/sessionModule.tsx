@@ -5,7 +5,7 @@ import { t } from '../../services/i18nService';
 import { focusIfDesktop, formatBytes, isMobileDevice, isAppleTouchDevice, ownFormatAccept } from '../../utils';
 import { showModal, closeModal, closeAllModals, renderModalBody, alertModal, confirmModal } from '../../components/modal';
 import { LiveSession } from '../liveSession';
-import { editSessionTree, placeSession } from '../sessionTree';
+import { editSessionTree, placeSession, sessionTreeOf } from '../sessionTree';
 import { ImportSession } from '../importSession';
 import { probeAudioDuration, canPlayFile, type LiveSourceKind } from '../audio/sources';
 import type { StreamProbe } from '../audio/streamingFileSource';
@@ -32,7 +32,10 @@ import { detectionsOnCards, pitchShiftSetting } from '../detections';
 import { appState, mutate, getContext } from '../../store';
 import { listLiveBackups, restoreLiveBackup, discardLiveBackup, type LiveBackupEntry } from '../liveBackup';
 import { showRecoveryFailures } from './RecoveryFailureModal';
-import { fmtSessionDateTime } from '../sessionNaming';
+import {
+  fmtSessionDateTime, nameTemplateSetting, parseNameTemplate, launchNameTemplate, usesFolder, defaultNameTemplate,
+  TEMPLATE_FIELDS,
+} from '../sessionNaming';
 import { fmtLongTime } from './sessionUiShared';
 import {
   activeLive, activeImport, setActiveLive, setActiveImport,
@@ -494,6 +497,10 @@ export function setPitchShiftSetting(semitones: number): void {
 export function startLiveSession(ctx: AppContext, kind: LiveSourceKind = 'mic', folderId: string | null = null): void {
   const live = new LiveSession({}, kind);
   live.pitchShift = pitchShiftSetting(appState.value);
+  // The folder it starts in, for {folder}: read now and never again (the
+  // user's rule, 2026-10-16) — see sessionNaming.ts.
+  const folderName = folderId === null ? null : sessionTreeOf(appState.value).folders[folderId]?.name ?? null;
+  live.nameTemplate = launchNameTemplate(nameTemplateSetting(appState.value), folderName);
   fileNewAnalysis(ctx, live.sessionId, folderId);
   setActiveLive(live);
   void live.start().catch((err: unknown) => {
@@ -754,7 +761,7 @@ function AudioDownloadsBlock() {
 
 /** A block's heading, with its explanation on demand — SettingRow's `?`,
  *  for a block whose choice is not a checkbox. */
-function BlockTitle({ label, hint }: { label: string; hint: string }) {
+function BlockTitle({ label, hint }: { label: string; hint: ComponentChild }) {
   const [hintOpen, setHintOpen] = useState(false);
   return (
     <>
@@ -771,8 +778,10 @@ function BlockTitle({ label, hint }: { label: string; hint: string }) {
           <HelpIcon size={14} />
         </button>
       </div>
+      {/* A div, not a p: a hint may hold more than a sentence — the name
+          template's list of fields. */}
       {hintOpen && (
-        <p class="text-xs text-dim leading-relaxed px-3 py-2 rounded-lg border border-border bg-bg">{hint}</p>
+        <div class="text-xs text-dim leading-relaxed px-3 py-2 rounded-lg border border-border bg-bg">{hint}</div>
       )}
     </>
   );
@@ -1004,6 +1013,155 @@ function DriveBackupsRow() {
   );
 }
 
+/** Stores both name templates — see TuneAnalyserModuleData.nameTemplate and
+ *  nameTemplateNoFolder. A blank one is removed, and so is the usual name's
+ *  template left as it was shown: absence is the default, the one each can
+ *  have, and it keeps the usual name in the language of the day. Nothing is
+ *  written when nothing changed, which is the common case: every field left,
+ *  and the panel closing, come through here. */
+function setNameTemplates(main: string, noFolder: string): void {
+  const a = main.trim() === defaultNameTemplate() ? '' : main.trim(), b = noFolder.trim();
+  const current = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  if ((current?.nameTemplate ?? '') === a && (current?.nameTemplateNoFolder ?? '') === b) return;
+  void mutate(s => {
+    const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+    if (a) m.nameTemplate = a; else delete m.nameTemplate;
+    if (b) m.nameTemplateNoFolder = b; else delete m.nameTemplateNoFolder;
+    s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
+  });
+}
+
+/** What is wrong with a template, said under its field. Never blocking: a
+ *  template is used as it stands, the wrong parts as text (sessionNaming.ts). */
+function TemplateWarnings({ value, folderForbidden }: { value: string; folderForbidden?: boolean }) {
+  const parsed = parseNameTemplate(value);
+  return (
+    <>
+      {parsed.unknown.length > 0 && (
+        <p class="text-xs text-warn break-words">
+          {t('sessions.nameTemplate.unknown', { fields: parsed.unknown.map(u => `{${u}}`).join(', ') })}
+        </p>
+      )}
+      {parsed.unclosed && <p class="text-xs text-warn">{t('sessions.nameTemplate.unclosed')}</p>}
+      {folderForbidden && usesFolder(value) && <p class="text-xs text-warn">{t('sessions.nameTemplate.noFolder.folderField')}</p>}
+    </>
+  );
+}
+
+type TemplateInputKey = 'main' | 'noFolder';
+
+/** The name new recordings get (2026-10-16) — see sessionNaming.ts. Stored when
+ *  a field is left, on Enter, and when the panel closes with a field still
+ *  being typed in, so nothing typed is lost and the synced blob is not
+ *  rewritten at every keystroke.
+ *
+ *  A template using {folder} shows a second field, for a recording started
+ *  outside any folder (the user's design, 2026-10-16).
+ *
+ *  Never an example name computed for show: what is said is only what is
+ *  wrong with a template (the user's call, 2026-10-16). An empty main field
+ *  shows the usual name's template greyed, as its placeholder — automatic
+ *  until something is typed, like an embedded link's name (2026-10-16). */
+function NameTemplateBlock() {
+  const mod = appState.value.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
+  const [main, setMain] = useState(mod?.nameTemplate ?? '');
+  const [noFolder, setNoFolder] = useState(mod?.nameTemplateNoFolder ?? '');
+  /** The field the list of fields inserts into: the one last focused. */
+  const [target, setTarget] = useState<TemplateInputKey>('main');
+  const mainRef = useRef<HTMLInputElement>(null);
+  const noFolderRef = useRef<HTMLInputElement>(null);
+  const drafts = useRef({ main, noFolder });
+  drafts.current = { main, noFolder };
+  useEffect(() => () => setNameTemplates(drafts.current.main, drafts.current.noFolder), []);
+  const commit = () => setNameTemplates(main, noFolder);
+
+  const withFolder = usesFolder(main);
+  const into: TemplateInputKey = withFolder ? target : 'main';
+
+  /** At the caret, keeping the field focused — a field's name is pressed
+   *  without taking the focus (onPointerDown), so a phone keeps its keyboard
+   *  up. */
+  const insert = (field: string) => {
+    const input = (into === 'main' ? mainRef : noFolderRef).current;
+    const value = into === 'main' ? main : noFolder;
+    const token = `{${field}}`;
+    const start = input?.selectionStart ?? value.length, end = input?.selectionEnd ?? value.length;
+    (into === 'main' ? setMain : setNoFolder)(value.slice(0, start) + token + value.slice(end));
+    requestAnimationFrame(() => {
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
+
+  // The fields live behind the title's `?` with the explanation (the user's
+  // call, 2026-10-16): a row of them always on show was noise for anyone who
+  // sets this once. Each one still inserts itself at the caret — except
+  // {folder} into the field for outside any folder, where it has no value.
+  const hint = (
+    <>
+      <p>{t('sessions.nameTemplate.hint')}</p>
+      <ul class="mt-2 space-y-0.5">
+        {TEMPLATE_FIELDS.map(([field, key]) => (
+          <li key={field}>
+            {field === 'folder' && into === 'noFolder' ? (
+              <span class="font-mono text-dim">{`{${field}}`}</span>
+            ) : (
+              <button
+                type="button"
+                class="font-mono text-primary hover:text-accent cursor-pointer"
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => insert(field)}
+              >
+                {`{${field}}`}
+              </button>
+            )}
+            {' '}{t(key)}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+
+  const inputProps = (key: TemplateInputKey) => ({
+    type: 'text',
+    class: 'input text-sm w-full px-2 py-1',
+    onFocus: () => setTarget(key),
+    onKeyDown: (e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); },
+  });
+
+  return (
+    <div class="space-y-2">
+      <BlockTitle label={t('sessions.nameTemplate.title')} hint={hint} />
+      <input
+        {...inputProps('main')}
+        ref={mainRef}
+        placeholder={defaultNameTemplate()}
+        value={main}
+        onInput={(e) => setMain((e.target as HTMLInputElement).value)}
+        onBlur={commit}
+      />
+      <TemplateWarnings value={main} />
+      {withFolder && (
+        <>
+          <label class="block text-xs text-muted">{t('sessions.nameTemplate.noFolder.label')}</label>
+          <input
+            {...inputProps('noFolder')}
+            ref={noFolderRef}
+            placeholder={t('sessions.nameTemplate.noFolder.placeholder')}
+            value={noFolder}
+            onInput={(e) => setNoFolder((e.target as HTMLInputElement).value)}
+            onBlur={commit}
+          />
+          <TemplateWarnings value={noFolder} folderForbidden />
+        </>
+      )}
+      {/* No "back to the usual template" button (the user's call, 2026-10-16):
+          emptying the field does it, and the greyed template says so. */}
+    </div>
+  );
+}
+
 function SessionSettingsBody() {
   // Read straight off appState rather than through db.ts's async accessors:
   // this component already re-renders on every state change.
@@ -1020,6 +1178,10 @@ function SessionSettingsBody() {
 
   return (
     <div class="space-y-4">
+      {/* First, at the user's request (2026-10-16). */}
+      <NameTemplateBlock />
+      <hr class="border-border" />
+
       <SettingRow
         checked={detectionsOnCards(appState.value)}
         label={t('sessions.detectionsOnCards')}

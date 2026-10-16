@@ -3,6 +3,7 @@ import { t } from './services/i18nService';
 import { SCHEMA_VERSION } from './services/migration';
 import { needsAudioSniff, sniffAudioMime, SNIFF_BYTES } from './services/audioSniff';
 import { isNative } from './native/platform';
+import { safeFileName } from './services/attachmentNames';
 
 export function generateId(): string {
   return crypto.randomUUID();
@@ -221,6 +222,9 @@ export function downloadTextFile(content: string, filename: string, mime: string
  *  downloadTextFile handed a Uint8Array reads as a bug at every call site,
  *  and the archive path is bytes all the way down. */
 export function downloadBlob(blob: Blob, filename: string): void {
+  // Names come from the user (an analysis, an attachment) and may hold what
+  // no filesystem accepts — see safeFileName.
+  filename = safeFileName(filename);
   // A .abc from TheSession is stored as text/plain, which Android would save
   // as "….abc.txt" — see downloadCadenceFile for why.
   if (/^text\/plain\b/.test(blob.type) && !/\.txt$/i.test(filename)) {

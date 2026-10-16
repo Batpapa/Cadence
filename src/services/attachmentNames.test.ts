@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { splitFileName, renamedFileName, copyFileName, legacyClipTag, migrateClipTags } from './attachmentNames';
+import { splitFileName, renamedFileName, copyFileName, legacyClipTag, migrateClipTags, safeFileName } from './attachmentNames';
+
+describe('safeFileName', () => {
+  it('cleans the base and keeps the extension', () => {
+    expect(safeFileName('261016 22:14 Celticime.webm')).toBe('261016 22-14 Celticime.webm');
+    expect(safeFileName('Écoute à la Cité?.cds')).toBe('Écoute à la Cité-.cds');
+  });
+
+  it('keeps a name with nothing left as it was', () => {
+    expect(safeFileName('  .webm')).toBe('  .webm');
+  });
+});
 
 describe('splitFileName', () => {
   it('splits on the last dot', () => {
