@@ -164,7 +164,7 @@ async function runBackup(live: LiveSession, interactive: boolean): Promise<void>
     const meta: LiveBackupMeta = {
       schema: 1,
       sessionId: id,
-      name: live.name,
+      name: live.draftName(),
       date: new Date(live.startedAt || Date.now()).toISOString(),
       mimeType,
       source: live.sourceKind === 'device' ? 'device' : 'live',

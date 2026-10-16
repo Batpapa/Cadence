@@ -6,7 +6,7 @@ import { generateId, addTouchDragSupport, matchesSearch } from '../../utils';
 import { promptModal, confirmModal } from '../../components/modal';
 import { MicIcon, FileAudioIcon, DeviceAudioIcon, PencilIcon, TrashIcon } from '../../components/icons';
 import { fmtLongTime } from './sessionUiShared';
-import { dateBesideName } from '../sessionNaming';
+import { fmtSessionDateTime } from '../sessionNaming';
 import type { Analysis } from '../model';
 import { deleteSession } from '../db';
 import { showBatchProgress, type BatchStep } from './batchRunner';
@@ -483,9 +483,9 @@ function folderDetail(folders: number, analyses: number): string {
 }
 
 function analysisDetail(session: Analysis): string {
-  // The date only when the name does not already say it — see dateBesideName.
-  // A renamed analysis shows its date here; a default-named one would only
-  // repeat itself.
-  const beside = dateBesideName(session.name, session.date);
-  return `${beside ? `${beside} · ` : ''}${fmtLongTime(session.duration)} · ${t(session.annotations.length === 1 ? 'sessions.tunesCount' : 'sessions.tunesCountPlural', { n: session.annotations.length })}`;
+  // The date always, in today's format, even when the name says it too — no
+  // reading dates out of names (the user's call, 2026-10-16; see
+  // sessionNaming.ts's header).
+  const when = session.date ? fmtSessionDateTime(session.date) : '';
+  return `${when ? `${when} · ` : ''}${fmtLongTime(session.duration)} · ${t(session.annotations.length === 1 ? 'sessions.tunesCount' : 'sessions.tunesCountPlural', { n: session.annotations.length })}`;
 }

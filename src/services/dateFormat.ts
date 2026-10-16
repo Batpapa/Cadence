@@ -62,42 +62,36 @@ function autoLocale(): string {
   return AUTO_LOCALE[currentLanguage()] ?? AUTO_LOCALE.en;
 }
 
-/** The locale a format writes with. `locale` overrides it for `auto` alone:
- *  how the renaming of generated names (sessionNaming.ts) recognises what
- *  another convention wrote. */
-function localeOf(fmt: DateFormat, locale?: string): string | undefined {
-  if (fmt === 'auto') return locale ?? autoLocale();
+/** The locale a format writes with. (It took an override for `auto` until
+ *  2026-10-16, to recognise dates other conventions had written into analysis
+ *  names; nothing reads dates out of names any more — sessionNaming.ts.) */
+function localeOf(fmt: DateFormat): string | undefined {
+  if (fmt === 'auto') return autoLocale();
   return fmt === 'ymd' ? undefined : LOCALE[fmt];
 }
 
-/** The browser's own convention — what every screen wrote before the setting,
- *  and so what an analysis named then carries. */
-export function browserLocale(): string {
-  return new Intl.DateTimeFormat().resolvedOptions().locale;
-}
-
 /** The date alone: 12/10/2026, 10/12/2026, 2026-10-12. */
-export function fmtDate(d: When, fmt: DateFormat = dateFormatPref.value, locale?: string): string {
+export function fmtDate(d: When, fmt: DateFormat = dateFormatPref.value): string {
   const date = asDate(d);
   if (fmt === 'ymd') return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  return date.toLocaleDateString(localeOf(fmt, locale));
+  return date.toLocaleDateString(localeOf(fmt));
 }
 
 /** The time of day, to the minute unless `seconds`: 18:00, 6:00 PM. */
-export function fmtTime(d: When, opts: { seconds?: boolean } = {}, fmt: DateFormat = dateFormatPref.value, locale?: string): string {
+export function fmtTime(d: When, opts: { seconds?: boolean } = {}, fmt: DateFormat = dateFormatPref.value): string {
   const date = asDate(d);
   const parts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', ...(opts.seconds ? { second: '2-digit' } : {}) };
   if (fmt === 'ymd') {
     const hm = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
     return opts.seconds ? `${hm}:${pad(date.getSeconds())}` : hm;
   }
-  return date.toLocaleTimeString(localeOf(fmt, locale), parts);
+  return date.toLocaleTimeString(localeOf(fmt), parts);
 }
 
 /** Date and time, joined by a space — the shape generated analysis names have
  *  always had (sessionNaming.ts), which is why it is kept for every format. */
-export function fmtDateTime(d: When, opts: { seconds?: boolean } = {}, fmt: DateFormat = dateFormatPref.value, locale?: string): string {
-  return `${fmtDate(d, fmt, locale)} ${fmtTime(d, opts, fmt, locale)}`;
+export function fmtDateTime(d: When, opts: { seconds?: boolean } = {}, fmt: DateFormat = dateFormatPref.value): string {
+  return `${fmtDate(d, fmt)} ${fmtTime(d, opts, fmt)}`;
 }
 
 // ── Reading a date someone typed ─────────────────────────────────────────────

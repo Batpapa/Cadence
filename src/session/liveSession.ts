@@ -76,6 +76,10 @@ export class LiveSession {
   startedAt = 0;
   /** Editable during recording (renderLive title input) — same field `stop()` persists under. */
   name = '';
+  /** The settings' name template, read when the recording starts with the
+   *  folder it starts in already written into it (see startLiveSession), or
+   *  null for the usual name — sessionNaming.ts. */
+  nameTemplate: string | null = null;
   /** Decks PINNED in the deck choice modal while this session is open — they
    *  come back ticked on the next add or link, and that is all they do. Purely
    *  in-memory and never persisted: picking a destination is a decision about
@@ -139,6 +143,19 @@ export class LiveSession {
     return Date.now() - this.startedAt - pausedSoFar;
   }
 
+  /** The name a crash recovery should save this recording under — on this
+   *  device from the draft, elsewhere from the Drive backup (liveBackup.ts).
+   *  Neither recovery reads the settings, so a template's name is written in
+   *  here; it cannot change during the recording (the template is read at the
+   *  start, the date is the start's). Without a template it stays what it
+   *  always was, the typed name or nothing — and nothing is filled with the
+   *  usual name when the recovered analysis is read (db.ts's migrateSession). */
+  draftName(): string {
+    if (this.name || !this.nameTemplate || !this.startedAt) return this.name;
+    const source: Analysis['source'] = this.sourceKind === 'device' ? 'device' : 'live';
+    return generatedSessionName(source, new Date(this.startedAt).toISOString(), this.nameTemplate);
+  }
+
   /** Writes the in-progress session so a crash/refresh can be recovered
    *  later. `annotations` here is only ever a best-effort live snapshot —
    *  recovery.ts does NOT trust it; it replays the separately-persisted raw
@@ -150,7 +167,7 @@ export class LiveSession {
   private persistDraft(): void {
     const session: Analysis = {
       id: this.sessionId,
-      name: this.name,
+      name: this.draftName(),
       date: new Date(this.startedAt).toISOString(),
       duration: this.getElapsedMs() / 1000,
       mimeType: this.recorder?.mimeType ?? '',
@@ -392,7 +409,7 @@ export class LiveSession {
         // Named here, once, rather than derived at display time — see
         // sessionNaming.ts. `this.name` is whatever the user typed during the
         // recording, and it wins.
-        name: this.name || generatedSessionName(source, date),
+        name: this.name || generatedSessionName(source, date, this.nameTemplate),
         date,
         duration: Math.max(tFinal, fileResult.durationMs / 1000),
         mimeType: fileResult.mimeType,

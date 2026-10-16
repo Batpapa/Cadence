@@ -61,7 +61,8 @@ export async function shareSession(session: Analysis, audioBlob: Blob | null): P
 /** Downloads a `.cds` file — no size limit beyond the browser/disk. */
 export async function exportSessionFile(session: Analysis, audioBlob: Blob | null): Promise<void> {
   const text = await buildPackageText(session, audioBlob);
-  downloadCadenceFile(text, `${(session.name || 'session').replace(/[^\w-]+/g, '_')}.cds`);
+  // Named as the library names it; downloadBlob makes it a valid file name.
+  downloadCadenceFile(text, `${session.name || 'session'}.cds`);
 }
 
 // ── In ────────────────────────────────────────────────────────────────────────

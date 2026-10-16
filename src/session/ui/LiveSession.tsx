@@ -215,7 +215,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     <>
       <TitleRow
         getName={() => live.name}
-        getDefaultName={() => generatedSessionName(live.sourceKind === 'device' ? 'device' : 'live', effectiveDate())}
+        getDefaultName={() => generatedSessionName(live.sourceKind === 'device' ? 'device' : 'live', effectiveDate(), live.nameTemplate)}
         onRename={(val) => { live.name = val; }}
         // No explicit "go back to the library" call needed: sessions.tsx
         // reads activeLive reactively, so clearing it alone switches the

@@ -793,8 +793,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   });
 
   // The session's own name, nothing computed: what the library calls this
-  // recording is what the downloaded file is called.
-  const safeName = session.name.replace(/[^\w-]+/g, '_');
+  // recording is what the downloaded file is called — accents and spaces
+  // included since 2026-10-16; downloadBlob takes out only what no
+  // filesystem accepts (they all became "_" before).
+  const fileBase = session.name || 'session';
 
   /** Hands the stored recording over exactly as it is (2026-09-14).
    *
@@ -815,7 +817,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         if (!blob) return;
         let ext = audioExtension(blob.type || session.mimeType);
         if (ext === 'bin') ext = (await detectAudioFile(blob))?.extension ?? ext;
-        downloadBlob(blob, `${safeName}.${ext}`);
+        downloadBlob(blob, `${fileBase}.${ext}`);
       })
       .finally(() => setDownloading(false));
   };
@@ -1005,7 +1007,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
               class="text-[11px] text-dim hover:text-primary hover:underline cursor-pointer ml-auto"
               onClick={() => {
                 const blob = new Blob([JSON.stringify(dump.windows, null, 1)], { type: 'application/json' });
-                downloadBlob(blob, `${(session.name || 'session').replace(/[^\w-]+/g, '_')}-windows.json`);
+                downloadBlob(blob, `${session.name || 'session'}-windows.json`);
               }}
             >
               {t('sessions.dumpWindows')}

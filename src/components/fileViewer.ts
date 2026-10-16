@@ -22,7 +22,7 @@ import {
 import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
 import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds } from '../services/abcBounds';
 import { showModal, updateTopModal, confirmModal, askUnsavedChanges } from './modal';
-import { splitFileName, renamedFileName } from '../services/attachmentNames';
+import { splitFileName, renamedFileName, safeFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon } from './playbackIcons';
 import { appState, mutate } from '../store';
@@ -858,7 +858,7 @@ export function showPreviewModal(
           msg.textContent = t('fileViewer.pdf.failed');
           const open = document.createElement('a');
           open.href = entryToObjectUrl(entry);
-          open.download = entry.name;
+          open.download = safeFileName(entry.name);
           // The Android app's WebView ignores `download` on a blob: link.
           if (isNative()) open.addEventListener('click', e => {
             e.preventDefault();

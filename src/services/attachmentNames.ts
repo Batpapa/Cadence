@@ -17,9 +17,21 @@ export function splitFileName(name: string): { base: string; ext: string } {
  *  its whitespace tidied. For a name DERIVED from something that was never
  *  meant to be one — a set's name ("Cooley's / The Wise Maid"), the `T:` title
  *  line of a pasted ABC — since an attachment is downloadable and ends up a
- *  real file on someone's disk. What the user types by hand is left alone. */
+ *  real file on someone's disk. What the user types by hand is left alone in
+ *  the app — and cleaned on its way to a disk, by safeFileName. */
 export function sanitizeFileBase(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+}
+
+/** The name a file is SAVED under: its base cleaned as above, its extension as
+ *  it was. Applied by every download (utils.ts's downloadBlob) since
+ *  2026-10-16, when a name template made "22:14" in an analysis's name
+ *  ordinary — a name the app keeps as typed, and that Windows and Android
+ *  refuse for a file. A base with nothing left is kept as it was. */
+export function safeFileName(name: string): string {
+  const { base, ext } = splitFileName(name);
+  const clean = sanitizeFileBase(base);
+  return clean ? clean + ext : name;
 }
 
 /** `name` with `newBase` in front of its unchanged extension. Null when there
