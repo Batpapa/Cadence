@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AudioPreset, FileEntry } from '../types';
 import { generateId } from '../utils';
 import { t } from '../services/i18nService';
-import { playIcon, pauseIcon, stopIcon, repeatIcon } from './playbackIcons';
+import { playIcon, pauseIcon, stopIcon, repeatIcon, boundIcon } from './playbackIcons';
 import { AudioEngine, type AudioEffects } from './audioEngine';
 import { CustomSelect } from './customSelect';
 import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon, AddClipIcon } from './icons';
@@ -63,16 +63,18 @@ function TransportButton({ html, title, active, onClick }: {
   );
 }
 
-function SmallButton({ text, title, onClick }: { text: string; title: string; onClick: () => void }) {
+/** `html` instead of `text` for an icon (`boundIcon`). */
+function SmallButton({ text, html, title, onClick }: { text?: string; html?: string; title: string; onClick: () => void }) {
   return (
     <button
       type="button"
       title={title}
-      class="px-1.5 py-0.5 text-[9px] bg-transparent border border-border rounded-[3px] text-dim cursor-pointer hover:border-dim hover:text-muted"
+      class="px-1.5 py-0.5 text-[9px] inline-flex items-center bg-transparent border border-border rounded-[3px] text-dim cursor-pointer hover:border-dim hover:text-muted"
       style={{ fontFamily: MONO }}
       onClick={onClick}
+      {...(html !== undefined ? { dangerouslySetInnerHTML: { __html: html } } : {})}
     >
-      {text}
+      {html === undefined && text}
     </button>
   );
 }
@@ -680,8 +682,8 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
           onClick={() => { const next = !repeat; setRepeat(next); engine.setRepeat(next); }}
         />
         <div style={{ flex: 1 }} />
-        <SmallButton text="[←" title={t('audioPlayer.setStart.title')} onClick={setStartHere} />
-        <SmallButton text="→]" title={t('audioPlayer.setEnd.title')} onClick={setEndHere} />
+        <SmallButton html={boundIcon('in', 12)} title={t('audioPlayer.setStart.title')} onClick={setStartHere} />
+        <SmallButton html={boundIcon('out', 12)} title={t('audioPlayer.setEnd.title')} onClick={setEndHere} />
         <SmallButton text={t('audioPlayer.reset')} title={t('audioPlayer.reset.title')} onClick={resetRegion} />
       </div>
 
