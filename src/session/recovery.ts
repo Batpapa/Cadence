@@ -82,7 +82,7 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
     let blob = new Blob(chunks, { type: mimeType });
     if (mimeType.includes('webm')) {
       try {
-        blob = await patchWebmDuration(blob, durationMs);
+        blob = await patchWebmDuration(chunks, mimeType, durationMs);
       } catch { /* seeking degraded but audio intact */ }
     }
     await saveSessionAudio(session.id, blob);
@@ -250,7 +250,7 @@ export function settleRecoveryFailure(sessionId: string): void {
  *  This used to skip that step: fix-webm-duration loaded the whole file into
  *  memory several times over, the likeliest thing to have killed the tab in the
  *  first place. Its replacement (audio/webmDuration, 2026-10-01) reads only the
- *  head and copies nothing, so the download gets it too — with the same
+ *  head and copies at most one chunk, so the download gets it too — with the same
  *  duration estimate finalizeOrphan uses, and the plain chunks if the patch
  *  cannot apply. Falls back to an audio blob saved by an attempt that failed
  *  later on. Null when there is no audio at all. */
@@ -260,7 +260,7 @@ export async function orphanAudio(session: Analysis): Promise<Blob | null> {
     const blob = new Blob(chunks, { type: session.mimeType || chunks[0]!.type || 'audio/webm' });
     if (!blob.type.includes('webm')) return blob;
     const durationMs = Math.max(chunks.length * RECORDER_TIMESLICE_MS, session.duration * 1000);
-    try { return await patchWebmDuration(blob, durationMs); } catch { return blob; }
+    try { return await patchWebmDuration(chunks, blob.type, durationMs); } catch { return blob; }
   }
   const saved = await loadSessionAudio(session.id);
   return saved && saved.size > 0 ? saved : null;

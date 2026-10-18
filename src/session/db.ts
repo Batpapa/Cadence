@@ -9,6 +9,7 @@ import { compareByDateThenName, editSessionTree, forgetSession } from './session
 import { strippedReviewIds } from '../services/reviewEntries';
 import { isAnalysisReviewId } from './reviewLink';
 import { onNetworkChange, onUnmeteredNetwork } from './network';
+import { findDoubledHead, repairDoubledWebm, PROBE_BYTES } from './audio/webmSliceRepair';
 
 // store.ts is imported lazily (dynamic import, below) rather than statically:
 // it transitively pulls in services/driveService.ts, which reads
@@ -927,8 +928,15 @@ export function uploadSessionAudio(sessionId: string, interactive = true): Promi
 }
 
 async function runUpload(sessionId: string, interactive: boolean): Promise<void> {
-  if (await isSessionAudioSynced(sessionId)) { markUploadWanted(sessionId, false); return; }
-  const audio = await (await localDb()).get(AUDIO_STORE, sessionId) as Blob | undefined;
+  if (await isSessionAudioSynced(sessionId)) {
+    // TEMPORARY (webmSliceRepair): already on Drive, but maybe broken there.
+    if (drivesToRepair.read().includes(sessionId)) await repairDriveCopy(sessionId, interactive);
+    markUploadWanted(sessionId, false);
+    return;
+  }
+  // Through loadSessionAudio, which repairs a recording damaged by WebKit
+  // before it goes anywhere (temporary — see audio/webmSliceRepair.ts).
+  const audio = await loadSessionAudio(sessionId);
   if (!audio) throw new Error('no_local_audio');
   const meta = await loadSessionMeta(sessionId);
   const mimeType = audio.type || meta?.mimeType || 'audio/webm';
@@ -1116,7 +1124,59 @@ export async function untrashResurrectedAudio(discarded: AppStateLike): Promise<
 /** The recording as held on THIS device. Never reaches for the network — see
  *  this section's header. */
 export async function loadSessionAudio(sessionId: string): Promise<Blob | undefined> {
-  return (await localDb()).get(AUDIO_STORE, sessionId);
+  const db = await localDb();
+  const blob = await db.get(AUDIO_STORE, sessionId) as Blob | undefined;
+  if (!blob) return blob;
+  // TEMPORARY, to remove on 2026-11-15 — see audio/webmSliceRepair.ts.
+  const repaired = await repairDoubledWebm(blob).catch(() => null);
+  if (!repaired) return blob;
+  console.warn(`[sessions] recording ${sessionId} repaired: ${blob.size} -> ${repaired.size} bytes`);
+  await db.put(AUDIO_STORE, repaired, sessionId);
+  void wantDriveRepair(sessionId);
+  return repaired;
+}
+
+// ── Drive copies of damaged recordings — TEMPORARY (webmSliceRepair) ─────────
+// To remove on 2026-11-15 with audio/webmSliceRepair.ts.
+//
+// A recording repaired here whose copy is on Drive gets that copy checked, and
+// replaced if it is damaged too — through the wanted-upload queue, so it waits
+// for a token, a network, or Wi-Fi exactly as an automatic upload does, and
+// survives the app being closed (the local copy, once repaired, would never
+// trigger it again).
+
+const drivesToRepair = deviceIdList('cadence_audio_drive_repairs');
+
+async function wantDriveRepair(sessionId: string): Promise<void> {
+  if (!(await isSessionAudioSynced(sessionId))) return;
+  drivesToRepair.set(sessionId, true);
+  markUploadWanted(sessionId, true);
+  if (!uploadHeldForWifi()) void attemptWantedUpload(sessionId);
+}
+
+/** Replaces the Drive copy with this device's (repaired) one — only if the
+ *  copy on Drive proves damaged itself: its first bytes are read, not its
+ *  size, a copy sent from damaged bytes possibly carrying the right size.
+ *  A copy that is fine, gone, or no longer here to send from is left alone.
+ *  Throws as an upload does, leaving the repair wanted. */
+async function repairDriveCopy(sessionId: string, interactive: boolean): Promise<void> {
+  const entry = await syncedAudioOf(sessionId);
+  const audio = entry && await loadSessionAudio(sessionId);
+  if (entry && audio) {
+    const drive = await driveModule();
+    let head: Uint8Array | null = null;
+    try {
+      head = await drive.readCompanionRange(entry.fileId, 0, Math.min(entry.bytes || PROBE_BYTES, PROBE_BYTES), interactive);
+    } catch (e) {
+      if (!(e instanceof Error && e.message === drive.COMPANION_GONE)) throw e;
+    }
+    if (head && findDoubledHead(head)) {
+      await drive.replaceCompanionFileContent(entry.fileId, audio, interactive);
+      await recordSyncedAudio(sessionId, { ...entry, bytes: audio.size });
+      console.warn(`[sessions] Drive copy of ${sessionId} repaired`);
+    }
+  }
+  drivesToRepair.set(sessionId, false);
 }
 
 /** What Drive says about this recording's copy, asked without fetching it.

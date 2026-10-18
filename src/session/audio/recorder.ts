@@ -125,7 +125,7 @@ export class SessionFileRecorder {
 
     if (mimeType.includes('webm')) {
       try {
-        blob = await patchWebmDuration(blob, durationMs);
+        blob = await patchWebmDuration(chunks, mimeType, durationMs);
       } catch { /* seeking degraded but audio intact */ }
     }
 

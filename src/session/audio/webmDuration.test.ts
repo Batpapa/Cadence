@@ -149,19 +149,38 @@ describe('patchHead', () => {
   });
 });
 
+/** `file` cut into chunks at these offsets, as the recorder's would be. */
+function chunked(file: Uint8Array, cuts: number[]): Blob[] {
+  const at = [0, ...cuts, file.length];
+  return at.slice(1).map((end, i) => new Blob([file.slice(at[i], end) as BlobPart]));
+}
+
 describe('patchWebmDuration', () => {
-  it('returns the same bytes plus the Duration, through Blob slices', async () => {
+  it('returns the same bytes plus the Duration', async () => {
     const file = recorderFile();
-    const out = await patchWebmDuration(new Blob([file as BlobPart], { type: 'audio/webm;codecs=opus' }), 7_000);
+    const out = await patchWebmDuration([new Blob([file as BlobPart])], 'audio/webm;codecs=opus', 7_000);
     expect(out.type).toBe('audio/webm;codecs=opus');
     const b = new Uint8Array(await out.arrayBuffer());
     expect(durationIn(b)).toBe(7_000);
     expect(b.length).toBe(file.length + 11);
   });
 
-  it('hands back the original blob when there is nothing it can do', async () => {
-    const blob = new Blob([bytes(1, 2, 3)]);
-    expect(await patchWebmDuration(blob, 7_000)).toBe(blob);
-    expect(await patchWebmDuration(new Blob([recorderFile() as BlobPart]), 0)).toBeInstanceOf(Blob);
+  // The patched head ends inside some chunk: wherever that is, what follows it
+  // is the rest of the recording, once — the shape that came back wrong from
+  // WebKit's IndexedDB was the original from its first byte again.
+  it('carries the rest of the recording over whichever chunk the head ends in', async () => {
+    const file = recorderFile();
+    const expected = new Uint8Array(await (await patchWebmDuration([new Blob([file as BlobPart])], '', 7_000)).arrayBuffer());
+    for (const cuts of [[1], [20], [40, 60], [file.length - 50], [10, 20, 30, 200, 300]]) {
+      const out = new Uint8Array(await (await patchWebmDuration(chunked(file, cuts), '', 7_000)).arrayBuffer());
+      expect(out).toEqual(expected);
+    }
+  });
+
+  it('joins the parts as they are when there is nothing it can do', async () => {
+    const parts = [new Blob([bytes(1, 2)]), new Blob([bytes(3)])];
+    expect(new Uint8Array(await (await patchWebmDuration(parts, 'audio/webm', 7_000)).arrayBuffer())).toEqual(bytes(1, 2, 3));
+    const file = recorderFile();
+    expect(new Uint8Array(await (await patchWebmDuration(chunked(file, [30]), '', 0)).arrayBuffer())).toEqual(file);
   });
 });
