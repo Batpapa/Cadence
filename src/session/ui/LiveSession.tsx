@@ -53,6 +53,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   const [abcTickerText, setAbcTickerText] = useState('');
   const [bgWarningText, setBgWarningText] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [autoPaused, setAutoPaused] = useState(() => live.autoPaused);
 
 
   // Declared above the callback registration below, which needs it: the
@@ -102,7 +103,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       // The Android notification's Stop, possibly pressed on the lock screen:
       // the same path as this screen's button, summary included.
       onStopRequested: () => { void onStopClick(); },
+      onAutoPause: setAutoPaused,
     });
+    setAutoPaused(live.autoPaused);
     // Re-entry (modal closed and reopened, or navigated away and back) while
     // a phase-changing event happened between the lazy useState initializers
     // above and this effect committing.
@@ -260,6 +263,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         {/* iPhone: the pause gave the microphone back, for another app to use
             (the camera, to film). Said, because nothing else on screen shows it. */}
         {paused && live.micReleased && <p class="text-xs text-dim mt-2">{t('sessions.pausedMicReleased')}</p>}
+        {/* Paused by the system, not by the user — see LiveSession.autoPaused.
+            Resumed by the button above, or on its own. */}
+        {paused && autoPaused && <p class="text-xs text-danger mt-2">{t('sessions.autoPaused')}</p>}
         {/* Only once something is being recorded: before that there is nothing
             to send, and no session to name in meta.json. */}
         {(phase === 'recording' || phase === 'paused') && <LiveBackupIndicator live={live} />}

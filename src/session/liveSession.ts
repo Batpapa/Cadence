@@ -45,6 +45,9 @@ export interface LiveSessionCallbacks {
    *  Handed to the UI so it takes the very path of the screen's own Stop:
    *  saving is only half of stopping, the screen then opens the summary. */
   onStopRequested?: () => void;
+  /** The recording was paused because the system cut the sound (true), or
+   *  that pause is over (false) — see LiveSession.autoPaused. */
+  onAutoPause?: (on: boolean) => void;
 }
 
 export class LiveSession {
@@ -194,6 +197,10 @@ export class LiveSession {
         // the window before recording actually begins.
         if (this.phase === 'recording' || this.phase === 'paused') this.cb.onSourceEnded?.();
       };
+      this.source.onStall = stalled => {
+        if (stalled && this.phase === 'recording') void this.pause(true);
+        else if (!stalled && this.autoPaused && this.phase === 'paused') void this.resume();
+      };
       await this.source.open();
 
       // Recognition worker: WASM + index (may trigger the big first download).
@@ -250,6 +257,10 @@ export class LiveSession {
       // the user is off looking at a card, and so must its backup.
       void import('./liveBackup').then(m => m.startAutoBackup(this));
       this.setPhase('recording');
+      // Cut before it even started — a context that never ran, or the system
+      // prompt for the microphone interrupting it: paused from the first
+      // second rather than recording nothing.
+      if (this.source.stalled) void this.pause(true);
     } catch (err) {
       this.cleanup();
       this.releaseLock();
@@ -325,17 +336,39 @@ export class LiveSession {
     return this.source.micReleased;
   }
 
+  /** Paused by the system rather than by the user: the sound stopped reaching
+   *  the recording — iOS took the audio over (a call, Siri, a system prompt)
+   *  or the context never ran. Recording on would only have stretched the
+   *  session over a hole: nothing goes into the file, while the recognition,
+   *  which pads a missing stretch with silence, would have timed every later
+   *  detection that much late against the audio. A pause keeps the three in
+   *  step (see resume()'s notifyLiveResume).
+   *
+   *  The microphone is kept (source.suspend's keepMic): the end of the
+   *  interruption shows as the context running again, and the recording
+   *  resumes on its own then. Resume does it by hand meanwhile — from a tap,
+   *  which is what iOS wants to give the audio back. */
+  private _autoPaused = false;
+  get autoPaused(): boolean { return this._autoPaused; }
+  private setAutoPaused(on: boolean): void {
+    if (on === this._autoPaused) return;
+    this._autoPaused = on;
+    this.cb.onAutoPause?.(on);
+  }
+
   /** Pauses the whole capture graph (recognition feed + recorder) in one shot —
    *  the worker's sample clock simply stops advancing, no offset bookkeeping needed. */
-  async pause(): Promise<void> {
+  async pause(auto = false): Promise<void> {
     if (this.phase !== 'recording') {
       if (DEBUG_LIVE_AUDIO) console.log(`[live] pause IGNOREE, phase=${this.phase}`);
       return;
     }
-    if (DEBUG_LIVE_AUDIO) console.log('[live] --- PAUSE demandee ---');
+    if (DEBUG_LIVE_AUDIO) console.log(`[live] --- PAUSE demandee${auto ? ' (systeme)' : ''} ---`);
     this.recorder?.pause();
-    await this.source.suspend();
+    // Stamped before the await: a system cut is dated from when it was seen.
     this.pauseStartedAt = Date.now();
+    await this.source.suspend(auto);
+    this.setAutoPaused(auto);
     this.setPhase('paused');
     void refreshLiveForeground();
     if (DEBUG_LIVE_AUDIO) console.log('[live] pause effective');
@@ -374,8 +407,12 @@ export class LiveSession {
     await this.source.resume();
     this.recorder?.resume();
     this.pausedAccumMs += Date.now() - this.pauseStartedAt;
+    this.setAutoPaused(false);
     this.setPhase('recording');
     void refreshLiveForeground();
+    // A resume the system did not let through — the context still not
+    // running, with no change to announce it: paused again, by the system.
+    if (this.source.stalled) void this.pause(true);
     if (DEBUG_LIVE_AUDIO) console.log('[live] reprise effective — la suite doit montrer des chunks worker');
   }
 
