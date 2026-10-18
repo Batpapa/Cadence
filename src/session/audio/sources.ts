@@ -72,6 +72,32 @@ export abstract class LiveStreamSource implements PcmSource {
    *  Never fired by our own stop(). */
   onEnded: (() => void) | null = null;
 
+  /** Fired when sound stops reaching the recording, and when it comes back —
+   *  see `stalled`. LiveSession pauses the recording on the first and
+   *  resumes it on the second. */
+  onStall: ((stalled: boolean) => void) | null = null;
+  private lastStalled = false;
+
+  /** The context stopped on its own: iOS took the audio session over (a
+   *  phone call, Siri, a system prompt — WebKit's 'interrupted') or suspended
+   *  it, and nothing reaches the recorder, the meter or the recognition any
+   *  more: the file goes on growing with nothing in it. A recording made that
+   *  way came out as a 5-byte file (tester's iPhone, 2026-10-16; the same 5
+   *  bytes as a Safari recorder fed by a suspended context, simulator,
+   *  2026-10-15). Not while the pause holds the context suspended on purpose
+   *  (releaseMic), nor once stopping. */
+  get stalled(): boolean {
+    const state = this.audioContext?.state as string | undefined;
+    return !!state && state !== 'running' && state !== 'closed' && !this.released && !this.stopping;
+  }
+
+  private checkStall = (): void => {
+    const now = this.stalled;
+    if (now === this.lastStalled) return;
+    this.lastStalled = now;
+    this.onStall?.(now);
+  };
+
   async open(): Promise<void> {
     // Synchronously, still inside the gesture: the iPhone's audio session must
     // allow recording before the microphone is asked for (audioSession.ts).
@@ -96,6 +122,10 @@ export abstract class LiveStreamSource implements PcmSource {
     }
     // Some browsers create suspended contexts outside a user gesture chain.
     if (this.audioContext.state === 'suspended') await this.audioContext.resume();
+    // Watched from here to the end: one that did not start, or stops later, is
+    // said at once — see `stalled`.
+    this.audioContext.addEventListener('statechange', this.checkStall);
+    this.checkStall();
 
     const track = this._stream.getAudioTracks()[0];
     console.debug(`[${this.label}] track:`, track?.label, JSON.stringify(track?.getSettings?.() ?? {}));
@@ -197,10 +227,14 @@ export abstract class LiveStreamSource implements PcmSource {
    *  processor simply stops forwarding. The recording tap is unaffected because
    *  MediaRecorder has its own pause(); the VU meter keeps reading, and the UI
    *  already pins it to zero while not recording. */
-  async suspend(): Promise<void> {
+  async suspend(keepMic = false): Promise<void> {
     if (DEBUG_LIVE_AUDIO) console.log(`[live] suspend: ctx=${this.audioContext?.state} node=${!!this.workletNode}`);
     this.workletNode?.port.postMessage({ paused: true });
-    if (this.releasesOnPause) await this.releaseMic();
+    // `keepMic`: the pause the system forced (a stall). The context is the
+    // system's to give back, and watching it is how the end of the
+    // interruption is seen — released and suspended by us, it would say
+    // nothing.
+    if (this.releasesOnPause && !keepMic) await this.releaseMic();
   }
 
   /** iPhone: a pause gives the microphone back, so the camera can film.
@@ -278,6 +312,9 @@ export abstract class LiveStreamSource implements PcmSource {
     if (state === 'suspended' || state === 'interrupted') await this.audioContext!.resume();
     if (DEBUG_LIVE_AUDIO) console.log(`[live] resume: ctx=${this.audioContext?.state} node=${!!this.workletNode} track=${this.trackState()}`);
     this.workletNode?.port.postMessage({ paused: false });
+    // Out of the pause with a context still not running — `released` turned
+    // false without any statechange to say so.
+    this.checkStall();
   }
 
   /** Compact track diagnostics for the pause/resume trace. */
@@ -289,6 +326,8 @@ export abstract class LiveStreamSource implements PcmSource {
   stop(): void {
     this.stopping = true;
     this.onEnded = null;
+    this.checkStall();   // stopping: never stalled any more, said once
+    this.onStall = null;
     if (this.capturing) { this.capturing = false; endCaptureSession(); }
     this._stream?.getTracks().forEach(trk => trk.stop());
     this._stream = null;

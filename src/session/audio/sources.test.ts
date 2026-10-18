@@ -139,9 +139,16 @@ class FakeContext {
   createMediaStreamSource(s: FakeStream): FakeNode { return this.make('source', s); }
   createAnalyser(): FakeNode { return Object.assign(this.make('analyser'), { fftSize: 0 }); }
   createMediaStreamDestination(): FakeNode { return Object.assign(this.make('dest'), { stream: {} }); }
-  async suspend(): Promise<void> { this.state = 'suspended'; }
-  async resume(): Promise<void> { this.state = 'running'; }
-  async close(): Promise<void> { this.state = 'closed'; }
+  private listeners: Array<() => void> = [];
+  addEventListener(_: string, fn: () => void): void { this.listeners.push(fn); }
+  private set(state: string): void { this.state = state; this.listeners.forEach(fn => fn()); }
+  /** Set while the system still holds the audio: a resume is refused. */
+  refuseResume = false;
+  async suspend(): Promise<void> { this.set('suspended'); }
+  async resume(): Promise<void> { if (this.refuseResume) throw new Error('InvalidStateError'); this.set('running'); }
+  async close(): Promise<void> { this.set('closed'); }
+  /** iOS taking the audio session over: WebKit's own state. */
+  interrupt(): void { this.set('interrupted'); }
 }
 
 let ctx: FakeContext;
@@ -273,6 +280,88 @@ describe('MicSource pause', () => {
     expect(ctx.state).toBe('closed');
     expect(audioSession.type).toBe('auto');
     expect(mic.micReleased).toBe(false);
+  });
+
+  // A recording whose context the system stopped goes on growing with nothing
+  // in it (a 5-byte file, tester's iPhone, 2026-10-16): said at once, which is
+  // what pauses the recording (LiveSession), and said again when it is back,
+  // which resumes it.
+  it('says when the system stops the audio, and when the system gives it back', async () => {
+    onDevice(IPHONE, 5);
+    const mic = await recordingMic();
+    const onStall = vi.fn();
+    mic.onStall = onStall;
+
+    ctx.interrupt();
+    expect(mic.stalled).toBe(true);
+    expect(onStall.mock.calls).toEqual([[true]]);
+
+    await ctx.resume();                  // the call is over
+    expect(mic.stalled).toBe(false);
+    expect(onStall.mock.calls).toEqual([[true], [false]]);
+    mic.stop();
+  });
+
+  it('the pause the system forced keeps the iPhone microphone, so its end can be seen', async () => {
+    onDevice(IPHONE, 5);
+    const mic = await recordingMic();
+    const onStall = vi.fn();
+    mic.onStall = onStall;
+    ctx.interrupt();
+    await mic.suspend(true);
+
+    expect(mic.micReleased).toBe(false);
+    expect(opened[0]!.track.stopped).toBe(false);
+    expect(feeding(node('dest'))).toEqual([opened[0]]);
+    expect(ctx.state).toBe('interrupted');          // not suspended by us
+    expect(workletMessages.at(-1)).toEqual({ paused: true });
+
+    await ctx.resume();
+    expect(onStall.mock.calls).toEqual([[true], [false]]);
+    mic.stop();
+  });
+
+  it('a Resume tapped while the system still holds the audio is refused, then goes through', async () => {
+    onDevice(IPHONE, 5);
+    const mic = await recordingMic();
+    ctx.interrupt();
+    await mic.suspend(true);
+
+    ctx.refuseResume = true;
+    await expect(mic.resume()).rejects.toThrow();
+    expect(mic.stalled).toBe(true);
+    expect(workletMessages.at(-1)).toEqual({ paused: true });
+
+    ctx.refuseResume = false;
+    await mic.resume();
+    expect(ctx.state).toBe('running');
+    expect(mic.stalled).toBe(false);
+    expect(opened).toHaveLength(1);                  // the same microphone
+    expect(workletMessages.at(-1)).toEqual({ paused: false });
+    mic.stop();
+  });
+
+  it('a pause that suspends the context on purpose is not a stall, nor is stopping', async () => {
+    onDevice(IPHONE, 5);
+    const mic = await recordingMic();
+    const onStall = vi.fn();
+    mic.onStall = onStall;
+    await mic.suspend();
+    expect(ctx.state).toBe('suspended');
+    expect(mic.stalled).toBe(false);
+    await mic.resume();
+    mic.stop();
+    expect(onStall).not.toHaveBeenCalled();
+  });
+
+  it('a stall left when stopping is cleared, once', async () => {
+    onDevice(IPHONE, 5);
+    const mic = await recordingMic();
+    const onStall = vi.fn();
+    mic.onStall = onStall;
+    ctx.interrupt();
+    mic.stop();
+    expect(onStall.mock.calls).toEqual([[true], [false]]);
   });
 
   it('anywhere else the pause keeps the microphone, as before', async () => {
