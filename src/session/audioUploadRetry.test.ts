@@ -2,9 +2,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   initSessionDbForUser, saveSessionAudio, deleteSession, autoUploadState, initAudioUploadRetry,
-  uploadSessionAudio, setUploadOnWifiOnly,
+  uploadSessionAudio, setUploadOnWifiOnly, loadSessionAudio,
 } from './db';
 import type { TuneAnalyserModuleData } from './model';
+import { patchHead } from './audio/webmDuration';
 
 // The device's network, one object for the whole file: the app wires its
 // listener to it once, as a browser's own never changes.
@@ -45,6 +46,8 @@ const drive = vi.hoisted(() => ({
   pending: null as null | { pending: () => boolean; resume: () => void },
   /** Held open until released, to start a second upload during the first. */
   gate: null as null | Promise<void>,
+  remote: new Uint8Array() as Uint8Array,
+  replaced: [] as Uint8Array[],
 }));
 vi.mock('../services/driveService', () => ({
   isDriveConnected: () => drive.connected,
@@ -59,6 +62,16 @@ vi.mock('../services/driveService', () => ({
   },
   trashCompanionFile: () => Promise.resolve(true),
   registerDrivePendingWork: (w: { pending: () => boolean; resume: () => void }) => { drive.pending = w; },
+  // TEMPORARY (webmSliceRepair): the Drive copy's bytes, and what replaced them.
+  COMPANION_GONE: 'companion_gone',
+  readCompanionRange: async (_id: string, start: number, end: number) => {
+    const outcome = drive.outcomes.shift() ?? 'ok';
+    if (outcome === 'network') throw new Error('Failed to fetch');
+    return drive.remote.slice(start, end);
+  },
+  replaceCompanionFileContent: async (_id: string, blob: Blob) => {
+    drive.replaced.push(new Uint8Array(await blob.arrayBuffer()));
+  },
 }));
 
 const store = vi.hoisted(() => ({ state: { id: 'u1', modules: {} } as { id: string; modules: Record<string, unknown> } }));
@@ -86,7 +99,7 @@ beforeEach(async () => {
   stores.clear();
   localStorage.clear();
   store.state = { id: 'u1', modules: { 'tune-analyser': { sessions: {} } } };
-  Object.assign(drive, { connected: true, outcomes: [], uploads: 0, gate: null });
+  Object.assign(drive, { connected: true, outcomes: [], uploads: 0, gate: null, remote: new Uint8Array(), replaced: [] });
   net.type = 'wifi';
   await initSessionDbForUser('u1');
   setUploadOnWifiOnly(false);
@@ -209,6 +222,92 @@ describe('two askers at once', () => {
     release();
     await Promise.all([a, b]);
     expect(drive.uploads).toBe(1);
+  });
+});
+
+// ── TEMPORARY (webmSliceRepair), to remove on 2026-11-15 ──────────────────────
+// A recording damaged by WebKit's sliced-Blob bug, repaired when opened: its
+// Drive copy is replaced if — and only if — it is damaged too.
+
+// jsdom's Blob cannot be read as an ArrayBuffer; its FileReader can.
+Blob.prototype.arrayBuffer ??= function (this: Blob) {
+  return new Promise<ArrayBuffer>(resolve => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as ArrayBuffer);
+    r.readAsArrayBuffer(this);
+  });
+};
+
+/** What this device now holds for s1. */
+const localBytes = async () => new Uint8Array(await (stores.get('audio')!.get('s1') as Blob).arrayBuffer());
+
+/** A minimal MediaRecorder WebM, and its damaged / repaired forms. */
+function webm(): { bad: Uint8Array; good: Uint8Array } {
+  const el = (id: number[], d: number[]) => [...id, 0x80 | d.length, ...d];
+  const file = Uint8Array.from([
+    ...el([0x1a, 0x45, 0xdf, 0xa3], el([0x42, 0x82], [0x77, 0x65, 0x62, 0x6d])),
+    0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    ...el([0x15, 0x49, 0xa9, 0x66], el([0x2a, 0xd7, 0xb1], [0x0f, 0x42, 0x40])),
+    ...Array.from({ length: 200 }, (_, i) => i & 0xff),
+  ]);
+  const p = patchHead(file, 44_000)!;
+  const cat = (a: Uint8Array, b: Uint8Array) => { const o = new Uint8Array(a.length + b.length); o.set(a); o.set(b, a.length); return o; };
+  return { bad: cat(p.head, file), good: cat(p.head, file.subarray(p.consumed)) };
+}
+
+/** s1, stored damaged here and recorded as on Drive, the Drive copy being `remote`. */
+function damagedAndSynced(remote: Uint8Array): Uint8Array {
+  const { bad, good } = webm();
+  addSession('s1');
+  mod().syncedAudio = { s1: { fileId: 'f1', mimeType: 'audio/webm', bytes: remote.length } };
+  stores.set('audio', new Map([['s1', new Blob([bad as BlobPart], { type: 'audio/webm' })]]));
+  drive.remote = remote;
+  return good;
+}
+
+describe('the Drive copy of a repaired recording', () => {
+  it('is replaced when it is damaged too', async () => {
+    const good = damagedAndSynced(webm().bad);
+    await loadSessionAudio('s1');
+    await settle(); await settle();
+    expect(await localBytes()).toEqual(good);
+    expect(drive.replaced).toEqual([good]);
+    expect(mod().syncedAudio?.s1?.bytes).toBe(good.length);
+    expect(localStorage.getItem('cadence_audio_drive_repairs:u1')).toBeNull();
+    expect(localStorage.getItem('cadence_audio_uploads_wanted:u1')).toBeNull();
+  });
+
+  it('is left alone when it is fine', async () => {
+    const good = damagedAndSynced(webm().good);
+    await loadSessionAudio('s1');
+    await settle(); await settle();
+    expect(await localBytes()).toEqual(good);
+    expect(drive.replaced).toEqual([]);
+    expect(localStorage.getItem('cadence_audio_drive_repairs:u1')).toBeNull();
+  });
+
+  it('waits for the network, and is put right once it is back', async () => {
+    const good = damagedAndSynced(webm().bad);
+    drive.outcomes = ['network'];
+    initAudioUploadRetry();
+    await settle();
+    await loadSessionAudio('s1');
+    await settle();
+    expect(drive.replaced).toEqual([]);
+    expect(JSON.parse(localStorage.getItem('cadence_audio_drive_repairs:u1')!)).toEqual(['s1']);
+    window.dispatchEvent(new Event('online'));
+    await settle(); await settle();
+    expect(drive.replaced).toEqual([good]);
+  });
+
+  it('is not asked for when the recording is not on Drive', async () => {
+    const good = damagedAndSynced(new Uint8Array());
+    delete mod().syncedAudio;
+    await loadSessionAudio('s1');
+    await settle();
+    expect(await localBytes()).toEqual(good);
+    expect(localStorage.getItem('cadence_audio_drive_repairs:u1')).toBeNull();
+    expect(drive.uploads).toBe(0);
   });
 });
 

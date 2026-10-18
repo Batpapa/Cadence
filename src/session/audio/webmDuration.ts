@@ -12,8 +12,18 @@
 // What actually has to change sits at the very start: MediaRecorder writes the
 // Segment with an UNKNOWN size and an Info element with no Duration. So the
 // first bytes are read, a Duration is added to Info, and the result is the
-// patched head followed by the rest of the ORIGINAL blob, sliced — a Blob made
-// of slices of a disk-backed Blob copies nothing into memory.
+// patched head followed by the rest of the ORIGINAL recording — its chunks,
+// whole, as they came out of the database, which copies nothing into memory.
+//
+// Whole, and never a slice: WebKit stores a sliced Blob in IndexedDB without
+// its start offset. Read back, it gives the right SIZE and the wrong bytes —
+// those of its source from byte 0 — so the patched head was followed by the
+// whole original file, head included, and the recording played nothing on an
+// iPhone once the app had been reopened; its Drive upload failed too, the
+// bytes not matching the announced size (tester, 2026-10-17; reproduced in
+// Playwright WebKit 2026-10-18, any slice, of any Blob; Chromium unaffected).
+// So the one chunk the head ends inside is copied from that point — a few
+// tens of kilobytes — and every chunk after it is passed as it is.
 //
 // Two layouts are met in practice (measured 2026-10-01):
 //   - Chrome: no Duration at all; one is INSERTED into Info. That moves
@@ -38,16 +48,29 @@ const ID_DURATION = 0x4489;
 const ID_VOID = 0xec;
 const ID_CRC32 = 0xbf;
 
-/** The duration-bearing file, or `blob` itself when there is nothing to do or
- *  the layout is not one this recognises — never a half-patched file. The
- *  audio is intact either way; only seeking and the displayed length suffer
- *  from a missing Duration. */
-export async function patchWebmDuration(blob: Blob, durationMs: number): Promise<Blob> {
-  if (!(durationMs > 0)) return blob;
-  const head = new Uint8Array(await blob.slice(0, Math.min(blob.size, HEAD_BYTES)).arrayBuffer());
+/** The recording made of `parts` (its chunks, in order), duration-bearing — or
+ *  the parts simply joined when there is nothing to do or the layout is not
+ *  one this recognises: never a half-patched file. The audio is intact either
+ *  way; only seeking and the displayed length suffer from a missing Duration.
+ *  The result holds no slice of anything (see the top of this file), so it can
+ *  go into IndexedDB on any browser. */
+export async function patchWebmDuration(parts: readonly Blob[], type: string, durationMs: number): Promise<Blob> {
+  const whole = new Blob(parts as Blob[], { type });
+  if (!(durationMs > 0)) return whole;
+  // Reading through a slice is fine everywhere; only STORING one is not.
+  const head = new Uint8Array(await whole.slice(0, Math.min(whole.size, HEAD_BYTES)).arrayBuffer());
   const patched = patchHead(head, durationMs);
-  if (!patched) return blob;
-  return new Blob([patched.head, blob.slice(patched.consumed)], { type: blob.type });
+  if (!patched) return whole;
+  const tail: BlobPart[] = [];
+  let at = 0;
+  for (const part of parts) {
+    const end = at + part.size;
+    if (end > patched.consumed) {
+      tail.push(at >= patched.consumed ? part : new Uint8Array(await part.slice(patched.consumed - at).arrayBuffer()));
+    }
+    at = end;
+  }
+  return new Blob([patched.head, ...tail], { type });
 }
 
 interface Vint { value: number; length: number; unknown: boolean }
