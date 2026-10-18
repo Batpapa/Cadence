@@ -24,7 +24,7 @@ import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds 
 import { showModal, updateTopModal, confirmModal, askUnsavedChanges } from './modal';
 import { splitFileName, renamedFileName, safeFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
-import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon } from './playbackIcons';
+import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon, boundIcon } from './playbackIcons';
 import { appState, mutate } from '../store';
 import { registerOverlay } from './overlayStack';
 
@@ -1248,18 +1248,18 @@ export function showPreviewModal(
 
     const boundsGroup = document.createElement('div');
     boundsGroup.className = 'flex items-center rounded-lg border border-border bg-bg shrink-0';
-    const mkBoundBtn = (label: string, cls: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const mkBoundBtn = (html: string, cls: string, title: string, onClick: () => void): HTMLButtonElement => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `abc-tool-btn text-xs font-mono font-semibold ${cls}`;
-      b.textContent = label;
+      b.innerHTML = html;
       b.title = title;
       b.setAttribute('aria-label', title);
       b.onclick = () => { b.blur(); onClick(); };
       return b;
     };
-    const boundInBtn = mkBoundBtn('[←', 'abc-bound-btn-in', t('fileViewer.abc.bounds.setIn'), () => setBoundHere('in'));
-    const boundOutBtn = mkBoundBtn('→]', 'abc-bound-btn-out', t('fileViewer.abc.bounds.setOut'), () => setBoundHere('out'));
+    const boundInBtn = mkBoundBtn(boundIcon('in'), 'abc-bound-btn-in', t('fileViewer.abc.bounds.setIn'), () => setBoundHere('in'));
+    const boundOutBtn = mkBoundBtn(boundIcon('out'), 'abc-bound-btn-out', t('fileViewer.abc.bounds.setOut'), () => setBoundHere('out'));
     const boundClearBtn = mkBoundBtn('✕', 'text-muted hover:text-primary disabled:opacity-30 disabled:cursor-default disabled:hover:text-muted',
       t('fileViewer.abc.bounds.clear'), () => { bounds = { in: null, out: null }; boundsChanged(); });
     // Nothing to clear yet. Not through paintBoundControls, which reads the
