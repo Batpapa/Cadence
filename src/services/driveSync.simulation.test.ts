@@ -775,3 +775,38 @@ describe('driveAnswerBudgetMs', () => {
     expect(driveAnswerBudgetMs(new Blob([new Uint8Array(100_000_000)]))).toBeGreaterThan(30 * 60_000);
   });
 });
+
+describe('the cloud during a flush (2026-10-19)', () => {
+  /** Statuses shown and requests made, in the order they happened. */
+  const trace = (s: Session): string[] => {
+    const events: string[] = [];
+    s.mod.onStatusChange(st => events.push(`status ${st}`));
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      events.push(String(url).includes('/upload/') ? 'upload' : 'request');
+      return realFetch(url, init);
+    });
+    return events;
+  };
+
+  it('turns blue before the first request, not at the upload', async () => {
+    const s = await connectedAndInSync();
+    advance(60_000);
+    edit(s, u => { u.note = 'second'; });
+    const events = trace(s);
+    await s.mod.manualSync();
+    expect(events[0]).toBe('status syncing');
+    expect(events.indexOf('request')).toBeGreaterThan(0);
+    expect(events.at(-1)).toBe('status connected');
+  });
+
+  it('a flush that stops at a conflict does not stay blue', async () => {
+    const s = await connectedAndInSync();
+    advance(60_000);
+    drive.writeAs(state({ note: 'theirs' }), 'other-device', Date.now());
+    edit(s, u => { u.note = 'mine'; });
+    await s.mod.manualSync();
+    expect(s.duringFlush.at(-1)).toMatchObject({ screen: 'conflict' });
+    expect(s.mod.getDriveStatus()).toBe('pending');
+  });
+});
