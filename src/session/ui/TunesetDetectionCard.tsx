@@ -14,7 +14,8 @@ import { fmtLongTime, tuneName, type ClipSessionRef } from './sessionUiShared';
 import { SetClipControls, TunesetDeckButton, setReviewId } from './tunesetShared';
 import { reviewEntryTs } from '../reviewLink';
 import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
-import { withChains } from './timelineModel';
+import { withChains, hasPause, type ListAnn, type ListChain, type ListGap } from './timelineModel';
+import { FeedSilence, setRows, withCutMark, type SetOpens } from './setBreaks';
 
 // ── A set heard in an analysis (2026-10-19) ──────────────────────────────────
 // Shaped like a detection and holding its detections, shown as they are —
@@ -45,22 +46,42 @@ export interface TunesetCardOptions {
   clip?: { audioAvailable: boolean; getAudio: () => Promise<Blob | undefined> };
 }
 
-/** A live or import feed's list: tunes alone and sets, no silence rows — a
- *  feed never had them. The sets are the summary's very rule (withChains),
- *  measured against the furthest point heard so far. */
-type FeedItem = { kind: 'ann'; ann: Detection } | { kind: 'chain'; chain: Detection[] };
+/** A live or import feed's list: tunes alone and sets. The sets are the
+ *  summary's very rule (withChains), measured against the furthest point heard
+ *  so far. A feed never had silence rows: it shows only those a set could be
+ *  carried on across — small, for the link (2026-10-20). */
+type FeedItem = ListAnn | ListChain | ListGap;
 
 export function feedItems(anns: Detection[]): { duration: number; items: FeedItem[] } {
   const duration = anns.reduce((m, a) => Math.max(m, a.end ?? a.start), 0);
   // Off (the default while it is iterated on), the feed is the flat list it
   // always was.
-  if (!experimentalSets(getContext().user)) return { duration, items: anns.map(ann => ({ kind: 'ann', ann })) };
-  const items: FeedItem[] = [];
-  for (const x of withChains(anns, duration)) {
-    if (x.kind === 'ann') items.push({ kind: 'ann', ann: x.ann });
-    else if (x.kind === 'chain') items.push({ kind: 'chain', chain: x.members.map(m => m.ann) });
-  }
-  return { duration, items };
+  if (!experimentalSets(getContext().user)) return { duration, items: anns.map((ann, i) => ({ kind: 'ann', ann, i, cut: false })) };
+  return { duration, items: withChains(anns, duration).filter(x => x.kind !== 'gap' || !!x.nextId) };
+}
+
+/** A feed, its marks and the controls that set them — the same for a live
+ *  recording and an import. The screen draws each tune and each set. */
+export function FeedList({ feed, renderAnn, renderSet, onSetOpens }: {
+  feed: ReturnType<typeof feedItems>;
+  renderAnn: (ann: Detection) => ComponentChild;
+  renderSet: (chain: Detection[], children: ComponentChild) => ComponentChild;
+  onSetOpens: SetOpens;
+}) {
+  const silence = (g: ListGap, linked: boolean) => (
+    <FeedSilence key={`gap-${g.from}`} len={g.len} linked={linked} onSetOpens={(o) => onSetOpens(g.nextId!, o)} />
+  );
+  return (
+    <>
+      {feed.items.map(item => {
+        if (item.kind === 'gap') return silence(item, false);
+        const node = item.kind === 'ann'
+          ? renderAnn(item.ann)
+          : renderSet(item.members.map(m => m.ann), setRows(item.rows, r => renderAnn(r.ann), g => silence(g, true), onSetOpens));
+        return withCutMark(item, node, onSetOpens);
+      })}
+    </>
+  );
 }
 
 /** The id the set plays under, in whichever player plays it. */
@@ -101,8 +122,11 @@ export function TunesetDetectionCard({ chain, opts, children }: {
   const showReview = !!setCard && !!reviewId && tracked && (reviewTs !== null || !!ratingOf(setCard.id, reviewId, reviewTs));
 
   return (
+    // A double line where a tune has a single one (the user's call,
+    // 2026-10-20): the set stands out from the tunes it holds and from those
+    // around it, = beside -. Three pixels is the least that draws both lines.
     <div
-      class={`detection-card p-3 rounded-lg border space-y-2 ${setCard ? 'bg-surface' : 'bg-bg'} ${open ? 'border-accent/60' : 'border-border'}`}
+      class={`detection-card p-3 rounded-lg border-[3px] border-double space-y-2 ${setCard ? 'bg-surface' : 'bg-bg'} ${open ? 'border-accent/60' : 'border-border'}`}
       data-set-id={opts.record?.id}
     >
       <div class="flex items-center gap-2">
@@ -164,6 +188,8 @@ export function TunesetDetectionCard({ chain, opts, children }: {
           text — no pencil: the set's bounds are its tunes'. */}
       <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
         <span class="font-mono tabular-nums">{range}</span>
+        {/* Linked across a silence: it plays, and clips, with the pause. */}
+        {hasPause(chain, opts.session.duration) && <span class="text-[11px] text-dim">· {t('sessions.set.pauseIncluded')}</span>}
         {opts.clip && (
           <span class="ml-auto flex items-center gap-1.5">
             <SetClipControls

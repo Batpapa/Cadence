@@ -5,7 +5,7 @@ import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets'
 import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
 import { copyFileName } from '../services/attachmentNames';
-import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, EyeOffIcon, SaveIcon, PlusIcon, GearIcon } from '../components/icons';
+import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, EyeOffIcon, SaveIcon, PlusIcon, GearIcon, DeckAddIcon } from '../components/icons';
 import { selectionIsHidden, toggleSpoiler } from '../components/spoilerToggle';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
@@ -862,7 +862,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
             title={t('card.manageDecks')}
             onClick={() => showManageDecksModal(cardId)}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <DeckAddIcon size={11} />
           </span>
         </div>
       </div>

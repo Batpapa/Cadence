@@ -5,7 +5,7 @@ import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon } from '.
 import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
-import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName, downloadBlob } from '../../utils';
 import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile, mutateWithRule } from '../../services/attachmentStore';
@@ -788,7 +788,7 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: T
       class={`${round} ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
       title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
       disabled={busy}
-      dangerouslySetInnerHTML={{ __html: deckLinkIcon }}
+      dangerouslySetInnerHTML={{ __html: deckAddIcon }}
       onClick={onLinkClick}
     />
   );

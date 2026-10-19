@@ -3,7 +3,7 @@ import type { AppContext, Card } from '../../types';
 import { t } from '../../services/i18nService';
 import { PlusIcon, AddClipIcon, ClipAttachedIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
-import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { fileToEntry, downloadBlob, generateId } from '../../utils';
 import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile } from '../../services/attachmentStore';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
@@ -239,7 +239,7 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
         class={`${round} cursor-pointer bg-accent/10 text-accent hover:bg-accent/20 ${isInEveryDeck(setCard.id) ? 'opacity-40' : ''}`}
         title={isInEveryDeck(setCard.id) ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
         disabled={busy}
-        dangerouslySetInnerHTML={{ __html: deckLinkIcon }}
+        dangerouslySetInnerHTML={{ __html: deckAddIcon }}
         onClick={(e) => {
           e.stopPropagation();
           showDeckChoiceModal({

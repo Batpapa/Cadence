@@ -314,6 +314,11 @@ export class ImportSession {
     this.tracker.toggleSetLike(tunesetId);
   }
 
+  /** See LiveSession's identical method. */
+  setOpensSet(annotationId: string, opens: boolean | undefined): void {
+    this.tracker.setOpensSet(annotationId, opens);
+  }
+
   /** Records the user's verdict on this detection's identity — see
    *  LiveSession's identical method for the full doc. */
   selectAlternate(annotationId: string, pick: DetectionAlternate | null): void {

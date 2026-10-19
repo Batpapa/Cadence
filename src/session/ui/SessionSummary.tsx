@@ -29,7 +29,8 @@ import { showBoundEditor, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import { appState } from '../../store';
-import { headPosition, withChains, withGaps } from './timelineModel';
+import { headPosition, withChains, withGaps, type ListGap } from './timelineModel';
+import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
 import { experimentalSets } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
 import { generateId } from '../../utils';
@@ -879,6 +880,61 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     </div>
   );
 
+  /** A cut, a link, or the rule again — see model.ts's opensSet. The sets on
+   *  either side move with it, and drag their rating and clip (settleSets). */
+  const setOpens: SetOpens = (id, opens) => {
+    const target = session.annotations.find(a => a.id === id);
+    if (!target) return;
+    if (opens === undefined) delete target.opensSet; else target.opensSet = opens;
+    persist();
+    bump();
+    void settleSets();
+  };
+
+  /** A silence row — between two sets, or inside one linked across it.
+   *
+   *  What the timeline shows as a hole and the list used to swallow whole:
+   *  read end to end, the cards otherwise describe one unbroken concert.
+   *
+   *  And, since 2026-09-21, the way to fill one: a tune can have been played
+   *  here and never recognised. The row is the control because it is the only
+   *  thing on the screen that both names the gap and sits in it — a button
+   *  elsewhere would have to say which hole it meant. The whole row is the
+   *  target, which on a phone is a comfortable strip, and the ⊕ is what says so
+   *  without a hover anyone can have (see hoverOnlyWhenSupported). A set linked
+   *  across it keeps it all the same (the user's call, 2026-10-20). */
+  const gapRow = (item: ListGap, inSet: boolean) => (
+    <div
+      key={`gap-${item.from}`}
+      data-gap-from={item.from}
+      // Lit like a card when the head stands in it: a silence is a place in
+      // the recording too, and "you are here" has to be answerable there as
+      // well.
+      class={`flex items-center gap-3 py-1 text-[11px] transition-colors ${
+        lit.gapFrom === item.from ? 'text-accent' : 'text-dim'}`}
+    >
+      <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
+      {audioUrl ? (
+        <button
+          class="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+          title={t('sessions.addDetection.hint')}
+          onClick={() => addDetectionIn(item.from, item.len)}
+        >
+          <PlusIcon size={9} />
+          {t('sessions.gap', { d: fmtLongTime(item.len) })}
+        </button>
+      ) : (
+        <span class="shrink-0 tabular-nums">{t('sessions.gap', { d: fmtLongTime(item.len) })}</span>
+      )}
+      <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
+      {item.nextId && (
+        <span class="mr-3 flex">
+          <SetMarkButton kind="link" active={inSet} onClick={() => setOpens(item.nextId!, inSet ? undefined : false)} />
+        </span>
+      )}
+    </div>
+  );
+
   /** A set played as a whole: one passage from its first tune's start to its
    *  last tune's end, under its own id so its ▶ is the only one lit. */
   const chainAsAnn = (chain: Detection[]): Detection => ({ ...chain[0]!, id: chainPlayId(chain), ...chainSpan(chain, session.duration) });
@@ -1150,51 +1206,18 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             ? withChains(session.annotations, session.duration)
             : withGaps(session.annotations, session.duration)
           ).map(item => (
-            item.kind === 'chain' ? (
+            item.kind === 'chain' ? withCutMark(item, (
               <TunesetDetectionCard
                 key={`set-${item.members[0]!.ann.id}`}
                 chain={item.members.map(m => m.ann)}
                 opts={setOptsFor(item.members.map(m => m.ann))}
               >
-                {item.members.map(m => annRow(m.ann, m.i))}
+                {setRows(item.rows, r => annRow(r.ann, r.i), g => gapRow(g, true), setOpens)}
               </TunesetDetectionCard>
-            ) : item.kind === 'gap' ? (
-              // What the timeline shows as a hole and the list used to swallow
-              // whole: read end to end, the cards otherwise describe one
-              // unbroken concert.
-              //
-              // And, since 2026-09-21, the way to fill one: a tune can have
-              // been played here and never recognised. The row is the control
-              // because it is the only thing on the screen that both names the
-              // gap and sits in it — a button elsewhere would have to say
-              // which hole it meant. The whole row is the target, which on a
-              // phone is a comfortable strip, and the ⊕ is what says so
-              // without a hover anyone can have (see hoverOnlyWhenSupported).
-              <div
-                key={`gap-${item.from}`}
-                data-gap-from={item.from}
-                // Lit like a card when the head stands in it: a silence is a
-                // place in the recording too, and "you are here" has to be
-                // answerable there as well.
-                class={`flex items-center gap-3 py-1 text-[11px] transition-colors ${
-                  lit.gapFrom === item.from ? 'text-accent' : 'text-dim'}`}
-              >
-                <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
-                {audioUrl ? (
-                  <button
-                    class="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
-                    title={t('sessions.addDetection.hint')}
-                    onClick={() => addDetectionIn(item.from, item.len)}
-                  >
-                    <PlusIcon size={9} />
-                    {t('sessions.gap', { d: fmtLongTime(item.len) })}
-                  </button>
-                ) : (
-                  <span class="shrink-0 tabular-nums">{t('sessions.gap', { d: fmtLongTime(item.len) })}</span>
-                )}
-                <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
-              </div>
-            ) : annRow(item.ann, item.i)
+            ), setOpens)
+            : item.kind === 'gap' ? gapRow(item, false)
+            : 'cut' in item ? withCutMark(item, annRow(item.ann, item.i), setOpens)
+            : annRow(item.ann, item.i)
           ))}
         </div>
       </div>

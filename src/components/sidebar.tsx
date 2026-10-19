@@ -4,6 +4,7 @@ import type { RefObject } from 'preact';
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
 import { generateId, addTouchDragSupport, availabilityColor, pct } from '../utils';
 import { promptModal } from './modal';
+import { DeckIcon } from './icons';
 import { findParentFolder } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -244,9 +245,7 @@ function DeckItem({ ctx, deck, depth }: { ctx: AppContext; deck: Deck; depth: nu
       onClick={() => ctx.navigate({ view: 'deck', deckId: deck.id })}
     >
       <span class={`shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim opacity-70'}`}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
-        </svg>
+        <DeckIcon size={12} />
       </span>
       <span class="truncate flex-1">{deck.name}</span>
       {deck.entries.length > 0 && (() => {

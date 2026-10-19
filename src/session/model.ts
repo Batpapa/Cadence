@@ -118,6 +118,18 @@ export interface Detection {
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */
   liked: boolean;
+  /** The user's word on whether this detection OPENS a set (2026-10-20) — the
+   *  one mark the set breaks hang on, read by timelineModel.ts's withChains.
+   *  Absent: the rule decides (a silence of GAP_MIN_S or more before it opens
+   *  a set). `true`: a set starts here though nothing stopped — a cut. `false`:
+   *  it carries on the set before it across a silence — a link. Where a set
+   *  ENDS is never stored: it is wherever the next one opens, so the two can
+   *  never contradict each other (the user's call).
+   *
+   *  Only the user's decisions are stored, like a confirmation; absent on every
+   *  detection before this existed — no migration. Ignored with the
+   *  experimental sets off, and on the first detection, which always opens. */
+  opensSet?: boolean;
   /** false while the Viterbi detector could still revise this detection's
    *  bounds or existence as more windows arrive (see viterbiSegmenter.ts) —
    *  the UI gates the actions that act on the bounds (delete, merge, edit,

@@ -316,6 +316,29 @@ export class DetectionTracker {
     return reconcileTunesets(this.sets, chainsOf(dets, duration), newId);
   }
 
+  // ── Where sets open, in the user's word (2026-10-20) ──
+  // A cut or a link (model.ts's opensSet) can be given while the recording
+  // runs, on a tune still being decoded. It is not kept on the decoder's
+  // detection the way a heart is: the decoder re-ids a stretch whenever it
+  // revises it, and a mark lost that way would undo a set the user just
+  // fixed. So it is anchored on WHEN that detection started, and lands after
+  // every update on the detection starting nearest that instant — following it
+  // as its start moves.
+  private readonly setMarks: Array<{ at: number; opens: boolean }> = [];
+  /** Shown id → the mark it carries. */
+  private markOf = new Map<string, { at: number; opens: boolean }>();
+
+  /** Marks a shown detection as opening a set (`true`), carrying the set
+   *  before it on (`false`), or hands it back to the rule (`undefined`). */
+  setOpensSet(id: string, opens: boolean | undefined): void {
+    const shown = this.get(id);
+    if (!shown) return;
+    const held = this.markOf.get(id);
+    if (held) this.setMarks.splice(this.setMarks.indexOf(held), 1);
+    if (opens !== undefined) this.setMarks.push({ at: shown.start, opens });
+    this.refresh();
+  }
+
   /** See model.ts's withManualAlternate. */
   addManualAlternate(id: string, tune: DetectionAlternate): void {
     this.mark(id, d => ({ manualAlternates: withManualAlternate(d, tune) }));
@@ -396,5 +419,38 @@ export class DetectionTracker {
       const c = this.confirmations.get(d.id);
       if (c && this.resolution.claims.has(c.id)) c.last = d;
     }
+    this.placeSetMarks();
+  }
+
+  /** Lays the set marks on the detections they now stand on — the nearest
+   *  start within MARK_REACH_S; on one detection, the latest mark wins. A mark
+   *  that finds nothing waits: the decoder may yet bring its tune back. */
+  private placeSetMarks(): void {
+    this.markOf = new Map();
+    if (this.setMarks.length === 0) return;
+    const dets = this.resolution.detections;
+    const at = new Map<number, { at: number; opens: boolean }>();
+    for (const m of this.setMarks) {
+      let best = -1;
+      let dist = MARK_REACH_S;
+      dets.forEach((d, j) => {
+        const x = Math.abs(d.start - m.at);
+        if (x <= dist) { best = j; dist = x; }
+      });
+      if (best >= 0) at.set(best, m);
+    }
+    const detections = dets.map((d, j) => {
+      const m = at.get(j);
+      if (!m) return d;
+      m.at = d.start;
+      this.markOf.set(d.id, m);
+      return { ...d, opensSet: m.opens };
+    });
+    this.resolution = { ...this.resolution, detections };
   }
 }
+
+/** How far a set mark reaches for its detection: a start revised by the
+ *  decoder moves by a window hop or two (5 s each); two tunes never start
+ *  this close. */
+const MARK_REACH_S = 10;
