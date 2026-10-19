@@ -42,6 +42,32 @@ describe('withChains', () => {
   });
 });
 
+describe('withChains — the user\'s marks', () => {
+  const shape = (items: ReturnType<typeof withChains>) => items.map(x =>
+    x.kind === 'chain' ? `${x.cut ? '✂' : ''}chain(${x.rows.map(r => r.kind === 'gap' ? '_' : r.ann.id).join('')})`
+      : x.kind === 'ann' ? `${x.cut ? '✂' : ''}${x.ann.id}` : `gap${x.nextId ? `>${x.nextId}` : ''}`);
+
+  it('a cut opens a set where nothing stopped, and says so', () => {
+    const anns = [ann('a', 0, 100), { ...ann('b', 105, 200), opensSet: true }, ann('c', 200, 300)];
+    expect(shape(withChains(anns, 300))).toEqual(['a', '✂chain(bc)']);
+  });
+
+  it('a link carries a set on across a silence, which shows inside it', () => {
+    const anns = [ann('a', 0, 100), ann('b', 100, 200), { ...ann('c', 260, 300), opensSet: false }, ann('d', 400, 500)];
+    expect(shape(withChains(anns, 500))).toEqual(['chain(ab_c)', 'gap>d', 'd']);
+    expect(chainsOf(anns, 500).map(c => c.map(d => d.id))).toEqual([['a', 'b', 'c']]);
+  });
+
+  it('a mark that agrees with the rule changes nothing, and the first detection always opens', () => {
+    const anns = [{ ...ann('a', 0, 100), opensSet: false }, { ...ann('b', 200, 300), opensSet: true }, { ...ann('c', 300, 400), opensSet: false }];
+    expect(shape(withChains(anns, 400))).toEqual(['a', 'gap>b', 'chain(bc)']);
+  });
+
+  it('no silence row before the first detection or after the last offers a link', () => {
+    expect(shape(withChains([ann('a', 30, 100)], 200))).toEqual(['gap', 'a', 'gap']);
+  });
+});
+
 describe('reconcileTunesets', () => {
   it('gives every settled chain an entry, and keeps ids and hearts across a recomputation', () => {
     const chains = [[ann('a', 0, 1), ann('b', 1, 2)], [ann('c', 9, 10), ann('d', 10, 11)]];
@@ -150,5 +176,21 @@ describe('the table kept while recording or importing', () => {
     t.finish([ev(ann('b', 100, 200)), ev(ann('c', 205, 300))]);
     const saved = t.finalSets(newId);
     expect(saved).toEqual([{ id: rec!.id, detectionIds: ['a', 'b', 'c'], liked: true }]);
+  });
+
+  it('a cut given while recording survives the decoder re-iding the tune and moving its start', () => {
+    const t = new DetectionTracker();
+    t.apply([ev(ann('a', 0, 100)), { type: 'open', detection: ann('b', 100, null, 'b', false) }]);
+    t.setOpensSet('b', true);
+    expect(t.get('b')?.opensSet).toBe(true);
+    // The decoder hands the stretch to a new detection, starting a hop later.
+    t.apply([{ type: 'retract', id: 'b' }, { type: 'open', detection: ann('b2', 105, null, 'x', false) }]);
+    expect(t.get('b2')?.opensSet).toBe(true);
+    t.finish([ev(ann('b2', 105, 200, 'x'))]);
+    expect(t.finalSets(newId)).toBeUndefined();
+    expect(t.list().map(d => d.opensSet)).toEqual([undefined, true]);
+    // Handed back to the rule: the set is whole again.
+    t.setOpensSet('b2', undefined);
+    expect(t.list().map(d => d.opensSet)).toEqual([undefined, undefined]);
   });
 });

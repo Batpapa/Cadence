@@ -322,6 +322,13 @@ export class LiveSession {
     this.userChanged();
   }
 
+  /** A cut (`true`) or a link (`false`) before this detection, or the rule
+   *  again (`undefined`) — see model.ts's opensSet. */
+  setOpensSet(annotationId: string, opens: boolean | undefined): void {
+    this.tracker.setOpensSet(annotationId, opens);
+    this.userChanged();
+  }
+
   /** Records the user's verdict on this detection's identity, finalized or
    *  still playing: any tune — the decoder's own current pick included —
    *  confirms it, `null` hands it back to the decoder. What a confirmation

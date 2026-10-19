@@ -8,7 +8,7 @@ import { alertModal } from '../../components/modal';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
-import { TunesetDetectionCard, feedItems } from './TunesetDetectionCard';
+import { TunesetDetectionCard, FeedList, feedItems } from './TunesetDetectionCard';
 import { recordOf } from '../tunesets';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
@@ -291,26 +291,31 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
           // The table only when there is a set to show: never asked, nothing
           // is saved with the analysis (the sets off).
           const table = feed.items.some(x => x.kind === 'chain') ? live.getTunesets() : [];
-          return feed.items.map(item => item.kind === 'ann'
-            ? <DetectionCard key={item.ann.id} ann={item.ann} opts={cardOpts} />
-            : (
-              <TunesetDetectionCard
-                key={`set-${item.chain[0]!.id}`}
-                chain={item.chain}
-                opts={{
-                  ctx,
-                  session: { id: live.sessionId, name: '', date: null, duration: feed.duration },
-                  onOpenCard,
-                  getPinnedDeckIds: () => live.pinnedDeckIds,
-                  onChanged: () => setDetections(live.getDetections()),
-                  record: recordOf(table, item.chain),
-                  onToggleLike: (r) => { live.toggleSetLike(r.id); setDetections(live.getDetections()); },
-                  sessionStartMs: live.startedAt || undefined,
-                }}
-              >
-                {item.chain.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
-              </TunesetDetectionCard>
-            ));
+          return (
+            <FeedList
+              feed={feed}
+              renderAnn={ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />}
+              renderSet={(chain, children) => (
+                <TunesetDetectionCard
+                  key={`set-${chain[0]!.id}`}
+                  chain={chain}
+                  opts={{
+                    ctx,
+                    session: { id: live.sessionId, name: '', date: null, duration: feed.duration },
+                    onOpenCard,
+                    getPinnedDeckIds: () => live.pinnedDeckIds,
+                    onChanged: () => setDetections(live.getDetections()),
+                    record: recordOf(table, chain),
+                    onToggleLike: (r) => { live.toggleSetLike(r.id); setDetections(live.getDetections()); },
+                    sessionStartMs: live.startedAt || undefined,
+                  }}
+                >
+                  {children}
+                </TunesetDetectionCard>
+              )}
+              onSetOpens={(id, opens) => { live.setOpensSet(id, opens); setDetections(live.getDetections()); }}
+            />
+          );
         })()}
       </div>
 

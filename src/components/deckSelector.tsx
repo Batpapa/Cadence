@@ -374,6 +374,7 @@ export function DeckPickerHost() {
   return createPortal(<DeckPickerPopover selected={s.selected} onChange={s.onChange} />, document.body);
 }
 
-/** Link-icon SVG string — the "already a card, put it in a deck" affordance. */
-export const deckLinkIcon =
-  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+/** icons.tsx's DeckAddIcon as an SVG string — the "already a card, manage its
+ *  decks" affordance (a chain until 2026-10-20). */
+export const deckAddIcon =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/><line x1="12" y1="4.6" x2="12" y2="9.4"/><line x1="9" y1="7" x2="15" y2="7"/></svg>';

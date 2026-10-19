@@ -223,4 +223,14 @@ describe('set breaks (experimental sets, 2026-10-19)', () => {
     const lines = analysisTextReport(analysis([det({ displayName: 'A', start: 0, end: 100 }), det({ displayName: 'B', start: 115, end: 200 })]), { setBreaks: true });
     expect(lines.split('\r\n').slice(2)).toEqual(['- A (reel)', '', '- B (reel)']);
   });
+
+  it('follows the user\'s cuts and links, as on screen (2026-10-20)', () => {
+    const marked = [
+      det({ id: 'a', displayName: 'A', start: 0, end: 100 }),
+      det({ id: 'b', displayName: 'B', start: 105, end: 200, opensSet: true }),
+      det({ id: 'c', displayName: 'C', start: 230, end: 300, opensSet: false }),
+    ];
+    const lines = analysisTextReport(analysis(marked), { setBreaks: true }).split('\r\n').slice(2);
+    expect(lines).toEqual(['- A (reel)', '', '- B (reel)', '- C (reel)']);
+  });
 });

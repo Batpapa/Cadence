@@ -618,8 +618,9 @@ export function FileAudioIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-/** Two chain links: a file reached by its address rather than picked on the
- *  device — the analyser's import from a link, beside FileAudioIcon. */
+/** Two chain links — two sets joined by hand across a silence; UnlinkIcon is
+ *  its pair (2026-10-20: it used to stand for decks and for an import from a
+ *  link, which now show DeckAddIcon and ExternalLinkIcon). */
 export function LinkIcon({ size = 12 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -865,6 +866,44 @@ export function TuneSetIcon({ size = 14 }: { size?: number }) {
       <circle cx="18" cy="17.6" r="2.3" fill="currentColor" stroke="none"/>
       <path d="M6.5 17.6V6.4M13.3 17.6V6.4M20.1 17.6V6.4"/>
       <path d="M6.5 6.4h13.6"/>
+    </svg>
+  );
+}
+
+/** A broken chain — LinkIcon's pair: its two links, drawn the same, pulled
+ *  apart (two tunes of a set unjoined by hand). Plain on purpose: no crack
+ *  marks, which turned to noise at the size it is shown. */
+export function UnlinkIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+      <path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+    </svg>
+  );
+}
+
+/** Stacked layers — a deck, as the sidebar lists them. */
+export function DeckIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+      <polyline points="2 17 12 22 22 17"/>
+      <polyline points="2 12 12 17 22 12"/>
+    </svg>
+  );
+}
+
+/** DeckIcon as it is, with a small "+" on its top layer — a card laid on the
+ *  pile: "manage this card's decks", wherever a card can be filed
+ *  (2026-10-20: it was a chain, now the sets' join). */
+export function DeckAddIcon({ size = 13 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+      <polyline points="2 17 12 22 22 17"/>
+      <polyline points="2 12 12 17 22 12"/>
+      <line x1="12" y1="4.6" x2="12" y2="9.4"/>
+      <line x1="9" y1="7" x2="15" y2="7"/>
     </svg>
   );
 }

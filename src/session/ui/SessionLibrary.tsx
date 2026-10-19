@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, LinkIcon } from '../../components/icons';
+import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, ExternalLinkIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
 import { listSessions } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
@@ -280,7 +280,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
                     .then(([file]) => { if (file) onImportFile(file, destinationFolder); });
                 }}
               >
-                {importFrom === 'link' ? <LinkIcon size={13} /> : <FileAudioIcon size={13} />}
+                {importFrom === 'link' ? <ExternalLinkIcon size={13} /> : <FileAudioIcon size={13} />}
                 <span>{t(importFrom === 'link' ? 'sessions.importLink' : 'sessions.import')}</span>
               </button>
               {/* Over the right edge, for the reason the live button's says. */}

@@ -1,6 +1,6 @@
 import type { Analysis, Detection } from '../session/model';
 import { downloadTextFile } from '../utils';
-import { GAP_MIN_S } from '../session/ui/timelineModel';
+import { withChains } from '../session/ui/timelineModel';
 
 // ── Read-only exports of an analysis ─────────────────────────────────────────
 // The .cds package (sessionShareService.ts) exists to travel BACK into Cadence:
@@ -46,17 +46,16 @@ const endOf = (d: Detection, session: Analysis): number => d.end ?? session.dura
 export type NameOf = (d: Detection) => string;
 const rawName: NameOf = d => d.displayName;
 
-/** Whether a blank line goes before each detection: where the screen shows a
- *  silence row (15 s), which with the experimental sets on is exactly where one set
- *  ends and the next begins (2026-10-19). Read the way the screen reads it —
- *  against the furthest end so far, since detections overlap. */
+/** Whether a blank line goes before each detection: where one set ends and
+ *  the next begins, as the screen draws them (timelineModel's withChains) —
+ *  the user's cuts and links included (2026-10-20). */
 function breaksBefore(dets: Detection[], session: Analysis): boolean[] {
-  let cursor = 0;
-  return dets.map((d, i) => {
-    const brk = i > 0 && d.start - cursor >= GAP_MIN_S;
-    cursor = Math.max(cursor, endOf(d, session));
-    return brk;
-  });
+  const opens = new Set<Detection>();
+  for (const x of withChains(dets, session.duration)) {
+    if (x.kind === 'ann') opens.add(x.ann);
+    else if (x.kind === 'chain') opens.add(x.members[0]!.ann);
+  }
+  return dets.map((d, i) => i > 0 && opens.has(d));
 }
 
 export interface TextReportOptions {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { TrendIcon, ResetIcon, MusicNoteIcon, PlusIcon } from '../../components/icons';
-import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckLinkIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { showPreviewModal } from '../../components/fileViewer';
 import { computeRows, sortRows, formatGain, growthIndex, inflationBetween, netGain, deflateFromRoute, type TuneRow, type GainMode } from '../../services/trendingService';
 import { syncPopularityHistory, type SyncProgress } from '../../services/trendingSyncService';
@@ -187,7 +187,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
           class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
           title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
           disabled={actionBusy}
-          dangerouslySetInnerHTML={{ __html: deckLinkIcon }}
+          dangerouslySetInnerHTML={{ __html: deckAddIcon }}
           onClick={onLinkClick}
         />
       ) : (
