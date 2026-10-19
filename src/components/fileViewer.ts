@@ -2861,11 +2861,6 @@ export function showPreviewModal(
         },
       };
 
-      // Resolves once the audio buffer for the current render is built. Held so
-      // a caller can act after the tune is actually playable, rather than after
-      // the notation has merely been drawn.
-      let primed: Promise<unknown> = Promise.resolve();
-
       /** Every rebuild of the synth — a new tune, a new speed — one after the
        *  other. Each is a teardown and a rebuild of the same controller, and
        *  two interleaved leave it holding the pieces of both (see applyWarp).
@@ -2875,6 +2870,11 @@ export function showPreviewModal(
         synthQueue = synthQueue.then(step).catch(() => {});
         return synthQueue;
       };
+
+      /** Where the stave was, and whether it was playing, before a run of
+       *  redraws that has not yet put it back — see redrawPreservingPlayback.
+       *  A stop asked for in the meantime is a stop: it clears `wasPlaying`. */
+      let pendingRestore: { wasPlaying: boolean; at: number } | null = null;
 
       /** Opens the audio output before the first note needs it.
        *
@@ -2962,6 +2962,7 @@ export function showPreviewModal(
             const go = synthControl.go.bind(synthControl);
             synthControl.go = () => go().catch((err: unknown) => { synthControl.isLoading = false; throw err; });
             stopAudio = () => {
+              if (pendingRestore) pendingRestore.wasPlaying = false;
               try { synthControl.pause(); } catch { /* ignore */ }
               releaseAudioFocus(pauseScoreForFocus);
             };
@@ -3002,6 +3003,7 @@ export function showPreviewModal(
           // object abcjs just built rather than from the `Q:` line, so an
           // injected default and a hand-written one give the same answer.
           pauseIfPlaying = () => {
+            if (pendingRestore) pendingRestore.wasPlaying = false;
             try {
               if (!synthControl?.isStarted) return;
               synthControl.pause();
@@ -3051,16 +3053,16 @@ export function showPreviewModal(
           // under an `options` key of our own buried it one level too deep and
           // abcjs ignored it in silence.
           if (swing !== NO_SWING && swingApplies()) audioParams.swing = swing;
-          primed = enqueueSynth(() => synthControl.setTune(visualObj[0]!, true, audioParams).then(() => {
+          void enqueueSynth(() => synthControl.setTune(visualObj[0]!, true, audioParams).then(() => {
             // After setTune, never before: warping rebuilds the audio buffer,
             // so it needs a tune to rebuild from. Skipped when the controller
             // is already at that speed — it keeps its warp from one tune to
             // the next, and `setTune` builds at it — since it would throw away
             // and re-render the buffer to arrive where it already is.
             //
-            // AWAITED, which it was not: `primed` resolved while the rebuild
-            // was still running, and anything waiting on it (a redraw putting
-            // the tune back where it was) raced it.
+            // AWAITED, which it was not: the step ended while the rebuild was
+            // still running, and the step behind it (a redraw putting the tune
+            // back where it was) raced it.
             if (synthControl.warp !== tempoPercent) return synthControl.setWarp(tempoPercent);
             return undefined;
           }).catch(() => {
@@ -3209,16 +3211,22 @@ export function showPreviewModal(
         `${textarea.selectionStart},${textarea.selectionEnd},${clickedAt && clickedAt.caret === textarea.selectionStart ? clickedAt.index : ''}`;
       const caretMoved = (run: TextRun): boolean => caretKey() !== run.caret;
 
+      interface TextResume { char: number; pass: number; playedTo: number; paused: boolean; caret: string }
+      /** The place the run being prepared was asked to start from. A setting
+       *  changed again before it is ready restarts the preparation from that
+       *  same place, not from the cursor (the key changed press after press,
+       *  2026-10-20: each press while loading sent it back to the caret). */
+      let loadingResume: TextResume | null = null;
+
       /** Builds and starts a run on the box's text: from the cursor when it is
        *  inside the passage, from the passage's start when it is not — or,
        *  after a setting changed, at `resume`. */
-      const startTextRun = (resume: {
-        char: number; pass: number; playedTo: number; paused: boolean; caret: string;
-      } | null) => {
+      const startTextRun = (resume: TextResume | null) => {
         // One tune at a time: the stave's, hidden behind this face, stops.
         pauseIfPlaying();
         stopTap();
         const id = ++textRunId;
+        loadingResume = resume;
         const caret = resume?.caret ?? caretKey();
         const ps = playableSource(splitXLine(tunes[currentIndex] ?? '').xLine, textarea.value);
         const cursorNote = resume ? null : textCursorNote();
@@ -3484,9 +3492,9 @@ export function showPreviewModal(
         retime: () => {
           if (textState === 'idle') return;
           const run = textRun;
-          if (textState === 'loading' || !run) { startTextRun(null); return; }
+          if (textState === 'loading' || !run) { startTextRun(loadingResume); return; }
           const at = run.last ?? textRegionStart(run);
-          const resume = {
+          const resume: TextResume = {
             char: at?.startCharArray?.[0] ?? 0,
             pass: at ? passOf(run.timings, at) : 0,
             playedTo: run.playedTo,
@@ -3529,22 +3537,42 @@ export function showPreviewModal(
        *
        *  `setTune` resets `isStarted` to false and the position to zero, so
        *  both are read BEFORE the re-draw and put back after. Expect a short
-       *  silence while the buffer is rebuilt; there is no way around that one. */
+       *  silence while the buffer is rebuilt; there is no way around that one.
+       *
+       *  Several redraws closer together than a rebuild — the key changed
+       *  press after press while it played (reported 2026-10-20: the cursor
+       *  went haywire, the sound stopped while the cursor ran on, once a
+       *  cacophony) — are ONE: the place is read at the first, put back after
+       *  the last. Two things went wrong before. The second press read the
+       *  controller mid-rebuild, "stopped, at the start", which the first
+       *  setTune had just set, and gave up the playback. And the first press's
+       *  `play()`, outside the queue, landed in the middle of the second
+       *  setTune: it started the buffer being re-initialised and the OLD
+       *  timer, which `go()` then orphaned by building a new one over it —
+       *  never stopped, still driving the cursor from a drawing that was gone.
+       *  So the putting back is a step of the queue too, behind its own
+       *  setTune, and awaited, so the next rebuild waits for it. */
+      let redrawGen = 0;
       const redrawPreservingPlayback = (draw: () => void) => {
-        const wasPlaying = !!synthControl?.isStarted;
-        const at = synthControl?.percent ?? 0;
+        if (!pendingRestore) pendingRestore = { wasPlaying: !!synthControl?.isStarted, at: synthControl?.percent ?? 0 };
+        const gen = ++redrawGen;
         draw();
-        // Stopped at the very beginning is "nothing to put back", and saying so
-        // matters: seeking runs the cursor callback, which paints the note it
-        // lands on. Restoring a position nobody had left would mark the first
-        // note of a score that has never been played.
-        if (!wasPlaying && at === 0) return;
-        void primed.then(() => {
-          if (!synthControl) return;
+        void enqueueSynth(() => {
+          // A later redraw is queued behind this one: it puts the place back.
+          if (gen !== redrawGen || !pendingRestore) return undefined;
+          const { wasPlaying, at } = pendingRestore;
+          // Cleared once it is done, not before: a press made while `play()`
+          // is on its way would otherwise read the controller half restored.
+          const done = () => { if (gen === redrawGen) pendingRestore = null; };
+          // Stopped at the very beginning is "nothing to put back", and saying
+          // so matters: seeking runs the cursor callback, which paints the note
+          // it lands on. Restoring a position nobody had left would mark the
+          // first note of a score that has never been played.
+          if (!synthControl || (!wasPlaying && at === 0)) { done(); return undefined; }
           try {
-            if (wasPlaying) void synthControl.play().then(() => synthControl.seek(at));
-            else synthControl.seek(at);
-          } catch { /* nothing primed to resume */ }
+            if (!wasPlaying || synthControl.isStarted) { synthControl.seek(at); done(); return undefined; }
+            return Promise.resolve(synthControl.play()).then(() => synthControl.seek(at)).finally(done);
+          } catch { done(); return undefined; /* nothing primed to resume */ }
         });
       };
 
