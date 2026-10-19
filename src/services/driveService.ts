@@ -938,6 +938,14 @@ async function flushSync(interactive = false): Promise<void> {
   if (!_state.fileId || !_state.pendingState || _state.flushInProgress) return;
   if (_state.retryTimer) { clearTimeout(_state.retryTimer); _state.retryTimer = null; }
   _state.flushInProgress = true;
+  // Blue from the start, not from the upload (2026-10-19): the precondition
+  // below is a round trip to Drive, and a full read of the file when the
+  // version has moved — the cloud stayed yellow through all of it, and a click
+  // on it seemed to do nothing for a moment. A flush that stops before pushing
+  // (a conflict to arbitrate, nothing left to send) puts back what was shown;
+  // see the `finally`.
+  const shownBefore = _state.status;
+  setStatus('syncing');
   // Consumed only once the push is committed to — restored by the catch if the
   // upload itself fails, untouched when we bail out before it.
   let consumed: AppState | null = null;
@@ -1014,6 +1022,10 @@ async function flushSync(interactive = false): Promise<void> {
     _state.retryTimer = setTimeout(() => { _state.retryTimer = null; void flushSync(autoMayPrompt()); }, 30_000);
   } finally {
     _state.flushInProgress = false;
+    // Every path that settles says so itself — pushed, failed, Drive applied
+    // (markSyncedAfterApply), an edit landing meanwhile (syncToCloud). Still
+    // blue here means the flush stopped short and nothing was decided.
+    if (_state.status === 'syncing') setStatus(shownBefore);
   }
 }
 
