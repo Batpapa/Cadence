@@ -1019,6 +1019,7 @@
   "fileViewer.abc.prefs.speed": "Vitesse par défaut",
   "fileViewer.abc.prefs.includeRepeats": "Écrire les répétitions dans les suites",
   "fileViewer.abc.prefs.tapPlaysNote": "Jouer la note touchée",
+  "fileViewer.abc.prefs.syntaxCheck": "Afficher la validation de syntaxe",
   "fileViewer.abc.prefs.openOn": "Ouvrir les partitions sur",
   "fileViewer.abc.prefs.barsPerLine": "Mesures par ligne",
   "fileViewer.abc.instrument.default": "Défaut",

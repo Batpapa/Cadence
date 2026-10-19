@@ -300,6 +300,10 @@ export interface User {
    *  ABC text alike. Absent = on; turning it off is written as an explicit
    *  `false`. */
   abcTapPlaysNote?: boolean;
+  /** Check the ABC face's text as it is typed — wavy lines under what abcjs
+   *  objects to, and the list of its warnings. Absent = off; see
+   *  `showAbcSyntaxCheck` in abcService. */
+  abcShowSyntaxCheck?: boolean;
 
   // Score engraving — how ABC READS. Measured on 2026-09-21: with no
   // `staffwidth` abcjs lays every score out at its own default of 740 units

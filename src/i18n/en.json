@@ -1019,6 +1019,7 @@
   "fileViewer.abc.prefs.speed": "Default speed",
   "fileViewer.abc.prefs.includeRepeats": "Write out repeats in sets",
   "fileViewer.abc.prefs.tapPlaysNote": "Play a note when tapped",
+  "fileViewer.abc.prefs.syntaxCheck": "Show syntax validation",
   "fileViewer.abc.prefs.openOn": "Open scores on",
   "fileViewer.abc.prefs.barsPerLine": "Bars per line",
   "fileViewer.abc.instrument.default": "Default",

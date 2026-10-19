@@ -6,11 +6,12 @@ import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingTripletIcon, SwingDottedIcon,
-  WarningTriangleIcon } from './icons';
+  WarningTriangleIcon, ChevronDownIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
+  showAbcSyntaxCheck, blankForRender, locateAbcWarning, abcWarningRange,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwing, meterCanSwing,
   ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
   SWING_CHOICES, NO_SWING } from '../services/abcService';
@@ -323,8 +324,9 @@ function nearestScroller(el: HTMLElement): HTMLElement | null {
  *  a score should open when you are still learning it.
  *
  *  `onApply` re-primes the score that is open, so a change is heard at once
- *  instead of at the next opening. */
-export function showAbcPrefsModal(onApply: () => void): void {
+ *  instead of at the next opening. `onSyntaxCheck` re-reads its text when the
+ *  syntax check is turned on or off. */
+export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => void): void {
   const body = document.createElement('div');
   body.className = 'space-y-4';
 
@@ -426,6 +428,19 @@ export function showAbcPrefsModal(onApply: () => void): void {
     void mutate(st => { if (on) delete st.abcTapPlaysNote; else st.abcTapPlaysNote = false; });
   });
 
+  // ── The ABC face's syntax check ──
+  // Applied at once to the score open behind, which only has to re-read its
+  // text: nothing is engraved for it.
+  const syntaxBox = document.createElement('input');
+  syntaxBox.type = 'checkbox';
+  syntaxBox.className = 'card-checkbox';
+  syntaxBox.checked = showAbcSyntaxCheck(appState.value);
+  syntaxBox.addEventListener('change', () => {
+    const on = syntaxBox.checked;
+    void mutate(st => { if (on) st.abcShowSyntaxCheck = true; else delete st.abcShowSyntaxCheck; })
+      .then(() => onSyntaxCheck?.());
+  });
+
   // ── Which face a score opens on ──
   // Saved only, like the speed: it describes the NEXT score to be opened, and
   // flipping the one already on screen would answer a question nobody asked —
@@ -490,6 +505,7 @@ export function showAbcPrefsModal(onApply: () => void): void {
     row('fileViewer.abc.prefs.barsPerLine', densitySelect),
     row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
     row('fileViewer.abc.prefs.tapPlaysNote', tapBox),
+    row('fileViewer.abc.prefs.syntaxCheck', syntaxBox),
     row('fileViewer.abc.prefs.openOn', openSelect),
   );
 
@@ -701,6 +717,8 @@ export function showPreviewModal(
   // Filled in by the ABC branch; the header gear needs a way to re-prime the
   // score once preferences change, and only that branch knows how.
   let reapplyAbcPrefs: (() => void) | null = null;
+  // Same shape, for the syntax check being turned on or off there.
+  let recheckAbcSyntax: (() => void) | null = null;
   // Same shape, for the header's way out to abcTools: only the score branch
   // knows which version is on screen.
   let openInAbcTools: (() => void) | null = null;
@@ -1092,13 +1110,20 @@ export function showPreviewModal(
     container.appendChild(topRow);
 
     // ── What abcjs made of the ABC ───────────────────────────────────────────
-    // Shown on BOTH faces, and on purpose. The stave is where a wrong bar is
-    // noticed and the source is where it is fixed, and a warning that only
-    // appeared next to the text would be invisible to the person who can see
-    // the music is wrong but does not read ABC.
+    // On the ABC face only, and only for whoever turned the check on (the
+    // user, 2026-10-19). It was on both faces, always, from 2026-09-21: the
+    // stave is where a wrong bar is noticed, the reasoning went. In practice
+    // it was a strip of parser jargon over half the scores from TheSession,
+    // read as "this tune is broken" by people who only wanted to play it.
+    // The mistake itself is now marked IN the text, under the word abcjs
+    // objects to (see `textWarnMarks`), and this strip is folded to its count
+    // until it is opened.
     const warnRow = document.createElement('div');
     warnRow.className = 'hidden flex-col gap-1 px-3 py-2 rounded-lg text-xs border border-warn/30 bg-warn/10 text-primary';
     container.appendChild(warnRow);
+    /** Folded or not: kept for the life of the viewer, since the strip is
+     *  rebuilt at every pause in the typing. */
+    let warningsOpen = false;
 
     /** Fills the strip, or hides it. abcjs's warnings carry their own position
      *  ("Music Line:7 Char:12") and are shown as it writes them: they are a
@@ -1106,14 +1131,30 @@ export function showPreviewModal(
      *  cost the one thing that makes them useful. */
     const showWarnings = (list: string[]) => {
       warnRow.replaceChildren();
-      if (list.length === 0) { warnRow.classList.add('hidden'); warnRow.classList.remove('flex'); return; }
-      const head = document.createElement('div');
-      head.className = 'flex items-center gap-2 text-warn font-medium';
+      if (list.length === 0 || currentMode !== 'text' || !showAbcSyntaxCheck(appState.value)) {
+        warnRow.classList.add('hidden'); warnRow.classList.remove('flex'); return;
+      }
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'flex items-center gap-2 text-warn font-medium text-left cursor-pointer';
       head.appendChild(iconElement(WarningTriangleIcon, 13));
       const headText = document.createElement('span');
       headText.textContent = t('fileViewer.abc.warnings', { n: String(list.length) });
-      head.appendChild(headText);
-      warnRow.appendChild(head);
+      const chevron = document.createElement('span');
+      chevron.className = 'ml-auto transition-transform';
+      chevron.appendChild(iconElement(ChevronDownIcon, 10));
+      head.append(headText, chevron);
+      const details = document.createElement('div');
+      details.className = 'flex-col gap-1';
+      const fold = () => {
+        details.classList.toggle('hidden', !warningsOpen);
+        details.classList.toggle('flex', warningsOpen);
+        chevron.style.transform = warningsOpen ? 'rotate(180deg)' : '';
+        head.setAttribute('aria-expanded', String(warningsOpen));
+      };
+      head.onclick = () => { warningsOpen = !warningsOpen; fold(); };
+      fold();
+      warnRow.append(head, details);
       // Capped, because a file that is wrong everywhere is wrong in one way
       // and the list would push the music off the screen to say so.
       for (const w of list.slice(0, 4)) {
@@ -1126,13 +1167,13 @@ export function showPreviewModal(
         // emphasis is painted from CSS (see `.abc-warning em`).
         line.textContent = w;
         void sanitizeEmphasisOnly(w).then(html => { line.innerHTML = html; }).catch(() => { /* keep the text */ });
-        warnRow.appendChild(line);
+        details.appendChild(line);
       }
       if (list.length > 4) {
         const more = document.createElement('div');
         more.className = 'text-dim';
         more.textContent = t('fileViewer.abc.warningsMore', { n: String(list.length - 4) });
-        warnRow.appendChild(more);
+        details.appendChild(more);
       }
       warnRow.classList.remove('hidden');
       warnRow.classList.add('flex');
@@ -1848,6 +1889,10 @@ export function showPreviewModal(
     let textHints: { start: [number, number] | null } = { start: null };
     let textCurrent: [number, number][] = [];
     let textBoundMarks: { in: [number, number] | null; out: [number, number] | null } = { in: null, out: null };
+    /** What abcjs objects to, underlined with a wave — only while the syntax
+     *  check is on. Positions in the text as it was last checked: a keystroke
+     *  makes them wrong, so typing clears them until the next check. */
+    let textWarnMarks: [number, number][] = [];
 
     /** abcjs ends a note after the spaces that follow it: marked, "A3 " looks
      *  like a note and a gap. */
@@ -1874,7 +1919,7 @@ export function showPreviewModal(
       const markIn = trimNote(text, textBoundMarks.in);
       const markOut = trimNote(text, textBoundMarks.out);
       const cuts = new Set<number>([0, text.length]);
-      for (const r of [caretNote, markIn, markOut, ...current]) if (r) { cuts.add(Math.min(r[0], text.length)); cuts.add(Math.min(r[1], text.length)); }
+      for (const r of [caretNote, markIn, markOut, ...current, ...textWarnMarks]) if (r) { cuts.add(Math.min(r[0], text.length)); cuts.add(Math.min(r[1], text.length)); }
       const points = [...cuts].sort((a, b) => a - b);
       const parts: Node[] = [];
       for (let i = 0; i + 1 < points.length; i++) {
@@ -1884,6 +1929,7 @@ export function showPreviewModal(
         if (cursors.some(r => p === r[0])) classes.push('abc-text-start');
         if (markIn && p === markIn[0]) classes.push('abc-text-in');
         if (markOut && q === markOut[1]) classes.push('abc-text-out');
+        if (textWarnMarks.some(([a, b]) => p >= a && q <= b)) classes.push('abc-text-warn');
         const sounding = current.find(([a, b]) => p >= a && q <= b);
         if (sounding) {
           const mark = document.createElement('mark');
@@ -2115,7 +2161,7 @@ export function showPreviewModal(
           // redraws it straight away when it is on screen, or the dialog is
           // going away.
           sheetNeedsRerender = true;
-          if (currentMode === 'text') textarea.value = currentBody();
+          if (currentMode === 'text') { textarea.value = currentBody(); checkWarnings(); }
         },
         proceed,
       });
@@ -2146,6 +2192,7 @@ export function showPreviewModal(
         textarea.value = pendingBody() ?? currentBody();
         saveBtn.disabled = pendingBody() === null;
         saveStatus.textContent = '';
+        checkWarnings();
       }
     }
 
@@ -2172,7 +2219,8 @@ export function showPreviewModal(
       // over, whichever face you were reading.
       fullscreenBtn.style.display = mode === 'sheet' ? '' : 'none';
       textBox.style.display = mode === 'text' ? '' : 'none';
-      if (mode !== 'text') stopTextPlay();
+      // The warnings are the source face's alone (2026-10-19).
+      if (mode !== 'text') { stopTextPlay(); showWarnings([]); }
       else previewText();
 
       if (onSave) {
@@ -2859,17 +2907,9 @@ export function showPreviewModal(
           selectionColor: ink,
         });
 
-        // What abcjs thought of the ABC it was just handed. It has always
-        // answered this and nobody ever read it: a bar with the wrong number of
-        // beats, a header it could not parse, a repeat that never opens — all
-        // of it drawn as best abcjs could and reported to no one. Verified in
-        // the browser on 2026-09-21 with a deliberately broken bar: the score
-        // redrew itself wrong, in silence.
-        //
-        // Optional at every step: `warnings` is declared optional in abcjs's
-        // own typings, and this file has been caught before by a typing that
-        // promised more than the code delivers.
-        showWarnings(Array.isArray(visualObj?.[0]?.warnings) ? visualObj[0]!.warnings! : []);
+        // abcjs's warnings about this drawing are not shown here any more: they
+        // belong to the ABC face, under the text they name (2026-10-19) — see
+        // `checkWarnings`.
 
         // After the drawing, before anything reads its height: pulls the music
         // up to where its own ink starts. See cropToInk.
@@ -3525,24 +3565,55 @@ export function showPreviewModal(
       // drawn. `parseOnly` does the reading without the engraving, which is the
       // whole cost of this: no SVG, no layout, no second score on screen.
       checkWarnings = () => {
-        if (currentMode !== 'text') return;
+        const marked = textWarnMarks.length > 0;
+        textWarnMarks = [];
+        if (currentMode !== 'text' || !showAbcSyntaxCheck(appState.value)) {
+          showWarnings([]);
+          if (marked) paintText();
+          return;
+        }
         // The `X:` line back on, because that is the block abcjs will be given
-        // when this is saved — and a body without it parses differently.
-        const source = injectDefaultTempo(stripForRender(withXLine(currentIndex, textarea.value)));
+        // when this is saved — and a body without it parses differently. Line
+        // for line with the box, so that a warning's line number is a line of
+        // the box: an `X:` typed in the box and a dropped field become comment
+        // lines rather than going, and the default tempo is not injected — a
+        // `Q:` line of our own making cannot be wrong, and would push every
+        // line after the `K:` one further down.
+        const { xLine } = splitXLine(tunes[currentIndex] ?? '');
+        const text = textarea.value;
+        const boxLines = text.split('\n').map(l => (/^X:/.test(l) ? '%' : l));
+        const source = blankForRender([...(xLine ? [xLine] : []), ...boxLines].join('\n'));
+        const offset = xLine ? 1 : 0;
         try {
           const parsed = abcjs.parseOnly(source);
-          showWarnings(Array.isArray(parsed?.[0]?.warnings) ? parsed[0]!.warnings! : []);
+          // Optional at every step: `warnings` is declared optional in abcjs's
+          // own typings, and this file has been caught before by a typing that
+          // promised more than the code delivers.
+          const list = Array.isArray(parsed?.[0]?.warnings) ? parsed[0]!.warnings! : [];
+          const sourceLines = source.split('\n');
+          for (const w of list) {
+            const at = locateAbcWarning(sourceLines, w);
+            // A warning on our own `X:` line has nothing in the box to mark.
+            const range = at && at.line >= offset ? abcWarningRange(text, at.line - offset, at.col) : null;
+            if (range) textWarnMarks.push(range);
+          }
+          showWarnings(list);
         } catch {
           // Text so broken that abcjs throws rather than warning about it.
           showWarnings([t('fileViewer.abcError')]);
         }
+        if (marked || textWarnMarks.length) paintText();
       };
+      recheckAbcSyntax = checkWarnings;
 
       // Debounced: parsing is cheap, but doing it inside every keystroke's
-      // input event makes the caret stutter on a long set.
+      // input event makes the caret stutter on a long set. The marks go at
+      // once, though: left in place, they would sit a character off from
+      // what they named until the check came back.
       let warnTimer = 0;
       textarea.addEventListener('input', () => {
         window.clearTimeout(warnTimer);
+        if (textWarnMarks.length) { textWarnMarks = []; paintText(); }
         warnTimer = window.setTimeout(checkWarnings, 250);
       });
       const stopWarnTimer = releaseKeys;
@@ -3803,7 +3874,7 @@ export function showPreviewModal(
           {
             icon: iconElement(GearIcon, 15),
             title: t('fileViewer.abc.prefs.title'),
-            onClick: () => showAbcPrefsModal(() => reapplyAbcPrefs?.()),
+            onClick: () => showAbcPrefsModal(() => reapplyAbcPrefs?.(), () => recheckAbcSyntax?.()),
           },
         ]
       : [],
