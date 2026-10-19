@@ -1,5 +1,6 @@
 import type { Analysis, Detection } from '../session/model';
 import { downloadTextFile } from '../utils';
+import { GAP_MIN_S } from '../session/ui/timelineModel';
 
 // ── Read-only exports of an analysis ─────────────────────────────────────────
 // The .cds package (sessionShareService.ts) exists to travel BACK into Cadence:
@@ -45,6 +46,19 @@ const endOf = (d: Detection, session: Analysis): number => d.end ?? session.dura
 export type NameOf = (d: Detection) => string;
 const rawName: NameOf = d => d.displayName;
 
+/** Whether a blank line goes before each detection: where the screen shows a
+ *  silence row (15 s), which with the experimental sets on is exactly where one set
+ *  ends and the next begins (2026-10-19). Read the way the screen reads it —
+ *  against the furthest end so far, since detections overlap. */
+function breaksBefore(dets: Detection[], session: Analysis): boolean[] {
+  let cursor = 0;
+  return dets.map((d, i) => {
+    const brk = i > 0 && d.start - cursor >= GAP_MIN_S;
+    cursor = Math.max(cursor, endOf(d, session));
+    return brk;
+  });
+}
+
 export interface TextReportOptions {
   /** The full report — times, confidence, meter, marks. Without it, the short
    *  setlist people paste into a chat: "- Morrison's (jig)", one line per tune
@@ -52,16 +66,19 @@ export interface TextReportOptions {
    *  full report read as noise there). */
   detailed?: boolean;
   nameOf?: NameOf;
+  /** A blank line between sets — only with the experimental sets on. */
+  setBreaks?: boolean;
 }
 
-export function analysisTextReport(session: Analysis, { detailed = false, nameOf = rawName }: TextReportOptions = {}): string {
+export function analysisTextReport(session: Analysis, { detailed = false, nameOf = rawName, setBreaks = false }: TextReportOptions = {}): string {
   const dets = ordered(session);
+  const brk = setBreaks ? breaksBefore(dets, session) : dets.map(() => false);
   if (!detailed) {
     const head = session.name || 'Analysis';
     return [
       session.date ? `${head} (${session.date.slice(0, 10)})` : head,
       '',
-      ...dets.map(d => `- ${nameOf(d)}${d.dance ? ` (${d.dance})` : ''}`),
+      ...dets.flatMap((d, i) => [...(brk[i] ? [''] : []), `- ${nameOf(d)}${d.dance ? ` (${d.dance})` : ''}`]),
     ].join('\r\n');
   }
   const out: string[] = [
@@ -77,13 +94,14 @@ export function analysisTextReport(session: Analysis, { detailed = false, nameOf
   const label = (d: Detection) => `${nameOf(d)}${d.dance || d.meter ? ` (${[d.dance, d.meter].filter(Boolean).join(', ')})` : ''}`;
   const width = Math.min(56, Math.max(0, ...dets.map(d => label(d).length)));
 
-  for (const d of dets) {
+  dets.forEach((d, i) => {
+    if (brk[i]) out.push('');
     const marks = [
       d.userConfirmed ? 'confirmed' : `${Math.round(d.confidence * 100)}%`,
       d.liked ? 'liked' : '',
     ].filter(Boolean).join('  ');
     out.push(`${hms(d.start)} - ${hms(endOf(d, session))}  ${label(d).padEnd(width + 2)}${marks}`.trimEnd());
-  }
+  });
 
   return out.join('\r\n');
 }
@@ -104,12 +122,23 @@ function escape(v: string): string {
 }
 
 /** Same fields as the detailed TXT, one row per detection. */
-export function exportAnalysisCSV(session: Analysis, nameOf: NameOf = rawName): void {
+export function exportAnalysisCSV(session: Analysis, nameOf: NameOf = rawName, { setBreaks = false }: { setBreaks?: boolean } = {}): void {
+  // BOM: without it Excel reads the file as the system codepage and mangles
+  // every accented tune name. Same prefix the card CSV export carries.
+  downloadTextFile('﻿' + analysisCsv(session, nameOf, setBreaks), `${safeName(session)}-detections.csv`, 'text/csv;charset=utf-8');
+}
+
+/** The CSV's text — with an empty row between sets when asked, which a
+ *  spreadsheet shows as the gap it is. */
+export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBreaks = false): string {
   const rows: string[][] = [
     ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked'],
   ];
 
-  for (const d of ordered(session)) {
+  const dets = ordered(session);
+  const brk = setBreaks ? breaksBefore(dets, session) : dets.map(() => false);
+  dets.forEach((d, i) => {
+    if (brk[i]) rows.push([]);
     rows.push([
       hms(d.start),
       hms(endOf(d, session)),
@@ -120,10 +149,7 @@ export function exportAnalysisCSV(session: Analysis, nameOf: NameOf = rawName): 
       d.userConfirmed ? 'yes' : '',
       d.liked ? 'yes' : '',
     ]);
-  }
+  });
 
-  const csv = rows.map(r => r.map(escape).join(',')).join('\r\n');
-  // BOM: without it Excel reads the file as the system codepage and mangles
-  // every accented tune name. Same prefix the card CSV export carries.
-  downloadTextFile('﻿' + csv, `${safeName(session)}-detections.csv`, 'text/csv;charset=utf-8');
+  return rows.map(r => r.map(escape).join(',')).join('\r\n');
 }

@@ -71,10 +71,13 @@ interface SessionLibraryProps {
   initialAnalyses?: [string, FilterState][];
   initialAnalysesOr?: boolean;
   initialDances?: [string, FilterState][];
+  initialKinds?: [string, FilterState][];
+  initialTags?: [string, FilterState][];
+  initialTagsOr?: boolean;
   initialModes?: [string, FilterState][];
 }
 
-export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes }: SessionLibraryProps) {
+export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes, initialKinds, initialTags, initialTagsOr }: SessionLibraryProps) {
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
   /** Whether `allSessions` has been read at least once. The tunes tab waits for
    *  it: its chips ignore any analysis they cannot find, and before the first
@@ -99,8 +102,10 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
     analysesOr: initialAnalysesOr ?? true,
     others: new Map(initialOthers ?? []),
     othersOr: initialOthersOr ?? false,
-    dances: new Map(initialDances ?? []),
-    modes: new Map(initialModes ?? []),
+    // A route saved while types and keys were two sections lands in Tags.
+    tags: new Map(initialTags ?? [...(initialDances ?? []), ...(initialModes ?? [])]),
+    tagsOr: initialTagsOr ?? false,
+    kinds: new Map(initialKinds ?? []),
   }));
   const [source, setSource] = useState<LiveSourceKind>('mic');
   // Where an import comes from, chosen the same way and kept the same way:
@@ -173,8 +178,9 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
       othersOr: tuneView.othersOr || undefined,
       analyses: tuneView.analyses.size > 0 ? [...tuneView.analyses] : undefined,
       analysesOr: tuneView.analysesOr ? undefined : false,
-      dances: tuneView.dances.size > 0 ? [...tuneView.dances] : undefined,
-      modes: tuneView.modes.size > 0 ? [...tuneView.modes] : undefined,
+      tags: tuneView.tags.size > 0 ? [...tuneView.tags] : undefined,
+      tagsOr: tuneView.tagsOr || undefined,
+      kinds: tuneView.kinds.size > 0 ? [...tuneView.kinds] : undefined,
     });
   }, [query, tab, folderId, tuneView]);
 

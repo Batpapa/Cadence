@@ -8,6 +8,8 @@ import { alertModal } from '../../components/modal';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
+import { TunesetDetectionCard, feedItems } from './TunesetDetectionCard';
+import { recordOf } from '../tunesets';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import { fmtLongTime, indexProgressText, TitleRow } from './sessionUiShared';
@@ -282,7 +284,34 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       </>}
 
       <div ref={feedAnchorRef} class="mt-3 space-y-2">
-        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
+        {(() => {
+          // The sets as they form: readable and playable-as-a-score only — the
+          // feed keeps no table, so nothing that needs the set's identity.
+          const feed = feedItems(annotations);
+          // The table only when there is a set to show: never asked, nothing
+          // is saved with the analysis (the sets off).
+          const table = feed.items.some(x => x.kind === 'chain') ? live.getTunesets() : [];
+          return feed.items.map(item => item.kind === 'ann'
+            ? <DetectionCard key={item.ann.id} ann={item.ann} opts={cardOpts} />
+            : (
+              <TunesetDetectionCard
+                key={`set-${item.chain[0]!.id}`}
+                chain={item.chain}
+                opts={{
+                  ctx,
+                  session: { id: live.sessionId, name: '', date: null, duration: feed.duration },
+                  onOpenCard,
+                  getPinnedDeckIds: () => live.pinnedDeckIds,
+                  onChanged: () => setDetections(live.getDetections()),
+                  record: recordOf(table, item.chain),
+                  onToggleLike: (r) => { live.toggleSetLike(r.id); setDetections(live.getDetections()); },
+                  sessionStartMs: live.startedAt || undefined,
+                }}
+              >
+                {item.chain.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
+              </TunesetDetectionCard>
+            ));
+        })()}
       </div>
 
       <p class="text-xs text-dim mt-3 text-center min-h-[1rem]">{stateZoneText}</p>

@@ -1,5 +1,6 @@
 import type { TuneSort, FilterState } from '../../types';
 import type { Analysis, Detection } from '../model';
+import { chainsOf } from './timelineModel';
 
 // ── What this scene actually plays ───────────────────────────────────────────
 // Asked for from the field (2026-09-11), and it is the interesting half of the
@@ -275,4 +276,84 @@ export function passesChips(values: readonly string[], chips: ReadonlyMap<string
     else if (carried) return false;
   }
   return !anyInclude || included;
+}
+
+// ── Sets, beside the tunes (2026-10-19) ──────────────────────────────────────
+// A set heard is a chain (timelineModel.ts's withChains): tunes played with no
+// silence between them. Two chains are the SAME set when they hold the same
+// tunes in the same order — the rule that also ties one to a set card. A set
+// row reuses TuneRankRow whole, its `tuneId` being the set's key, so every
+// sort, selection and open/close below works on it unchanged.
+
+/** Whether a set gets through a section of chips: its tunes' values taken
+ *  together, as a tune's passes are (filterByFacets) — "all of" asks the set
+ *  to carry every value included, between its tunes. */
+function chainPasses(values: readonly string[], facet: PassFacet): boolean {
+  if (!passesChips(values, facet.chips)) return false;
+  if (facet.or) return true;
+  return [...facet.chips].every(([k, st]) => st !== 'include' || values.includes(k));
+}
+
+/** A set row's key: never a TheSession id, so nothing mistakes one for a tune. */
+export const SET_KEY_PREFIX = 'set:';
+
+export function setKeyOf(tuneIds: readonly string[]): string {
+  return SET_KEY_PREFIX + tuneIds.join(',');
+}
+
+/** The tune ids of a set key, or null for a tune's. */
+export function tuneIdsOfSetKey(key: string): string[] | null {
+  return key.startsWith(SET_KEY_PREFIX) ? key.slice(SET_KEY_PREFIX.length).split(',') : null;
+}
+
+/** One time a set was played, and where. */
+export interface SetOccurrence {
+  session: Analysis;
+  chain: Detection[];
+}
+
+/** Every chain of every analysis, kept when it gets through the chips — a set
+ *  answers to a chip when one of its tunes does (a jig set with a slide in it
+ *  is under both) — then grouped into sets.
+ *
+ *  Read off the analyses as they ARE, never off the pass-filtered copies the
+ *  tunes are ranked from: taking a tune out of an analysis would cut its set
+ *  in two and invent two sets nobody played. */
+export function rankDetectedSets(
+  sessions: Analysis[],
+  facets: readonly PassFacet[],
+  likedOf: (session: Analysis, chain: Detection[]) => boolean,
+): { rows: TuneRankRow[]; occurrences: Map<string, SetOccurrence[]> } {
+  const byKey = new Map<string, { row: TuneRankRow; sessionIds: Set<string>; list: Array<SetOccurrence & { at: number | null }> }>();
+  for (const session of sessions) {
+    const sessionAt = sessionTime(session);
+    for (const chain of chainsOf(session.annotations ?? [], session.duration)) {
+      if (!facets.every(f => chainPasses(chain.flatMap(d => f.valuesOf(d, session)), f))) continue;
+      const key = setKeyOf(chain.map(d => d.tuneId));
+      const at = heardAt(sessionAt, chain[0]!.start);
+      const liked = likedOf(session, chain);
+      let found = byKey.get(key);
+      if (!found) {
+        found = {
+          row: { tuneId: key, displayName: chain.map(d => d.displayName).join(' / '), count: 0, sessions: 0, liked: false, lastHeard: null },
+          sessionIds: new Set(),
+          list: [],
+        };
+        byKey.set(key, found);
+      }
+      found.row.count++;
+      found.row.liked ||= liked;
+      found.sessionIds.add(session.id);
+      found.row.sessions = found.sessionIds.size;
+      if (at !== null && (found.row.lastHeard === null || at > found.row.lastHeard)) found.row.lastHeard = at;
+      found.list.push({ session, chain, at });
+    }
+  }
+  const occurrences = new Map<string, SetOccurrence[]>();
+  for (const [key, v] of byKey) {
+    occurrences.set(key, v.list
+      .sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity) || a.chain[0]!.start - b.chain[0]!.start)
+      .map(({ at: _at, ...rest }) => rest));
+  }
+  return { rows: [...byKey.values()].map(v => v.row), occurrences };
 }

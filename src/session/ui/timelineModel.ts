@@ -9,8 +9,15 @@ import type { Detection } from '../model';
  *  detector's bounds come from 10 s windows on a 5 s hop, so two tunes running
  *  straight into each other still leave one hop between them. Measured on real
  *  sessions (2026-09-05): every genuine pause was 15 s or more, every artefact
- *  was exactly one or two hops. */
-const GAP_MIN_S = 15;
+ *  was exactly one or two hops.
+ *
+ *  With the experimental sets on (2026-10-19) it is also, by construction, the
+ *  ONE rule that makes a set — the user's decision: detections with no hole of
+ *  this size between them were played without stopping, and form one chain
+ *  (see withChains). A silence row in the list and a break between two sets
+ *  are the same thing, so they can never disagree. What the threshold misses
+ *  is left to the user, who corrects it by hand in the bound editor. */
+export const GAP_MIN_S = 15;
 
 /** EVERY detection covering `t` — none, one, or several.
  *
@@ -53,6 +60,42 @@ export function withGaps(anns: Detection[], duration: number): Array<
   });
   if (duration - cursor >= GAP_MIN_S) out.push({ kind: 'gap', from: cursor, len: duration - cursor });
   return out;
+}
+
+/** What the list shows, in playing order: the silences, the tunes played
+ *  alone, and the CHAINS — two or more detections with no silence between
+ *  them, which is what a set is here (see GAP_MIN_S). Built on withGaps rather
+ *  than beside it, so a chain ends exactly where a silence row begins and
+ *  nowhere else.
+ *
+ *  `i` is each detection's index in `anns`, which the summary's merge and
+ *  delete controls address it by. */
+export function withChains(anns: Detection[], duration: number): Array<
+  | { kind: 'gap'; from: number; len: number }
+  | { kind: 'ann'; ann: Detection; i: number }
+  | { kind: 'chain'; members: Array<{ ann: Detection; i: number }> }
+> {
+  const out: ReturnType<typeof withChains> = [];
+  let run: Array<{ ann: Detection; i: number }> = [];
+  const flush = () => {
+    if (run.length === 1) out.push({ kind: 'ann', ...run[0]! });
+    else if (run.length > 1) out.push({ kind: 'chain', members: run });
+    run = [];
+  };
+  for (const item of withGaps(anns, duration)) {
+    if (item.kind === 'gap') { flush(); out.push(item); }
+    else run.push({ ann: item.ann, i: item.i });
+  }
+  flush();
+  return out;
+}
+
+/** Just the chains, as lists of detections — what the set table and the
+ *  searches across analyses are built from. */
+export function chainsOf(anns: Detection[], duration: number): Detection[][] {
+  return withChains(anns, duration)
+    .filter((x): x is Extract<typeof x, { kind: 'chain' }> => x.kind === 'chain')
+    .map(x => x.members.map(m => m.ann));
 }
 
 /** Where the play head stands, as the list and the strip both need to show

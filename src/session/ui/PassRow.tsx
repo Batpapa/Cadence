@@ -317,7 +317,7 @@ export function playDiscTitle(o: { playing: boolean; fromDrive: boolean; loading
 
 /** The play button of a pass. No button at all when the recording is neither
  *  here nor on Drive. */
-function PlayPassButton({ sessionId, detection, player }: {
+export function PlayPassButton({ sessionId, detection, player }: {
   sessionId: string; detection: Detection; player: SlicePlayer;
 }) {
   const here = player.isHere(sessionId);

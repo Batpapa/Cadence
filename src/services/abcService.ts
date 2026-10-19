@@ -234,7 +234,27 @@ export function buildTunesetAbc(set: Card, cards: Record<string, Card>, opts?: T
       repeat: clampRepeat(ref.repeat),
     };
   });
+  return fuseBlocks(set.name, members, opts);
+}
 
+/** A set heard in an analysis, fused from the versions that were PLAYED: each
+ *  tune's own ABC (a whole tune, header included), or null where none was
+ *  recognised — that tune then keeps its place as a labelled bar of silence,
+ *  exactly as in a set card's score. One pass each: a detection says nothing
+ *  of repeats (2026-10-19). */
+export function buildHeardSetAbc(title: string, tunes: Array<{ label: string; abc: string | null }>): string | null {
+  if (tunes.length === 0) return null;
+  return fuseBlocks(title, tunes.map(({ label, abc }) => {
+    const block = abc ? parseAbcBlock(abc) : null;
+    return { label: safeLabel(label || '?'), block: block && block.music ? block : null, repeat: 1 };
+  }));
+}
+
+function fuseBlocks(
+  title: string,
+  members: Array<{ label: string; block: AbcBlock | null; repeat: number }>,
+  opts?: TunesetAbcOptions,
+): string | null {
   const first = members.find(m => m.block)?.block;
   if (!first) return null;
 
@@ -275,7 +295,7 @@ export function buildTunesetAbc(set: Card, cards: Record<string, Card>, opts?: T
 
   const header = [
     'X: 1',
-    `T: ${set.name}`,
+    `T: ${title}`,
     first.meter ? `M: ${first.meter}` : null,
     `L: ${first.unitLength || '1/8'}`,
     tempoOf(first) ? `Q: ${tempoOf(first)}` : null,

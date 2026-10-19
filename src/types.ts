@@ -468,7 +468,12 @@ export type Route =
       folder?: string;
       sort?: TuneSort; sortAsc?: boolean; others?: [string, FilterState][]; othersOr?: boolean;
       analyses?: [string, FilterState][]; analysesOr?: boolean;
+      /** Read only: routes saved before the two sections became "Tags". */
       dances?: [string, FilterState][]; modes?: [string, FilterState][];
+      /** Tune types and keys, one section since 2026-10-19. */
+      tags?: [string, FilterState][]; tagsOr?: boolean;
+      /** Tunes, sets, or both, in the detections tab (2026-10-19). */
+      kinds?: [string, FilterState][];
     }
   // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.

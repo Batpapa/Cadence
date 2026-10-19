@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { getSettingAbcMeta, getSettingAbcMetaSync, type SettingAbcMeta } from '../recognition/indexStore';
 import { theSessionKeyToAbc, findSettingInScore } from '../../services/theSessionService';
-import { isAbcFile } from '../../services/abcService';
+import { isAbcFile, buildHeardSetAbc, tunesetAbcFileName } from '../../services/abcService';
 import { hydratedEntry } from '../../services/attachmentStore';
 import { showPreviewModal } from '../../components/fileViewer';
 import { getContext } from '../../store';
@@ -20,8 +20,9 @@ function toBase64(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 }
 
-function showAbcPreview(displayName: string, settingId: string, meta: SettingAbcMeta): void {
-  const abcText = [
+/** A whole ABC tune for a setting of the recognition index. */
+function settingAbcText(displayName: string, settingId: string, meta: SettingAbcMeta): string {
+  return [
     'X: 1',
     `T: ${displayName}`,
     // Same URL shape as theSessionService.ts's settingToAbcBlock — verified
@@ -33,12 +34,64 @@ function showAbcPreview(displayName: string, settingId: string, meta: SettingAbc
     `K: ${theSessionKeyToAbc(meta.mode)}`,
     meta.abc.replace(/!/g, '\n'),
   ].join('\n');
+}
 
+function showAbcPreview(displayName: string, settingId: string, meta: SettingAbcMeta): void {
   showPreviewModal({
     name: `${displayName}.abc`,
     mimeType: 'text/vnd.abc',
-    data: toBase64(abcText),
+    data: toBase64(settingAbcText(displayName, settingId, meta)),
   });
+}
+
+/** The score of a set heard in an analysis: its tunes fused into one, each in
+ *  the version that was PLAYED — the setting each detection recognised, never
+ *  a card's (the user's call, 2026-10-19), so it is there before any card is.
+ *  A tune named by hand, whose version nobody heard, keeps its place as a
+ *  labelled bar of silence. Greyed only when not a single tune has a score. */
+export function HeardSetAbc({ title, tunes, size = 12 }: {
+  title: string;
+  tunes: Array<{ label: string; settingId: string | null }>;
+  size?: number;
+}) {
+  const key = tunes.map(x => x.settingId ?? '-').join(',');
+  const [metas, setMetas] = useState<{ key: string; list: Array<SettingAbcMeta | null> } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(tunes.map(x => (x.settingId ? getSettingAbcMeta(x.settingId) : Promise.resolve(null))))
+      .then(list => { if (!cancelled) setMetas({ key, list }); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line
+  }, [key]);
+  const list = metas?.key === key ? metas.list : null;
+  const playable = !!list && list.some(m => !!m?.abc);
+
+  const base = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
+  const icon = <span style={{ transform: 'translateX(-1px)' }}><MusicNoteIcon size={size} /></span>;
+  if (!playable) {
+    return (
+      <button disabled class={`${base} bg-elevated text-border cursor-default`} title={list ? t('sessions.abcUnavailable') : t('sessions.listenAbc')}>
+        {icon}
+      </button>
+    );
+  }
+  return (
+    <button
+      class={`${base} bg-accent/10 text-accent hover:bg-accent/20 cursor-pointer`}
+      title={t('sessions.listenAbc')}
+      onClick={(e) => {
+        e.stopPropagation();
+        const abc = buildHeardSetAbc(title, tunes.map((x, i) => {
+          const meta = list[i];
+          return { label: x.label, abc: meta?.abc && x.settingId ? settingAbcText(x.label, x.settingId, meta) : null };
+        }));
+        if (!abc) return;
+        showPreviewModal({ name: `${tunesetAbcFileName(title)}`, mimeType: 'text/vnd.abc', data: toBase64(abc) });
+      }}
+    >
+      {icon}
+    </button>
+  );
 }
 
 

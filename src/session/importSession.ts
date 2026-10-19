@@ -4,7 +4,8 @@ import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
-import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
+import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate, TunesetRecord } from './model';
+import { withSets } from './tunesets';
 import { DetectionTracker } from './detectionState';
 import type { IndexProgress } from './recognition/indexStore';
 
@@ -301,6 +302,18 @@ export class ImportSession {
     this.tracker.toggleLike(annotationId);
   }
 
+  /** The sets heard so far, with the identity a heart or a review hangs on —
+   *  asked for by the feed, and only with the experimental sets on. Handed to
+   *  the analysis when it is saved (see DetectionTracker.finalSets). */
+  getTunesets(): TunesetRecord[] {
+    return this.tracker.setTable(() => crypto.randomUUID());
+  }
+
+  /** Toggle "I liked this set". */
+  toggleSetLike(tunesetId: string): void {
+    this.tracker.toggleSetLike(tunesetId);
+  }
+
   /** Records the user's verdict on this detection's identity — see
    *  LiveSession's identical method for the full doc. */
   selectAlternate(annotationId: string, pick: DetectionAlternate | null): void {
@@ -434,6 +447,7 @@ export class ImportSession {
       mimeType: this.playbackFile.type || 'application/octet-stream',
       source: this.sourceOverride ?? 'import',
       annotations: this.getDetections(),
+      ...withSets(this.tracker.finalSets(() => crypto.randomUUID())),
       ...(this.notes ? { notes: this.notes } : {}),
     };
     // A video's picture is dropped before anything is stored — see

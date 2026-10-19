@@ -4,6 +4,8 @@ import type { AppContext } from '../../types';
 import type { ImportSession, ImportProgress } from '../importSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
+import { TunesetDetectionCard, feedItems } from './TunesetDetectionCard';
+import { recordOf } from '../tunesets';
 import { useAutoFollowScroll } from './domInterop';
 import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta, repinSessionDate } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
@@ -191,7 +193,33 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       {importPlaybackWarn.value && <p class="text-xs text-amber-500 mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
 
       <div ref={feedAnchorRef} class="mt-3 space-y-2">
-        {annotations.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
+        {(() => {
+          // The sets as they form — see LiveSession's feed.
+          const feed = feedItems(annotations);
+          // The table only when there is a set to show: never asked, nothing
+          // is saved with the analysis (the sets off).
+          const table = feed.items.some(x => x.kind === 'chain') ? imp.getTunesets() : [];
+          return feed.items.map(item => item.kind === 'ann'
+            ? <DetectionCard key={item.ann.id} ann={item.ann} opts={cardOpts} />
+            : (
+              <TunesetDetectionCard
+                key={`set-${item.chain[0]!.id}`}
+                chain={item.chain}
+                opts={{
+                  ctx,
+                  session: { id: imp.sessionId, name: '', date: null, duration: feed.duration },
+                  onOpenCard,
+                  getPinnedDeckIds: () => imp.pinnedDeckIds,
+                  onChanged: () => setDetections(imp.getDetections()),
+                  record: recordOf(table, item.chain),
+                  onToggleLike: (r) => { imp.toggleSetLike(r.id); setDetections(imp.getDetections()); },
+                  sessionStartMs: imp.dateOverride ? Date.parse(imp.dateOverride) : undefined,
+                }}
+              >
+                {item.chain.map(ann => <DetectionCard key={ann.id} ann={ann} opts={cardOpts} />)}
+              </TunesetDetectionCard>
+            ));
+        })()}
       </div>
     </>
   );

@@ -192,3 +192,35 @@ describe('tune names', () => {
     expect(csvRows()[1]).toContain(',THE SILVER SPEAR,');
   });
 });
+
+describe('set breaks (experimental sets, 2026-10-19)', () => {
+  // Two sets: a 5 s hole is one hop of blur inside a set, 30 s is a silence.
+  const dets = () => [
+    det({ id: 'a', displayName: 'A', start: 0, end: 100 }),
+    det({ id: 'b', displayName: 'B', start: 105, end: 200 }),
+    det({ id: 'c', displayName: 'C', start: 230, end: 300 }),
+  ];
+
+  it('the short list gets a blank line between sets, and none without the option', () => {
+    const lines = analysisTextReport(analysis(dets()), { setBreaks: true }).split('\r\n').slice(2);
+    expect(lines).toEqual(['- A (reel)', '- B (reel)', '', '- C (reel)']);
+    expect(analysisTextReport(analysis(dets())).split('\r\n').slice(2)).toEqual(['- A (reel)', '- B (reel)', '- C (reel)']);
+  });
+
+  it('the detailed report too', () => {
+    const lines = analysisTextReport(analysis(dets()), { detailed: true, setBreaks: true }).split('\r\n');
+    const c = lines.findIndex(l => l.includes('  C '));
+    expect(lines[c - 1]).toBe('');
+    expect(lines[c - 2]).toContain('  B ');
+  });
+
+  it('the CSV gets an empty row', () => {
+    exportAnalysisCSV(analysis(dets()), undefined, { setBreaks: true });
+    expect(csvRows().map(r => r.split(',')[2] ?? '')).toEqual(['Tune', 'A', 'B', '', 'C']);
+  });
+
+  it('a hole of exactly 15 s is a break, as on screen', () => {
+    const lines = analysisTextReport(analysis([det({ displayName: 'A', start: 0, end: 100 }), det({ displayName: 'B', start: 115, end: 200 })]), { setBreaks: true });
+    expect(lines.split('\r\n').slice(2)).toEqual(['- A (reel)', '', '- B (reel)']);
+  });
+});

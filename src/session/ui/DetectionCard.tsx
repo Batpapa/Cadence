@@ -138,7 +138,7 @@ const REMOVE_GUARD_MS = 600;
 
 /** The rating this detection carries, if any. Read from live state, so the
  *  card and the control below always agree on whether there is one. */
-function ratingOf(cardId: string, reviewId: string, ts: number | null) {
+export function ratingOf(cardId: string, reviewId: string, ts: number | null) {
   const user = getContext().user;
   const history = user.cardWorks[`${user.currentProfileId}:${cardId}`]?.history ?? [];
   const at = reviewEntryIndex(history, reviewId, ts);
@@ -156,7 +156,7 @@ function removeRating(ctx: AppContext, cardId: string, reviewId: string, ts: num
   });
 }
 
-function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
+export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
   cardId: string;
   /** What this rating is filed under — opaque to the card's history, built by
    *  this module (reviewLink.ts). */

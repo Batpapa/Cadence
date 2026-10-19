@@ -29,8 +29,14 @@ import { showBoundEditor, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import { appState } from '../../store';
-import { headPosition, withGaps } from './timelineModel';
+import { headPosition, withChains, withGaps } from './timelineModel';
+import { experimentalSets } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
+import { generateId } from '../../utils';
+import { getContext } from '../../store';
+import { tunesetsOf, sameTunesets, chainSpan, setCardFor } from '../tunesets';
+import { TunesetDetectionCard, chainPlayId, type TunesetCardOptions } from './TunesetDetectionCard';
+import { repinSetReview, recutSetClip, setReviewId, type Span } from './tunesetShared';
 
 // ── Screen: summary ───────────────────────────────────────────────────────────
 // A finished session: audio player, clickable segment timeline, detection
@@ -240,6 +246,64 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   };
 
   const persist = () => { void saveSessionMeta(session); };
+
+  // ── The sets of this analysis (2026-10-19) ──
+  // Which detections make a set is read off the detections on every render
+  // (timelineModel's withChains); the table only carries what that cannot
+  // give — an identity for the set's heart and its review — and is brought in
+  // line here, written back only when it actually changed.
+  // Behind an option while it is iterated on with the testers (2026-10-19):
+  // off, nothing here runs and the table is never written.
+  const setsOn = experimentalSets(appState.value);
+  const tablePendingRef = useRef(false);
+  const reconciled = setsOn ? tunesetsOf(session, generateId) : session.tunesets ?? [];
+  if (setsOn && !sameTunesets(session.tunesets, reconciled)) {
+    session.tunesets = reconciled;
+    tablePendingRef.current = true;
+  }
+  const records = session.tunesets ?? [];
+  useEffect(() => {
+    if (!tablePendingRef.current) return;
+    tablePendingRef.current = false;
+    persist();
+  });
+
+  /** A set as it stands: its span and its tunes, read from its detections. */
+  const setNow = (detectionIds: string[]): { span: Span; tuneIds: string[] } | null => {
+    const chain = detectionIds.map(id => session.annotations.find(a => a.id === id)).filter((d): d is Detection => !!d);
+    if (chain.length === 0) return null;
+    return { span: chainSpan(chain, session.duration), tuneIds: chain.map(d => d.tuneId) };
+  };
+  // Taken NOW, at render, before any edit below writes into the detections:
+  // what an edit has to compare against to know whether a set moved.
+  const setsBefore = new Map(records.map(r => [r.id, setNow(r.detectionIds)]));
+
+  /** What a set drags behind it when its span moves — its rating, then its
+   *  clip — the set's twin of settleMoved below. A set whose tunes changed is
+   *  looked up again: its card is the one made of the tunes it has NOW. */
+  const settleSets = async () => {
+    if (!setsOn) return;
+    const after = tunesetsOf(session, generateId);
+    if (!sameTunesets(session.tunesets, after)) { session.tunesets = after; persist(); }
+    const startMs = session.date === null ? NaN : Date.parse(session.date);
+    let blob: Blob | undefined | null = null;
+    let changed = false;
+    for (const r of after) {
+      const was = setsBefore.get(r.id);
+      const now = setNow(r.detectionIds);
+      if (!was || !now) continue;
+      if (Math.abs(was.span.start - now.span.start) < 0.001 && Math.abs(was.span.end - now.span.end) < 0.001) continue;
+      const setCard = setCardFor(now.tuneIds, getContext().user.cards);
+      if (!setCard) continue;
+      if (!Number.isNaN(startMs)) {
+        changed = await repinSetReview(ctx, setCard.id, setReviewId(session.id, r.id),
+          { startMs, end: was.span.end }, { startMs, end: now.span.end }).catch(() => false) || changed;
+      }
+      if (blob === null) blob = await loadSessionAudio(session.id).catch(() => undefined);
+      if (blob) changed = await recutSetClip(ctx, session, setCard.id, was.span, now.span, blob).catch(() => false) || changed;
+    }
+    if (changed) bump();
+  };
 
   // The automatic copy made when the recording was saved, or its retries: shown
   // here too, so that a recording stopped a moment ago reads as on its way
@@ -608,6 +672,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  no longer holds it — a clip cut from nothing would be worse than a stale
    *  one. */
   const settleMoved = async (moved: Array<{ ann: Detection; previous: { start: number; end: number | null } }>) => {
+    await settleSets();
     if (moved.length === 0) return;
     let changed = false;
     for (const { ann: target, previous } of moved) {
@@ -750,7 +815,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         // The rating goes with it (user's rule, 2026-09-23): it said this tune
         // was played here, and deleting the detection says it was not. Nothing
         // like deleting the whole analysis, where the playing stands.
-        void dropReviewEntry(ctx, session, ann).then(gone => { if (gone) bump(); });
+        // Then the set it was in, whose span may just have shrunk — one write
+        // after the other, never side by side.
+        void (async () => {
+          if (await dropReviewEntry(ctx, session, ann)) bump();
+          await settleSets();
+        })();
       },
     ),
     // All that is left of the third row, and it only appears when there is
@@ -791,6 +861,52 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       );
     },
   });
+
+  /** One detection's row — alone in the list, or inside its set. A plain
+   *  function returning a vnode, never a component declared here (see
+   *  ClipControls' `slot` for why that matters). */
+  const annRow = (ann: Detection, i: number) => (
+    <div
+      key={ann.id}
+      data-ann-id={ann.id}
+      // The answer to "which one did I just scroll to": the card is
+      // ringed, not merely centred among identical neighbours.
+      class={`rounded-lg transition-shadow ${
+        ann.id === targetId ? 'ring-2 ring-warn'
+        : lit.ids.includes(ann.id) ? 'ring-2 ring-accent' : ''}`}
+    >
+      <DetectionCard ann={ann} opts={cardOptsFor(ann, i)} />
+    </div>
+  );
+
+  /** A set played as a whole: one passage from its first tune's start to its
+   *  last tune's end, under its own id so its ▶ is the only one lit. */
+  const chainAsAnn = (chain: Detection[]): Detection => ({ ...chain[0]!, id: chainPlayId(chain), ...chainSpan(chain, session.duration) });
+
+  const setOptsFor = (chain: Detection[]): TunesetCardOptions => {
+    const record = records.find(r => r.detectionIds.length === chain.length && r.detectionIds.every((id, k) => id === chain[k]!.id));
+    return {
+      ctx,
+      session,
+      record,
+      onOpenCard,
+      getPinnedDeckIds: () => pinnedDeckIdsRef.current,
+      onChanged: bump,
+      onPlay: audioUrl ? (c) => playSlice(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
+      playingId: audioUrl ? playingId : drivePlayer.playingId,
+      playFromDrive: !audioUrl && !!synced,
+      playLoadingId: audioUrl ? null : drivePlayer.loadingId,
+      sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
+      onToggleLike: (r) => {
+        const target = session.tunesets?.find(x => x.id === r.id);
+        if (!target) return;
+        if (target.liked) delete target.liked; else target.liked = true;
+        persist();
+        bump();
+      },
+      clip: { audioAvailable: !!audioUrl, getAudio: () => loadSessionAudio(session.id) },
+    };
+  };
 
   // The session's own name, nothing computed: what the library calls this
   // recording is what the downloaded file is called — accents and spaces
@@ -848,8 +964,22 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           // tune ended", so moving the date moves all of them — and the picker
           // only offers minutes, which means re-choosing what looks like the
           // same date still lands seconds away from it.
-          void repinSessionDate(ctx, session, session.annotations, previousDate)
-            .then(moved => { if (moved) bump(); });
+          void (async () => {
+            if (await repinSessionDate(ctx, session, session.annotations, previousDate)) bump();
+            // The sets' ratings are filed the same way, so they move too.
+            if (date === null || previousDate === null) return;
+            const from = Date.parse(previousDate), to = Date.parse(date);
+            if (Number.isNaN(from) || Number.isNaN(to)) return;
+            let moved = false;
+            for (const r of session.tunesets ?? []) {
+              const now = setNow(r.detectionIds);
+              const setCard = now ? setCardFor(now.tuneIds, getContext().user.cards) : undefined;
+              if (!now || !setCard) continue;
+              moved = await repinSetReview(ctx, setCard.id, setReviewId(session.id, r.id),
+                { startMs: from, end: now.span.end }, { startMs: to, end: now.span.end }) || moved;
+            }
+            if (moved) bump();
+          })();
         }}
         onChange={bump}
       />
@@ -1016,8 +1146,19 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         </div>
 
         <div ref={listWrapRef} class="mt-3 space-y-2">
-          {withGaps(session.annotations, session.duration).map(item => (
-            item.kind === 'gap' ? (
+          {(setsOn
+            ? withChains(session.annotations, session.duration)
+            : withGaps(session.annotations, session.duration)
+          ).map(item => (
+            item.kind === 'chain' ? (
+              <TunesetDetectionCard
+                key={`set-${item.members[0]!.ann.id}`}
+                chain={item.members.map(m => m.ann)}
+                opts={setOptsFor(item.members.map(m => m.ann))}
+              >
+                {item.members.map(m => annRow(m.ann, m.i))}
+              </TunesetDetectionCard>
+            ) : item.kind === 'gap' ? (
               // What the timeline shows as a hole and the list used to swallow
               // whole: read end to end, the cards otherwise describe one
               // unbroken concert.
@@ -1053,19 +1194,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
                 )}
                 <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
               </div>
-            ) : (
-              <div
-                key={item.ann.id}
-                data-ann-id={item.ann.id}
-                // The answer to "which one did I just scroll to": the card is
-                // ringed, not merely centred among identical neighbours.
-                class={`rounded-lg transition-shadow ${
-                  item.ann.id === targetId ? 'ring-2 ring-warn'
-                  : lit.ids.includes(item.ann.id) ? 'ring-2 ring-accent' : ''}`}
-              >
-                <DetectionCard ann={item.ann} opts={cardOptsFor(item.ann, item.i)} />
-              </div>
-            )
+            ) : annRow(item.ann, item.i)
           ))}
         </div>
       </div>
