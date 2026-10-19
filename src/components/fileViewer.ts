@@ -1124,12 +1124,15 @@ export function showPreviewModal(
     /** Folded or not: kept for the life of the viewer, since the strip is
      *  rebuilt at every pause in the typing. */
     let warningsOpen = false;
+    /** Takes the caret to a place in the text. Set once the box exists. */
+    let goToWarning: (at: number) => void = () => {};
 
     /** Fills the strip, or hides it. abcjs's warnings carry their own position
      *  ("Music Line:7 Char:12") and are shown as it writes them: they are a
      *  parser's words about a file the user wrote, and rewording them would
-     *  cost the one thing that makes them useful. */
-    const showWarnings = (list: string[]) => {
+     *  cost the one thing that makes them useful. `at` is where each one was
+     *  placed in the text, if it could be: a placed warning is a link to it. */
+    const showWarnings = (list: string[], at: (number | null)[] = []) => {
       warnRow.replaceChildren();
       if (list.length === 0 || currentMode !== 'text' || !showAbcSyntaxCheck(appState.value)) {
         warnRow.classList.add('hidden'); warnRow.classList.remove('flex'); return;
@@ -1157,9 +1160,17 @@ export function showPreviewModal(
       warnRow.append(head, details);
       // Capped, because a file that is wrong everywhere is wrong in one way
       // and the list would push the music off the screen to say so.
-      for (const w of list.slice(0, 4)) {
-        const line = document.createElement('div');
-        line.className = 'abc-warning text-muted leading-relaxed break-words';
+      list.slice(0, 4).forEach((w, i) => {
+        const place = at[i] ?? null;
+        // A button when it leads somewhere: the caret to the word, which is
+        // where it gets fixed (the user, 2026-10-19).
+        const line = document.createElement(place === null ? 'div' : 'button');
+        line.className = 'abc-warning text-muted leading-relaxed break-words text-left';
+        if (line instanceof HTMLButtonElement) {
+          line.type = 'button';
+          line.className += ' cursor-pointer hover:text-primary';
+          line.onclick = () => goToWarning(place!);
+        }
         // abcjs marks the offending character with markup of its own, around a
         // quote of the user's own ABC — so the string is neither plain text nor
         // safe HTML. `textContent` printed the tags; `innerHTML` would run the
@@ -1168,7 +1179,7 @@ export function showPreviewModal(
         line.textContent = w;
         void sanitizeEmphasisOnly(w).then(html => { line.innerHTML = html; }).catch(() => { /* keep the text */ });
         details.appendChild(line);
-      }
+      });
       if (list.length > 4) {
         const more = document.createElement('div');
         more.className = 'text-dim';
@@ -1936,11 +1947,14 @@ export function showPreviewModal(
           mark.className = ['abc-text-playing', ...classes].join(' ');
           // Where the note is in the text, for whoever needs to know (tests).
           if (p === sounding[0]) mark.dataset['at'] = String(p);
+          if (textWarnMarks.some(([a]) => a === p)) mark.dataset['warnAt'] = String(p);
           mark.textContent = piece;
           parts.push(mark);
         } else if (classes.length) {
           const span = document.createElement('span');
           span.className = classes.join(' ');
+          // Where a warning's word starts, for the strip to scroll to.
+          if (textWarnMarks.some(([a]) => a === p)) span.dataset['warnAt'] = String(p);
           span.textContent = piece;
           parts.push(span);
         } else {
@@ -1960,6 +1974,23 @@ export function showPreviewModal(
         }
       }
       textBackdrop.scrollTop = textarea.scrollTop;
+    };
+
+    // A warning in the strip, tapped: the caret goes to the start of the word
+    // it names, and the box scrolls to show it — read off the layer, which
+    // wraps the lines exactly as the box does. A caret, not a selection: a
+    // selection is also the passage play is limited to.
+    goToWarning = (at: number) => {
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(at, at);
+      const word = textBackdrop.querySelector<HTMLElement>(`[data-warn-at="${at}"]`);
+      if (word) {
+        const top = word.offsetTop;
+        if (top < textarea.scrollTop || top + word.offsetHeight > textarea.scrollTop + textarea.clientHeight) {
+          textarea.scrollTop = top - textarea.clientHeight / 2;
+        }
+        textBackdrop.scrollTop = textarea.scrollTop;
+      }
     };
 
     /** The notes sounding, or none. */
@@ -3591,13 +3622,14 @@ export function showPreviewModal(
           // promised more than the code delivers.
           const list = Array.isArray(parsed?.[0]?.warnings) ? parsed[0]!.warnings! : [];
           const sourceLines = source.split('\n');
-          for (const w of list) {
+          const places = list.map(w => {
             const at = locateAbcWarning(sourceLines, w);
             // A warning on our own `X:` line has nothing in the box to mark.
             const range = at && at.line >= offset ? abcWarningRange(text, at.line - offset, at.col) : null;
             if (range) textWarnMarks.push(range);
-          }
-          showWarnings(list);
+            return range ? range[0] : null;
+          });
+          showWarnings(list, places);
         } catch {
           // Text so broken that abcjs throws rather than warning about it.
           showWarnings([t('fileViewer.abcError')]);

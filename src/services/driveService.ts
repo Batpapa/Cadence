@@ -676,11 +676,56 @@ async function getToken(interactive: boolean): Promise<string> {
   }
 }
 
+/** What a Drive request that never answers is turned into: a failure like any
+ *  network error, and retried as one. */
+const DRIVE_TIMEOUT = 'drive request timed out';
+/** The wait any request is allowed for its answer to start, sending aside. */
+const DRIVE_ANSWER_MS = 45_000;
+/** The slowest upload still taken for a working connection — about 0,4 Mbit/s,
+ *  a poor mobile link. Below it a big recording would be cut off mid-send. */
+const DRIVE_SLOWEST_BYTES_PER_MS = 50;
+
+/** How long a request may wait for Drive's answer to START: a fixed wait, plus
+ *  the time it takes to send what it carries at the slowest pace above — a
+ *  live of several hours goes up in ONE request. The answer's body is not
+ *  covered: once it starts coming, it is the reader's to take, and a long
+ *  recording coming down must not be cut halfway. */
+export function driveAnswerBudgetMs(body: BodyInit | null | undefined): number {
+  const size =
+    body == null ? 0
+    : typeof body === 'string' ? body.length
+    : body instanceof Blob ? body.size
+    : body instanceof ArrayBuffer ? body.byteLength
+    : ArrayBuffer.isView(body) ? body.byteLength
+    : 0;
+  return DRIVE_ANSWER_MS + Math.ceil(size / DRIVE_SLOWEST_BYTES_PER_MS);
+}
+
 async function driveRequest(url: string, options: RequestInit = {}, interactive = false): Promise<Response> {
-  const doFetch = (tok: string) => fetch(url, {
-    ...options,
-    headers: { ...(options.headers as Record<string, string> ?? {}), Authorization: `Bearer ${tok}` },
-  });
+  // A request that never settles used to hold everything behind it for the
+  // life of the page (2026-10-19): the flush in flight is never released, and
+  // no later edit is pushed until a reload. Safari suspended mid-request on an
+  // iPhone is how it happens. Given up after its budget, it fails like a lost
+  // connection — the retry follows, and a write that landed all the same is
+  // recognised by its in-flight note (recogniseOwnLandedWrite), which is the
+  // case that note was written for.
+  const doFetch = async (tok: string): Promise<Response> => {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), driveAnswerBudgetMs(options.body));
+    try {
+      return await fetch(url, {
+        ...options,
+        headers: { ...(options.headers as Record<string, string> ?? {}), Authorization: `Bearer ${tok}` },
+        signal: abort.signal,
+      });
+    } catch (e) {
+      if (abort.signal.aborted) throw new Error(DRIVE_TIMEOUT);
+      throw e;
+    } finally {
+      // The answer has started: reading it is not timed (see the budget).
+      clearTimeout(timer);
+    }
+  };
   const token = await getToken(interactive);
   const resp = await doFetch(token);
   if (resp.status === 401) {
