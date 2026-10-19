@@ -18,6 +18,9 @@ import { isNative } from '../native/platform';
 type AudioSessionType ='auto' | 'playback' | 'transient' | 'transient-solo' | 'ambient' | 'play-and-record';
 
 function session(): { type: AudioSessionType } | undefined {
+  // No `navigator` at all under Node before 21 — the nightly CI's Node 20,
+  // where the capture test died on it (2026-10-18) while Node 26 passed.
+  if (typeof navigator === 'undefined') return undefined;
   return (navigator as Navigator & { audioSession?: { type: AudioSessionType } }).audioSession;
 }
 
