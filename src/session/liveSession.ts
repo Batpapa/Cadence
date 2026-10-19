@@ -5,7 +5,8 @@ import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession } from './db';
 import { holdAnalysisLock } from './recovery';
-import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate } from './model';
+import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate, TunesetRecord } from './model';
+import { withSets } from './tunesets';
 import { DetectionTracker } from './detectionState';
 import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
@@ -308,6 +309,19 @@ export class LiveSession {
     this.userChanged();
   }
 
+  /** The sets heard so far, with the identity a heart or a review hangs on —
+   *  asked for by the feed, and only with the experimental sets on. Handed to
+   *  the analysis when it is saved (see DetectionTracker.finalSets). */
+  getTunesets(): TunesetRecord[] {
+    return this.tracker.setTable(() => crypto.randomUUID());
+  }
+
+  /** Toggle "I liked this set". */
+  toggleSetLike(tunesetId: string): void {
+    this.tracker.toggleSetLike(tunesetId);
+    this.userChanged();
+  }
+
   /** Records the user's verdict on this detection's identity, finalized or
    *  still playing: any tune — the decoder's own current pick included —
    *  confirms it, `null` hands it back to the decoder. What a confirmation
@@ -452,6 +466,7 @@ export class LiveSession {
         mimeType: fileResult.mimeType,
         source,
         annotations: this.getDetections(),
+        ...withSets(this.tracker.finalSets(() => crypto.randomUUID())),
       };
       await saveSessionAudio(session.id, fileResult.blob);
       // Another device may have written to Drive during the recording — the

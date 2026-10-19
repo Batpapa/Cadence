@@ -1,0 +1,200 @@
+import { useState } from 'preact/hooks';
+import type { ComponentChild } from 'preact';
+import type { AppContext } from '../../types';
+import { t } from '../../services/i18nService';
+import { HeartIcon, HourglassIcon, TuneSetIcon } from '../../components/icons';
+import { getContext } from '../../store';
+import { hasRecognisedSetting, type Detection, type TunesetRecord } from '../model';
+import { setCardFor, chainSpan, isSettled } from '../tunesets';
+import { experimentalSets } from '../detections';
+import { HeardSetAbc } from './abcPreview';
+import { PlayDisc, playDiscTitle } from './PassRow';
+import { ReviewLogControl, ratingOf } from './DetectionCard';
+import { fmtLongTime, tuneName, type ClipSessionRef } from './sessionUiShared';
+import { SetClipControls, TunesetDeckButton, setReviewId } from './tunesetShared';
+import { reviewEntryTs } from '../reviewLink';
+import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
+import { withChains } from './timelineModel';
+
+// ── A set heard in an analysis (2026-10-19) ──────────────────────────────────
+// Shaped like a detection and holding its detections, shown as they are —
+// "detections inside a detection" (the user's design). A set here is only a
+// chain: tunes played with no silence between them (timelineModel.ts). So it
+// has no score of its own (the pill says "Set" where a tune shows its %), and
+// no bounds of its own to edit: its span is its tunes', moved through theirs.
+
+export interface TunesetCardOptions {
+  ctx: AppContext;
+  session: ClipSessionRef;
+  /** Its entry in the analysis's table — none while the set is still being
+   *  decoded, or on the live and import feeds, which keep no table: then the
+   *  set can be read and heard, and nothing else. */
+  record?: TunesetRecord;
+  onOpenCard?: (cardId: string) => void;
+  getPinnedDeckIds?: () => Set<string>;
+  /** After anything this card wrote to the user blob. */
+  onChanged?: () => void;
+  onPlay?: (chain: Detection[]) => void;
+  playingId?: string | null;
+  playFromDrive?: boolean;
+  playLoadingId?: string | null;
+  onToggleLike?: (record: TunesetRecord) => void;
+  /** Unix ms of the session's t=0 — what a rating is filed against. */
+  sessionStartMs?: number;
+  /** Where the clip controls go — absent on the feeds, which have none. */
+  clip?: { audioAvailable: boolean; getAudio: () => Promise<Blob | undefined> };
+}
+
+/** A live or import feed's list: tunes alone and sets, no silence rows — a
+ *  feed never had them. The sets are the summary's very rule (withChains),
+ *  measured against the furthest point heard so far. */
+type FeedItem = { kind: 'ann'; ann: Detection } | { kind: 'chain'; chain: Detection[] };
+
+export function feedItems(anns: Detection[]): { duration: number; items: FeedItem[] } {
+  const duration = anns.reduce((m, a) => Math.max(m, a.end ?? a.start), 0);
+  // Off (the default while it is iterated on), the feed is the flat list it
+  // always was.
+  if (!experimentalSets(getContext().user)) return { duration, items: anns.map(ann => ({ kind: 'ann', ann })) };
+  const items: FeedItem[] = [];
+  for (const x of withChains(anns, duration)) {
+    if (x.kind === 'ann') items.push({ kind: 'ann', ann: x.ann });
+    else if (x.kind === 'chain') items.push({ kind: 'chain', chain: x.members.map(m => m.ann) });
+  }
+  return { duration, items };
+}
+
+/** The id the set plays under, in whichever player plays it. */
+export function chainPlayId(chain: readonly Detection[]): string {
+  return `set:${chain[0]?.id ?? ''}`;
+}
+
+export function TunesetDetectionCard({ chain, opts, children }: {
+  chain: Detection[];
+  opts: TunesetCardOptions;
+  /** The tunes' own cards, rendered by the screen exactly as it renders any. */
+  children: ComponentChild;
+}) {
+  const [missing, setMissing] = useState<string[] | null>(null);
+  const user = getContext().user;
+  const tuneIds = chain.map(d => d.tuneId);
+  const setCard = setCardFor(tuneIds, user.cards);
+  // Settled = every tune closed and finalized: enough to create the set card
+  // or cut its clip. The heart and the review need more — the set's entry in
+  // the analysis's table, which only a saved analysis has.
+  const settled = isSettled(chain);
+  const tracked = settled && !!opts.record;
+  const open = chain.some(d => d.end === null);
+  const pending = !open && !isSettled(chain);
+  const span = chainSpan(chain, opts.session.duration);
+  const names = chain.map(d => tuneName(d).text);
+  const name = setCard?.name ?? names.join(TUNESET_NAME_SEPARATOR);
+
+  const range = open
+    ? `${fmtLongTime(span.start)} · ${t('sessions.inProgress')}`
+    : `${fmtLongTime(span.start)} – ${fmtLongTime(span.end)}`;
+
+  const playId = chainPlayId(chain);
+  const playing = !!opts.onPlay && opts.playingId === playId;
+
+  const reviewId = opts.record ? setReviewId(opts.session.id, opts.record.id) : null;
+  const reviewTs = opts.sessionStartMs !== undefined && !open ? reviewEntryTs(opts.sessionStartMs, span.end) : null;
+  const showReview = !!setCard && !!reviewId && tracked && (reviewTs !== null || !!ratingOf(setCard.id, reviewId, reviewTs));
+
+  return (
+    <div
+      class={`detection-card p-3 rounded-lg border space-y-2 ${setCard ? 'bg-surface' : 'bg-bg'} ${open ? 'border-accent/60' : 'border-border'}`}
+      data-set-id={opts.record?.id}
+    >
+      <div class="flex items-center gap-2">
+        {open && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
+        {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
+
+        {opts.onPlay && (() => {
+          const state = { playing, fromDrive: !!opts.playFromDrive, loading: opts.playLoadingId === playId };
+          return <PlayDisc {...state} title={playDiscTitle(state)} onClick={() => opts.onPlay!(chain)} />;
+        })()}
+
+        <HeardSetAbc
+          title={name}
+          tunes={chain.map((d, i) => ({ label: names[i]!, settingId: hasRecognisedSetting(d) ? d.settingId : null }))}
+        />
+
+        <TunesetDeckButton
+          tuneIds={tuneIds}
+          setCard={setCard}
+          settled={settled}
+          ctx={opts.ctx}
+          getPinnedDeckIds={opts.getPinnedDeckIds}
+          onChanged={() => { setMissing(null); opts.onChanged?.(); }}
+          onExplain={(ids) => setMissing(m => (m ? null : ids ?? []))}
+        />
+
+        {setCard ? (
+          <span
+            class="text-sm font-semibold text-primary truncate flex-1 cursor-pointer hover:text-accent transition-colors"
+            title={t('sessions.openCard')}
+            onClick={() => opts.onOpenCard?.(setCard.id)}
+          >
+            {name}
+          </span>
+        ) : (
+          <span class="text-sm font-semibold text-muted truncate flex-1">{name}</span>
+        )}
+
+        {/* Where a tune shows how sure the recogniser is: a set is not one of
+            its results, so it says what it is instead. */}
+        <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted">
+          <TuneSetIcon size={11} />
+          {t('sessions.set.label')}
+        </span>
+
+        {opts.onToggleLike && opts.record && (
+          <button
+            class={`shrink-0 cursor-pointer transition-colors ${opts.record.liked ? 'text-danger' : 'text-dim hover:text-danger'}`}
+            title={t(opts.record.liked ? 'sessions.set.unlike' : 'sessions.set.like')}
+            onClick={(e) => { e.stopPropagation(); opts.onToggleLike!(opts.record!); }}
+          >
+            <HeartIcon size={13} filled={!!opts.record.liked} />
+          </button>
+        )}
+      </div>
+
+      {/* The span only: its tunes say what they are, and how many there are
+          is in plain sight just below (the user's call, 2026-10-19). Plain
+          text — no pencil: the set's bounds are its tunes'. */}
+      <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
+        <span class="font-mono tabular-nums">{range}</span>
+        {opts.clip && (
+          <span class="ml-auto flex items-center gap-1.5">
+            <SetClipControls
+              session={opts.session}
+              setCard={setCard}
+              span={span}
+              audioAvailable={opts.clip.audioAvailable}
+              getAudio={opts.clip.getAudio}
+              ctx={opts.ctx}
+              onAttached={opts.onChanged}
+              disabled={!settled}
+            />
+          </span>
+        )}
+      </div>
+
+      {missing && (
+        <p class="text-[11px] text-dim leading-snug">
+          {missing.length > 0
+            ? t('sessions.set.needCards', { names: missing.map(id => names[tuneIds.indexOf(id)]).join(', ') })
+            : t('sessions.set.notSettled')}
+        </p>
+      )}
+
+      {showReview && (
+        <div class="flex items-center gap-3 flex-wrap">
+          <ReviewLogControl cardId={setCard!.id} reviewId={reviewId!} ts={reviewTs} ctx={opts.ctx} />
+        </div>
+      )}
+
+      <div class="space-y-1.5">{children}</div>
+    </div>
+  );
+}

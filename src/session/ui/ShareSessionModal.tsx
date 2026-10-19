@@ -10,6 +10,8 @@ import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { copyText, formatBytes } from '../../utils';
 import type { Analysis, Detection } from '../model';
 import { tuneName, useTuneNames } from './sessionUiShared';
+import { experimentalSets } from '../detections';
+import { getContext } from '../../store';
 
 // ── Share a session (annotations + optionally the audio) via a short key —
 // same mechanism as card sharing (shareService.ts). showModal/closeModal are
@@ -91,6 +93,8 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   // detections ran first (a share from the analysis browser does not).
   useTuneNames();
   const nameOf = (d: Detection) => tuneName(d).text;
+  // A blank line between sets, with the experimental sets on (2026-10-19).
+  const setBreaks = experimentalSets(getContext().user);
 
   // The header belongs to the shell, not to this body, so the two levels are
   // kept in step from here — same title-plus-back-arrow the card export modal
@@ -205,7 +209,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
             label={t('library.export.file')}
             desc={t('sessions.export.txtDesc')}
             color="var(--color-warn)"
-            onClick={() => { exportAnalysisTXT(session, { detailed, nameOf }); closeModal(); }}
+            onClick={() => { exportAnalysisTXT(session, { detailed, nameOf, setBreaks }); closeModal(); }}
           />
           <ShareChoiceCard
             icon={SHARE_ICON_CLIPBOARD}
@@ -213,7 +217,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
             desc={t('common.copyToClipboardDesc')}
             color="var(--color-success)"
             onClick={() => {
-              void copyText(analysisTextReport(session, { detailed, nameOf })).then(ok => {
+              void copyText(analysisTextReport(session, { detailed, nameOf, setBreaks })).then(ok => {
                 setCopied(ok ? 'yes' : 'failed');
                 // Long enough to read the confirmation, short enough not to
                 // feel stuck. A failure keeps the modal open: there is nothing
@@ -308,7 +312,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
         label="CSV"
         desc={t('sessions.export.csvDesc')}
         color="var(--color-success)"
-        onClick={() => { exportAnalysisCSV(session, nameOf); closeModal(); }}
+        onClick={() => { exportAnalysisCSV(session, nameOf, { setBreaks }); closeModal(); }}
       />
       <ShareChoiceCard
         icon={SHARE_ICON_TXT}

@@ -6,6 +6,7 @@ import { t } from '../services/i18nService';
 import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
 import { isAbcFile } from '../services/abcService';
 import { liveScreenActive, importScreenActive } from '../session/ui/sessionModule';
+import { experimentalSets } from '../session/detections';
 
 type SectionStyle = 'definition' | 'logic' | 'metrics';
 type HelpSection = { heading: string; items: string[]; style?: SectionStyle };
@@ -42,7 +43,7 @@ function cardSections(ctx: AppContext, cardId: string): HelpSection[] {
     { style: 'logic', heading: t('help.card.content.heading'), items: [t('help.card.content.1'), t('help.card.content.2'), t('help.card.content.3'), t('help.card.content.4')] },
     { style: 'logic', heading: t('help.card.attach.heading'), items: [t('help.card.attach.1'), t('help.card.attach.2'), t('help.card.attach.3'), t('help.card.attach.4')] },
     ...(hasScore ? [{ style: 'logic' as const, heading: t('help.card.abc.heading'), items: [t('help.card.abc.1'), t('help.card.abc.2'), t('help.card.abc.3'), t('help.card.abc.4'), t('help.card.abc.5'), t('help.card.abc.6')] }] : []),
-    { style: 'logic', heading: t('help.card.links.heading'), items: [t('help.card.links.1'), ...(isMusic ? [t('help.card.links.2'), t('help.card.links.3')] : [])] },
+    { style: 'logic', heading: t('help.card.links.heading'), items: [t('help.card.links.1'), ...(isMusic ? [t('help.card.links.2'), t('help.card.links.3')] : []), ...(isSet && experimentalSets(ctx.user) ? [t('help.card.links.4')] : [])] },
     { style: 'metrics', heading: t('help.card.history.heading'), items: [t('help.card.history.1'), t('help.card.history.2'), t('help.card.history.3')] },
   ];
 }
@@ -130,6 +131,8 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
           sections: [
             { style: 'definition', heading: t('help.sessionSummary.screen.heading'),    items: [t('help.sessionSummary.screen.1'), t('help.sessionSummary.screen.2'), t('help.sessionSummary.screen.3'), t('help.sessionSummary.screen.4')] },
             detectionSection(),
+            // The sets only when they are on (an option, off by default).
+            ...(experimentalSets(ctx.user) ? [{ style: 'logic' as const, heading: t('help.sessionSummary.sets.heading'), items: [t('help.sessionSummary.sets.1'), t('help.sessionSummary.sets.2'), t('help.sessionSummary.sets.3')] }] : []),
             { style: 'logic',      heading: t('help.sessionSummary.recording.heading'), items: [t('help.sessionSummary.recording.1'), t('help.sessionSummary.recording.2'), t('help.sessionSummary.recording.3'), t('help.sessionSummary.recording.4')] },
             { style: 'logic',      heading: t('help.sessionSummary.edit.heading'),      items: [t('help.sessionSummary.edit.1')] },
             { style: 'logic',      heading: t('help.sessionSummary.share.heading'),     items: [t('help.sessionSummary.share.1')] },
@@ -160,7 +163,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
           { style: 'definition', heading: t('help.sessions.what.heading'),     items: [t('help.sessions.what.1'), t('help.sessions.what.2'), t('help.sessions.what.3')] },
           { style: 'logic',      heading: t('help.sessions.start.heading'),    items: [t('help.sessions.start.1'), t('help.sessions.start.2'), t('help.sessions.start.3'), t('help.sessions.start.4'), t('help.sessions.start.5')] },
           { style: 'logic',      heading: t('help.sessions.analyses.heading'), items: [t('help.sessions.analyses.1'), t('help.sessions.analyses.2'), t('help.sessions.analyses.3'), t('help.sessions.analyses.4'), t('help.sessions.analyses.5')] },
-          { style: 'logic',      heading: t('help.sessions.tunes.heading'),    items: [t('help.sessions.tunes.1'), t('help.sessions.tunes.2'), t('help.sessions.tunes.3'), t('help.sessions.tunes.4'), t('help.sessions.tunes.5')] },
+          { style: 'logic',      heading: t('help.sessions.tunes.heading'),    items: [t('help.sessions.tunes.1'), t('help.sessions.tunes.2'), t('help.sessions.tunes.3'), t('help.sessions.tunes.4'), t('help.sessions.tunes.5'), ...(experimentalSets(ctx.user) ? [t('help.sessions.tunes.6')] : [])] },
         ],
       };
 

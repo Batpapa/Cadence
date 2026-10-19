@@ -188,10 +188,31 @@ export interface Analysis {
    *  builds an Analysis from scratch over an existing one must carry it — a
    *  re-analysis does (startReanalyze → ImportSession.notes). */
   notes?: string;
+  /** The sets heard in this analysis — chains of detections played without a
+   *  silence between them (timelineModel.ts's withChains), 2026-10-19.
+   *
+   *  NOT a second source of truth for what a set is: which detections belong
+   *  together is always recomputed from the detections themselves, and this
+   *  table is reconciled against it (tunesets.ts's reconcileTunesets). What it
+   *  holds is what a chain cannot derive — an IDENTITY that survives a bound
+   *  being moved, which the set's heart and its review hang on. Absent on every
+   *  analysis saved before it existed; built the first time one is shown. */
+  tunesets?: TunesetRecord[];
   // The audio Blob (+ in-progress crash-recovery scratch data) lives in a
   // local-only, non-Drive-synced IndexedDB under the session id — see
   // session/db.ts. This record itself is small (no audio), so it's kept
   // directly on the user's synced AppState instead (see TuneAnalyserModuleData).
+}
+
+/** One set heard in an analysis: the detections it is made of, in playing
+ *  order, and what the user said about it. See Analysis.tunesets. */
+export interface TunesetRecord {
+  /** A UUID, like a detection's: a review given from this set is filed under
+   *  it (reviewLink.ts's detectionReviewId), so it must never collide with one. */
+  id: string;
+  detectionIds: string[];
+  /** "I liked this set" — the set's own heart, apart from its tunes'. */
+  liked?: boolean;
 }
 
 /** `AppState.modules['tune-analyser']` (see types.ts's User.modules) — the
@@ -214,6 +235,11 @@ export interface TuneAnalyserModuleData {
    *  library — a flag on this module's own slice rather than on User, which
    *  knows nothing about panels. */
   detectionsOnCards?: boolean;
+  /** "Use experimental set detection" (2026-10-19): tunes played without a
+   *  silence between them shown as sets, everywhere the analyser shows its
+   *  results. Absent = off — being iterated on with the testers. Read it
+   *  through `experimentalSets()`. */
+  experimentalSets?: boolean;
   /** How far the instruments are tuned off written pitch, in ENGINE semitones
    *  (see PitchShiftControl's `flip` for why that is the opposite sign of what a
    *  player says). Absent = as written. The module's own setting since

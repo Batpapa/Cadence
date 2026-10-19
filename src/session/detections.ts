@@ -73,6 +73,13 @@ export function detectionsOnCards(user: { modules?: Record<string, unknown> }): 
   return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.detectionsOnCards !== false;
 }
 
+/** Whether sets are shown at all (an option of the module, off by default
+ *  while it is iterated on with the testers — 2026-10-19). Off, the analyser
+ *  behaves exactly as it did before sets existed. */
+export function experimentalSets(user: { modules?: Record<string, unknown> }): boolean {
+  return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.experimentalSets === true;
+}
+
 /** The instruments' pitch setting, in engine semitones — 0 when absent, and
  *  when the synced blob holds anything but a whole number the control could
  *  have written. */

@@ -1,4 +1,6 @@
-import type { Detection, DetectionAlternate, DetectionEvent } from './model';
+import type { Detection, DetectionAlternate, DetectionEvent, TunesetRecord } from './model';
+import { reconcileTunesets } from './tunesets';
+import { chainsOf } from './ui/timelineModel';
 import { withManualAlternate } from './model';
 
 // ── The detection list both engines keep ─────────────────────────────────────
@@ -278,6 +280,40 @@ export class DetectionTracker {
 
   toggleLike(id: string): void {
     this.mark(id, d => ({ liked: !d.liked }));
+  }
+
+  // ── The sets heard so far (2026-10-19) ──
+  // Kept here, beside the tunes' hearts, so that a recording or an import can
+  // give a set its heart and its review before the analysis exists — the table
+  // is handed to the analysis when it is saved (finalSets), under the same ids,
+  // and a review given now still finds its set in the summary. Only ever asked
+  // for with the experimental sets on: never asked, nothing is saved.
+  private sets: TunesetRecord[] = [];
+  private setsAsked = false;
+
+  /** The table, brought in line with the detections as they stand. A set
+   *  still being decoded has an entry too (see reconcileTunesets). */
+  setTable(newId: () => string): TunesetRecord[] {
+    this.setsAsked = true;
+    const dets = this.list();
+    const duration = dets.reduce((m, d) => Math.max(m, d.end ?? d.start), 0);
+    this.sets = reconcileTunesets(this.sets, chainsOf(dets, duration), newId, { includeUnsettled: true });
+    return this.sets;
+  }
+
+  toggleSetLike(id: string): void {
+    const rec = this.sets.find(r => r.id === id);
+    if (!rec) return;
+    if (rec.liked) delete rec.liked; else rec.liked = true;
+  }
+
+  /** What the saved analysis carries: the settled sets, ids and hearts kept —
+   *  or nothing at all when the table was never asked for. */
+  finalSets(newId: () => string): TunesetRecord[] | undefined {
+    if (!this.setsAsked) return undefined;
+    const dets = this.list();
+    const duration = dets.reduce((m, d) => Math.max(m, d.end ?? d.start), 0);
+    return reconcileTunesets(this.sets, chainsOf(dets, duration), newId);
   }
 
   /** See model.ts's withManualAlternate. */
