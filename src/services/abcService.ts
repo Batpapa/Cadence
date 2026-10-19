@@ -611,6 +611,87 @@ export function abcOpenMode(user: { abcOpenMode?: AbcOpenMode }): AbcOpenMode {
   return user.abcOpenMode ?? ABC_OPEN_MODE_DEFAULT;
 }
 
+/** Whether the ABC face checks the text as it is typed. Off unless asked for
+ *  (the user, 2026-10-19): most of what abcjs warns about is harmless, and a
+ *  strip of warnings over every score from TheSession read as "this tune is
+ *  broken" to people who only wanted to read it. Absence means NO, so the
+ *  setting stores `true` or nothing. */
+export function showAbcSyntaxCheck(user: { abcShowSyntaxCheck?: boolean }): boolean {
+  return user.abcShowSyntaxCheck === true;
+}
+
+/** `stripForRender`, line for line: a dropped field becomes a comment line
+ *  instead of disappearing, so line N of the result is line N of the input —
+ *  which is what lets a warning's line number be found again in the text. */
+export function blankForRender(abc: string): string {
+  return abc.split('\n').map(l => (STRIPPED_FOR_RENDER.test(l) ? '%' : l)).join('\n');
+}
+
+/** abcjs's own marker around the character it blames, in every warning it
+ *  writes (abc_parse.js, `warn`). */
+const WARNING_MARK = /<span[^>]*>([\s\S]*?)<\/span>/;
+
+const unescapeWarning = (s: string): string =>
+  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/** Where in the parsed text an abcjs warning points, as a line (0-based) and
+ *  a column — or null when it cannot be placed.
+ *
+ *  Every warning abcjs writes is "Music Line:N:C: message:  context", N
+ *  counted from 1 in the string it was given and C from 1 — but C is counted
+ *  in whatever piece of the line the parser was holding, which for a header
+ *  field is its value alone ("K: Zzz" blames column 2, the Z of " Zzz").
+ *  The context it quotes (up to 64 characters either side of the culprit) is
+ *  what settles it: the column is taken as given when the text agrees with
+ *  the quote there, and the quote is looked for in the line otherwise.
+ *  Measured on abcjs 6.7.0. */
+export function locateAbcWarning(lines: string[], warning: string): { line: number; col: number } | null {
+  const head = /^Music Line:(\d+):(\d+): [\s\S]*?: {2}([\s\S]*)$/.exec(warning);
+  if (!head) return null;
+  const line = parseInt(head[1]!, 10) - 1;
+  const text = lines[line];
+  if (text === undefined) return null;
+  const quote = head[3]!;
+  const mark = WARNING_MARK.exec(quote);
+  if (!mark) return null;
+  const before = unescapeWarning(quote.slice(0, mark.index));
+  const after = unescapeWarning(quote.slice(mark.index + mark[0].length));
+  // "SPACE" is abcjs's word for a blank, or for the end of the line.
+  const culprit = mark[1] === 'SPACE' ? ' ' : unescapeWarning(mark[1]!);
+  const col = parseInt(head[2]!, 10) - 1;
+  const fits = (at: number) =>
+    text.slice(at - before.length, at) === before &&
+    (text.slice(at, at + culprit.length) === culprit || (culprit === ' ' && at >= text.length));
+  if (col >= 0 && fits(col)) return { line, col };
+  for (const probe of [before + culprit + after, before + culprit]) {
+    if (!probe.trim()) continue;
+    const at = text.indexOf(probe);
+    if (at >= 0) return { line, col: at + before.length };
+  }
+  return null;
+}
+
+/** Where a word of ABC music ends: a blank, or a bar line. */
+const WARNING_WORD_END = /[\s|]/;
+
+/** What to underline in `text` for a warning placed at `line`/`col`: the word
+ *  around it, between blanks and bar lines — one character is a single wave,
+ *  too small to see — or the blank or bar itself when that is what it blames. */
+export function abcWarningRange(text: string, line: number, col: number): [number, number] | null {
+  const lines = text.split('\n');
+  if (line < 0 || line >= lines.length) return null;
+  let start = 0;
+  for (let i = 0; i < line; i++) start += lines[i]!.length + 1;
+  const own = lines[line]!;
+  if (own.length === 0) return null;
+  const at = Math.min(col, own.length - 1);
+  if (WARNING_WORD_END.test(own[at]!)) return [start + at, start + at + 1];
+  let a = at, b = at + 1;
+  while (a > 0 && !WARNING_WORD_END.test(own[a - 1]!)) a--;
+  while (b < own.length && !WARNING_WORD_END.test(own[b]!)) b++;
+  return [start + a, start + b];
+}
+
 /** How many bars a line of an engraved score aims to hold.
  *
  *  Four, because that is the carrure this music is written in: a jig or a reel

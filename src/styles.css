@@ -681,6 +681,19 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 .abc-text-start.abc-text-in::before { border-left-color: transparent; }
 .abc-text-out::after { right: -1.5px; border-color: var(--abc-out, #3b82f6); border-left-width: 0; }
 
+/* What abcjs objects to, in the same layer (2026-10-19): the editor's wavy
+   line, in the warning colour. A decoration, which moves nothing; its colour
+   is given explicitly because the layer's text is transparent and a
+   decoration otherwise takes the text's. */
+.abc-text-warn {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: rgb(var(--color-warn-ch));
+  text-decoration-thickness: 1px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+}
+
 /* The note being played, in the ABC source face's layer (fileViewer.ts,
    2026-10-15). Not tinted any more: the cursor's bar moves onto it instead,
    as the stave's cursor does (the user, 2026-10-15). Still a <mark>, which the

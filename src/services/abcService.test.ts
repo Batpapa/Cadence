@@ -4,7 +4,9 @@ import {
   tunesetAbcPlaceholder, addTunesetAbcOnConvert, addTunesetAbcOnBecomingSet, ADD_TUNESET_ABC_BY_DEFAULT,
   musicIncipit, abcDurationUnits, abcIncipit, TUNE_TEMPOS,
   abcOpenMode, ABC_OPEN_MODE_DEFAULT,
+  showAbcSyntaxCheck, blankForRender, stripForRender, locateAbcWarning, abcWarningRange,
 } from './abcService';
+import abcjs from 'abcjs';
 import { hasTunesetScore } from './cardTypeService';
 import type { Card, CardRef } from '../types';
 
@@ -544,5 +546,57 @@ describe('abcOpenMode', () => {
   it('respecte le choix explicite, dans les deux sens', () => {
     expect(abcOpenMode({ abcOpenMode: 'text' })).toBe('text');
     expect(abcOpenMode({ abcOpenMode: 'sheet' })).toBe('sheet');
+  });
+});
+
+describe('showAbcSyntaxCheck', () => {
+  it('est desactive tant que l utilisateur n a rien dit', () => {
+    expect(showAbcSyntaxCheck({})).toBe(false);
+    expect(showAbcSyntaxCheck({ abcShowSyntaxCheck: true })).toBe(true);
+  });
+});
+
+describe('blankForRender', () => {
+  it('retire les memes champs que stripForRender sans decaler les lignes', () => {
+    const abc = 'X: 1\nT: T\nS: https://thesession.org/tunes/1\nZ: moi\nK: D\nABcd|';
+    expect(blankForRender(abc).split('\n')).toHaveLength(6);
+    expect(blankForRender(abc).split('\n').filter(l => l !== '%').join('\n')).toBe(stripForRender(abc));
+  });
+});
+
+describe('locateAbcWarning / abcWarningRange', () => {
+  /** What abcjs itself says about `abc`, placed back in it. */
+  const placed = (abc: string) => {
+    const warnings = abcjs.parseOnly(abc)[0]?.warnings ?? [];
+    const lines = abc.split('\n');
+    return warnings.map(w => {
+      const at = locateAbcWarning(lines, w);
+      const range = at && abcWarningRange(abc, at.line, at.col);
+      return range ? abc.slice(range[0], range[1]) : null;
+    });
+  };
+
+  it('retrouve le caractere fautif d une ligne de musique', () => {
+    expect(placed('X: 1\nT: T\nM: 6/8\nL: 1/8\nK: D\n|:ABc def|g#a y>> 7 bag|\n')).toEqual(['g#a', '7']);
+  });
+
+  it('retrouve une erreur d en-tete, dont abcjs compte la colonne dans la valeur seule', () => {
+    // abcjs blames column 2 of " Zzz", not of the line "K: Zzz".
+    expect(placed('X: 1\nT: T\nK: D\nABcd|\nK: Zzz\n')).toEqual(['Zzz']);
+  });
+
+  it('compte les lignes depuis le debut du texte, sans X:', () => {
+    expect(placed('T: Sans X\nM: 4/4\nK: G\nAB$c d|\n')).toEqual(['AB$c']);
+  });
+
+  it('ne place pas un avertissement qu il ne sait pas lire', () => {
+    expect(locateAbcWarning(['ABc'], 'Something else entirely')).toBeNull();
+    expect(locateAbcWarning(['ABc'], 'Music Line:9:1: x:  <span>A</span>')).toBeNull();
+  });
+
+  it('souligne la barre ou le blanc seul quand c est lui qui est en cause', () => {
+    expect(abcWarningRange('ab cd|ef', 0, 2)).toEqual([2, 3]);
+    expect(abcWarningRange('ab cd|ef', 0, 5)).toEqual([5, 6]);
+    expect(abcWarningRange('x\nab cd|ef', 1, 4)).toEqual([5, 7]);
   });
 });
