@@ -14,13 +14,15 @@ on:
 jobs:
   streaming-equivalence:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Was 30, and the test step alone takes 23-29 min on a GitHub runner: 13 of
+    # the 20 nights up to 2026-10-19 were cut off at the limit, not failed.
+    timeout-minutes: 60
     env:
       CADENCE_NIGHTLY: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci
       - run: npm run test:nightly
