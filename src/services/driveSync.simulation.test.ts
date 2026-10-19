@@ -86,7 +86,13 @@ function installFetch(drive: FakeDrive): void {
       drive.write(String(init!.body));
       if (outcome === 'commit-then-network-error') throw new TypeError('Failed to fetch');
       if (outcome === 'commit-then-500') return response(500, {});
-      if (outcome === 'commit-then-hang') return new Promise(() => { /* the tab dies here */ });
+      // Never answers — but gives up when the request is aborted, as a
+      // browser's fetch does.
+      if (outcome === 'commit-then-hang') {
+        return new Promise((_, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        });
+      }
       // The answer reports the version produced BY THIS WRITE, whenever it
       // finally arrives — which is the whole point of holding it back.
       const written = String(drive.version);
@@ -344,6 +350,28 @@ describe('a write that landed on Drive without being recorded locally', () => {
       await s.mod.manualSync();
       expect(driveNote()).toBe(`confirmed ${i} bis`);
     }
+    expect(s.duringFlush.filter(v => v.screen === 'conflict')).toEqual([]);
+  });
+
+  it('an answer that never comes is given up, and the page goes on syncing (2026-10-19)', async () => {
+    // Before the time limit, the hung flush held its lock for the life of the
+    // page: every later edit stayed local until a reload.
+    const s = await connectedAndInSync();
+    advance(60_000);
+    edit(s, u => { u.note = 'second'; });
+    drive.nextUpload = 'commit-then-hang';
+    const hung = s.mod.manualSync();
+    await flushMicrotasks();
+    expect(drive.commits).toBe(2);           // landed, unanswered
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await hung;                              // given up, not hanging
+
+    edit(s, u => { u.note = 'third'; });
+    await s.mod.manualSync();
+    expect(driveNote()).toBe('third');
+    expect(drive.commits).toBe(3);
+    // The write that landed unanswered is recognised as ours, not asked about.
     expect(s.duringFlush.filter(v => v.screen === 'conflict')).toEqual([]);
   });
 
@@ -734,5 +762,16 @@ describe('refreshFromDrive', () => {
     const onDrive = drive.payload() as unknown as { note?: string; modules?: Record<string, { sessions: Record<string, unknown> }> };
     expect(onDrive.note).toBe('renamed on the computer');
     expect(Object.keys(onDrive.modules?.['tune-analyser']?.sessions ?? {})).toEqual(['live1']);
+  });
+});
+
+describe('driveAnswerBudgetMs', () => {
+  it('waits longer for what carries more: a long live goes up in one request', async () => {
+    const { driveAnswerBudgetMs } = await import('./driveService');
+    const bare = driveAnswerBudgetMs(undefined);
+    expect(bare).toBe(45_000);
+    expect(driveAnswerBudgetMs('{}')).toBeGreaterThan(bare);
+    // Three hours of recording, about 100 MB: more than half an hour allowed.
+    expect(driveAnswerBudgetMs(new Blob([new Uint8Array(100_000_000)]))).toBeGreaterThan(30 * 60_000);
   });
 });
