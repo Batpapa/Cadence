@@ -326,7 +326,8 @@ export interface User {
    *  straight, 60 is 3:2, 66 is a 2:1 triplet feel, 75 is a dotted eighth
    *  against a sixteenth and is its ceiling. Absent = straight. Set in the
    *  playback preferences only; the viewer's own button changes the score that
-   *  is open and writes nothing. Only `X/4` metres swing — see meterCanSwing.
+   *  is open and writes nothing. `X/4` and compound `X/8` metres swing — see
+   *  meterCanSwing.
    *
    *  A NEW field, not `abcSwing` given a new meaning (2026-10-22). `abcSwing`
    *  was the viewer button's last state, written on every press, so a device

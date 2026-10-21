@@ -739,21 +739,21 @@ export function stepSwingChoice(value: number, d: 1 | -1): number {
   return SWING_CHOICES[((i < 0 ? 0 : i) + d + n) % n]!.value;
 }
 
-/** Whether abcjs can swing this metre at all.
+/** Whether this metre can be swung at all.
  *
- *  Read out of its `addSwing`, not guessed: it only touches events that fall on
- *  an odd HALF-BEAT, where the beat is a quarter in X/4 and — this is the
- *  catch — an EIGHTH in X/8. So in 6/8, 9/8 or 12/8 it swings the
- *  semiquavers, and a jig written in quavers (which is every jig) has nothing
- *  on an odd semiquaver for it to move. The setting is a no-op there, and a
- *  control that does nothing is worse than one that is not offered.
- *
- *  Reels, hornpipes, polkas, marches and barndances are all X/4 and swing
- *  normally — which is where anyone wanted it. */
+ *  X/4 by abcjs (reels, hornpipes, polkas, marches, barndances): its
+ *  `addSwing` delays a note on an odd half-beat. Compound X/8 — jigs, slip
+ *  jigs, slides — by jigSwing.ts since 2026-10-22: abcjs takes the beat to be
+ *  an EIGHTH there and swings semiquavers, which a jig has none of, so the
+ *  three-quaver swing is done on its note map instead. Anything else (5/8,
+ *  3/2…) has neither, and a control that does nothing is worse than one that
+ *  is not offered. Must agree with swingAudioParams. */
 export function meterCanSwing(meter: string): boolean {
   const m = /^\s*(\d+)\s*\/\s*(\d+)/.exec(meter);
   if (!m) return true;                    // unstated: do not take the control away
-  return parseInt(m[2]!, 10) === 4;
+  const num = parseInt(m[1]!, 10);
+  const den = parseInt(m[2]!, 10);
+  return den === 4 || (den === 8 && num % 3 === 0);
 }
 
 export const NO_SWING = 50;
