@@ -33,6 +33,7 @@ import { CustomSelect } from './customSelect';
 import { isNative } from '../native/platform';
 import { clearLastUserId, deleteUser, removeUserFromOrder } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
+import { setsMatchTuneTags } from '../services/cardRefService';
 import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
 import { formatBytes } from '../utils';
 import { registerOverlay } from './overlayStack';
@@ -1392,6 +1393,18 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
         <Toggle
           checked={addTunesetAbcOnConvert(user)}
           onChange={(v) => void ctx.mutate(s => updateUser(s, { addTunesetAbcOnConvert: v }))}
+        />
+      </Row>
+      <Sep />
+
+      {/* Same both-values rule as the switch above. Here rather than as a
+          checkbox in the library's tag section (the user's call, 2026-10-22):
+          it is a standing way of reading the library, not a filter of the
+          moment. */}
+      <Row label={t('settings.setsMatchTuneTags')} hint={t('settings.setsMatchTuneTagsHint')}>
+        <Toggle
+          checked={setsMatchTuneTags(user)}
+          onChange={(v) => void ctx.mutate(s => updateUser(s, { setsMatchTuneTags: v }))}
         />
       </Row>
       <Sep />

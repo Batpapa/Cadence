@@ -4,6 +4,7 @@ import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } fro
 import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, type AliasMatch } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType } from '../services/cardTypeService';
+import { tagsWithTunes, setsMatchTuneTags } from '../services/cardRefService';
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, exportCardsTXT, cardsTextReport, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
@@ -325,6 +326,16 @@ export function LibraryView() {
   // "Aucun" does in the card view's own type selector.
   const typeItems  = [NO_TYPE, ...CARD_TYPES];
 
+  // What the tag section matches a card on: a set is also found by its tunes'
+  // tags, unless that is switched off in Misc. (see tagsWithTunes). Every tag
+  // read of the section goes through this — the chips offered, whether the
+  // section shows, the filter, the chips still available — or ticking `reel`
+  // would list a set without lighting the chip that let it in. Built once per
+  // render: the sets' tune lists are resolved here and nowhere else.
+  const tuneTagsOn = setsMatchTuneTags(user);
+  const filterTags = new Map(pool.map(c => [c.id, tuneTagsOn ? tagsWithTunes(c, user.cards) : c.tags ?? []]));
+  const filterTagsOf = (c: Card) => filterTags.get(c.id) ?? [];
+
   // A pinned chip naming a deck or a folder deleted since, a tag no card
   // carries any more, or a type this build does not know, is IGNORED rather
   // than left filtering the list with no chip on screen to explain it (a back
@@ -343,7 +354,7 @@ export function LibraryView() {
   const liveTags  = knownChips(activeTags, tagKnown);
   const liveTypes = knownChips(activeTypes, typeKnown);
 
-  const allTags    = [...new Set([...pool.flatMap(c => c.tags ?? []), ...liveTags.keys()])].sort();
+  const allTags    = [...new Set([...pool.flatMap(filterTagsOf), ...liveTags.keys()])].sort();
   const hasOrphans = pool.some(c => decksContainingCard(c.id, user).length === 0);
   const deckItems  = [
     ...(hasOrphans || liveDecks.has(NO_DECK) ? [NO_DECK] : []),
@@ -397,7 +408,7 @@ export function LibraryView() {
   // would be unexplainable.
   const hasDeckMix = deckItems.length > 1 || liveDecks.size > 0;
   const hasTagMix  = liveTags.size > 0 || allTags.length > 1
-    || (allTags.length === 1 && pool.some(c => !(c.tags ?? []).includes(allTags[0]!)));
+    || (allTags.length === 1 && pool.some(c => !filterTagsOf(c).includes(allTags[0]!)));
   const hasTypeMix = liveTypes.size > 0
     || new Set(pool.map(c => knownCardType(c) ?? NO_TYPE)).size > 1;
   // The rule above stops at the chip sections. The review dates stay whatever
@@ -413,7 +424,7 @@ export function LibraryView() {
   // the "Alias: …" line under a row found by one all read this.
   const textMatch = new Map<string, AliasMatch>();
   const filteredUnsorted = pool.filter(c => {
-    const tags       = c.tags ?? [];
+    const tags       = filterTagsOf(c);
     // externalId match is EXACT (whole "source:id", or just the id part),
     // not a substring — "729" must not also pull in "thesession:7290".
     const extId      = c.externalId?.toLowerCase();
@@ -503,7 +514,7 @@ export function LibraryView() {
   if (sortAsc) filtered = filtered.slice().reverse();
 
   // ── Available chips (derived from filtered) ───────────────────────────────────
-  const availTags  = new Set(filtered.flatMap(c => c.tags ?? []));
+  const availTags  = new Set(filtered.flatMap(filterTagsOf));
   const availDecks = new Set<string>();
   for (const c of filtered) {
     const decks = decksContainingCard(c.id, user);

@@ -358,6 +358,11 @@ export interface User {
    *  nothing else: it is not an invariant, and a set someone stripped the
    *  score from must stay stripped. */
   addTunesetAbcOnConvert?: boolean;
+  /** Whether the library's tag filter finds a set by its tunes' tags too.
+   *  Absent = yes, so both values are written explicitly (see
+   *  `setsMatchTuneTags` in cardRefService, the single reader). Only the
+   *  filter reads it: nothing is ever copied into the set's own `tags`. */
+  setsMatchTuneTags?: boolean;
   /** Where to show a tune's opening bars — see `components/incipit.tsx`.
    *  Absent = 'card', the default: the reminder is the feature, and one that
    *  has to be switched on is one nobody finds. */
