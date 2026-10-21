@@ -15,6 +15,7 @@ import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwingAtOpen, meterCanSwing,
   ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
   SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
+import { swingAudioParams } from '../services/jigSwing';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import {
   playableSource, sourceIndex, playPlan, noteRanges, resumeInside, passOf, eventAt,
@@ -1634,10 +1635,10 @@ export function showPreviewModal(
     /** Whether this tune's metre swings at all — see meterCanSwing. */
     const swingApplies = () => meterCanSwing(parseAbcBlock(shownBlock(currentIndex)).meter);
     const updateSwing = () => {
-      // GONE, not greyed out, where the metre cannot swing: abcjs simply has
-      // no way to swing a jig (see meterCanSwing), so the control has nothing
-      // to offer and a disabled chip is a question the reader has to answer
-      // before moving on. It comes back by itself on a version in 4/4.
+      // GONE, not greyed out, where the metre cannot swing (5/8, 3/2… — see
+      // meterCanSwing): the control has nothing to offer there, and a
+      // disabled chip is a question the reader has to answer before moving
+      // on. It comes back by itself on a version that can.
       swingBtn.style.display = swingApplies() ? '' : 'none';
     };
     updateSwing();
@@ -3068,7 +3069,12 @@ export function showPreviewModal(
           // So `swing` belongs beside `drum`, at the top level. Nesting it
           // under an `options` key of our own buried it one level too deep and
           // abcjs ignored it in silence.
-          if (swing !== NO_SWING && swingApplies()) audioParams.swing = swing;
+          // abcjs's `swing` in a reel, our own note-map pass in a jig — see
+          // swingAudioParams. Both read the metre and the pickup from abcjs's
+          // own parse, the one the notes are timed from.
+          if (swing !== NO_SWING && swingApplies()) {
+            Object.assign(audioParams, swingAudioParams(swing, visualObj[0]!.getMeterFraction(), visualObj[0]!.getPickupLength()));
+          }
           void enqueueSynth(() => synthControl.setTune(visualObj[0]!, true, audioParams).then(() => {
             // After setTune, never before: warping rebuilds the audio buffer,
             // so it needs a tune to rebuild from. Skipped when the controller
@@ -3259,7 +3265,9 @@ export function showPreviewModal(
             if (transpose !== 0) audioParams.midiTranspose = transpose;
             const meter = parseAbcBlock(ps.source).meter;
             if (metronome) { audioParams.drum = drumPattern(beatsPerBar(meter)); audioParams.drumBars = 1; }
-            if (swing !== NO_SWING && meterCanSwing(meter)) audioParams.swing = swing;
+            if (swing !== NO_SWING && meterCanSwing(meter)) {
+              Object.assign(audioParams, swingAudioParams(swing, visualObj.getMeterFraction(), visualObj.getPickupLength()));
+            }
             // As SynthController.go() does it, at the shared speed.
             const millisecondsPerMeasure = visualObj.millisecondsPerMeasure() * 100 / tempoPercent;
             const qpm = Math.round(visualObj.getBeatsPerMeasure() / millisecondsPerMeasure * 60000);
