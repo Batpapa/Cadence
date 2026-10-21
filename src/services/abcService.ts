@@ -720,17 +720,24 @@ export function abcBarsPerLine(user: { abcBarsPerLine?: number }): number {
  *  music is actually played with, and a hornpipe is not "63 % swung".
  *
  *  `labelKey` rather than a label, so the list stays a data structure the i18n
- *  key check can see. */
-/** Four feels. Three of them are a rhythm you can write down and get an icon
- *  that draws it; the light 3:2 shares the straight pair's icon, because it IS
- *  written as two even quavers — what marks it is the chip being lit, which is
- *  exactly how a swung tune is told apart from a straight one on paper. */
+ *  key check can see.
+ *
+ *  Named by how much they swing rather than by a rhythm (2026-10-22): it is an
+ *  indication of feel, and each one's icon is a gauge — see SwingGlyph. The
+ *  ORDER is the cycle the button walks, and the icon's level is the index. */
 export const SWING_CHOICES: Array<{ value: number; labelKey: string }> = [
   { value: 50, labelKey: 'fileViewer.abc.swing.straight' },
   { value: 60, labelKey: 'fileViewer.abc.swing.light' },
-  { value: 66, labelKey: 'fileViewer.abc.swing.triplet' },
-  { value: 75, labelKey: 'fileViewer.abc.swing.dotted' },
+  { value: 66, labelKey: 'fileViewer.abc.swing.medium' },
+  { value: 75, labelKey: 'fileViewer.abc.swing.strong' },
 ];
+
+/** The setting one press away, `d` = 1 forward, −1 back, wrapping round. */
+export function stepSwingChoice(value: number, d: 1 | -1): number {
+  const i = SWING_CHOICES.findIndex(c => c.value === value);
+  const n = SWING_CHOICES.length;
+  return SWING_CHOICES[((i < 0 ? 0 : i) + d + n) % n]!.value;
+}
 
 /** Whether abcjs can swing this metre at all.
  *
@@ -751,8 +758,9 @@ export function meterCanSwing(meter: string): boolean {
 
 export const NO_SWING = 50;
 
-export function abcSwing(user: { abcSwing?: number }): number {
-  const stored = user.abcSwing;
+/** The swing a score OPENS with — set in the playback preferences only. */
+export function abcSwingAtOpen(user: { abcSwingAtOpen?: number }): number {
+  const stored = user.abcSwingAtOpen;
   if (typeof stored !== 'number' || !Number.isFinite(stored)) return NO_SWING;
   // Clamped against the offered values, like the density: this comes back from
   // a synced blob another bundle may have written.
