@@ -322,11 +322,20 @@ export interface User {
   // session, not to the reader. You put a click on while you are learning a
   // passage and you do not want the next score you open to start clicking.
   // It lives in the viewer and starts off every time.
-  /** How much the playback swings, as abcjs counts it: 50 is straight, 60 is
-   *  3:2, 66 is a 2:1 triplet feel, 75 is a dotted eighth against a sixteenth
-   *  and is its ceiling. Absent = straight. Only `X/4` and `X/8` metres swing
-   *  at all, which is every metre this music is written in. */
-  abcSwing?: number;
+  /** How much a score swings when it OPENS, as abcjs counts it: 50 is
+   *  straight, 60 is 3:2, 66 is a 2:1 triplet feel, 75 is a dotted eighth
+   *  against a sixteenth and is its ceiling. Absent = straight. Set in the
+   *  playback preferences only; the viewer's own button changes the score that
+   *  is open and writes nothing. Only `X/4` metres swing — see meterCanSwing.
+   *
+   *  A NEW field, not `abcSwing` given a new meaning (2026-10-22). `abcSwing`
+   *  was the viewer button's last state, written on every press, so a device
+   *  still on an older bundle goes on writing it there — read as the default,
+   *  each of its presses would have reset the opening swing of every other
+   *  device through Drive. `abcSwing` is no longer read and is left alone in
+   *  stored data; its value was where the button was left, not a default
+   *  anyone chose, so it is not carried over. */
+  abcSwingAtOpen?: number;
 
   // abcZoomPercent lived here until 2026-09-21 — how big the notation was
   // drawn, as a percentage. The score zoom is gone (see fileViewer's note on

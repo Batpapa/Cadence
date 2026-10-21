@@ -491,63 +491,74 @@ export function CollapseIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-// ── The three swing feels, written out ────────────────────────────────────────
-// Each one is the pair of notes it actually produces, because that is what a
-// player reads off a page — and because the names ("swing ternaire") are four
-// syllables in a bar with no room for them.
+// ── The four swing settings ───────────────────────────────────────────────────
+// A rhythm, and beside it a gauge of three bars: how MUCH it swings.
 //
-// Three and not four, and these three, at the user's request (2026-09-21): the
-// fourth was a 3:2 that differed from the triplet only by where a note head
-// sat, which is not a difference anyone can see at 15 px. What is left are
-// three silhouettes you can tell apart at a glance — one beam, no beam, two
-// beams — rather than one shape with the spacing nudged.
+// Redrawn 2026-10-22, at the user's request, after a tester pressed once, heard
+// the tune swing and saw nothing change: the light 3:2 wore the straight pair's
+// glyph (2026-09-21, because a third rhythm drawn at 15 px could not be told
+// from the triplet), and the lit chip alone did not say it. The setting is an
+// indication of feel, not a notation — "swing de 72 %" has no written form — so
+// the three swung settings share the triplet's rhythm, and the gauge counts.
+// Straight keeps its beamed pair and an empty gauge: same width in every state,
+// so the chip does not shift under the thumb as it cycles.
 //
-// Shared geometry, so the three read as one family: heads on the same line,
+// Shared geometry, so the four read as one family: heads on the same line,
 // stems the same height, the same weight throughout.
 const NOTE_HEAD = { cy: 16.5, rx: 2.8, ry: 2.1 };
 const STEM_TOP = 5.5;
+/** Wider than the 24 of the other glyphs: the notes keep their 24, the gauge
+ *  takes the rest. */
+const SWING_VIEW_W = 33;
+/** The gauge's bars, rising like a signal meter, their feet on the heads' line. */
+const SWING_BARS = [{ x: 23, h: 5 }, { x: 26.6, h: 8.5 }, { x: 30.2, h: 12 }];
+const SWING_BAR_FOOT = NOTE_HEAD.cy + NOTE_HEAD.ry;
 
-/** Two quavers under one beam: straight, played as written. */
+function SwingGlyph({ size, level }: { size: number; level: 0 | 1 | 2 | 3 }) {
+  return (
+    <svg viewBox={`0 0 ${SWING_VIEW_W} 24`} width={Math.round(size * SWING_VIEW_W / 24)} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+      <ellipse cx="5" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      <ellipse cx="15" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
+      {level === 0 ? (
+        // Two quavers under one beam: played as written.
+        <>
+          <path d={`M7.6 ${NOTE_HEAD.cy}V${STEM_TOP}M17.6 ${NOTE_HEAD.cy}V${STEM_TOP}`} />
+          <path d={`M7.6 ${STEM_TOP}h10`} stroke-width="2.6" />
+        </>
+      ) : (
+        // A crotchet and a quaver under a 3: the swung pair.
+        <>
+          <path d={`M7.6 ${NOTE_HEAD.cy}V8M17.6 ${NOTE_HEAD.cy}V8`} />
+          <path d="M17.6 8c2.2 1 3.2 2.2 3.2 4" />
+          <text x="11" y="6" text-anchor="middle" font-size="8" font-weight="600" font-family="Georgia, serif" fill="currentColor" stroke="none">3</text>
+        </>
+      )}
+      {SWING_BARS.map((b, i) => (
+        <rect x={b.x} y={SWING_BAR_FOOT - b.h} width="2.2" height={b.h} rx="0.6"
+          fill="currentColor" stroke="none" opacity={i < level ? 1 : 0.3} />
+      ))}
+    </svg>
+  );
+}
+
+/** Straight: the beamed pair, the gauge empty. */
 export function SwingStraightIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-      <ellipse cx="5" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
-      <ellipse cx="15" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
-      <path d={`M7.6 ${NOTE_HEAD.cy}V${STEM_TOP}M17.6 ${NOTE_HEAD.cy}V${STEM_TOP}`} />
-      <path d={`M7.6 ${STEM_TOP}h10`} stroke-width="2.6" />
-    </svg>
-  );
+  return <SwingGlyph size={size} level={0} />;
 }
 
-/** A crotchet and a quaver under a 3: the 2:1 triplet feel. The one with NO
- *  beam, which is what makes it unmistakable beside the other two. */
-export function SwingTripletIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-      <ellipse cx="5" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
-      <ellipse cx="15" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
-      <path d={`M7.6 ${NOTE_HEAD.cy}V8M17.6 ${NOTE_HEAD.cy}V8`} />
-      {/* The quaver's flag — the second of the pair is the short one. */}
-      <path d="M17.6 8c2.2 1 3.2 2.2 3.2 4" />
-      {/* The 3 that says triplet, where a bracket would go. */}
-      <text x="11" y="6" text-anchor="middle" font-size="8" font-weight="600" font-family="Georgia, serif" fill="currentColor" stroke="none">3</text>
-    </svg>
-  );
+/** Light swing: one bar of three. */
+export function SwingLightIcon({ size = 14 }: { size?: number }) {
+  return <SwingGlyph size={size} level={1} />;
 }
 
-/** A dotted quaver and a semiquaver: the hornpipe's own pair. Two beams, the
- *  second of them short — the shape that says "the first note is long". */
-export function SwingDottedIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-      <ellipse cx="5" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
-      <circle cx="9.6" cy={NOTE_HEAD.cy} r="1.15" fill="currentColor" stroke="none" />
-      <ellipse cx="16" cy={NOTE_HEAD.cy} rx={NOTE_HEAD.rx} ry={NOTE_HEAD.ry} fill="currentColor" stroke="none" />
-      <path d={`M7.6 ${NOTE_HEAD.cy}V${STEM_TOP}M18.6 ${NOTE_HEAD.cy}V${STEM_TOP}`} />
-      <path d={`M7.6 ${STEM_TOP}h11`} stroke-width="2.6" />
-      <path d={`M14.6 ${STEM_TOP + 3.4}h4`} stroke-width="2.2" />
-    </svg>
-  );
+/** Medium swing: two bars of three. */
+export function SwingMediumIcon({ size = 14 }: { size?: number }) {
+  return <SwingGlyph size={size} level={2} />;
+}
+
+/** Strong swing: the gauge full. */
+export function SwingStrongIcon({ size = 14 }: { size?: number }) {
+  return <SwingGlyph size={size} level={3} />;
 }
 
 /** A metronome: the case, and the pendulum caught off centre. */

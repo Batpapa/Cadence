@@ -5,16 +5,16 @@ import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
-  MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingTripletIcon, SwingDottedIcon,
+  MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon,
   WarningTriangleIcon, ChevronDownIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   showAbcSyntaxCheck, blankForRender, locateAbcWarning, abcWarningRange,
-  abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwing, meterCanSwing,
+  abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwingAtOpen, meterCanSwing,
   ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
-  SWING_CHOICES, NO_SWING } from '../services/abcService';
+  SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import {
   playableSource, sourceIndex, playPlan, noteRanges, resumeInside, passOf, eventAt,
@@ -318,6 +318,50 @@ function nearestScroller(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
+/** One glyph per entry of SWING_CHOICES, in its order: the gauge's level is
+ *  the index. */
+const SWING_GLYPHS = [SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon];
+
+/** The swing button: four settings cycled by one press each, drawn as a rhythm
+ *  and a gauge rather than named — the name ("swing moyen") was wider than the
+ *  transport beside it. The NAME is still there, in the tooltip and for a
+ *  screen reader.
+ *
+ *  Right-click walks BACK through them, so a cycle of four is never three
+ *  presses away from the one you wanted. `contextmenu` rather than a long
+ *  press: this is a pointer affordance, and on a touch screen a fifth press
+ *  simply comes round again.
+ *
+ *  The same button in the viewer's transport and in the playback preferences
+ *  (the user's call, 2026-10-22: the setting is chosen the way it is seen,
+ *  not from a list). `onChange` fires on every press with the new value. */
+function mkSwingButton(initial: number, onChange: (value: number) => void): HTMLButtonElement {
+  let value = initial;
+  const btn = document.createElement('button');
+  btn.className = 'abc-chip';
+  const show = () => {
+    const i = Math.max(0, SWING_CHOICES.findIndex(c => c.value === value));
+    btn.replaceChildren(iconElement(SWING_GLYPHS[i] ?? SwingStraightIcon, 16));
+    btn.classList.toggle('abc-chip-on', value !== NO_SWING);
+    const label = `${t('fileViewer.abc.swing')} · ${t(SWING_CHOICES[i]!.labelKey)}`;
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  };
+  const step = (d: 1 | -1) => {
+    value = stepSwingChoice(value, d);
+    show();
+    onChange(value);
+  };
+  show();
+  btn.onclick = () => { btn.blur(); step(1); };
+  btn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    btn.blur();
+    step(-1);
+  });
+  return btn;
+}
+
 /** Playback preferences, reachable from any score's header and stored on the
  *  user, so they travel with everything else through Drive. They describe the
  *  listener rather than the tune: which instrument to hear it on, and how fast
@@ -381,6 +425,14 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
   // `change`, not `input`: typing "150" passes through "1" and "15", and each
   // would be written as a preference nobody asked for.
   speedInput.addEventListener('change', persist);
+
+  // ── Swing at opening ──
+  // Saved only, like the speed and for the same reason: it is how the NEXT
+  // score starts. The one on screen has its own button, two centimetres away.
+  // Straight is the absence, like the speed's 100 %.
+  const swingBtn = mkSwingButton(abcSwingAtOpen(appState.value), (v) => {
+    void mutate(st => { if (v === NO_SWING) delete st.abcSwingAtOpen; else st.abcSwingAtOpen = v; });
+  });
 
   // ── Instrument ──
   const stored = appState.value.abcInstrument;
@@ -500,6 +552,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
 
   body.append(
     row('fileViewer.abc.prefs.speed', speedControl),
+    row('fileViewer.abc.prefs.swing', swingBtn),
     row('fileViewer.abc.instrument', instrSelect),
     row('fileViewer.abc.paper', paperSelect),
     row('fileViewer.abc.prefs.barsPerLine', densitySelect),
@@ -1005,13 +1058,17 @@ export function showPreviewModal(
     const openingTempoPercent = abcTempoPercent();
 
     // ── How this score READS and SOUNDS, for as long as it is open ──
-    // Paper, density and swing are the user's stored preferences and are
-    // written back the moment they are changed here: unlike the opening speed,
-    // these describe how the reader wants to see and hear a score, and a
-    // reader who turns the page dark wants the next one dark too.
+    // Paper and density are the user's stored preferences and are written
+    // back the moment they are changed here: unlike the opening speed, these
+    // describe how the reader wants to see a score, and a reader who turns the
+    // page dark wants the next one dark too.
     let paper: AbcPaper = abcPaper(appState.value);
     let barsPerLine = abcBarsPerLine(appState.value);
-    let swing = abcSwing(appState.value);
+    // The swing is the opening speed's kind, not the paper's (2026-10-22, a
+    // tester's request): a reel swung for one tune went on swinging every
+    // score opened after it. It starts from the preferences' setting, and the
+    // button changes this score only.
+    let swing = abcSwingAtOpen(appState.value);
     // Transposition is the exception: it belongs to the READING, not to the
     // reader — a whistle player in D does not want every score they open
     // shifted for the one tune they were reading in B flat. It starts at zero
@@ -1554,10 +1611,11 @@ export function showPreviewModal(
     updateTempo();
 
     // ── The click, and the swing ──
-    // The swing is stored; the metronome is NOT, and starts off on every score
-    // (the user's call). A click is something you put on for a passage you are
+    // Neither is stored from here. The metronome starts off on every score
+    // (the user's call): a click is something you put on for a passage you are
     // working out, not a way you like scores to sound — and one that came back
-    // by itself on the next tune would be a small annoyance every time.
+    // by itself on the next tune would be a small annoyance every time. The
+    // swing starts where the preferences put it, for the same reason.
     let metronome = false;
     const metronomeChip = mkToggleChip(iconElement(MetronomeIcon, 14), null, t('fileViewer.abc.metronome'), metronome, (on) => {
       metronome = on;
@@ -1566,34 +1624,13 @@ export function showPreviewModal(
       redrawScore();
     });
 
-    // Four feels, cycled by one button, and drawn as the pair of notes each one
-    // produces rather than named: the label ("swing ternaire") was wider than
-    // the transport beside it, and the shape is what a player reads off a page
-    // anyway. The NAME is still there, in the tooltip and for a screen reader.
-    //
-    // Right-click walks BACK through them, so a cycle of four is never three
-    // presses away from the one you wanted. `contextmenu` rather than a long
-    // press: this is a pointer affordance, and on a touch screen a fifth press
-    // simply comes round again.
-    //
     // abcjs does the work (its `addSwing`); all this chooses is the number.
-    const swingBtn = document.createElement('button');
-    swingBtn.className = 'abc-chip';
-    const swingLabels: Record<number, string> = {
-      50: t('fileViewer.abc.swing.straight'),
-      60: t('fileViewer.abc.swing.light'),
-      66: t('fileViewer.abc.swing.triplet'),
-      75: t('fileViewer.abc.swing.dotted'),
-    };
-    // The light 3:2 wears the straight pair's glyph: it is written as two even
-    // quavers, and what says it is swung is the chip being lit — which is how
-    // the page says it too.
-    const swingGlyphs: Record<number, typeof SwingStraightIcon> = {
-      50: SwingStraightIcon,
-      60: SwingStraightIcon,
-      66: SwingTripletIcon,
-      75: SwingDottedIcon,
-    };
+    const swingBtn = mkSwingButton(swing, (v) => {
+      swing = v;
+      // Swing is applied when the note map is built, so it needs the buffer
+      // rebuilt — same as the metronome.
+      redrawScore();
+    });
     /** Whether this tune's metre swings at all — see meterCanSwing. */
     const swingApplies = () => meterCanSwing(parseAbcBlock(shownBlock(currentIndex)).meter);
     const updateSwing = () => {
@@ -1602,29 +1639,8 @@ export function showPreviewModal(
       // to offer and a disabled chip is a question the reader has to answer
       // before moving on. It comes back by itself on a version in 4/4.
       swingBtn.style.display = swingApplies() ? '' : 'none';
-      swingBtn.replaceChildren(iconElement(swingGlyphs[swing] ?? SwingStraightIcon, 16));
-      swingBtn.classList.toggle('abc-chip-on', swing !== NO_SWING);
-      const name = swingLabels[swing] ?? swingLabels[NO_SWING]!;
-      swingBtn.title = `${t('fileViewer.abc.swing')} · ${name}`;
-      swingBtn.setAttribute('aria-label', `${t('fileViewer.abc.swing')} · ${name}`);
-    };
-    const stepSwing = (d: 1 | -1) => {
-      const i = SWING_CHOICES.findIndex(c => c.value === swing);
-      const n = SWING_CHOICES.length;
-      swing = SWING_CHOICES[((i < 0 ? 0 : i) + d + n) % n]!.value;
-      updateSwing();
-      void mutate(st => { if (swing === NO_SWING) delete st.abcSwing; else st.abcSwing = swing; });
-      // Swing is applied when the note map is built, so it needs the buffer
-      // rebuilt — same as the metronome.
-      redrawScore();
     };
     updateSwing();
-    swingBtn.onclick = () => { swingBtn.blur(); stepSwing(1); };
-    swingBtn.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      swingBtn.blur();
-      stepSwing(-1);
-    });
 
     // Order: what you change while playing first (speed), then the feel, then
     // the key — which is set once for a tune and then left alone.
