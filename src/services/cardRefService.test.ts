@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveCardRef, findBacklinks, findSetsContaining, cardsPlayingInSets } from './cardRefService';
+import { resolveCardRef, findBacklinks, findSetsContaining, cardsPlayingInSets, tagsWithTunes, setsMatchTuneTags, SETS_MATCH_TUNE_TAGS_BY_DEFAULT } from './cardRefService';
 import type { Card, CardReferenceAttachment } from '../types';
 
 function card(id: string, over: Partial<Card> = {}): Card {
@@ -216,5 +216,47 @@ describe('cardsPlayingInSets', () => {
   it('leaves an unresolved reference out — there is no card to lock', () => {
     const cards = lib(tuneset('s', [ref({ id: 'gone', guid: 'also-gone' })]));
     expect(cardsPlayingInSets(cards).size).toBe(0);
+  });
+});
+
+describe('tagsWithTunes', () => {
+  const tuneset = (id: string, refs: CardReferenceAttachment[], over: Partial<Card> = {}) =>
+    card(id, { ...over, type: 'tuneset', tunes: refs });
+
+  it('adds the tunes\' tags to the set\'s own, once each', () => {
+    const cards = lib(
+      card('j', { type: 'tune', tags: ['jig', 'Am'] }),
+      card('r', { type: 'tune', tags: ['reel', 'D'] }),
+      card('r2', { type: 'tune', tags: ['reel', 'Em'] }),
+      tuneset('s', [ref({ id: 'j' }), ref({ id: 'r' }), ref({ id: 'r2' })], { tags: ['jeudi'] }),
+    );
+    expect(tagsWithTunes(cards['s']!, cards).sort()).toEqual(['Am', 'D', 'Em', 'jeudi', 'jig', 'reel']);
+  });
+
+  it('leaves the set\'s own tags untouched — nothing is written', () => {
+    const cards = lib(card('r', { type: 'tune', tags: ['reel'] }), tuneset('s', [ref({ id: 'r' })], { tags: ['jeudi'] }));
+    tagsWithTunes(cards['s']!, cards);
+    expect(cards['s']!.tags).toEqual(['jeudi']);
+  });
+
+  it('is a card\'s own tags for anything but a set, a stray tune list included', () => {
+    const cards = lib(
+      card('r', { type: 'tune', tags: ['reel'] }),
+      card('x', { type: 'tune', tags: ['own'], tunes: [ref({ id: 'r' })] }),
+    );
+    expect(tagsWithTunes(cards['x']!, cards)).toEqual(['own']);
+  });
+
+  it('ignores a tune that no longer resolves, and the set itself', () => {
+    const cards = lib(tuneset('s', [ref({ id: 'gone', guid: 'also-gone' }), ref({ id: 's', guid: 'guid-s' })], { tags: ['jeudi'] }));
+    expect(tagsWithTunes(cards['s']!, cards)).toEqual(['jeudi']);
+  });
+});
+
+describe('setsMatchTuneTags', () => {
+  it('reads an absent setting as the default, and a stored refusal as a refusal', () => {
+    expect(setsMatchTuneTags({})).toBe(SETS_MATCH_TUNE_TAGS_BY_DEFAULT);
+    expect(SETS_MATCH_TUNE_TAGS_BY_DEFAULT).toBe(true);
+    expect(setsMatchTuneTags({ setsMatchTuneTags: false })).toBe(false);
   });
 });

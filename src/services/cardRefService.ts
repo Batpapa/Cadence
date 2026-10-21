@@ -105,3 +105,35 @@ function collect(
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/** Whether the library's tag filter also lets a set be found by its tunes'
+ *  tags, when the user has said nothing. Absence means YES, so — the
+ *  `syncAudioByDefault` lesson — the setting writes both values explicitly and
+ *  every read comes through `setsMatchTuneTags`. */
+export const SETS_MATCH_TUNE_TAGS_BY_DEFAULT = true;
+
+export function setsMatchTuneTags(user: { setsMatchTuneTags?: boolean }): boolean {
+  return user.setsMatchTuneTags ?? SETS_MATCH_TUNE_TAGS_BY_DEFAULT;
+}
+
+/** The tags the library's filter matches a card on: its own, and for a set,
+ *  those of every tune it plays as well — "a set holding a reel" is asked by
+ *  ticking `reel` (asked by the group, 2026-10-20).
+ *
+ *  Derived at each read and NEVER written to the set: a copy would go stale the
+ *  first time a tune is retagged or swapped, would bury the set's own tags under
+ *  `TheSession`/`Dmajor`/…, and a copy kept fresh by the normalisation would put
+ *  back a tag someone removed on purpose. The set's `tags` stay its own.
+ *
+ *  Membership through the resolver, as in the lookups above; a tune that no
+ *  longer resolves contributes nothing. */
+export function tagsWithTunes(card: Card, cards: Record<string, Card>): string[] {
+  const own = card.tags ?? [];
+  if (!isTuneset(card)) return own;
+  const out = new Set(own);
+  for (const ref of card.tunes ?? []) {
+    const tune = resolveCardRef(ref, cards);
+    if (tune && tune.id !== card.id) for (const tag of tune.tags ?? []) out.add(tag);
+  }
+  return [...out];
+}
