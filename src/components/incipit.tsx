@@ -5,7 +5,8 @@ import type { AbcOpenMode, AppState, Card, ExternalFile, FileAttachment, Incipit
 // module itself stays lazily imported below.
 import type { TuneObject, MidiBuffer } from 'abcjs';
 import { isTuneset } from '../services/cardTypeService';
-import { INCIPIT_BARS, abcIncipit, abcOpenMode, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock } from '../services/abcService';
+import { INCIPIT_BARS, abcIncipit, abcOpenMode, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcSwingAtOpen } from '../services/abcService';
+import { swingAudioParams } from '../services/jigSwing';
 import { resolveCardRef } from '../services/cardRefService';
 import { appState } from '../store';
 import { hydratedEntry } from '../services/attachmentStore';
@@ -466,7 +467,12 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
 
     const program = appState.value.abcInstrument;
     const volume = abcjsVolumeMultiplier();
-    const wanted = `${program ?? ''}|${volume}`;
+    // The opening swing of the playback preferences: an incipit is a score
+    // just opened, and it was heard straight while the full score swung
+    // (reported 2026-10-22). No button here to change it — read at each press
+    // like the instrument, so a change in the preferences is heard next time.
+    const swing = abcSwingAtOpen(appState.value);
+    const wanted = `${program ?? ''}|${volume}|${swing}`;
     let synth = audio.current.synth;
     // Built with other settings: dropped, and built again below.
     if (synth && audio.current.primedWith !== wanted) {
@@ -497,6 +503,8 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
         options: {
           ...(program !== undefined ? { program } : {}),
           soundFontVolumeMultiplier: volume,
+          // abcjs's swing in a reel, ours in a jig — the viewer's own rule.
+          ...swingAudioParams(swing, visualObj.getMeterFraction(), visualObj.getPickupLength()),
           onEnded: () => setPlaying(false),
         },
       });
