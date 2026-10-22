@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import abcjs from 'abcjs';
-import { swingJigNotes, swingAudioParams, type SwingNote } from './jigSwing';
+import { swingJigNotes, swingAudioParams, JIG_SWING_SHAPE, type SwingNote } from './jigSwing';
 import { meterCanSwing } from './abcService';
 
 /** The notes abcjs would play, as its note map has them (gap left out), and
@@ -18,21 +18,25 @@ function notesOf(music: string, meter = '6/8'): { notes: SwingNote[]; pickup: nu
 const r = (x: number) => Math.round(x * 1e6) / 1e6;
 const starts = (ns: SwingNote[]) => ns.map(n => r(n.start));
 /** The three parts of a beat for a setting, in whole notes: the first quaver
- *  gains what a reel's would (swing / 50 − 1), the other two share the loss. */
-const parts = (swing: number) => { const a = swing / 50; return { a: a / 8, b: (3 - a) / 2 / 8 }; };
+ *  gains what a reel's would (swing / 50 − 1), and the shape says who loses
+ *  it. Written out independently of the module, so a mistake in one does not
+ *  hide in the other. */
+const parts = (swing: number) => {
+  const k = swing / 50 - 1;
+  const [a, b, c] = JIG_SWING_SHAPE === 'longShortShort' ? [1 + k, 1 - k / 2, 1 - k / 2] : [1 + k, 1 - k, 1];
+  return { a: a / 8, b: b / 8, c: c / 8 };
+};
 
 describe('swingJigNotes', () => {
-  it('lengthens the first quaver as a reel would, the other two staying equal', () => {
+  it('lengthens the first quaver as a reel would, the shape deciding the rest', () => {
     const { notes, pickup } = notesOf('ABc def|');
     swingJigNotes([notes], 75, pickup);
-    const { a, b } = parts(75);
+    const { a, b, c } = parts(75);
     expect(starts(notes)).toEqual([0, r(a), r(a + b), 0.375, r(0.375 + a), r(0.375 + a + b)]);
     const lengths = notes.map(n => n.end - n.start);
-    expect(lengths.slice(0, 3).map(r)).toEqual([r(a), r(b), r(b)]);
-    // Strong: 1,5 / 0,75 / 0,75 quavers, the first one gaining half a quaver
-    // as in a reel.
+    expect(lengths.slice(0, 3).map(r)).toEqual([r(a), r(b), r(c)]);
+    // Strong: the first quaver gains half a quaver, as in a reel.
     expect(lengths[0]! * 8).toBeCloseTo(1.5, 9);
-    expect(lengths[1]! * 8).toBeCloseTo(0.75, 9);
   });
 
   it('never moves a beat', () => {
@@ -47,10 +51,10 @@ describe('swingJigNotes', () => {
     const { notes, pickup } = notesOf('A|BcB AFD|');
     expect(pickup).toBe(0.125);
     swingJigNotes([notes], 66, pickup);
-    const { a, b } = parts(66);
+    const { a, b, c } = parts(66);
     // The pickup is the last part of a beat: it starts where a third does.
     expect(starts(notes)).toEqual([
-      r(0.125 - b),
+      r(0.125 - c),
       0.125, r(0.125 + a), r(0.125 + a + b),
       0.5, r(0.5 + a), r(0.5 + a + b),
     ]);
@@ -58,7 +62,7 @@ describe('swingJigNotes', () => {
 
   it('puts every rhythm on the same grid', () => {
     const { a, b } = parts(75);
-    // A crotchet and a quaver: the crotchet takes the long part and a short one.
+    // A crotchet and a quaver: the crotchet takes the first two parts.
     const cB = notesOf('c2B A3|');
     swingJigNotes([cB.notes], 75, cB.pickup);
     expect(starts(cB.notes).slice(0, 2)).toEqual([0, r(a + b)]);
@@ -82,8 +86,8 @@ describe('swingJigNotes', () => {
       { start: 0.125, end: 0.25 },
     ];
     swingJigNotes([notes], 75, 0);
-    const { a } = parts(75);
-    expect(notes.map(n => [r(n.start), r(n.end)])).toEqual([[0, r(0.8 * a)], [0, r(a)], [r(a), r(a + parts(75).b)]]);
+    const { a, b } = parts(75);
+    expect(notes.map(n => [r(n.start), r(n.end)])).toEqual([[0, r(0.8 * a)], [0, r(a)], [r(a), r(a + b)]]);
   });
 
   it('does nothing when straight', () => {
