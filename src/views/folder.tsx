@@ -56,21 +56,42 @@ function studyStreak(times: number[]): number {
   return streak;
 }
 
+/** How many CALENDAR days before today `ts` falls, where the user is: 0 for
+ *  anything since midnight. The bars used to count back in slices of 24 h from
+ *  now, while their labels and the library they open speak in days from
+ *  midnight to midnight — at 2 a.m. the "today" bar held all of yesterday
+ *  evening: 44 reviews on the bar, 2 cards in the list (2026-10-23).
+ *  Rounded, not floored: across a DST change the gap between two midnights is
+ *  23 or 25 hours. */
+function calendarDaysAgo(ts: number, todayStart: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((todayStart - d.getTime()) / 86400000);
+}
+
+function todayStart(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 function reviewsLastNDays(times: number[], n: number): number[] {
   const counts = Array<number>(n).fill(0);
-  const now = Date.now();
+  const today = todayStart();
   for (const ts of times) {
-    const i = n - 1 - Math.floor((now - ts) / 86400000);
+    const i = n - 1 - calendarDaysAgo(ts, today);
     if (i >= 0 && i < n) counts[i]++;
   }
   return counts;
 }
 
+/** Weeks of seven calendar days ending today — the same spans `barDateRange`
+ *  prints and hands to the library. */
 function reviewsLastNWeeks(times: number[], n: number): number[] {
   const counts = Array<number>(n).fill(0);
-  const now = Date.now();
+  const today = todayStart();
   for (const ts of times) {
-    const i = n - 1 - Math.floor((now - ts) / (7 * 86400000));
+    const i = n - 1 - Math.floor(calendarDaysAgo(ts, today) / 7);
     if (i >= 0 && i < n) counts[i]++;
   }
   return counts;
