@@ -1197,8 +1197,8 @@ function SessionSettingsBody() {
         }}
       />
 
-      {/* Off by default, iterated on with the testers (2026-10-19). Written
-          only to turn it ON: absence is the default. */}
+      {/* On by default since 2026-10-23, no longer experimental. Written only
+          to turn it OFF: absence is the default. */}
       <SettingRow
         checked={experimentalSets(appState.value)}
         label={t('sessions.experimentalSets')}
@@ -1206,7 +1206,7 @@ function SessionSettingsBody() {
         onToggle={(next) => {
           void mutate(s => {
             const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
-            if (next) m.experimentalSets = true; else delete m.experimentalSets;
+            if (next) delete m.experimentalSets; else m.experimentalSets = false;
             s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
           });
         }}

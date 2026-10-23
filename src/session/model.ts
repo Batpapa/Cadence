@@ -247,9 +247,10 @@ export interface TuneAnalyserModuleData {
    *  library — a flag on this module's own slice rather than on User, which
    *  knows nothing about panels. */
   detectionsOnCards?: boolean;
-  /** "Use experimental set detection" (2026-10-19): tunes played without a
-   *  silence between them shown as sets, everywhere the analyser shows its
-   *  results. Absent = off — being iterated on with the testers. Read it
+  /** "Use set detection" (2026-10-19, experimental until 2026-10-23, hence the
+   *  name): tunes played without a silence between them shown as sets,
+   *  everywhere the analyser shows its results. Absent = on; only `false` is
+   *  ever written. A `true` from the experimental days reads as on too. Read it
    *  through `experimentalSets()`. */
   experimentalSets?: boolean;
   /** How far the instruments are tuned off written pitch, in ENGINE semitones
