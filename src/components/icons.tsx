@@ -254,15 +254,21 @@ export function CheckIcon({ size = 11 }: { size?: number }) {
   );
 }
 
-export function CadenceLogo({ size = 22 }: { size?: number }) {
+/** `glyph`: the same drawing as an icon among the 24-unit glyphs — `size` is
+ *  then its WIDTH. The full mark only fills a flat band of its square box, in
+ *  hairlines (3.3 of 154 units): at menu size it came out as a faint smudge
+ *  next to the gear (2026-10-23). Cropped to the drawing (bounding box
+ *  measured in Chromium, plus half the heavier stroke) and drawn at a stroke
+ *  that lands near the other icons' 1.5 px. */
+export function CadenceLogo({ size = 22, glyph = false }: { size?: number; glyph?: boolean }) {
   return (
     <svg
-      viewBox="0 0 154 154"
+      viewBox={glyph ? '2.5 33.5 149 86.5' : '0 0 154 154'}
       width={size}
-      height={size}
+      height={glyph ? Math.round(size * 86.5 / 149) : size}
       fill="none"
       stroke="currentColor"
-      stroke-width="3.3"
+      stroke-width={glyph ? 9 : 3.3}
       stroke-linecap="round"
       stroke-linejoin="round"
     >
