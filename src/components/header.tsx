@@ -11,7 +11,7 @@ import { registerOverlay } from './overlayStack';
 import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
 import { isMacSafariInstallable } from '../utils';
 import { t } from '../services/i18nService';
-import { updateReady, applyUpdate, versionLabel } from '../services/updateService';
+import { updateReady, applyUpdate } from '../services/updateService';
 import { saveFailure } from '../services/saveHealth';
 import { showSaveFailureModal } from './saveFailureModal';
 import { getZoom } from '../services/zoomService';
@@ -214,7 +214,7 @@ function HeaderMenu({ anchor, align, onClose, children }: {
     <div
       ref={ref}
       role="menu"
-      class={`fixed z-30 bg-elevated border border-border rounded-xl overflow-hidden shadow-2xl p-1.5 min-w-[12rem]
+      class={`fixed z-30 bg-elevated border border-border rounded-xl overflow-hidden shadow-2xl p-1.5
         ${align === 'center' ? '-translate-x-1/2' : ''}`}
       style={pos}
     >
@@ -223,8 +223,12 @@ function HeaderMenu({ anchor, align, onClose, children }: {
   ), document.body);
 }
 
-function MenuRow({ icon, label, sub, accent, dot, onClick }: {
-  icon: ComponentChildren; label: string; sub?: string; accent?: boolean; dot?: boolean; onClick: () => void;
+/** One line per entry, no subtitles (the author's call, 2026-10-23). The icon
+ *  column is 24 px for every row, wide enough for the logo glyph, so the labels
+ *  line up whatever the icon; `[&>svg]:shrink-0` because an SVG is a flex item
+ *  that would otherwise shrink to the column instead of keeping its size. */
+function MenuRow({ icon, label, accent, dot, onClick }: {
+  icon: ComponentChildren; label: string; accent?: boolean; dot?: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -232,18 +236,11 @@ function MenuRow({ icon, label, sub, accent, dot, onClick }: {
       class="w-full flex items-center gap-3 min-h-11 px-2.5 py-2 rounded-lg text-left text-sm text-primary hover:bg-surface cursor-pointer border-none bg-transparent transition-colors"
       onClick={onClick}
     >
-      <span class={`w-5 flex items-center justify-center shrink-0 ${accent ? 'text-accent' : 'text-muted'}`}>{icon}</span>
-      <span class="flex-1 min-w-0 flex flex-col">
-        <span>{label}</span>
-        {sub && <span class="text-xs text-dim">{sub}</span>}
-      </span>
+      <span class={`w-6 flex items-center justify-center shrink-0 [&>svg]:shrink-0 ${accent ? 'text-accent' : 'text-muted'}`}>{icon}</span>
+      <span class="flex-1 min-w-0 whitespace-nowrap">{label}</span>
       {dot && <span class="w-2 h-2 rounded-full bg-accent shrink-0" />}
     </button>
   );
-}
-
-function MenuSep() {
-  return <div class="h-px bg-border my-1.5 mx-1" />;
 }
 
 // ── Status items ─────────────────────────────────────────────────────────────
@@ -593,41 +590,18 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
       {menuOpen && (
         <HeaderMenu anchor={moreRef} align="right" onClose={() => setMenuOpen(false)}>
-          <div class="w-[16.5rem]">
-            {/* Always first (the author's call, 2026-10-23). The logo had no
-                job before; About now also carries sharing the app and the
-                community — the job of a share button testers read as "share
-                what is selected" (2026-10-22). */}
-            <button
-              role="menuitem"
-              class="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left hover:bg-surface cursor-pointer border-none bg-transparent transition-colors"
-              onClick={fromMenu(showAboutModal)}
-            >
-              <span class="w-10 h-10 rounded-[10px] bg-accent/15 text-accent flex items-center justify-center shrink-0">
-                <CadenceLogo size={28} />
-              </span>
-              <span class="flex-1 min-w-0 flex flex-col">
-                <span class="text-sm font-medium text-primary">{t('about.title')}</span>
-                <span class="text-xs text-dim">{t('header.menu.aboutSub')}</span>
-              </span>
-              <span class="text-dim flex items-center"><ArrowRightIcon size={14} /></span>
-            </button>
-            <MenuSep />
-            {overflowInMenu.length > 0 && (
-              <>
-                {overflowInMenu.map(id => id === 'search'
-                  ? <MenuRow key={id} icon={<SearchIcon size={18} />} label={t('header.menu.search')} onClick={fromMenu(search)} />
-                  : <MenuRow key={id} icon={<HelpIcon size={18} />} label={t('sidebar.help')} onClick={fromMenu(help)} />)}
-                <MenuSep />
-              </>
-            )}
+          {/* No separators and no fixed width: one plain list, as wide as its
+              longest label (the author's call, 2026-10-23). */}
+          <>
+            {overflowInMenu.map(id => id === 'search'
+              ? <MenuRow key={id} icon={<SearchIcon size={18} />} label={t('header.menu.search')} onClick={fromMenu(search)} />
+              : <MenuRow key={id} icon={<HelpIcon size={18} />} label={t('sidebar.help')} onClick={fromMenu(help)} />)}
             {install && (
               <MenuRow
                 icon={<InstallIcon size={18} />}
                 accent
                 dot={!installOfferSeen.value}
                 label={t('settings.install')}
-                sub={t('header.menu.installSub')}
                 onClick={fromMenu(() => { markInstallSeen(); install(); })}
               />
             )}
@@ -641,12 +615,16 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
                 accent
                 dot
                 label={t('update.button')}
-                sub={t('header.menu.updateSub', { version: versionLabel(update) })}
                 onClick={fromMenu(applyUpdate)}
               />
             )}
             <MenuRow icon={<SettingsIcon size={18} />} label={t('sidebar.settings')} onClick={fromMenu(() => showSettingsModal(ctx))} />
-          </div>
+            {/* Last, a row like the others (the author's call, 2026-10-23). The
+                logo had no job before; About now also carries sharing the app
+                and the community — the job of a share button testers read as
+                "share what is selected" (2026-10-22). */}
+            <MenuRow icon={<CadenceLogo size={24} glyph />} accent label={t('about.title')} onClick={fromMenu(showAboutModal)} />
+          </>
         </HeaderMenu>
       )}
 
