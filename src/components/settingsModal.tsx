@@ -24,13 +24,11 @@ import { askIncompleteExport } from './incompleteExportModal';
 import { findDriveOrphans, trashDriveOrphans, driveStorageUsage, OrphanScanUnavailable, type DriveOrphan } from '../services/driveOrphans';
 import { listSnapshots, getSnapshotState, clearSnapshotsForUser, deleteSnapshot, type SnapshotMeta } from '../services/snapshotService';
 import { t, setLanguage } from '../services/i18nService';
-import { APP_BUILD, commitUrl } from '../services/updateService';
 import { initDriveClient, isDriveFeatureEnabled, isDriveConnected, getDriveStatus, onStatusChange, connectDrive, disconnectDrive, clearDriveOwner, clearDriveStateForUser, syncToCloud, manualSync, isLikelyInAppBrowser, type DriveStatus } from '../services/driveService';
 import { applyDriveState, showDriveConflictModal } from './driveConflictModal';
 import type { Lang } from '../services/i18nService';
 import { appState, getContext } from '../store';
 import { CustomSelect } from './customSelect';
-import { isNative } from '../native/platform';
 import { clearLastUserId, deleteUser, removeUserFromOrder } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { setsMatchTuneTags } from '../services/cardRefService';
@@ -180,7 +178,7 @@ export function showProfileModal(ctx: AppContext): void {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-type SectionId = 'study' | 'user' | 'storage' | 'display' | 'misc' | 'about';
+type SectionId = 'study' | 'user' | 'storage' | 'display' | 'misc';
 
 const SECTION_ICONS: Record<SectionId, string> = {
   study: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
@@ -188,7 +186,6 @@ const SECTION_ICONS: Record<SectionId, string> = {
   storage: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
   display: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
   misc: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
-  about: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`,
 };
 
 const LOGOUT_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`;
@@ -556,7 +553,7 @@ async function runReset(): Promise<void> {
     // interface is in, so both are carried over rather than reverting to
     // `emptyState()`'s 'Default' and 'en' (reported 2026-09-15). Carrying the
     // language is also what makes the profile `ensureCurrentProfile` recreates
-    // just below come back named "Par défaut" in a French interface: it names
+    // just below come back named "Défaut" in a French interface: it names
     // it in `fresh.language`. Both still go through `ensureCurrentUser`, so an
     // old state that carries neither is filled in as it always was.
     fresh.name = s.name; fresh.language = s.language;
@@ -1455,86 +1452,6 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
     </>
   );
 }
-// ── About section ─────────────────────────────────────────────────────────────
-
-function AboutLine({ textKey, href }: { textKey: string; href?: string }) {
-  return (
-    <p class="text-xs text-muted">
-      {href ? <a href={href} target="_blank" rel="noopener" class="text-accent hover:underline">{t(textKey)}</a> : t(textKey)}
-    </p>
-  );
-}
-
-function offerRecoveryScreen(): void {
-  const body = document.createElement('p');
-  body.className = 'text-sm text-muted leading-relaxed';
-  body.textContent = t('native.recovery.message');
-  showModal(t('native.recovery.title'), body, [
-    { label: t('common.cancel'), onClick: closeModal },
-    { label: t('native.recovery.open'), primary: true, onClick: () => { location.href = './?mode=recovery'; } },
-  ]);
-}
-
-/** The commit links to its page on GitHub: the one thing someone reporting a
- *  bug can send that names the exact code they ran. */
-function VersionLine() {
-  const url = commitUrl();
-  const commit = APP_BUILD.commit + (APP_BUILD.dirty ? '-dev' : '');
-  // The Android app has no address bar to type ?mode=recovery into: a long
-  // press on this line is the way in, easy to talk someone through.
-  const pressTimer = useRef(0);
-  const press = isNative()
-    ? {
-        onPointerDown: () => { pressTimer.current = window.setTimeout(offerRecoveryScreen, 800); },
-        onPointerUp: () => clearTimeout(pressTimer.current),
-        onPointerLeave: () => clearTimeout(pressTimer.current),
-        onPointerCancel: () => clearTimeout(pressTimer.current),
-      }
-    : {};
-  return (
-    <p class={`text-xs text-muted tabular-nums ${isNative() ? 'select-none' : ''}`} {...press}>
-      {t('settings.version', { version: APP_BUILD.version })}
-      {' · '}
-      {url ? <a href={url} target="_blank" rel="noopener" class="text-accent hover:underline">{commit}</a> : commit}
-    </p>
-  );
-}
-
-function AboutSection() {
-  return (
-    <>
-      <div class="space-y-1.5">
-        <AboutLine textKey="settings.aboutLine1" />
-        <VersionLine />
-        <AboutLine textKey="settings.aboutLine2" />
-        <AboutLine textKey="settings.aboutLine3" href="https://github.com/Batpapa/Cadence" />
-      </div>
-
-      {/* FolkFriend attribution (GPLv3) — required by the vendored recognition engine. */}
-      <Sep />
-      <div class="space-y-1.5">
-        <p class="text-xs text-muted">{t('settings.aboutFolkFriend')}</p>
-        <p class="text-xs text-muted">
-          <a href="https://github.com/TomWyllie/folkfriend" target="_blank" rel="noopener" class="text-accent hover:underline">github.com/TomWyllie/folkfriend (GPLv3)</a>
-        </p>
-      </div>
-
-      {/* Their only place once a user is open: the static footer of
-          index.html shows on the user selector and recovery screens alone. */}
-      <Sep />
-      <p class="text-xs text-muted">
-        <a href="./privacy.html" rel="noopener" class="text-accent hover:underline">{t('settings.privacyPolicy')}</a>
-        {' · '}
-        <a href="./terms.html" rel="noopener" class="text-accent hover:underline">{t('settings.termsOfService')}</a>
-      </p>
-
-      {/* No install offer here any more — the header carries it (both the
-          native prompt and the iOS Share-sheet steps), and buried in About it
-          was the reason nobody knew Cadence was installable. */}
-    </>
-  );
-}
-
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 /** Below this dialog width the section list drops its labels and keeps only the
@@ -1574,7 +1491,6 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
     { id: 'storage', labelKey: 'settings.storage' },
     { id: 'display', labelKey: 'settings.display' },
     { id: 'misc', labelKey: 'settings.misc' },
-    { id: 'about', labelKey: 'settings.about' },
   ];
 
   return (
@@ -1650,7 +1566,6 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
             {section === 'storage' && <StorageSection userId={ctx.user.id} />}
             {section === 'display' && <DisplaySection ctx={ctx} redrawShell={() => bumpDialog(x => x + 1)} />}
             {section === 'misc' && <MiscSection ctx={ctx} />}
-            {section === 'about' && <AboutSection />}
           </div>
         </div>
       </div>

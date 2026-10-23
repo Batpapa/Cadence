@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'preact/hooks';
-import { showModal, renderModalBody } from './modal';
 import { t } from '../services/i18nService';
 import { ShareIcon, WhatsAppIcon, ExternalLinkIcon } from './icons';
 import { copyText } from '../utils';
@@ -89,7 +88,10 @@ function QrCode({ text }: { text: string }) {
   );
 }
 
-function ShareAppBody() {
+/** QR, link and share sheet, then the community — the "Share Cadence" part of
+ *  the About modal (aboutModal.tsx), which used to be a modal of its own behind
+ *  a header button. */
+export function ShareAppBody() {
   const url = appUrl();
   const [copied, setCopied] = useState(false);
   // Absent on Firefox desktop among others, so the share sheet can never be the
@@ -198,9 +200,4 @@ function ShareAppBody() {
       </a>
     </div>
   );
-}
-
-export function showShareAppModal(): void {
-  const { el, cleanup } = renderModalBody(<ShareAppBody />);
-  showModal(t('shareApp.title'), el, [], { maxWidth: '20rem', onDismiss: cleanup });
 }

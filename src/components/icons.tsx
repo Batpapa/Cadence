@@ -739,6 +739,17 @@ export function DeviceAudioIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** ⋮ — the header's overflow menu. */
+export function MoreVerticalIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="5" r="1.9"/>
+      <circle cx="12" cy="12" r="1.9"/>
+      <circle cx="12" cy="19" r="1.9"/>
+    </svg>
+  );
+}
+
 export function PanelLeftIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
