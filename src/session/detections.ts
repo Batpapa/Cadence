@@ -73,11 +73,13 @@ export function detectionsOnCards(user: { modules?: Record<string, unknown> }): 
   return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.detectionsOnCards !== false;
 }
 
-/** Whether sets are shown at all (an option of the module, off by default
- *  while it is iterated on with the testers — 2026-10-19). Off, the analyser
- *  behaves exactly as it did before sets existed. */
+/** Whether sets are shown at all — an option of the module, experimental and
+ *  off by default from 2026-10-19, on by default and no longer experimental
+ *  since 2026-10-23 (the name stays: it is the key in people's synced data).
+ *  Absent = on. Off, the analyser behaves exactly as it did before sets
+ *  existed. */
 export function experimentalSets(user: { modules?: Record<string, unknown> }): boolean {
-  return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.experimentalSets === true;
+  return (user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined)?.experimentalSets !== false;
 }
 
 /** The instruments' pitch setting, in engine semitones — 0 when absent, and
