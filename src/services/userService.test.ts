@@ -12,7 +12,7 @@ describe('ensureCurrentProfile', () => {
   it('names the first profile in the user language', () => {
     const fr = bare('fr');
     ensureCurrentProfile(fr);
-    expect(fr.profiles[fr.currentProfileId]?.name).toBe('Par défaut');
+    expect(fr.profiles[fr.currentProfileId]?.name).toBe('Défaut');
 
     const en = bare('en');
     ensureCurrentProfile(en);

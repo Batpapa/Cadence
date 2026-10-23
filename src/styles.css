@@ -247,6 +247,21 @@
     min-height: 2rem;
   }
 
+  /* The header's own targets, bigger than `.tap-btn` since 2026-10-23: at 14 px
+     icons in a 2.5 rem bar the header looked a size smaller than the page under
+     it and than the bottom bar (a tester's remark). 40 px on a computer, 44 on
+     a portrait phone — where the bar holds fewer items, the rest being in ⋮ —
+     so the phone's header matches its 3.5 rem bottom bar. */
+  .hdr-btn {
+    @apply flex items-center justify-center rounded-lg transition-colors shrink-0;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+  .hdr-phone .hdr-btn {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
   /* The tempo mark on an incipit. HIDDEN, not removed: the ABC keeps its
      `Q:` so the ▸ beside the stave takes a reel at reel speed, while
      "♩ = 190" stops claiming a line of its own above three centimetres of

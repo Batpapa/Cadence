@@ -4,7 +4,7 @@ import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, g
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
 import { Sidebar } from './components/sidebar';
-import { AppHeader, BottomNav } from './components/header';
+import { AppHeader, BottomNav, headerCompact } from './components/header';
 import { ModalHost } from './components/modal';
 import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
@@ -189,7 +189,9 @@ function AppRoot() {
           <ContentSwitch />
         </main>
       </div>
-      {isPortraitPhone && <BottomNav ctx={ctx} />}
+      {/* Also wherever the header found no room for its wide layout: Home,
+          Library, Modules and ‹ › then live down here, as on a phone. */}
+      {(isPortraitPhone || headerCompact.value) && <BottomNav ctx={ctx} />}
       <ModalHost />
       <CommandPaletteHost />
       <DeckPickerHost />
