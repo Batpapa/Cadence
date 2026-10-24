@@ -40,7 +40,7 @@ export function pickRecorderMime(): string {
 /** How long stop() waits for the recorder to say it has stopped. */
 const STOP_TIMEOUT_MS = 5000;
 
-function recorderBitrate(mime: string): number {
+export function recorderBitrate(mime: string): number {
   return mime.includes('mp4') ? 96_000 : 64_000;
 }
 

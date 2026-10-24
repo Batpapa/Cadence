@@ -31,13 +31,16 @@ export interface PinnableModule {
    *  header. */
   id: string;
   labelKey: string;
+  /** Under its icon in the bottom bar, where a cell is 60 px on a 360 px
+   *  phone: "Analyseur de morceaux" does not fit there. */
+  shortLabelKey: string;
   route: Route;
   Icon: (props: { size?: number }) => JSX.Element;
 }
 
 export const PINNABLE_MODULES: PinnableModule[] = [
-  { id: 'sessions', labelKey: 'sessions.moduleTitle', route: { view: 'sessions' }, Icon: WaveformIcon },
-  { id: 'trending', labelKey: 'trending.moduleTitle', route: { view: 'trending' }, Icon: TrendIcon },
+  { id: 'sessions', labelKey: 'sessions.moduleTitle', shortLabelKey: 'bottomNav.sessions', route: { view: 'sessions' }, Icon: WaveformIcon },
+  { id: 'trending', labelKey: 'trending.moduleTitle', shortLabelKey: 'bottomNav.trending', route: { view: 'trending' }, Icon: TrendIcon },
 ];
 
 const PIN_KEY = 'cadence_pinned_module';

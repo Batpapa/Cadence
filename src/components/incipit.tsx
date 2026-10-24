@@ -304,6 +304,9 @@ function fitToInk(host: HTMLElement): void {
   if (!svg) return;
   let top = Infinity, bottom = -Infinity;
   for (const el of Array.from(svg.querySelectorAll('path, text, rect'))) {
+    // Not the tempo mark, hidden in CSS: getBBox answers for it all the same.
+    // See cropToInk in fileViewer, which had the same blind spot.
+    if (el.getClientRects().length === 0) continue;
     let box: DOMRect;
     try { box = (el as SVGGraphicsElement).getBBox(); } catch { continue; }
     if (!box.width && !box.height) continue;

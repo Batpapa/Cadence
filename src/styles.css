@@ -561,8 +561,15 @@
    `display: none` has none — which is the piece that was missing the first
    time this was tried. */
 /* `display: block` because an SVG is inline by default, so it sits on a text
-   baseline and the line-box leaves a few pixels of descender space under it. */
-.abc-score-paper svg { max-width: 100%; display: block; }
+   baseline and the line-box leaves a few pixels of descender space under it.
+   `height: auto` because abcjs makes the drawing its staff width PLUS its side
+   paddings — wider than the box it was measured for — and `max-width` narrows
+   it without touching its height attribute. The drawing, shrunk to the width,
+   was then centred in a box still as tall as before: an empty band above the
+   first staff and below the last, ~65 px each on a 360 px phone (measured
+   2026-10-24, a 328-wide drawing in a 302 box). Following the width keeps the
+   proportions, so the drawing fills its box. */
+.abc-score-paper svg { max-width: 100%; height: auto; display: block; }
 .abc-score-paper .abcjs-tempo { display: none; }
 
 /* The scrollbar down a full-page score that fits was NOT the score. abcjs

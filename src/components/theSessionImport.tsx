@@ -23,6 +23,7 @@ import { IrishTuneInfoBody } from './irishTuneInfoImport';
 import { showDeckChoiceModal, hasAnyDeck } from './deckSelector';
 import { CheckIcon } from './icons';
 import { registerOverlay } from './overlayStack';
+import { usePinnedTop } from './modal';
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
 // Dedupes on externalId when present (two independent shares of the same
@@ -1458,16 +1459,25 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
   const onOpenCard = (cardId: string) => { ctx.navigate({ view: 'card', cardId }); onClose(); };
 
   const mouseDownOnOverlay = useRef(false);
+  // ← pressed twice to climb two steps, the TheSession tabs gone through one
+  // by one: every step and tab is its own height. See usePinnedTop.
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const pinned = usePinnedTop(true, overlayRef, dialogRef);
 
   return (
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm"
+      ref={overlayRef}
+      class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center bg-black/75 backdrop-blur-sm`}
       onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onClose(); }}
     >
       <div
+        ref={dialogRef}
         class="bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col"
-        style={{ maxWidth: `min(440px, ${modalMaxW(0.9)})`, maxHeight: modalMaxH(0.85) }}
+        style={{ maxWidth: `min(440px, ${modalMaxW(0.9)})`, maxHeight: modalMaxH(0.85), ...pinned.dialogStyle }}
+        onPointerDownCapture={pinned.onPointerDownCapture}
+        onKeyDownCapture={pinned.onKeyDownCapture}
       >
         <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div class="flex items-center gap-2 min-w-0">

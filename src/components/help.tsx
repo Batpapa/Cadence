@@ -351,5 +351,6 @@ function HelpModalContent({ sections, initialTab }: { sections: HelpSection[]; i
 export function showHelpModal(ctx: AppContext, opts: { tab?: HelpTabId } = {}): void {
   const { title, sections } = getInfoContent(ctx);
   const { el, cleanup } = renderModalBody(<HelpModalContent sections={sections} initialTab={opts.tab ?? 'info'} />);
-  showModal(t('help.title', { context: title }), el, [], { maxWidth: '36rem', expandable: true, onDismiss: cleanup });
+  // Its two tabs are gone back and forth between, and are not the same height.
+  showModal(t('help.title', { context: title }), el, [], { maxWidth: '36rem', expandable: true, pinTop: true, onDismiss: cleanup });
 }

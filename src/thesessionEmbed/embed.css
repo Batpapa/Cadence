@@ -1,0 +1,712 @@
+/* ── thesession-embed: The Session's own look ──────────────────────────────────
+   Values read off thesession.org's stylesheet (global-min.20261021.css and the
+   inline critical CSS, 2026-10-24) and kept under the same names, so a change
+   on their side maps one to one: the pale/dark pair, the brick button, the
+   dotted links, the small-caps `.detail` for a tune type, the gold focus ring,
+   1.25rem for a tune's name as in their lists.
+
+   The root size is The Session's too, set from main.tsx: theirs follows the
+   width of the window, which the frame cannot read from CSS.
+
+   Plain CSS, not Tailwind: nothing of the app's design is wanted here, and the
+   app's stylesheet would weigh more than this whole page. */
+
+/* Lora is The Session's face, served from its CDN. Inside the frame on
+   thesession.org the browser's cache is partitioned under that same site, so
+   the file the page already loaded is the one found here. Georgia, metrically
+   adjusted as The Session does, stands in until then — and for good, should
+   the CDN ever refuse us. */
+@font-face {
+  font-family: Lora;
+  src: url('https://cdn.thesession.org/fonts/Lora-VariableFont_wght-subset.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: fallback;
+}
+@font-face {
+  font-family: 'Fallback for Lora';
+  src: local('Georgia');
+  size-adjust: 105.77%;
+  ascent-override: 95.11%;
+  descent-override: 25.9%;
+}
+
+html {
+  --pale: 255, 255, 234;
+  --dark: 33, 0, 0;
+  --bright: 255, 204, 51;
+  --gold: rgba(204, 153, 0, 1);
+  --button-hue: 19;
+  --button-saturation: 82%;
+  --button-lightness: 38%;
+  --link-hue: 15;
+  --heading-hue: 30;
+  --font-base: 450;
+  --font-increment: 25;
+
+  --ink-base: var(--dark);
+  --page-base: var(--pale);
+  --highlight-opacity: 0.5;
+  --link-saturation: 100%;
+  --link-lightness: 36%;
+  --heading-saturation: 100%;
+  --heading-lightness: 25%;
+  --font-multiplier: 1;
+  --formfield-background: rgba(255, 255, 255, 1);
+  /* The confidence colours: the analyser's green / amber / grey, in tones
+     that sit with The Session's warm palette. */
+  --sure: hsl(125 50% 27%);
+  --unsure: hsl(38 100% 29%);
+  color-scheme: light;
+}
+
+html.dark {
+  --ink-base: var(--pale);
+  --page-base: var(--dark);
+  --highlight-opacity: 1;
+  --link-saturation: 78%;
+  --link-lightness: 60%;
+  --heading-saturation: 15%;
+  --heading-lightness: 60%;
+  --font-multiplier: 0.95;
+  --formfield-background: rgba(42, 22, 17, 1);
+  --sure: hsl(110 45% 62%);
+  --unsure: hsl(45 100% 58%);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not(.light) {
+    --ink-base: var(--pale);
+    --page-base: var(--dark);
+    --highlight-opacity: 1;
+    --link-saturation: 78%;
+    --link-lightness: 60%;
+    --heading-saturation: 15%;
+    --heading-lightness: 60%;
+    --font-multiplier: 0.95;
+    --formfield-background: rgba(42, 22, 17, 1);
+    --sure: hsl(110 45% 62%);
+    --unsure: hsl(45 100% 58%);
+    color-scheme: dark;
+  }
+}
+
+html {
+  --ink: rgba(var(--ink-base), 1);
+  --page: rgba(var(--page-base), 1);
+  --link-base: hsl(var(--link-hue) var(--link-saturation) var(--link-lightness));
+  --heading: hsl(var(--heading-hue) var(--heading-saturation) var(--heading-lightness));
+  --keyline: rgba(var(--ink-base), 0.04);
+  --keyline-strong: rgba(var(--ink-base), 0.1);
+  --formfield-border: rgba(var(--ink-base), 0.35);
+  --formfield-border-over: rgba(var(--ink-base), 0.65);
+  --highlight: rgba(var(--bright), var(--highlight-opacity));
+  --wght: clamp(400, var(--font-base) * var(--font-multiplier), 700);
+
+  /* Painted, not left transparent: a frame whose colour scheme differs from
+     the element around it gets an opaque canvas from the browser anyway, and
+     The Session's `.setting.light` box is this very colour. */
+  background-color: var(--page);
+  color: var(--ink);
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  block-size: 100%;
+}
+
+body {
+  margin: 0;
+  block-size: 100%;
+  overflow: hidden;
+  font-family: Lora, 'Fallback for Lora', Georgia, serif;
+  font-weight: var(--wght);
+  line-height: 1.5625;
+  accent-color: var(--link-base);
+}
+
+#finder { block-size: 100%; }
+
+a {
+  color: var(--link-base);
+  text-decoration-color: hsl(var(--link-hue) var(--link-saturation) var(--link-lightness) / 20%);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 0.05em;
+  text-underline-offset: 0.15em;
+  word-break: break-word;
+}
+a:hover {
+  color: hsl(var(--link-hue) var(--link-saturation) calc(var(--link-lightness) + 4%));
+  text-decoration-color: inherit;
+  text-decoration-style: solid;
+}
+a:active {
+  color: hsl(var(--link-hue) var(--link-saturation) calc(var(--link-lightness) - 4%));
+  text-decoration-color: inherit;
+  text-decoration-style: solid;
+}
+a:focus-visible,
+button:focus-visible {
+  outline: max(0.2rem, 2px) solid var(--gold);
+  outline-offset: 1px;
+}
+
+.detail {
+  text-transform: lowercase;
+  font-variant: small-caps;
+  margin-inline-start: 0.4em;
+}
+
+/* ── Layout ── */
+
+.finder {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+}
+
+/* The heights add up to The Session's 5.75rem frame: the tabs (~1.2rem), the
+   strip's padding (0.5), a 1.5rem headline and two 1.22rem lines. A third
+   line, or bigger type, and the bottom one is cut off. */
+
+/* The tabs and the credit. */
+.top {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.875rem;
+  padding-inline: 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.sources {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.875rem;
+  min-inline-size: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* A tab is a word, in The Session's small capitals, the chosen one in ink and
+   underlined in the heading colour. */
+.source {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-block-end: 0.125rem solid transparent;
+  background: none;
+  color: var(--link-base);
+  font: inherit;
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.source:hover { color: hsl(var(--link-hue) var(--link-saturation) calc(var(--link-lightness) + 4%)); }
+.source[aria-selected="true"] {
+  color: var(--ink);
+  border-block-end-color: var(--heading);
+  cursor: default;
+}
+.source:disabled:not([aria-selected="true"]) { opacity: 0.4; cursor: default; }
+
+.credit {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+@media (max-width: 26rem) {
+  .credit { display: none; }
+}
+
+/* The strip: the rest of a 92 px frame, the top of a taller one. */
+.strip {
+  flex: 1 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  box-sizing: border-box;
+  padding: 0.25rem;
+}
+
+.text {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.headline {
+  font-size: 1.25rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.headline .tune {
+  color: hsl(var(--link-hue) var(--link-saturation) calc(var(--link-lightness) - 6%));
+  text-decoration-color: hsl(var(--link-hue) var(--link-saturation) var(--link-lightness) / 10%);
+  text-decoration-thickness: 0.1em;
+  text-underline-offset: 0.26em;
+  text-decoration-style: solid;
+}
+.headline .status { color: var(--heading); }
+
+.sub {
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  margin-block-start: 0.125rem;
+  /* Two lines at most: the strip has room for them and not a third. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* The link's field, in the headline's place: The Session's form field. */
+.url {
+  box-sizing: border-box;
+  inline-size: 100%;
+  margin: 0;
+  padding: 0.2em 0.5em;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.25;
+  color: var(--ink);
+  background-color: var(--formfield-background);
+  border: 0.0625rem solid var(--formfield-border);
+  border-radius: 0.25em;
+}
+.url:hover { border-color: var(--formfield-border-over); }
+.url:focus {
+  outline: max(0.2rem, 2px) solid var(--gold);
+  outline-offset: 0;
+}
+
+/* A file dragged over the widget. */
+.finder.drag {
+  outline: 0.1875rem dashed var(--gold);
+  outline-offset: -0.1875rem;
+}
+
+/* ── The button: The Session's `.button`, as is ── */
+
+.button {
+  user-select: none;
+  box-sizing: border-box;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-block;
+  /* Wide enough for every label it takes (LISTEN, STOP, CANCEL, OPEN…, NEW
+     LINK, and the French ones), so a change of state never moves the text
+     beside it. */
+  min-inline-size: 9.5em;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: var(--wght);
+  text-align: center;
+  text-transform: uppercase;
+  text-indent: 0.075em;
+  text-shadow: 0 -0.075em 0 rgba(0, 0, 0, 0.25);
+  letter-spacing: 0.15em;
+  line-height: 1;
+  vertical-align: middle;
+  border-width: 0.075em;
+  border-style: solid;
+  border-radius: 0.3em;
+  background-image: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.2));
+  padding-block: 0.75em;
+  padding-inline: 1.175em;
+  margin: 0;
+  box-shadow: inset 0 0.075em 0.075em rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 204, 0.9);
+  transition: border-color 0.1s, background-color 0.1s;
+  touch-action: manipulation;
+  background-color: hsl(var(--button-hue) var(--button-saturation) var(--button-lightness));
+  border-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 10%));
+  border-block-end-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 20%));
+  border-block-start-color: hsl(var(--button-hue) var(--button-saturation) var(--button-lightness));
+}
+.button:hover,
+.button:focus {
+  background-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 5%));
+  border-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 15%));
+  border-block-end-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 25%));
+  border-block-start-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 5%));
+}
+.button:focus-visible { outline-offset: max(0.25rem, 2px); }
+.button:focus:not(:focus-visible) { outline: none; }
+.button:active {
+  outline: 0;
+  box-shadow: inset 0 0 0.6em 0 rgba(var(--dark), 0.5);
+  background-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 10%));
+  border-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 20%));
+  border-block-end-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 30%));
+  border-block-start-color: hsl(var(--button-hue) var(--button-saturation) calc(var(--button-lightness) - 10%));
+}
+.button:disabled { cursor: default; opacity: 0.6; }
+
+/* The level meter: a halo of The Session's highlight gold around the button,
+   as wide as the sound is loud. --level is written per frame (FinderWidget). */
+.meter {
+  flex: 0 0 auto;
+  display: inline-block;
+  border-radius: 0.4rem;
+  line-height: 0;
+  box-shadow: 0 0 0 calc(var(--level, 0) * 0.5rem) var(--highlight);
+}
+.meter.live { transition: box-shadow 80ms linear; }
+
+/* ── The feed: only in a frame tall enough for it ── */
+
+.feed {
+  display: none;
+  position: relative; /* the follow button sits over its bottom */
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+  padding-inline: 0.25rem;
+  border-block-start: 0.1875rem solid var(--keyline);
+}
+
+@media (min-height: 9.5rem) {
+  .feed { display: flex; }
+  /* The strip keeps its height; the feed takes the rest. */
+  .strip { flex-grow: 0; min-block-size: 4.5rem; }
+  /* What the feed already shows. */
+  .compact-only { display: none; }
+}
+
+/* An analysis's sets box, in its title. */
+.sets {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  user-select: none;
+}
+.sets input { margin: 0; accent-color: var(--link-base); }
+
+/* The analyses, newest on top, scrolling together. Positioned: the offsetParent
+   the follow logic measures the newest line against. */
+.runs {
+  position: relative;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+/* Back to following the newest tune, once scrolled away from it. */
+.follow {
+  position: absolute;
+  inset-block-end: 0.5rem;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.35em 0.9em;
+  border: 0.0625rem solid var(--formfield-border);
+  border-radius: 1em;
+  background-color: var(--page);
+  box-shadow: 0 0.125rem 0.5rem rgba(var(--dark), 0.25);
+  color: var(--link-base);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.follow::before { content: '↓ '; }
+.follow:hover { border-color: var(--link-base); }
+
+.run h2 {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: 0;
+  padding-block: 0.5rem 0.25rem;
+  border-block-end: 0.0625em solid var(--keyline-strong);
+  color: var(--heading);
+  font-size: 0.875rem;
+  font-weight: var(--wght);
+  line-height: 1.3;
+}
+
+/* The title folds and unfolds its analysis. */
+.fold {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.fold .chevron { flex: 0 0 1em; letter-spacing: 0; }
+.fold .title {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fold .started,
+.fold .count {
+  flex: 0 0 auto;
+  font-size: 0.8125rem;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+.fold .count::before { content: '('; }
+.fold .count::after { content: ')'; }
+
+/* Copy · Download: The Session's `button.link`, a button dressed as a link. */
+.export {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.75em;
+  font-size: 0.8125rem;
+}
+button.link {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link-base);
+  font: inherit;
+  text-decoration: underline dotted hsl(var(--link-hue) var(--link-saturation) var(--link-lightness) / 40%);
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+button.link:hover {
+  color: hsl(var(--link-hue) var(--link-saturation) calc(var(--link-lightness) + 4%));
+  text-decoration-style: solid;
+}
+
+.run .none {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.run ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+
+/* A set, with the sets shown: its tunes under one heading, indented. */
+.set {
+  margin-block: 0.375rem;
+  padding-inline-start: 0.625rem;
+  border-inline-start: 0.1875rem solid var(--highlight);
+}
+.set-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  padding-block: 0.25rem 0;
+  font-size: 0.875rem;
+}
+.set-label {
+  flex: 0 0 auto;
+  color: var(--heading);
+  font-variant: small-caps;
+  text-transform: lowercase;
+}
+.set-names {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+/* Play / pause, in front of the line. */
+.play {
+  flex: 0 0 auto;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0.0625rem solid var(--formfield-border);
+  border-radius: 50%;
+  background: none;
+  color: var(--link-base);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  align-self: center;
+}
+.play:hover:not(:disabled) { border-color: var(--link-base); }
+.play.playing {
+  border-color: var(--link-base);
+  background-color: color-mix(in srgb, var(--link-base) 12%, transparent);
+}
+.play:disabled { opacity: 0.35; cursor: default; }
+
+/* One tune: when · what · how sure. */
+.detection {
+  padding-block: 0.5em;
+  border-block-end: 0.0625em solid var(--keyline-strong);
+}
+.detection:last-child { border-block-end: none; }
+.detection.open { background-color: rgba(var(--bright), 0.12); }
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+/* The tune being played right now. */
+.dot {
+  display: inline-block;
+  inline-size: 0.5em;
+  block-size: 0.5em;
+  margin-inline-end: 0.35em;
+  border-radius: 50%;
+  background-color: var(--gold);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+
+.pending { margin-inline-start: 0.3em; }
+
+.what {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.manifest-item-title {
+  font-size: 1.25rem;
+  font-weight: clamp(400, var(--wght) - (var(--font-increment) * 1.25), 700);
+  line-height: 1.2;
+}
+
+/* The confidence badge, and the way into the alternatives — as in the
+   analyser, the chevron is what says there is more behind it. */
+.badge {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.15em 0.55em;
+  border: 0.0625rem solid currentColor;
+  border-radius: 1em;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.badge.high, .badge.confirmed { color: var(--sure); }
+.badge.medium { color: var(--unsure); }
+.badge.low { color: var(--ink); opacity: 0.7; }
+.badge.confirmed { background-color: color-mix(in srgb, var(--sure) 12%, transparent); }
+.badge .chevron { margin-inline-start: 0.3em; opacity: 0.7; }
+@media (max-width: 26rem) {
+  /* The word goes before the number does: the colour already says it. */
+  .badge .word { display: none; }
+}
+
+/* The alternatives picker. */
+.alternatives {
+  margin: 0.5em 0 0.25em;
+  padding: 0.25em 0.5em;
+  border: 0.0625rem solid var(--keyline-strong);
+  border-radius: 0.3em;
+  background-color: var(--formfield-background);
+}
+.alternatives .howto {
+  margin: 0.25em 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  opacity: 0.8;
+}
+.alternatives ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  border-block-start: 0.0625em solid var(--keyline-strong);
+}
+.option.selected { background-color: color-mix(in srgb, var(--sure) 10%, transparent); }
+
+.pick {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  margin: 0;
+  padding: 0.4em 0.25em;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.3;
+  text-align: start;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pick:hover .name { text-decoration: underline dotted; }
+.pick .check {
+  flex: 0 0 1em;
+  color: var(--sure);
+}
+.pick .name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick .detail { margin-inline-start: 0; }
+.pick .recommended {
+  flex: 0 0 auto;
+  padding: 0 0.4em;
+  border-radius: 0.2em;
+  background-color: var(--highlight);
+  color: rgba(var(--dark), 1);
+  font-size: 0.75rem;
+  font-variant: small-caps;
+  text-transform: lowercase;
+}
+.pick .pct {
+  margin-inline-start: auto;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+.pct.high { color: var(--sure); }
+.pct.medium { color: var(--unsure); }
+.pct.low { opacity: 0.7; }
+
+.option .open {
+  flex: 0 0 auto;
+  padding: 0.25em 0.4em;
+  text-decoration: none;
+}

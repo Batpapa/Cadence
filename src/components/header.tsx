@@ -673,18 +673,26 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
 // ── Bottom nav (portrait phone, or a header in its compact layout) ────────────
 
-function BottomNavBtn({ title, active, disabled, onClick, children }: {
-  title: string; active?: boolean; disabled?: boolean; onClick: () => void; children: ComponentChildren;
+/** `label` is what a phone shows under the icon, since 2026-10-24: a first-time
+ *  user had to click "four little cubes" to find out what they were, and a
+ *  phone has no hover to show the title. Destinations only — Back and Forward
+ *  are the history's, not places — but every button keeps the label's line,
+ *  so the icons stay on one row. 10 px, and short words written for this bar:
+ *  a cell is 60 px with a pinned module on a 360 px phone, and the widest
+ *  label, "Tendances", measures 50 px in IBM Plex Sans 500. */
+function BottomNavBtn({ title, label, active, disabled, onClick, children }: {
+  title: string; label?: string; active?: boolean; disabled?: boolean; onClick: () => void; children: ComponentChildren;
 }) {
   return (
     <button
-      class={`flex-1 flex items-center justify-center transition-colors
+      class={`flex-1 min-w-0 flex flex-col items-center justify-center gap-1 transition-colors
         ${active ? 'text-accent' : disabled ? 'text-border' : 'text-dim active:text-accent'}`}
       title={title}
       disabled={disabled}
       onClick={onClick}
     >
       {children}
+      <span class="h-3 text-[10px] leading-3 font-medium whitespace-nowrap" aria-hidden="true">{label}</span>
     </button>
   );
 }
@@ -707,13 +715,13 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
       class="flex items-stretch border-t border-border bg-surface shrink-0"
       style="padding-bottom: var(--safe-bottom); min-height: calc(3.5rem + var(--safe-bottom))"
     >
-      <BottomNavBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
+      <BottomNavBtn title={t('sidebar.home')} label={t('bottomNav.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
         <HomeIcon size={20} />
       </BottomNavBtn>
-      <BottomNavBtn title={t('sidebar.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
+      <BottomNavBtn title={t('sidebar.library')} label={t('bottomNav.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
         <LibraryIcon size={20} />
       </BottomNavBtn>
-      <BottomNavBtn title={t('sidebar.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
+      <BottomNavBtn title={t('sidebar.modules')} label={t('bottomNav.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
         <ModulesIcon size={20} />
       </BottomNavBtn>
       {/* Between the destinations and the two history controls: it is one of
@@ -724,6 +732,7 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
       {pinned && (
         <BottomNavBtn
           title={t(pinned.labelKey)}
+          label={t(pinned.shortLabelKey)}
           active={isPinnedRouteActive(route, pinned)}
           onClick={() => ctx.navigate(pinned.route)}
         >

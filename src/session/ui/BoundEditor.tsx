@@ -1068,6 +1068,9 @@ export function showBoundEditor(opts: {
     { label: t('common.save'), primary: true, disabled: unchanged, onClick: save },
   ], {
     maxWidth: '34rem',
+    // The jog buttons are pressed in a row, and the first press brings the
+    // Reset line in under them.
+    pinTop: true,
     onDismiss: cleanup,
     guardDismiss: (dismiss) => {
       if (!moved()) return false;

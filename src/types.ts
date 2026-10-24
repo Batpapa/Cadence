@@ -311,11 +311,11 @@ export interface User {
   // came out at 3,9 mm on a phone and 13,6 mm on a wide screen — against the
   // 7 mm of printed music. The width is now the box's own, and what adapts is
   // how many bars a line holds. See `engraveOptions` in fileViewer.
-  /** Bars per line the score aims for. Absent = DEFAULT_BARS_PER_LINE, which
-   *  is the carrure most of this music is written in. A request, not an order:
-   *  abcjs will not compress music below its own minimum, so a narrow screen
-   *  gets fewer bars than asked and the staff keeps its size. */
-  abcBarsPerLine?: number;
+  //
+  // abcBarsPerLine lived here until 2026-10-24 — how many bars a line aimed
+  // for. The score follows the lines of the ABC now (abcLineBreaks.ts). A value
+  // stored by whoever set it stays in their synced blob, harmlessly, and is
+  // simply not read.
   /** Absent = the app's theme decides — see `abcPaper` in abcService. */
   abcPaper?: AbcPaper;
   // The metronome is NOT here, deliberately (2026-09-22): it belongs to the

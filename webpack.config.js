@@ -8,6 +8,13 @@ const CopyPlugin = require('copy-webpack-plugin');
 
 const TEMPLATE = './src/index.html';
 
+/** The Session widget (src/thesessionEmbed/main.tsx): its own entry and its
+ *  own page, two folders down from the app. Only its HTML lives there — its
+ *  bundle, the worker and the WASM sit at the root with everything else, and
+ *  the page finds them through thesessionEmbed/publicPath.ts. */
+const EMBED_ENTRY = 'thesessionEmbed';
+const EMBED_PAGE = 'TuneAnalyser/thesession-embed/index.html';
+
 const CSP_PLACEHOLDER = '%CSP%';
 
 /**
@@ -188,10 +195,20 @@ module.exports = (env, argv) => {
 
   return {
     name: 'cadence',
-    entry: './src/main.ts',
+    entry: {
+      main: './src/main.ts',
+      [EMBED_ENTRY]: './src/thesessionEmbed/main.tsx',
+    },
     output: {
       path:       path.resolve(__dirname, 'dist'),
-      filename:   isDev ? 'bundle.js' : 'bundle.[contenthash].js',
+      // A function only to give the widget its own name: the app's bundle and
+      // chunks keep exactly the names they had with a single entry — chunkFilename
+      // is what webpack inferred from 'bundle.js' / 'bundle.[contenthash].js', and
+      // a function filename would otherwise turn it into '[id].js'.
+      filename:   ({ chunk }) => chunk && chunk.name === EMBED_ENTRY
+        ? (isDev ? 'thesession-embed.js' : 'thesession-embed.[contenthash].js')
+        : (isDev ? 'bundle.js' : 'bundle.[contenthash].js'),
+      chunkFilename: isDev ? '[id].bundle.js' : 'bundle.[contenthash].js',
       clean:      true,
       publicPath: isDev ? undefined : '',
     },
@@ -235,7 +252,17 @@ module.exports = (env, argv) => {
       ],
     },
     plugins: [
-      new HtmlWebpackPlugin({ template: TEMPLATE }),
+      // `chunks`: by default each page would load every entry.
+      new HtmlWebpackPlugin({ template: TEMPLATE, chunks: ['main'] }),
+      // publicPath: the page's own links to the bundle and the stylesheet,
+      // relative to where it sits. What the bundle loads after that is
+      // publicPath.ts's business.
+      new HtmlWebpackPlugin({
+        template: './src/thesessionEmbed/index.html',
+        filename: EMBED_PAGE,
+        chunks: [EMBED_ENTRY],
+        publicPath: '../../',
+      }),
       new CspPlugin(),
       new webpack.DefinePlugin({ __APP_VERSION__: JSON.stringify(info) }),
       new VersionPlugin(info),

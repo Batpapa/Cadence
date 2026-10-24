@@ -9,3 +9,7 @@ declare module '*?raw' {
 /** Injected at build time by webpack's DefinePlugin (see buildInfo() in
  *  webpack.config.js), and by vitest's `define` under test. */
 declare const __APP_VERSION__: { version: string; commit: string; dirty: boolean; build: string };
+
+/** Webpack's runtime base URL for chunks, the worker and the WASM — assigned
+ *  only by thesessionEmbed/publicPath.ts. */
+declare let __webpack_public_path__: string;

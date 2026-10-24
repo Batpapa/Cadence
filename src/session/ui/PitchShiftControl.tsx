@@ -91,7 +91,8 @@ export function PitchShiftControl({ value, onChange }: { value: number; onChange
         onPick={(next) => { setHeard(next); onChange(flip(next)); }}
       />,
     );
-    showModal(t('sessions.pitchShift'), el, [], { maxWidth: '20rem', onDismiss: cleanup });
+    // + pressed several times, under a sentence whose length changes with it.
+    showModal(t('sessions.pitchShift'), el, [], { maxWidth: '20rem', pinTop: true, onDismiss: cleanup });
   };
 
   // Same shape as the pause button next to it. Reads as an icon at rest and as
