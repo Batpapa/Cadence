@@ -10,11 +10,13 @@ import './embed.css';
 // Served at TuneAnalyser/thesession-embed/ and meant to sit in an iframe:
 //
 //   <iframe src="https://batpapa.github.io/Cadence/TuneAnalyser/thesession-embed/?links=same&theme=light"
-//     allow="microphone; display-capture" title="Identify a tune" style="…"></iframe>
+//     allow="microphone; display-capture" title="Identify tunes" style="…"></iframe>
 //
 // The same two parameters as the widget The Session embeds today, so trying
 // this one is a matter of changing the src:
-//   theme=light|dark — absent: follows the system, as The Session itself does;
+//   theme=dark|auto  — light otherwise: the embedding page decides, and knows
+//                      its visitor's choice, which the frame cannot read.
+//                      `auto` follows the system;
 //   links=same       — tune links open in the embedding page, not a new tab;
 //   lang=fr          — French; English otherwise (The Session is in English);
 //   sources=mic,file — the tabs offered, in that order: mic, device, file,
@@ -30,7 +32,7 @@ import './embed.css';
 
 const params = new URLSearchParams(location.search);
 const theme = params.get('theme');
-if (theme === 'light' || theme === 'dark') document.documentElement.classList.add(theme);
+if (theme !== 'auto') document.documentElement.classList.add(theme === 'dark' ? 'dark' : 'light');
 const lang: Lang = params.get('lang') === 'fr' ? 'fr' : 'en';
 const ALL_SOURCES: SourceKind[] = ['mic', 'device', 'file', 'link'];
 const asked = (params.get('sources') ?? '').split(',').filter((s): s is SourceKind => (ALL_SOURCES as string[]).includes(s));
