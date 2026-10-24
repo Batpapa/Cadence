@@ -283,7 +283,9 @@ function Alternatives({ d, opts, onPick }: { d: Detection; opts: WidgetOptions; 
 
 interface RowControls {
   opts: WidgetOptions;
-  /** Still listening, so the open detection is the tune being played. */
+  /** Its run is still going — listened to or analysed — so the open
+   *  detection is the one being heard. Marked in both cases, as the
+   *  analyser's cards mark theirs. */
   live: boolean;
   /** Why the play button is off, or null when it can play. */
   playOff: string | null;
@@ -317,10 +319,12 @@ function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
         {/* No times: the order says when, and ▶ plays it — the analyser's
             ranges are for editing bounds, which nobody does here. */}
         <span class="what">
+          {/* One place for the line's state, before the name, as on the
+              analyser's cards: playing now, or still being settled. */}
           {open && c.live && <span class="dot" aria-hidden="true" />}
+          {pending && <span class="pending" title={app(lang, 'sessions.consolidating')}>⧗</span>}
           <TuneLink d={d} opts={c.opts} className="manifest-item-title" />
           {d.dance && <span class="detail">{d.dance}</span>}
-          {pending && <span class="pending" title={app(lang, 'sessions.consolidating')}>⧗</span>}
         </span>
         <button
           type="button"
@@ -634,7 +638,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     const playable = finder.canPlay(run.index);
     return {
       opts,
-      live: inProgress && listening,
+      live: inProgress,
       playOff: playable ? null
         : finder.sound(run.index) ? tr(lang, 'playAfterStop') : tr(lang, 'cantPlay'),
       playing: player.playing === key,
