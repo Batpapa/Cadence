@@ -1,5 +1,5 @@
 import { signal, type Signal } from '@preact/signals';
-import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { render } from 'preact';
 import type { ComponentChild } from 'preact';
@@ -96,6 +96,62 @@ export interface ModalOptions {
    *  Not consulted by `closeModal` / `closeAllModals`: those are the code's
    *  own way of closing, and a body that calls them knows what it is doing. */
   guardDismiss?: (dismiss: () => void) => boolean;
+  /** Default false. Once the user has pressed anything in the dialog, its TOP
+   *  stays where it is and only the bottom moves as the content changes — see
+   *  usePinnedTop. For a dialog pressed several times at the same place while
+   *  its height changes under the finger. */
+  pinTop?: boolean;
+}
+
+/** A centred dialog moves when its height changes: half the change goes on
+ *  top. In a dialog pressed several times in a row at the same place, the
+ *  second press then lands beside the control — and, when the dialog has just
+ *  shrunk, on the backdrop, which closes it. Reported 2026-10-23 on the score
+ *  viewer: a version of two lines after one of twenty, the arrows jumped down,
+ *  and a quick second tap on → went back to the card.
+ *
+ *  Centred until the first press inside it, because what a dialog shows at its
+ *  opening is not always its size: the score viewer draws after abcjs has
+ *  loaded. From that press the top is held, and only the bottom follows the
+ *  content — past the bottom of the screen if need be, the backdrop then
+ *  scrolls (the user's call: "tant pis, les gens scrolleront"). A width change
+ *  of the window — a phone turned — centres it again; a height change alone,
+ *  which is a keyboard opening, does not.
+ *
+ *  Measured and written in layout pixels (clientHeight, offsetHeight, a
+ *  margin), the one pixel space that the app's CSS zoom does not split. */
+export function usePinnedTop(
+  enabled: boolean,
+  overlayRef: { current: HTMLElement | null },
+  dialogRef: { current: HTMLElement | null },
+) {
+  const [top, setTop] = useState<number | null>(null);
+  const pinned = enabled && top !== null;
+  useEffect(() => {
+    if (!pinned) return;
+    const width = window.innerWidth;
+    const onResize = () => { if (window.innerWidth !== width) setTop(null); };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [pinned]);
+  const pin = () => {
+    if (!enabled || top !== null) return;
+    const overlay = overlayRef.current, dialog = dialogRef.current;
+    if (!overlay || !dialog) return;
+    setTop(Math.max(0, (overlay.clientHeight - dialog.offsetHeight) / 2));
+  };
+  return {
+    unpin: () => setTop(null),
+    /** For the backdrop, in place of its `items-center`. */
+    overlayClass: pinned ? 'items-start overflow-y-auto' : 'items-center',
+    /** Merged into the dialog's own style. The bottom margin is the room left
+     *  under it once it runs past the screen and the backdrop scrolls. */
+    dialogStyle: pinned ? { marginTop: `${top}px`, marginBottom: '1rem' } : {},
+    /** On the dialog, capture phase: the press is measured before whatever it
+     *  does changes the height. */
+    onPointerDownCapture: pin,
+    onKeyDownCapture: pin,
+  };
 }
 
 interface ModalEntry {
@@ -112,6 +168,7 @@ interface ModalEntry {
   onBack?: () => void;
   titleEdit?: ModalOptions['titleEdit'];
   guardDismiss?: ModalOptions['guardDismiss'];
+  pinTop: boolean;
 }
 
 let nextId = 0;
@@ -209,6 +266,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     onExpandedChange: opts.onExpandedChange,
     onBack: opts.onBack,
     guardDismiss: opts.guardDismiss,
+    pinTop: opts.pinTop ?? false,
   }];
 }
 
@@ -415,6 +473,10 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
   // this is not remembered. ModalHost keys on entry.id, so the state survives
   // every re-render of the stack and only that.
   const [expanded, setExpanded] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Not while expanded: the dialog is the whole page then, with no top to hold.
+  const pinned = usePinnedTop(entry.pinTop && !expanded, overlayRef, dialogRef);
   const dismiss = () => {
     if (entry.guardDismiss?.(() => completeDismiss(entry))) return;
     completeDismiss(entry);
@@ -434,15 +496,19 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
 
   return (
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm"
+      ref={overlayRef}
+      class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center bg-black/75 backdrop-blur-sm`}
       onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (entry.dismissable && e.target === e.currentTarget && mouseDownOnOverlay.current) dismiss(); }}
     >
       <div
+        ref={dialogRef}
         class={`bg-elevated shadow-2xl overflow-hidden flex flex-col ${
           expanded ? 'w-full h-full safe-area-pad' : 'border border-border rounded-xl w-full mx-4'
         }`}
-        style={expanded ? undefined : { maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85) }}
+        style={expanded ? undefined : { maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85), ...pinned.dialogStyle }}
+        onPointerDownCapture={pinned.onPointerDownCapture}
+        onKeyDownCapture={pinned.onKeyDownCapture}
       >
         <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           {/* Same shape as the card export modal, which is the reference:
@@ -475,7 +541,9 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
               <button
                 class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
                 title={t(expanded ? 'modal.collapse' : 'modal.expand')}
-                onClick={() => setExpanded(e => !e)}
+                // Centred again on the way back: the held top was for the
+                // dialog as it was before.
+                onClick={() => { pinned.unpin(); setExpanded(e => !e); }}
               >
                 {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
               </button>

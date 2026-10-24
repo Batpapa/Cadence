@@ -200,5 +200,6 @@ export function showAliasModal(cardId: string): void {
   const { el, cleanup } = renderModalBody(<AliasManager cardId={cardId} />);
   // No action buttons: every change is already written. The ✕, Escape and a
   // click outside close it.
-  showModal(t('card.aliases.title'), el, [], { maxWidth: '28rem', onDismiss: cleanup });
+  // Removing aliases one after another: each row gone would move the next ✕.
+  showModal(t('card.aliases.title'), el, [], { maxWidth: '28rem', pinTop: true, onDismiss: cleanup });
 }

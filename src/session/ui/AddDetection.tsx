@@ -143,5 +143,6 @@ export function showAddDetection(opts: {
         opts.onAdd(manualDetection(tune, draft.start, draft.end), draft.twins);
       },
     },
-  ], { maxWidth: '34rem', onDismiss: cleanup });
+  // The bound editor's room, and its jog buttons: see BoundEditor's pinTop.
+  ], { maxWidth: '34rem', pinTop: true, onDismiss: cleanup });
 }

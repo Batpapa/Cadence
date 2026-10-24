@@ -12,9 +12,9 @@ import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../service
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   showAbcSyntaxCheck, blankForRender, locateAbcWarning, abcWarningRange,
-  abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcBarsPerLine, abcSwingAtOpen, meterCanSwing,
-  ABC_PAPERS, BARS_PER_LINE_CHOICES, DEFAULT_BARS_PER_LINE,
-  SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
+  abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcSwingAtOpen, meterCanSwing,
+  ABC_PAPERS, SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
+import { sourceMeasures, scoreLineBreaks, type MeasuredSection, type SourceMeasures } from '../services/abcLineBreaks';
 import { swingAudioParams } from '../services/jigSwing';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import {
@@ -141,6 +141,11 @@ function abcTempoPercent(): number {
 //
 // Which is why the zoom is not coming back as it was: on a phone the score is
 // bounded by width, so magnifying it never filled the height. Re-wrapping does.
+//
+// WHERE the lines break is no longer abcjs's `wrap` either, since 2026-10-24:
+// the score follows the lines of the ABC, as TheSession draws it, and only cuts
+// one that does not fit — see abcLineBreaks.ts, and `engraveScore` below. The
+// "bars per line" setting went with it.
 
 /** Narrower than this and abcjs is drawing for nobody — the modal itself never
  *  gets this small, but a box measured mid-layout can report anything. */
@@ -154,9 +159,65 @@ const ENGRAVE_HYSTERESIS = 24;
 
 interface EngraveSettings {
   width: number;
-  barsPerLine: number;
   ink: string;
   transpose: number;
+}
+
+/** How much room a bar is given beyond its natural width — abcjs's own unit,
+ *  1 being notes as close as it will set them — before a line of the ABC is
+ *  judged too long for the width. Today's phone layout, two bars to a line at
+ *  a 348 px box, ran at about 1.45; 1.3 keeps a line of four jig bars whole
+ *  from a ~520 px staff up, and two on a 360 px phone. */
+const MIN_BAR_SPACING = 1.3;
+
+/** abcjs's own wrapping: only what measures the bars now, and what draws a
+ *  score whose bars could not be matched to its lines. */
+const FALLBACK_WRAP = {
+  minSpacing: 1.8, maxSpacing: 2.7,
+  // Required by abcjs's types, and 0 is how its code reads "none"
+  // (wrap_lines.js: a falsy value skips the fixed-count attempt).
+  preferredMeasuresPerLine: 0,
+};
+
+/** A source's bar structure and abcjs's measurement of it. The widths do not
+ *  depend on the staff width, so one measurement serves every redraw of the
+ *  same source — a resize, the paper — at the cost of a single drawing. */
+interface ScoreMeasure {
+  key: string;
+  structure: SourceMeasures;
+  sections: MeasuredSection[];
+}
+
+/** Draws a score with its lines where the ABC has them (abcLineBreaks.ts).
+ *
+ *  abcjs measures the natural width of each bar only on its way to wrapping a
+ *  tune, so a source seen for the first time is drawn once WITH `wrap`, kept
+ *  for its measurements (`tune.explanation`), then drawn again with the line
+ *  breaks worked out from them. `cache` holds the last measurement. */
+function engraveScore(
+  abcjs: typeof import('abcjs'), targetId: string, source: string, options: Record<string, unknown>,
+  cache: { measure: ScoreMeasure | null },
+): ReturnType<typeof abcjs.renderAbc> {
+  // The transposition is in the key: accidentals change how wide a bar is.
+  const key = `${String(options.visualTranspose)}\n${source}`;
+  let measure = cache.measure?.key === key ? cache.measure : null;
+  if (!measure) {
+    const drawn = abcjs.renderAbc(targetId, source, { ...options, wrap: FALLBACK_WRAP });
+    const explanation = (drawn[0] as { explanation?: unknown } | undefined)?.explanation;
+    // A string when abcjs gave up wrapping ("narrower than the margin").
+    if (!Array.isArray(explanation)) { cache.measure = null; return drawn; }
+    measure = cache.measure = {
+      key,
+      structure: sourceMeasures(abcjs.parseOnly(source)[0]!),
+      sections: (explanation as { widths: MeasuredSection }[]).map(e => ({ left: e.widths.left, measureWidths: e.widths.measureWidths })),
+    };
+  }
+  const lineBreaks = scoreLineBreaks(measure.structure, measure.sections, options.staffwidth as number, MIN_BAR_SPACING);
+  if (!lineBreaks) return abcjs.renderAbc(targetId, source, { ...options, wrap: FALLBACK_WRAP });
+  // One array PER SECTION, which is what abcjs's code reads (wrap_lines.js,
+  // findLineBreaks) and what its own wrapping hands its parser; its type
+  // declaration says a flat `number[]`, which it is not.
+  return abcjs.renderAbc(targetId, source, { ...options, lineBreaks: lineBreaks as unknown as number[] });
 }
 
 /** Everything about how a score is DRAWN, in one place, so the four callers
@@ -175,7 +236,7 @@ function engraveOptions(s: EngraveSettings): Record<string, unknown> {
     // viewBox would have been clipped by the very box it was shrinking.
     add_classes: true,
     staffwidth: Math.max(MIN_ENGRAVE_WIDTH, Math.round(s.width)),
-    wrap: { minSpacing: 1.8, maxSpacing: 2.7, preferredMeasuresPerLine: s.barsPerLine },
+    // No `wrap` here: where the lines break is engraveScore's.
     // abcjs's own defaults for the sides (15/50) leave the last note of a line
     // hanging outside the box at some widths — measured. These are symmetric
     // and verified to keep the ink inside from 348 px to 1200 px.
@@ -223,7 +284,14 @@ function engraveOptions(s: EngraveSettings): Record<string, unknown> {
  *
  *  abcjs also writes `overflow:hidden` and a fixed `height` onto the element it
  *  drew into; both are cleared, or the box stays as tall as the uncropped
- *  drawing and the space comes back underneath. */
+ *  drawing and the space comes back underneath.
+ *
+ *  Ink is what is DRAWN: an element hidden in CSS is skipped. getBBox does not
+ *  know about CSS — it answers for the tempo mark too, which
+ *  `.abc-score-paper .abcjs-tempo` hides — so the crop used to start at the
+ *  tempo and leave its band above the first staff (measured 2026-10-24 on a
+ *  360 px phone: viewBox at 31, staff at 69). getClientRects is empty for an
+ *  element that is not rendered, its own display or an ancestor's. */
 function cropToInk(host: HTMLElement): void {
   host.style.removeProperty('overflow');
   host.style.removeProperty('height');
@@ -234,6 +302,7 @@ function cropToInk(host: HTMLElement): void {
   let top = Infinity;
   let bottom = -Infinity;
   for (const el of Array.from(svg.querySelectorAll('path, text, rect'))) {
+    if (el.getClientRects().length === 0) continue;
     let box: DOMRect;
     // getBBox throws on a detached or undisplayed element, and returns zeros
     // for an empty one; neither is ink.
@@ -538,25 +607,13 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
   );
   paperSelect.style.maxWidth = '14rem';
 
-  const { el: densitySelect } = mkCustomSelect(
-    BARS_PER_LINE_CHOICES.map(n => ({ value: String(n), label: t('fileViewer.abc.barsPerLine', { n: String(n) }) })),
-    String(abcBarsPerLine(appState.value)),
-    (v) => {
-      const n = parseInt(v, 10);
-      void mutate(st => {
-        if (n === DEFAULT_BARS_PER_LINE) delete st.abcBarsPerLine; else st.abcBarsPerLine = n;
-      }).then(() => onApply());
-    },
-    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
-  );
-  densitySelect.style.maxWidth = '14rem';
-
+  // "Bars per line" lived here until 2026-10-24: the score follows the lines
+  // of the ABC now (see engraveScore), and cuts them only where they do not fit.
   body.append(
     row('fileViewer.abc.prefs.speed', speedControl),
     row('fileViewer.abc.prefs.swing', swingBtn),
     row('fileViewer.abc.instrument', instrSelect),
     row('fileViewer.abc.paper', paperSelect),
-    row('fileViewer.abc.prefs.barsPerLine', densitySelect),
     row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
     row('fileViewer.abc.prefs.tapPlaysNote', tapBox),
     row('fileViewer.abc.prefs.syntaxCheck', syntaxBox),
@@ -645,7 +702,9 @@ function showTransposeModal(current: number, limit: number, onPick: (semitones: 
   paint();
 
   body.append(row, said, reset);
-  showModal(t('fileViewer.abc.transpose'), body, [], { maxWidth: '20rem' });
+  // + pressed several times, and the first press makes the dialog taller: the
+  // reset appears, and the sentence can take a second line.
+  showModal(t('fileViewer.abc.transpose'), body, [], { maxWidth: '20rem', pinTop: true });
 }
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
@@ -1059,12 +1118,11 @@ export function showPreviewModal(
     const openingTempoPercent = abcTempoPercent();
 
     // ── How this score READS and SOUNDS, for as long as it is open ──
-    // Paper and density are the user's stored preferences and are written
-    // back the moment they are changed here: unlike the opening speed, these
-    // describe how the reader wants to see a score, and a reader who turns the
-    // page dark wants the next one dark too.
+    // The paper is the user's stored preference and is written back the moment
+    // it is changed here: unlike the opening speed, it describes how the
+    // reader wants to see a score, and a reader who turns the page dark wants
+    // the next one dark too.
     let paper: AbcPaper = abcPaper(appState.value);
-    let barsPerLine = abcBarsPerLine(appState.value);
     // The swing is the opening speed's kind, not the paper's (2026-10-22, a
     // tester's request): a reel swung for one tune went on swinging every
     // score opened after it. It starts from the preferences' setting, and the
@@ -1671,7 +1729,12 @@ export function showPreviewModal(
     // Carrying both jobs on one element meant neither cap nor scrollbar ever
     // took, and the modal body quietly went on being the scroller.
     const scoreScroll = document.createElement('div');
-    scoreScroll.className = 'abc-score-paper w-full rounded p-2 overflow-y-auto';
+    // `pt-8`: the room the full-page button sits in (scoreTools, `top-1`, a
+    // 2rem target whose glyph ends ~27 px down). It used to fall, by accident,
+    // in empty bands above the first staff — the hidden tempo mark's, and the
+    // drawing shrunk inside a box too tall for it — and landed on the last
+    // notes of the first line once both were gone (2026-10-24).
+    scoreScroll.className = 'abc-score-paper w-full rounded p-2 pt-8 overflow-y-auto';
     scoreFrame.appendChild(scoreScroll);
 
     // Full page, in the score's top right corner, over the paper (2026-10-10,
@@ -2690,6 +2753,13 @@ export function showPreviewModal(
        *  while it plays, which has a place of its own. Waits for the tune to
        *  be primed when it is not yet. */
       let cursorPending = false;
+      /** True for the length of a `setTune` call. abcjs starts it by rewinding
+       *  the OLD timer (`restart()` → `timer.setProgress(0)`), which reports
+       *  the first note to `onEvent` synchronously — and `onEvent` would take
+       *  that for the reader's place, overwriting `cursorAt` just before
+       *  `onReady` puts the cursor back from it. Reported 2026-10-23: type in
+       *  the ABC, go back to the score, and the cursor was on the first note. */
+      let rebinding = false;
       const placeScoreCursor = () => {
         cursorPending = false;
         if (cursorAt === null || synthControl?.isStarted) return;
@@ -2846,6 +2916,8 @@ export function showPreviewModal(
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onEvent: (ev: any) => {
+          // The old timer being rewound by setTune, not the music moving.
+          if (rebinding) return;
           if (ev.measureStart && ev.left === null) return; // 2nd half of a tie across a measure line
           // Sent elsewhere: the note it was sent to comes through here too.
           if (keepInRegion(ev as TimingEvent)) return;
@@ -2939,12 +3011,13 @@ export function showPreviewModal(
         return Math.max(MIN_ENGRAVE_WIDTH, Math.round(inner));
       };
 
+      const scoreMeasure: { measure: ScoreMeasure | null } = { measure: null };
       const renderTune = (index: number) => {
         const ink = ABC_PAPERS[paper].ink;
         const source = injectDefaultTempo(stripForRender(shownBlock(index)));
         lastEngravedWidth = engraveWidth();
-        const visualObj = abcjs.renderAbc(notation.id, source, {
-          ...engraveOptions({ width: lastEngravedWidth, barsPerLine, ink, transpose }),
+        const visualObj = engraveScore(abcjs, notation.id, source, {
+          ...engraveOptions({ width: lastEngravedWidth, ink, transpose }),
           // abcjs listens for clicks on every score it draws, whatever it is
           // given, and paints the note it thinks was clicked as "selected" —
           // which it only repaints on the NEXT click, so a clicked note stayed
@@ -2953,7 +3026,7 @@ export function showPreviewModal(
           // in the paper's own ink so it does not turn black on a dark page.
           // `dragging` is left off: abcjs's note-dragging would edit pitches.
           selectionColor: ink,
-        });
+        }, scoreMeasure);
 
         // abcjs's warnings about this drawing are not shown here any more: they
         // belong to the ABC face, under the text they name (2026-10-19) — see
@@ -3075,7 +3148,15 @@ export function showPreviewModal(
           if (swing !== NO_SWING && swingApplies()) {
             Object.assign(audioParams, swingAudioParams(swing, visualObj[0]!.getMeterFraction(), visualObj[0]!.getPickupLength()));
           }
-          void enqueueSynth(() => synthControl.setTune(visualObj[0]!, true, audioParams).then(() => {
+          // The rewind that reports the first note runs inside the call itself,
+          // before `go()` — so the flag only has to cover the call, not the
+          // promise it returns. See `rebinding`.
+          const rebind = (): Promise<unknown> => {
+            rebinding = true;
+            try { return synthControl.setTune(visualObj[0]!, true, audioParams); }
+            finally { rebinding = false; }
+          };
+          void enqueueSynth(() => rebind().then(() => {
             // After setTune, never before: warping rebuilds the audio buffer,
             // so it needs a tune to rebuild from. Skipped when the controller
             // is already at that speed — it keeps its warp from one tune to
@@ -3415,6 +3496,22 @@ export function showPreviewModal(
       let tapKey: string | null = null;
       let tapTune: unknown = null;
       let tapPs: PlayableSource | null = null;
+      /** A click while the run plays sends it to the note clicked, the way a
+       *  tap on the stave does (asked 2026-10-24: the click moved only the
+       *  caret, and the music went on where it was). Same rule as a start from
+       *  the cursor: that note's first time round, and only inside the
+       *  passage. The run takes the new caret as its own, or a pause then play
+       *  would read "the cursor moved" and start over from it. */
+      const jumpTextRun = (run: TextRun) => {
+        const note = textCursorNote();
+        if (!note) return;
+        const here = playPlan(run.timings, note.start, null)?.start;
+        const region = textRegion();
+        if (!here || !touches(here, region.from, region.to)) return;
+        run.playedTo = -1;
+        run.caret = caretKey();
+        seekText(run, here);
+      };
       textarea.addEventListener('click', (e) => {
         clickedAt = null;
         const caret = textarea.selectionStart;
@@ -3425,10 +3522,13 @@ export function showPreviewModal(
           const box = charBox(i);
           return !!box && e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
         });
-        if (index === undefined) return;
         // The cursor is on the note clicked, whichever side of it the caret
         // went — see textCursorNote.
-        clickedAt = { caret, index };
+        if (index !== undefined) clickedAt = { caret, index };
+        // Before the bail-out below: a click between two notes moves the
+        // music too, to the next one, as it would start from there.
+        if (currentMode === 'text' && textState === 'playing' && textRun) { jumpTextRun(textRun); return; }
+        if (index === undefined) return;
         schedulePreview();
         if (currentMode !== 'text' || (textState !== 'idle' && textState !== 'paused')) return;
         if (!tapPlaysNote(appState.value)) return;
@@ -3731,11 +3831,10 @@ export function showPreviewModal(
       // Changing instrument without losing your place.
       reapplyAbcPrefs = () => redrawPreservingPlayback(() => {
         selectedProgram = appState.value.abcInstrument;
-        // The paper and the bars per line are set in that dialog too, and both
-        // belong to the ENGRAVING: re-read here so one apply hook covers
-        // everything the preferences can change about a score.
+        // The paper is set in that dialog too, and belongs to the ENGRAVING:
+        // re-read here so one apply hook covers everything the preferences can
+        // change about a score.
         paper = abcPaper(appState.value);
-        barsPerLine = abcBarsPerLine(appState.value);
         applyPaper();
         // A derived score may have just been rebuilt differently under us.
         const fresh = opts?.reloadEntry?.();
@@ -3930,6 +4029,9 @@ export function showPreviewModal(
   const onRename = opts?.onRename;
   showModal(entry.name, body, [], {
     maxWidth: modalWidth(entry),
+    // The version arrows and the Sheet / ABC tabs are pressed again and again,
+    // and every version, every face, is its own height (reported 2026-10-23).
+    pinTop: true,
     onDismiss,
     guardDismiss: (dismiss) => guardClose?.(dismiss) ?? false,
     expandable: isScore || m.startsWith('audio/') || m === 'application/pdf',

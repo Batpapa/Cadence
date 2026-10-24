@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en-ie">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>thesession-embed — local test page</title>
+<!--
+  LOCAL TESTING ONLY — never copied to dist (webpack's CopyPlugin lists its
+  files one by one). A stand-in for thesession.org/tunes/identify: the same
+  container and the same iframe attributes Jeremy uses for the widget there
+  today, with our URL in place of theirs.
+
+  The widget is loaded from the OTHER loopback name than this page
+  (localhost <-> 127.0.0.1): two different origins, so the frame is
+  cross-origin exactly as it will be on thesession.org — the microphone goes
+  through the iframe's `allow`, storage is partitioned, links have to leave
+  the frame. Both names are secure contexts, so getUserMedia works on plain
+  http.
+
+    dev server :  http://localhost:3002/thesessionEmbed/demo.html
+    built dist :  node scripts/serve-embed-demo.js  (prints its URL)
+-->
+<style>
+  html { --pale: 255,255,234; --dark: 33,0,0; }
+  body { margin: 0; padding: 2rem 5%; font-family: Lora, Georgia, serif; line-height: 1.5625;
+         background: rgb(var(--pale)); color: rgb(var(--dark)); }
+  body.dark { background: rgb(var(--dark)); color: rgb(var(--pale)); }
+  h1 { font-weight: 400; font-size: 2rem; color: hsl(30 100% 25%); border-bottom: .1875rem solid rgba(var(--dark),.04); }
+  body.dark h1 { color: hsl(30 15% 60%); }
+  h2 { font-weight: 400; font-size: 1.1rem; margin: 2.5rem 0 .5rem; }
+  code { font-size: .8rem; word-break: break-all; }
+  /* The Session's `.setting.light` box, as on the identify page. */
+  .setting { padding: 3em 1em; margin-inline: -1em; border-radius: .25em; border: .1875em double transparent;
+             background: rgb(var(--pale)); color: rgb(var(--dark)); }
+  body.dark .setting.light { border-color: rgb(var(--pale)); }
+  body.dark .setting.dark { background: rgb(var(--dark)); color: rgb(var(--pale)); }
+  label { font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>Identify a tune</h1>
+<p><label><input type="checkbox" id="darkpage"> Dark page (The Session in dark mode)</label></p>
+
+<h2>1 · Exactly the markup on thesession.org/tunes/identify (92 px strip) — no display-capture, so Capture explains itself</h2>
+<div class="setting light">
+  <iframe data-src="?links=same&amp;theme=light" allow="microphone; autoplay" title="Identify a tune"
+    style="inline-size: 100%; max-inline-size: max(536px, 33.5rem); block-size: max(92px, 5.75rem); border: none"></iframe>
+</div>
+
+<h2>2 · A taller frame: the list of everything heard appears</h2>
+<div class="setting light">
+  <iframe data-src="?links=same&amp;theme=light" allow="microphone; display-capture; autoplay" title="Identify a tune"
+    style="inline-size: 100%; block-size: 20rem; border: none"></iframe>
+</div>
+
+<h2>3 · theme=dark, links in a new tab</h2>
+<div class="setting dark">
+  <iframe data-src="?theme=dark" allow="microphone; display-capture; autoplay" title="Identify a tune"
+    style="inline-size: 100%; block-size: 14rem; border: none"></iframe>
+</div>
+
+<h2>4 · No theme (follows the system), lang=fr</h2>
+<div class="setting">
+  <iframe data-src="?lang=fr" allow="microphone; display-capture; autoplay" title="Identifier un morceau"
+    style="inline-size: 100%; max-inline-size: max(536px, 33.5rem); block-size: max(92px, 5.75rem); border: none"></iframe>
+</div>
+
+<h2>5 · Without allow="microphone" (what a site forgetting it gets)</h2>
+<div class="setting light">
+  <iframe data-src="?theme=light" title="Identify a tune"
+    style="inline-size: 100%; max-inline-size: max(536px, 33.5rem); block-size: max(92px, 5.75rem); border: none"></iframe>
+</div>
+
+<p id="where"></p>
+
+<script>
+  // ?base=/Cadence/ when serving the built dist the way GitHub Pages does.
+  var base = new URLSearchParams(location.search).get('base') || '/';
+  var other = location.hostname === '127.0.0.1' ? 'localhost' : '127.0.0.1';
+  var origin = location.protocol + '//' + other + (location.port ? ':' + location.port : '');
+  var page = origin + base + 'TuneAnalyser/thesession-embed/';
+  document.querySelectorAll('iframe[data-src]').forEach(function (f) { f.src = page + f.dataset.src; });
+  document.getElementById('where').innerHTML = 'Widget loaded from <code>' + page + '</code> (cross-origin to this page).';
+  document.getElementById('darkpage').addEventListener('change', function (e) {
+    document.body.classList.toggle('dark', e.target.checked);
+  });
+</script>
+</body>
+</html>

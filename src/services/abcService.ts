@@ -692,24 +692,6 @@ export function abcWarningRange(text: string, line: number, col: number): [numbe
   return [start + a, start + b];
 }
 
-/** How many bars a line of an engraved score aims to hold.
- *
- *  Four, because that is the carrure this music is written in: a jig or a reel
- *  is eight bars twice over, and four to a line puts the repeat exactly under
- *  its first half. It is a REQUEST — abcjs will not compress music below its
- *  own minimum, so a phone that cannot fit four at a readable size draws two or
- *  three instead, which is the point: the staff keeps its size and the line
- *  gives way. */
-export const DEFAULT_BARS_PER_LINE = 4;
-export const BARS_PER_LINE_CHOICES = [2, 3, 4, 6];
-
-export function abcBarsPerLine(user: { abcBarsPerLine?: number }): number {
-  const stored = user.abcBarsPerLine;
-  if (typeof stored !== 'number' || !Number.isFinite(stored)) return DEFAULT_BARS_PER_LINE;
-  // Clamped against the offered choices rather than trusted: this value comes
-  // back from a synced blob that an older or newer bundle may have written.
-  return BARS_PER_LINE_CHOICES.includes(stored) ? stored : DEFAULT_BARS_PER_LINE;
-}
 
 /** The swing settings offered, and what each one is called.
  *

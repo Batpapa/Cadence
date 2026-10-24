@@ -5,6 +5,7 @@ import { CadenceLogo } from './icons';
 import { ShareAppBody } from './shareAppModal';
 import { APP_BUILD, commitUrl } from '../services/updateService';
 import { isNative } from '../native/platform';
+import { devMode, toggleDevMode } from '../services/devMode';
 
 // ── "About Cadence" ──────────────────────────────────────────────────────────
 // Behind the logo, since the header redesign of 2026-10-23. It merges two
@@ -47,14 +48,33 @@ function VersionLine() {
         onPointerCancel: () => clearTimeout(pressTimer.current),
       }
     : {};
+  // Seven taps in a row switch the developer mode — see devMode.ts. Not the
+  // ones on the commit link, which leave for GitHub.
+  const taps = useRef({ n: 0, at: 0 });
+  const onClick = (e: MouseEvent) => {
+    if ((e.target as Element).closest('a')) return;
+    const now = performance.now();
+    taps.current.n = now - taps.current.at < DEV_TAP_GAP_MS ? taps.current.n + 1 : 1;
+    taps.current.at = now;
+    if (taps.current.n < DEV_TAPS) return;
+    taps.current.n = 0;
+    toggleDevMode();
+  };
   return (
-    <p class={`text-xs text-muted tabular-nums ${isNative() ? 'select-none' : ''}`} {...press}>
+    <p class={`text-xs text-muted tabular-nums ${isNative() ? 'select-none' : ''}`} {...press} onClick={onClick}>
       {t('settings.version', { version: APP_BUILD.version })}
       {' · '}
       {url ? <a href={url} target="_blank" rel="noopener" class="text-accent hover:underline">{commit}</a> : commit}
+      {/* Said where it was switched on: the only sign, and the only way to
+          know the next seven taps will switch it off. */}
+      {devMode.value && <span class="text-warn">{' · '}{t('about.devMode')}</span>}
     </p>
   );
 }
+
+const DEV_TAPS = 7;
+/** Longer than this between two taps and the count starts again. */
+const DEV_TAP_GAP_MS = 1000;
 
 function AboutBody() {
   return (

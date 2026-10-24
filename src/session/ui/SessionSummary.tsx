@@ -28,6 +28,7 @@ import {
 import { showBoundEditor, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
+import { devMode } from '../../services/devMode';
 import { appState } from '../../store';
 import { headPosition, withChains, withGaps, type ListGap } from './timelineModel';
 import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
@@ -638,7 +639,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // feedback. The bound editor listens around the bound in a loop, against a
   // waveform, so there is nothing left for it to do.
 
-  const dump = lastImportDump.value?.sessionId === session.id ? lastImportDump.value
+  // A debugging aid, offered only in developer mode: a first-time user took
+  // it for the list of tunes (2026-10-23). See devMode.ts.
+  const dump = !devMode.value ? null
+    : lastImportDump.value?.sessionId === session.id ? lastImportDump.value
     : lastLiveDump.value?.sessionId === session.id ? lastLiveDump.value
     : null;
 
