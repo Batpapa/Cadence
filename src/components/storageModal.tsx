@@ -36,7 +36,6 @@ function StorageBody() {
 
   const risk = assessStorage(effectivePersisted(report.persisted), report.usage, report.quota);
   const used = report.usage !== null ? formatBytes(report.usage) : t('storage.unknown');
-  const free = report.quota !== null && report.usage !== null ? formatBytes(report.quota - report.usage) : t('storage.unknown');
 
   const ask = () => {
     setAsking(true);
@@ -68,7 +67,10 @@ function StorageBody() {
           tone={report.persisted === true ? 'ok' : 'warn'}
         />
         <Row label={t('storage.used')} value={used} />
-        <Row label={t('storage.free')} value={free} />
+        {/* No « still available » row (removed 2026-10-26): Chromium reports a
+            made-up quota, usage + 10 GiB whatever the disk holds, so the figure
+            was false for most users — 10 GB on a phone with 3 GB left. An
+            estimate that cannot be trusted is not shown at all. */}
       </div>
 
       {(risk === 'refused' || risk === 'unknown') && (

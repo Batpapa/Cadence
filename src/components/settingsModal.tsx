@@ -32,7 +32,7 @@ import { CustomSelect } from './customSelect';
 import { clearLastUserId, deleteUser, removeUserFromOrder } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { setsMatchTuneTags } from '../services/cardRefService';
-import { refreshStorageEstimate, storageUsage, storageQuota } from '../services/storageService';
+import { refreshStorageEstimate, storageUsage } from '../services/storageService';
 import { formatBytes } from '../utils';
 import { registerOverlay } from './overlayStack';
 import { fmtDateTime, dateFormatOf, DATE_FORMATS, type DateFormat } from '../services/dateFormat';
@@ -414,6 +414,14 @@ function DriveRow() {
          Cadence links commonly circulate that way. */}
       {status !== 'connected' && isLikelyInAppBrowser() && (
         <p class="text-xs text-warn leading-relaxed -mt-1 mb-1">{t('settings.sync.inAppBrowserWarning')}</p>
+      )}
+      {/* Grey, here and nowhere else: Cadence is meant to work without Drive,
+          and someone who chose that should not be nagged about it. But the
+          risk is real — Android wiped a tester's whole library on a nearly
+          full phone, with no warning (2026-10-25) — so it is said once, where
+          the choice is made. */}
+      {status === 'disconnected' && (
+        <p class="text-xs text-muted leading-relaxed -mt-1 mb-1">{t('settings.sync.localOnlyNote')}</p>
       )}
     </>
   );
@@ -813,7 +821,7 @@ function StorageSection({ userId }: { userId: string }) {
   const [attachLocal, setAttachLocal] = useState<number | null>(null);
   const [snapBytes, setSnapBytes] = useState<number | null>(null);
   const [drive, setDrive] = useState<{ data: number | null; attachments: number | null; recordings: number | null } | null>(null);
-  const [total, setTotal] = useState<{ usage: number | null; quota: number | null } | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
   // Freeing space, or moving files in or out, changes none of the state these
   // figures are derived from — so nothing would tell them to look again. This
   // does.
@@ -843,7 +851,7 @@ function StorageSection({ userId }: { userId: string }) {
     void listSnapshots(userId).then(snaps => setSnapBytes(
       snaps.reduce<number | null>((acc, s) => (acc === null || s.bytes === null ? null : acc + s.bytes), 0),
     ));
-    void refreshStorageEstimate().then(() => setTotal({ usage: storageUsage.value, quota: storageQuota.value }));
+    void refreshStorageEstimate().then(() => setTotal(storageUsage.value));
     // appState.value, not just userId: a fresh object on every mutation, so
     // the figures follow an import, a reset, or a Drive state landing while
     // this section is on screen. Nothing else here mutates, so it is not a
@@ -888,11 +896,14 @@ function StorageSection({ userId }: { userId: string }) {
         </>}
       />
 
+      {/* What Cadence holds on this device, every user together — and no quota
+          beside it. Chromium reports a made-up one, usage + 10 GiB whatever the
+          disk holds (CalculateReportedQuota, so that a site cannot measure the
+          disk): « 56 MB / 10 GB » on a phone with 3 GB left (2026-10-25), the
+          very phone whose data Android then evicted. */}
       <Row label={t('settings.storage.device')}>
         <span class="text-sm text-muted tabular-nums">
-          {!total || total.usage === null ? unknown
-            : total.quota === null ? formatBytes(total.usage)
-              : t('settings.storage.totalValue', { used: formatBytes(total.usage), quota: formatBytes(total.quota) })}
+          {total === null ? unknown : formatBytes(total)}
         </span>
       </Row>
 

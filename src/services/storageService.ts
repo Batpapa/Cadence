@@ -100,10 +100,17 @@ export function assessStorage(
 /** What `persisted` means for the warning on this platform. In the Android app
  *  the durability half does not apply: persist() is not available to a WebView
  *  and always answers no, so the triangle would be on for everyone, for good.
- *  Measured on 2026-10-05 with the phone held at ~400 MB free (below Chromium's
- *  eviction threshold), app relaunched and written to: nothing was evicted,
- *  Android only purged caches. The capacity half — writes failing on a full
- *  origin — still applies, and still shows. */
+ *
+ *  NOT because the app is safe from eviction. The 2026-10-05 test that seemed to
+ *  show it (phone at ~400 MB free, nothing evicted) could not have shown
+ *  anything: it lasted 4 min, and Chromium's first eviction round comes 5 min
+ *  after start; and with 23 MB stored, its rule — evict only an origin holding
+ *  at least half of what is missing below 2 GiB free — ruled it out anyway. On
+ *  2026-10-25 a tester's phone at ~3 GB free lost the whole IndexedDB, with
+ *  localStorage untouched. The answer to that risk is Drive (see DriveRow's
+ *  note in settingsModal), not a triangle nobody can act on. The capacity
+ *  half is kept, though inert here: Chromium reports a made-up quota (usage +
+ *  10 GiB), so `full` cannot trigger in the app or in any Chromium browser. */
 export function effectivePersisted(persisted: boolean | null | undefined): boolean | null | undefined {
   return isNative() ? true : persisted;
 }
