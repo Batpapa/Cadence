@@ -9,8 +9,8 @@ import './embed.css';
 // ── thesession-embed: Cadence's tune recognition as a widget for The Session ──
 // Served at TuneAnalyser/thesession-embed/ and meant to sit in an iframe:
 //
-//   <iframe src="https://batpapa.github.io/Cadence/TuneAnalyser/thesession-embed/?links=same&theme=light"
-//     allow="microphone; display-capture" title="Identify tunes" style="…"></iframe>
+//   <iframe src="https://batpapa.github.io/Cadence/TuneAnalyser/thesession-embed/?links=same"
+//     allow="microphone" title="Identify tunes" style="…"></iframe>
 //
 // The same two parameters as the widget The Session embeds today, so trying
 // this one is a matter of changing the src:
@@ -19,11 +19,11 @@ import './embed.css';
 //                      `auto` follows the system;
 //   links=same       — tune links open in the embedding page, not a new tab;
 //   lang=fr          — French; English otherwise (The Session is in English);
-//   sources=mic,file — the tabs offered, in that order: mic, device, file,
-//                      link. All four by default.
-//                      `device` (the computer's sound) also needs
-//                      allow="display-capture" on the iframe, and says so
-//                      without it;
+//   sources=…        — the tabs offered, in that order, among mic, device,
+//                      file and link. mic,file by default: what Jeremy keeps
+//                      for The Session (2026-10-25). `device` (the
+//                      computer's sound) also needs allow="display-capture" on
+//                      the iframe, and says so without it;
 //   sets=on          — the "sets" box ticked from the start (off otherwise).
 //
 // Nothing here reads or writes the app's data: no user, no AppState, no
@@ -36,8 +36,9 @@ const theme = params.get('theme');
 if (theme !== 'auto') document.documentElement.classList.add(theme === 'dark' ? 'dark' : 'light');
 const lang: Lang = params.get('lang') === 'fr' ? 'fr' : 'en';
 const ALL_SOURCES: SourceKind[] = ['mic', 'device', 'file', 'link'];
+const DEFAULT_SOURCES: SourceKind[] = ['mic', 'file'];
 const asked = (params.get('sources') ?? '').split(',').filter((s): s is SourceKind => (ALL_SOURCES as string[]).includes(s));
-const sources = asked.length > 0 ? [...new Set(asked)] : ALL_SOURCES;
+const sources = asked.length > 0 ? [...new Set(asked)] : DEFAULT_SOURCES;
 const sets = params.get('sets') === 'on';
 document.documentElement.lang = lang === 'fr' ? 'fr' : 'en-ie';
 

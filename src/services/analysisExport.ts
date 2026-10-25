@@ -1,13 +1,16 @@
 import type { Analysis, Detection } from '../session/model';
-import { downloadTextFile } from '../utils';
+import { downloadBlob, downloadTextFile } from '../utils';
 import { withChains } from '../session/ui/timelineModel';
+import { buildZip, type ZipEntry } from './zip';
+import { safeFileName } from './attachmentNames';
 
 // ── Read-only exports of an analysis ─────────────────────────────────────────
 // The .cds package (sessionShareService.ts) exists to travel BACK into Cadence:
 // it carries evidence arrays, alternates, the Viterbi snapshot, optionally the
-// audio. These two carry the answer only — the setlist — for reading, for a
-// spreadsheet, or for handing to someone who does not run Cadence. Nothing here
-// re-imports, so nothing here has to stay stable across schema versions.
+// audio. The text and the CSV carry the answer only — the setlist — for
+// reading, for a spreadsheet, or for handing to someone who does not run
+// Cadence; the clips zip, the sound of each answer. Nothing here re-imports, so
+// nothing here has to stay stable across schema versions.
 //
 // Labels are English literals, matching what the card CSV export already does:
 // an exported file outlives the session that made it and is usually read
@@ -151,4 +154,44 @@ export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBrea
   });
 
   return rows.map(r => r.map(escape).join(',')).join('\r\n');
+}
+
+/** A clip's name inside a clips zip: "{index} - {tune}" and nothing else —
+ *  the analysis is already the zip's name (user's choice, 2026-10-25). Shared
+ *  with the TheSession widget's zip (thesessionEmbed/exports.ts), so the two
+ *  archives read alike.
+ *
+ *  The index is zero-padded to the count, so a file manager sorting by name
+ *  keeps the playing order past 9; it also keeps a tune played twice in two
+ *  distinct files. Cleaned as downloadBlob cleans the zip's own name: a tune
+ *  title is not a file name, and a "/" left in a zip path makes a folder. */
+export function clipEntryName(index: number, total: number, tune: string, extension: string): string {
+  const n = String(index + 1).padStart(String(total).length, '0');
+  return safeFileName(`${n} - ${tune}.${extension}`);
+}
+
+/** Every detection's clip, in playing order, in one zip (2026-10-25). The same
+ *  clip the card's "attach" cuts (clipExtract.ts): the recording's own
+ *  container, no re-encoding, the same padding. STORE zip: the entries are
+ *  compressed audio already.
+ *
+ *  All or nothing: a clip that cannot be cut fails the whole export rather
+ *  than leaving a zip that is quietly one tune short. */
+export async function exportAnalysisClipsZip(
+  session: Analysis,
+  audio: Blob,
+  nameOf: NameOf = rawName,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  // Lazy, as everywhere a clip is cut: mediabunny stays out of the main bundle.
+  const { extractClip } = await import('../session/audio/clipExtract');
+  const dets = ordered(session);
+  const entries: ZipEntry[] = [];
+  for (const [i, d] of dets.entries()) {
+    onProgress?.(i, dets.length);
+    const clip = await extractClip(audio, d.start, endOf(d, session));
+    entries.push({ name: clipEntryName(i, dets.length, nameOf(d), clip.extension), data: new Uint8Array(await clip.blob.arrayBuffer()) });
+  }
+  onProgress?.(dets.length, dets.length);
+  downloadBlob(new Blob([buildZip(entries)], { type: 'application/zip' }), `${safeName(session)}-clips.zip`);
 }

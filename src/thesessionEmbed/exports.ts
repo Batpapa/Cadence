@@ -1,5 +1,5 @@
 import { titleCaseTuneName, downloadBlob, downloadTextFile } from '../utils';
-import { analysisTextReport } from '../services/analysisExport';
+import { analysisTextReport, clipEntryName } from '../services/analysisExport';
 import { exportSessionFile } from '../services/sessionShareService';
 import { buildZip, audioExtension, type ZipEntry } from '../services/zip';
 import { provisionalEnd } from '../session/detectionState';
@@ -104,9 +104,8 @@ export async function downloadAllClips(run: Run, title: string, sound: Blob, onP
   for (const [i, d] of run.detections.entries()) {
     onProgress?.(i, total);
     const clip = await cutClip(sound, d, duration);
-    // Numbered, so the archive lists them in the order they were played.
-    const n = String(i + 1).padStart(String(total).length, '0');
-    entries.push({ name: `${n} ${clipName(d, title, duration, clip.extension)}`, data: new Uint8Array(await clip.blob.arrayBuffer()) });
+    // Named as the analyser's clips zip names them — the title is the zip's.
+    entries.push({ name: clipEntryName(i, total, nameOf(d), clip.extension), data: new Uint8Array(await clip.blob.arrayBuffer()) });
   }
   onProgress?.(total, total);
   downloadBlob(new Blob([buildZip(entries)], { type: 'application/zip' }), `${fileSafe(title)} - clips.zip`);
