@@ -1895,7 +1895,6 @@
   "thesessionEmbed.source.device": "Capture",
   "thesessionEmbed.source.file": "Fichier",
   "thesessionEmbed.source.link": "Lien",
-  "thesessionEmbed.source.cds": ".cds",
   "thesessionEmbed.link.label": "Lien vers un fichier audio ou vidéo",
   "thesessionEmbed.link.placeholder": "Lien vers un fichier audio ou vidéo",
   "thesessionEmbed.opening": "En attente du micro…",
@@ -1946,6 +1945,5 @@
   "thesessionEmbed.error.link": "Lien illisible",
   "thesessionEmbed.error.not-recording": "Pas un fichier audio ou vidéo",
   "thesessionEmbed.error.capture-not-allowed": "Capture non autorisée dans ce cadre",
-  "thesessionEmbed.error.bad-package": "Pas une analyse Cadence (.cds)",
   "thesessionEmbed.error.failed": "Une erreur est survenue"
 }

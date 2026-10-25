@@ -75,12 +75,3 @@ export async function importSessionFile(file: File): Promise<Analysis> {
   if (!file.name.endsWith('.cds')) throw new Error('Expected a .cds file');
   return applyPackage(parsePackageText(await file.text()));
 }
-
-/** A .cds read and nothing saved: the analysis and its audio, for a page that
- *  only shows them — the TheSession widget, which has no library to file it
- *  in. Throws as importSessionFile does on what is not a package. */
-export async function readSessionFile(file: File): Promise<{ session: Omit<Analysis, 'id'>; audio: Blob | null }> {
-  const pkg = parsePackageText(await file.text());
-  const audio = pkg.audioBase64 ? base64ToBlob(pkg.audioBase64, pkg.audioMimeType ?? pkg.session.mimeType) : null;
-  return { session: pkg.session, audio };
-}
