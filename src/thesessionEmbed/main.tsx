@@ -2,7 +2,7 @@
 import './publicPath';
 import { render } from 'preact';
 import type { Lang } from '../services/i18nService';
-import type { SourceKind } from './tuneFinder';
+import type { TabKind } from './tuneFinder';
 import { FinderWidget } from './FinderWidget';
 import './embed.css';
 
@@ -20,9 +20,10 @@ import './embed.css';
 //   links=same       — tune links open in the embedding page, not a new tab;
 //   lang=fr          — French; English otherwise (The Session is in English);
 //   sources=mic,file — the tabs offered, in that order: mic, device, file,
-//                      link. All four by default. `device` (the computer's
-//                      sound) also needs allow="display-capture" on the iframe,
-//                      and says so without it;
+//                      link, cds (a Cadence analysis opened). All by default.
+//                      `device` (the computer's sound) also needs
+//                      allow="display-capture" on the iframe, and says so
+//                      without it;
 //   sets=on          — the "sets" box ticked from the start (off otherwise).
 //
 // Nothing here reads or writes the app's data: no user, no AppState, no
@@ -34,8 +35,8 @@ const params = new URLSearchParams(location.search);
 const theme = params.get('theme');
 if (theme !== 'auto') document.documentElement.classList.add(theme === 'dark' ? 'dark' : 'light');
 const lang: Lang = params.get('lang') === 'fr' ? 'fr' : 'en';
-const ALL_SOURCES: SourceKind[] = ['mic', 'device', 'file', 'link'];
-const asked = (params.get('sources') ?? '').split(',').filter((s): s is SourceKind => (ALL_SOURCES as string[]).includes(s));
+const ALL_SOURCES: TabKind[] = ['mic', 'device', 'file', 'link', 'cds'];
+const asked = (params.get('sources') ?? '').split(',').filter((s): s is TabKind => (ALL_SOURCES as string[]).includes(s));
 const sources = asked.length > 0 ? [...new Set(asked)] : ALL_SOURCES;
 const sets = params.get('sets') === 'on';
 document.documentElement.lang = lang === 'fr' ? 'fr' : 'en-ie';

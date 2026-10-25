@@ -1,27 +1,38 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { tIn, type Lang } from '../services/i18nService';
-import { titleCaseTuneName, copyText, downloadTextFile } from '../utils';
-import { analysisTextReport } from '../services/analysisExport';
+import { copyText } from '../utils';
 import { TUNESET_NAME_SEPARATOR } from '../services/stateNormalise';
 import { DETECTION_TEMPORAL_CONFIG } from '../session/recognition/detectionTemporalConfig';
-import { provisionalEnd } from '../session/detectionState';
 import { withChains } from '../session/ui/timelineModel';
-import { viterbiPickOf, type Analysis, type Detection, type DetectionAlternate } from '../session/model';
-import { TuneFinder, canOfferCapture, type FinderStatus, type Run, type SourceKind } from './tuneFinder';
+import { viterbiPickOf, type Detection, type DetectionAlternate } from '../session/model';
+import { TuneFinder, canOfferCapture, type FinderStatus, type Run, type SourceKind, type TabKind } from './tuneFinder';
+import { Menu, type MenuEntry } from './Menu';
+import { GearIcon, ExportIcon, CadenceLogo, TuningForkIcon } from './icons';
+import {
+  nameOf, runDuration, runText, downloadRunText, downloadRunPackage, downloadRunAudio, downloadClip, downloadSetClip, downloadAllClips,
+} from './exports';
 
 // ── The widget ────────────────────────────────────────────────────────────────
 // The analyser's feed, pared down: the tunes in the order they were played,
 // one line each — play, when, what, how sure — and behind the confidence badge
 // the same alternatives picker, where picking a tune confirms it. Sets only
 // when asked for (a box, off by default, as the analyser's option once was);
-// no cards, no ratings: nothing here belongs to anyone. Each run exports as
-// the analyser's short text setlist.
+// no cards, no ratings: nothing here belongs to anyone.
 //
-// Above the feed, a strip: the source tabs, the one button, and what is going
-// on. A 92 px frame — what The Session gives a widget today — shows the strip
-// alone, the latest tune in it; a taller one shows the feed under it
-// (embed.css, by the frame's height).
+// Each analysis has two menus in its title, as the analyser's summary has its
+// settings and its export (2026-10-25): the gear for what the list shows —
+// the sets, the timings — and the export for what leaves the page — the text,
+// the .cds, the audio, the clips. Each tune exports its own clip.
+//
+// Above the feed, a strip: the source tabs, the one button, and one line of
+// what is going on. A 92 px frame — what The Session gives a widget today —
+// shows the strip alone, the latest tune in it; a taller one shows the feed
+// under it (embed.css, by the frame's height).
+//
+// Less is more (Jeremy, 2026-10-25, after a look on a phone): no hints, no
+// instructions — he puts those around the frame. Every line says one thing in
+// a few words, and wraps rather than being cut.
 //
 // The sources are the analyser's four — microphone, capture, file, link — as
 // tabs rather than a menu: a menu opening downwards would be cut off by the
@@ -36,8 +47,8 @@ export interface WidgetOptions {
   lang: Lang;
   /** `links=same`: tune links open in the embedding page, not a new tab. */
   sameTab: boolean;
-  /** `sources=`: the tabs offered, in this order — all four by default. */
-  sources: SourceKind[];
+  /** `sources=`: the tabs offered, in this order — all five by default. */
+  sources: TabKind[];
   /** `sets=on`: every analysis's sets box ticked from the start. */
   sets: boolean;
 }
@@ -55,14 +66,6 @@ function tr(lang: Lang, key: string, vars?: Record<string, string | number>): st
  *  words, the picker's instructions. One wording for one meaning. */
 const app = (lang: Lang, key: string) => tIn(lang, key);
 
-function fmtTime(s: number): string {
-  s = Math.max(0, Math.floor(s));
-  const h = Math.floor(s / 3600);
-  const mm = String(Math.floor((s % 3600) / 60));
-  const ss = String(s % 60).padStart(2, '0');
-  return h > 0 ? `${h}:${mm.padStart(2, '0')}:${ss}` : `${mm}:${ss}`;
-}
-
 const mb = (bytes: number) => (bytes / 1e6).toFixed(1);
 
 /** The setting that matched, not just the tune: the index is per setting. */
@@ -79,32 +82,22 @@ function bucketOf(score: number): Detection['bucket'] {
 
 const isLive = (kind: SourceKind) => kind === 'mic' || kind === 'device';
 
-const nameOf = (d: { displayName: string }) => titleCaseTuneName(d.displayName);
-
-/** How far a run reaches: its last detection's end, an open one's last window. */
-const runDuration = (run: Run) => run.detections.reduce((m, d) => Math.max(m, provisionalEnd(d)), 0);
+/** m:ss, h:mm:ss past the hour — the analyser's on-screen times. */
+function fmtTime(s: number): string {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600);
+  const mm = String(Math.floor((s % 3600) / 60));
+  const ss = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${mm.padStart(2, '0')}:${ss}` : `${mm}:${ss}`;
+}
 
 const startTime = (run: Run, lang: Lang) =>
   new Date(run.startedAt).toLocaleTimeString(lang === 'fr' ? 'fr-FR' : 'en-IE', { hour: '2-digit', minute: '2-digit' });
 
-/** "Microphone 21:40", or the file's name. */
+/** "Mic 21:40", or the file's name — or the opened analysis's, whatever its
+ *  source was. */
 function runTitle(run: Run, lang: Lang): string {
-  return isLive(run.kind) ? `${tr(lang, `source.${run.kind}`)} ${startTime(run, lang)}` : run.label;
-}
-
-/** A run as the analyser's export reads it — the same short setlist,
- *  "- Morrison's (jig)", a blank line between sets when they are shown. */
-function runReport(run: Run, lang: Lang, sets: boolean): string {
-  const analysis: Analysis = {
-    id: `run-${run.index}`,
-    name: runTitle(run, lang),
-    date: new Date(run.startedAt).toISOString(),
-    duration: runDuration(run),
-    mimeType: '',
-    source: run.kind === 'mic' ? 'live' : run.kind === 'device' ? 'device' : 'import',
-    annotations: run.detections,
-  };
-  return analysisTextReport(analysis, { nameOf, setBreaks: sets });
+  return run.label || `${tr(lang, `source.${run.kind}`)} ${startTime(run, lang)}`;
 }
 
 type TuneRef = { tuneId: string; settingId: string; displayName: string };
@@ -120,24 +113,7 @@ function TuneLink({ d, opts, className }: { d: TuneRef; opts: WidgetOptions; cla
   );
 }
 
-function TuneHeadline({ d, opts }: { d: Detection; opts: WidgetOptions }) {
-  return <><TuneLink d={d} opts={opts} className="tune" />{d.dance && <span class="detail">{d.dance}</span>}</>;
-}
-
-function Names({ items, opts }: { items: TuneRef[]; opts: WidgetOptions }) {
-  return (
-    <>
-      {items.map((d, i) => (
-        <span key={`${d.tuneId}-${i}`}>{i > 0 && ', '}<TuneLink d={d} opts={opts} /></span>
-      ))}
-    </>
-  );
-}
-
-/** Errors whose hint is the detail itself — a refusal already in words. */
-const DETAIL_IS_HINT = new Set(['link', 'failed']);
-
-function buttonLabel(status: FinderStatus, tab: SourceKind, editingLink: boolean, lang: Lang): string {
+function buttonLabel(status: FinderStatus, tab: TabKind, editingLink: boolean, lang: Lang): string {
   switch (status.kind) {
     case 'opening':
     case 'downloading':
@@ -147,7 +123,7 @@ function buttonLabel(status: FinderStatus, tab: SourceKind, editingLink: boolean
     case 'analysing':
     case 'stopping':  return tr(lang, 'stop');
   }
-  if (tab === 'file') return tr(lang, 'open');
+  if (tab === 'file' || tab === 'cds') return tr(lang, 'open');
   if (tab === 'link') return editingLink ? tr(lang, 'analyse') : tr(lang, 'newLink');
   return tr(lang, 'listen');
 }
@@ -260,8 +236,7 @@ function Alternatives({ d, opts, onPick }: { d: Detection; opts: WidgetOptions; 
     options.push({ tuneId: d.tuneId, settingId: d.settingId, displayName: d.displayName, dance: d.dance, meter: d.meter, meanScore: d.meanScore });
   }
   return (
-    <div class="alternatives">
-      <p class="howto">{app(lang, 'sessions.alternates.howToPick')}</p>
+    <div class="alternatives" title={app(lang, 'sessions.alternates.howToPick')}>
       <ul>
         {options.map(opt => {
           const selected = !!d.userConfirmed && opt.tuneId === d.tuneId;
@@ -314,6 +289,13 @@ interface RowControls {
   onToggle: () => void;
   onPick: (pick: DetectionAlternate | null) => void;
   latest: boolean;
+  /** The second line, with where it is in the recording — the gear's
+   *  "Timings". */
+  timings: boolean;
+  /** Why the clip cannot be had, or null when it can. */
+  clipOff: string | null;
+  clipBusy: boolean;
+  onClip: () => void;
 }
 
 function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
@@ -343,6 +325,7 @@ function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
           {pending && <span class="pending" title={app(lang, 'sessions.consolidating')}>⧗</span>}
           <TuneLink d={d} opts={c.opts} className="manifest-item-title" />
           {d.dance && <span class="detail">{d.dance}</span>}
+          {c.timings && <span class="when">{fmtTime(d.start)}–{open ? '' : fmtTime(d.end!)}</span>}
         </span>
         <button
           type="button"
@@ -352,39 +335,21 @@ function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
           aria-label={d.userConfirmed ? app(lang, 'sessions.alternates.confirmed') : `${word} ${pct}`}
           onClick={c.onToggle}
         >
-          {d.userConfirmed ? '✓' : <><span class="word">{word}</span> {pct}</>}
+          {/* The number alone (2026-10-25): its colour already says how sure. */}
+          {d.userConfirmed ? '✓' : pct}
           <span class="chevron" aria-hidden="true">{c.expanded ? '▴' : '▾'}</span>
         </button>
+        <button
+          type="button"
+          class="icon-button clip"
+          disabled={!!c.clipOff || c.clipBusy}
+          title={c.clipOff ?? tr(lang, 'downloadClip')}
+          aria-label={tr(lang, 'downloadClip')}
+          onClick={c.onClip}
+        >{c.clipBusy ? <span class="busy" aria-hidden="true">…</span> : <ExportIcon />}</button>
       </div>
       {c.expanded && <Alternatives d={d} opts={c.opts} onPick={c.onPick} />}
     </li>
-  );
-}
-
-/** A run's copy and download, as the analyser's export offers both. */
-function RunExport({ run, lang, sets }: { run: Run; lang: Lang; sets: boolean }) {
-  const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
-  if (run.detections.length === 0) return null;
-  return (
-    <span class="export">
-      <button
-        type="button"
-        class="link"
-        onClick={() => {
-          // copyText falls back to execCommand: a cross-origin frame is
-          // refused the async clipboard unless its iframe allows it.
-          void copyText(runReport(run, lang, sets)).then(ok => {
-            setCopied(ok ? 'yes' : 'failed');
-            setTimeout(() => setCopied('no'), 1500);
-          });
-        }}
-      >{copied === 'no' ? tr(lang, 'copy') : app(lang, copied === 'yes' ? 'common.copied' : 'common.copyFailed')}</button>
-      <button
-        type="button"
-        class="link"
-        onClick={() => downloadTextFile(runReport(run, lang, sets), `${runTitle(run, lang).replace(/[^\w-]+/g, '_')}-tunes.txt`, 'text/plain;charset=utf-8')}
-      >{tr(lang, 'download')}</button>
-    </span>
   );
 }
 
@@ -399,6 +364,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const finder = finderRef.current;
   const meterRef = useRef<HTMLSpanElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cdsRef = useRef<HTMLInputElement>(null);
   const urlRef = useRef<HTMLInputElement>(null);
   /** The analyses, which scroll together. */
   const runsRef = useRef<HTMLDivElement>(null);
@@ -411,7 +377,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const player = usePlayer(finder);
 
   const [tabs] = useState(() => opts.sources.filter(k => k !== 'device' || canOfferCapture()));
-  const [tab, setTab] = useState<SourceKind>(tabs[0] ?? 'mic');
+  const [tab, setTab] = useState<TabKind>(tabs[0] ?? 'mic');
   /** The tab's own invitation (and the link's field) rather than the last
    *  run's result — true from a tab change until the next run starts. */
   const [fresh, setFresh] = useState(true);
@@ -419,12 +385,18 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const [dragOver, setDragOver] = useState(false);
   /** The detection whose alternatives are shown, as `${run}:${id}`. */
   const [expanded, setExpanded] = useState<string | null>(null);
-  /** Per analysis, as an analysis is where a set is: the box in its title. */
-  /** The pitch control open in the strip. */
-  const [pitchOpen, setPitchOpen] = useState(false);
+  /** The instruments' pitch, as heard (see flip). */
   const [heard, setHeard] = useState(0);
+  /** Per analysis, as an analysis is where a set is: the box in its title. */
   const [setsShown, setSetsShown] = useState<ReadonlyMap<number, boolean>>(new Map());
   const showsSets = (run: Run) => setsShown.get(run.index) ?? opts.sets;
+  /** Per analysis too: where each tune is in it, under its name. */
+  const [timingsShown, setTimingsShown] = useState<ReadonlySet<number>>(new Set());
+  const showsTimings = (run: Run) => timingsShown.has(run.index);
+  /** An export still being made (`run:…` for a whole analysis, `run:id` for a
+   *  clip), and a word to say how it went, under the analysis's title. */
+  const [working, setWorking] = useState<ReadonlySet<string>>(new Set());
+  const [notes, setNotes] = useState<ReadonlyMap<number, string>>(new Map());
   /** The runs folded down to their title. A new run folds the ones before it,
    *  so that it has the room; any can be opened again. */
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
@@ -438,13 +410,6 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const last = runs[runs.length - 1];
   const activeRun = busy ? last : undefined;
   const latestId = activeRun?.detections[activeRun.detections.length - 1]?.id;
-
-  // The elapsed time, once a second, only while listening.
-  useEffect(() => {
-    if (!listening) return;
-    const id = setInterval(rerender, 1000);
-    return () => clearInterval(id);
-  }, [listening]);
 
   // The level meter, written straight to the DOM: a render per frame for one
   // CSS variable would be absurd. Reads the finder through its ref only.
@@ -524,7 +489,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     return next;
   });
 
-  const chooseTab = (k: SourceKind) => {
+  const chooseTab = (k: TabKind) => {
     if (busy) return;
     finder.dismissError();
     setTab(k);
@@ -543,6 +508,11 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     finder.analyseFile(file);
   };
 
+  const openPackage = (file: File) => {
+    startRun();
+    void finder.openPackage(file);
+  };
+
   const submitLink = () => {
     if (!url.trim()) return;
     startRun();
@@ -554,6 +524,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     // Each branch reaches its prompt or picker synchronously: both need the
     // click's own activation.
     if (tab === 'file') { fileRef.current?.click(); return; }
+    if (tab === 'cds') { cdsRef.current?.click(); return; }
     if (tab === 'link') {
       if (editingLink) submitLink();
       else setFresh(true);
@@ -563,29 +534,11 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     finder.startLive(tab);
   };
 
-  // ── The strip: what is going on, and in a 92 px frame the latest answer ──
+  // ── The strip: one line of what is going on — in a 92 px frame, the answer ──
 
-  /** The latest tune of a run, and the ones before it — which only a frame
-   *  too short for the feed shows (`.compact-only`). */
-  const latestOf = (run: Run, state: ComponentChildren) => {
-    const tunes = run.detections;
-    const latest = tunes[tunes.length - 1];
-    if (!latest) return null;
-    const before: TuneRef[] = [];
-    for (let i = tunes.length - 2; i >= 0 && before.length < 3; i--) {
-      if (tunes[i]!.tuneId !== latest.tuneId && !before.some(b => b.tuneId === tunes[i]!.tuneId)) before.push(tunes[i]!);
-    }
-    return {
-      headline: <TuneHeadline d={latest} opts={opts} />,
-      sub: <>
-        {state}
-        {before.length > 0 && <span class="compact-only">{state && ' · '}{tr(lang, 'earlier')} <Names items={before} opts={opts} /></span>}
-      </>,
-    };
-  };
-
-  let headline: ComponentChildren;
-  let sub: ComponentChildren;
+  /** A tune as the strip shows it: its name and its type. */
+  const tuneLine = (d: Detection) => <><TuneLink d={d} opts={opts} className="tune" />{d.dance && <span class="detail">{d.dance}</span>}</>;
+  const status_ = (text: string) => <span class="status">{text}</span>;
 
   // A file takes the pitch it starts with: the control waits for the end.
   const pitchLocked = busy && !!activeRun && !isLive(activeRun.kind);
@@ -596,61 +549,54 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     finder.setPitchShift(flip(next));
   };
 
-  if (pitchOpen && !pitchLocked) {
-    headline = (
-      <span class="pitch">
+  let line: ComponentChildren = null;
+  /** A recording's progress, drawn rather than written. */
+  let progress: number | null = null;
+
+  const latest = activeRun?.detections[activeRun.detections.length - 1];
+
+  /** The pitch's panel: the stepper, and which way in words — the sign alone
+   *  was the whole trouble with the analyser's first stepper. */
+  const pitchPanel = (
+    <div class="pitch-panel">
+      <div class="pitch-head">{tr(lang, 'pitch')}</div>
+      <div class="pitch">
         <button type="button" class="step" disabled={heard <= -12} onClick={() => stepPitch(-1)} aria-label="−1">−</button>
-        <span class={`value${heard === 0 ? '' : ' set'}`}>{heard === 0 ? '0' : signed(heard)}</span>
+        <span class={`value${heard === 0 ? '' : ' shifted'}`}>{heard === 0 ? '0' : signed(heard)}</span>
         <button type="button" class="step" disabled={heard >= 12} onClick={() => stepPitch(1)} aria-label="+1">+</button>
-        <button type="button" class="link done" onClick={() => setPitchOpen(false)}>{tr(lang, 'pitch.done')}</button>
-      </span>
-    );
-    sub = <>{app(lang, 'sessions.pitchShift.question')} <strong>{pitchDescription(lang, heard)}</strong></>;
-  } else if (status.kind === 'error') {
-    headline = <span class="status">{tr(lang, `error.${status.error}`)}</span>;
-    sub = DETAIL_IS_HINT.has(status.error) ? status.detail : tr(lang, `error.${status.error}.hint`, { n: status.detail });
+      </div>
+      <p class="pitch-words">{app(lang, 'sessions.pitchShift.question')} <strong>{pitchDescription(lang, heard)}</strong></p>
+    </div>
+  );
+
+  if (status.kind === 'error') {
+    // One short sentence; a refusal's own words, when there are some, on hover.
+    line = <span class="status" title={status.detail || undefined}>{tr(lang, `error.${status.error}`, { n: status.detail })}</span>;
   } else if (status.kind === 'opening') {
-    const device = finder.running === 'device';
-    headline = <span class="status">{tr(lang, device ? 'opening.device' : 'opening')}</span>;
-    sub = tr(lang, device ? 'opening.device.hint' : 'opening.hint');
+    line = status_(tr(lang, finder.running === 'device' ? 'opening.device' : 'opening'));
   } else if (status.kind === 'downloading') {
-    headline = <span class="status">{status.total
+    line = status_(status.total
       ? tr(lang, 'downloadingLinkOf', { mb: mb(status.received), total: mb(status.total) })
-      : tr(lang, 'downloadingLink', { mb: mb(status.received) })}</span>;
-    sub = last?.label;
+      : tr(lang, 'downloadingLink', { mb: mb(status.received) }));
   } else if (status.kind === 'checking') {
-    headline = <span class="status">{tr(lang, 'checking')}</span>;
-    sub = last?.label;
+    line = status_(tr(lang, 'checking'));
   } else if (status.kind === 'loading') {
-    headline = <span class="status">{loadingText(status, lang)}</span>;
-    sub = tr(lang, 'loading.hint');
-  } else if (activeRun && !isLive(activeRun.kind)) {
-    // Analysing a recording, or finishing it.
-    const pct = status.kind === 'analysing' && status.totalS > 0 ? Math.min(100, Math.round(status.analyzedS / status.totalS * 100)) : 100;
-    const progress = tr(lang, 'analysingProgress', { pct, name: activeRun.label });
-    const shown = latestOf(activeRun, progress);
-    headline = shown?.headline ?? <span class="status">{tr(lang, 'analysing')}</span>;
-    sub = shown?.sub ?? progress;
+    line = status_(loadingText(status, lang));
   } else if (activeRun) {
-    // Listening, or stopping.
-    const time = fmtTime((Date.now() - finder.listeningSince) / 1000);
-    const state = listening ? tr(lang, 'listeningFor', { time }) : tr(lang, 'stopping');
-    const shown = latestOf(activeRun, state);
-    headline = shown?.headline ?? <span class="status">{tr(lang, listening ? 'listening' : 'stopping')}</span>;
-    sub = shown?.sub ?? (listening ? tr(lang, 'listening.hint', { time }) : null);
-  } else if (last && !fresh) {
-    // A run just over: its answer, until another tab is chosen.
-    const n = new Set(last.detections.map(d => d.tuneId)).size;
-    if (isLive(last.kind) && n > 0) {
-      const shown = latestOf(last, null)!;
-      headline = shown.headline;
-      sub = <>{tr(lang, 'tunesHeard', { n })}{shown.sub}</>;
-    } else {
-      headline = <span class="status">{n === 0 ? tr(lang, 'noneFound') : tr(lang, n === 1 ? 'tuneFound' : 'tunesFound', { n })}</span>;
-      sub = last.label || null;
+    // Listening or analysing: the latest tune, as soon as there is one.
+    line = latest ? tuneLine(latest) : status_(tr(lang, status.kind === 'stopping' ? 'stopping' : isLive(activeRun.kind) ? 'listening' : 'analysing'));
+    if (!isLive(activeRun.kind)) {
+      progress = status.kind === 'analysing' && status.totalS > 0 ? Math.min(1, status.analyzedS / status.totalS) : 1;
     }
+  } else if (last && !fresh) {
+    // A run just over: its latest tune when listened to, how many in a file.
+    const n = new Set(last.detections.map(d => d.tuneId)).size;
+    const end = last.detections[last.detections.length - 1];
+    line = isLive(last.kind) && end
+      ? tuneLine(end)
+      : status_(n === 0 ? tr(lang, 'noneFound') : tr(lang, n === 1 ? 'tuneFound' : 'tunesFound', { n }));
   } else if (editingLink) {
-    headline = (
+    line = (
       <input
         ref={urlRef}
         class="url"
@@ -664,13 +610,88 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitLink(); } }}
       />
     );
-    sub = tr(lang, 'link.hint');
-  } else {
-    headline = <span class="status">{tr(lang, `idle.${tab}`)}</span>;
-    sub = tr(lang, `idle.${tab}.hint`);
   }
 
-  const canDrop = tabs.includes('file');
+  const canDrop = tabs.includes('file') || tabs.includes('cds');
+
+  const note = (run: Run, text: string) => {
+    setNotes(prev => new Map(prev).set(run.index, text));
+    setTimeout(() => setNotes(prev => {
+      if (prev.get(run.index) !== text) return prev;
+      const next = new Map(prev);
+      next.delete(run.index);
+      return next;
+    }), 2500);
+  };
+
+  /** Runs an export that takes a moment, marked as working meanwhile. A
+   *  failure is said under the title: a frame on someone else's site is
+   *  refused alert(). */
+  const exporting = (key: string, run: Run, job: () => Promise<void>) => {
+    setWorking(prev => new Set(prev).add(key));
+    job()
+      .catch(err => {
+        console.error('[thesession-embed] export failed', err);
+        note(run, tr(lang, 'exportFailed'));
+      })
+      .finally(() => setWorking(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      }));
+  };
+
+  /** The sound a run's clips and audio come from, or why there is none. */
+  const soundOff = (run: Run): string | null => finder.sound(run.index) ? null : tr(lang, 'cantPlay');
+
+  const gearEntries = (run: Run): MenuEntry[] => [
+    {
+      kind: 'toggle', label: tr(lang, 'showSets'), checked: showsSets(run),
+      onChange: on => setSetsShown(prev => new Map(prev).set(run.index, on)),
+    },
+    {
+      kind: 'toggle', label: tr(lang, 'timings'), checked: showsTimings(run),
+      onChange: on => setTimingsShown(prev => {
+        const next = new Set(prev);
+        if (on) next.add(run.index); else next.delete(run.index);
+        return next;
+      }),
+    },
+  ];
+
+  const exportEntries = (run: Run): MenuEntry[] => {
+    const title = runTitle(run, lang);
+    const textOpts = { sets: showsSets(run), timings: showsTimings(run) };
+    const noTune = run.detections.length === 0;
+    const off = soundOff(run);
+    const withSound = (job: (sound: Blob) => Promise<void>) => () => {
+      const sound = finder.sound(run.index);
+      if (sound) exporting(`${run.index}:…`, run, async () => job(await sound));
+    };
+    return [
+      {
+        kind: 'action', label: tr(lang, 'copyText'), disabled: noTune,
+        onClick: () => {
+          // copyText falls back to execCommand: a cross-origin frame is
+          // refused the async clipboard unless its iframe allows it.
+          void copyText(runText(run, title, textOpts)).then(ok => note(run, app(lang, ok ? 'common.copied' : 'common.copyFailed')));
+        },
+      },
+      { kind: 'action', label: tr(lang, 'downloadText'), disabled: noTune, onClick: () => downloadRunText(run, title, textOpts) },
+      {
+        kind: 'action', label: tr(lang, 'downloadCds'), disabled: noTune,
+        onClick: () => exporting(`${run.index}:…`, run, async () => {
+          const sound = finder.sound(run.index);
+          await downloadRunPackage(run, title, sound ? await sound : null);
+        }),
+      },
+      { kind: 'action', label: tr(lang, 'downloadAudio'), disabled: !!off, hint: off ?? undefined, onClick: withSound(async sound => downloadRunAudio(title, sound)) },
+      {
+        kind: 'action', label: tr(lang, 'downloadClips'), disabled: !!off || noTune, hint: off ?? undefined,
+        onClick: withSound(sound => downloadAllClips(run, title, sound)),
+      },
+    ];
+  };
 
   const rowControls = (run: Run, d: Detection, inProgress: boolean): RowControls => {
     const key = `${run.index}:${d.id}`;
@@ -687,6 +708,14 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
       onToggle: () => setExpanded(expanded === key ? null : key),
       onPick: pick => finder.confirm(run.index, d.id, pick),
       latest: inProgress && d.id === latestId,
+      timings: showsTimings(run),
+      // A tune still being heard has no end to cut at yet.
+      clipOff: soundOff(run) ?? (d.end === null ? tr(lang, 'clipAfterEnd') : null),
+      clipBusy: working.has(key),
+      onClip: () => {
+        const sound = finder.sound(run.index);
+        if (sound) exporting(key, run, async () => downloadClip(run, runTitle(run, lang), d, await sound));
+      },
     };
   };
 
@@ -700,11 +729,26 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
       if (item.kind === 'gap') return null;
       if (item.kind === 'ann') return row(item.ann);
       const members = item.members.map(m => m.ann);
+      const setName = members.map(nameOf).join(TUNESET_NAME_SEPARATOR);
+      const key = `${run.index}:set-${members[0]!.id}`;
+      // Its clip, as each tune has its own: once the set has ended.
+      const clipOff = soundOff(run) ?? (members[members.length - 1]!.end === null ? tr(lang, 'clipAfterEnd') : null);
       return (
         <li key={`set-${members[0]!.id}`} class="set">
           <div class="set-head">
             <span class="set-label">{app(lang, 'sessions.set.label')}</span>
-            <span class="set-names">{members.map(nameOf).join(TUNESET_NAME_SEPARATOR)}</span>
+            <span class="set-names">{setName}</span>
+            <button
+              type="button"
+              class="icon-button clip"
+              disabled={!!clipOff || working.has(key)}
+              title={clipOff ?? app(lang, 'sessions.set.downloadClip')}
+              aria-label={app(lang, 'sessions.set.downloadClip')}
+              onClick={() => {
+                const sound = finder.sound(run.index);
+                if (sound) exporting(key, run, async () => downloadSetClip(run, runTitle(run, lang), members, setName, await sound));
+              }}
+            >{working.has(key) ? <span class="busy" aria-hidden="true">…</span> : <ExportIcon />}</button>
           </div>
           <ol>{members.map(row)}</ol>
         </li>
@@ -726,8 +770,14 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
         const file = e.dataTransfer?.files[0];
         if (!canDrop || busy || !file) return;
         e.preventDefault();
-        setTab('file');
-        analyseFile(file);
+        if (/\.cds$/i.test(file.name)) {
+          if (!tabs.includes('cds')) return;
+          setTab('cds');
+          openPackage(file);
+        } else if (tabs.includes('file')) {
+          setTab('file');
+          analyseFile(file);
+        }
       }}
     >
       <div class="top">
@@ -746,15 +796,22 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
             ))}
           </div>
         )}
-        <button
-          type="button"
-          class={`source pitch-toggle${heard === 0 ? '' : ' set'}`}
-          aria-pressed={pitchOpen}
+        {/* Always in sight, at the end of the tabs' line (the user's call): the
+            mark alone where the frame is too narrow for the words. */}
+        <a class="credit" href={CADENCE_URL} target="_blank" rel="noopener" title={tr(lang, 'credit')}>
+          <span class="credit-words">{tr(lang, 'credit')}</span>
+          <CadenceLogo glyph size={20} />
+        </a>
+        {/* The pitch, behind the analyser's own tuning fork — with its value
+            beside it once set, so a shifted analysis never looks like a plain
+            one. */}
+        <Menu
+          class="pitch-toggle"
+          icon={<><TuningForkIcon size={15} />{heard !== 0 && <span class="pitch-value">{signed(heard)}</span>}</>}
+          label={pitchLocked ? tr(lang, 'pitch.locked') : app(lang, 'sessions.pitchShift.hint')}
           disabled={pitchLocked}
-          title={pitchLocked ? tr(lang, 'pitch.locked') : app(lang, 'sessions.pitchShift.hint')}
-          onClick={() => setPitchOpen(!pitchOpen)}
-        >{tr(lang, 'pitch')}{heard !== 0 && ` ${signed(heard)}`}</button>
-        <a class="credit" href={CADENCE_URL} target="_blank" rel="noopener">{tr(lang, 'credit')}</a>
+          entries={[{ kind: 'content', key: 'pitch', content: pitchPanel }]}
+        />
       </div>
       <div class="strip">
         <span class={`meter${listening ? ' live' : ''}`} ref={meterRef}>
@@ -767,9 +824,19 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
           >{buttonLabel(status, tab, editingLink, lang)}</button>
         </span>
         <div class="text">
-          <div class="headline" aria-live="polite">{headline}</div>
-          <div class="sub">{sub}</div>
+          <div class="headline" aria-live="polite">{line}</div>
         </div>
+        {progress !== null && (
+          <span
+            class="progress"
+            role="progressbar"
+            aria-label={tr(lang, 'analysingProgress', { name: activeRun?.label ?? '', pct: Math.round(progress * 100) })}
+            aria-valuenow={Math.round(progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            style={{ '--p': String(progress) }}
+          />
+        )}
       </div>
       <input
         ref={fileRef}
@@ -781,6 +848,18 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
           const file = input.files?.[0];
           input.value = ''; // the same file again is a new analysis
           if (file) analyseFile(file);
+        }}
+      />
+      <input
+        ref={cdsRef}
+        type="file"
+        accept=".cds"
+        hidden
+        onChange={e => {
+          const input = e.target as HTMLInputElement;
+          const file = input.files?.[0];
+          input.value = '';
+          if (file) openPackage(file);
         }}
       />
       {runs.length > 0 && (
@@ -796,23 +875,21 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
                   <h2>
                     <button type="button" class="fold" aria-expanded={open} onClick={() => toggleRun(run.index)}>
                       <span class="chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
-                      <span class="title">{isLive(run.kind) ? tr(lang, `source.${run.kind}`) : run.label}</span>
-                      {isLive(run.kind) && <span class="started">{startTime(run, lang)}</span>}
+                      <span class="title">{run.label || tr(lang, `source.${run.kind}`)}</span>
+                      {!run.label && <span class="started">{startTime(run, lang)}</span>}
                       <span class="count">{n}</span>
                     </button>
-                    <label class="sets">
-                      <input
-                        type="checkbox"
-                        checked={showsSets(run)}
-                        onChange={e => {
-                          const on = (e.target as HTMLInputElement).checked;
-                          setSetsShown(prev => new Map(prev).set(run.index, on));
-                        }}
-                      />
-                      {tr(lang, 'showSets')}
-                    </label>
-                    {!inProgress && <RunExport run={run} lang={lang} sets={showsSets(run)} />}
+                    <Menu icon={<GearIcon size={15} />} label={tr(lang, 'display')} entries={gearEntries(run)} />
+                    <Menu
+                      icon={<ExportIcon size={15} />}
+                      label={tr(lang, 'export')}
+                      entries={exportEntries(run)}
+                      // The whole analysis, once it is whole.
+                      disabled={inProgress}
+                      busy={working.has(`${run.index}:…`)}
+                    />
                   </h2>
+                  {notes.has(run.index) && <p class="note" role="status">{notes.get(run.index)}</p>}
                   {open && (run.detections.length === 0 && !inProgress
                     ? <p class="none">{tr(lang, 'noneFound')}</p>
                     : (
