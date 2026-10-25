@@ -141,6 +141,10 @@ export class TuneFinder {
 
   status: FinderStatus = { kind: 'idle' };
   listeningSince = 0;
+  /** The analyser's manual transposition, ENGINE sign (see
+   *  PitchShiftControl.tsx: a session a tone down is +2 here). Live-adjustable
+   *  while listening; a file takes the value it starts with. */
+  private pitchShift = 0;
 
   constructor(private readonly onChange: () => void) {}
 
@@ -180,6 +184,18 @@ export class TuneFinder {
   }
 
   /** Signal level 0–1 for the meter (poll from the UI). */
+  /** In the engine's sign — the widget flips it, as Cadence does. */
+  setPitchShift(semitones: number): void {
+    this.pitchShift = semitones;
+    // Only a live run takes it on the way: a file analysed at two pitches
+    // would be wrong at one of them (the analyser's own rule, 2026-09-13).
+    if (this.active && (this.active.kind === 'mic' || this.active.kind === 'device')) {
+      this.recognition?.setPitchShift(semitones);
+    }
+  }
+
+  getPitchShift(): number { return this.pitchShift; }
+
   level(): number {
     return this.status.kind === 'listening' ? this.live?.getLevel() ?? 0 : 0;
   }
@@ -363,6 +379,7 @@ export class TuneFinder {
         }
       },
     }, fromFile ? { hopS: HOP_S_IMPORT } : {});
+    if (this.pitchShift !== 0) recognition.setPitchShift(this.pitchShift);
     this.recognition = recognition;
     return recognition;
   }
