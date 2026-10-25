@@ -6,7 +6,7 @@ import { TUNESET_NAME_SEPARATOR } from '../services/stateNormalise';
 import { DETECTION_TEMPORAL_CONFIG } from '../session/recognition/detectionTemporalConfig';
 import { withChains } from '../session/ui/timelineModel';
 import { viterbiPickOf, type Detection, type DetectionAlternate } from '../session/model';
-import { TuneFinder, canOfferCapture, type FinderStatus, type Run, type SourceKind, type TabKind } from './tuneFinder';
+import { TuneFinder, canOfferCapture, type FinderStatus, type Run, type SourceKind } from './tuneFinder';
 import { Menu, type MenuEntry } from './Menu';
 import { GearIcon, ExportIcon, CadenceLogo, TuningForkIcon } from './icons';
 import {
@@ -47,8 +47,8 @@ export interface WidgetOptions {
   lang: Lang;
   /** `links=same`: tune links open in the embedding page, not a new tab. */
   sameTab: boolean;
-  /** `sources=`: the tabs offered, in this order — all five by default. */
-  sources: TabKind[];
+  /** `sources=`: the tabs offered, in this order — all four by default. */
+  sources: SourceKind[];
   /** `sets=on`: every analysis's sets box ticked from the start. */
   sets: boolean;
 }
@@ -94,8 +94,7 @@ function fmtTime(s: number): string {
 const startTime = (run: Run, lang: Lang) =>
   new Date(run.startedAt).toLocaleTimeString(lang === 'fr' ? 'fr-FR' : 'en-IE', { hour: '2-digit', minute: '2-digit' });
 
-/** "Mic 21:40", or the file's name — or the opened analysis's, whatever its
- *  source was. */
+/** "Mic 21:40", or the file's name. */
 function runTitle(run: Run, lang: Lang): string {
   return run.label || `${tr(lang, `source.${run.kind}`)} ${startTime(run, lang)}`;
 }
@@ -113,7 +112,7 @@ function TuneLink({ d, opts, className }: { d: TuneRef; opts: WidgetOptions; cla
   );
 }
 
-function buttonLabel(status: FinderStatus, tab: TabKind, editingLink: boolean, lang: Lang): string {
+function buttonLabel(status: FinderStatus, tab: SourceKind, editingLink: boolean, lang: Lang): string {
   switch (status.kind) {
     case 'opening':
     case 'downloading':
@@ -123,7 +122,7 @@ function buttonLabel(status: FinderStatus, tab: TabKind, editingLink: boolean, l
     case 'analysing':
     case 'stopping':  return tr(lang, 'stop');
   }
-  if (tab === 'file' || tab === 'cds') return tr(lang, 'open');
+  if (tab === 'file') return tr(lang, 'open');
   if (tab === 'link') return editingLink ? tr(lang, 'analyse') : tr(lang, 'newLink');
   return tr(lang, 'listen');
 }
@@ -364,7 +363,6 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const finder = finderRef.current;
   const meterRef = useRef<HTMLSpanElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const cdsRef = useRef<HTMLInputElement>(null);
   const urlRef = useRef<HTMLInputElement>(null);
   /** The analyses, which scroll together. */
   const runsRef = useRef<HTMLDivElement>(null);
@@ -377,7 +375,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const player = usePlayer(finder);
 
   const [tabs] = useState(() => opts.sources.filter(k => k !== 'device' || canOfferCapture()));
-  const [tab, setTab] = useState<TabKind>(tabs[0] ?? 'mic');
+  const [tab, setTab] = useState<SourceKind>(tabs[0] ?? 'mic');
   /** The tab's own invitation (and the link's field) rather than the last
    *  run's result — true from a tab change until the next run starts. */
   const [fresh, setFresh] = useState(true);
@@ -489,7 +487,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     return next;
   });
 
-  const chooseTab = (k: TabKind) => {
+  const chooseTab = (k: SourceKind) => {
     if (busy) return;
     finder.dismissError();
     setTab(k);
@@ -508,11 +506,6 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     finder.analyseFile(file);
   };
 
-  const openPackage = (file: File) => {
-    startRun();
-    void finder.openPackage(file);
-  };
-
   const submitLink = () => {
     if (!url.trim()) return;
     startRun();
@@ -524,7 +517,6 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     // Each branch reaches its prompt or picker synchronously: both need the
     // click's own activation.
     if (tab === 'file') { fileRef.current?.click(); return; }
-    if (tab === 'cds') { cdsRef.current?.click(); return; }
     if (tab === 'link') {
       if (editingLink) submitLink();
       else setFresh(true);
@@ -612,7 +604,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     );
   }
 
-  const canDrop = tabs.includes('file') || tabs.includes('cds');
+  const canDrop = tabs.includes('file');
 
   const note = (run: Run, text: string) => {
     setNotes(prev => new Map(prev).set(run.index, text));
@@ -770,14 +762,8 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
         const file = e.dataTransfer?.files[0];
         if (!canDrop || busy || !file) return;
         e.preventDefault();
-        if (/\.cds$/i.test(file.name)) {
-          if (!tabs.includes('cds')) return;
-          setTab('cds');
-          openPackage(file);
-        } else if (tabs.includes('file')) {
-          setTab('file');
-          analyseFile(file);
-        }
+        setTab('file');
+        analyseFile(file);
       }}
     >
       <div class="top">
@@ -848,18 +834,6 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
           const file = input.files?.[0];
           input.value = ''; // the same file again is a new analysis
           if (file) analyseFile(file);
-        }}
-      />
-      <input
-        ref={cdsRef}
-        type="file"
-        accept=".cds"
-        hidden
-        onChange={e => {
-          const input = e.target as HTMLInputElement;
-          const file = input.files?.[0];
-          input.value = '';
-          if (file) openPackage(file);
         }}
       />
       {runs.length > 0 && (
