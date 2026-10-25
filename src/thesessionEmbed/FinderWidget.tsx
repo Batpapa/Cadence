@@ -160,6 +160,24 @@ function loadingText(status: Extract<FinderStatus, { kind: 'loading' }>, lang: L
   return tr(lang, 'preparing');
 }
 
+// ── The instruments' pitch ──
+// The analyser's control (PitchShiftControl.tsx), its sign and its words: the
+// value is how the instruments SOUND against the written tune, negative =
+// lower, and the engine takes the opposite. Inline, in place of the strip's
+// text: a dialog would not fit in a 92 px frame.
+
+const flip = (semitones: number) => -semitones;
+const signed = (heard: number) => (heard > 0 ? `+${heard}` : String(heard));
+
+function pitchDescription(lang: Lang, heard: number): string {
+  if (heard === 0) return app(lang, 'sessions.pitchShift.asWritten');
+  const dir = heard < 0 ? 'lower' : 'higher';
+  const n = Math.abs(heard);
+  if (n === 1) return app(lang, `sessions.pitchShift.semitone.${dir}`);
+  if (n === 2) return app(lang, `sessions.pitchShift.tone.${dir}`);
+  return app(lang, `sessions.pitchShift.semitones.${dir}`).replace('{n}', String(n));
+}
+
 // ── Playing a detection ──
 
 /** One player for the whole widget, as the analyser's summary has one: a
@@ -402,6 +420,9 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   /** The detection whose alternatives are shown, as `${run}:${id}`. */
   const [expanded, setExpanded] = useState<string | null>(null);
   /** Per analysis, as an analysis is where a set is: the box in its title. */
+  /** The pitch control open in the strip. */
+  const [pitchOpen, setPitchOpen] = useState(false);
+  const [heard, setHeard] = useState(0);
   const [setsShown, setSetsShown] = useState<ReadonlyMap<number, boolean>>(new Map());
   const showsSets = (run: Run) => setsShown.get(run.index) ?? opts.sets;
   /** The runs folded down to their title. A new run folds the ones before it,
@@ -566,7 +587,26 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   let headline: ComponentChildren;
   let sub: ComponentChildren;
 
-  if (status.kind === 'error') {
+  // A file takes the pitch it starts with: the control waits for the end.
+  const pitchLocked = busy && !!activeRun && !isLive(activeRun.kind);
+  const stepPitch = (delta: number) => {
+    const next = Math.max(-12, Math.min(12, heard + delta));
+    if (next === heard) return;
+    setHeard(next);
+    finder.setPitchShift(flip(next));
+  };
+
+  if (pitchOpen && !pitchLocked) {
+    headline = (
+      <span class="pitch">
+        <button type="button" class="step" disabled={heard <= -12} onClick={() => stepPitch(-1)} aria-label="−1">−</button>
+        <span class={`value${heard === 0 ? '' : ' set'}`}>{heard === 0 ? '0' : signed(heard)}</span>
+        <button type="button" class="step" disabled={heard >= 12} onClick={() => stepPitch(1)} aria-label="+1">+</button>
+        <button type="button" class="link done" onClick={() => setPitchOpen(false)}>{tr(lang, 'pitch.done')}</button>
+      </span>
+    );
+    sub = <>{app(lang, 'sessions.pitchShift.question')} <strong>{pitchDescription(lang, heard)}</strong></>;
+  } else if (status.kind === 'error') {
     headline = <span class="status">{tr(lang, `error.${status.error}`)}</span>;
     sub = DETAIL_IS_HINT.has(status.error) ? status.detail : tr(lang, `error.${status.error}.hint`, { n: status.detail });
   } else if (status.kind === 'opening') {
@@ -593,12 +633,11 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     sub = shown?.sub ?? progress;
   } else if (activeRun) {
     // Listening, or stopping.
-    const state = listening
-      ? tr(lang, 'listeningFor', { time: fmtTime((Date.now() - finder.listeningSince) / 1000) })
-      : tr(lang, 'stopping');
+    const time = fmtTime((Date.now() - finder.listeningSince) / 1000);
+    const state = listening ? tr(lang, 'listeningFor', { time }) : tr(lang, 'stopping');
     const shown = latestOf(activeRun, state);
     headline = shown?.headline ?? <span class="status">{tr(lang, listening ? 'listening' : 'stopping')}</span>;
-    sub = shown?.sub ?? (listening ? tr(lang, 'listening.hint', { time: fmtTime((Date.now() - finder.listeningSince) / 1000) }) : null);
+    sub = shown?.sub ?? (listening ? tr(lang, 'listening.hint', { time }) : null);
   } else if (last && !fresh) {
     // A run just over: its answer, until another tab is chosen.
     const n = new Set(last.detections.map(d => d.tuneId)).size;
@@ -707,6 +746,14 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
             ))}
           </div>
         )}
+        <button
+          type="button"
+          class={`source pitch-toggle${heard === 0 ? '' : ' set'}`}
+          aria-pressed={pitchOpen}
+          disabled={pitchLocked}
+          title={pitchLocked ? tr(lang, 'pitch.locked') : app(lang, 'sessions.pitchShift.hint')}
+          onClick={() => setPitchOpen(!pitchOpen)}
+        >{tr(lang, 'pitch')}{heard !== 0 && ` ${signed(heard)}`}</button>
         <a class="credit" href={CADENCE_URL} target="_blank" rel="noopener">{tr(lang, 'credit')}</a>
       </div>
       <div class="strip">
