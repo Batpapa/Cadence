@@ -4,6 +4,7 @@ import { RecognitionClient } from '../session/recognitionClient';
 import { DetectionTracker } from '../session/detectionState';
 import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S, importWarnMinutes } from '../session/sessionConfig';
 import { fetchRemoteFile, refusalMessage, RemoteFileError, MAX_REMOTE_ANALYSIS_BYTES } from '../services/remoteFile';
+import { readSessionFile } from '../services/sessionShareService';
 import { isMobileDevice, isAppleTouchDevice } from '../utils';
 import type { Detection, DetectionAlternate } from '../session/model';
 import type { IndexProgress } from '../session/recognition/indexStore';
@@ -27,10 +28,13 @@ import { MemoryRecorder } from './memoryRecorder';
 // back: the file itself for a recording, a MemoryRecorder for a live run.
 
 export type SourceKind = 'mic' | 'device' | 'file' | 'link';
+/** The tabs: the four sources, and an analysis made elsewhere, opened from
+ *  its .cds. */
+export type TabKind = SourceKind | 'cds';
 
 export type FinderError =
   | 'mic-denied' | 'no-mic' | 'no-shared-audio' | 'capture-not-allowed' | 'unsupported'
-  | 'too-short' | 'too-long' | 'cant-decode' | 'bad-url' | 'link' | 'not-recording' | 'failed';
+  | 'too-short' | 'too-long' | 'cant-decode' | 'bad-url' | 'link' | 'not-recording' | 'bad-package' | 'failed';
 
 export type FinderStatus =
   | { kind: 'idle' }
@@ -50,7 +54,7 @@ export interface Run {
   /** Its place among the runs, which is how a confirmation finds it. */
   index: number;
   kind: SourceKind;
-  /** The file's name; empty for the live sources. */
+  /** The file's name, or an opened analysis's; empty for the live sources. */
   label: string;
   startedAt: number;
   /** In the order they were played. */
@@ -382,6 +386,35 @@ export class TuneFinder {
     if (this.pitchShift !== 0) recognition.setPitchShift(this.pitchShift);
     this.recognition = recognition;
     return recognition;
+  }
+
+  // ── An analysis made elsewhere ──
+
+  /** Opens a .cds — Cadence's, or this page's own export — as one more run:
+   *  its detections as they were saved, its sound to play and cut. Nothing is
+   *  analysed again, and nothing is kept. */
+  async openPackage(file: File): Promise<void> {
+    if (this.active) return;
+    this.set({ kind: 'checking' });
+    try {
+      const { session, audio } = await readSessionFile(file);
+      const tracker = new DetectionTracker();
+      // Settled once and for all, as a saved analysis's are.
+      tracker.finish(session.annotations.map(detection => ({ type: 'close' as const, detection })));
+      const kind: SourceKind = session.source === 'live' ? 'mic' : session.source === 'device' ? 'device' : 'file';
+      const startedAt = session.date ? Date.parse(session.date) : NaN;
+      this.all = [...this.all, {
+        kind,
+        label: session.name || file.name.replace(/\.cds$/i, ''),
+        startedAt: Number.isFinite(startedAt) ? startedAt : Date.now(),
+        tracker,
+        sound: audio && audio.size > 0 ? audio : null,
+      }];
+      this.set({ kind: 'idle' });
+    } catch (err) {
+      console.error('[thesession-embed]', err);
+      this.set({ kind: 'error', error: 'bad-package', detail: String((err as Error)?.message ?? err) });
+    }
   }
 
   // ── Ending a run ──

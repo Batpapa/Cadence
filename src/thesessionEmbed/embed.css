@@ -165,9 +165,11 @@ button:focus-visible {
   block-size: 100%;
 }
 
-/* The heights add up to The Session's 5.75rem frame: the tabs (~1.2rem), the
-   strip's padding (0.5), a 1.5rem headline and two 1.22rem lines. A third
-   line, or bigger type, and the bottom one is cut off. */
+/* The heights add up to The Session's 5.75rem frame: the tabs (~1.1rem), the
+   strip's padding (0.5) and two 1.5rem lines of headline — or, for the pitch,
+   one line of stepper and two of words. Text wraps rather than being cut
+   (Jeremy, on a phone, 2026-10-25: too much was truncated), and there is
+   only ever that much of it. */
 
 /* The tabs and the credit. */
 .top {
@@ -214,65 +216,130 @@ button:focus-visible {
 }
 .source:disabled:not([aria-selected="true"]) { opacity: 0.4; cursor: default; }
 
-/* The pitch, at the end of the tabs' line: a word like them, and its value
-   once set — the analyser's tuning-fork button, said in words. */
-.pitch-toggle { margin-inline-start: auto; }
-.pitch-toggle.set { color: var(--heading); font-weight: calc(var(--wght) + 150); }
-.pitch-toggle[aria-pressed="true"] {
-  color: var(--ink);
-  border-block-end-color: var(--heading);
+/* The pitch's tuning fork, last on the tabs' line: smaller than a line's own
+   buttons, the line is short; widened by its value once one is set. */
+.top .pitch-toggle {
+  inline-size: auto;
+  min-inline-size: 1.5rem;
+  block-size: 1.5rem;
+  gap: 0.2em;
+  padding-inline: 0.2rem;
+  border-radius: 0.75rem;
+  align-self: center;
+}
+.top .menu { align-self: center; }
+.pitch-value {
+  color: var(--heading);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: calc(var(--wght) + 150);
 }
 
-/* Its stepper, in the strip's headline. */
+/* Its panel (Menu's content entry): a heading as the panel's rows have, the
+   stepper, and the sentence that says which way. On The Session's gold: their
+   panel's own dark ink and red links. */
+/* One width whatever the sentence says: the sentence wraps inside it rather
+   than widening the panel, so the stepper never moves under the finger. */
+.pitch-panel {
+  inline-size: 15rem;
+  max-inline-size: calc(100vw - 3rem);
+}
+.pitch-head {
+  padding-block: 0.4em 0.2em;
+  font-size: 0.875rem;
+  font-variant: small-caps;
+  text-transform: lowercase;
+}
 .pitch {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: center;
+  gap: 0.8rem;
+  padding-block: 0.2em;
 }
 .pitch .step {
-  inline-size: 1.6rem;
-  block-size: 1.6rem;
+  inline-size: 1.9rem;
+  block-size: 1.9rem;
   margin: 0;
   padding: 0;
-  border: 0.0625rem solid var(--formfield-border);
+  border: 0.0625rem solid rgba(0, 0, 0, 0.35);
   border-radius: 50%;
   background: none;
-  color: var(--link-base);
+  color: #ba0000;
   font: inherit;
-  font-size: 1rem;
+  font-size: 1.125rem;
   line-height: 1;
   cursor: pointer;
   touch-action: manipulation;
 }
-.pitch .step:hover:not(:disabled) { border-color: var(--link-base); }
+.pitch .step:hover:not(:disabled) { border-color: #ba0000; }
 .pitch .step:disabled { opacity: 0.35; cursor: default; }
 .pitch .value {
-  min-inline-size: 2ch;
+  /* A fixed width, the widest value's ("−12"): the buttons either side must
+     not move as it changes. */
+  flex: 0 0 3.2ch;
+  inline-size: 3.2ch;
   text-align: center;
+  font-size: 1.25rem;
   font-variant-numeric: tabular-nums;
-  opacity: 0.7;
+  opacity: 0.6;
 }
-.pitch .value.set { color: var(--heading); opacity: 1; }
-.pitch .done { font-size: 0.875rem; }
+/* Not `.set`: that is a set of tunes in the list, and its rule would apply. */
+.pitch .value.shifted { opacity: 1; }
+.pitch-words {
+  margin: 0.3em 0 0.5em;
+  text-align: center;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
 
+/* At the end of the tabs' line, always in sight. */
 .credit {
   flex: 0 0 auto;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  align-self: center;
   font-size: 0.75rem;
-  opacity: 0.75;
   white-space: nowrap;
+  opacity: 0.75;
+  text-decoration: none;
 }
-@media (max-width: 26rem) {
-  .credit { display: none; }
+.credit:hover { opacity: 1; }
+/* The words go first on a phone; the mark stays, and says it on hover. */
+@media (max-width: 30rem) {
+  .credit-words { display: none; }
 }
 
 /* The strip: the rest of a 92 px frame, the top of a taller one. */
 .strip {
+  position: relative; /* the progress bar sits on its bottom edge */
   flex: 1 0 auto;
   display: flex;
   align-items: center;
   gap: 0.875rem;
   box-sizing: border-box;
   padding: 0.25rem;
+}
+
+/* A recording's progress, along the bottom of the strip. */
+.progress {
+  position: absolute;
+  inset-inline: 0.25rem;
+  inset-block-end: 0;
+  block-size: 0.1875rem;
+  border-radius: 0.1rem;
+  background-color: var(--keyline-strong);
+  overflow: hidden;
+}
+.progress::after {
+  content: '';
+  display: block;
+  block-size: 100%;
+  inline-size: calc(var(--p, 0) * 100%);
+  background-color: var(--gold);
+  transition: inline-size 0.25s linear;
 }
 
 .text {
@@ -283,9 +350,13 @@ button:focus-visible {
 .headline {
   font-size: 1.25rem;
   line-height: 1.2;
-  white-space: nowrap;
+  /* Two lines at most, wrapped: a long tune name reads whole on a phone. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .headline .tune {
   color: hsl(var(--link-hue) var(--link-saturation) calc(var(--link-lightness) - 6%));
@@ -418,22 +489,7 @@ button:focus-visible {
   .feed { display: flex; }
   /* The strip keeps its height; the feed takes the rest. */
   .strip { flex-grow: 0; min-block-size: 4.5rem; }
-  /* What the feed already shows. */
-  .compact-only { display: none; }
 }
-
-/* An analysis's sets box, in its title. */
-.sets {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 0.35em;
-  color: var(--ink);
-  font-size: 0.8125rem;
-  cursor: pointer;
-  user-select: none;
-}
-.sets input { margin: 0; accent-color: var(--link-base); }
 
 /* The analyses, newest on top, scrolling together. Positioned: the offsetParent
    the follow logic measures the newest line against. */
@@ -468,8 +524,8 @@ button:focus-visible {
 .run h2 {
   flex: 0 0 auto;
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.25rem;
   margin: 0;
   padding-block: 0.5rem 0.25rem;
   border-block-end: 0.0625em solid var(--keyline-strong);
@@ -481,6 +537,7 @@ button:focus-visible {
 
 /* The title folds and unfolds its analysis. */
 .fold {
+  /* The title takes the line; its two menus sit at the end of it. */
   flex: 1 1 auto;
   min-inline-size: 0;
   display: flex;
@@ -515,13 +572,109 @@ button:focus-visible {
 .fold .count::before { content: '('; }
 .fold .count::after { content: ')'; }
 
-/* Copy · Download: The Session's `button.link`, a button dressed as a link. */
-.export {
+/* A glyph for a button on a tune's line — its clip. Round, quiet until
+   pointed at, as the analyser's own: a brick button on every line would
+   shout. */
+.icon-button {
   flex: 0 0 auto;
-  display: flex;
-  gap: 0.75em;
-  font-size: 0.8125rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.9rem;
+  block-size: 1.9rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--link-base);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
 }
+.icon-button:hover:not(:disabled) { background-color: var(--keyline-strong); }
+.icon-button:disabled { opacity: 0.35; cursor: default; }
+.busy { font-size: 1rem; line-height: 1; }
+
+/* ── The menus of an analysis (Menu.tsx): The Session's disclosure ──
+   A bare glyph, as a tune's clip button; under it their gold
+   .clapperboard.feedback, swinging down. Values from global-min.20261021.css. */
+.menu { position: relative; display: inline-flex; }
+.icon-button[aria-expanded="true"] { background-color: var(--keyline-strong); }
+
+/* Fixed, not under the button in the flow: the scrolled list of analyses
+   would cut it. The colours are theirs and fixed — the panel is gold in the
+   dark scheme too. */
+.clapperboard.feedback {
+  position: fixed;
+  z-index: 10;
+  box-sizing: border-box;
+  min-inline-size: 13rem;
+  max-inline-size: calc(100vw - 0.5rem);
+  padding-block: 0.25em;
+  padding-inline: 1em;
+  background-color: #fc3;
+  color: rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 0 1em rgba(0, 0, 0, 0.1);
+  border: 0.1875em double rgba(0, 0, 0, 0.1);
+  border-radius: 0.125em;
+  /* Joined to the button, as on The Session: no corner where they meet. */
+  border-start-end-radius: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  transform-origin: center top;
+  animation: swingdown 0.15s 1;
+}
+.clapperboard.feedback.up {
+  border-start-end-radius: 0.125em;
+  border-end-end-radius: 0;
+  transform-origin: center bottom;
+  animation-name: swingup;
+}
+@keyframes swingdown {
+  from { transform: perspective(100vh) rotate3d(1, 0, 0, -90deg); }
+  to { transform: perspective(100vh); }
+}
+@keyframes swingup {
+  from { transform: perspective(100vh) rotate3d(1, 0, 0, 90deg); }
+  to { transform: perspective(100vh); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clapperboard.feedback { animation: none; }
+}
+
+/* A label and its box, as their player's "repeat". */
+.bill-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1em;
+  padding-block: 0.4em;
+  font-size: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+}
+.bill-item + .bill-item { border-block-start: 0.0625em solid rgba(0, 0, 0, 0.1); }
+.bill-item-cost { text-align: end; }
+.bill-item input { margin: 0; accent-color: hsl(var(--button-hue) var(--button-saturation) var(--button-lightness)); }
+
+/* An action, as their ABC / midi: a small brick button, full width. */
+.feedback .button.discrete {
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
+  margin-block: 0.35em;
+  font-size: 0.6875rem;
+}
+.feedback .button.discrete:disabled { opacity: 0.5; cursor: default; }
+
+/* How an export went, under the analysis's title, for a moment. */
+.run .note {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--heading);
+}
+
 button.link {
   margin: 0;
   padding: 0;
@@ -569,12 +722,13 @@ button.link:hover {
   text-transform: lowercase;
 }
 .set-names {
+  flex: 1 1 auto;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   opacity: 0.8;
 }
+/* Its clip, at the end of its line, where each tune has its own. */
+.set-head .icon-button { align-self: center; }
 
 /* Play / pause, in front of the line. */
 .play {
@@ -612,8 +766,12 @@ button.link:hover {
 .row {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
+/* The controls of the line sit on its middle, not on the name's baseline:
+   with the timings shown, the name takes two lines. */
+.row .icon-button,
+.row .badge { align-self: center; }
 
 /* The tune being played right now. */
 .dot {
@@ -636,6 +794,13 @@ button.link:hover {
 .what {
   flex: 1 1 auto;
   min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.what .when {
+  display: block;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
 }
 
 .manifest-item-title {
@@ -666,10 +831,6 @@ button.link:hover {
 .badge.low { color: var(--ink); opacity: 0.7; }
 .badge.confirmed { background-color: color-mix(in srgb, var(--sure) 12%, transparent); }
 .badge .chevron { margin-inline-start: 0.3em; opacity: 0.7; }
-@media (max-width: 26rem) {
-  /* The word goes before the number does: the colour already says it. */
-  .badge .word { display: none; }
-}
 
 /* The alternatives picker. */
 .alternatives {
@@ -678,12 +839,6 @@ button.link:hover {
   border: 0.0625rem solid var(--keyline-strong);
   border-radius: 0.3em;
   background-color: var(--formfield-background);
-}
-.alternatives .howto {
-  margin: 0.25em 0;
-  font-size: 0.8125rem;
-  line-height: 1.35;
-  opacity: 0.8;
 }
 .alternatives ul {
   list-style: none;
@@ -703,6 +858,7 @@ button.link:hover {
   flex: 1 1 auto;
   min-inline-size: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 0.5em;
   margin: 0;
@@ -724,9 +880,7 @@ button.link:hover {
 }
 .pick .name {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .pick .detail { margin-inline-start: 0; }
 .pick .recommended {
