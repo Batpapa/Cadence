@@ -394,12 +394,32 @@ export class TuneFinder {
     if (!active || this.status.kind === 'stopping') return;
     const wasRunning = this.status.kind === 'listening' || this.status.kind === 'analysing';
     const recognition = this.recognition;
-    this.run++;
-    this.release();
-    if (wasRunning && recognition) {
+    if (wasRunning && recognition && (active.kind === 'mic' || active.kind === 'device')) {
+      // LiveSession.stop's order: the recorder, then the decoder, the source
+      // last. The other way round — the AudioContext closed under a
+      // MediaRecorder still recording its stream — Stop reloaded the page in
+      // Firefox (Mac) and Safari (iOS), not in Chrome (Jeremy, 2026-10-26).
+      // The run is not over until the decoder's last word: its events still
+      // land in the tracker meanwhile.
       this.set({ kind: 'stopping' });
-      const { events } = await recognition.stop();
-      active.tracker.finish(events);
+      const recorder = this.recorder;
+      this.recorder = null;
+      try {
+        await recorder?.stop();
+        const { events } = await recognition.stop();
+        active.tracker.finish(events);
+      } finally {
+        this.run++;
+        this.release();
+      }
+    } else {
+      this.run++;
+      this.release();
+      if (wasRunning && recognition) {
+        this.set({ kind: 'stopping' });
+        const { events } = await recognition.stop();
+        active.tracker.finish(events);
+      }
     }
     recognition?.dispose();
     // A file cancelled before its analysis began has no answer to keep; one
