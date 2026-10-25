@@ -831,10 +831,12 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
           />
         )}
       </div>
+      {/* No `accept`, as the analyser's own import: with audio/*,video/*, iOS
+          greyed out .m4a files saved to the iPhone (2026-10-26). What is not a
+          recording is refused once picked (`not-recording`). */}
       <input
         ref={fileRef}
         type="file"
-        accept="audio/*,video/*"
         hidden
         onChange={e => {
           const input = e.target as HTMLInputElement;
