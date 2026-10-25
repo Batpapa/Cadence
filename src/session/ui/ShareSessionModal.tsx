@@ -4,7 +4,7 @@ import { t } from '../../services/i18nService';
 import { showModal, closeModal, updateTopModal } from '../../components/modal';
 import { loadSessionAudio, probeSyncedAudio, downloadSyncedAudioOnce, type SyncedAudioProbe } from '../db';
 import { shareSession, exportSessionFile } from '../../services/sessionShareService';
-import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport } from '../../services/analysisExport';
+import { exportAnalysisCSV, exportAnalysisTXT, exportAnalysisClipsZip, analysisTextReport } from '../../services/analysisExport';
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
 import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { copyText, formatBytes } from '../../utils';
@@ -24,16 +24,19 @@ const SHARE_ICON_SHARE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="
 const SHARE_ICON_CSV = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>';
 const SHARE_ICON_TXT = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>';
 const SHARE_ICON_CLIPBOARD = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const SHARE_ICON_CLIPS = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>';
 
-function ShareChoiceCard({ icon, label, desc, color, onClick }: {
-  icon: string; label: string; desc: string; color: string; onClick: () => void;
+function ShareChoiceCard({ icon, label, desc, color, onClick, disabled = false }: {
+  icon: string; label: string; desc: string; color: string; onClick: () => void; disabled?: boolean;
 }) {
   const [hover, setHover] = useState(false);
+  const lit = hover && !disabled;
   return (
     <button
-      class="flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer"
-      style={{ transition: 'border-color 0.15s, background 0.15s', borderColor: hover ? color : undefined, background: hover ? `${color}12` : undefined }}
+      class={`flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+      style={{ transition: 'border-color 0.15s, background 0.15s', borderColor: lit ? color : undefined, background: lit ? `${color}12` : undefined }}
       title={desc}
+      disabled={disabled}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={onClick}
@@ -74,6 +77,13 @@ type UploadState =
   | { phase: 'result'; key: string; secondsRemaining: number }
   | { phase: 'error'; message: string };
 
+/** The clips zip, from the click to the download. */
+type ClipsState =
+  | { phase: 'idle' }
+  | { phase: 'fetchingAudio' }
+  | { phase: 'cutting'; done: number; total: number }
+  | { phase: 'error'; message: string };
+
 function ShareSessionModal({ session }: { session: Analysis }) {
   const [audioBlob, setAudioBlob] = useState<Blob | null | undefined>(undefined); // undefined = still checking
   // When the recording is not on this device: what Drive ACTUALLY says about
@@ -85,6 +95,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   const [probing, setProbing] = useState(false);
   const [includeAudio, setIncludeAudio] = useState(false);
   const [upload, setUpload] = useState<UploadState>({ phase: 'idle' });
+  const [clips, setClips] = useState<ClipsState>({ phase: 'idle' });
   const [view, setView] = useState<'root' | 'package' | 'txt'>('root');
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
   const [detailed, setDetailed] = useState(false);
@@ -105,7 +116,13 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   // the two destinations rather than out at the format list.
   useEffect(() => {
     const packageTitle = t('sessions.export.cds');
-    if (upload.phase === 'uploading' || upload.phase === 'result') {
+    // Same rule for the clips: nothing to go back to while they are cut, and
+    // a failure goes back to the formats.
+    if (clips.phase === 'fetchingAudio' || clips.phase === 'cutting') {
+      updateTopModal({ title: t('sessions.export.clips'), onBack: undefined });
+    } else if (clips.phase === 'error') {
+      updateTopModal({ title: t('sessions.export.clips'), onBack: () => setClips({ phase: 'idle' }) });
+    } else if (upload.phase === 'uploading' || upload.phase === 'result') {
       updateTopModal({ title: packageTitle, onBack: undefined });
     } else if (upload.phase === 'error') {
       updateTopModal({ title: packageTitle, onBack: () => setUpload({ phase: 'idle' }) });
@@ -116,7 +133,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     } else {
       updateTopModal({ title: t('sessions.export.title'), onBack: undefined });
     }
-  }, [view, upload.phase]);
+  }, [view, upload.phase, clips.phase]);
 
   useEffect(() => {
     void (async () => {
@@ -155,6 +172,15 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   if (upload.phase === 'result') {
     return <ShareKeyResult keyValue={upload.key} secondsRemaining={upload.secondsRemaining} />;
   }
+  if (clips.phase === 'fetchingAudio') {
+    return <p class="text-xs text-muted text-center py-2">{t('sessions.share.fetchingAudio')}</p>;
+  }
+  if (clips.phase === 'cutting') {
+    return <p class="text-xs text-muted text-center py-2">{t('sessions.export.clipsCutting', { done: clips.done, total: clips.total })}</p>;
+  }
+  if (clips.phase === 'error') {
+    return <p class="text-xs text-muted text-center py-2">{clips.message}</p>;
+  }
 
   const doUpload = async (withAudio: Blob | null) => {
     setUpload({ phase: 'uploading' });
@@ -185,6 +211,33 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     }
     setUpload({ phase: 'idle' });
     await send(fetched);
+  };
+
+  /** Every clip, in one zip — the recording fetched from Drive first when it
+   *  is not here, as the package does, and with the same refusal to pretend:
+   *  a recording that cannot be had, or a clip that cannot be cut, says so and
+   *  downloads nothing. */
+  const exportClips = async () => {
+    let audio = audioBlob;
+    if (!audio) {
+      setClips({ phase: 'fetchingAudio' });
+      try { audio = await downloadSyncedAudioOnce(session.id); } catch { /* reported below */ }
+      if (!audio) {
+        setClips({ phase: 'error', message: t('sessions.export.clipsFetchFailed') });
+        return;
+      }
+    }
+    const total = session.annotations.length;
+    setClips({ phase: 'cutting', done: 0, total });
+    try {
+      await exportAnalysisClipsZip(session, audio, nameOf, (done, n) => setClips({ phase: 'cutting', done, total: n }));
+      closeModal();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Worded as the clip window words it (extractClipModal.tsx).
+      const shown = msg.startsWith('clip_format_unsupported') || msg.startsWith('clip_cannot_copy') ? t('audioPlayer.clip.unsupported') : msg;
+      setClips({ phase: 'error', message: t('sessions.export.clipsFailed', { message: shown }) });
+    }
   };
 
   // TXT has two destinations for the same bytes, so it gets a level of its
@@ -231,8 +284,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     );
   }
 
-  // Two levels, mirroring the card export modal: the root offers the three
-  // FORMATS, and the .cds package — whose two destinations (a file, a share
+  // Two levels, mirroring the card export modal: the root offers the FORMATS, and the .cds package — whose two destinations (a file, a share
   // key) are the same bytes going to different places — opens underneath.
   // The audio checkbox lives in that sub-view and nowhere else, because audio
   // is a property of the package: offering it beside CSV and TXT, which can
@@ -321,6 +373,33 @@ function ShareSessionModal({ session }: { session: Analysis }) {
         color="var(--color-muted)"
         onClick={() => setView('txt')}
       />
+      {/* Read-only too, and the one that needs the recording: greyed with the
+          reason when it cannot be had, rather than failing after the click. */}
+      <ShareChoiceCard
+        icon={SHARE_ICON_CLIPS}
+        label={t('sessions.export.clips')}
+        desc={t('sessions.export.clipsDesc')}
+        color="var(--color-accent)"
+        disabled={audioBytes === null || session.annotations.length === 0}
+        onClick={() => { void exportClips(); }}
+      />
+      {session.annotations.length > 0 && audioBytes !== null && !audioBlob && (
+        <p class="text-xs text-dim">{t('sessions.export.clipsFromDrive')}</p>
+      )}
+      {session.annotations.length > 0 && audioBytes === null && (
+        <>
+          <p class="text-xs text-dim">
+            {t(remote?.status === 'needsAuth' ? 'sessions.share.audioNeedsAuth'
+              : remote && remote.status !== 'gone' ? 'sessions.share.audioOffline'
+              : 'sessions.export.clipsNoAudio')}
+          </p>
+          {remote?.status === 'needsAuth' && (
+            <button class="btn-ghost text-xs" disabled={probing} onClick={probeAgain}>
+              {t(probing ? 'sessions.share.checking' : 'sessions.share.checkDrive')}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

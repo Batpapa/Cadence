@@ -47,7 +47,7 @@ export interface WidgetOptions {
   lang: Lang;
   /** `links=same`: tune links open in the embedding page, not a new tab. */
   sameTab: boolean;
-  /** `sources=`: the tabs offered, in this order — all four by default. */
+  /** `sources=`: the tabs offered, in this order — mic and file by default. */
   sources: SourceKind[];
   /** `sets=on`: every analysis's sets box ticked from the start. */
   sets: boolean;
