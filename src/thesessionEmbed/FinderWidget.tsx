@@ -51,6 +51,9 @@ export interface WidgetOptions {
   sources: SourceKind[];
   /** `sets=on`: every analysis's sets box ticked from the start. */
   sets: boolean;
+  /** `tools=on`: an analysis's gear and export menus, and a clip per line and
+   *  per set. Off by default: overkill for The Session (Jeremy, 2026-10-25). */
+  tools: boolean;
 }
 
 const CADENCE_URL = 'https://batpapa.github.io/Cadence/';
@@ -338,14 +341,16 @@ function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
           {d.userConfirmed ? '✓' : pct}
           <span class="chevron" aria-hidden="true">{c.expanded ? '▴' : '▾'}</span>
         </button>
-        <button
-          type="button"
-          class="icon-button clip"
-          disabled={!!c.clipOff || c.clipBusy}
-          title={c.clipOff ?? tr(lang, 'downloadClip')}
-          aria-label={tr(lang, 'downloadClip')}
-          onClick={c.onClip}
-        >{c.clipBusy ? <span class="busy" aria-hidden="true">…</span> : <ExportIcon />}</button>
+        {c.opts.tools && (
+          <button
+            type="button"
+            class="icon-button clip"
+            disabled={!!c.clipOff || c.clipBusy}
+            title={c.clipOff ?? tr(lang, 'downloadClip')}
+            aria-label={tr(lang, 'downloadClip')}
+            onClick={c.onClip}
+          >{c.clipBusy ? <span class="busy" aria-hidden="true">…</span> : <ExportIcon />}</button>
+        )}
       </div>
       {c.expanded && <Alternatives d={d} opts={c.opts} onPick={c.onPick} />}
     </li>
@@ -730,17 +735,19 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
           <div class="set-head">
             <span class="set-label">{app(lang, 'sessions.set.label')}</span>
             <span class="set-names">{setName}</span>
-            <button
-              type="button"
-              class="icon-button clip"
-              disabled={!!clipOff || working.has(key)}
-              title={clipOff ?? app(lang, 'sessions.set.downloadClip')}
-              aria-label={app(lang, 'sessions.set.downloadClip')}
-              onClick={() => {
-                const sound = finder.sound(run.index);
-                if (sound) exporting(key, run, async () => downloadSetClip(run, runTitle(run, lang), members, setName, await sound));
-              }}
-            >{working.has(key) ? <span class="busy" aria-hidden="true">…</span> : <ExportIcon />}</button>
+            {opts.tools && (
+              <button
+                type="button"
+                class="icon-button clip"
+                disabled={!!clipOff || working.has(key)}
+                title={clipOff ?? app(lang, 'sessions.set.downloadClip')}
+                aria-label={app(lang, 'sessions.set.downloadClip')}
+                onClick={() => {
+                  const sound = finder.sound(run.index);
+                  if (sound) exporting(key, run, async () => downloadSetClip(run, runTitle(run, lang), members, setName, await sound));
+                }}
+              >{working.has(key) ? <span class="busy" aria-hidden="true">…</span> : <ExportIcon />}</button>
+            )}
           </div>
           <ol>{members.map(row)}</ol>
         </li>
@@ -853,15 +860,19 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
                       {!run.label && <span class="started">{startTime(run, lang)}</span>}
                       <span class="count">{n}</span>
                     </button>
-                    <Menu icon={<GearIcon size={15} />} label={tr(lang, 'display')} entries={gearEntries(run)} />
-                    <Menu
-                      icon={<ExportIcon size={15} />}
-                      label={tr(lang, 'export')}
-                      entries={exportEntries(run)}
-                      // The whole analysis, once it is whole.
-                      disabled={inProgress}
-                      busy={working.has(`${run.index}:…`)}
-                    />
+                    {opts.tools && (
+                      <>
+                        <Menu icon={<GearIcon size={15} />} label={tr(lang, 'display')} entries={gearEntries(run)} />
+                        <Menu
+                          icon={<ExportIcon size={15} />}
+                          label={tr(lang, 'export')}
+                          entries={exportEntries(run)}
+                          // The whole analysis, once it is whole.
+                          disabled={inProgress}
+                          busy={working.has(`${run.index}:…`)}
+                        />
+                      </>
+                    )}
                   </h2>
                   {notes.has(run.index) && <p class="note" role="status">{notes.get(run.index)}</p>}
                   {open && (run.detections.length === 0 && !inProgress

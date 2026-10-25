@@ -24,7 +24,10 @@ import './embed.css';
 //                      for The Session (2026-10-25). `device` (the
 //                      computer's sound) also needs allow="display-capture" on
 //                      the iframe, and says so without it;
-//   sets=on          — the "sets" box ticked from the start (off otherwise).
+//   sets=on          — the "sets" box ticked from the start (off otherwise);
+//   tools=on         — each analysis's gear (sets, timings) and export menus,
+//                      and a clip per tune and per set. Off by default: Jeremy
+//                      finds them overkill for The Session (2026-10-25).
 //
 // Nothing here reads or writes the app's data: no user, no AppState, no
 // Drive. The only storage touched is the shared tune-index cache
@@ -57,6 +60,6 @@ matchTheSessionType();
 addEventListener('resize', matchTheSessionType);
 
 render(
-  <FinderWidget opts={{ lang, sameTab: params.get('links') === 'same', sources, sets }} />,
+  <FinderWidget opts={{ lang, sameTab: params.get('links') === 'same', sources, sets, tools: params.get('tools') === 'on' }} />,
   document.getElementById('finder')!,
 );
