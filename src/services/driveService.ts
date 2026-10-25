@@ -1,6 +1,7 @@
 import type { AppState } from '../types';
 import { GOOGLE_CLIENT_ID } from '../config';
 import { withTimeout } from '../utils';
+import { getAllUserIds } from '../db';
 import { isNative } from '../native/platform';
 import { decideReconcile } from './reconcilePolicy';
 
@@ -841,14 +842,23 @@ export async function connectDrive(allowSharedAccount = false): Promise<ConnectR
     // two local users syncing with the SAME Google account would bind to the
     // SAME file and wholesale-overwrite each other. Surface it before binding
     // anything; the user may still insist (allowSharedAccount).
+    //
+    // Only a user still in IndexedDB counts. These keys outlive the user record
+    // when the WebView's IndexedDB is wiped and its localStorage is not (Android
+    // app, 2026-10-25): the welcome screen was empty, yet every connect named that
+    // ghost — Settings raised this warning, and the welcome screen's recovery
+    // tried to open it, found nothing, and sat on « Connexion… » for good.
     if (!allowSharedAccount && googleId) {
       const ownerPrefix = 'cadence_drive_owner_';
+      let liveUsers: Set<string> | null = null;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)!;
         if (!key.startsWith(ownerPrefix)) continue;
         const uid = key.slice(ownerPrefix.length);
         if (uid === _state.userId) continue;
         if (localStorage.getItem(key) === googleId && localStorage.getItem(lsConnected(uid)) === '1') {
+          liveUsers ??= new Set(await getAllUserIds());
+          if (!liveUsers.has(uid)) continue;
           // The token just obtained does belong to that account; saying so keeps
           // initDriveForUser from discarding it if that other user is opened next.
           localStorage.setItem(LS_TOKEN_OWNER, googleId);
