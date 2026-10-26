@@ -3,6 +3,12 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  # TheSession publishes its popularity figures once a week: a weekly deploy
+  # adds them to data/popularity.json (see the step below) even when nothing
+  # was pushed. Monday morning, after their weekend commit.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,6 +37,13 @@ jobs:
       # recorded in version.json (see the script). After the build on purpose,
       # so the zip never lands inside an APK through `cap sync`.
       - run: node scripts/ota-bundle.js
+      # TheSession's popularity history, precomputed for the Trending page and
+      # the app's first sync. After the OTA zip on purpose: 14 MB the app never
+      # needs inside its own bundle. Starts from the published file, so a run
+      # adds a week or two; the token lifts GitHub's anonymous rate limit.
+      - run: node scripts/build-popularity.mjs --out dist/data/popularity.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

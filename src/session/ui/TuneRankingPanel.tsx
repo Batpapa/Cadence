@@ -30,6 +30,7 @@ import type { Card } from '../../types';
 import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../../components/filterChips';
 import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf } from '../sessionTree';
 import { mutateWithRule } from '../../services/attachmentStore';
+import { hasLibrary } from '../../services/pageMode';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
 // The analyses read the other way round: by tune instead of by evening. It is
@@ -298,7 +299,8 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
   // would disable the control that undoes it.
   const availOthers = new Set<string>();
   if (rows.some(r => r.row.liked)) availOthers.add(OTHER_LIKED);
-  if (rows.some(r => !r.cardId)) availOthers.add(OTHER_NO_CARD);
+  // No library (pageMode.ts): every tune is without a card, the filter would sort nothing.
+  if (hasLibrary() && rows.some(r => !r.cardId)) availOthers.add(OTHER_NO_CARD);
 
   /** The values a pass section could still act on: those carried by a pass of
    *  a tune it would leave listed, every OTHER section applied but not its own
@@ -717,13 +719,17 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                 <LibraryIcon size={12} />
               </button>
             )}
-            <button
-              class="btn-ghost text-xs inline-flex items-center justify-center"
-              title={t('library.batch.more')}
-              onClick={(e) => bulkMenu.open(e.clientX, e.clientY)}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
-            </button>
+            {/* Both of its actions file into the library — none on the
+                standalone page (pageMode.ts). */}
+            {hasLibrary() && (
+              <button
+                class="btn-ghost text-xs inline-flex items-center justify-center"
+                title={t('library.batch.more')}
+                onClick={(e) => bulkMenu.open(e.clientX, e.clientY)}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+              </button>
+            )}
           </>}
         </div>
       </div>
@@ -825,7 +831,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                         separate buttons for it — one name, one destination.
                         A set without a card has nowhere to go: plain text. */}
                     {members && !cardId ? (
-                      <span class="text-sm text-muted truncate">{name}</span>
+                      <span class={`text-sm ${hasLibrary() ? 'text-muted' : 'text-primary'} truncate`}>{name}</span>
                     ) : cardId ? (
                       <span
                         class={`text-sm text-primary truncate ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
@@ -841,7 +847,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                     ) : (
                       // Muted, as in an analysis: no card yet.
                       <a
-                        class={`text-sm text-muted truncate ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
+                        class={`text-sm ${hasLibrary() ? 'text-muted' : 'text-primary'} truncate ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
                         title={t('sessions.viewOnTheSession')}
                         href={`https://thesession.org/tunes/${row.tuneId}`}
                         target="_blank"

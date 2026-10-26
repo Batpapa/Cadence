@@ -4,6 +4,7 @@ import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon } from '../../components/icons';
 import { findByExternalId } from '../../services/theSessionService';
+import { hasLibrary } from '../../services/pageMode';
 import { AbcPreview, TuneFacts } from './abcPreview';
 import { PlayDisc, playDiscTitle } from './PassRow';
 import { showAlternatesPopover } from './AlternatesPopover';
@@ -239,7 +240,9 @@ function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard }: {
   // cased properly.
   // A tune with no card is muted (2026-10-15, user's request): the eye picks
   // out what is already in the collection without reading the deck button.
-  const cls = `text-sm font-semibold ${knownCardId ? 'text-primary' : 'text-muted'} truncate flex-1 cursor-pointer hover:text-accent transition-colors`;
+  // Muted when there is no card — unless there is no library at all (the
+  // standalone page, pageMode.ts), where every tune is shown as a known one.
+  const cls = `text-sm font-semibold ${knownCardId || !hasLibrary() ? 'text-primary' : 'text-muted'} truncate flex-1 cursor-pointer hover:text-accent transition-colors`;
   label = tuneName({ tuneId, displayName: label }).text;
   if (knownCardId) {
     return <span class={cls} title={t('sessions.openCard')} onClick={() => onOpenCard?.(knownCardId)}>{label}</span>;
@@ -332,7 +335,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
     // themes. Both ways round were tried on screen and the user kept this one —
     // what is yours has substance, what is not stays flat. A neutral tone on
     // purpose: an accent tint would read as a call to attention.
-    <div class={`detection-card p-3 rounded-lg border ${known ? 'bg-surface' : 'bg-bg'} space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
+    <div class={`detection-card p-3 rounded-lg border ${known || !hasLibrary() ? 'bg-surface' : 'bg-bg'} space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
       <div class="flex items-center gap-2">
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}

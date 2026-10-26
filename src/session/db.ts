@@ -169,6 +169,17 @@ export async function initSessionDbForUser(userId: string): Promise<void> {
   }
 }
 
+/** A standalone page's user (TuneAnalyser/, 2026-10-26): its own local
+ *  database, and NO migration. migrateToFinalShape moves the device's legacy
+ *  analyses into whichever user it runs for; run for a user who lives in
+ *  memory, it would take them from their owners and lose them. */
+export function initSessionDbStandalone(userId: string): void {
+  if (_userId === userId) return;
+  _userId = userId;
+  _localDb?.close();
+  _localDb = null;
+}
+
 /** The shared DB's schema version stays 1 forever, deliberately never
  *  bumped: this database is also opened from the FolkFriend worker thread (a
  *  separate JS context with its own copy of this module's state), and a

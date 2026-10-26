@@ -4,6 +4,7 @@ import { initDb, dumpRawDatabase, loadUser, saveUser, getAllUserIds, loadLegacyS
 import { emptyState, formatBytes, downloadCadenceFile, downloadBlob, isTouchPrimaryDevice, isAppleTouchDevice } from './utils';
 import { appState, commitState, applyFromDrive, routeSignal, loadSavedRoute, initRoutePersistence } from './store';
 import { ensureCurrentUser, ensureCurrentProfile, welcomeLanguage } from './services/userService';
+import { newUserExtensions } from './services/extensions';
 import { h, render } from 'preact';
 import { WelcomePrefs } from './components/welcomePrefs';
 import { registerCommandPalette } from './components/commandPalette';
@@ -30,6 +31,8 @@ import { showHelpModal } from './components/help';
 import { getContext } from './store';
 import { anyOverlayOpen, closeTopOverlay } from './components/overlayStack';
 import { isNative } from './native/platform';
+import { importStagedAnalyses, hasStagedAnalyses } from './services/standaloneHandoff';
+import { showUsageChoiceModal } from './components/usageChoice';
 import type { User } from './types';
 
 // index.html's bootstrap found a browser too old to run Cadence and is putting
@@ -89,6 +92,11 @@ export async function createAndOpenUser(name: string, root: HTMLElement): Promis
 
 /** Everything after the Drive bookkeeping has been initialised for `user`. */
 async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
+  // Extensions off for a new user, written out: absent means on
+  // (extensions.ts). Here, the one way in for a user who is really new — NOT
+  // in blankUser, whose user a Drive recovery fills by Object.assign: data
+  // from before extensions has no such field, and would have inherited this.
+  user.extensions = newUserExtensions();
   commitState(user);
   await saveUser(user);
   setLastUserId(user.id);
@@ -102,8 +110,18 @@ async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
 
   initAttachmentSync();
   initRoutePersistence(user.id);
+  // Asked BEFORE finishBoot, which takes the standalone analyser's waiting
+  // analyses in: someone bringing those has answered already — their import
+  // switches the extension on, and "Default" would then hide them.
+  const broughtAnalyses = await hasStagedAnalyses().catch(() => false);
   finishBoot(root);
-  setTimeout(() => showHelpModal(getContext(), { tab: 'guide' }), 0);
+  const showGuide = () => showHelpModal(getContext(), { tab: 'guide' });
+  // What the new user is here for, then the guide — once answered, not over
+  // the question.
+  setTimeout(() => {
+    if (broughtAnalyses) showGuide();
+    else showUsageChoiceModal(getContext(), showGuide);
+  }, 0);
 }
 
 /** The welcome screen's "restore my data" (2026-09-14). Getting one's data
@@ -786,6 +804,9 @@ function finishBoot(root: HTMLElement): void {
   initAudioUploadRetry();
   // …and, the other way, the ones on Drive brought here if this device asked.
   initAudioDownloads();
+  // Analyses carried over from the standalone analyser, if its "sign in to
+  // keep them" was used (standaloneHandoff.ts): into this user's analyser.
+  void importStagedAnalyses(getContext());
 
   // Alt+← / Alt+→ used to be handled here. Removed on 2026-09-10: they are
   // the browser's OWN shortcut for back and forward, and since the history

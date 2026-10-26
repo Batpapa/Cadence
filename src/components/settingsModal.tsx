@@ -32,6 +32,7 @@ import { CustomSelect } from './customSelect';
 import { clearLastUserId, deleteUser, removeUserFromOrder } from '../db';
 import { defaultTuneRepeat, MAX_REPEAT, addTunesetAbcOnConvert } from '../services/abcService';
 import { setsMatchTuneTags } from '../services/cardRefService';
+import { EXTENSIONS, extensionEnabled, extensionOption } from '../services/extensions';
 import { refreshStorageEstimate, storageUsage } from '../services/storageService';
 import { formatBytes } from '../utils';
 import { registerOverlay } from './overlayStack';
@@ -178,17 +179,17 @@ export function showProfileModal(ctx: AppContext): void {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-type SectionId = 'study' | 'user' | 'storage' | 'display' | 'misc';
+export type SectionId = 'study' | 'user' | 'storage' | 'display' | 'extensions' | 'misc';
 
 const SECTION_ICONS: Record<SectionId, string> = {
   study: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
   user: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
   storage: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
   display: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
+  extensions: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5a2 2 0 1 1 4 0V5h4a1 1 0 0 1 1 1v4h-1.5a2 2 0 1 0 0 4H19v4a1 1 0 0 1-1 1h-4v-1.5a2 2 0 1 0-4 0V19H6a1 1 0 0 1-1-1v-4h1.5a2 2 0 1 0 0-4H5V6a1 1 0 0 1 1-1h4z"/></svg>`,
   misc: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
 };
 
-const LOGOUT_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`;
 
 /** One setting per row: label on the left, control on the right. An explanation
  *  is opt-in — a `?` pinned to the end of the label toggles it open below the
@@ -238,15 +239,16 @@ function Sep() {
  *  intentionally NOT the Tailwind-class `Switch` used elsewhere (studyModal.tsx):
  *  this settings screen predates that convention and restyling it is out of
  *  scope for a Preact-only migration. */
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <label style="width:34px; height:18px; display:block; position:relative; cursor:pointer; flex-shrink:0;">
+    <label style={`width:34px; height:18px; display:block; position:relative; cursor:${disabled ? 'default' : 'pointer'}; flex-shrink:0; opacity:${disabled ? 0.5 : 1};`}>
       <div style={`width:34px; height:18px; border-radius:99px; background:${checked ? 'var(--color-accent)' : 'var(--color-border)'}; transition:background 0.15s;`} />
       <div style={`position:absolute; top:2px; left:${checked ? '16px' : '2px'}; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.15s; box-shadow:0 1px 3px rgba(0,0,0,0.3);`} />
       <input
         type="checkbox"
         checked={checked}
-        style="position:absolute; opacity:0; inset:0; cursor:pointer;"
+        disabled={disabled}
+        style={`position:absolute; opacity:0; inset:0; cursor:${disabled ? 'default' : 'pointer'};`}
         onChange={(e) => onChange((e.target as HTMLInputElement).checked)}
       />
     </label>
@@ -565,6 +567,9 @@ async function runReset(): Promise<void> {
     // it in `fresh.language`. Both still go through `ensureCurrentUser`, so an
     // old state that carries neither is filled in as it always was.
     fresh.name = s.name; fresh.language = s.language;
+    // Nor which extensions are on: a preference, not data.
+    if (s.extensions) fresh.extensions = { ...s.extensions };
+    if (s.extensionOptions) fresh.extensionOptions = structuredClone(s.extensionOptions);
     ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
     // EMPTIED first, not just overwritten. `Object.assign` only touches the
     // keys `emptyState()` happens to name, so every optional field added since
@@ -1364,6 +1369,54 @@ function dateFormatLabel(f: DateFormat): string {
 // justify a section named after a repertoire — the label says what it is,
 // which is the odds and ends.
 
+// ── Extensions section ───────────────────────────────────────────────────────
+// One block per extension (services/extensions.ts): its switch, what it adds,
+// and its own options under it, so that everything an extension brings is
+// found in one place. The options stay listed while it is off — greyed, so
+// that what switching it on would bring is there to read.
+
+function ExtensionsSection({ ctx }: { ctx: AppContext }) {
+  const user = appState.value;
+  return (
+    <>
+      <p class="text-xs text-muted leading-relaxed pb-2">{t('settings.extensions.intro')}</p>
+      {EXTENSIONS.map(ext => {
+        const on = extensionEnabled(ext.id, user);
+        return (
+          // Framed in the extension's own green, as its lines are in the help.
+          <div key={ext.id} class={`rounded-lg border bg-bg px-3.5 py-3 ${ext.id === 'irishTrad' ? 'border-irish/50' : 'border-border'}`}>
+            <div class="flex items-center justify-between gap-4">
+              <span class="text-sm font-medium text-primary">{t(ext.labelKey)}</span>
+              <Toggle
+                checked={on}
+                onChange={(v) => void ctx.mutate(s => updateUser(s, { extensions: { ...s.extensions, [ext.id]: v } }))}
+              />
+            </div>
+            <p class="text-xs text-muted leading-relaxed mt-1.5">{t(ext.descKey)}</p>
+            <div class={`mt-2.5 pt-1 border-t border-border transition-opacity ${on ? '' : 'opacity-50'}`}>
+              {ext.options.map(opt => (
+                <div key={opt.id} class="flex items-center justify-between gap-4 py-1.5 pl-2">
+                  <span class="text-[13px] text-primary">
+                    {t(opt.labelKey)}
+                    {opt.forced && <span class="text-xs text-dim"> · {t('settings.extensions.always')}</span>}
+                  </span>
+                  <Toggle
+                    checked={on && extensionOption(ext.id, opt.id, user)}
+                    disabled={!on || opt.forced}
+                    onChange={(v) => void ctx.mutate(s => updateUser(s, {
+                      extensionOptions: { ...s.extensionOptions, [ext.id]: { ...s.extensionOptions?.[ext.id], [opt.id]: v } },
+                    }))}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function MiscSection({ ctx }: { ctx: AppContext }) {
   const user = appState.value;
   const current = defaultTuneRepeat(user);
@@ -1471,8 +1524,8 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
  *  zoom factor to say anything true about the space actually left inside. */
 const NAV_LABELS_MIN_W = 420;
 
-function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void }) {
-  const [section, setSection] = useState<SectionId>('study');
+function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; initialSection?: SectionId; onClose: () => void }) {
+  const [section, setSection] = useState<SectionId>(initialSection ?? 'study');
   const [, bumpDialog] = useState(0);
   const mouseDownOnOverlay = useRef(false);
   // The same toggle as showModal's `expandable`, and like it not remembered:
@@ -1501,6 +1554,7 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
     { id: 'user', labelKey: 'settings.user' },
     { id: 'storage', labelKey: 'settings.storage' },
     { id: 'display', labelKey: 'settings.display' },
+    { id: 'extensions', labelKey: 'settings.extensions' },
     { id: 'misc', labelKey: 'settings.misc' },
   ];
 
@@ -1553,22 +1607,8 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
                 {!compactNav && <span class={`text-sm ${sec.id === section ? 'font-medium' : ''}`}>{t(sec.labelKey)}</span>}
               </button>
             ))}
-            <button
-              class={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer mt-auto text-muted hover:bg-elevated hover:text-danger ${
-                compactNav ? 'justify-center' : ''
-              }`}
-              title={compactNav ? t('settings.logout') : undefined}
-              onClick={() => confirmModal(t('settings.logout'), t('settings.logout.message'), t('settings.logout.confirm'), () => {
-                closeModal(); onClose();
-                manualSync().finally(() => { clearLastUserId(); location.reload(); });
-              })}
-            >
-              <span
-                class="shrink-0 flex items-center justify-center w-[22px] h-[22px] rounded-md bg-danger/15 text-danger"
-                dangerouslySetInnerHTML={{ __html: LOGOUT_ICON }}
-              />
-              {!compactNav && <span class="text-sm">{t('settings.logout')}</span>}
-            </button>
+            {/* Logging out lives in the header's ⋮ menu since 2026-10-26
+                (confirmLogout, below): it is not a setting. */}
           </div>
 
           <div class="flex-1 overflow-y-auto p-4 space-y-1">
@@ -1576,12 +1616,23 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
             {section === 'user' && <UserSection ctx={ctx} />}
             {section === 'storage' && <StorageSection userId={ctx.user.id} />}
             {section === 'display' && <DisplaySection ctx={ctx} redrawShell={() => bumpDialog(x => x + 1)} />}
+            {section === 'extensions' && <ExtensionsSection ctx={ctx} />}
             {section === 'misc' && <MiscSection ctx={ctx} />}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+/** Back to the welcome screen, once confirmed: whatever is not on Drive yet
+ *  is sent first, then the page starts over with no user open. From the
+ *  header's ⋮ menu; it used to sit at the foot of this modal's sections. */
+export function confirmLogout(): void {
+  confirmModal(t('settings.logout'), t('settings.logout.message'), t('settings.logout.confirm'), () => {
+    closeModal(); closeSettingsModal?.();
+    void manualSync().finally(() => { clearLastUserId(); location.reload(); });
+  });
 }
 
 /** Set while the settings modal is open. It renders into its own host
@@ -1591,7 +1642,9 @@ function SettingsModal({ ctx, onClose }: { ctx: AppContext; onClose: () => void 
  *  happened. Module-level because only one can ever be open. */
 let closeSettingsModal: (() => void) | null = null;
 
-export function showSettingsModal(ctx: AppContext): void {
+/** `section`: the one to open on (the Modules page sends people straight to
+ *  Extensions). */
+export function showSettingsModal(ctx: AppContext, section?: SectionId): void {
   const host = document.createElement('div');
   document.body.appendChild(host);
   // Registered like any modal, even though it is not in the shared stack:
@@ -1600,5 +1653,5 @@ export function showSettingsModal(ctx: AppContext): void {
   const close = () => { unregister(); render(null, host); host.remove(); closeSettingsModal = null; };
   unregister = registerOverlay(close);
   closeSettingsModal = close;
-  render(<SettingsModal ctx={ctx} onClose={close} />, host);
+  render(<SettingsModal ctx={ctx} initialSection={section} onClose={close} />, host);
 }

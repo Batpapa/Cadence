@@ -1,6 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { appState, navigate, getContext } from '../../store';
 import { t } from '../../services/i18nService';
+import { tuneAnalyserOffered } from '../../services/extensions';
 import { findCardDetections, sessionsOf, detectionsOnCards, experimentalSets } from '../detections';
 import { PassRow, PlayPassButton, useSlicePlayer, type SlicePlayer } from './PassRow';
 import { HeartIcon } from '../../components/icons';
@@ -28,6 +29,10 @@ import { chainPlayId } from './TunesetDetectionCard';
  *  hearing every version of a tune from its card is the point of the panel for
  *  someone choosing which recording to learn from. */
 export function DetectedIn({ cardId }: { cardId: string }) {
+  // What the analyser found goes with the analyser (2026-10-26, the user's
+  // call): its option off in the Irish trad extension, or the extension off,
+  // the panel goes too. The analyses themselves are kept, and show again.
+  if (!tuneAnalyserOffered()) return null;
   const card = appState.value.cards[cardId];
   // A set is heard as a set: its own list, of the analyses where these tunes
   // were played one after the other in this order (2026-10-19) — never its

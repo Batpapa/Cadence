@@ -44,11 +44,18 @@ function parsePackageText(text: string): SessionPackage {
 /** Saves the package as a new session — a fresh id is always generated (the
  *  original's id has no meaning on this device). */
 async function applyPackage(pkg: SessionPackage): Promise<Analysis> {
-  const session: Analysis = { ...pkg.session, id: generateId() };
+  const audio = pkg.audioBase64 ? base64ToBlob(pkg.audioBase64, pkg.audioMimeType ?? pkg.session.mimeType) : null;
+  return importAnalysis(pkg.session, audio);
+}
+
+/** An analysis from elsewhere — a package, the standalone analyser
+ *  (standaloneHandoff.ts) — saved into the open user's analyser as a new one,
+ *  at the root of its list. */
+export async function importAnalysis(from: Omit<Analysis, 'id'>, audio: Blob | null): Promise<Analysis> {
+  const { id: _id, ...rest } = from as Analysis;
+  const session: Analysis = { ...rest, id: generateId() };
   await saveSessionMeta(session);
-  if (pkg.audioBase64) {
-    await saveSessionAudio(session.id, base64ToBlob(pkg.audioBase64, pkg.audioMimeType ?? session.mimeType));
-  }
+  if (audio) await saveSessionAudio(session.id, audio);
   return session;
 }
 

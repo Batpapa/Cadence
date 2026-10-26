@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# TheSession popularity history for the dev server (scripts/build-popularity.mjs
+# --out src/data/popularity.json): ~14 MB, rebuilt by the deploy, never committed.
+src/data/
 *.local
 .env
 

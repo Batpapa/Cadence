@@ -1,6 +1,7 @@
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { t } from '../../services/i18nService';
+import { hasLibrary } from '../../services/pageMode';
 import type { AppContext } from '../../types';
 import { generateId, addTouchDragSupport, matchesSearch } from '../../utils';
 import { promptModal, confirmModal } from '../../components/modal';
@@ -341,6 +342,11 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
 
   return (
     <>
+      {/* No folders without a library (the standalone page, 2026-10-26): its
+          analyses are to go into an account one day, and folders made here
+          would have to be merged into that account's own tree. With none to
+          make, the row would hold only "Home". */}
+      {hasLibrary() && (
       <div class="mt-3 flex items-center gap-2">
         {/* The breadcrumb. Every step but the last is a way back up; the last
             is where you are, so it is not a link. Wraps rather than scrolls —
@@ -405,6 +411,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
           </button>
         )}
       </div>
+      )}
 
       <div class="mt-3 space-y-2">
         {/* The way out, first in the list and before anything else — it is both

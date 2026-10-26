@@ -26,6 +26,9 @@ module.exports = {
         danger:         'rgb(var(--color-danger-ch) / <alpha-value>)',
         success:        'rgb(var(--color-success-ch) / <alpha-value>)',
         warn:           'rgb(var(--color-warn-ch) / <alpha-value>)',
+        // The Irish trad extension's own colour, the same green in every theme:
+        // what it adds reads as its own, wherever it is set apart.
+        irish:          'rgb(var(--color-irish-ch) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],

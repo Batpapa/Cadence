@@ -33,6 +33,27 @@ export interface TrendingRouteParams {
 // deck-target picker mirror the session module's DetectionCard exactly,
 // rather than a separate detail screen.
 
+/** What the module stands on, so that it also runs outside the app — the
+ *  standalone Trending page (2026-10-26), which has no user, no library and
+ *  no route. */
+export interface TrendingEnv {
+  /** The history, and how far its loading has got. */
+  load: (onProgress: (p: SyncProgress) => void) => Promise<PopularityDb>;
+  /** Where the chosen period and filters are kept for the next visit. */
+  saveParams: (p: TrendingRouteParams) => void;
+  /** The user's library: the "+" and deck buttons, and a known tune's name
+   *  leading to its card. Without it every name leads to The Session. */
+  library: boolean;
+}
+
+/** In the app: the history synced on this device, the filters in the route —
+ *  via replaceRoute, not navigate, so tweaking one doesn't spam the back-stack. */
+const APP_ENV: TrendingEnv = {
+  load: syncPopularityHistory,
+  saveParams: p => replaceRoute({ view: 'trending', ...p }),
+  library: true,
+};
+
 const PAGE_SIZE = 50;
 const DEFAULT_MIN_TUNEBOOKS = 300;
 const DEFAULT_WINDOW_DAYS = 365;
@@ -70,16 +91,17 @@ interface RowProps {
   /** Decks pinned on this page — ticked again in the deck choice modal, which
    *  opens on every add and every link (see components/deckSelector.tsx). */
   getPinnedDeckIds: () => Set<string>;
+  library: boolean;
 }
 
-function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProps) {
+function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }: RowProps) {
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetError, setSheetError] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState(false);
 
   const externalId = `thesession:${row.id}`;
-  const known = findByExternalId(externalId, appState.value.cards);
+  const known = library ? findByExternalId(externalId, appState.value.cards) : undefined;
 
   const doViewSheet = async () => {
     setSheetBusy(true);
@@ -165,7 +187,8 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
   return (
     // A card: `surface`; none yet: the page's `bg` — as a detection in an
     // analysis (see DetectionCard).
-    <div class={`flex items-center gap-3 p-2.5 rounded-lg border border-border ${known ? 'bg-surface' : 'bg-bg'}`}>
+    // Without a library (the standalone page) every row is shown as known.
+    <div class={`flex items-center gap-3 p-2.5 rounded-lg border border-border ${known || !library ? 'bg-surface' : 'bg-bg'}`}>
       <span class="text-xs text-dim w-6 text-right shrink-0">{rank}</span>
 
       {/* Icons to the left of the name, same order/placement as the session
@@ -179,7 +202,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
         <MusicNoteIcon size={12} />
       </button>
 
-      {known ? hasAnyDeck() && (
+      {!library ? null : known ? hasAnyDeck() && (
         // Card already exists: offer to put it in a deck instead — additive
         // only, never unlinks from decks left unticked. With no deck at all
         // there is nothing to offer, so the button is not rendered.
@@ -213,7 +236,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
           ) : (
             // Muted, as in an analysis and the detection library: no card yet.
             <a
-              class="text-sm text-muted truncate hover:text-accent transition-colors"
+              class={`text-sm ${library ? 'text-muted' : 'text-primary'} truncate hover:text-accent transition-colors`}
               href={externalSourceLink(externalId)!.url}
               target="_blank"
               rel="noopener"
@@ -237,7 +260,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds }: RowProp
 
 // ── Module ────────────────────────────────────────────────────────────────────
 
-export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
+export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingRouteParams; env?: TrendingEnv }) {
   const [dbState, setDbState] = useState<PopularityDb | null>(null);
   const [startIdx, setStartIdx] = useState(0);
   const [endIdx, setEndIdx] = useState(0);
@@ -291,11 +314,9 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
   };
 
   // Persists the current filter params (not the deck-picker target, which
-  // stays session-only) into the route — via replaceRoute, not navigate, so
-  // tweaking a filter doesn't spam the back-stack. Restored on next mount.
+  // stays session-only) — where is env's business. Restored on next mount.
   const pushRoute = (db: PopularityDb, gm: GainMode, th: string, si: number, ei: number, df = deflate) => {
-    replaceRoute({
-      view: 'trending',
+    env.saveParams({
       // The dates as chosen, so coming back shows what was chosen; they
       // resolve to the same snapshots on the way in.
       from: acceptedFromRef.current || (db.snapshots[si] ? toDateInputValue(db.snapshots[si]!) : undefined),
@@ -323,7 +344,7 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
       const onProgress = (p: SyncProgress) => {
         setStatus(p.phase === 'checking' ? t('trending.checking', { n: p.found }) : t('trending.syncing', { done: p.done, total: p.total }));
       };
-      const db = await syncPopularityHistory(onProgress);
+      const db = await env.load(onProgress);
       setDbState(db);
 
       if (db.snapshots.length === 0) {
@@ -538,6 +559,7 @@ export function TrendingModule({ initial }: { initial?: TrendingRouteParams }) {
             gainMode={gainMode}
             getTune={getTune}
             getPinnedDeckIds={() => pinnedDeckIdsRef.current}
+            library={env.library}
           />
         ))}
         <div ref={sentinelRef} class="h-4" style={{ display: revealed >= allRows.length ? 'none' : undefined }} />

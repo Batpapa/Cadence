@@ -6,6 +6,7 @@ import { HeartIcon, HourglassIcon, TuneSetIcon } from '../../components/icons';
 import { getContext } from '../../store';
 import { hasRecognisedSetting, type Detection, type TunesetRecord } from '../model';
 import { setCardFor, chainSpan, isSettled } from '../tunesets';
+import { hasLibrary } from '../../services/pageMode';
 import { experimentalSets } from '../detections';
 import { HeardSetAbc } from './abcPreview';
 import { PlayDisc, playDiscTitle } from './PassRow';
@@ -126,7 +127,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
     // 2026-10-20): the set stands out from the tunes it holds and from those
     // around it, = beside -. Three pixels is the least that draws both lines.
     <div
-      class={`detection-card p-3 rounded-lg border-[3px] border-double space-y-2 ${setCard ? 'bg-surface' : 'bg-bg'} ${open ? 'border-accent/60' : 'border-border'}`}
+      class={`detection-card p-3 rounded-lg border-[3px] border-double space-y-2 ${setCard || !hasLibrary() ? 'bg-surface' : 'bg-bg'} ${open ? 'border-accent/60' : 'border-border'}`}
       data-set-id={opts.record?.id}
     >
       <div class="flex items-center gap-2">
@@ -162,7 +163,8 @@ export function TunesetDetectionCard({ chain, opts, children }: {
             {name}
           </span>
         ) : (
-          <span class="text-sm font-semibold text-muted truncate flex-1">{name}</span>
+          // No library (pageMode.ts): shown as a known set, not a muted one.
+          <span class={`text-sm font-semibold ${hasLibrary() ? 'text-muted' : 'text-primary'} truncate flex-1`}>{name}</span>
         )}
 
         {/* Where a tune shows how sure the recogniser is: a set is not one of
