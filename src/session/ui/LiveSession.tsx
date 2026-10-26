@@ -3,6 +3,7 @@ import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { isTouchPrimaryDevice, isAppleTouchDevice } from '../../utils';
 import { isNative } from '../../native/platform';
+import { offersPlayApp, PLAY_STORE_URL } from '../../components/installOffer';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { alertModal } from '../../components/modal';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
@@ -280,6 +281,13 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
           screen off, nothing lost, 2026-10-05), so both would be false. */}
       {!native && <>
         {isTouchPrimary && <p class="text-[11px] text-dim mt-2 text-center">{t('sessions.foregroundReminder')}</p>}
+        {/* On Android the limit has a way out since 2026-10-26: the Play app. */}
+        {isTouchPrimary && offersPlayApp() && (
+          <p class="text-[11px] text-dim mt-1 text-center">
+            {t('sessions.foregroundAppHint')}{' '}
+            <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" class="text-accent underline">{t('sessions.foregroundAppLink')}</a>
+          </p>
+        )}
         {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}
       </>}
 
