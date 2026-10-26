@@ -10,7 +10,8 @@ import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
-import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon, CloudDownIcon, UpdateIcon } from './components/icons';
+import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon, CloudDownIcon, UpdateIcon, InstallIcon } from './components/icons';
+import { installAction } from './components/installOffer';
 import { t } from './services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from './services/updateService';
 import { initDriveClient } from './services/driveService';
@@ -249,6 +250,7 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   const [irishOpen, setIrishOpen] = useState(false);
   // t() is not reactive: a language picked on this screen redraws it.
   const [, redraw] = useState(0);
+  const install = installAction();
 
   const select = async (id: string) => {
     setLoading(id);
@@ -293,7 +295,15 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
     <div class="fixed inset-0 bg-bg flex items-center justify-center overflow-y-auto py-10">
       {/* No Settings before a user exists: language and theme are here. Below
           the status bar where the page runs under it (Android 15+, iOS). */}
-      <div class="fade-in absolute right-3" style="top:calc(var(--safe-top) + 8px);animation-delay:1s">
+      <div class="fade-in absolute right-3 flex items-center gap-1" style="top:calc(var(--safe-top) + 8px);animation-delay:1s">
+        {/* The same offer as the header's ⋮ menu (2026-10-26): a first-time
+            visitor lands here, and on Android the Play app is the better way
+            in. Only when there is something to install. */}
+        {install && (
+          <button type="button" class="btn-ghost text-xs inline-flex items-center gap-1.5 text-accent" onClick={install}>
+            <InstallIcon size={13} />{t('settings.install')}
+          </button>
+        )}
         <WelcomePrefs onLanguageChange={() => redraw(x => x + 1)} />
       </div>
       <div class="w-full max-w-[352px] mx-4 flex flex-col items-center">

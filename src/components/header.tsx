@@ -6,10 +6,10 @@ import type { AppContext } from '../types';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
 import { showSettingsModal, showProfileModal } from './settingsModal';
-import { showModal, closeModal } from './modal';
 import { registerOverlay } from './overlayStack';
-import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
-import { isMacSafariInstallable } from '../utils';
+// In the header at all because most people never opened Settings → About, and
+// so never learnt Cadence was installable.
+import { installAction, installSeenKey } from './installOffer';
 import { t } from '../services/i18nService';
 import { updateReady, applyUpdate } from '../services/updateService';
 import { saveFailure } from '../services/saveHealth';
@@ -276,7 +276,7 @@ function SyncBtn({ status, icon }: { status: DriveStatus; icon: number }) {
  *  dots go: a dot reads as "something needs you", and not installing can be a
  *  choice (the author's remark, 2026-10-23). The entry itself stays. Per
  *  device on purpose — installing is. */
-const INSTALL_SEEN_KEY = 'cadence_install_offer_seen';
+const INSTALL_SEEN_KEY = installSeenKey();
 const installOfferSeen = signal(readInstallSeen());
 
 function readInstallSeen(): boolean {
@@ -288,25 +288,6 @@ function markInstallSeen(): void {
   try { localStorage.setItem(INSTALL_SEEN_KEY, '1'); } catch { /* the dot comes back next time, nothing worse */ }
 }
 
-/** What installing takes here, or null when there is nothing to offer: a live
- *  `beforeinstallprompt` (Chrome/Edge/Android), or iOS and Mac Safari where the
- *  prompt does not exist and the steps have to be spelled out. Self-erasing:
- *  once installed the app runs standalone and the offer is gone.
- *
- *  In the header at all because most people never opened Settings → About, and
- *  so never learnt Cadence was installable. */
-function installAction(): (() => void) | null {
-  const canPrompt = canInstallSignal.value;
-  const ios = isIOS();
-  if (isStandalone() || (!canPrompt && !ios && !isMacSafariInstallable())) return null;
-  return () => {
-    if (canPrompt) { void triggerInstall(); return; }
-    const body = document.createElement('p');
-    body.className = 'text-sm text-muted leading-relaxed';
-    body.textContent = t(ios ? 'settings.installIOS' : 'settings.installMac');
-    showModal(t('settings.install'), body, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
-  };
-}
 
 interface Alert { key: string; label: string; danger: boolean; open: () => void }
 
