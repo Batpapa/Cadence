@@ -97,10 +97,10 @@ function batchSegments(windows: WindowResult[], cfg: DetectionTemporalConfig = T
   const detectionWindows = filterByTempoSpread(marginFiltered, cfg.tempoSpreadThreshold);
   const timeline = buildTemporalTimeline(detectionWindows, cfg);
   const result = runViterbiDetection(timeline, cfg);
-  // Finalized batch context — exemptLastSegment=false, same as
-  // IncrementalViterbiSegmenter.finalize() — so this stays a fair comparison
-  // for the "matches a one-shot batch call" test below.
-  const filtered = filterShortSegments(result.segments, timeline, cfg.minSegmentWindows, false);
+  // Finalized batch context — exemptLastSegment=true, same as
+  // IncrementalViterbiSegmenter.finalize() since 2026-10-26 — so this stays a
+  // fair comparison for the "matches a one-shot batch call" test below.
+  const filtered = filterShortSegments(result.segments, timeline, cfg.minSegmentWindows, true);
   const merged = mergeNearbySameTune(filtered, timeline, cfg.sameTuneMergeGapWindows);
   return merged.filter(s => s.tuneId !== UNKNOWN_STATE);
 }

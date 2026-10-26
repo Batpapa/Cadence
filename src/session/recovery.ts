@@ -24,7 +24,8 @@ import { DetectionTracker, type DetectionConfirmation } from './detectionState';
  *  arbitrary instant (here, whatever made it to IndexedDB before a crash) can
  *  catch a short-lived, not-yet-confirmed guess (minSegmentWindows/'retract'
  *  in viterbiSegmenter.ts) that blanket-finalizing would wrongly resurrect as
- *  a real detection.
+ *  a real detection. The last one standing is kept since 2026-10-26, as a
+ *  Stop keeps it (viterbiSegmenter.ts's recompute()).
  *
  *  A clean LiveSession.stop()/ImportSession.save() does NOT need this
  *  extra replay (2026-08-21): viterbiSegmenter.ts now only marks a segment

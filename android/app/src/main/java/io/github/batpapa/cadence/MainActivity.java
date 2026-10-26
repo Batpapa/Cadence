@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SystemBarsColorPlugin.class);
         registerPlugin(AudioFocusPlugin.class);
         registerPlugin(SystemAudioCapturePlugin.class);
+        registerPlugin(DiskSpacePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

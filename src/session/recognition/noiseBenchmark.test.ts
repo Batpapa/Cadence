@@ -37,7 +37,9 @@ describe('noise benchmarks (goal: zero detections, ever)', () => {
       const detectionWindows = filterByTempoSpread(marginFiltered, DETECTION_TEMPORAL_CONFIG.tempoSpreadThreshold);
       const timeline = buildTemporalTimeline(detectionWindows, DETECTION_TEMPORAL_CONFIG);
       const raw = runViterbiDetection(timeline, DETECTION_TEMPORAL_CONFIG).segments;
-      const filtered = filterShortSegments(raw, timeline, DETECTION_TEMPORAL_CONFIG.minSegmentWindows, false);
+      // As IncrementalViterbiSegmenter.finalize() since 2026-10-26: a short
+      // last segment stays.
+      const filtered = filterShortSegments(raw, timeline, DETECTION_TEMPORAL_CONFIG.minSegmentWindows, true);
       const merged = mergeNearbySameTune(filtered, timeline, DETECTION_TEMPORAL_CONFIG.sameTuneMergeGapWindows);
       const detections = merged.filter(s => s.tuneId !== UNKNOWN_STATE);
 

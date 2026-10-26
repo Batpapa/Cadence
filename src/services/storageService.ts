@@ -35,10 +35,17 @@ export const storagePersisted = signal<boolean | null | undefined>(undefined);
 export const storageUsage = signal<number | null>(null);
 export const storageQuota = signal<number | null>(null);
 
-/** Re-reads the browser's estimate into the signals above. Cheap, and safe to
- *  call from anywhere: every failure mode reports "unknown" rather than
- *  throwing. */
+/** Bytes free on the device, measured natively — the Android app only, and
+ *  only from the build that ships DiskSpacePlugin. null everywhere else: a
+ *  browser has no honest way to tell (the quota above is made up under
+ *  Chromium, see LOW_DISK_BYTES). */
+export const deviceFree = signal<number | null>(null);
+
+/** Re-reads the browser's estimate into the signals above, and the device's
+ *  free space in the app. Cheap, and safe to call from anywhere: every failure
+ *  mode reports "unknown" rather than throwing. */
 export async function refreshStorageEstimate(): Promise<void> {
+  const disk = isNative() ? refreshDeviceFree() : null;
   try {
     const est = await navigator.storage?.estimate?.();
     storageUsage.value = est?.usage ?? null;
@@ -47,12 +54,40 @@ export async function refreshStorageEstimate(): Promise<void> {
     storageUsage.value = null;
     storageQuota.value = null;
   }
+  await disk;
 }
 
-/** Two independent dangers, not one.
+async function refreshDeviceFree(): Promise<void> {
+  try {
+    const { deviceFreeBytes } = await import('../native/diskSpace');
+    deviceFree.value = await deviceFreeBytes();
+  } catch {
+    deviceFree.value = null;
+  }
+}
+
+let watchingDevice = false;
+
+/** Other apps fill the disk while Cadence sits in the background — the photos
+ *  and videos that tipped the phone of 2026-10-25 over. Coming back to the app
+ *  is when the figure may have moved, and when a warning can still be read. */
+function watchDeviceFree(): void {
+  if (watchingDevice) return;
+  watchingDevice = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void refreshDeviceFree();
+  });
+}
+
+/** Three independent dangers, not one.
  *
  *  `refused` / `unknown` are about DURABILITY: the browser may delete
  *  everything to reclaim space.
+ *
+ *  `lowDisk` is the same deletion, no longer a possibility but close at hand:
+ *  the DEVICE is nearly full (see LOW_DISK_BYTES). Measured natively, so only
+ *  the Android app can raise it, and it outranks everything — eviction takes
+ *  the whole library at once.
  *
  *  `full` is about CAPACITY, and it is worse. A persistent grant is not lost
  *  when the origin fills up — there is no demotion back to best-effort, and
@@ -63,7 +98,17 @@ export async function refreshStorageEstimate(): Promise<void> {
  *  pieces of the recording in progress, silently, while everything on screen
  *  looks normal. That is why it outranks the durability warning and why it is
  *  shown in red rather than amber. */
-export type StorageRisk = 'none' | 'refused' | 'unknown' | 'full';
+export type StorageRisk = 'none' | 'refused' | 'unknown' | 'full' | 'lowDisk';
+
+/** Free space under which the app warns, in bytes as Android's own Settings
+ *  count them (3 GB). Chromium evicts an origin once free space falls under
+ *  2 GiB (`should_remain_available`: the lesser of 2 GiB and 10 % of the disk,
+ *  storage/browser/quota/quota_settings.cc) — and in the app, Cadence is the
+ *  only origin, so the whole IndexedDB goes at once, localStorage aside. That
+ *  is what happened on 2026-10-25, on a phone at about 3 GB free: a few
+ *  photos or a WhatsApp video are enough to cross the remaining gap. This
+ *  leaves about 850 MB of warning before it. */
+export const LOW_DISK_BYTES = 3_000_000_000;
 
 /** Ratio of the quota at which writes are close enough to failing to be worth
  *  interrupting someone over. Not a free-space figure in bytes: quotas differ
@@ -86,8 +131,13 @@ export function assessStorage(
   persisted: boolean | null | undefined,
   usage?: number | null,
   quota?: number | null,
+  free?: number | null,
 ): StorageRisk {
-  // Capacity first: it is the one that is already losing data rather than
+  // The device first: eviction takes everything, at once — worse than the
+  // chunks a full origin drops. Only ever a real measure (see deviceFree), so
+  // an unknown figure says nothing.
+  if (typeof free === 'number' && free < LOW_DISK_BYTES) return 'lowDisk';
+  // Then capacity: it is the one that is already losing data rather than
   // merely risking it, and it applies whether or not persistence was granted.
   if (typeof usage === 'number' && typeof quota === 'number' && quota > 0 && usage / quota >= FULL_RATIO) {
     return 'full';
@@ -107,8 +157,9 @@ export function assessStorage(
  *  after start; and with 23 MB stored, its rule — evict only an origin holding
  *  at least half of what is missing below 2 GiB free — ruled it out anyway. On
  *  2026-10-25 a tester's phone at ~3 GB free lost the whole IndexedDB, with
- *  localStorage untouched. The answer to that risk is Drive (see DriveRow's
- *  note in settingsModal), not a triangle nobody can act on. The capacity
+ *  localStorage untouched. The answer to that risk is not a triangle on for
+ *  good, which nobody can act on, but `lowDisk` — raised only when the device
+ *  is actually close to it — and Drive (see DriveRow's note). The capacity
  *  half is kept, though inert here: Chromium reports a made-up quota (usage +
  *  10 GiB), so `full` cannot trigger in the app or in any Chromium browser. */
 export function effectivePersisted(persisted: boolean | null | undefined): boolean | null | undefined {
@@ -119,6 +170,8 @@ export interface StorageReport {
   persisted: boolean | null;
   usage: number | null;
   quota: number | null;
+  /** See deviceFree: a real measure, or null. */
+  free: number | null;
 }
 
 /** Asks the browser to stop evicting this origin automatically, and records
@@ -129,10 +182,11 @@ export interface StorageReport {
  *  harmless, but the check is cheaper and keeps the call out of the way of
  *  whatever heuristics a browser applies to repeated requests. */
 export async function ensurePersistentStorage(): Promise<boolean | null> {
-  // Pointless in the Android app (see effectivePersisted); the estimate is
-  // still wanted for the capacity warning.
+  // Pointless in the Android app (see effectivePersisted); the device's free
+  // space is wanted instead, now and each time the app comes back.
   if (isNative()) {
     void refreshStorageEstimate();
+    watchDeviceFree();
     return null;
   }
   const sm = navigator.storage;
@@ -165,5 +219,5 @@ export async function storageReport(): Promise<StorageReport> {
   const usage = storageUsage.value;
   const quota = storageQuota.value;
 
-  return { persisted, usage, quota };
+  return { persisted, usage, quota, free: deviceFree.value };
 }

@@ -28,7 +28,7 @@ import {
 import { showAboutModal } from './aboutModal';
 import { showStorageModal } from './storageModal';
 import { pinnedModule, isPinnedRouteActive } from './pinnedModule';
-import { storagePersisted, storageUsage, storageQuota, assessStorage, effectivePersisted } from '../services/storageService';
+import { storagePersisted, storageUsage, storageQuota, deviceFree, assessStorage, effectivePersisted } from '../services/storageService';
 
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
@@ -337,13 +337,14 @@ function AlertBtn({ compact, icon }: { compact: boolean; icon: number }) {
   // Reads the signals, so this re-renders on its own when the boot request
   // settles and when the estimate is refreshed. assessStorage owns every case,
   // including "not asked yet".
-  const risk = assessStorage(effectivePersisted(storagePersisted.value), storageUsage.value, storageQuota.value);
+  const risk = assessStorage(effectivePersisted(storagePersisted.value), storageUsage.value, storageQuota.value, deviceFree.value);
 
   const alerts: Alert[] = [];
   if (failure) alerts.push({ key: 'save', label: t('saveFailure.pillTitle'), danger: true, open: showSaveFailureModal });
   if (risk !== 'none') {
-    const full = risk === 'full';
-    alerts.push({ key: 'storage', label: t(full ? 'storage.warningFull' : 'storage.warning'), danger: full, open: showStorageModal });
+    const red = risk === 'full' || risk === 'lowDisk';
+    const label = risk === 'lowDisk' ? 'storage.warningLowDisk' : risk === 'full' ? 'storage.warningFull' : 'storage.warning';
+    alerts.push({ key: 'storage', label: t(label), danger: red, open: showStorageModal });
   }
 
   const [open, setOpen] = useState(false);

@@ -8,7 +8,7 @@ import { withChains } from '../session/ui/timelineModel';
 import { viterbiPickOf, type Detection, type DetectionAlternate } from '../session/model';
 import { TuneFinder, canOfferCapture, type FinderStatus, type Run, type SourceKind } from './tuneFinder';
 import { Menu, type MenuEntry } from './Menu';
-import { GearIcon, ExportIcon, CadenceLogo, TuningForkIcon } from './icons';
+import { GearIcon, ExportIcon, CadenceLogo, TuningForkIcon, ResetIcon } from './icons';
 import {
   nameOf, runDuration, runText, downloadRunText, downloadRunPackage, downloadRunAudio, downloadClip, downloadSetClip, downloadAllClips,
 } from './exports';
@@ -410,8 +410,11 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const editingLink = tab === 'link' && fresh && !busy;
 
   const runs = finder.runs();
-  const last = runs[runs.length - 1];
+  const latestIndex = finder.latestIndex;
+  const last = latestIndex === null ? undefined : runs[latestIndex];
   const activeRun = busy ? last : undefined;
+  /** Listening, rather than analysing — a listening analysed again included. */
+  const liveNow = finder.running === 'mic' || finder.running === 'device';
   const latestId = activeRun?.detections[activeRun.detections.length - 1]?.id;
 
   // The level meter, written straight to the DOM: a render per frame for one
@@ -511,6 +514,19 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     finder.analyseFile(file);
   };
 
+  /** The run's recording again, at the pitch now set, in place: it opens,
+   *  the others stay as they are. */
+  const reanalyse = (run: Run) => {
+    setFresh(false);
+    setFollow(true);
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      next.delete(run.index);
+      return next;
+    });
+    finder.reanalyse(run.index);
+  };
+
   const submitLink = () => {
     if (!url.trim()) return;
     startRun();
@@ -538,7 +554,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const status_ = (text: string) => <span class="status">{text}</span>;
 
   // A file takes the pitch it starts with: the control waits for the end.
-  const pitchLocked = busy && !!activeRun && !isLive(activeRun.kind);
+  const pitchLocked = busy && !!activeRun && !liveNow;
   const stepPitch = (delta: number) => {
     const next = Math.max(-12, Math.min(12, heard + delta));
     if (next === heard) return;
@@ -581,8 +597,8 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     line = status_(loadingText(status, lang));
   } else if (activeRun) {
     // Listening or analysing: the latest tune, as soon as there is one.
-    line = latest ? tuneLine(latest) : status_(tr(lang, status.kind === 'stopping' ? 'stopping' : isLive(activeRun.kind) ? 'listening' : 'analysing'));
-    if (!isLive(activeRun.kind)) {
+    line = latest ? tuneLine(latest) : status_(tr(lang, status.kind === 'stopping' ? 'stopping' : liveNow ? 'listening' : 'analysing'));
+    if (!liveNow) {
       progress = status.kind === 'analysing' && status.totalS > 0 ? Math.min(1, status.analyzedS / status.totalS) : 1;
     }
   } else if (last && !fresh) {
@@ -862,6 +878,18 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
                       {!run.label && <span class="started">{startTime(run, lang)}</span>}
                       <span class="count">{n}</span>
                     </button>
+                    {/* Once the pitch is changed, every analysis made before
+                        can be made again at it — greyed while one is running. */}
+                    {finder.canReanalyse(run.index) && (
+                      <button
+                        type="button"
+                        class="icon-button"
+                        disabled={busy}
+                        title={tr(lang, 'reanalyse', { pitch: signed(heard) })}
+                        aria-label={tr(lang, 'reanalyse', { pitch: signed(heard) })}
+                        onClick={() => reanalyse(run)}
+                      ><ResetIcon size={15} /></button>
+                    )}
                     {opts.tools && (
                       <>
                         <Menu icon={<GearIcon size={15} />} label={tr(lang, 'display')} entries={gearEntries(run)} />
@@ -888,7 +916,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
           </div>
           {busy && !following && latestId && (
             <button type="button" class="follow" onClick={followLive}>
-              {tr(lang, isLive(activeRun!.kind) ? 'followLive' : 'followAnalysis')}
+              {tr(lang, liveNow ? 'followLive' : 'followAnalysis')}
             </button>
           )}
         </section>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDisplayName, scoreMatch, sortByRelevance, foldForSearch, matchesSearch, formatBytes, titleCaseTuneName } from './utils';
+import { normalizeDisplayName, scoreMatch, sortByRelevance, foldForSearch, matchesSearch, formatBytes, formatDiskBytes, titleCaseTuneName } from './utils';
 
 describe('normalizeDisplayName', () => {
   it('moves a trailing ", The" to the front', () => {
@@ -149,6 +149,28 @@ describe('formatBytes', () => {
 
   it('reports the embed budget as the round number it is', () => {
     expect(formatBytes(50 * 1024 * 1024)).toBe('50 MB');
+  });
+
+  it('speaks octets in French, with the decimal comma', () => {
+    expect(formatBytes(999, 'fr')).toBe('999 o');
+    expect(formatBytes(1.5 * 1024 * 1024, 'fr')).toBe('1,5 Mo');
+    expect(formatBytes(42 * 1024 * 1024 * 1024, 'fr')).toBe('42 Go');
+    expect(formatBytes(1024, 'fr')).toBe('1,0 ko');
+  });
+
+  it('never groups digits', () => {
+    expect(formatBytes(1000 * 1024 * 1024, 'en')).toBe('1000 MB');
+    expect(formatBytes(1000 * 1024 * 1024, 'fr')).toBe('1000 Mo');
+  });
+});
+
+// The free-space figure, held up against Android's Settings → Storage, which
+// counts in powers of 1000.
+describe('formatDiskBytes', () => {
+  it('counts as Android does', () => {
+    expect(formatDiskBytes(3_000_000_000, 'fr')).toBe('3,0 Go');
+    expect(formatDiskBytes(2_500_000_000, 'en')).toBe('2.5 GB');
+    expect(formatDiskBytes(850_000_000, 'fr')).toBe('850 Mo');
   });
 });
 
