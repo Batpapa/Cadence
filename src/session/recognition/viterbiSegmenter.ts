@@ -248,12 +248,13 @@ export class IncrementalViterbiSegmenter {
     }
     const timeline = this.timelineBuilder.current();
     const result = this.decoder.extend(timeline, this.cfg);
-    // exemptLastSegment = !forceFinalizeAll: while a session (live or
-    // import) is still streaming windows in, the most recent segment is
-    // shown even if still short (user call: fine if it later disappears) —
-    // only once finalize() confirms no more windows are coming does a short
-    // last segment get filtered like any other.
-    const filteredSegments = filterShortSegments(result.segments, timeline, this.cfg.minSegmentWindows, !forceFinalizeAll);
+    // The most recent segment is never filtered for being short — while
+    // windows still stream in (user call: fine if it later disappears), and
+    // at finalize() too (2026-10-26): people press Stop as soon as they see
+    // their tune, one window after it appeared, and the final pass then took
+    // it away — 4 times out of 5 on three real sessions stopped right after a
+    // tune showed. What is on screen when Stop is pressed stays.
+    const filteredSegments = filterShortSegments(result.segments, timeline, this.cfg.minSegmentWindows, true);
     // Bridges a brief UNKNOWN drop between two occurrences of the same tune
     // (e.g. a couple of quiet/noisy windows mid-performance) into one
     // continuous segment, instead of reporting two separate detections.

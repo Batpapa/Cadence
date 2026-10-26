@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessStorage } from './storageService';
+import { assessStorage, LOW_DISK_BYTES } from './storageService';
 
 // The rule behind the header's warning triangle, kept pure so it can be pinned
 // down without a browser. It exists because of a real loss on 2026-09-09: an
@@ -62,5 +62,31 @@ describe('assessStorage — capacity', () => {
 
   it('does not divide by a zero quota', () => {
     expect(assessStorage(true, 0, 0)).toBe('none');
+  });
+});
+
+describe('assessStorage — device space (Android app)', () => {
+  // The third danger, measured natively: 2026-10-25, a phone at about 3 GB
+  // free lost the whole IndexedDB to Chromium's eviction, which starts under
+  // 2 GiB free. Nothing else in the rule could see it — the browser's quota is
+  // made up — so this one figure decides on its own.
+  it('warns under 3 GB free, whatever the rest says', () => {
+    expect(assessStorage(true, 10, 100, LOW_DISK_BYTES - 1)).toBe('lowDisk');
+    expect(assessStorage(false, 10, 100, 1_000_000_000)).toBe('lowDisk');
+  });
+
+  it('outranks a full origin: eviction takes everything, not a few chunks', () => {
+    expect(assessStorage(true, 95, 100, 1_000_000_000)).toBe('lowDisk');
+  });
+
+  it('stays quiet from 3 GB free up', () => {
+    expect(assessStorage(true, 10, 100, LOW_DISK_BYTES)).toBe('none');
+  });
+
+  it('says nothing when the device was not measured', () => {
+    // The web, or an app installed before the plugin and updated over the
+    // air: unknown is neither safe nor full.
+    expect(assessStorage(true, 10, 100, null)).toBe('none');
+    expect(assessStorage(true, 10, 100)).toBe('none');
   });
 });

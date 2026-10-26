@@ -1,5 +1,5 @@
 import type { AppState, FileEntry } from './types';
-import { t } from './services/i18nService';
+import { t, tIn, currentLanguage, type Lang } from './services/i18nService';
 import { SCHEMA_VERSION } from './services/migration';
 import { needsAudioSniff, sniffAudioMime, SNIFF_BYTES } from './services/audioSniff';
 import { isNative } from './native/platform';
@@ -320,13 +320,30 @@ export async function copyTextWhenReady(text: Promise<string | null>): Promise<b
   return t === null ? false : copyText(t);
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${Math.round(bytes)} B`;
+/** In the interface's language: octets in French (Mo, Go — 2026-10-26, « bytes »
+ *  read as English there), with its decimal comma. */
+export function formatBytes(bytes: number, lang: Lang = currentLanguage()): string {
+  return formatSize(bytes, 1024, lang);
+}
+
+/** In powers of 1000, as Android's Settings → Storage counts: for a figure
+ *  someone will hold up against that screen, where formatBytes' powers of 1024
+ *  would show 2.8 GB for the phone's 3.0 GB. */
+export function formatDiskBytes(bytes: number, lang: Lang = currentLanguage()): string {
+  return formatSize(bytes, 1000, lang);
+}
+
+function formatSize(bytes: number, base: number, lang: Lang): string {
+  const unit = (key: string) => tIn(lang, `units.${key}`);
+  // No grouping: « 1000 Mo » rather than « 1 000 Mo » or « 1,000 MB ».
+  const num = (v: number, digits: number) =>
+    v.toLocaleString(lang, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
+  if (bytes < base) return `${Math.round(bytes)} ${unit('B')}`;
   const units = ['kB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
-  return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+  let value = bytes / base;
+  let i = 0;
+  while (value >= base && i < units.length - 1) { value /= base; i++; }
+  return `${value >= 10 ? num(Math.round(value), 0) : num(value, 1)} ${unit(units[i]!)}`;
 }
 
 export function emptyState(): AppState {

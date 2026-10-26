@@ -122,17 +122,13 @@ export interface DetectionTemporalConfig {
    *  stable confirmation signal, changed from the original "windowCount"
    *  version on explicit user request the same day). A segment that never
    *  reaches this count is relabeled UNKNOWN (then merged with any
-   *  now-adjacent UNKNOWN segment). EXCEPTION: while detection is still in
-   *  progress (live capture OR an import/recording still streaming windows
-   *  in — i.e. viterbiSegmenter.ts's forceFinalizeAll is false), the very
-   *  last segment is shown regardless of its current rank-1 count —
-   *  explicit user call: showing it and then having it disappear/get
-   *  superseded is fine, being permanently invisible is not. It closes NOT
-   *  finalized if it never reached the threshold (see viterbiSegmenter.ts's
-   *  vanish-cleanup), so it can't be mistaken for a confirmed detection.
-   *  Once truly finalized (no more windows will ever arrive), that
-   *  exemption no longer applies: a genuinely unconfirmed last segment is
-   *  filtered like any other. */
+   *  now-adjacent UNKNOWN segment). EXCEPTION: the very last segment is
+   *  shown regardless of its current rank-1 count — explicit user call:
+   *  showing it and then having it disappear/get superseded is fine, being
+   *  permanently invisible is not. Superseded while windows still stream in,
+   *  it closes NOT finalized (see viterbiSegmenter.ts's vanish-cleanup). It
+   *  also survives finalize() since 2026-10-26: people press Stop the moment
+   *  their tune appears, and the final pass used to take it away. */
   minSegmentWindows: number;
 
   /** Post-process (2026-08-15), applied AFTER filterShortSegments — see

@@ -2,12 +2,13 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { showModal } from './modal';
 import { t } from '../services/i18nService';
-import { formatBytes } from '../utils';
+import { formatBytes, formatDiskBytes } from '../utils';
 import { ensurePersistentStorage, storageReport, assessStorage, effectivePersisted, type StorageReport } from '../services/storageService';
 
 // ── "Where your data lives" ──────────────────────────────────────────────────
-// Reached from the header warning, which only appears when the browser has not
-// granted persistent storage. The panel answers the two questions that warning
+// Reached from the header warning, which appears when the browser has not
+// granted persistent storage — or, in the Android app, when the device is
+// nearly full (`lowDisk`). The panel answers the two questions that warning
 // raises — is my work safe, and how much room is left — and offers the one
 // action that can change the first.
 
@@ -34,7 +35,7 @@ function StorageBody() {
 
   if (!report) return <p class="text-xs text-muted text-center py-3">{t('storage.reading')}</p>;
 
-  const risk = assessStorage(effectivePersisted(report.persisted), report.usage, report.quota);
+  const risk = assessStorage(effectivePersisted(report.persisted), report.usage, report.quota, report.free);
   const used = report.usage !== null ? formatBytes(report.usage) : t('storage.unknown');
 
   const ask = () => {
@@ -53,8 +54,9 @@ function StorageBody() {
     <div class="space-y-4">
       {/* The verdict first, in words, because "persistent storage: false" is
           not something anyone should have to interpret. */}
-      <p class={`text-xs leading-relaxed ${risk === 'full' ? 'text-danger' : risk === 'none' ? 'text-muted' : 'text-warn'}`}>
-        {t(risk === 'full' ? 'storage.full'
+      <p class={`text-xs leading-relaxed ${risk === 'full' || risk === 'lowDisk' ? 'text-danger' : risk === 'none' ? 'text-muted' : 'text-warn'}`}>
+        {t(risk === 'lowDisk' ? 'storage.lowDisk'
+          : risk === 'full' ? 'storage.full'
           : risk === 'none' ? 'storage.safe'
             : risk === 'refused' ? 'storage.atRisk' : 'storage.unknownState')}
       </p>
@@ -67,6 +69,11 @@ function StorageBody() {
           tone={report.persisted === true ? 'ok' : 'warn'}
         />
         <Row label={t('storage.used')} value={used} />
+        {/* Only where it is measured for real (the Android app): unlike the
+            quota, this is the disk itself. */}
+        {report.free !== null && (
+          <Row label={t('storage.deviceFree')} value={formatDiskBytes(report.free)} tone={risk === 'lowDisk' ? 'danger' : undefined} />
+        )}
         {/* No « still available » row (removed 2026-10-26): Chromium reports a
             made-up quota, usage + 10 GiB whatever the disk holds, so the figure
             was false for most users — 10 GB on a phone with 3 GB left. An

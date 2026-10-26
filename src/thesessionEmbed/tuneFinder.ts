@@ -65,6 +65,14 @@ interface RunState {
   /** What its detections are played from; null when the browser could not
    *  play it back (a QuickTime or AVI video, typically). */
   sound: Blob | MemoryRecorder | null;
+  /** What it can be analysed again from: the file itself, played back or not,
+   *  or the listening's recording. Null when there is none (no MediaRecorder). */
+  input: File | MemoryRecorder | null;
+  /** The pitch was changed since it was analysed: it can be again. */
+  stale: boolean;
+  /** While it is analysed again: what it had, given back should the new
+   *  analysis fail or be cancelled before it began. */
+  previous?: DetectionTracker;
 }
 
 /** A failure that already knows what to tell the user. */
@@ -132,8 +140,14 @@ export class TuneFinder {
   private recorder: MemoryRecorder | null = null;
   /** Every run since the page opened, oldest first. */
   private all: RunState[] = [];
-  /** The run in progress, the last of `all`; null between runs. */
+  /** The run in progress; null between runs. The last of `all`, except
+   *  for one analysed again, which keeps its place. */
   private active: RunState | null = null;
+  /** What the run in progress is doing: its own source, or `file` for one
+   *  analysed again from its recording — a listening included. */
+  private op: SourceKind | null = null;
+  /** The run started last: the one the strip speaks of once it is over. */
+  private latest: RunState | null = null;
   private wakeLock = new WakeLockManager();
   /** Bumped by every stop and failure: a start still awaiting a prompt, a
    *  download or the index sees it changed and gives up instead of going on. */
@@ -157,7 +171,13 @@ export class TuneFinder {
 
   /** The source of the run in progress, if any. */
   get running(): SourceKind | null {
-    return this.active?.kind ?? null;
+    return this.op;
+  }
+
+  /** The run started last, by its index; null before any. */
+  get latestIndex(): number | null {
+    const i = this.latest ? this.all.indexOf(this.latest) : -1;
+    return i < 0 ? null : i;
   }
 
   /** The analyser's confirmation, from its alternatives picker: any tune
@@ -173,7 +193,7 @@ export class TuneFinder {
    *  name it again — the analyser's live screen has no play button either. */
   canPlay(runIndex: number): boolean {
     const r = this.all[runIndex];
-    return !!r?.sound && !(r === this.active && (r.kind === 'mic' || r.kind === 'device'));
+    return !!r?.sound && !(r === this.active && (this.op === 'mic' || this.op === 'device'));
   }
 
   /** The file a run's detections are played from, as it stands. */
@@ -189,9 +209,10 @@ export class TuneFinder {
     this.pitchShift = semitones;
     // Only a live run takes it on the way: a file analysed at two pitches
     // would be wrong at one of them (the analyser's own rule, 2026-09-13).
-    if (this.active && (this.active.kind === 'mic' || this.active.kind === 'device')) {
+    if (this.active && (this.op === 'mic' || this.op === 'device')) {
       this.recognition?.setPitchShift(semitones);
     }
+    for (const r of this.all) if (r !== this.active) r.stale = true;
   }
 
   getPitchShift(): number { return this.pitchShift; }
@@ -216,8 +237,12 @@ export class TuneFinder {
       this.set({ kind: 'error', error: 'unsupported', detail: '' });
       return null;
     }
-    this.active = { kind, label, startedAt: Date.now(), tracker: new DetectionTracker(), sound: null };
+    this.active = {
+      kind, label, startedAt: Date.now(), tracker: new DetectionTracker(), sound: null, input: null, stale: false,
+    };
     this.all = [...this.all, this.active];
+    this.op = kind;
+    this.latest = this.active;
     return ++this.run;
   }
 
@@ -260,6 +285,7 @@ export class TuneFinder {
       this.recorder = new MemoryRecorder(source.recordingStream);
       this.recorder.start();
       this.active!.sound = this.recorder;
+      this.active!.input = this.recorder;
     } catch (err) {
       console.warn('[thesession-embed] no recorder, detections will not be playable', err);
       this.recorder = null;
@@ -279,6 +305,37 @@ export class TuneFinder {
     if (run === null) return;
     this.set({ kind: 'checking' });
     this.bootFile(run, file).catch(err => this.failed(run, err));
+  }
+
+  /** Whether a run can be analysed again: the pitch was changed since it
+   *  was analysed, and there is something to analyse — once nothing else is
+   *  running (reanalyse() waits for that). */
+  canReanalyse(runIndex: number): boolean {
+    const r = this.all[runIndex];
+    return !!r?.input && r.stale;
+  }
+
+  /** The run's recording analysed again at the pitch now set, in place: same
+   *  place, same title, its list replaced as the new one comes. A listening is
+   *  analysed as a file there, from its recording. */
+  reanalyse(runIndex: number): void {
+    const r = this.all[runIndex];
+    const input = r?.input;
+    if (!r || !input || this.active || !this.canReanalyse(runIndex)) return;
+    r.previous = r.tracker;
+    r.tracker = new DetectionTracker();
+    r.stale = false;
+    this.active = r;
+    this.op = 'file';
+    this.latest = r;
+    const run = ++this.run;
+    this.set({ kind: 'checking' });
+    const file = input instanceof MemoryRecorder
+      ? input.file().then(blob => new File([blob], r.label || 'recording', { type: blob.type }))
+      : Promise.resolve(input);
+    file
+      .then(f => (run === this.run ? this.bootFile(run, f) : undefined))
+      .catch(err => this.failed(run, err));
   }
 
   /** A DIRECT link to a recording only, as in the analyser (see
@@ -316,7 +373,10 @@ export class TuneFinder {
    *  video's sound extracted for playback (nothing is played here, and the
    *  decoder reads a video's audio track as it is). */
   private async bootFile(run: number, file: File): Promise<void> {
-    if (this.active && canPlayFile(file)) this.active.sound = file;
+    if (this.active) {
+      this.active.input = file;
+      if (canPlayFile(file)) this.active.sound = file;
+    }
     const duration = await probeAudioDuration(file);
     if (duration !== null && duration < IMPORT_MIN_S) throw new FinderFailure('too-short', String(IMPORT_MIN_S));
 
@@ -394,7 +454,7 @@ export class TuneFinder {
     if (!active || this.status.kind === 'stopping') return;
     const wasRunning = this.status.kind === 'listening' || this.status.kind === 'analysing';
     const recognition = this.recognition;
-    if (wasRunning && recognition && (active.kind === 'mic' || active.kind === 'device')) {
+    if (wasRunning && recognition && (this.op === 'mic' || this.op === 'device')) {
       // LiveSession.stop's order: the recorder, then the decoder, the source
       // last. The other way round — the AudioContext closed under a
       // MediaRecorder still recording its stream — Stop reloaded the page in
@@ -432,7 +492,7 @@ export class TuneFinder {
     // Closing the share picker is a decision, not a failure: back to where it
     // was, nothing said — as in the analyser.
     const name = errorName(err);
-    const dismissed = this.active?.kind === 'device'
+    const dismissed = this.op === 'device'
       && (name === 'NotAllowedError' || name === 'AbortError' || name === 'NotFoundError');
     this.run++;
     this.recognition?.dispose();
@@ -468,10 +528,21 @@ export class TuneFinder {
     this.recognition?.dispose();
     this.recognition = null;
     const run = this.active;
-    if (run && run.tracker.list().length === 0 && !(analysed && (run.kind === 'file' || run.kind === 'link'))) {
+    if (run?.previous) {
+      // Analysed again: never dropped. Failed or cancelled before the analysis
+      // began, it gets back what it had; once begun, the new one stands,
+      // partial or not, as a file's would.
+      if (!analysed) {
+        run.tracker = run.previous;
+        run.stale = true;
+      }
+      run.previous = undefined;
+    } else if (run && run.tracker.list().length === 0 && !(analysed && (this.op === 'file' || this.op === 'link'))) {
       this.all = this.all.filter(r => r !== run);
+      if (this.latest === run) this.latest = this.all[this.all.length - 1] ?? null;
     }
     this.active = null;
+    this.op = null;
     this.wakeLock.stop();
     this.set(status);
   }

@@ -4,7 +4,7 @@
 // (sessionUiShared.tsx's SHARE_ICON_TRIGGER), redrawn here as a component:
 // that file reaches for the user's cards, and this page cannot load it.
 
-export { GearIcon, CadenceLogo, TuningForkIcon } from '../components/icons';
+export { GearIcon, CadenceLogo, TuningForkIcon, ResetIcon } from '../components/icons';
 
 export function ExportIcon({ size = 14 }: { size?: number }) {
   return (

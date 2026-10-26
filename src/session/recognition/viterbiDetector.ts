@@ -267,17 +267,16 @@ export function countTop1Windows(tuneId: string, firstIdx: number, windowCount: 
  *  reported), then adjacent UNKNOWN segments are merged into one so the
  *  result never has two UNKNOWN segments sitting back to back.
  *
- *  `exemptLastSegment`: while detection is still in progress (live capture or
- *  an import/recording still streaming windows in), the very last segment IS
- *  shown even if still short — the user explicitly wants this (2026-08-15:
+ *  `exemptLastSegment`: the very last segment IS shown even if still short —
+ *  IncrementalViterbiSegmenter always passes `true`, at finalize() too since
+ *  2026-10-26 (Stop pressed as soon as the tune appeared took it away) — the user explicitly wants this (2026-08-15:
  *  "si c'est la dernière fenêtre alors j'accepte de l'afficher, c'est juste
  *  qu'il va ensuite disparaître"). A single-window guess can therefore still
  *  get opened as a real detection and then be superseded a few seconds
  *  later — see viterbiSegmenter.ts's vanish-cleanup for how that close is
  *  marked NOT finalized (not confirmed, but not hidden either) rather than
- *  pretending it was never shown. Once truly finalized (no more windows will
- *  ever arrive), pass `false`: a genuinely short last segment is filtered
- *  exactly like any other. */
+ *  pretending it was never shown. `false` filters a short last segment like
+ *  any other. */
 export function filterShortSegments(
   segments: DetectedTuneSegment[],
   timeline: TemporalTimeline,

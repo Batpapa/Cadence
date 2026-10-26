@@ -28,18 +28,18 @@ function sequence(rows: Record<string, number>[]): WindowResult[] {
 }
 
 describe('recomputeDetections', () => {
-  it('never resurrects a short-lived, never-confirmed guess that happened to be the live tail at the moment of a "crash"', () => {
-    // A plays a real, sustained run; B is a single stray window that was the
-    // live tail right when the recording was cut off (the crash) — exactly
-    // the scenario that used to leak a permanent, finalized "B" detection
-    // through the old blanket-finalize recovery path.
+  it('keeps the live tail at the moment of a "crash", short as it is — as a Stop pressed then would (2026-10-26)', () => {
+    // A plays a real, sustained run; B is a single window, the live tail
+    // right when the recording was cut off. Until 2026-10-26 it was dropped;
+    // a Stop now keeps the tune just shown, and recovery finalizes "exactly as
+    // if the user had pressed stop at that point".
     const windows = sequence([
       { A: 0.92 }, { A: 0.95 }, { A: 0.94 }, { A: 0.91 }, { A: 0.93 },
       { B: 0.9 }, // <- "crash" happens right here, B is the current live tail
     ]);
 
     const annotations = recomputeDetections(windows);
-    expect(annotations.map(a => a.tuneId)).toEqual(['A']);
+    expect(annotations.map(a => a.tuneId)).toEqual(['A', 'B']);
     expect(annotations.every(a => a.finalized)).toBe(true);
   });
 
