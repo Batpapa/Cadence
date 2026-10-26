@@ -18,6 +18,7 @@ import { defaultTuneRepeat } from '../services/abcService';
 import { describeTune, tuneFetchStatus, TuneUnavailableError, type SkippedTune } from '../services/tuneFetchError';
 import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
 import { t } from '../services/i18nService';
+import { theSessionOffered, irishTuneInfoOffered } from '../services/extensions';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
 import { showDeckChoiceModal, hasAnyDeck } from './deckSelector';
@@ -1166,6 +1167,26 @@ const BACK_PARENT: Partial<Record<Step, Step>> = {
   'json-file': 'json', share: 'json',
 };
 
+/** Whether Cadence's own cards are the only thing to import from: TheSession
+ *  and irishtune.info are the Irish trad extension's options
+ *  (services/extensions.ts). */
+function onlyCadenceCards(): boolean {
+  return !theSessionOffered() && !irishTuneInfoOffered();
+}
+
+/** Where ← leads. When only Cadence's own cards are left, the import step IS
+ *  theirs (ImportStep), so its two choices climb straight to it. */
+function backParent(step: Step): Step {
+  if (onlyCadenceCards() && (step === 'json-file' || step === 'share')) return 'import';
+  return BACK_PARENT[step] ?? 'root';
+}
+
+/** The import entry's line: the sources actually offered. */
+function importDescKey(): string {
+  if (onlyCadenceCards()) return 'newCard.importDescPlain';
+  return irishTuneInfoOffered() ? 'newCard.importDesc' : 'newCard.importDescTheSession';
+}
+
 function ChoiceCard({ icon, label, desc, accentColor, onClick }: {
   icon: string; label: string; desc: string; accentColor: string; onClick: () => void;
 }) {
@@ -1197,7 +1218,7 @@ function RootStep({ navigate }: { navigate: (s: Step) => void }) {
   return (
     <>
       <ChoiceCard icon={ICON_CREATE} label={t('newCard.tabCreate')} desc={t('newCard.createDesc')} accentColor="var(--color-accent)" onClick={() => navigate('create')} />
-      <ChoiceCard icon={ICON_IMPORT} label={t('newCard.tabImport')} desc={t('newCard.importDesc')} accentColor="var(--color-warn)" onClick={() => navigate('import')} />
+      <ChoiceCard icon={ICON_IMPORT} label={t('newCard.tabImport')} desc={t(importDescKey())} accentColor="var(--color-warn)" onClick={() => navigate('import')} />
     </>
   );
 }
@@ -1267,10 +1288,19 @@ function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
 }
 
 function ImportStep({ navigate }: { navigate: (s: Step) => void }) {
+  // TheSession and irishtune.info are the Irish trad extension's options
+  // (services/extensions.ts). With neither, only Cadence's own cards are
+  // left, and a menu of one entry would be a click for nothing: their two
+  // ways in are shown right here.
+  if (onlyCadenceCards()) return <JsonStep navigate={navigate} />;
   return (
     <>
-      <ChoiceCard icon={ICON_TS}   label={t('newCard.tabTheSession')}    desc={t('newCard.theSessionDesc')}    accentColor="var(--color-success)" onClick={() => navigate('thesession')} />
-      <ChoiceCard icon={ICON_ITI}  label={t('newCard.tabIrishTuneInfo')} desc={t('newCard.irishTuneInfoDesc')} accentColor="var(--color-accent)"  onClick={() => navigate('irishtuneinfo')} />
+      {theSessionOffered() && (
+        <ChoiceCard icon={ICON_TS}   label={t('newCard.tabTheSession')}    desc={t('newCard.theSessionDesc')}    accentColor="var(--color-success)" onClick={() => navigate('thesession')} />
+      )}
+      {irishTuneInfoOffered() && (
+        <ChoiceCard icon={ICON_ITI}  label={t('newCard.tabIrishTuneInfo')} desc={t('newCard.irishTuneInfoDesc')} accentColor="var(--color-accent)"  onClick={() => navigate('irishtuneinfo')} />
+      )}
       <ChoiceCard icon={ICON_JSON} label={t('newCard.tabImportJson')}    desc={t('newCard.importJsonDesc')}    accentColor="var(--color-warn)"    onClick={() => navigate('json')} />
     </>
   );
@@ -1482,7 +1512,7 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
         <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div class="flex items-center gap-2 min-w-0">
             {step !== 'root' && (
-              <button class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0" onClick={() => setStep(BACK_PARENT[step] ?? 'root')}>←</button>
+              <button class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0" onClick={() => setStep(backParent(step))}>←</button>
             )}
             <h2 class="text-sm font-semibold text-primary truncate">{TITLES[step]}</h2>
           </div>

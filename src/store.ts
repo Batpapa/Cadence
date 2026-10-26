@@ -324,8 +324,23 @@ export async function mutate(fn: (user: AppState) => void): Promise<void> {
   const next = structuredClone(appState.value);
   fn(next);
   commitState(next);
+  if (_ephemeral) return;
   await saveOrReport(next);
   syncToCloud(next);
+}
+
+/** A standalone page (TuneAnalyser/, 2026-10-26): the app's analyser for a user
+ *  who lives in memory only — never written to the users' store (it would
+ *  appear on the welcome screen), never sent to Drive. */
+let _ephemeral = false;
+
+/** Opens such a user: the state as given, the history bridge for back and
+ *  forward, and no route remembered for next time. */
+export function openEphemeralUser(user: AppState, route: Route): void {
+  _ephemeral = true;
+  commitState(user);
+  routeSignal.value = route;
+  initHistory(user.id);
 }
 
 /** Saves, and on failure says so and keeps trying — still rejecting, so that a

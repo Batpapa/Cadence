@@ -1,0 +1,93 @@
+/* ── The standalone pages' frame (shell.tsx) ──
+   On the app's --color-* tokens (styles.css, which both pages load). */
+
+html, body { margin: 0; height: 100%; }
+body { background: var(--color-bg); color: var(--color-primary); }
+
+.sa-page {
+  display: flex;
+  flex-direction: column;
+  /* The app's own rule (#app, styles.css): the zoom set on <html> scales dvh too. */
+  height: calc(100dvh / var(--zoom-factor, 1));
+  background: var(--color-bg);
+  color: var(--color-primary);
+}
+
+.sa-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: calc(env(safe-area-inset-top, 0px) + 0.6rem) 1rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  min-width: 0;
+}
+.sa-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+}
+.sa-mark { display: flex; color: #6cf6e9; }
+/* Finer than the glyph's 9 units (sized to sit among 1.5 px menu icons):
+   alone in the header, ~1.2 px reads as the welcome screen's mark does.
+   CSS over the presentation attribute. */
+.sa-mark svg { stroke-width: 5.5; }
+.sa-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin-left: -0.4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.45rem;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.sa-back:hover { color: var(--color-accent); background: var(--color-elevated); }
+.sa-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+}
+
+/* What the page is not (the analyser keeps nothing): one quiet line at the
+   foot of the screen, the link in the accent. Wraps rather than truncates on
+   a phone. It takes the gesture bar's inset in place of the page's main. */
+.sa-notice {
+  flex: 0 0 auto;
+  padding: 0.45rem 1rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--color-muted);
+  background: var(--color-accent-dim);
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  text-wrap: pretty;
+}
+.sa-notice a { color: var(--color-accent); font-weight: 500; text-decoration: none; white-space: nowrap; }
+.sa-notice a:hover { text-decoration: underline; }
+
+/* The whole width, as the module has it in the app (2026-10-26). */
+.sa-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.sa-main.scroll { display: block; overflow-y: auto; }
+.sa-main.above-notice { padding-bottom: 0; }

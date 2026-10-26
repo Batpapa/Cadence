@@ -1,8 +1,9 @@
-import { navigate } from '../store';
+import { navigate, getContext } from '../store';
 import { t } from '../services/i18nService';
 import { WaveformIcon, TrendIcon, RecordingPulseDot, PinIcon } from '../components/icons';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
-import { PINNABLE_MODULES, pinnedModuleId, togglePin } from '../components/pinnedModule';
+import { offeredModules, pinnedModuleId, togglePin } from '../components/pinnedModule';
+import { showSettingsModal } from '../components/settingsModal';
 import type { JSX } from 'preact';
 
 // ── Modules page ──────────────────────────────────────────────────────────────
@@ -63,30 +64,50 @@ function ModuleCard({ id, icon, title, desc, extra, onOpen, first }: {
 }
 
 export function ModulesView() {
-  const ids = PINNABLE_MODULES.map(m => m.id);
+  // Only the modules of the extensions switched on (services/extensions.ts).
+  const offered = new Set(offeredModules().map(m => m.id));
   return (
     <div class="p-6">
       <h1 class="text-xl font-semibold text-primary mb-4">{t('modules.title')}</h1>
 
-      <ModuleCard
-        first
-        id={ids[0]!}
-        icon={<WaveformIcon size={20} />}
-        title={t('sessions.moduleTitle')}
-        desc={t('sessions.moduleDesc')}
-        extra={sessionRecordingSignal.value && <RecordingPulseDot size={10} />}
-        onOpen={() => navigate({ view: 'sessions' })}
-      />
+      {offered.size === 0 ? (
+        // Every module comes with an extension, so none switched on leaves
+        // this page empty: it says where they are switched on rather than
+        // the Modules entry disappearing, which would hide the way back.
+        <div class="p-4 rounded-lg border border-dashed border-border text-center">
+          <p class="text-sm text-muted leading-relaxed">{t('modules.none')}</p>
+          <button type="button" class="btn-ghost text-sm text-accent mt-2" onClick={() => showSettingsModal(getContext(), 'extensions')}>
+            {t('modules.openExtensions')}
+          </button>
+        </div>
+      ) : (
+        <>
+          {offered.has('sessions') && (
+            <ModuleCard
+              first
+              id="sessions"
+              icon={<WaveformIcon size={20} />}
+              title={t('sessions.moduleTitle')}
+              desc={t('sessions.moduleDesc')}
+              extra={sessionRecordingSignal.value && <RecordingPulseDot size={10} />}
+              onOpen={() => navigate({ view: 'sessions' })}
+            />
+          )}
 
-      <ModuleCard
-        id={ids[1]!}
-        icon={<TrendIcon size={20} />}
-        title={t('trending.moduleTitle')}
-        desc={t('trending.moduleDesc')}
-        onOpen={() => navigate({ view: 'trending' })}
-      />
+          {offered.has('trending') && (
+            <ModuleCard
+              first={!offered.has('sessions')}
+              id="trending"
+              icon={<TrendIcon size={20} />}
+              title={t('trending.moduleTitle')}
+              desc={t('trending.moduleDesc')}
+              onOpen={() => navigate({ view: 'trending' })}
+            />
+          )}
 
-      <p class="text-xs text-dim mt-4 leading-relaxed">{t('modules.pinHint')}</p>
+          <p class="text-xs text-dim mt-4 leading-relaxed">{t('modules.pinHint')}</p>
+        </>
+      )}
     </div>
   );
 }

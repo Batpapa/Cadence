@@ -3,6 +3,7 @@ import type { ComponentChildren } from 'preact';
 import { setLanguage, t, type Lang } from '../services/i18nService';
 import { setWelcomeLanguage, welcomeLanguage } from '../services/userService';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
+import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, zoomWorks } from '../services/zoomService';
 import { registerOverlay } from './overlayStack';
 import { CheckIcon, GlobeIcon, ThemeIcon } from './icons';
 
@@ -90,8 +91,9 @@ function MenuItem({ active, icon, onClick, children }: {
 }
 
 /**
- * Language and theme for the screens outside any user — the welcome screen and
- * the recovery screen (2026-10-06). Settings only exist inside a user, so
+ * Language, theme and zoom for the screens outside any user — the welcome
+ * screen, the recovery screen (2026-10-06) and the standalone pages
+ * (2026-10-26). Settings only exist inside a user, so
  * before this someone who landed in the wrong language, or on a theme that
  * hurt their eyes, could not change either until they had created a user.
  * Each is a button opening a menu, so that more languages are more lines,
@@ -104,6 +106,8 @@ function MenuItem({ active, icon, onClick, children }: {
 export function WelcomePrefs({ onLanguageChange }: { onLanguageChange: () => void }) {
   const [theme, setThemeState] = useState<Theme>(getTheme);
   const [lang, setLang] = useState<Lang>(welcomeLanguage);
+  const [zoom, setZoomState] = useState(getZoom);
+  const stepZoom = (step: () => void) => { step(); setZoomState(getZoom()); };
 
   const pickLanguage = (l: Lang) => {
     setWelcomeLanguage(l);
@@ -140,6 +144,21 @@ export function WelcomePrefs({ onLanguageChange }: { onLanguageChange: () => voi
           </MenuItem>
         ))}
       </PrefMenu>
+      {/* The zoom too (2026-10-26): a device setting like the theme, and as
+          needed before any user exists — on this screen and on the standalone
+          pages. Settings' own stepper, which stays open while it is used. None
+          where the browser's CSS zoom is the old kind (zoomService.zoomWorks). */}
+      {zoomWorks() && (
+        <PrefMenu title={t('settings.zoom')} button={<span class="tabular-nums">{zoom}%</span>}>
+          {() => (
+            <div class="flex items-center justify-between gap-1 px-3 py-2">
+              <button type="button" class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomOut()} onClick={() => stepZoom(zoomOut)}>−</button>
+              <span class="text-sm font-mono w-12 text-center tabular-nums">{zoom}%</span>
+              <button type="button" class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomIn()} onClick={() => stepZoom(zoomIn)}>+</button>
+            </div>
+          )}
+        </PrefMenu>
+      )}
     </div>
   );
 }

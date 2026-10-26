@@ -378,6 +378,15 @@ export interface User {
    *  settings, because it spends someone's Drive and needs their say-so. */
   attachmentThresholdKb?: number;
 
+  /** Which extensions are switched on — see services/extensions.ts, the
+   *  single reader. An extension only offers things (an import source, a
+   *  module); switching one off hides them and touches no data. */
+  extensions?: UserExtensions;
+  /** Each extension's own options, by extension then by option id — the
+   *  list and the defaults are declared in services/extensions.ts. Absent =
+   *  that option's default. */
+  extensionOptions?: Partial<Record<keyof UserExtensions, Record<string, boolean>>>;
+
   // Profiles
   profileIds: string[];
   currentProfileId: string;
@@ -404,6 +413,15 @@ export interface User {
 
   // Schema versioning
   schemaVersion?: number;
+}
+
+/** One flag per extension. Absent = ON: every user made before extensions
+ *  existed (2026-10-26) had all of it, and keeps it. A brand-new user is
+ *  written with an explicit `false` instead (main.ts's blankUser). */
+export interface UserExtensions {
+  /** Irish traditional music: TheSession and irishtune.info as card sources,
+   *  the tune analyser and Trending modules. */
+  irishTrad?: boolean;
 }
 
 /** AppState is the active User — kept as alias to minimise call-site changes. */

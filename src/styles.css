@@ -63,6 +63,7 @@
   --color-danger-ch:   248 113 113;
   --color-success-ch:  74 222 128;
   --color-warn-ch:     251 191 36;
+  --color-irish-ch:    52 211 133;
 }
 
 [data-theme="green"] {
@@ -93,6 +94,7 @@
   --color-danger-ch:   220 38 38;
   --color-success-ch:  21 128 61;
   --color-warn-ch:     232 120 58;
+  --color-irish-ch:    22 155 98;
 }
 
 [data-theme="light"] {
@@ -139,6 +141,7 @@
   --color-danger-ch:   220 38 38;
   --color-success-ch:  22 163 74;
   --color-warn-ch:     192 122 0;
+  --color-irish-ch:    21 128 61;
 }
 
 @layer base {
@@ -352,17 +355,12 @@
   to   { opacity: 1; transform: none; }
 }
 
-/* Dépliage du bloc « trad irlandais ». max-height n'est qu'une borne
-   d'animation (couvre les 4 lignes en anglais à fort zoom) : une fois
-   l'animation finie le contenu n'est plus contraint ni rogné. */
-.irish-expand {
-  overflow: hidden;
-  animation: irishExpand .26s cubic-bezier(.2, .7, .3, 1);
-}
-@keyframes irishExpand {
-  from { opacity: 0; max-height: 0; }
-  to   { opacity: 1; max-height: 260px; }
-}
+/* The welcome screen's tour (components/welcomeTour.tsx) is drawn in the
+   brand cyan, the logo's — which would not show against the light themes'
+   white: a deeper teal there, dark enough for its small labels. */
+.welcome-tour { --tour-brand: #6cf6e9; }
+[data-theme="light"] .welcome-tour,
+[data-theme="green"] .welcome-tour { --tour-brand: #0b7d76; }
 
 /* Respect de la préférence système : on montre l'écran final, sans mouvement */
 @media (prefers-reduced-motion: reduce) {
@@ -371,7 +369,6 @@
     animation-duration: .01ms !important;
     animation-delay: 0ms !important;
   }
-  .irish-expand { animation: none; }
   /* A loop at .01ms would be a flicker: the drawn mark, still. */
   .cadence-mark.looping path { animation: none; stroke-dashoffset: 0; }
 }

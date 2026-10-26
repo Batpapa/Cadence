@@ -17,6 +17,7 @@ import type { Detection } from '../model';
 import { retargetedHistory } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { DateField } from '../../components/dateField';
+import { hasLibrary } from '../../services/pageMode';
 import { fieldValueToDate } from '../../services/dateFormat';
 
 // ── Shared UI helpers ────────────────────────────────────────────────────────
@@ -772,6 +773,8 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: T
 
   const round = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50';
 
+  // The standalone analyser has no library to add to (pageMode.ts).
+  if (!hasLibrary()) return null;
   if (!known) {
     return (
       <button class={round} title={t('sessions.addCard')} disabled={busy} onClick={onAddClick}>

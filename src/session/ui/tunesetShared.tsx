@@ -13,6 +13,7 @@ import { getContext } from '../../store';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { buildDetectedSetCard, cardsByTuneId, setCardFor } from '../tunesets';
 import { fmtTime, type ClipSessionRef } from './sessionUiShared';
+import { hasLibrary } from '../../services/pageMode';
 
 // ── What a set heard in an analysis can be put through (2026-10-19) ──────────
 // The set's own twins of the detection's clip, rating and deck controls
@@ -232,6 +233,8 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
   const [busy, setBusy] = useState(false);
   const round = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
 
+  // The standalone analyser has no library to file a set in (pageMode.ts).
+  if (!hasLibrary()) return null;
   if (setCard) {
     if (!hasAnyDeck()) return null;
     return (

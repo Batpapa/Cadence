@@ -5,7 +5,7 @@ import type { ComponentChildren, RefObject } from 'preact';
 import type { AppContext } from '../types';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
-import { showSettingsModal, showProfileModal } from './settingsModal';
+import { showSettingsModal, showProfileModal, confirmLogout } from './settingsModal';
 import { registerOverlay } from './overlayStack';
 // In the header at all because most people never opened Settings → About, and
 // so never learnt Cadence was installable.
@@ -23,7 +23,7 @@ import {
 import {
   HomeIcon, LibraryIcon, SearchIcon, HelpIcon, SettingsIcon, ModulesIcon,
   CloudUpIcon, ChevronDownIcon, CheckIcon, PanelLeftIcon, CadenceLogo,
-  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, WarningTriangleIcon, UpdateIcon, MoreVerticalIcon,
+  ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, WarningTriangleIcon, UpdateIcon, MoreVerticalIcon, LogoutIcon,
 } from './icons';
 import { showAboutModal } from './aboutModal';
 import { showStorageModal } from './storageModal';
@@ -227,8 +227,8 @@ function HeaderMenu({ anchor, align, onClose, children }: {
  *  column is 24 px for every row, wide enough for the logo glyph, so the labels
  *  line up whatever the icon; `[&>svg]:shrink-0` because an SVG is a flex item
  *  that would otherwise shrink to the column instead of keeping its size. */
-function MenuRow({ icon, label, accent, dot, onClick }: {
-  icon: ComponentChildren; label: string; accent?: boolean; dot?: boolean; onClick: () => void;
+function MenuRow({ icon, label, accent, danger, dot, onClick }: {
+  icon: ComponentChildren; label: string; accent?: boolean; danger?: boolean; dot?: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -236,7 +236,7 @@ function MenuRow({ icon, label, accent, dot, onClick }: {
       class="w-full flex items-center gap-3 min-h-11 px-2.5 py-2 rounded-lg text-left text-sm text-primary hover:bg-surface cursor-pointer border-none bg-transparent transition-colors"
       onClick={onClick}
     >
-      <span class={`w-6 flex items-center justify-center shrink-0 [&>svg]:shrink-0 ${accent ? 'text-accent' : 'text-muted'}`}>{icon}</span>
+      <span class={`w-6 flex items-center justify-center shrink-0 [&>svg]:shrink-0 ${danger ? 'text-danger' : accent ? 'text-accent' : 'text-muted'}`}>{icon}</span>
       <span class="flex-1 min-w-0 whitespace-nowrap">{label}</span>
       {dot && <span class="w-2 h-2 rounded-full bg-accent shrink-0" />}
     </button>
@@ -606,6 +606,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
                 and the community — the job of a share button testers read as
                 "share what is selected" (2026-10-22). */}
             <MenuRow icon={<CadenceLogo size={24} glyph />} accent label={t('about.title')} onClick={fromMenu(showAboutModal)} />
+            {/* Last of all, out of Settings (2026-10-26, the author's call):
+                leaving is not a setting. Red like it was there. */}
+            <MenuRow icon={<LogoutIcon size={18} />} danger label={t('settings.logout')} onClick={fromMenu(confirmLogout)} />
           </>
         </HeaderMenu>
       )}

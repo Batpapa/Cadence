@@ -22,6 +22,7 @@ import { showModal, closeModal, confirmModal, renderModalBody } from './modal';
 import { CardSearchField } from './cardSearchField';
 import { showNewCardModal, type NewCardPreset } from './theSessionImport';
 import { t } from '../services/i18nService';
+import { theSessionOffered, irishTuneInfoOffered } from '../services/extensions';
 import { downloadIcon } from './playbackIcons';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
@@ -592,7 +593,11 @@ async function createMissingCard(entry: CardRef, type: string | undefined): Prom
  *  ✕, Escape and the backdrop already do that, and a modal that offers a way
  *  out twice reads as if the two differed. */
 function showBrokenRefModal(entry: CardRef, type: string | undefined): void {
-  const preset = repairPreset(entry);
+  // Importing from TheSession or irishtune.info is offered only with that
+  // source's option on (services/extensions.ts); otherwise the card can still
+  // be created bare.
+  const found = repairPreset(entry);
+  const preset = found && (found.source === 'thesession' ? theSessionOffered() : irishTuneInfoOffered()) ? found : null;
   // Nothing to name it with — a nameless card is unsortable, unsearchable and
   // effectively invisible, so it is not an offer worth making.
   const canCreate = !preset && entry.title.trim() !== '';

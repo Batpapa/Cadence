@@ -10,7 +10,8 @@ import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
-import { GithubIcon, ChevronDownIcon, ImportTrayIcon, MicIcon, MusicNoteIcon, TrendIcon, CloudDownIcon, UpdateIcon, InstallIcon } from './components/icons';
+import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon } from './components/icons';
+import { WelcomeTour } from './components/welcomeTour';
 import { installAction } from './components/installOffer';
 import { t } from './services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from './services/updateService';
@@ -211,16 +212,43 @@ export function mountApp(root: HTMLElement): void {
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '?';
 
-/** The Irish-trad toolkit, folded away behind a question on the welcome
- *  screen: Cadence is general-purpose first, so this stays a post-scriptum
- *  addressed to the people it concerns rather than a second sales pitch.
- *  Module scope — constant, no reason to rebuild it on every render. */
-const IRISH_FEATURES = [
-  { key: 'welcome.irish.1', Icon: ImportTrayIcon },
-  { key: 'welcome.irish.2', Icon: MicIcon },
-  { key: 'welcome.irish.3', Icon: MusicNoteIcon },
-  { key: 'welcome.irish.4', Icon: TrendIcon },
-] as const;
+/** The source link and the version, at the foot of the welcome screen.
+ *  No privacy/terms links here: index.html's static footer carries them on
+ *  this screen, and is what the OAuth review reads. */
+function Signature({ class: extra }: { class: string }) {
+  return (
+    <div class={`flex-col items-center gap-2.5 ${extra}`}>
+      <a
+        href="https://github.com/Batpapa/Cadence"
+        target="_blank"
+        rel="noopener noreferrer"
+        title={t('welcome.sourceTitle')}
+        class="flex items-center gap-1.5 text-[10.5px] text-dim hover:text-primary transition-colors"
+      >
+        <GithubIcon size={12} />
+        <span>Batpapa</span>
+      </a>
+
+      {/* Quiet, like the signature: for the screenshot someone sends
+          when asking for help. When a newer build is ready it becomes the
+          way to get it — nothing is open on this screen for a reload to
+          lose, and there is no header here to carry the pill. */}
+      <div class="flex items-center gap-2 text-[10px] text-dim tabular-nums">
+        <span>{versionLabel()}</span>
+        {updateReady.value && (
+          <button
+            class="flex items-center gap-1 text-accent hover:underline cursor-pointer"
+            title={t('update.title', { version: versionLabel(updateReady.value) })}
+            onClick={applyUpdate}
+          >
+            <UpdateIcon size={11} />
+            {t('update.button')}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** How the welcome screen's Drive recovery ended (see main.ts). Only 'empty'
  *  hands control back: a Google account with no Cadence data on it, where the
@@ -246,8 +274,6 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   // Set while the name being typed is for a user bound to an empty Drive.
   const [emptyDrive, setEmptyDrive] = useState<EmptyDrive | null>(null);
   const [recoverError, setRecoverError] = useState<'failed' | 'inAppBrowser' | null>(null);
-  // Deliberately not persisted: it reopens closed on every visit.
-  const [irishOpen, setIrishOpen] = useState(false);
   // t() is not reactive: a language picked on this screen redraws it.
   const [, redraw] = useState(0);
   const install = installAction();
@@ -292,10 +318,14 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   // an interaction nobody chose, holding a destructive action. Removing a user
   // now lives in Settings → User, where it is a button that is simply visible.
   return (
-    <div class="fixed inset-0 bg-bg flex items-center justify-center overflow-y-auto py-10">
+    // The sign-in, then what Cadence does (WelcomeTour) under it — beside it
+    // on a wide screen, each column scrolling on its own so that the sign-in
+    // stays in view. Auto margins rather than centring by flex: a column taller
+    // than the screen must not lose its top.
+    <div class="fixed inset-0 bg-bg overflow-y-auto flex flex-col lg:flex-row lg:overflow-hidden">
       {/* No Settings before a user exists: language and theme are here. Below
           the status bar where the page runs under it (Android 15+, iOS). */}
-      <div class="fade-in absolute right-3 flex items-center gap-1" style="top:calc(var(--safe-top) + 8px);animation-delay:1s">
+      <div class="fade-in absolute z-10 right-3 flex items-center gap-1" style="top:calc(var(--safe-top) + 8px);animation-delay:1s">
         {/* The same offer as the header's ⋮ menu (2026-10-26): a first-time
             visitor lands here, and on Android the Play app is the better way
             in. Only when there is something to install. */}
@@ -306,7 +336,8 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
         )}
         <WelcomePrefs onLanguageChange={() => redraw(x => x + 1)} />
       </div>
-      <div class="w-full max-w-[352px] mx-4 flex flex-col items-center">
+      <div class="shrink-0 flex flex-col items-center px-4 pt-14 pb-12 lg:flex-1 lg:min-w-0 lg:overflow-y-auto lg:py-10">
+      <div class="w-full max-w-[352px] lg:my-auto flex flex-col items-center">
 
         {/* ── Marque ── */}
         <div class="mark-in mb-[22px]">
@@ -420,75 +451,22 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             </p>
           )}
 
-          {/* See IRISH_FEATURES. Stays inside the selection block's `rise-in`
-              so the entrance cascade above keeps its hard-coded delays. */}
-          <div class="w-11 h-px bg-border mx-auto mt-[26px] mb-[22px]" />
+          {/* Under the sign-in when the tour is beside it; at the very end
+              of the page when the tour is below. */}
+          <Signature class="hidden lg:flex mt-10" />
+        </div>
+      </div>
+      </div>
 
-          <button
-            type="button"
-            aria-expanded={irishOpen}
-            aria-controls="irish-features"
-            onClick={() => setIrishOpen(o => !o)}
-            class={`w-full flex items-center justify-center gap-1.5 py-1 text-[11px] transition-colors cursor-pointer ${
-              irishOpen ? 'text-muted' : 'text-dim hover:text-muted'
-            }`}
-          >
-            <span>{t('welcome.irish.lead')}</span>
-            <span class={`flex transition-transform duration-200 ${irishOpen ? 'rotate-180' : ''}`}>
-              <ChevronDownIcon size={12} />
-            </span>
-          </button>
-
-          {irishOpen && (
-            <div id="irish-features" class="irish-expand">
-              <div class="flex flex-col gap-2.5 mt-3 px-3.5 py-3 rounded-xl bg-surface border border-border">
-                {IRISH_FEATURES.map(({ key, Icon }) => (
-                  // Brand cyan on the parent so `currentColor` carries it into
-                  // the icon — same literal as CadenceMark, deliberately not
-                  // theme-driven (see its comment).
-                  <div key={key} class="flex items-center gap-2.5">
-                    <span class="flex shrink-0 text-[#6cf6e9]">
-                      <Icon size={14} />
-                    </span>
-                    <span class="text-[11.5px] text-muted leading-snug">{t(key)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* No privacy/terms links here: index.html's static footer carries
-              them on this screen, and is what the OAuth review reads. */}
-          <div class="flex flex-col items-center gap-2.5 mt-5">
-            <a
-              href="https://github.com/Batpapa/Cadence"
-              target="_blank"
-              rel="noopener noreferrer"
-              title={t('welcome.sourceTitle')}
-              class="flex items-center gap-1.5 text-[10.5px] text-dim hover:text-primary transition-colors"
-            >
-              <GithubIcon size={12} />
-              <span>Batpapa</span>
-            </a>
-
-            {/* Quiet, like the signature: for the screenshot someone sends
-                when asking for help. When a newer build is ready it becomes the
-                way to get it — nothing is open on this screen for a reload to
-                lose, and there is no header here to carry the pill. */}
-            <div class="flex items-center gap-2 text-[10px] text-dim tabular-nums">
-              <span>{versionLabel()}</span>
-              {updateReady.value && (
-                <button
-                  class="flex items-center gap-1 text-accent hover:underline cursor-pointer"
-                  title={t('update.title', { version: versionLabel(updateReady.value) })}
-                  onClick={applyUpdate}
-                >
-                  <UpdateIcon size={11} />
-                  {t('update.button')}
-                </button>
-              )}
-            </div>
-          </div>
+      <div
+        class="fade-in shrink-0 px-[19px] sm:px-14 pt-6 pb-16 lg:flex-[1.3] lg:min-w-0 lg:overflow-y-auto lg:pt-[72px] lg:bg-surface/40 lg:border-l lg:border-border"
+        style="animation-delay:1.3s"
+      >
+        {/* Below the sign-in, the whole width between the side-by-side
+            layout's margins (2026-10-26): not the sign-in's narrow column. */}
+        <div class="w-full lg:max-w-[640px]">
+          <WelcomeTour />
+          <Signature class="flex lg:hidden mt-14" />
         </div>
       </div>
       <ModalHost />

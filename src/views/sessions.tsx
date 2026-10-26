@@ -12,7 +12,7 @@ import { SessionSummary } from '../session/ui/SessionSummary';
 import { startLiveSession, startImport, startLinkImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive, setPitchShiftSetting } from '../session/ui/sessionModule';
 import { PitchShiftControl } from '../session/ui/PitchShiftControl';
 import { pitchShiftSetting } from '../session/detections';
-import { GearIcon } from '../components/icons';
+import { GearIcon, WaveformIcon } from '../components/icons';
 
 // ── Sessions page (the tune analyzer) ───────────────────────────────────────────
 // Route `{ view: 'sessions' }` = past-sessions library, or whichever local
@@ -84,7 +84,11 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
     content = (
       <>
         <div class="flex items-center justify-between mb-4">
-          <h1 class="text-xl font-semibold text-primary">{t('sessions.moduleTitle')}</h1>
+          {/* The module's own icon before its name, as Trending has it. */}
+          <h1 class="text-xl font-semibold text-primary flex items-center gap-2">
+            <WaveformIcon size={18} />
+            {t('sessions.moduleTitle')}
+          </h1>
           <div class="flex items-center gap-2">
             {/* The instruments' pitch, set here before anything starts — an
                 import runs too fast to catch with a control on its own screen.

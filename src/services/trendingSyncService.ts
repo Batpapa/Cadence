@@ -1,4 +1,5 @@
 import { loadPopularityDb, savePopularityDb, type PopularityDb } from '../trending/db';
+import { fetchPublishedHistory } from '../trending/publishedHistory';
 
 // ── TheSession popularity history sync ────────────────────────────────────────
 // Ports Program.cs (TheSession_PopularityHistory) to the browser: both
@@ -96,7 +97,18 @@ export type SyncProgress =
  *  the up-to-date PopularityDb. Safe to call on every module open — a no-op fetch
  *  of the commit list plus 0-1 snapshot fetches once already caught up. */
 export async function syncPopularityHistory(onProgress?: (p: SyncProgress) => void): Promise<PopularityDb> {
-  const dbState = await loadPopularityDb();
+  let dbState = await loadPopularityDb();
+  // A first sync on this device starts from the history published with the
+  // site (2026-10-26) rather than from week one: under a megabyte to download
+  // instead of ~267. Whatever it lacks — a week published since the last
+  // deploy — the walk below adds as usual.
+  if (dbState.snapshots.length === 0) {
+    const published = await fetchPublishedHistory('data/popularity.json');
+    if (published) {
+      dbState = published;
+      await savePopularityDb(dbState);
+    }
+  }
   const known = new Set(dbState.snapshots);
 
   const allCommits = await fetchAllCommits(found => onProgress?.({ phase: 'checking', found }));

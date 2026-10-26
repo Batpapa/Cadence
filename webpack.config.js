@@ -15,6 +15,31 @@ const TEMPLATE = './src/index.html';
 const EMBED_ENTRY = 'thesessionEmbed';
 const EMBED_PAGE = 'TuneAnalyser/thesession-embed/index.html';
 
+/** The standalone pages (src/standalone/, 2026-10-26): two of the app's
+ *  modules for using once, one folder down from the app, their bundles at the
+ *  root beside the rest as the widget's are. */
+const STANDALONE = [
+  {
+    entry: 'standaloneAnalyser', file: 'standalone-analyser', src: './src/standalone/analyser.tsx', page: 'TuneAnalyser/index.html',
+    title: 'Tune analyser — Cadence',
+    description: 'Name the Irish tunes being played: listen with the microphone, or open a recording. Free, nothing to sign up for.',
+  },
+  {
+    entry: 'standaloneTrending', file: 'standalone-trending', src: './src/standalone/trending.tsx', page: 'Trending/index.html',
+    title: 'Trending tunes — Cadence',
+    description: "The tunes gaining ground on The Session, week by week, from its members' tunebooks.",
+  },
+];
+
+/** A bundle's name, by its entry: the app's and its chunks keep exactly the
+ *  names they had with a single entry. */
+function bundleName(chunkName, isDev) {
+  const own = chunkName === EMBED_ENTRY ? 'thesession-embed'
+    : STANDALONE.find(s => s.entry === chunkName)?.file;
+  const base = own ?? 'bundle';
+  return isDev ? `${base}.js` : `${base}.[contenthash].js`;
+}
+
 const CSP_PLACEHOLDER = '%CSP%';
 
 /**
@@ -198,6 +223,7 @@ module.exports = (env, argv) => {
     entry: {
       main: './src/main.ts',
       [EMBED_ENTRY]: './src/thesessionEmbed/main.tsx',
+      ...Object.fromEntries(STANDALONE.map(s => [s.entry, s.src])),
     },
     output: {
       path:       path.resolve(__dirname, 'dist'),
@@ -205,9 +231,7 @@ module.exports = (env, argv) => {
       // chunks keep exactly the names they had with a single entry — chunkFilename
       // is what webpack inferred from 'bundle.js' / 'bundle.[contenthash].js', and
       // a function filename would otherwise turn it into '[id].js'.
-      filename:   ({ chunk }) => chunk && chunk.name === EMBED_ENTRY
-        ? (isDev ? 'thesession-embed.js' : 'thesession-embed.[contenthash].js')
-        : (isDev ? 'bundle.js' : 'bundle.[contenthash].js'),
+      filename:   ({ chunk }) => bundleName(chunk?.name, isDev),
       chunkFilename: isDev ? '[id].bundle.js' : 'bundle.[contenthash].js',
       clean:      true,
       publicPath: isDev ? undefined : '',
@@ -263,6 +287,14 @@ module.exports = (env, argv) => {
         chunks: [EMBED_ENTRY],
         publicPath: '../../',
       }),
+      ...STANDALONE.map(s => new HtmlWebpackPlugin({
+        template: './src/standalone/page.html',
+        filename: s.page,
+        chunks: [s.entry],
+        publicPath: '../',
+        title: s.title,
+        description: s.description,
+      })),
       new CspPlugin(),
       new webpack.DefinePlugin({ __APP_VERSION__: JSON.stringify(info) }),
       new VersionPlugin(info),

@@ -81,7 +81,10 @@ self.addEventListener('fetch', e => {
 
   // Network-first for HTML and the manifest so updates are picked up immediately,
   // but keep a copy so there is something to boot from when the network is gone.
-  if (url.pathname.endsWith('/') || url.pathname.endsWith('.html') || url.pathname.endsWith('manifest.json')) {
+  // data/ too (2026-10-26): the popularity history is rebuilt every week under
+  // the same name, and cache-first would serve the first copy for ever.
+  if (url.pathname.endsWith('/') || url.pathname.endsWith('.html') || url.pathname.endsWith('manifest.json')
+      || url.pathname.includes('/data/')) {
     e.respondWith(
       fetch(e.request)
         .then(response => {

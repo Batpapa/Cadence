@@ -7,9 +7,38 @@ import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
 import { isAbcFile } from '../services/abcService';
 import { liveScreenActive, importScreenActive } from '../session/ui/sessionModule';
 import { experimentalSets } from '../session/detections';
+import { EXTENSIONS, type ExtensionId, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered } from '../services/extensions';
+import { offeredModules } from './pinnedModule';
+import { MusicNoteIcon } from './icons';
 
 type SectionStyle = 'definition' | 'logic' | 'metrics';
-type HelpSection = { heading: string; items: string[]; style?: SectionStyle };
+/** The lines of a section that an extension brings: drawn apart, in a box
+ *  named after it, under the section's own lines. */
+type ExtensionLines = { ext: ExtensionId; items: string[] };
+type HelpSection = { heading: string; items: string[]; extension?: ExtensionLines; style?: SectionStyle };
+
+// ── Extensions ───────────────────────────────────────────────────────────────
+// What an extension offers is only explained while it is offered (2026-10-26):
+// a user who never switched on Irish music is not taught TheSession, and one
+// who did sees those lines set apart, so the core of Cadence reads on its own.
+// A line goes when its option is off; a box with no line left goes with it.
+// What only shows on data the extension once made — an imported card's badge
+// — stays plain: that help opens on the thing itself, which is still there.
+
+function irish(...lines: (string | false)[]): ExtensionLines {
+  return { ext: 'irishTrad', items: lines.filter((l): l is string => !!l) };
+}
+
+/** The import sources the extension offers, in one line: TheSession always
+ *  comes with it, irishtune.info only when ticked. */
+function importLine(theSessionOnly: string, withIti: string): string | false {
+  return theSessionOffered() && (irishTuneInfoOffered() ? withIti : theSessionOnly);
+}
+
+/** A section the extension emptied of every line has nothing left to say. */
+function nonEmpty(sections: HelpSection[]): HelpSection[] {
+  return sections.filter(s => s.items.length > 0 || (s.extension?.items.length ?? 0) > 0);
+}
 
 // ── What each screen explains ────────────────────────────────────────────────
 // Rewritten from the running app on 2026-09-15, for the public release: one
@@ -42,8 +71,9 @@ function cardSections(ctx: AppContext, cardId: string): HelpSection[] {
     ...(imported ? [{ style: 'logic' as const, heading: t('help.card.imported.heading'), items: [t('help.card.imported.1'), t('help.card.imported.2'), t('help.card.imported.3'), t('help.card.imported.4')] }] : []),
     { style: 'logic', heading: t('help.card.content.heading'), items: [t('help.card.content.1'), t('help.card.content.2'), t('help.card.content.3'), t('help.card.content.4')] },
     { style: 'logic', heading: t('help.card.attach.heading'), items: [t('help.card.attach.1'), t('help.card.attach.2'), t('help.card.attach.3'), t('help.card.attach.4')] },
-    ...(hasScore ? [{ style: 'logic' as const, heading: t('help.card.abc.heading'), items: [t('help.card.abc.1'), t('help.card.abc.2'), t('help.card.abc.3'), t('help.card.abc.4'), t('help.card.abc.5'), t('help.card.abc.6')] }] : []),
-    { style: 'logic', heading: t('help.card.links.heading'), items: [t('help.card.links.1'), ...(isMusic ? [t('help.card.links.2'), t('help.card.links.3')] : []), ...(isSet && experimentalSets(ctx.user) ? [t('help.card.links.4')] : [])] },
+    ...(hasScore ? [{ style: 'logic' as const, heading: t('help.card.abc.heading'), items: [t('help.card.abc.1'), t('help.card.abc.2'), t('help.card.abc.3'), t('help.card.abc.4'), t('help.card.abc.6')], extension: irish(theSessionOffered() && t('help.card.abc.5')) }] : []),
+    { style: 'logic', heading: t('help.card.links.heading'), items: [t('help.card.links.1'), ...(isMusic ? [t('help.card.links.2')] : [])],
+      extension: irish(isMusic && tuneAnalyserOffered() && t('help.card.links.3'), isSet && experimentalSets(ctx.user) && tuneAnalyserOffered() && t('help.card.links.4')) },
     { style: 'metrics', heading: t('help.card.history.heading'), items: [t('help.card.history.1'), t('help.card.history.2'), t('help.card.history.3')] },
   ];
 }
@@ -68,7 +98,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
           { style: 'metrics',    heading: t('help.home.stats.heading'),    items: [t('help.home.stats.1'), t('help.home.stats.2'), t('help.home.stats.3'), t('help.home.stats.4'), t('help.home.stats.5')] },
           { style: 'logic',      heading: t('help.home.study.heading'),    items: [t('help.home.study.1'), t('help.home.study.2')] },
           { style: 'logic',      heading: t('help.home.organize.heading'), items: [t('help.home.organize.1'), t('help.home.organize.2'), t('help.home.organize.3'), t('help.home.organize.4')] },
-          { style: 'logic',      heading: t('help.home.smartEdit.heading'), items: [t('help.home.smartEdit.1'), t('help.home.smartEdit.2'), t('help.home.smartEdit.3')] },
+          { style: 'logic',      heading: t('help.home.smartEdit.heading'), items: [t('help.home.smartEdit.1'), t('help.home.smartEdit.2'), t('help.home.smartEdit.3')], extension: irish(tuneAnalyserOffered() && t('help.home.smartEdit.analyses')) },
           { style: 'metrics',    heading: t('help.home.dots.heading'),     items: [t('help.home.dots.1'), t('help.home.dots.2'), t('help.home.dots.3')] },
         ],
       };
@@ -77,10 +107,12 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
       return {
         title: t('help.context.library'),
         sections: [
-          { style: 'definition', heading: t('help.library.what.heading'),   items: [t('help.library.what.1'), t('help.library.what.2'), t('help.library.what.3'), t('help.library.what.4')] },
-          { style: 'logic',      heading: t('help.library.search.heading'), items: [t('help.library.search.1'), t('help.library.search.2'), t('help.library.search.3'), t('help.library.search.4'), t('help.library.search.5'), t('help.library.search.6')] },
+          { style: 'definition', heading: t('help.library.what.heading'),   items: [t('help.library.what.1'), t('help.library.what.2'), t('help.library.what.3'), t('help.library.what.4')],
+            extension: irish(importLine(t('help.library.what.import'), t('help.library.what.importIti'))) },
+          { style: 'logic',      heading: t('help.library.search.heading'), items: [t('help.library.search.1'), t('help.library.search.2'), t('help.library.search.3'), t('help.library.search.4'), t('help.library.search.5'), t('help.library.search.6')],
+            extension: irish(importLine(t('help.library.search.number'), t('help.library.search.numberIti'))) },
           { style: 'logic',      heading: t('help.library.sort.heading'),   items: [t('help.library.sort.1'), t('help.library.sort.2'), t('help.library.sort.3')] },
-          { style: 'logic',      heading: t('help.library.select.heading'), items: [t('help.library.select.1'), t('help.library.select.2'), t('help.library.select.3')] },
+          { style: 'logic',      heading: t('help.library.select.heading'), items: [t('help.library.select.1'), t('help.library.select.2')], extension: irish(theSessionOffered() && t('help.library.select.3')) },
         ],
       };
 
@@ -91,7 +123,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
           { style: 'definition', heading: t('help.deck.what.heading'),       items: [t('help.deck.what.1'), t('help.deck.what.2'), t('help.deck.what.3'), t('help.deck.what.4')] },
           { style: 'metrics',    heading: t('help.deck.metrics.heading'),    items: [t('help.deck.metrics.1'), t('help.deck.metrics.2'), t('help.deck.metrics.3'), t('help.deck.metrics.4'), t('help.deck.metrics.5')] },
           { style: 'logic',      heading: t('help.deck.cards.heading'),      items: [t('help.deck.cards.1'), t('help.deck.cards.2'), t('help.deck.cards.3'), t('help.deck.cards.4')] },
-          { style: 'logic',      heading: t('help.deck.importance.heading'), items: [t('help.deck.importance.1'), t('help.deck.importance.2'), t('help.deck.importance.3')] },
+          { style: 'logic',      heading: t('help.deck.importance.heading'), items: [t('help.deck.importance.1'), t('help.deck.importance.2'), t('help.deck.importance.3')], extension: irish(theSessionOffered() && t('help.deck.importance.tunebooks')) },
         ],
       };
 
@@ -116,9 +148,12 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
         sections: [
           // A picker: what each module is for, and a pointer to its own help.
           // The detail lives in the 'sessions' and 'trending' cases below.
-          { style: 'definition', heading: t('help.modules.what.heading'), items: [t('help.modules.what.1'), t('help.modules.what.2')] },
-          { style: 'logic',      heading: t('help.modules.list.heading'), items: [t('help.modules.list.1'), t('help.modules.list.2'), t('help.modules.list.3')] },
-          { style: 'logic',      heading: t('help.modules.pin.heading'),  items: [t('help.modules.pin.1'), t('help.modules.pin.2')] },
+          // Every module comes with an extension: with none switched on, only
+          // what a module is and where to get one is left.
+          { style: 'definition', heading: t('help.modules.what.heading'), items: [t('help.modules.what.1'), ...(offeredModules().length > 0 ? [t('help.modules.what.2')] : [])] },
+          { style: 'logic',      heading: t('help.modules.list.heading'), items: [],
+            extension: irish(tuneAnalyserOffered() && t('help.modules.list.1'), trendingOffered() && t('help.modules.list.2'), tuneAnalyserOffered() && t('help.modules.list.3')) },
+          ...(offeredModules().length > 0 ? [{ style: 'logic' as const, heading: t('help.modules.pin.heading'), items: [t('help.modules.pin.1'), t('help.modules.pin.2')] }] : []),
         ],
       };
 
@@ -184,13 +219,20 @@ function getGuideSteps(): HelpSection[] {
     { heading: t('help.guide.s1.heading'),  items: [t('help.guide.s1.1'), t('help.guide.s1.2'), t('help.guide.s1.3'), t('help.guide.s1.4')] },
     { heading: t('help.guide.s2.heading'),  items: [t('help.guide.s2.1'), t('help.guide.s2.2'), t('help.guide.s2.3'), t('help.guide.s2.4'), t('help.guide.s2.5')] },
     { heading: t('help.guide.s3.heading'),  items: [t('help.guide.s3.1'), t('help.guide.s3.2'), t('help.guide.s3.3'), t('help.guide.s3.4')] },
-    { heading: t('help.guide.s4.heading'),  items: [t('help.guide.s4.1'), t('help.guide.s4.2'), t('help.guide.s4.3'), t('help.guide.s4.4'), t('help.guide.s4.5')] },
+    { heading: t('help.guide.s4.heading'),  items: [t('help.guide.s4.1'), t('help.guide.s4.2'), t('help.guide.s4.3'), t('help.guide.s4.4'), t('help.guide.s4.5')],
+      extension: irish(importLine(t('help.guide.s4.import'), t('help.guide.s4.importIti'))) },
     { heading: t('help.guide.s5.heading'),  items: [t('help.guide.s5.1'), t('help.guide.s5.2'), t('help.guide.s5.3'), t('help.guide.s5.4')] },
     { heading: t('help.guide.s6.heading'),  items: [t('help.guide.s6.1'), t('help.guide.s6.2'), t('help.guide.s6.3'), t('help.guide.s6.4')] },
     { heading: t('help.guide.s7.heading'),  items: [t('help.guide.s7.1'), t('help.guide.s7.2'), t('help.guide.s7.3'), t('help.guide.s7.4')] },
     { heading: t('help.guide.s8.heading'),  items: [t('help.guide.s8.1'), t('help.guide.s8.2'), t('help.guide.s8.3'), t('help.guide.s8.4')] },
     { heading: t('help.guide.s9.heading'),  items: [t('help.guide.s9.1'), t('help.guide.s9.2'), t('help.guide.s9.3'), t('help.guide.s9.4'), t('help.guide.s9.5'), t('help.guide.s9.6')] },
-    { heading: t('help.guide.s10.heading'), items: [t('help.guide.s10.1'), t('help.guide.s10.2'), t('help.guide.s10.3'), t('help.guide.s10.4'), t('help.guide.s10.5')] },
+    { heading: t('help.guide.s10.heading'), items: [t('help.guide.s10.1'), t('help.guide.s10.3'), t('help.guide.s10.4'), t('help.guide.s10.extensions')],
+      extension: irish(
+        theSessionOffered() && t('help.guide.s10.theSession'),
+        irishTuneInfoOffered() && t('help.guide.s10.iti'),
+        tuneAnalyserOffered() && t('help.guide.s10.analyser'),
+        trendingOffered() && t('help.guide.s10.trending'),
+      ) },
     { heading: t('help.guide.s11.heading'), items: [t('help.guide.s11.1'), t('help.guide.s11.2'), t('help.guide.s11.3')] },
   ];
 }
@@ -241,6 +283,30 @@ const FALLBACK_STYLES: SectionStyle[] = ['definition', 'logic', 'metrics'];
 
 const CHECK_SVG = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 
+/** The extension's lines, boxed and labelled, so they read as an addition to
+ *  the section rather than part of it. Bullets drawn by the caller, to match
+ *  the section above. */
+function ExtensionBox({ lines, bullet }: { lines?: ExtensionLines; bullet: () => ComponentChildren }) {
+  if (!lines || lines.items.length === 0) return null;
+  const ext = EXTENSIONS.find(e => e.id === lines.ext)!;
+  return (
+    <div class="mt-2.5 rounded-md border border-irish/35 bg-irish/5 px-2.5 pt-2 pb-2.5">
+      <div class="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-irish">
+        <MusicNoteIcon size={12} />
+        <span>{t(ext.labelKey)}</span>
+      </div>
+      <ul class="flex flex-col gap-1.5 list-none">
+        {lines.items.map(item => (
+          <li key={item} class="flex gap-2 text-xs leading-relaxed text-primary/75">
+            {bullet()}
+            <span><Rich text={item} /></span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function InfoBody({ sections }: { sections: HelpSection[] }) {
   return (
     <div class="flex flex-col gap-3">
@@ -253,14 +319,15 @@ function InfoBody({ sections }: { sections: HelpSection[] }) {
               <span class="shrink-0 flex items-center" style={{ color: accent }} dangerouslySetInnerHTML={{ __html: STYLE_ICONS[sectionStyle] }} />
               <span class="text-sm font-semibold text-primary">{section.heading}</span>
             </div>
-            <ul class="flex flex-col gap-1.5 list-none">
+            {section.items.length > 0 && <ul class="flex flex-col gap-1.5 list-none">
               {section.items.map(item => (
                 <li key={item} class="flex gap-2 text-xs leading-relaxed text-primary/75">
                   <span class="shrink-0 flex items-center mt-0.5 self-start pt-1" style={{ color: accent }} dangerouslySetInnerHTML={{ __html: CHECK_SVG }} />
                   <span><Rich text={item} /></span>
                 </li>
               ))}
-            </ul>
+            </ul>}
+            <ExtensionBox lines={section.extension} bullet={() => <span class="shrink-0 flex items-center mt-0.5 self-start pt-1 text-irish" dangerouslySetInnerHTML={{ __html: CHECK_SVG }} />} />
           </div>
         );
       })}
@@ -293,6 +360,7 @@ function GuideBody({ steps }: { steps: HelpSection[] }) {
                 </li>
               ))}
             </ul>
+            <ExtensionBox lines={step.extension} bullet={() => <span class="text-dim shrink-0 mt-0.5">·</span>} />
           </div>
         );
       })}
@@ -339,7 +407,7 @@ function HelpModalContent({ sections, initialTab }: { sections: HelpSection[]; i
         <HelpTab label={t('help.tabGuide')} active={activeTab === 'guide'} onClick={() => switchTo('guide')} />
       </div>
       <div class="px-5 pb-4">
-        {activeTab === 'info' ? <InfoBody sections={sections} /> : <GuideBody steps={getGuideSteps()} />}
+        {activeTab === 'info' ? <InfoBody sections={sections} /> : <GuideBody steps={nonEmpty(getGuideSteps())} />}
       </div>
     </div>
   );
@@ -350,7 +418,7 @@ function HelpModalContent({ sections, initialTab }: { sections: HelpSection[]; i
  *  explain to them. The ? button keeps opening on the page it is pressed on. */
 export function showHelpModal(ctx: AppContext, opts: { tab?: HelpTabId } = {}): void {
   const { title, sections } = getInfoContent(ctx);
-  const { el, cleanup } = renderModalBody(<HelpModalContent sections={sections} initialTab={opts.tab ?? 'info'} />);
+  const { el, cleanup } = renderModalBody(<HelpModalContent sections={nonEmpty(sections)} initialTab={opts.tab ?? 'info'} />);
   // Its two tabs are gone back and forth between, and are not the same height.
   showModal(t('help.title', { context: title }), el, [], { maxWidth: '36rem', expandable: true, pinTop: true, onDismiss: cleanup });
 }

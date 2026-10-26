@@ -2,6 +2,7 @@ import { signal } from '@preact/signals';
 import type { JSX } from 'preact';
 import type { Route } from '../types';
 import { WaveformIcon, TrendIcon } from './icons';
+import { tuneAnalyserOffered, trendingOffered } from '../services/extensions';
 
 // ── Pinning a module to the navigation ───────────────────────────────────────
 // Answers a field request (2026-09-09) that asked for something else: "the
@@ -36,12 +37,21 @@ export interface PinnableModule {
   shortLabelKey: string;
   route: Route;
   Icon: (props: { size?: number }) => JSX.Element;
+  /** Whether the open user is offered it — its extension and option on. */
+  offered: () => boolean;
 }
 
 export const PINNABLE_MODULES: PinnableModule[] = [
-  { id: 'sessions', labelKey: 'sessions.moduleTitle', shortLabelKey: 'bottomNav.sessions', route: { view: 'sessions' }, Icon: WaveformIcon },
-  { id: 'trending', labelKey: 'trending.moduleTitle', shortLabelKey: 'bottomNav.trending', route: { view: 'trending' }, Icon: TrendIcon },
+  { id: 'sessions', labelKey: 'sessions.moduleTitle', shortLabelKey: 'bottomNav.sessions', route: { view: 'sessions' }, Icon: WaveformIcon, offered: () => tuneAnalyserOffered() },
+  { id: 'trending', labelKey: 'trending.moduleTitle', shortLabelKey: 'bottomNav.trending', route: { view: 'trending' }, Icon: TrendIcon, offered: () => trendingOffered() },
 ];
+
+/** The modules the open user is offered: each is an option of an extension
+ *  (services/extensions.ts). Reads the user through its signal, so the
+ *  Modules page and both bars redraw when an option is switched. */
+export function offeredModules(): PinnableModule[] {
+  return PINNABLE_MODULES.filter(m => m.offered());
+}
 
 const PIN_KEY = 'cadence_pinned_module';
 
@@ -54,12 +64,14 @@ function readPin(): string | null {
  *  they are in a different tree from the modules page that sets it. */
 export const pinnedModuleId = signal<string | null>(readPin());
 
-/** The pinned module, or undefined — which covers both "nothing pinned" (the
- *  default, and the only sensible one: a shortcut nobody asked for is clutter)
- *  and an id this build does not know. */
+/** The pinned module, or undefined — which covers "nothing pinned" (the
+ *  default, and the only sensible one: a shortcut nobody asked for is clutter),
+ *  an id this build does not know, and a module whose extension is off. The
+ *  pin itself is kept (it is per device, the extension per user): switched
+ *  back on, the shortcut is where it was. */
 export function pinnedModule(): PinnableModule | undefined {
   const id = pinnedModuleId.value;
-  return PINNABLE_MODULES.find(m => m.id === id);
+  return offeredModules().find(m => m.id === id);
 }
 
 /** Pinning is a radio, not a checkbox: pinning a second module replaces the
