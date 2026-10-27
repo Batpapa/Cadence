@@ -187,7 +187,7 @@ export function IncipitRow({ card, where, onOpenScore, class: className = '' }: 
   const scores = incipitScores(card, user.cards);
   if (scores.length === 0) return null;
   return (
-    <div class={`space-y-1 ${className}`}>
+    <div class={`space-y-1 ${className}`} data-tour="incipit">
       <div class="flex items-center gap-2">
         <span class="section-title">{t('card.section.incipit')}</span>
         {/* `group` / `group-hover`, and not a `hover:` on the pill itself.

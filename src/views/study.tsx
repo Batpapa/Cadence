@@ -211,7 +211,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
   const StrategyIcon = STRATEGY_ICONS[strategy].Icon;
 
   const topBar = (
-    <div class="flex items-center justify-between px-6 py-3 border-b border-border bg-surface shrink-0">
+    <div class="flex items-center justify-between px-6 py-3 border-b border-border bg-surface shrink-0" data-tour="study-top">
       <div class="flex items-center gap-3 flex-wrap">
         {/* Mode first, and as an icon rather than a spelled-out chip: it is
             the same glyph the picker showed a moment ago, it costs a fraction
@@ -295,7 +295,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
       <div class="flex-1 overflow-y-auto p-6">
         <div class="space-y-6">
 
-          <div>
+          <div data-tour="study-card">
             <div class="flex items-center justify-between">
               <h2 class="text-2xl font-semibold text-primary">{card.name}</h2>
               <button class="btn-ghost text-xs" onClick={() => navigate({ view: 'card', cardId: card.id, contextDeckId: contextDeckId ?? undefined })}>{t('study.viewCard')}</button>
@@ -324,7 +324,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
 
           <div class="space-y-2">
             <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>
-            <div class="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-2">
+            <div class="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-2" data-tour="study-ratings">
               {RATINGS.map(({ rating, key, cls, shortcut }) => (
                 <button key={rating} class={cls} title={`${t(key)} [${shortcut}]`} onClick={() => logRating(rating)}>
                   {t(key)}

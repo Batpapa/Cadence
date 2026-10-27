@@ -211,6 +211,9 @@ function SuggestDropdown<T>({ anchorRef, items, renderItem, onPick, open }: {
 
   return createPortal((
     <div
+      // Belongs to the field it hangs from: a walkthrough lifts it over its
+      // veil and lets it be picked from (walkthrough/, styles.css).
+      data-tour-float
       class="fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-y-auto"
       style={{ top: `${pos.top}px`, left: `${pos.left}px`, width: `${pos.width}px`, maxHeight: '220px' }}
     >
@@ -248,7 +251,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
     setStatus(
       <>
         {t('theSession.status.imported', { name: '\x00' }).split('\x00')[0]}
-        <span class="text-accent cursor-pointer hover:underline" onClick={() => { ctx.navigate({ view: 'card', cardId }); onNavigateToCard?.(); }}>
+        <span class="text-accent cursor-pointer hover:underline" data-tour="ts-imported" onClick={() => { ctx.navigate({ view: 'card', cardId }); onNavigateToCard?.(); }}>
           {cardName}
         </span>
         {t('theSession.status.imported', { name: '\x00' }).split('\x00')[1]}
@@ -341,7 +344,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
 
   return (
     <div class="space-y-3">
-      <div class="flex gap-1 p-1 bg-bg rounded-lg">
+      <div class="flex gap-1 p-1 bg-bg rounded-lg" data-tour="ts-tabs">
         <Tab label={t('theSession.tabTune')} active={tab === 'tune'} onClick={() => setTab('tune')} />
         <Tab label={t('theSession.tabMember')} active={tab === 'member'} onClick={() => setTab('member')} />
         <Tab label={t('theSession.tabBookmarks')} active={tab === 'bookmarks'} onClick={() => setTab('bookmarks')} />
@@ -512,7 +515,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
 
   return (
     <>
-      <div class="flex gap-2">
+      <div class="flex gap-2" data-tour="ts-tune">
         <InputRow
           inputRef={inputRef}
           placeholder={t('theSession.tune.placeholder')}
@@ -1187,12 +1190,13 @@ function importDescKey(): string {
   return irishTuneInfoOffered() ? 'newCard.importDesc' : 'newCard.importDescTheSession';
 }
 
-function ChoiceCard({ icon, label, desc, accentColor, onClick }: {
-  icon: string; label: string; desc: string; accentColor: string; onClick: () => void;
+function ChoiceCard({ icon, label, desc, accentColor, tour, onClick }: {
+  icon: string; label: string; desc: string; accentColor: string; tour?: string; onClick: () => void;
 }) {
   const [hover, setHover] = useState(false);
   return (
     <button
+      data-tour={tour}
       class="flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer"
       style={{ transition: 'border-color 0.15s, background 0.15s', borderColor: hover ? accentColor : undefined, background: hover ? `${accentColor}12` : undefined }}
       title={desc}
@@ -1217,8 +1221,8 @@ const ICON_SHARE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" 
 function RootStep({ navigate }: { navigate: (s: Step) => void }) {
   return (
     <>
-      <ChoiceCard icon={ICON_CREATE} label={t('newCard.tabCreate')} desc={t('newCard.createDesc')} accentColor="var(--color-accent)" onClick={() => navigate('create')} />
-      <ChoiceCard icon={ICON_IMPORT} label={t('newCard.tabImport')} desc={t(importDescKey())} accentColor="var(--color-warn)" onClick={() => navigate('import')} />
+      <ChoiceCard icon={ICON_CREATE} label={t('newCard.tabCreate')} desc={t('newCard.createDesc')} accentColor="var(--color-accent)" tour="newcard-create" onClick={() => navigate('create')} />
+      <ChoiceCard icon={ICON_IMPORT} label={t('newCard.tabImport')} desc={t(importDescKey())} accentColor="var(--color-warn)" tour="newcard-import" onClick={() => navigate('import')} />
     </>
   );
 }
@@ -1253,7 +1257,7 @@ function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
     setStatus(
       <>
         {t('newCard.create.done', { name: '\x00' }).split('\x00')[0]}
-        <span class="text-accent cursor-pointer hover:underline" onClick={() => onOpenCard(createdId)}>{trimmed}</span>
+        <span class="text-accent cursor-pointer hover:underline" data-tour="newcard-open" onClick={() => onOpenCard(createdId)}>{trimmed}</span>
         {t('newCard.create.done', { name: '\x00' }).split('\x00')[1]}
       </>,
     );
@@ -1269,6 +1273,9 @@ function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
 
   return (
     <>
+      {/* One block for the walkthrough to light: the field and its button,
+          not the line saying what was made (walkthrough/). */}
+      <div class="flex flex-col gap-3" data-tour="newcard-form">
       <label class="label">{t('newCard.nameLabel')}</label>
       <input
         ref={inputRef}
@@ -1282,6 +1289,7 @@ function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
       <button class="btn-primary w-full mt-1" disabled={busy} onClick={() => withDeckChoice(() => { void doCreate(); })}>
         {t('newCard.createBtn')}
       </button>
+      </div>
       <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
     </>
   );
@@ -1296,10 +1304,10 @@ function ImportStep({ navigate }: { navigate: (s: Step) => void }) {
   return (
     <>
       {theSessionOffered() && (
-        <ChoiceCard icon={ICON_TS}   label={t('newCard.tabTheSession')}    desc={t('newCard.theSessionDesc')}    accentColor="var(--color-success)" onClick={() => navigate('thesession')} />
+        <ChoiceCard icon={ICON_TS}   label={t('newCard.tabTheSession')}    desc={t('newCard.theSessionDesc')}    accentColor="var(--color-success)" tour="newcard-thesession" onClick={() => navigate('thesession')} />
       )}
       {irishTuneInfoOffered() && (
-        <ChoiceCard icon={ICON_ITI}  label={t('newCard.tabIrishTuneInfo')} desc={t('newCard.irishTuneInfoDesc')} accentColor="var(--color-accent)"  onClick={() => navigate('irishtuneinfo')} />
+        <ChoiceCard icon={ICON_ITI}  label={t('newCard.tabIrishTuneInfo')} desc={t('newCard.irishTuneInfoDesc')} accentColor="var(--color-accent)"  tour="newcard-iti" onClick={() => navigate('irishtuneinfo')} />
       )}
       <ChoiceCard icon={ICON_JSON} label={t('newCard.tabImportJson')}    desc={t('newCard.importJsonDesc')}    accentColor="var(--color-warn)"    onClick={() => navigate('json')} />
     </>

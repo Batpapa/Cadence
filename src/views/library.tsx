@@ -98,6 +98,7 @@ function showExportModal(cards: Card[], user: AppState): void {
 
   const body = document.createElement('div');
   body.className = 'px-5 py-4 space-y-2 overflow-y-auto flex-1';
+  body.dataset.tour = 'export-body';
 
   dialog.append(header, body);
   overlay.appendChild(dialog);
@@ -136,7 +137,9 @@ function showExportModal(cards: Card[], user: AppState): void {
     titleEl.textContent = t('library.exportSelected');
     backBtn.classList.add('hidden');
     body.innerHTML = '';
-    body.appendChild(mkChoice(iconCdc, t('library.export.cdc'), t('library.export.cdcDesc'), 'var(--color-warn)', renderCdc));
+    const cdc = mkChoice(iconCdc, t('library.export.cdc'), t('library.export.cdcDesc'), 'var(--color-warn)', renderCdc);
+    cdc.dataset.tour = 'export-cdc';
+    body.appendChild(cdc);
     body.appendChild(mkChoice(iconCsv, 'CSV', t('library.export.csvDesc'), 'var(--color-success)', () => { close(); exportCardsCSV(cards, user); }));
     body.appendChild(mkChoice(iconTxt, 'TXT', t('library.export.txtDesc'), 'var(--color-muted)', renderTxt));
   };
@@ -782,11 +785,12 @@ export function LibraryView() {
               mapOpen ? 'bg-accent text-white border-accent' : 'border-border text-muted hover:border-accent hover:text-accent'
             }`}
             title={t('dashboard.cardMap')}
+            data-tour="library-map"
             onClick={() => setMapOpen(o => !o)}
           >
             <ScatterPlotIcon size={16} />
           </button>
-          <button class="btn-primary" onClick={() => showNewCardModal(getContext())}>
+          <button class="btn-primary" data-tour="new-card" onClick={() => showNewCardModal(getContext())}>
             {t('library.newCard')}
           </button>
         </div>
@@ -794,7 +798,7 @@ export function LibraryView() {
 
       {/* ── Card map ── */}
       {mapOpen && (
-        <div class="px-6 pb-4">
+        <div class="px-6 pb-4" data-tour="library-cardmap">
           <CardMap user={user} cards={hasSelection ? allCards.filter(c => selected.has(c.id)) : filtered} />
         </div>
       )}
@@ -804,6 +808,7 @@ export function LibraryView() {
         <input
           type="text"
           placeholder={t('library.search')}
+          data-tour="library-search"
           class="input"
           value={searchQuery}
           onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
@@ -827,6 +832,8 @@ export function LibraryView() {
           </div>
         )}
 
+        {/* The filter families, one block for the walkthrough to light. */}
+        <div class="space-y-1" data-tour="library-filters">
         {hasDeckMix && (
           <FilterSection
             labelKey="library.filterDecks"
@@ -884,11 +891,12 @@ export function LibraryView() {
           to={revTo}
           onChange={(f, to) => { setRevFrom(f); setRevTo(to); }}
         />
+        </div>
       </div>
 
       {/* ── Selection toolbar ── */}
       <div class="flex items-center justify-between px-6 h-9">
-        <label class="flex items-center gap-2 cursor-pointer select-none">
+        <label class="flex items-center gap-2 cursor-pointer select-none" data-tour="library-select-all">
           <input
             type="checkbox"
             class="card-checkbox"
@@ -910,13 +918,14 @@ export function LibraryView() {
             <button
               type="button"
               class="btn-ghost text-xs inline-flex items-center justify-center"
+              data-tour="library-sort"
               title={t(`library.sort.${sortMode}`)}
               onClick={() => setSortOpen(o => !o)}
             >
               {(() => { const Icon = SORT_ICON[sortMode]; return <Icon size={13} />; })()}
             </button>
             {sortOpen && (
-              <div class="absolute top-full right-0 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[170px]">
+              <div class="absolute top-full right-0 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[170px]" data-tour="library-sort-menu">
                 {SORT_MODES.map(m => {
                   const Icon   = SORT_ICON[m];
                   const active = m === sortMode;
@@ -938,6 +947,7 @@ export function LibraryView() {
           <button
             type="button"
             class="btn-ghost text-xs inline-flex items-center justify-center"
+            data-tour="library-sort-dir"
             title={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
             onClick={() => { const next = !sortAsc; setSortAsc(next); saveSortPref(user.id, sortMode, next); }}
           >
@@ -946,14 +956,15 @@ export function LibraryView() {
               <polyline points="19 12 12 19 5 12"/>
             </svg>
           </button>
-          {hasSelection && <>
+          {hasSelection && <span class="flex gap-1 items-center" data-tour="library-actions">
             <div class="w-px h-4 bg-border mx-1" />
-            <button class="btn-ghost text-xs inline-flex items-center justify-center" title={t('library.exportSelected')} onClick={() => showExportModal(allCards.filter(c => selected.has(c.id)), user)}>
+            <button class="btn-ghost text-xs inline-flex items-center justify-center" data-tour="library-export" title={t('library.exportSelected')} onClick={() => showExportModal(allCards.filter(c => selected.has(c.id)), user)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
             <button
               class="btn-ghost text-xs inline-flex items-center justify-center"
               title={t('library.batch.more')}
+              data-tour="library-bulk"
               onClick={(e) => bulkMenu.open(e.clientX, e.clientY)}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
@@ -983,7 +994,7 @@ export function LibraryView() {
             >
               <TrashIcon size={13} />
             </button>
-          </>}
+          </span>}
         </div>
       </div>
       {bulkMenu.menu}

@@ -27,7 +27,6 @@ import { migrateState, migrateLegacyToUser, applyExternalData } from './services
 import { applyZoom } from './services/zoomService';
 import { applyTheme } from './services/themeService';
 import { mountApp, mountUserSelector, type DriveRecovery } from './appRoot';
-import { showHelpModal } from './components/help';
 import { getContext } from './store';
 import { anyOverlayOpen, closeTopOverlay } from './components/overlayStack';
 import { isNative } from './native/platform';
@@ -115,12 +114,13 @@ async function openBrandNewUser(user: User, root: HTMLElement): Promise<void> {
   // switches the extension on, and "Default" would then hide them.
   const broughtAnalyses = await hasStagedAnalyses().catch(() => false);
   finishBoot(root);
-  const showGuide = () => showHelpModal(getContext(), { tab: 'guide' });
-  // What the new user is here for, then the guide — once answered, not over
-  // the question.
+  // What the new user is here for, then the tour of the interface — once
+  // answered, not over the question (2026-10-27: the walkthrough replaced the
+  // help's guide here; the guide stays one tab away in the help).
+  const discover = () => { void import('./walkthrough/engine').then(m => m.startScenario('discover')); };
   setTimeout(() => {
-    if (broughtAnalyses) showGuide();
-    else showUsageChoiceModal(getContext(), showGuide);
+    if (broughtAnalyses) discover();
+    else showUsageChoiceModal(getContext(), discover);
   }, 0);
 }
 

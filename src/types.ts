@@ -386,6 +386,10 @@ export interface User {
    *  list and the defaults are declared in services/extensions.ts. Absent =
    *  that option's default. */
   extensionOptions?: Partial<Record<keyof UserExtensions, Record<string, boolean>>>;
+  /** The guided walkthroughs this user has finished, by scenario id → when
+   *  (ms). Absent = none. A preference-like record of who they are, kept by a
+   *  reset like the extensions are (see walkthrough/scenarios.ts). */
+  walkthroughs?: Record<string, number>;
 
   // Profiles
   profileIds: string[];

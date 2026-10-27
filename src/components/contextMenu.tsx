@@ -105,6 +105,7 @@ export function useContextMenu(items: ContextMenuEntry[]) {
   const menu = pos ? createPortal((
     <div
       ref={menuRef}
+      data-tour="context-menu"
       class="fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-hidden py-1 min-w-[180px]"
       style={{
         left:   pos.left   !== undefined ? `${pos.left}px`   : undefined,

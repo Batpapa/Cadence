@@ -47,8 +47,26 @@ export function registerOverlay(close: Closer): () => void {
   };
 }
 
+/** Above every layer while held: Escape and the back gesture are consumed
+ *  and close nothing. For a guided walkthrough (walkthrough/engine.ts), which
+ *  lets the user do only the step it asks for — a dialog the step opened must
+ *  not go away under it, nor the page change behind it. */
+let holds = 0;
+
+export function holdOverlays(): () => void {
+  holds++;
+  changed();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds--;
+    changed();
+  };
+}
+
 export function anyOverlayOpen(): boolean {
-  return stack.length > 0;
+  return holds > 0 || stack.length > 0;
 }
 
 /** How many layers are open. For anything that wants to unwind the stack:
@@ -68,6 +86,7 @@ export function overlayCount(): number {
  *  optimistically first, and a closer that forgets cannot leave an entry that
  *  can never be closed again. */
 export function closeTopOverlay(): boolean {
+  if (holds > 0) return true;
   const top = stack.pop();
   if (!top) return false;
   const at = stack.length;

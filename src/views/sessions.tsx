@@ -95,10 +95,11 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
                 Beside the gear rather than inside its settings: it shows its
                 value once set, and a shift left on by mistake would otherwise
                 analyse every session after it wrong without a word. */}
-            <PitchShiftControl value={pitchShiftSetting(appState.value)} onChange={setPitchShiftSetting} />
+            <div class="flex" data-tour="analyser-pitch"><PitchShiftControl value={pitchShiftSetting(appState.value)} onChange={setPitchShiftSetting} /></div>
             <button
               type="button"
               class="w-8 h-8 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+              data-tour="analyser-gear"
               title={t('sessions.settings.title')}
               onClick={showSessionSettingsModal}
             >

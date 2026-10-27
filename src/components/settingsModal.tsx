@@ -47,10 +47,15 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
   const inputRef = useRef<HTMLInputElement>(null);
+  // As in AddProfileRow: the blur of the unmounting field must not act a
+  // second time — nor save what Escape just cancelled.
+  const settled = useRef(false);
 
-  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
+  useEffect(() => { if (editing) { settled.current = false; inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
 
   const commit = () => {
+    if (settled.current) return;
+    settled.current = true;
     const val = draft.trim();
     if (val && val !== name) void ctx.mutate(s => { s.profiles[pid]!.name = val; });
     setEditing(false);
@@ -69,7 +74,7 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
           class="text-sm bg-transparent border-b border-accent outline-none flex-1 min-w-0"
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
           onBlur={commit}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); } }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { e.stopPropagation(); settled.current = true; setEditing(false); } }}
         />
       ) : (
         <span
@@ -83,6 +88,7 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
       {canDelete && (
         <button
           class="btn-danger px-2 shrink-0"
+          data-tour={`profile-delete-${pid}`}
           title={t('settings.profiles.delete.title')}
           onClick={() => confirmModal(t('settings.profiles.delete.title'), t('settings.profiles.delete.message', { name }), t('common.delete'), () => {
             void ctx.mutate(s => {
@@ -104,10 +110,16 @@ function AddProfileRow({ ctx }: { ctx: AppContext }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  // Enter commits and unmounts the field, and the unmount blurs it: without
+  // this, the blur committed the same name again — two profiles from one
+  // Enter (found 2026-10-27 through the profiles walkthrough).
+  const settled = useRef(false);
 
-  useEffect(() => { if (adding) inputRef.current?.focus(); }, [adding]);
+  useEffect(() => { if (adding) { settled.current = false; inputRef.current?.focus(); } }, [adding]);
 
   const commit = () => {
+    if (settled.current) return;
+    settled.current = true;
     const trimmed = name.trim();
     setName('');
     setAdding(false);
@@ -147,7 +159,9 @@ function AddProfileRow({ ctx }: { ctx: AppContext }) {
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          if (e.key === 'Escape') { e.stopPropagation(); setName(''); setAdding(false); }
+          // Settled too: the blur that follows must not create what Escape
+          // just dropped.
+          if (e.key === 'Escape') { e.stopPropagation(); settled.current = true; setName(''); setAdding(false); }
         }}
       />
     </div>
@@ -165,7 +179,7 @@ function ProfileModalBody({ ctx }: { ctx: AppContext }) {
         if (!profile) return null;
         return <ProfileRow key={pid} ctx={ctx} pid={pid} name={profile.name} canDelete={canDelete} />;
       })}
-      <div class="mt-2">
+      <div class="mt-2" data-tour="profile-add">
         <AddProfileRow ctx={ctx} />
       </div>
     </div>
@@ -282,6 +296,7 @@ function StudySection({ ctx }: { ctx: AppContext }) {
 
   return (
     <>
+      <div data-tour="settings-threshold">
       <Row label={t('settings.availabilityThreshold')} hint={t('settings.availabilityThresholdHint')}>
         <input
           type="number" min="0" max="100" step="1"
@@ -292,6 +307,7 @@ function StudySection({ ctx }: { ctx: AppContext }) {
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         />
       </Row>
+      </div>
       <Sep />
 
       <Row label={t('settings.weightByImportance')} hint={t('settings.weightByImportanceHint')}>
@@ -405,12 +421,14 @@ function DriveRow() {
   return (
     <>
       <Sep />
+      <div data-tour="settings-drive">
       <Row label="Google Drive">
         <div class="flex items-center gap-2">
           <span class={ui.cls}>{ui.text}</span>
           <button class={ui.btnCls} disabled={ui.btnDisabled} onClick={ui.onClick}>{ui.btnText}</button>
         </div>
       </Row>
+      </div>
       {/* Proactive: don't wait for a connect attempt that may just hang on
          a blank screen inside an in-app browser (WhatsApp, Instagram…) —
          Cadence links commonly circulate that way. */}
@@ -570,6 +588,8 @@ async function runReset(): Promise<void> {
     // Nor which extensions are on: a preference, not data.
     if (s.extensions) fresh.extensions = { ...s.extensions };
     if (s.extensionOptions) fresh.extensionOptions = structuredClone(s.extensionOptions);
+    // Nor which walkthroughs were done: the person learnt the app, not the data.
+    if (s.walkthroughs) fresh.walkthroughs = { ...s.walkthroughs };
     ensureCurrentUser(fresh); ensureCurrentProfile(fresh);
     // EMPTIED first, not just overwritten. `Object.assign` only touches the
     // keys `emptyState()` happens to name, so every optional field added since
@@ -664,6 +684,9 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
 
   return (
     <>
+      {/* Export and import together, for the walkthrough to light — not the
+          reset beside them (walkthrough/). */}
+      <span class="inline-flex items-center gap-1" data-tour="backup-buttons">
       <button
         class="btn-ghost text-xs inline-flex items-center justify-center px-2"
         disabled={busy}
@@ -691,6 +714,7 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
           }}
         />
       </label>
+      </span>
       <button
         class="btn-ghost text-xs inline-flex items-center justify-center px-2 text-danger"
         disabled={busy || audioBytes === null}
@@ -1595,6 +1619,7 @@ function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; init
             {SECTIONS.map(sec => (
               <button
                 key={sec.id}
+                data-tour={`settings-nav-${sec.id}`}
                 class={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer ${
                   compactNav ? 'justify-center' : ''
                 } ${

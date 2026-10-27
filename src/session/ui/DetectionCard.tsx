@@ -335,7 +335,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
     // themes. Both ways round were tried on screen and the user kept this one —
     // what is yours has substance, what is not stays flat. A neutral tone on
     // purpose: an accent tint would read as a call to attention.
-    <div class={`detection-card p-3 rounded-lg border ${known || !hasLibrary() ? 'bg-surface' : 'bg-bg'} space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id}>
+    <div class={`detection-card p-3 rounded-lg border ${known || !hasLibrary() ? 'bg-surface' : 'bg-bg'} space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id} data-tour="detection">
       <div class="flex items-center gap-2">
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}

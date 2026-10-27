@@ -210,6 +210,7 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
             type="button"
             class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
             title={t('deck.viewInLibrary')}
+            data-tour="activity-library"
             onClick={() => navigate({ view: 'library', reviewedFrom: localDay(selection.start), reviewedTo: localDay(selection.end) })}
           >
             <LibraryIcon size={12} />
@@ -241,7 +242,7 @@ function Dashboard({ user }: { user: AppState }) {
   return (
     <div class="space-y-5 pb-2">
       {/* Stats */}
-      <div class="grid grid-cols-3 gap-3">
+      <div class="grid grid-cols-3 gap-3" data-tour="dashboard">
         {[
           { label: t('dashboard.cards'),    value: String(allCards.length),  sub: t(deckCount !== 1 ? 'dashboard.decks' : 'dashboard.deck', { count: deckCount }) },
           { label: t('dashboard.thisWeek'), value: String(weekReviews),      sub: t('dashboard.totalReviews', { count: totalReviews }) },
@@ -256,7 +257,7 @@ function Dashboard({ user }: { user: AppState }) {
       </div>
 
       {/* Activity chart */}
-      <div class="card-block space-y-2">
+      <div class="card-block space-y-2" data-tour="activity">
         <div class="flex items-center justify-between">
           <div class="section-title">{t('dashboard.activity')}</div>
           <div class="flex gap-1">
@@ -504,6 +505,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             <button
               class="btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium"
               title={folderId ? t('folder.studyTitle') : undefined}
+              data-tour="study-all"
               onClick={() => showStudyModal({ entries: folderEntries, title: folderTitle, defaultContext: null })}
             >
               {folderId ? t('folder.study') : t('folder.studyAll')}
@@ -555,7 +557,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
         const favoriteDecks = Object.values(user.decks).filter(d => d.favorite).sort((a, b) => a.name.localeCompare(b.name));
         if (favoriteDecks.length === 0) return null;
         return (
-          <div class="space-y-2">
+          <div class="space-y-2" data-tour="favorites">
             <span class="section-title">{t('folder.section.favorites')}</span>
             <div class="flex flex-wrap gap-2">
               {favoriteDecks.map(deck => (
@@ -574,7 +576,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
       })()}
 
       {/* ── Sub-folders ── */}
-      <div class="space-y-2">
+      <div class="space-y-2" data-tour="folders">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('folder.section.folders')}</span>
           <button class="btn-ghost text-xs" onClick={() =>
@@ -631,10 +633,10 @@ export function FolderView({ folderId }: { folderId: string | null }) {
       </div>
 
       {/* ── Decks ── */}
-      <div class="space-y-2">
+      <div class="space-y-2" data-tour="decks">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('folder.section.decks')}</span>
-          <button class="btn-ghost text-xs" onClick={() => showCreateDeckModal(getContext(), folderId)}>
+          <button class="btn-ghost text-xs" data-tour="new-deck" onClick={() => showCreateDeckModal(getContext(), folderId)}>
             {t('folder.newDeck')}
           </button>
         </div>
@@ -654,6 +656,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               return (
                 <div
                   key={deckId}
+                  data-tour={`deck-${deckId}`}
                   draggable
                   ref={(el) => { if (el) addTouchDragSupport(el as HTMLElement); }}
                   class={[

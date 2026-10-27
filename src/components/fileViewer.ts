@@ -1161,6 +1161,7 @@ export function showPreviewModal(
     sheetTabBtn.onclick = () => setAbcMode('sheet');
     textTabBtn.onclick  = () => setAbcMode('text');
     tabBar.append(sheetTabBtn, textTabBtn);
+    tabBar.dataset.tour = 'abc-tabs';
 
     const versionNav = document.createElement('div');
     versionNav.className = `flex items-center gap-1 p-1 bg-bg rounded-lg w-fit ${versionCount <= 1 ? 'hidden' : ''}`;
@@ -1178,6 +1179,7 @@ export function showPreviewModal(
     prevBtn.onclick = () => settleDraft(() => goToVersion(currentIndex - 1));
     nextBtn.onclick = () => settleDraft(() => goToVersion(currentIndex + 1));
     versionNav.append(prevBtn, versionLabel, nextBtn);
+    versionNav.dataset.tour = 'abc-versions';
 
     // ★ "set as default version" — independent of onSave, works read-only too
     // (picking a favorite version isn't editing the card's content). Declared
@@ -1329,6 +1331,7 @@ export function showPreviewModal(
     // Capture phase: before abcjs's own handlers, still inside the tap — the
     // only moment Safari lets its audio start (audioSession.ts).
     controls.addEventListener('click', unlockAbcjsAudio, true);
+    controls.dataset.tour = 'abc-play';
     transportBar.appendChild(controls);
 
     // ── The source face's transport (2026-10-15) ──
@@ -1434,6 +1437,7 @@ export function showPreviewModal(
     // stave's back button, declared further down.
     boundClearBtn.disabled = true;
     boundsGroup.append(boundInBtn, boundOutBtn, boundClearBtn);
+    boundsGroup.dataset.tour = 'abc-bounds';
     transportBar.appendChild(boundsGroup);
     /** Just before the stave starts: from the start of the passage when the
      *  cursor is outside it — late-bound, it needs the timer. */
@@ -1464,6 +1468,7 @@ export function showPreviewModal(
     // the beginning and none of it was ever asked for.
     const practiceRow = document.createElement('div');
     practiceRow.className = 'flex items-center gap-1.5 flex-wrap';
+    practiceRow.dataset.tour = 'abc-practice';
     transportBar.appendChild(practiceRow);
 
     /** abcjs's own glyphs swapped for the app's, after its widget is built.
@@ -1610,6 +1615,8 @@ export function showPreviewModal(
     const TRANSPOSE_LIMIT = 12;
     const transposeBtn = document.createElement('button');
     transposeBtn.className = 'abc-chip';
+    // Opens a dialog of its own, which a walkthrough's veil would cover.
+    transposeBtn.dataset.tour = 'abc-transpose';
     const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
     function updateTranspose(): void {
       transposeBtn.replaceChildren();
@@ -1711,6 +1718,7 @@ export function showPreviewModal(
     // away with the music. The frame does not scroll, so they stay put.
     const scoreFrame = document.createElement('div');
     scoreFrame.className = 'relative w-full';
+    scoreFrame.dataset.tour = 'abc-score';
     container.appendChild(scoreFrame);
     // The transport goes UNDER the score, which is why it is not appended where
     // it was built (see TRANSPORT_CLASS) — nor here: under the ABC source as
@@ -1747,6 +1755,7 @@ export function showPreviewModal(
     fullscreenBtn.className = 'abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center';
     fullscreenBtn.title = t('fileViewer.abc.fullscreen');
     fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreen'));
+    fullscreenBtn.dataset.tour = 'abc-fullscreen';
     fullscreenBtn.appendChild(iconElement(ExpandIcon, 13));
     fullscreenBtn.addEventListener('click', () => fullscreenBtn.blur());
     scoreTools.appendChild(fullscreenBtn);
@@ -4060,6 +4069,7 @@ export function showPreviewModal(
           {
             icon: iconElement(GearIcon, 15),
             title: t('fileViewer.abc.prefs.title'),
+            tour: 'abc-gear',
             onClick: () => showAbcPrefsModal(() => reapplyAbcPrefs?.(), () => recheckAbcSyntax?.()),
           },
         ]
