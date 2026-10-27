@@ -130,6 +130,7 @@ export function DeckView({ deckId }: { deckId: string }) {
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <button
+                data-tour="deck-star"
                 class={`shrink-0 flex items-center transition-colors cursor-pointer ${deck.favorite ? 'text-yellow-400' : 'text-dim hover:text-yellow-400'}`}
                 title={deck.favorite ? t('deck.unfavorite') : t('deck.favorite')}
                 onClick={() => mutate(s => { const d = s.decks[deckId]; if (d) d.favorite = !d.favorite; })}
@@ -165,7 +166,7 @@ export function DeckView({ deckId }: { deckId: string }) {
             )}
               </div>
             </div>
-            <div class="flex items-center gap-1 mt-1">
+            <div class="flex items-center gap-1 mt-1" data-tour="deck-location">
               <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('folder.parent.label')}</span>
               <CustomSelect
                 value={parentId ?? ''}
@@ -237,7 +238,7 @@ export function DeckView({ deckId }: { deckId: string }) {
         </div>
 
         {/* Metrics — single evenly-spaced inline row */}
-        <div class="stats-container border-y border-border">
+        <div class="stats-container border-y border-border" data-tour="deck-stats">
         <div class="stats-grid py-3 px-4 gap-x-4 gap-y-3 justify-items-center">
           <DeckMetric
             label={t('deck.section.availability')}
@@ -263,6 +264,9 @@ export function DeckView({ deckId }: { deckId: string }) {
 
       </div>
 
+      {/* The cards, header and list: one block for the walkthrough to light
+          (walkthrough/), the field's list of matches hanging over the rows. */}
+      <div data-tour="deck-cards">
       {/* ── Cards header + quick-link ── */}
       <div class="flex items-center justify-between px-6 pb-2">
         <div class="flex items-center gap-2">
@@ -270,6 +274,7 @@ export function DeckView({ deckId }: { deckId: string }) {
           <button
             type="button"
             class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+            data-tour="deck-library-btn"
             title={t('deck.viewInLibrary')}
             onClick={() => navigate({ view: 'library', decks: [[deckId, 'include']] })}
           >
@@ -293,6 +298,7 @@ export function DeckView({ deckId }: { deckId: string }) {
           <button
             type="button"
             class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+            data-tour="deck-add-btn"
             title={t('deck.addCards')}
             onClick={() => showNewCardModal(getContext(), [deckId])}
           >
@@ -302,7 +308,7 @@ export function DeckView({ deckId }: { deckId: string }) {
       </div>
 
       {/* ── Cards list ── */}
-      <div class="px-6 pb-6">
+      <div class="px-6 pb-6" data-tour="deck-card-list">
         <div class="space-y-3">
           {deck.entries.length === 0 ? (
             <p class="text-sm text-dim italic">{t('deck.empty')}</p>
@@ -353,6 +359,7 @@ export function DeckView({ deckId }: { deckId: string }) {
 
                     <span
                       class="text-sm text-primary flex-1 truncate cursor-pointer hover:text-accent"
+                      data-tour="deck-row-name"
                       onClick={() => navigate({ view: 'card', cardId: card.id, contextDeckId: deckId })}
                     >
                       {card.name}
@@ -362,6 +369,9 @@ export function DeckView({ deckId }: { deckId: string }) {
                       {lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}
                     </span>
 
+                    {/* The field and the value it replaces, one box for the
+                        walkthrough to light (walkthrough/). */}
+                    <span class="shrink-0 flex" data-tour="deck-importance">
                     {editingImportanceId === entry.cardId ? (
                       <input
                         ref={importanceInputRef}
@@ -395,6 +405,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                         ×{imp}
                       </span>
                     )}
+                    </span>
 
                   </div>
                 );
@@ -403,6 +414,7 @@ export function DeckView({ deckId }: { deckId: string }) {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

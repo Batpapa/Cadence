@@ -818,3 +818,100 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 html.app-open #legal-footer { display: none; }
 /* Nor does it ride the on-screen keyboard (services/softKeyboard.ts). */
 html.soft-keyboard-open #legal-footer { display: none; }
+
+/* ── Walkthrough bubble (walkthrough/engine.ts) ───────────────────────────────
+   driver.js's popover in the app's own clothes. It is zoomed back to 1 so its
+   position matches its measurements (see `unzoom` there), so every length here
+   is multiplied by the app's zoom to read at the app's size. Two classes (and
+   three on the buttons): driver.css is loaded after this file and would win a
+   tie. */
+.driver-popover.cadence-tour {
+  --tz: var(--zoom-factor, 1);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  background: rgb(var(--color-elevated-ch));
+  color: rgb(var(--color-primary-ch));
+  border: 1px solid rgb(var(--color-border-ch));
+  border-radius: calc(12px * var(--tz));
+  padding: calc(16px * var(--tz));
+  min-width: calc(250px * var(--tz));
+  max-width: min(calc(330px * var(--tz)), calc(100vw - 24px));
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+  /* Shown once the lit box has reached its element (engine.ts, onHighlighted),
+     not half-way there as driver.js would: its own fade is replaced. */
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+.driver-popover.cadence-tour.tour-shown { opacity: 1; }
+/* driver.css's fade (`.driver-fade .driver-popover`) would show it at once. */
+.driver-fade .driver-popover.cadence-tour { animation: none; }
+.driver-popover.cadence-tour .driver-popover-title {
+  font-size: calc(15px * var(--tz));
+  font-weight: 600;
+  line-height: 1.35;
+  padding-right: calc(22px * var(--tz));
+}
+.driver-popover.cadence-tour .driver-popover-description {
+  font-size: calc(13px * var(--tz));
+  line-height: 1.55;
+  color: rgb(var(--color-muted-ch));
+}
+.driver-popover.cadence-tour .driver-popover-description strong { color: rgb(var(--color-primary-ch)); font-weight: 600; }
+.driver-popover.cadence-tour .driver-popover-description code {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.9em;
+  padding: 0 0.3em;
+  border-radius: 4px;
+  background: rgb(var(--color-surface-ch));
+  border: 1px solid rgb(var(--color-border-ch));
+}
+.driver-popover.cadence-tour .driver-popover-footer { margin-top: calc(14px * var(--tz)); }
+.driver-popover.cadence-tour .driver-popover-progress-text {
+  font-size: calc(12px * var(--tz));
+  color: rgb(var(--color-dim-ch));
+  font-variant-numeric: tabular-nums;
+}
+.driver-popover.cadence-tour .driver-popover-footer .driver-popover-footer-btn {
+  font-family: inherit;
+  font-size: calc(13px * var(--tz));
+  font-weight: 500;
+  padding: calc(6px * var(--tz)) calc(14px * var(--tz));
+  border-radius: calc(8px * var(--tz));
+  border: none;
+  background: rgb(var(--color-accent-ch));
+  color: #fff;
+  text-shadow: none;
+}
+.driver-popover.cadence-tour .driver-popover-footer .driver-popover-footer-btn:hover,
+.driver-popover.cadence-tour .driver-popover-footer .driver-popover-footer-btn:focus-visible {
+  background: var(--color-accent-hover);
+}
+.driver-popover.cadence-tour .driver-popover-footer .driver-popover-footer-btn:focus-visible {
+  outline: 2px solid rgb(var(--color-accent-ch) / 0.5);
+  outline-offset: 2px;
+}
+.driver-popover.cadence-tour .driver-popover-close-btn {
+  color: rgb(var(--color-dim-ch));
+  width: calc(34px * var(--tz));
+  height: calc(34px * var(--tz));
+  font-size: calc(18px * var(--tz));
+}
+.driver-popover.cadence-tour .driver-popover-close-btn:hover,
+.driver-popover.cadence-tour .driver-popover-close-btn:focus { color: rgb(var(--color-primary-ch)); }
+/* The arrow is a bordered box with three sides transparent: the fourth takes
+   the bubble's colour. */
+.driver-popover.cadence-tour .driver-popover-arrow { border-width: calc(6px * var(--tz)); }
+.driver-popover.cadence-tour .driver-popover-arrow-side-left   { border-left-color:   rgb(var(--color-elevated-ch)); }
+.driver-popover.cadence-tour .driver-popover-arrow-side-right  { border-right-color:  rgb(var(--color-elevated-ch)); }
+.driver-popover.cadence-tour .driver-popover-arrow-side-top    { border-top-color:    rgb(var(--color-elevated-ch)); }
+.driver-popover.cadence-tour .driver-popover-arrow-side-bottom { border-bottom-color: rgb(var(--color-elevated-ch)); }
+/* A deck's cards while a walkthrough has the user link one: the field's list
+   of matches hangs below it, over the rows, and must stay inside the lit box
+   — what is outside it lies under the veil and cannot be pressed. */
+.driver-active [data-tour="deck-cards"] { min-height: 22rem; }
+/* A walkthrough of the Irish trad extension: framed in its green, as its lines
+   are in the help (help.tsx's ExtensionBox). */
+.driver-popover.cadence-tour.cadence-tour-irish { border-color: rgb(var(--color-irish-ch) / 0.6); }
+/* A list hanging from the lit field but drawn elsewhere on the page — a search
+   field's suggestions (data-tour-float): over the veil, and pickable. */
+.driver-active [data-tour-float] { z-index: 10001 !important; }
+.driver-active [data-tour-float], .driver-active [data-tour-float] * { pointer-events: auto; }

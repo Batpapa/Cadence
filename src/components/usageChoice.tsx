@@ -40,7 +40,7 @@ function Choice({ icon, title, desc, tone = 'plain', onPick }: {
   );
 }
 
-/** `onDone` runs once the question is answered — the guide that a new user is
+/** `onDone` runs once the question is answered — the walkthrough a new user is
  *  shown next waits for it, rather than opening over it. The window cannot be
  *  closed without an answer (the author's call): only a reload gets past it,
  *  and leaves the user as created, with no extension. */

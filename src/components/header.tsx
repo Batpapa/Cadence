@@ -5,6 +5,7 @@ import type { ComponentChildren, RefObject } from 'preact';
 import type { AppContext } from '../types';
 import { showCommandPalette } from './commandPalette';
 import { showHelpModal } from './help';
+import { anyScenarioPending } from '../walkthrough/scenarios';
 import { showSettingsModal, showProfileModal, confirmLogout } from './settingsModal';
 import { registerOverlay } from './overlayStack';
 // In the header at all because most people never opened Settings → About, and
@@ -33,18 +34,21 @@ import { storagePersisted, storageUsage, storageQuota, deviceFree, assessStorage
 const initialsOf = (name: string) =>
   name.split(/[\s-]+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '—';
 
-function HeaderBtn({ title, active, overflow, onClick, children }: {
-  title: string; onClick: () => void; active?: boolean; overflow?: OverflowId; children: ComponentChildren;
+/** `tour`: the name a walkthrough step points at it by (walkthrough/). */
+function HeaderBtn({ title, active, overflow, tour, dot, onClick, children }: {
+  title: string; onClick: () => void; active?: boolean; overflow?: OverflowId; tour?: string; dot?: boolean; children: ComponentChildren;
 }) {
   return (
     <button
-      class={`hdr-btn cursor-pointer
+      class={`hdr-btn cursor-pointer${dot ? ' relative' : ''}
         ${active ? 'bg-accent/10 text-accent' : 'text-dim hover:text-primary hover:bg-elevated'}`}
       title={title}
       data-overflow={overflow}
+      data-tour={tour}
       onClick={onClick}
     >
       {children}
+      {dot && <span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent" style="box-shadow:0 0 0 2px var(--color-surface)" />}
     </button>
   );
 }
@@ -181,8 +185,8 @@ function useHeaderLayout(forceCompact: boolean) {
  *  like every other popup, so Back and Escape close it — the Android app's Back
  *  used to send the whole app to the background past the profile menu (seen
  *  2026-10-05). */
-function HeaderMenu({ anchor, align, onClose, children }: {
-  anchor: RefObject<HTMLElement>; align: 'center' | 'right'; onClose: () => void; children: ComponentChildren;
+function HeaderMenu({ anchor, align, tour, onClose, children }: {
+  anchor: RefObject<HTMLElement>; align: 'center' | 'right'; tour?: string; onClose: () => void; children: ComponentChildren;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // `document.documentElement` has a CSS `zoom` applied (zoomService); the portaled
@@ -214,6 +218,7 @@ function HeaderMenu({ anchor, align, onClose, children }: {
     <div
       ref={ref}
       role="menu"
+      data-tour={tour}
       class={`fixed z-30 bg-elevated border border-border rounded-xl overflow-hidden shadow-2xl p-1.5
         ${align === 'center' ? '-translate-x-1/2' : ''}`}
       style={pos}
@@ -227,12 +232,13 @@ function HeaderMenu({ anchor, align, onClose, children }: {
  *  column is 24 px for every row, wide enough for the logo glyph, so the labels
  *  line up whatever the icon; `[&>svg]:shrink-0` because an SVG is a flex item
  *  that would otherwise shrink to the column instead of keeping its size. */
-function MenuRow({ icon, label, accent, danger, dot, onClick }: {
-  icon: ComponentChildren; label: string; accent?: boolean; danger?: boolean; dot?: boolean; onClick: () => void;
+function MenuRow({ icon, label, accent, danger, dot, tour, onClick }: {
+  icon: ComponentChildren; label: string; accent?: boolean; danger?: boolean; dot?: boolean; tour?: string; onClick: () => void;
 }) {
   return (
     <button
       role="menuitem"
+      data-tour={tour}
       class="w-full flex items-center gap-3 min-h-11 px-2.5 py-2 rounded-lg text-left text-sm text-primary hover:bg-surface cursor-pointer border-none bg-transparent transition-colors"
       onClick={onClick}
     >
@@ -424,6 +430,9 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
   const initials = initialsOf(currentProfile?.name ?? '—');
   const overflowInMenu = OVERFLOW_ORDER.filter(id => hidden.has(id));
+  // A walkthrough never finished: a dot on ?, or on ⋮ and its Help row when
+  // ? has moved in there.
+  const walkthroughPending = anyScenarioPending();
 
   return (
     <header
@@ -434,19 +443,19 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
       {/* Left group */}
       <div ref={leftRef} class="flex items-center gap-1 shrink-0">
-        <HeaderBtn title={sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')} onClick={onToggleSidebar}>
+        <HeaderBtn title={sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')} tour="sidebar" onClick={onToggleSidebar}>
           <PanelLeftIcon size={icon} />
         </HeaderBtn>
         {/* In the bottom bar in the compact layout, never in ⋮. */}
         {!compact && (
           <>
-            <HeaderBtn title={t('sidebar.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
+            <HeaderBtn title={t('sidebar.home')} active={homeActive} tour="nav-home" onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
               <HomeIcon size={icon} />
             </HeaderBtn>
-            <HeaderBtn title={t('sidebar.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
+            <HeaderBtn title={t('sidebar.library')} active={libActive} tour="nav-library" onClick={() => ctx.navigate({ view: 'library' })}>
               <LibraryIcon size={icon} />
             </HeaderBtn>
-            <HeaderBtn title={t('sidebar.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
+            <HeaderBtn title={t('sidebar.modules')} active={modulesActive} tour="nav-modules" onClick={() => ctx.navigate({ view: 'modules' })}>
               <ModulesIcon size={icon} />
             </HeaderBtn>
             {/* The pinned module, right after the three fixed destinations and
@@ -495,6 +504,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
 
           <button
             ref={profileBtnRef}
+            data-tour="profile"
             class="pointer-events-auto hdr-btn gap-2 px-2.5 hover:bg-elevated cursor-pointer border-none bg-transparent"
             onClick={() => setProfileOpen(o => !o)}
           >
@@ -531,18 +541,19 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
       {/* Right group */}
       <div ref={rightRef} class="flex items-center gap-1 shrink-0">
         {!hidden.has('search') && (
-          <HeaderBtn title={t('sidebar.search')} overflow="search" onClick={search}>
+          <HeaderBtn title={t('sidebar.search')} overflow="search" tour="search" onClick={search}>
             <SearchIcon size={icon} />
           </HeaderBtn>
         )}
         {!hidden.has('help') && (
-          <HeaderBtn title={t('sidebar.help')} overflow="help" onClick={help}>
+          <HeaderBtn title={t('sidebar.help')} overflow="help" tour="help" dot={walkthroughPending} onClick={help}>
             <HelpIcon size={icon} />
           </HeaderBtn>
         )}
         {compact && (
           <button
             ref={profileBtnRef}
+            data-tour="profile"
             class="hdr-btn hover:bg-elevated cursor-pointer border-none bg-transparent"
             title={currentProfile?.name ?? '—'}
             onClick={() => setProfileOpen(o => !o)}
@@ -557,6 +568,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
           ref={moreRef}
           class={`hdr-btn relative cursor-pointer ${menuOpen ? 'bg-elevated text-primary' : 'text-dim hover:text-primary hover:bg-elevated'}`}
           title={t('header.more')}
+          data-tour="more"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen(o => !o)}
         >
@@ -564,26 +576,27 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
           {/* Installing and updating are the entries worth a nudge: both used
               to be filled pills in the bar. Installing only until the entry
               has been used once (installOfferSeen). */}
-          {((install && !installOfferSeen.value) || update) && (
+          {((install && !installOfferSeen.value) || update || (walkthroughPending && hidden.has('help'))) && (
             <span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-accent" style="box-shadow:0 0 0 2px var(--color-surface)" />
           )}
         </button>
       </div>
 
       {menuOpen && (
-        <HeaderMenu anchor={moreRef} align="right" onClose={() => setMenuOpen(false)}>
+        <HeaderMenu anchor={moreRef} align="right" tour="menu" onClose={() => setMenuOpen(false)}>
           {/* No separators and no fixed width: one plain list, as wide as its
               longest label (the author's call, 2026-10-23). */}
           <>
             {overflowInMenu.map(id => id === 'search'
-              ? <MenuRow key={id} icon={<SearchIcon size={18} />} label={t('header.menu.search')} onClick={fromMenu(search)} />
-              : <MenuRow key={id} icon={<HelpIcon size={18} />} label={t('sidebar.help')} onClick={fromMenu(help)} />)}
+              ? <MenuRow key={id} icon={<SearchIcon size={18} />} label={t('header.menu.search')} tour="menu-search" onClick={fromMenu(search)} />
+              : <MenuRow key={id} icon={<HelpIcon size={18} />} label={t('sidebar.help')} dot={walkthroughPending} tour="menu-help" onClick={fromMenu(help)} />)}
             {install && (
               <MenuRow
                 icon={<InstallIcon size={18} />}
                 accent
                 dot={!installOfferSeen.value}
                 label={t('settings.install')}
+                tour="menu-install"
                 onClick={fromMenu(() => { markInstallSeen(); install(); })}
               />
             )}
@@ -600,7 +613,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
                 onClick={fromMenu(applyUpdate)}
               />
             )}
-            <MenuRow icon={<SettingsIcon size={18} />} label={t('sidebar.settings')} onClick={fromMenu(() => showSettingsModal(ctx))} />
+            <MenuRow icon={<SettingsIcon size={18} />} label={t('sidebar.settings')} tour="menu-settings" onClick={fromMenu(() => showSettingsModal(ctx))} />
             {/* Last, a row like the others (the author's call, 2026-10-23). The
                 logo had no job before; About now also carries sharing the app
                 and the community — the job of a share button testers read as
@@ -622,6 +635,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             return (
               <button
                 key={pid}
+                data-tour={`profile-${pid}`}
                 class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-md cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
                 onClick={() => {
                   setProfileOpen(false);
@@ -644,6 +658,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
           <div class="h-px bg-border my-1" />
           <button
             class="w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-md text-dim hover:text-primary hover:bg-surface cursor-pointer border-none bg-transparent text-left transition-colors"
+            data-tour="profile-manage"
             onClick={() => { setProfileOpen(false); showProfileModal(ctx); }}
           >
             <span class="flex items-center"><SettingsIcon size={12} /></span>
@@ -665,11 +680,12 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
  *  so the icons stay on one row. 10 px, and short words written for this bar:
  *  a cell is 60 px with a pinned module on a 360 px phone, and the widest
  *  label, "Tendances", measures 50 px in IBM Plex Sans 500. */
-function BottomNavBtn({ title, label, active, disabled, onClick, children }: {
-  title: string; label?: string; active?: boolean; disabled?: boolean; onClick: () => void; children: ComponentChildren;
+function BottomNavBtn({ title, label, active, disabled, tour, onClick, children }: {
+  title: string; label?: string; active?: boolean; disabled?: boolean; tour?: string; onClick: () => void; children: ComponentChildren;
 }) {
   return (
     <button
+      data-tour={tour}
       class={`flex-1 min-w-0 flex flex-col items-center justify-center gap-1 transition-colors
         ${active ? 'text-accent' : disabled ? 'text-border' : 'text-dim active:text-accent'}`}
       title={title}
@@ -700,13 +716,13 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
       class="flex items-stretch border-t border-border bg-surface shrink-0"
       style="padding-bottom: var(--safe-bottom); min-height: calc(3.5rem + var(--safe-bottom))"
     >
-      <BottomNavBtn title={t('sidebar.home')} label={t('bottomNav.home')} active={homeActive} onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
+      <BottomNavBtn title={t('sidebar.home')} label={t('bottomNav.home')} active={homeActive} tour="nav-home" onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
         <HomeIcon size={20} />
       </BottomNavBtn>
-      <BottomNavBtn title={t('sidebar.library')} label={t('bottomNav.library')} active={libActive} onClick={() => ctx.navigate({ view: 'library' })}>
+      <BottomNavBtn title={t('sidebar.library')} label={t('bottomNav.library')} active={libActive} tour="nav-library" onClick={() => ctx.navigate({ view: 'library' })}>
         <LibraryIcon size={20} />
       </BottomNavBtn>
-      <BottomNavBtn title={t('sidebar.modules')} label={t('bottomNav.modules')} active={modulesActive} onClick={() => ctx.navigate({ view: 'modules' })}>
+      <BottomNavBtn title={t('sidebar.modules')} label={t('bottomNav.modules')} active={modulesActive} tour="nav-modules" onClick={() => ctx.navigate({ view: 'modules' })}>
         <ModulesIcon size={20} />
       </BottomNavBtn>
       {/* Between the destinations and the two history controls: it is one of

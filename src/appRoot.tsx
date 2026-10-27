@@ -173,7 +173,7 @@ function AppRoot() {
             ? `absolute top-0 bottom-0 left-0 z-30 overflow-hidden transition-transform duration-200 ease-in-out ${sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'}`
             : `shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out`}
         >
-          <div class="h-full">
+          <div class="h-full" data-tour="sidebar-panel">
             <Sidebar ctx={ctx} />
           </div>
         </div>

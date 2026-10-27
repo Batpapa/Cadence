@@ -765,7 +765,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
            two never wrap: the title column is `flex-1` (basis 0), so it just
            narrows and the name wraps inside it. */}
       <div class="flex flex-wrap items-start gap-x-4 gap-y-1.5">
-        <div class="flex-1 min-w-0">
+        <div class="flex-1 min-w-0" data-tour="card-name">
           {isEditingName ? (
             <input
               type="text"
@@ -813,6 +813,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               rel="noopener"
               class={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-elevated border transition-colors shrink-0 ${SOURCE_PIN_COLORS[source.source] ?? 'text-dim border-border'}`}
               title={source.label}
+              data-tour="card-source"
               {...pinTriggerProps}
             >
               {source.id}
@@ -843,7 +844,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         </div>
 
         {/* Deck chips */}
-        <div class="basis-full flex flex-wrap gap-1.5">
+        <div class="basis-full flex flex-wrap gap-1.5" data-tour="card-decks">
           {deckIds.map(dId => {
             const deck = user.decks[dId]; if (!deck) return null;
             return (
@@ -868,7 +869,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       </div>
 
       {/* ── Stats ── */}
-      <div class="stats-container border-y border-border">
+      <div class="stats-container border-y border-border" data-tour="card-stats">
       <div class="stats-grid py-3 px-4 gap-x-4 gap-y-3 justify-items-center">
         <CardMetric
           label={t('card.section.availability')}
@@ -884,7 +885,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           value={ease !== undefined ? pct(ease) : '—'}
           colorClass={easeColor}
         />
-        <div class="flex items-baseline gap-1.5">
+        <div class="flex items-baseline gap-1.5" data-tour="card-importance">
           {deckIds.length > 0 ? (
             <CustomSelect
               value={importanceCtx}
@@ -976,11 +977,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           word, not a form field. The value is the control — clicking it raises
           the same overflow menu the attachments "+" uses, or, when the card is
           already playing in a set, the modal explaining why it cannot move. */}
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2" data-tour="card-type">
         <span class="section-title shrink-0">{t('card.section.type')}</span>
         <button
           type="button"
           class="inline-flex items-center gap-1.5 text-sm text-primary hover:text-accent transition-colors cursor-pointer"
+          data-tour="card-type-btn"
           title={typeLocked ? t('card.type.lockedTitle') : t('card.type.change')}
           onClick={(e) => typeLocked
             ? showTypeLockedModal(inSets)
@@ -999,7 +1001,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           tapped; and a plain tap on a pill dropped it into an edit field,
           which put a rename one mis-tap away. A tap now selects, and selecting
           is all it does — the actions live on the title line, as targets. */}
-      <div class="space-y-2">
+      <div class="space-y-2" data-tour="card-tags">
         {/* Actions hard right, where every other section in this view keeps
             them (the review history's "+", the metrics row above). */}
         <div class="flex items-center justify-between">
@@ -1057,7 +1059,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       </div>
 
       {/* ── Notes ── */}
-      <div class="space-y-2">
+      <div class="space-y-2" data-tour="card-notes">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.notes')}</span>
           {/* The hidden-text button sits OUT of the flow, just left of the eye:
@@ -1082,6 +1084,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           )}
           <button
             class="btn-ghost px-2"
+            data-tour="card-notes-edit"
             title={isEditingNotes ? t('card.saveNotes') : t('card.editNotes')}
             onClick={() => {
               if (isEditingNotes) void mutate(s => { s.cards[cardId]!.content.notes = notesDraft; });
@@ -1095,6 +1098,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         {isEditingNotes ? (
           <textarea
             ref={notesRef}
+            data-tour="card-notes-text"
             value={notesDraft}
             class="input w-full font-mono text-xs resize-none"
             rows={12}
@@ -1126,7 +1130,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           score IS an attachment, and this list is what it is made of — reading
           the two apart made neither say much. */}
       {isTuneset(card) && (
-        <div class="space-y-2">
+        <div class="space-y-2" data-tour="card-tunes">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0">
               <span class="section-title shrink-0">{t('card.section.tunes')}</span>
@@ -1139,6 +1143,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 <button
                   type="button"
                   class="inline-flex items-center gap-1.5 text-xs text-dim hover:text-accent transition-colors cursor-pointer min-w-0"
+                  data-tour="card-autoname"
                   title={t(card.computedName ? 'card.autoName.disable' : 'card.autoName.enable')}
                   onClick={() => mutate(s => {
                     const c = s.cards[cardId];
@@ -1155,6 +1160,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
             </div>
             <button
               class="btn-ghost px-2 shrink-0"
+              data-tour="card-tunes-add"
               title={t('card.tunes.add')}
               onClick={() => showCardPicker(
                 picked => mutate(s => {
@@ -1204,7 +1210,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       <IncipitRow card={card} where="card" onOpenScore={hasScore(card.content.attachments) ? () => openCardScore(attachmentOptions) : undefined} />
 
       {/* ── Attachments ── */}
-      <AttachmentList options={attachmentOptions} />
+      <div data-tour="card-attachments"><AttachmentList options={attachmentOptions} /></div>
 
       {/* ── Played in these sets (read-only) ── */}
       {/* Above "referenced by" because membership is stronger information than
@@ -1258,7 +1264,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       {cardPanels().map((panel, i) => <Fragment key={i}>{panel(cardId)}</Fragment>)}
 
       {/* ── Review history ── */}
-      <div class="space-y-2">
+      <div class="space-y-2" data-tour="card-history">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.reviewHistory')}</span>
           <button onClick={() =>

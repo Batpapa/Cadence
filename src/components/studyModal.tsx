@@ -40,9 +40,9 @@ const STRATEGIES: Array<{ id: StudyStrategy; labelKey: string; subKey: string }>
   { id: 'sequential', labelKey: 'deck.strategy.sequential', subKey: 'deck.strategy.sequential.sub' },
 ];
 
-function Switch({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+function Switch({ label, value, tour, onChange }: { label: string; value: boolean; tour?: string; onChange: (v: boolean) => void }) {
   return (
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex items-center justify-between gap-3" data-tour={tour}>
       <span class="text-xs font-semibold text-muted uppercase tracking-widest">{label}</span>
       <button
         type="button"
@@ -111,6 +111,8 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
 
   return (
     <div class="space-y-4">
+      {/* The three settings, one block for the walkthrough to light. */}
+      <div class="space-y-4" data-tour="study-options">
       <div>
         <div class="flex items-center gap-3">
           <label class="text-xs font-semibold text-muted uppercase tracking-widest shrink-0">{t('deck.context.title')}</label>
@@ -132,8 +134,10 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
       <Switch
         label={t('study.excludeMastered')}
         value={exclMastered}
+        tour="study-exclude"
         onChange={v => { setExclMastered(v); void mutate(s => { s.excludeMastered = v; }); }}
       />
+      </div>
 
       <div class="border-t border-border" />
 
@@ -149,6 +153,7 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
             return (
               <button
                 key={s.id}
+                data-tour={`study-${s.id}`}
                 class="w-full text-left card-block hover:border-accent/60 transition-colors cursor-pointer"
                 onClick={() => pickStrategy(s.id)}
               >

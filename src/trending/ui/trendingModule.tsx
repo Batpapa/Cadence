@@ -188,7 +188,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
     // A card: `surface`; none yet: the page's `bg` — as a detection in an
     // analysis (see DetectionCard).
     // Without a library (the standalone page) every row is shown as known.
-    <div class={`flex items-center gap-3 p-2.5 rounded-lg border border-border ${known || !library ? 'bg-surface' : 'bg-bg'}`}>
+    <div class={`flex items-center gap-3 p-2.5 rounded-lg border border-border ${known || !library ? 'bg-surface' : 'bg-bg'}`} data-tour="trending-row">
       <span class="text-xs text-dim w-6 text-right shrink-0">{rank}</span>
 
       {/* Icons to the left of the name, same order/placement as the session
@@ -196,6 +196,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
       <button
         class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
         title={sheetError ? t('trending.detailLoadError') : t('trending.viewSheet')}
+        data-tour="trending-sheet"
         disabled={sheetBusy}
         onClick={() => void doViewSheet()}
       >
@@ -420,6 +421,7 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
         <div class="flex items-center gap-3 shrink-0">
           <button
             class={`text-dim hover:text-accent transition-colors cursor-pointer ${loading ? 'opacity-50 pointer-events-none' : ''}`}
+            data-tour="trending-refresh"
             title={t('trending.refresh')}
             onClick={() => void load()}
           >
@@ -431,7 +433,7 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
       <div class="text-xs text-dim mb-3">{status}</div>
 
       {dbState && dbState.snapshots.length > 0 && (
-        <div class="flex flex-wrap items-center gap-3 mb-3">
+        <div class="flex flex-wrap items-center gap-3 mb-3" data-tour="trending-controls">
           <div class="flex items-center gap-1.5">
             <span class="text-xs text-dim">{t('trending.from')}</span>
             {/* A DateField (2026-10-13): read once the field is left or the

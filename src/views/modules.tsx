@@ -22,6 +22,7 @@ function PinButton({ id }: { id: string }) {
   const pinned = pinnedModuleId.value === id;
   return (
     <button
+      data-tour={`module-pin-${id}`}
       class={`tap-btn cursor-pointer shrink-0 ${pinned ? 'text-accent bg-accent/10' : 'text-dim hover:text-primary hover:bg-elevated'}`}
       title={t(pinned ? 'modules.unpin' : 'modules.pin')}
       onClick={(e) => {
@@ -45,6 +46,7 @@ function ModuleCard({ id, icon, title, desc, extra, onOpen, first }: {
 }) {
   return (
     <div
+      data-tour={`module-${id}`}
       class={`w-full text-left p-4 rounded-lg border border-border bg-bg hover:border-accent/50 hover:bg-accent/5 transition-colors cursor-pointer flex items-center gap-3 ${first ? '' : 'mt-3'}`}
       onClick={onOpen}
     >

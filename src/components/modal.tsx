@@ -30,6 +30,8 @@ export interface ModalAction {
   danger?: boolean;
   icon?: Element;
   align?: 'start';
+  /** The name a walkthrough step points at it by (walkthrough/). */
+  tour?: string;
   /** A signal rather than a plain boolean because the footer buttons are
    *  declared up front, outside the body's Preact tree: a body that decides
    *  whether its action would do anything (nothing ticked, empty field) writes
@@ -44,6 +46,8 @@ export interface ModalAction {
 export interface ModalHeaderAction {
   icon: Element;
   title: string;
+  /** The name a walkthrough step points at it by (walkthrough/). */
+  tour?: string;
   onClick: () => void;
 }
 
@@ -286,7 +290,7 @@ export function promptModal(title: string, label: string, defaultValue: string, 
   // and closing here as well would let one keypress take this dialog AND
   // whatever it was opened from.
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); });
-  showModal(title, body, [{ label: t('common.cancel'), onClick: closeModal }, { label: t('common.confirm'), primary: true, onClick: confirm }]);
+  showModal(title, body, [{ label: t('common.cancel'), tour: 'modal-cancel', onClick: closeModal }, { label: t('common.confirm'), primary: true, onClick: confirm }]);
   focusIfDesktop(input);
 }
 
@@ -330,7 +334,7 @@ export function confirmModal(title: string, message: string, confirmLabel: strin
   body.textContent = message;
   showModal(title, body, [
     { label: t('common.cancel'), onClick: closeModal },
-    { label: confirmLabel, danger: true, onClick: () => { closeModal(); onConfirm(); } },
+    { label: confirmLabel, danger: true, tour: 'modal-confirm', onClick: () => { closeModal(); onConfirm(); } },
   ]);
 }
 
@@ -503,6 +507,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
     >
       <div
         ref={dialogRef}
+        data-tour="modal"
         class={`bg-elevated shadow-2xl overflow-hidden flex flex-col ${
           expanded ? 'w-full h-full safe-area-pad' : 'border border-border rounded-xl w-full mx-4'
         }`}
@@ -529,6 +534,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
               <button
                 key={i}
                 class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
+                data-tour={action.tour}
                 title={action.title}
                 onClick={action.onClick}
               >
@@ -549,7 +555,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
               </button>
             )}
             {entry.dismissable && (
-              <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={dismiss}>✕</button>
+              <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" data-tour="modal-close" onClick={dismiss}>✕</button>
             )}
           </div>
         </div>
@@ -562,6 +568,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
               <button
                 key={i}
                 class={(action.primary ? 'btn-primary' : action.danger ? 'btn-danger px-2' : 'btn-ghost') + (action.align === 'start' ? ' mr-auto' : '')}
+                data-tour={action.tour}
                 disabled={action.disabled?.value}
                 onClick={async () => { await action.onClick(); }}
               >

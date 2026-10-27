@@ -206,6 +206,8 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
         if (file && mayHoldAudio(file.type)) onImportFile(file, destinationFolder);
       }}
     >
+      {/* The three ways in, one block for the walkthrough to light. */}
+      <div data-tour="analyser-start">
       {/* Split button: pressing it starts a session on the source shown by its
          own icon, and the chevron half changes that source. CustomSelect is
          driving it — its trigger is the WHOLE control, so its portaled panel
@@ -304,6 +306,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
         <ImportTrayIcon size={13} />
         <span>{t('sessions.share.importSession')}</span>
       </button>
+      </div>
       {/* Two readings of the same material, side by side: the evenings, and
           what was played across them. A tab rather than a second module —
           the ranking is derived from these sessions and means nothing without
@@ -311,10 +314,11 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
       {/* The ABC viewer's segmented control, to the class: a background pill
           holding the two choices, rather than two loose buttons. Same gesture
           in two places, so it should look like the same gesture. */}
-      <div class="flex gap-1 p-1 mt-3 bg-bg rounded-lg w-fit">
+      <div class="flex gap-1 p-1 mt-3 bg-bg rounded-lg w-fit" data-tour="analyser-tabs">
         {([['sessions', 'sessions.tab.sessions'], ['tunes', 'sessions.tab.tunes']] as const).map(([id, key]) => (
           <button
             key={id}
+            data-tour={`analyser-tab-${id}`}
             class={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
               tab === id ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-elevated'}`}
             onClick={() => setTab(id)}

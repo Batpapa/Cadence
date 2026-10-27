@@ -200,7 +200,7 @@ function Card({ icon, iconTitle, name, detail, onOpen, dragItem, target, accepts
 
   return (
     <div ref={ref} class="rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors">
-      <div class="flex items-center gap-3 p-3 cursor-pointer" onClick={onOpen}>
+      <div class="flex items-center gap-3 p-3 cursor-pointer" data-tour={target.kind === 'session' ? 'analysis-row' : undefined} onClick={onOpen}>
         <div class="flex-1 min-w-0">
           <div class="text-sm font-medium text-primary truncate flex items-center gap-1.5">
             {/* Before the name, not after it: these are scanned down a column,

@@ -1063,7 +1063,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           would let it scroll away immediately — which is exactly what it did. */}
       <div class="relative">
         {audioUrl && (
-          <div class="absolute top-3 right-0 z-20 h-7 flex items-center gap-3">
+          <div class="absolute top-3 right-0 z-20 h-7 flex items-center gap-3" data-tour="summary-audio">
             {/* A button, not a link to the stored blob: the file is only read
                 out of the local database on demand, which is also where its
                 extension gets settled (see downloadAudio). */}
@@ -1103,7 +1103,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             number pinned and at rest — it cannot drift apart. And `pt-3`
             matches the timeline's `mt-3` just below, so the bar sits in equal
             air top and bottom. Change one of the three and change all three. */}
-        <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3">
+        <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3" data-tour="summary-player">
           {audioUrl && (
             <div class="flex items-center gap-2 flex-wrap">
               <button

@@ -9,7 +9,8 @@ import { liveScreenActive, importScreenActive } from '../session/ui/sessionModul
 import { experimentalSets } from '../session/detections';
 import { EXTENSIONS, type ExtensionId, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered } from '../services/extensions';
 import { offeredModules } from './pinnedModule';
-import { MusicNoteIcon } from './icons';
+import { MusicNoteIcon, CheckIcon } from './icons';
+import { offeredScenarios, scenarioDone, anyScenarioPending, type Scenario } from '../walkthrough/scenarios';
 
 type SectionStyle = 'definition' | 'logic' | 'metrics';
 /** The lines of a section that an extension brings: drawn apart, in a box
@@ -368,19 +369,81 @@ function GuideBody({ steps }: { steps: HelpSection[] }) {
   );
 }
 
-function HelpTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function HelpTab({ label, active, dot, onClick }: { label: string; active: boolean; dot?: boolean; onClick: () => void }) {
   return (
     <button
-      class={`px-3 py-2.5 text-xs font-medium cursor-pointer transition-colors border-none bg-transparent ${active ? 'text-accent' : 'text-dim hover:text-primary'}`}
+      class={`px-3 py-2.5 text-xs font-medium cursor-pointer transition-colors border-none bg-transparent inline-flex items-center gap-1.5 ${active ? 'text-accent' : 'text-dim hover:text-primary'}`}
       style={{ borderBottom: active ? '2px solid var(--color-accent)' : '2px solid transparent', marginBottom: '-1px' }}
       onClick={onClick}
     >
       {label}
+      {dot && <NewDot />}
     </button>
   );
 }
 
-type HelpTabId = 'info' | 'guide';
+/** "Not done yet" — the same dot as on the ? button. */
+function NewDot() {
+  return <span class="w-2 h-2 rounded-full bg-accent shrink-0" />;
+}
+
+/** The walkthroughs on offer, each started from here: the help closes and
+ *  the walkthrough takes over (walkthrough/engine.ts, loaded on demand). */
+function ScenarioRow({ s, n }: { s: Scenario; n: number }) {
+  const done = scenarioDone(s.id);
+  // Not yet possible: it says what it needs instead of what it does.
+  const blocked = s.requires && !s.requires.met() ? s.requires.hintKey : null;
+  return (
+          <div class="bg-bg border border-border rounded-lg p-3.5 flex items-center gap-3">
+            <span class={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${done ? 'bg-success/15 text-success' : 'bg-accent/15 text-accent'}`}>
+              {done ? <CheckIcon size={14} /> : n}
+            </span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-sm font-semibold text-primary">
+                {t(s.titleKey)}
+                {!done && <NewDot />}
+              </div>
+              <div class="text-xs text-muted leading-relaxed mt-0.5">{t(s.descKey)}</div>
+              {blocked && <div class="text-xs text-warn leading-relaxed mt-1">{t(blocked)}</div>}
+            </div>
+            <button
+              class={`shrink-0 text-xs ${done ? 'btn-ghost border border-border px-3' : 'btn-primary'}`}
+              disabled={!!blocked}
+              onClick={() => { void import('../walkthrough/engine').then(m => m.startScenario(s.id)); }}
+            >
+              {t(done ? 'walkthrough.redo' : 'walkthrough.start')}
+            </button>
+          </div>
+  );
+}
+
+/** Everyone's walkthroughs, then each extension's in its box — the same box
+ *  as its lines in the help, numbered on from the others. */
+function WalkthroughBody() {
+  const scenarios = offeredScenarios();
+  const core = scenarios.filter(s => !s.extension);
+  const byExtension = EXTENSIONS
+    .map(ext => ({ ext, list: scenarios.filter(s => s.extension === ext.id) }))
+    .filter(g => g.list.length > 0);
+  let n = core.length;
+  return (
+    <div class="flex flex-col gap-3">
+      <p class="text-xs text-muted leading-relaxed">{t('walkthrough.intro')}</p>
+      {core.map((s, i) => <ScenarioRow key={s.id} s={s} n={i + 1} />)}
+      {byExtension.map(({ ext, list }) => (
+        <div key={ext.id} class="rounded-lg border border-irish/35 bg-irish/5 p-2.5 flex flex-col gap-2.5">
+          <div class="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-irish">
+            <MusicNoteIcon size={12} />
+            <span>{t(ext.labelKey)}</span>
+          </div>
+          {list.map(s => <ScenarioRow key={s.id} s={s} n={++n} />)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type HelpTabId = 'info' | 'guide' | 'walkthrough';
 
 function HelpModalContent({ sections, initialTab }: { sections: HelpSection[]; initialTab: HelpTabId }) {
   const [activeTab, setActiveTab] = useState<HelpTabId>(initialTab);
@@ -405,20 +468,22 @@ function HelpModalContent({ sections, initialTab }: { sections: HelpSection[]; i
       <div class="flex border-b border-border px-5">
         <HelpTab label={t('help.tabInfo')}  active={activeTab === 'info'}  onClick={() => switchTo('info')} />
         <HelpTab label={t('help.tabGuide')} active={activeTab === 'guide'} onClick={() => switchTo('guide')} />
+        <HelpTab label={t('help.tabWalkthrough')} active={activeTab === 'walkthrough'} dot={anyScenarioPending()} onClick={() => switchTo('walkthrough')} />
       </div>
       <div class="px-5 pb-4">
-        {activeTab === 'info' ? <InfoBody sections={sections} /> : <GuideBody steps={nonEmpty(getGuideSteps())} />}
+        {activeTab === 'info' ? <InfoBody sections={sections} />
+          : activeTab === 'guide' ? <GuideBody steps={nonEmpty(getGuideSteps())} />
+          : <WalkthroughBody />}
       </div>
     </div>
   );
 }
 
-/** `tab: 'guide'` opens straight on the user guide — what a brand-new user
- *  is shown on arrival, when a page they have not used yet has nothing to
- *  explain to them. The ? button keeps opening on the page it is pressed on. */
+/** `tab` opens on another tab than the page's own help, which is where the
+ *  ? button opens it. */
 export function showHelpModal(ctx: AppContext, opts: { tab?: HelpTabId } = {}): void {
   const { title, sections } = getInfoContent(ctx);
   const { el, cleanup } = renderModalBody(<HelpModalContent sections={nonEmpty(sections)} initialTab={opts.tab ?? 'info'} />);
-  // Its two tabs are gone back and forth between, and are not the same height.
+  // Its tabs are gone back and forth between, and are not the same height.
   showModal(t('help.title', { context: title }), el, [], { maxWidth: '36rem', expandable: true, pinTop: true, onDismiss: cleanup });
 }

@@ -393,6 +393,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
       ) : (
         <span
           class={`text-xs font-mono truncate flex-1 ${previewable ? 'text-muted hover:text-primary cursor-pointer transition-colors' : 'text-dim'}`}
+          data-tour={isAbcFile(entry) ? 'attachment-abc' : undefined}
           // Favoriting a version isn't "editing" the card — available regardless of `editable`.
           onClick={!previewable ? undefined : onOpen ?? (() => void withResolvedEntry(entry, resolved => showPreviewModal(resolved, editable ? onSave : undefined, {
             initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex,
