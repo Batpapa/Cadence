@@ -10,10 +10,10 @@ import { showModal, closeModal } from './modal';
 
 export const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=io.github.batpapa.cadence';
 
-/** Whether the Play app can be offered to anyone. False while the listing is
- *  open to the testers only (2026-10-26): everyone else would land on a page
- *  that says the app is not available. Turn on once it is public. */
-const PLAY_STORE_LIVE = false;
+/** Whether the Play app can be offered to anyone. False while the listing was
+ *  open to the testers only (2026-10-26): everyone else would have landed on a
+ *  page that says the app is not available. Public since 2026-10-28. */
+const PLAY_STORE_LIVE = true;
 
 /** Android, in a browser — not inside the app itself, which says Android too —
  *  and the Play app public: where the Play app is the step up. */
