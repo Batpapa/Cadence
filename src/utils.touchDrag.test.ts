@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { addTouchDragSupport } from './utils';
+import { addTouchDragSupport, touchDragActive } from './utils';
 
 // The touch polyfill against the case that broke it in the field (2026-10-14):
 // Chrome on Android starting its own drag of a `draggable` element on a long
@@ -69,6 +69,15 @@ describe('addTouchDragSupport', () => {
     touch('touchcancel', source);
     expect(seen).toEqual(['dragstart', 'dragend']);
     expect(source.draggable).toBe(true);
+  });
+
+  it('says a drag is under way while it is, for the app’s pull-to-refresh', () => {
+    touch('touchstart', source);
+    expect(touchDragActive.value).toBe(false);
+    vi.advanceTimersByTime(300);
+    expect(touchDragActive.value).toBe(true);
+    touch('touchend', source, 10, 60);
+    expect(touchDragActive.value).toBe(false);
   });
 
   it('never makes draggable what a caller had turned off', () => {

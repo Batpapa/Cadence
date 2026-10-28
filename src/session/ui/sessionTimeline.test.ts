@@ -85,4 +85,15 @@ describe('the silences shown in the list', () => {
     expect(kinds(items)).toBe('ann,ann,gap,ann');
     expect((items[2] as { from: number; len: number }).from).toBe(200);
   });
+
+  it('names what borders each silence — the furthest-reaching tune before it', () => {
+    // b starts after a but ends long before it: the silence follows a.
+    const items = withGaps([ann('a', 30, 200), ann('b', 40, 60), ann('c', 260, 300)], 400);
+    const gaps = items.filter(i => i.kind === 'gap');
+    expect(gaps).toEqual([
+      { kind: 'gap', from: 0, len: 30, followingId: 'a' },
+      { kind: 'gap', from: 200, len: 60, prevId: 'a', followingId: 'c' },
+      { kind: 'gap', from: 300, len: 100, prevId: 'c' },
+    ]);
+  });
 });

@@ -9,7 +9,7 @@ import { ResetIcon } from '../../components/icons';
 import { hasRecognisedSetting, type Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
-  snapMarks, findSnap, findTwin, clampLinked, missingRanges,
+  snapMarks, findSnap, findTwin, clampLinked, closingSnap, missingRanges,
   LOUPE_HALF_S, PEAK_BUCKET_S, type SnapMark, type BoundTwin,
 } from './boundEditorModel';
 import {
@@ -128,7 +128,9 @@ const cssVar = (name: string): string =>
  *  the reason the model states — re-casing is guesswork the moment a name
  *  contains "McGuire", and failing identically everywhere beats failing
  *  differently here. */
-const capitalizeWords = (s: string): string => s.replace(/\b\p{L}/gu, ch => ch.toUpperCase());
+// After a space or a hyphen only: `\b` also sits after an apostrophe, and made
+// "Morrison'S Jig" (2026-10-27).
+export const capitalizeWords = (s: string): string => s.replace(/(^|[\s-])(\p{L})/gu, (_, before: string, ch: string) => before + ch.toUpperCase());
 
 /** Sizes a canvas to its box in real device pixels and hands back a context
  *  whose coordinates are plain layout pixels.
@@ -286,11 +288,14 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   // side alone does not correct it: it opens a hole or an overlap exactly as
   // wide as the move. So the neighbour comes along (user request, 2026-09-21).
   //
-  // ON by default, and only ever offered where the bounds already touch — so
-  // the default is simply "a join stays a join", and the toggle is there for
-  // the one case where the user means to break it apart. That is also why
-  // availability is read from the bounds as they OPENED: a link that switched
-  // itself on mid-drag, the instant a snap made the numbers agree, would start
+  // ON by default, and only ever offered where the bounds touch — so the
+  // default is simply "a join stays a join", and the toggle is there for the
+  // one case where the user means to break it apart.
+  //
+  // A join made HERE — a snap onto the neighbour — is offered too, but OFF,
+  // and only once the gesture that made it is over (2026-10-27: it used to
+  // wait for the editor to be opened again). Never switched on by itself: a
+  // link that came on mid-drag, the instant the numbers agreed, would start
   // moving a second detection under the user's finger.
   const opening = useRef({
     start: findTwin(anns, ann.id, origin.start, 'end', duration),
@@ -300,10 +305,22 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     start: linkByDefault && !!opening.start,
     end: linkByDefault && !!opening.end,
   });
+  /** A join made here and then linked by the user. Kept, because once it
+   *  travels with our bound the neighbour's stored number no longer matches
+   *  the draft, and looking it up again would lose it mid-move. */
+  const [adopted, setAdopted] = useState<Record<'start' | 'end', BoundTwin | null>>({ start: null, end: null });
+  /** A pointer is dragging a handle or jogging the magnifier. */
+  const [gesturing, setGesturing] = useState(false);
+  /** The neighbour each bound is joined to, linked or not — what the toggle
+   *  is offered for. */
+  const offered: Record<'start' | 'end', BoundTwin | null> = {
+    start: opening.start ?? adopted.start ?? (gesturing ? null : findTwin(anns, ann.id, draft.start, 'end', duration)),
+    end: opening.end ?? adopted.end ?? (gesturing ? null : findTwin(anns, ann.id, draft.end, 'start', duration)),
+  };
   /** The twin actually travelling with each bound, or null. */
   const twin: Record<'start' | 'end', BoundTwin | null> = {
-    start: linked.start ? opening.start : null,
-    end: linked.end ? opening.end : null,
+    start: linked.start ? opening.start ?? adopted.start : null,
+    end: linked.end ? opening.end ?? adopted.end : null,
   };
   const linkedIds = new Set([twin.start?.id, twin.end?.id].filter((v): v is string => !!v));
 
@@ -725,6 +742,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     e.preventDefault();
     e.stopPropagation();
     setBound(which);
+    setGesturing(true);
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
@@ -736,6 +754,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
+      setGesturing(false);
       rearmListening();
     };
     el.addEventListener('pointermove', move);
@@ -758,6 +777,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     loupeDragRef.current = { x: e.clientX, from: active, moved: false };
+    setGesturing(true);
   };
   const onLoupeMove = (e: PointerEvent) => {
     const d = loupeDragRef.current;
@@ -788,6 +808,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     const d = loupeDragRef.current;
     if (!d) return;
     loupeDragRef.current = null;
+    setGesturing(false);
     if (d.moved) { rearmListening(); return; }
     const box = loupeBoxRef.current;
     if (!box) return;
@@ -803,6 +824,8 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   const dirty = Math.abs(dStart) > .004 || Math.abs(dEnd) > .004;
   const noWave = !waveformFitsContext(win);
   const snapped = magnet ? findSnap(active, marksNow(), 0.002) : null;
+  /** Not during a gesture: the button would come and go under the finger. */
+  const closing = gesturing ? null : closingSnap(anns, ann.id, origin.start, bound, draft, duration);
 
   const boundBtn = (which: 'start' | 'end', value: number, delta: number) => (
     <button
@@ -840,7 +863,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           says more by appearing than a permanently greyed one ever could. It
           names the neighbour, because "move both" is meaningless until you
           know which other tune you are about to change. */}
-      {opening[bound] && (
+      {offered[bound] && (
         <button
           class={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-[11px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
             linked[bound] ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted hover:text-primary'}`}
@@ -849,15 +872,21 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           title={t('sessions.bounds.linkHint')}
           onClick={() => {
             const next = { ...linked, [bound]: !linked[bound] };
+            // A join made here is kept from the moment it is linked — see
+            // `adopted` — and let go when it is unlinked.
+            const nextAdopted = opening[bound] ? adopted : { ...adopted, [bound]: next[bound] ? offered[bound] : null };
             setLinked(next);
+            setAdopted(nextAdopted);
+            const joined = (b: 'start' | 'end') => (next[b] ? opening[b] ?? nextAdopted[b] : null);
+            const s = joined('start'), en = joined('end');
             // The draft's own numbers did not move, but what a save would
             // write just did — the caller has to hear about it.
             onDraft({
               start: draft.start,
               end: draft.end,
               twins: [
-                ...(next.start && opening.start ? [{ id: opening.start.id, edge: opening.start.edge, t: draft.start }] : []),
-                ...(next.end && opening.end ? [{ id: opening.end.id, edge: opening.end.edge, t: draft.end }] : []),
+                ...(s ? [{ id: s.id, edge: s.edge, t: draft.start }] : []),
+                ...(en ? [{ id: en.id, edge: en.edge, t: draft.end }] : []),
               ],
             });
           }}
@@ -868,7 +897,26 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           <span class="shrink-0 text-sm leading-none">⛓</span>
           <span class="flex-1 min-w-0 truncate">
             {t(linked[bound] ? 'sessions.bounds.linkOn' : 'sessions.bounds.linkOff', {
-              name: capitalizeWords(opening[bound]!.name),
+              name: capitalizeWords(offered[bound]!.name),
+            })}
+          </span>
+        </button>
+      )}
+      {/* Its counterpart where the bounds do NOT touch: closing up on the
+          neighbour in one press, which a drag onto its mark already does
+          with the magnet — the gap the recogniser leaves between two tunes
+          of a set is the commonest correction there is (2026-10-27). Once
+          pressed the bounds touch, and the link above takes its place. */}
+      {!offered[bound] && !twin[bound] && closing && (
+        <button
+          class="w-full flex items-center gap-2.5 rounded-lg border border-border px-3 py-2 text-left text-[11px] text-muted hover:text-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+          disabled={locked}
+          onClick={() => { moveTo(closing.t, { snap: false }); rearmListening(); }}
+        >
+          <span class="shrink-0 text-sm leading-none">{bound === 'start' ? '⇤' : '⇥'}</span>
+          <span class="flex-1 min-w-0 truncate">
+            {t(bound === 'start' ? 'sessions.bounds.snapToPrev' : 'sessions.bounds.snapToNext', {
+              name: capitalizeWords(closing.name),
             })}
           </span>
         </button>

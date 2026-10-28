@@ -1,5 +1,5 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
-import { appState, navigate, mutate, leaveStudy } from '../store';
+import { appState, navigate, mutate, leaveStudy, replaceRouteNow } from '../store';
 import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets';
 import { pickRandom, pickOptimal, pickStochastic, pickSequential, advanceSkips, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
@@ -79,7 +79,7 @@ function VanillaEl({ el }: { el: HTMLElement }) {
   return <div ref={ref} />;
 }
 
-export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId, contextDeckId, skippedCardIds }: {
+export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId, contextDeckId, skippedCardIds, ratedTs }: {
   deckId?: string;
   cardIds?: string[];
   studyTitle?: string;
@@ -87,6 +87,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
   currentCardId?: string | null;
   contextDeckId?: string | null;
   skippedCardIds?: string[];
+  ratedTs?: number;
 }) {
   const user = appState.value;
   const deck = buildDeck(user, deckId, cardIds, studyTitle);
@@ -164,13 +165,54 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
   const goNext   = () => advance(false);
   const skipCard = () => advance(true);
 
+  // ── Coming back to a card already rated (2026-10-27, user request) ────────
+  // Back used to show the card as if new, and a second press filed a second
+  // rating for one recall — undone only on the card page, by a tiny square.
+  // Now the rating given here is found again: shown, replaced by another
+  // press, or deleted. Nothing is undone by going back alone: back is also
+  // how people leave a card they only opened to look at.
+  //
+  // Found by its instant, which the visit's history entry carries (ratedTs):
+  // a rating from the study flow has no id and never moves, so within one
+  // card's history its instant is all the identity it needs. A rating deleted
+  // or changed elsewhere meanwhile is simply not found, and the card reads as
+  // unrated — the safe way round.
+  const isRated = (e: { ts: number; id?: string }) => ratedTs !== undefined && e.ts === ratedTs && e.id === undefined;
+  const ratedEntry = user.cardWorks[`${profileId}:${cardId}`]?.history.find(isRated);
+  /** This visit's route, card pinned: the first card of a session is picked
+   *  at render and its entry names none — coming back to it would pick again. */
+  const here = { ...routeBase, currentCardId: cardId, skippedCardIds };
+
   const logRating = (rating: SessionRating) => {
+    if (ratedEntry) {
+      // The same one again is a confirmation, not a second recall.
+      if (ratedEntry.rating === rating) { goNext(); return; }
+      mutate(s => {
+        const entry = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history.find(isRated);
+        if (entry) entry.rating = rating;
+      }).then(goNext);
+      return;
+    }
     const ts = Date.now();
     mutate(s => {
       const key = `${s.currentProfileId}:${cardId}`;
       if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId: cardId!, history: [] };
       s.cardWorks[key]!.history.push({ ts, rating });
-    }).then(goNext);
+    }).then(() => {
+      // Written into the entry being LEFT, right before the next is pushed.
+      replaceRouteNow({ ...here, ratedTs: ts });
+      goNext();
+    });
+  };
+
+  /** Stays on the card, unrated again: rating it afresh, skipping it or
+   *  leaving are all still open. */
+  const deleteRating = () => {
+    mutate(s => {
+      const history = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
+      const i = history?.findIndex(isRated) ?? -1;
+      if (i !== -1) history!.splice(i, 1);
+    }).then(() => replaceRouteNow(here));
   };
 
   /** Back to the page the session was started from — see leaveStudy. When the
@@ -323,14 +365,26 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           </div>
 
           <div class="space-y-2">
-            <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>
+            <p class="text-xs text-dim text-center">{t(ratedEntry ? 'study.ratedHint' : 'study.ratingHint')}</p>
             <div class="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-2" data-tour="study-ratings">
               {RATINGS.map(({ rating, key, cls, shortcut }) => (
-                <button key={rating} class={cls} title={`${t(key)} [${shortcut}]`} onClick={() => logRating(rating)}>
+                <button
+                  key={rating}
+                  // Ringed in its own colour: the one given on this visit.
+                  class={`${cls} ${ratedEntry?.rating === rating ? 'ring-2 ring-current' : ''}`}
+                  aria-pressed={ratedEntry ? ratedEntry.rating === rating : undefined}
+                  title={`${t(key)} [${shortcut}]`}
+                  onClick={() => logRating(rating)}
+                >
                   {t(key)}
                 </button>
               ))}
             </div>
+            {ratedEntry && (
+              <button class="btn-ghost py-1.5 text-xs w-full text-danger hover:text-danger" onClick={deleteRating}>
+                {t('study.deleteReview')}
+              </button>
+            )}
             {/* Greys out rather than disappears while a single candidate is
                 left, which is a passing state worth showing. */}
             <button class="btn-ghost py-1.5 text-xs w-full" disabled={!canSkip} title={t('study.skipTitle')} onClick={skipCard}>

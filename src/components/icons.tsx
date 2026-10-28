@@ -442,6 +442,29 @@ export function ArrowRightIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** An arrow running down onto a bar: the tune ABOVE a silence stretched down
+ *  to the one below it (the analysis summary's gap rows). */
+export function ExtendDownIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="3" x2="12" y2="16"/>
+      <polyline points="7 11 12 16 17 11"/>
+      <line x1="5" y1="21" x2="19" y2="21"/>
+    </svg>
+  );
+}
+
+/** Its mirror: the tune BELOW a silence pulled up to the one above it. */
+export function ExtendUpIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="5" y1="3" x2="19" y2="3"/>
+      <polyline points="7 13 12 8 17 13"/>
+      <line x1="12" y1="8" x2="12" y2="21"/>
+    </svg>
+  );
+}
+
 export function ResetIcon({ size = 13 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

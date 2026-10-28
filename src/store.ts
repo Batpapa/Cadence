@@ -193,6 +193,17 @@ export function replaceRoute(route: Route): void {
   }, REPLACE_THROTTLE_MS);
 }
 
+/** replaceRoute without the wait, for a rewrite that is followed at once by a
+ *  navigation: the trailing write would land after it, on the NEW entry, and
+ *  the one being left would never be written at all. One write per user act
+ *  — a study rating — is nowhere near what browsers throttle. */
+export function replaceRouteNow(route: Route): void {
+  if (_replaceTimer) { clearTimeout(_replaceTimer); _replaceTimer = null; }
+  routeSignal.value = route;
+  _routeByIdx.set(_idx, route);
+  history.replaceState(stateFor(route), '');
+}
+
 // Deliberately thin: they hand the gesture to the platform and let popstate do
 // the work, so the button and the system gesture cannot diverge. Neither is
 // synchronous — popstate arrives on a later task — which is why the enabled

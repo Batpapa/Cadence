@@ -230,6 +230,41 @@ export function findTwin(
   return null;
 }
 
+/** Where the active bound would land to close up on the tune next to it, or
+ *  null when there is nothing to close: no tune on that side, the bounds
+ *  already meet, or meeting it would turn this detection inside out.
+ *
+ *  "Next to it" is in playing order, read from where the detection started
+ *  when the editor OPENED (`at`) — not from the draft, which would hand the
+ *  button to another tune as soon as the bound crossed one. For the start,
+ *  the tune that began last before it, whose end is the target; for the end,
+ *  the first one to begin after it — overlapping or not — whose start is.
+ *
+ *  The one-press form of a snap onto that neighbour's bound (2026-10-27, user
+ *  request), for the gap a recogniser leaves between two tunes — or the
+ *  overlap, which the same press closes. */
+export function closingSnap(
+  anns: Detection[],
+  editedId: string,
+  at: number,
+  bound: 'start' | 'end',
+  draft: { start: number; end: number },
+  duration: number,
+): BoundTwin & { t: number } | null {
+  let pick: Detection | null = null;
+  for (const a of anns) {
+    if (a.id === editedId) continue;
+    if (bound === 'start' ? a.start < at && (!pick || a.start > pick.start)
+                          : a.start > at && (!pick || a.start < pick.start)) pick = a;
+  }
+  if (!pick) return null;
+  const t = bound === 'start' ? pick.end ?? duration : pick.start;
+  if (Math.abs(t - draft[bound]) <= TWIN_EPSILON_S) return null;
+  const landed = clampBound(bound, t, draft, [0, duration]);
+  if (Math.abs(landed[bound] - t) > TWIN_EPSILON_S) return null;
+  return { id: pick.id, name: pick.displayName, edge: bound === 'start' ? 'end' : 'start', t };
+}
+
 /** The mark `t` would click onto, or null. Nearest wins; ties go to the first
  *  in the list, which is stable because `snapMarks` builds it in a fixed order. */
 export function findSnap(t: number, marks: SnapMark[], tolerance = SNAP_TOLERANCE_S): SnapMark | null {

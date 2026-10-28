@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
-  snapMarks, findSnap, findTwin, clampLinked, missingRanges,
+  snapMarks, findSnap, findTwin, clampLinked, closingSnap, missingRanges,
   CTX_PAD_S, MIN_SPAN_S,
 } from './boundEditorModel';
 
@@ -148,6 +148,37 @@ describe('findTwin', () => {
 
   it('reads an open detection’s end as the session’s end', () => {
     expect(findTwin([det('a', 10, null)], 'b', 200, 'end', 200)?.id).toBe('a');
+  });
+});
+
+describe('closingSnap', () => {
+  // morrison's was detected late and stopped early: a gap on either side.
+  const anns = [det('a', 10, 62, 'the kesh'), det('b', 70, 110, "morrison's"), det('c', 128, 177, 'silver spear')];
+  const draft = { start: 70, end: 110 };
+
+  it('closes up on the end of the tune before and the start of the one after', () => {
+    expect(closingSnap(anns, 'b', 70, 'start', draft, 200)).toEqual({ id: 'a', name: 'the kesh', edge: 'end', t: 62 });
+    expect(closingSnap(anns, 'b', 70, 'end', draft, 200)).toEqual({ id: 'c', name: 'silver spear', edge: 'start', t: 128 });
+  });
+
+  it('closes an overlap the same way', () => {
+    expect(closingSnap([det('a', 10, 75), ...anns.slice(1)], 'b', 70, 'start', draft, 200)?.t).toBe(75);
+  });
+
+  it('offers nothing where the bounds already meet, or on the open side of the recording', () => {
+    expect(closingSnap(anns, 'b', 70, 'start', { start: 62, end: 110 }, 200)).toBeNull();
+    expect(closingSnap(anns, 'a', 10, 'start', { start: 10, end: 62 }, 200)).toBeNull();
+    expect(closingSnap(anns, 'c', 128, 'end', { start: 128, end: 177 }, 200)).toBeNull();
+  });
+
+  it('keeps to the neighbours of where the detection opened, wherever the draft has gone', () => {
+    // The start dragged back past the kesh's own start: still the kesh.
+    expect(closingSnap(anns, 'b', 70, 'start', { start: 5, end: 110 }, 200)?.id).toBe('a');
+  });
+
+  it('never turns the detection inside out', () => {
+    // The next tune starts before this one does once dragged: no end there.
+    expect(closingSnap(anns, 'b', 70, 'end', { start: 128, end: 140 }, 200)).toBeNull();
   });
 });
 

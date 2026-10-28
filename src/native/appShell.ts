@@ -4,6 +4,7 @@ import { anyOverlayOpen, closeTopOverlay, onOverlaysChanged } from '../component
 import { canGoBack, routeSignal } from '../store';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import { PullToRefresh } from './pullToRefresh';
+import { touchDragActive } from '../utils';
 
 /**
  * The Android app's system Back.
@@ -58,7 +59,10 @@ function initPullToRefresh(): void {
     for (const el of scrolledDown) if (!el.isConnected || el.scrollTop <= 0) scrolledDown.delete(el);
     return scrolledDown.size === 0;
   };
-  const allowed = () => !anyOverlayOpen() && !sessionRecordingSignal.value && atTop();
+  // Nor while a finger carries something (utils.ts's touch drag): dragging a
+  // card down a list at its top is a pull to the layout, and reloaded the
+  // page under the drop (2026-10-27).
+  const allowed = () => !anyOverlayOpen() && !sessionRecordingSignal.value && !touchDragActive.value && atTop();
   // A gesture that did not START at the top never refreshes, as in the
   // browser: scrolling back up past the top in one swipe stops there. So while
   // a finger is down the gesture may only be switched off, never on — the
@@ -84,7 +88,7 @@ function initPullToRefresh(): void {
     update();
   }, { capture: true, passive: true });
   onOverlaysChanged(update);
-  effect(() => { void sessionRecordingSignal.value; void routeSignal.value; update(); });
+  effect(() => { void sessionRecordingSignal.value; void routeSignal.value; void touchDragActive.value; update(); });
   // Checked again on arrival: the state may have changed during the pull.
   void PullToRefresh.addListener('refresh', () => { if (allowed()) location.reload(); });
 }
