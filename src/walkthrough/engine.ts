@@ -8,6 +8,7 @@ import { closeAllModals } from '../components/modal';
 import { holdOverlays } from '../components/overlayStack';
 import { SCENARIOS, type TourStep, type TourAct } from './scenarios';
 import { resolve, onScreen, stillOnScreen } from './targets';
+import { bubbleTop, type Rect } from './placement';
 
 // ── Running a walkthrough ────────────────────────────────────────────────────
 // driver.js (MIT) lights the element and places the bubble; what it does not
@@ -122,6 +123,29 @@ function installBlocker(gate: Gate): () => void {
 }
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+/** What a 'do' step may have the user press or type in — disabled ones too:
+ *  « Créer » is greyed until a name is typed, and must not be covered then. */
+const CONTROL = 'button, input, textarea, select, a[href], [role="button"], [contenteditable="true"]';
+
+/** The safe area, in window pixels: what lies under a phone's status bar and
+ *  above its gesture bar. Measured, because env() is only readable by CSS. */
+function safeInsets(): { top: number; bottom: number } {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;left:0;top:0;width:0;visibility:hidden;pointer-events:none;'
+    + 'padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const scale = probe.getBoundingClientRect().height / ((parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)) || 1);
+  const out = { top: parseFloat(cs.paddingTop) * (scale || 1), bottom: parseFloat(cs.paddingBottom) * (scale || 1) };
+  probe.remove();
+  return out;
+}
+
+const visibleRect = (el: Element): Rect | null => {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0 || r.bottom <= 0 || r.top >= innerHeight) return null;
+  return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+};
 
 function markDone(id: string): void {
   void getContext().mutate(s => updateUser(s, { walkthroughs: { ...s.walkthroughs, [id]: Date.now() } }));
@@ -209,6 +233,55 @@ export function startScenario(id: string): void {
   const releaseHold = holdOverlays();
   const removeBlocker = installBlocker(gate);
 
+  /** What the bubble must not cover (see placement.ts): on a 'do' step the
+   *  controls inside the lit element, and the list hanging from it; on any
+   *  other step the lit element whole — a 'click' one is pressed anywhere. */
+  const keepRects = (): Rect[] => {
+    const lit = d?.getActiveElement();
+    if (!lit || lit.id === 'driver-dummy-element') return [];
+    const out: Rect[] = [];
+    if (activeStep()?.action === 'do') {
+      const controls = [lit, ...Array.from(lit.querySelectorAll(CONTROL))].filter(el => el.matches(CONTROL) && !denied(el));
+      for (const el of [...controls, ...Array.from(document.querySelectorAll('[data-tour-float]'))]) {
+        const r = visibleRect(el);
+        if (r) out.push(r);
+      }
+    }
+    if (out.length === 0) {
+      const r = visibleRect(lit);
+      if (r) out.push(r);
+    }
+    return out;
+  };
+  const keepKey = (rects: Rect[]) => rects.map(r => `${r.top},${r.bottom},${r.left},${r.right}`).join(';');
+
+  /** Where the bubble stood when placeBubble last left it — see `watch`. */
+  let placedAt = '';
+  const posOf = (el: HTMLElement) => `${el.style.top}|${el.style.left}|${el.style.bottom}|${el.style.right}`;
+
+  /** Runs right after driver.js has placed the bubble, never otherwise: the
+   *  decision is about ITS place — measured against ours, the bubble would
+   *  look clear and be handed back to the spot it was moved off. */
+  const placeBubble = () => {
+    const popover = popoverEl();
+    if (!popover) return;
+    try { decide(popover); } finally { placedAt = posOf(popover); }
+  };
+  const decide = (popover: HTMLElement) => {
+    const r = popover.getBoundingClientRect();
+    const insets = safeInsets();
+    const top = bubbleTop(
+      { top: r.top, bottom: r.bottom, left: r.left, right: r.right },
+      keepRects(),
+      { width: innerWidth, height: innerHeight, insetTop: insets.top, insetBottom: insets.bottom },
+    );
+    // The arrow points at the lit element from a side; detached, it would
+    // point at nothing.
+    popover.classList.toggle('tour-detached', top !== null);
+    if (top === null) return;
+    Object.assign(popover.style, { top: `${top}px`, bottom: 'auto', left: `${(innerWidth - r.width) / 2}px`, right: 'auto' });
+  };
+
   /** On to the next step — from « Suivant », a press on the lit element, or
    *  a 'do' step whose result is there. */
   const advance = () => {
@@ -248,8 +321,15 @@ export function startScenario(id: string): void {
       return;
     }
     const r = el.getBoundingClientRect();
-    const box = `${r.x},${r.y},${r.width},${r.height},${innerWidth},${innerHeight}`;
-    if (box !== lastBox) { lastBox = box; d.refresh(); }
+    // What the bubble keeps clear of counts too: a list of matches opening
+    // under a field moves nothing the lit box is drawn from.
+    const box = `${r.x},${r.y},${r.width},${r.height},${innerWidth},${innerHeight}|${keepKey(keepRects())}`;
+    if (box !== lastBox) { lastBox = box; d.refresh(); placeBubble(); return; }
+    // driver.js places the bubble again on its own too — on `resize`, which
+    // is what a phone's keyboard coming up is, and AFTER this loop had seen
+    // the new size (measured 2026-10-27). Its place is then decided again.
+    const popover = popoverEl();
+    if (popover && posOf(popover) !== placedAt) placeBubble();
   };
   watcher = requestAnimationFrame(watch);
 
@@ -305,6 +385,7 @@ export function startScenario(id: string): void {
       lastBox = '';
       const popover = popoverEl();
       if (!popover) return;
+      placeBubble();
       popover.classList.add('tour-shown');
       // Keyboard users start where the step wants them: in the lit field of
       // a step that has them type, on the way forward otherwise.

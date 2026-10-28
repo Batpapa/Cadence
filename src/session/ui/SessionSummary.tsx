@@ -1,8 +1,9 @@
+import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { formatBytes, downloadBlob } from '../../utils';
-import { TrashIcon, ResetIcon, CloudUpIcon, PlusIcon } from '../../components/icons';
+import { TrashIcon, ResetIcon, CloudUpIcon, PlusIcon, ExtendDownIcon, ExtendUpIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, alertModal } from '../../components/modal';
 import {
@@ -25,7 +26,7 @@ import {
   fmtLongTime, TitleRow, DateRow,
   ClipControls, recutAttachedClip, repinReviewEntry, absorbReviewEntry, dropReviewEntry, repinSessionDate,
 } from './sessionUiShared';
-import { showBoundEditor, type TwinEdit } from './BoundEditor';
+import { showBoundEditor, capitalizeWords, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import { devMode } from '../../services/devMode';
@@ -907,6 +908,39 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  target, which on a phone is a comfortable strip, and the ⊕ is what says so
    *  without a hover anyone can have (see hoverOnlyWhenSupported). A set linked
    *  across it keeps it all the same (the user's call, 2026-10-20). */
+  /** Hands a whole silence to the tune on one side of it — the one before
+   *  ends where the next begins, or the one after begins where the previous
+   *  ended (2026-10-27, user request: the bound editor for the commonest
+   *  correction there is, in one press). Settles like any other moved bound:
+   *  rating, clip, sets. */
+  const giveGapTo = (id: string, item: ListGap) => {
+    const target = session.annotations.find(a => a.id === id);
+    if (!target) return;
+    audioRef.current?.pause();
+    const previous = { start: target.start, end: target.end };
+    if (id === item.prevId) target.end = item.from + item.len;
+    else target.start = item.from;
+    persist();
+    bump();
+    void settleMoved([{ ann: target, previous }]);
+  };
+
+  /** One of the two "give it to…" buttons of a gap row. */
+  const gapGiveBtn = (id: string | undefined, item: ListGap, key: 'sessions.gap.toPrev' | 'sessions.gap.toNext', icon: ComponentChild) => {
+    const target = id ? session.annotations.find(a => a.id === id) : undefined;
+    if (!target) return null;
+    return (
+      <button
+        class="shrink-0 w-6 h-6 flex items-center justify-center rounded-full hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+        title={t(key, { name: capitalizeWords(target.displayName) })}
+        aria-label={t(key, { name: capitalizeWords(target.displayName) })}
+        onClick={() => giveGapTo(target.id, item)}
+      >
+        {icon}
+      </button>
+    );
+  };
+
   const gapRow = (item: ListGap, inSet: boolean) => (
     <div
       key={`gap-${item.from}`}
@@ -919,14 +953,22 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     >
       <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
       {audioUrl ? (
-        <button
-          class="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
-          title={t('sessions.addDetection.hint')}
-          onClick={() => addDetectionIn(item.from, item.len)}
-        >
-          <PlusIcon size={9} />
-          {t('sessions.gap', { d: fmtLongTime(item.len) })}
-        </button>
+        <span class="shrink-0 inline-flex items-center gap-1">
+          {/* Moving a bound needs the recording, for the reason onEditBounds
+              gives — so these go with it, like the ⊕ beside them. Down from
+              the tune above, up from the tune below: each arrow points the
+              way its tune would grow. */}
+          {gapGiveBtn(item.prevId, item, 'sessions.gap.toPrev', <ExtendDownIcon size={12} />)}
+          <button
+            class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            title={t('sessions.addDetection.hint')}
+            onClick={() => addDetectionIn(item.from, item.len)}
+          >
+            <PlusIcon size={9} />
+            {t('sessions.gap', { d: fmtLongTime(item.len) })}
+          </button>
+          {gapGiveBtn(item.followingId, item, 'sessions.gap.toNext', <ExtendUpIcon size={12} />)}
+        </span>
       ) : (
         <span class="shrink-0 tabular-nums">{t('sessions.gap', { d: fmtLongTime(item.len) })}</span>
       )}

@@ -904,6 +904,9 @@ html.soft-keyboard-open #legal-footer { display: none; }
 .driver-popover.cadence-tour .driver-popover-arrow-side-right  { border-right-color:  rgb(var(--color-elevated-ch)); }
 .driver-popover.cadence-tour .driver-popover-arrow-side-top    { border-top-color:    rgb(var(--color-elevated-ch)); }
 .driver-popover.cadence-tour .driver-popover-arrow-side-bottom { border-bottom-color: rgb(var(--color-elevated-ch)); }
+/* Moved off the controls it would have covered (walkthrough/placement.ts):
+   no longer beside the lit element, so its arrow would point at nothing. */
+.driver-popover.cadence-tour.tour-detached .driver-popover-arrow { display: none; }
 /* A deck's cards while a walkthrough has the user link one: the field's list
    of matches hangs below it, over the rows, and must stay inside the lit box
    — what is outside it lies under the veil and cannot be pressed. */

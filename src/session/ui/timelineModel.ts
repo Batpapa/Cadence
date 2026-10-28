@@ -45,28 +45,43 @@ export function detectionsAt(anns: Detection[], t: number, duration: number): st
 
 /** Detections and the silences between them, in playing order — what the
  *  timeline shows positionally, rendered as a sequence so the list can say it
- *  too. A list of cards butted together reads as one continuous concert. */
+ *  too. A list of cards butted together reads as one continuous concert.
+ *
+ *  A silence names what borders it (see ListGap): the detection whose end it
+ *  starts from — the one reaching furthest, which is not always the last to
+ *  start — and the one that ends it. */
 export function withGaps(anns: Detection[], duration: number): Array<
-  { kind: 'ann'; ann: Detection; i: number } | { kind: 'gap'; from: number; len: number }
+  { kind: 'ann'; ann: Detection; i: number } | Omit<ListGap, 'nextId'>
 > {
   const out: ReturnType<typeof withGaps> = [];
   let cursor = 0;
+  let reachedBy: string | undefined;
+  const gap = (from: number, len: number, followingId: string | undefined): Omit<ListGap, 'nextId'> => ({
+    kind: 'gap', from, len,
+    ...(reachedBy ? { prevId: reachedBy } : {}),
+    ...(followingId ? { followingId } : {}),
+  });
   anns.forEach((ann, i) => {
     const hole = ann.start - cursor;
-    if (hole >= GAP_MIN_S) out.push({ kind: 'gap', from: cursor, len: hole });
+    if (hole >= GAP_MIN_S) out.push(gap(cursor, hole, ann.id));
     out.push({ kind: 'ann', ann, i });
     // Overlaps mean the next tune can start before this one ends; the cursor
     // only ever moves forward, so a negative hole simply never shows.
-    cursor = Math.max(cursor, ann.end ?? duration);
+    const end = ann.end ?? duration;
+    if (end > cursor) { cursor = end; reachedBy = ann.id; }
   });
-  if (duration - cursor >= GAP_MIN_S) out.push({ kind: 'gap', from: cursor, len: duration - cursor });
+  if (duration - cursor >= GAP_MIN_S) out.push(gap(cursor, duration - cursor, undefined));
   return out;
 }
 
 /** A silence row. `nextId`: the detection right after it when a set could be
  *  carried on across it — the one a "link" marks (absent before the first
- *  detection and after the last). */
-export type ListGap = { kind: 'gap'; from: number; len: number; nextId?: string };
+ *  detection and after the last).
+ *
+ *  `prevId` / `followingId`: what borders it, absent at the head and the tail
+ *  of the recording — the two detections a silence can be handed to
+ *  (2026-10-27, user request). */
+export type ListGap = { kind: 'gap'; from: number; len: number; nextId?: string; prevId?: string; followingId?: string };
 /** `cut`: it opens a set only because the user said so — nothing stopped
  *  before it — so the join it sits on carries the mark. */
 export type ListAnn = { kind: 'ann'; ann: Detection; i: number; cut: boolean };

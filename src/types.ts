@@ -489,7 +489,10 @@ export type Route =
   // It travels in the route and NOT in the user's data: it describes this
   // sitting, not what is known — a reload resumes the round, a new session
   // starts a fresh one, and nothing of it reaches IndexedDB or Drive.
-  | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null; skippedCardIds?: string[] }
+  // `ratedTs` is the instant of the rating given on this card in this visit —
+  // what going back to it finds again, to show and correct (2026-10-27). The
+  // same kind of thing: a mark on the history entry, never in the data.
+  | { view: 'study'; deckId?: string; cardIds?: string[]; studyTitle?: string; strategy: StudyStrategy; currentCardId?: string | null; contextDeckId?: string | null; skippedCardIds?: string[]; ratedTs?: number }
   | { view: 'modules' }
   // `annotationId` points at one detection inside the session — a "detected in"
   // link from a card, where two passes through the same tune are two distinct
