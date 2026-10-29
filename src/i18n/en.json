@@ -557,6 +557,8 @@
   "settings.language": "Language",
   "settings.dateFormat": "Date format",
   "settings.dateFormatHint": "On all devices. The names of analyses already saved do not change.",
+  "settings.navLabels": "Names under the navigation icons",
+  "settings.navLabelsHint": "In the bottom bar, on a phone or in a narrow window. On all devices.",
   "settings.dateFormat.auto": "Auto",
   "settings.dateFormat.dmy": "Day/month",
   "settings.dateFormat.mdy": "Month/day",

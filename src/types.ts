@@ -287,6 +287,11 @@ export interface User {
    *  'ymd'. Absent = the browser's own convention, which is what every screen
    *  did before the setting existed. Synced: it is how this person reads. */
   dateFormat?: string;
+  /** Names under the bottom bar's icons (header.tsx). Absent = shown, so both
+   *  values are written explicitly (see `navLabels` in userService, the single
+   *  reader). Synced, not per device (the author's call, 2026-10-29): someone
+   *  who knows what the icons mean knows it on every device. */
+  navLabels?: boolean;
   /** Write a set's repeats out in its fused score. Absent = no, which is the
    *  default: the counts still live on each tune and still show as ×N in the
    *  card view, they are only spelled out in the notation when this is on. */
