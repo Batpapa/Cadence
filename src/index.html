@@ -32,9 +32,13 @@
       (function(){
         var d=document.documentElement, nav=navigator, ua=nav.userAgent;
         function meta(name){ return document.querySelector('meta[name="'+name+'"]'); }
-        // Same default as themeService.getTheme(): light on a phone, dark elsewhere.
+        // Same default as themeService.getTheme(): light on a touch screen, dark
+        // elsewhere, written down the first time.
         var t=null; try { t=localStorage.getItem('cadence_theme'); } catch(e) {}
-        t=t||(innerWidth<768&&nav.maxTouchPoints>0?'light':'dark');
+        if (!t) {
+          t=window.matchMedia&&matchMedia('(pointer: coarse)').matches?'light':'dark';
+          try { localStorage.setItem('cadence_theme', t); } catch(e) {}
+        }
         d.dataset.theme=t;
         d.style.background=t==='light'?'#ffffff':t==='green'?'#f7faf5':'#0a0a0a';
         // The header's colour, so the browser's own bar matches it; kept in step by
