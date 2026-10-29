@@ -18,6 +18,7 @@ import { showSaveFailureModal } from './saveFailureModal';
 import { getZoom } from '../services/zoomService';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import { softKeyboardOpen } from '../services/softKeyboard';
+import { navLabels } from '../services/userService';
 import {
   isDriveFeatureEnabled, getDriveStatus, onStatusChange, manualSync, type DriveStatus,
 } from '../services/driveService';
@@ -679,9 +680,13 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
  *  are the history's, not places — but every button keeps the label's line,
  *  so the icons stay on one row. 10 px, and short words written for this bar:
  *  a cell is 60 px with a pinned module on a 360 px phone, and the widest
- *  label, "Tendances", measures 50 px in IBM Plex Sans 500. */
-function BottomNavBtn({ title, label, active, disabled, tour, onClick, children }: {
-  title: string; label?: string; active?: boolean; disabled?: boolean; tour?: string; onClick: () => void; children: ComponentChildren;
+ *  label, "Tendances", measures 50 px in IBM Plex Sans 500.
+ *
+ *  `labelled` false (the `navLabels` setting, 2026-10-29) drops that line on
+ *  every button, and the icons grow into the room it leaves: the bar keeps
+ *  its height. */
+function BottomNavBtn({ title, label, labelled, active, disabled, tour, onClick, children }: {
+  title: string; label?: string; labelled: boolean; active?: boolean; disabled?: boolean; tour?: string; onClick: () => void; children: ComponentChildren;
 }) {
   return (
     <button
@@ -693,7 +698,7 @@ function BottomNavBtn({ title, label, active, disabled, tour, onClick, children 
       onClick={onClick}
     >
       {children}
-      <span class="h-3 text-[10px] leading-3 font-medium whitespace-nowrap" aria-hidden="true">{label}</span>
+      {labelled && <span class="h-3 text-[10px] leading-3 font-medium whitespace-nowrap" aria-hidden="true">{label}</span>}
     </button>
   );
 }
@@ -704,6 +709,8 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
   const libActive     = route.view === 'library';
   const modulesActive = route.view === 'modules' || route.view === 'sessions';
   const pinned        = pinnedModule();
+  const labelled      = navLabels(ctx.user);
+  const icon          = labelled ? 20 : 24;
 
   // The keyboard covers the bar rather than carrying it up (softKeyboard.ts).
   if (softKeyboardOpen.value) return null;
@@ -716,14 +723,14 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
       class="flex items-stretch border-t border-border bg-surface shrink-0"
       style="padding-bottom: var(--safe-bottom); min-height: calc(3.5rem + var(--safe-bottom))"
     >
-      <BottomNavBtn title={t('sidebar.home')} label={t('bottomNav.home')} active={homeActive} tour="nav-home" onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
-        <HomeIcon size={20} />
+      <BottomNavBtn title={t('sidebar.home')} label={t('bottomNav.home')} labelled={labelled} active={homeActive} tour="nav-home" onClick={() => ctx.navigate({ view: 'folder', folderId: null })}>
+        <HomeIcon size={icon} />
       </BottomNavBtn>
-      <BottomNavBtn title={t('sidebar.library')} label={t('bottomNav.library')} active={libActive} tour="nav-library" onClick={() => ctx.navigate({ view: 'library' })}>
-        <LibraryIcon size={20} />
+      <BottomNavBtn title={t('sidebar.library')} label={t('bottomNav.library')} labelled={labelled} active={libActive} tour="nav-library" onClick={() => ctx.navigate({ view: 'library' })}>
+        <LibraryIcon size={icon} />
       </BottomNavBtn>
-      <BottomNavBtn title={t('sidebar.modules')} label={t('bottomNav.modules')} active={modulesActive} tour="nav-modules" onClick={() => ctx.navigate({ view: 'modules' })}>
-        <ModulesIcon size={20} />
+      <BottomNavBtn title={t('sidebar.modules')} label={t('bottomNav.modules')} labelled={labelled} active={modulesActive} tour="nav-modules" onClick={() => ctx.navigate({ view: 'modules' })}>
+        <ModulesIcon size={icon} />
       </BottomNavBtn>
       {/* Between the destinations and the two history controls: it is one of
           the former, and putting it after Back would separate a pair that is
@@ -734,17 +741,18 @@ export function BottomNav({ ctx }: { ctx: AppContext }) {
         <BottomNavBtn
           title={t(pinned.labelKey)}
           label={t(pinned.shortLabelKey)}
+          labelled={labelled}
           active={isPinnedRouteActive(route, pinned)}
           onClick={() => ctx.navigate(pinned.route)}
         >
-          <pinned.Icon size={20} />
+          <pinned.Icon size={icon} />
         </BottomNavBtn>
       )}
-      <BottomNavBtn title={t('sidebar.back')} disabled={!canGoBack} onClick={() => ctx.back()}>
-        <ArrowLeftIcon size={20} />
+      <BottomNavBtn title={t('sidebar.back')} labelled={labelled} disabled={!canGoBack} onClick={() => ctx.back()}>
+        <ArrowLeftIcon size={icon} />
       </BottomNavBtn>
-      <BottomNavBtn title={t('sidebar.forward')} disabled={!canGoForward} onClick={() => ctx.forward()}>
-        <ArrowRightIcon size={20} />
+      <BottomNavBtn title={t('sidebar.forward')} labelled={labelled} disabled={!canGoForward} onClick={() => ctx.forward()}>
+        <ArrowRightIcon size={icon} />
       </BottomNavBtn>
     </nav>
   );

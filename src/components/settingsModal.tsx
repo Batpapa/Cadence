@@ -11,7 +11,7 @@ import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, a
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW, zoomWorks } from '../services/zoomService';
 import { playbackVolumePercent, setPlaybackVolumePercent, DEFAULT_VOLUME_PERCENT } from '../services/playbackVolume';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
-import { updateUser, ensureCurrentUser, ensureCurrentProfile } from '../services/userService';
+import { updateUser, ensureCurrentUser, ensureCurrentProfile, navLabels } from '../services/userService';
 import { applyExternalData } from '../services/migration';
 import { exportBackup, exportSnapshotBackup, parseImport } from '../services/importExport';
 import { exportFullBackup, fullBackupSize, parseFullBackup, restoreFullBackupAudio, BackupTooLarge, MAX_FULL_BACKUP_BYTES } from '../services/fullBackup';
@@ -1365,6 +1365,17 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
             triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent min-w-[13rem]"
           />
         </div>
+      </Row>
+      <Sep />
+
+      {/* Listed on every screen, the wide one included where the bottom bar
+          is not shown: a row that came and went as the window is resized
+          would be one nobody could count on finding. */}
+      <Row label={t('settings.navLabels')} hint={t('settings.navLabelsHint')}>
+        <Toggle
+          checked={navLabels(user)}
+          onChange={(v) => void ctx.mutate(s => updateUser(s, { navLabels: v }))}
+        />
       </Row>
       <Sep />
     </>

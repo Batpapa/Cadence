@@ -61,6 +61,16 @@ export function ensureCurrentProfile(user: User): void {
   }
 }
 
+/** Whether the bottom bar names its icons, when the user has said nothing.
+ *  Absence means YES — the labels are there for whoever does not know the
+ *  icons yet — so the setting writes both values explicitly and every read
+ *  comes through `navLabels`. */
+export const NAV_LABELS_BY_DEFAULT = true;
+
+export function navLabels(user: { navLabels?: boolean }): boolean {
+  return user.navLabels ?? NAV_LABELS_BY_DEFAULT;
+}
+
 export function updateUser(user: User, patch: Partial<Omit<User, 'id'>>): void {
   Object.assign(user, patch);
 }

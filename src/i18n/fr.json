@@ -557,6 +557,8 @@
   "settings.language": "Langue",
   "settings.dateFormat": "Format des dates",
   "settings.dateFormatHint": "Sur tous les appareils. Les noms des analyses déjà enregistrées ne changent pas.",
+  "settings.navLabels": "Noms sous les icônes de navigation",
+  "settings.navLabelsHint": "Dans la barre du bas, sur téléphone ou dans une fenêtre étroite. Sur tous les appareils.",
   "settings.dateFormat.auto": "Auto",
   "settings.dateFormat.dmy": "Jour/mois",
   "settings.dateFormat.mdy": "Mois/jour",
