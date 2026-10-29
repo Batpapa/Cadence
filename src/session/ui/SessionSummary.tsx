@@ -459,7 +459,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       if (!a || !a.src) return;
       e.preventDefault(); // or the page scrolls under it
       dropTarget();
-      if (a.paused) void a.play().catch(() => {}); else a.pause();
+      // stop() only reads refs, so the first render's player is good here.
+      if (a.paused) { drivePlayer.stop(); void a.play().catch(() => {}); } else a.pause();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -506,9 +507,20 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // eslint-disable-next-line
   }, []);
 
+  /** Silences a passage still playing from Drive: the recording can arrive
+   *  while one does, and the timeline's element would then play over it. True
+   *  when that passage was `annId`'s — the press was its stop. */
+  const stopDrivePassage = (annId?: string): boolean => {
+    const was = drivePlayer.playingId;
+    if (was === null) return false;
+    drivePlayer.stop();
+    return was === annId;
+  };
+
   const playSlice = (ann: Detection) => {
     const a = audioRef.current;
     if (!a) return;
+    if (stopDrivePassage(ann.id)) return;
     if (playingIdRef.current === ann.id) { a.pause(); return; }
     sliceEndRef.current = ann.end ?? session.duration;
     // Through seekTo, so this gesture gets the same floor: playing a slice
@@ -741,7 +753,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     study,
     // No ▶ at all when the recording is neither here nor on Drive.
     onPlay: audioUrl ? playSlice : synced ? (a) => { void drivePlayer.play(session.id, a); } : undefined,
-    playingId: audioUrl ? playingId : drivePlayer.playingId,
+    // A passage from Drive goes on playing when the recording arrives under it:
+    // its ▶ still says ■ until it is stopped.
+    playingId: audioUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
     playFromDrive: !audioUrl && !!synced,
     playLoadingId: audioUrl ? null : drivePlayer.loadingId,
     sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
@@ -1030,7 +1044,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       getPinnedDeckIds: () => pinnedDeckIdsRef.current,
       onChanged: bump,
       onPlay: audioUrl ? (c) => playSlice(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
-      playingId: audioUrl ? playingId : drivePlayer.playingId,
+      playingId: audioUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
       playFromDrive: !audioUrl && !!synced,
       playLoadingId: audioUrl ? null : drivePlayer.loadingId,
       sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
@@ -1218,7 +1232,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             <div class="flex items-center gap-2 flex-wrap mt-3">
               <button
                 class="w-7 h-7 p-0 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
-                onClick={() => { const a = audioRef.current; if (!a) return; if (a.paused) void a.play(); else a.pause(); }}
+                onClick={() => { const a = audioRef.current; if (!a) return; if (a.paused) { stopDrivePassage(); void a.play(); } else a.pause(); }}
                 dangerouslySetInnerHTML={{ __html: playing ? pauseIcon(12) : playIcon(12) }}
               />
               <button
