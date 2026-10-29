@@ -1,5 +1,5 @@
 import type { FFWorkerRequest, FFWorkerResponse } from './recognition/ffWorker';
-import type { IndexProgress } from './recognition/indexStore';
+import { noteTuneIndexCached, type IndexProgress } from './recognition/indexStore';
 import type { WindowResult, DetectionEvent } from './model';
 import type { RecognitionSink } from './audio/sources';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
@@ -56,7 +56,7 @@ export class RecognitionClient implements RecognitionSink {
       const msg = e.data;
       switch (msg.type) {
         case 'init-progress': this.cb.onIndexProgress?.(msg.progress); break;
-        case 'ready':         resolveReady(msg.version); break;
+        case 'ready':         noteTuneIndexCached(); resolveReady(msg.version); break;
         case 'window':        this.cb.onWindow?.(msg.result, msg.abc); break;
         case 'annotations':   this.cb.onDetections?.(msg.events); break;
         case 'pcm-ack':       this.ackQueue.shift()?.(); break;

@@ -45,6 +45,11 @@ export interface TunesetCardOptions {
   sessionStartMs?: number;
   /** Where the clip controls go — absent on the feeds, which have none. */
   clip?: { audioAvailable: boolean; getAudio: () => Promise<Blob | undefined> };
+  /** The span line and its clip controls. Default true; the analysis's simple
+   *  view leaves it out, as it does its tunes' (analysisView.ts). */
+  details?: boolean;
+  /** The review row. Default true; the analysis's "Study" switch. */
+  study?: boolean;
 }
 
 /** A live or import feed's list: tunes alone and sets. The sets are the
@@ -188,7 +193,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
       {/* The span only: its tunes say what they are, and how many there are
           is in plain sight just below (the user's call, 2026-10-19). Plain
           text — no pencil: the set's bounds are its tunes'. */}
-      <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
+      {opts.details !== false && <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
         <span class="font-mono tabular-nums">{range}</span>
         {/* Linked across a silence: it plays, and clips, with the pause. */}
         {hasPause(chain, opts.session.duration) && <span class="text-[11px] text-dim">· {t('sessions.set.pauseIncluded')}</span>}
@@ -206,7 +211,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
             />
           </span>
         )}
-      </div>
+      </div>}
 
       {missing && (
         <p class="text-[11px] text-dim leading-snug">
@@ -216,7 +221,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
         </p>
       )}
 
-      {showReview && (
+      {showReview && opts.study !== false && (
         <div class="flex items-center gap-3 flex-wrap">
           <ReviewLogControl cardId={setCard!.id} reviewId={reviewId!} ts={reviewTs} ctx={opts.ctx} />
         </div>

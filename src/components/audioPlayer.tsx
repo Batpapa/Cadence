@@ -1,10 +1,13 @@
 import { render, type ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { AudioPreset, FileEntry } from '../types';
 import { generateId } from '../utils';
 import { t } from '../services/i18nService';
 import { playIcon, pauseIcon, stopIcon, repeatIcon, boundIcon } from './playbackIcons';
 import { AudioEngine, type AudioEffects } from './audioEngine';
+import { SyncedScore, passStartsOf } from './syncedScore';
+import { localMatch, type FollowResult } from '../session/scoreFollow';
+import { qualityColour, faded } from './followColour';
 import { CustomSelect } from './customSelect';
 import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon, AddClipIcon } from './icons';
 import {
@@ -45,6 +48,24 @@ const WAVE_H = 56;
  *  user): side by side, a label and a value such as "TRANSPOSE +12 st" no
  *  longer fit a third of a phone. */
 const SLIDERS_IN_A_ROW_MIN_PX = 420;
+
+/** Seconds either side of a bar its colour is judged over: about a bar of a
+ *  reel each way — a single quaver's few frames say too little. */
+const LOCAL_MATCH_HALF_S = 1.5;
+/** How much of the quality's colour a bar takes over the waveform's own
+ *  accent: mixed, not replaced (2026-10-29, the user) — the waveform stays
+ *  itself, tinted by how well the score holds there. */
+const QUALITY_TINT = 0.55;
+/** A bar still to play: the accent-subtle's alpha. */
+const AHEAD_ALPHA = 0.35;
+
+/** A bar's two fills, played and still to play, for a share of notes on the
+ *  score (followColour.ts) — null outside the aligned span. */
+function barFillsOf(share: number | null): { played: string; ahead: string } | null {
+  if (share === null) return null;
+  const played = `color-mix(in oklab, ${qualityColour(share)} ${Math.round(QUALITY_TINT * 100)}%, var(--color-accent))`;
+  return { played, ahead: faded(played, AHEAD_ALPHA) };
+}
 
 // ── Pieces ───────────────────────────────────────────────────────────────────
 
@@ -341,9 +362,44 @@ type Status =
   | { kind: 'ready'; duration: number; waveform: number[] }
   | { kind: 'error'; msg: string };
 
-interface Region { start: number; end: number }
+export interface Region { start: number; end: number }
 
-function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPresetsBinding }) {
+/** What a caller other than the file viewer can ask of the player — the
+ *  score that follows a recording (session/ui/ScoreFollowView.tsx, 2026-10-28),
+ *  which is this player with a score drawn above it. All optional: without
+ *  them, the player is exactly the file viewer's. */
+export interface AudioPlayerHooks {
+  /** Loads the engine instead of decoding a file entry. */
+  load?: (engine: AudioEngine) => Promise<{ duration: number; waveform: number[] }>;
+  /** The region to open on, instead of the whole file — and to move to,
+   *  whenever a new object is passed. */
+  region?: Region;
+  /** Plays as soon as it is loaded. */
+  autoplay?: boolean;
+}
+
+/** A score drawn above the waveform, following what plays (syncedScore.tsx):
+ *  its passes become numbered marks under the waveform, and the player's
+ *  transposition moves it with the sound. `follow` in the player's time; null
+ *  until the alignment is in. */
+export interface PlayerScore {
+  abc: string;
+  meter: string;
+  follow: FollowResult | null;
+  maxHeight: string;
+  /** The stave, or its ABC text (SyncedScoreProps.face). */
+  face?: 'sheet' | 'text';
+  /** Buttons over the score's corner (SyncedScoreProps.tools). */
+  tools?: ComponentChildren;
+  /** With no alignment to follow, how well it went (0–1, the share of notes
+   *  on the score): the whole waveform is tinted with it — a poor one reads
+   *  as poor everywhere (2026-10-29, the user). */
+  tint?: number;
+}
+
+export function AudioPlayer({ entry, binding, hooks, score }: {
+  entry?: FileEntry; binding?: AudioPresetsBinding; hooks?: AudioPlayerHooks; score?: PlayerScore;
+}) {
   const [playing, setPlaying] = useState(false);
   const engineRef = useRef<AudioEngine | null>(null);
   engineRef.current ??= new AudioEngine(setPlaying);
@@ -361,6 +417,11 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
   const regionRef = useRef(region);
   const durationRef = useRef(duration);
   durationRef.current = duration;
+  // The region asked from outside (hooks.region), and the last one applied.
+  const askedRegion = hooks?.region;
+  const askedRef = useRef(askedRegion);
+  askedRef.current = askedRegion;
+  const appliedAsk = useRef<Region | undefined>(undefined);
 
   const waveWrapRef = useRef<HTMLDivElement>(null);
   const waveSvgRef = useRef<SVGSVGElement>(null);
@@ -376,10 +437,40 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
     setRegionState(r);
   };
 
+  // A score's passes, as marks under the waveform, and the one being heard.
+  const follow = score?.follow ?? null;
+  const marks = follow ? passStartsOf(follow) : [];
+  const marksRef = useRef<{ at: number[]; end: number }>({ at: [], end: 0 });
+  marksRef.current = { at: marks, end: follow?.end ?? 0 };
+  const [currentMark, setCurrentMark] = useState(-1);
+
+  // The waveform in the alignment's colours (2026-10-29, the user): each bar
+  // tinted by how well the score holds around it — the Play-along toggle's
+  // scale (followColour.ts), over a couple of seconds either side. Outside
+  // the aligned span, the waveform's own colours.
+  const barCount = status.kind === 'ready' ? status.waveform.length : 0;
+  const tint = score?.tint;
+  const levels = useMemo(() => {
+    if (!barCount) return [];
+    if (!follow) return tint === undefined ? [] : Array.from({ length: barCount }, () => barFillsOf(tint));
+    const centres = Array.from({ length: barCount }, (_, i) => ((i + 0.5) / barCount) * duration);
+    return localMatch(follow, centres, LOCAL_MATCH_HALF_S).map(barFillsOf);
+  }, [follow, tint, barCount, duration]);
+  const levelsRef = useRef(levels);
+  levelsRef.current = levels;
+  // Painted at once: the alignment may land while paused, when the frame
+  // loop leaves the bars alone.
+  useEffect(() => { if (status.kind === 'ready') updateMoving(); }, [levels]);
+
   /** The parts that move while playing: playhead, current time, the bars'
-   *  colours. Straight to the DOM — see this file's header. */
+   *  colours. Straight to the DOM — see this file's header. The mark being
+   *  heard is a render, but only when it changes. */
   const updateMoving = () => {
     const pos = engine.position();
+    const m = marksRef.current;
+    let mark = -1;
+    if (pos < m.end) for (let i = 0; i < m.at.length; i++) if (m.at[i]! <= pos) mark = i;
+    setCurrentMark(c => (c === mark ? c : mark));
     const d = durationRef.current;
     if (playheadRef.current) playheadRef.current.style.left = `${(pos / d) * 100}%`;
     if (timeCurrentRef.current) timeCurrentRef.current.textContent = fmtTime(pos);
@@ -387,11 +478,15 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
     if (!rects) return;
     const n = rects.length;
     const { start, end } = regionRef.current;
+    const levels = levelsRef.current;
     for (let i = 0; i < n; i++) {
       const el = rects[i]!;
       const t = (i + 0.5) / n * d;
       const inReg = t >= start && t <= end;
-      const fill = inReg && t <= pos ? 'var(--color-accent)' : inReg ? 'var(--color-accent-subtle)' : 'var(--color-border)';
+      const level = levels[i];
+      const fill = !inReg ? 'var(--color-border)'
+        : level ? (t <= pos ? level.played : level.ahead)
+        : t <= pos ? 'var(--color-accent)' : 'var(--color-accent-subtle)';
       const cached = barFills.current[i];
       if (cached?.el === el && cached.fill === fill) continue;
       el.setAttribute('fill', fill);
@@ -403,11 +498,19 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
   useEffect(() => {
     injectSliderStyle();
     let alive = true;
-    engine.load(entry).then(
+
+    (hooks?.load ? hooks.load(engine) : engine.load(entry!)).then(
       (r) => {
         if (!alive) return;
-        setRegion({ start: 0, end: r.duration });
+        // The LATEST one asked: it may have changed while this loaded.
+        const asked = askedRef.current;
+        appliedAsk.current = asked;
+        const start = asked ? Math.max(0, Math.min(asked.start, r.duration - MIN_REGION_S)) : 0;
+        const end = asked ? Math.max(start + MIN_REGION_S, Math.min(asked.end, r.duration)) : r.duration;
+        setRegion({ start, end });
+        if (asked) engine.seek(start);
         setStatus({ kind: 'ready', ...r });
+        if (hooks?.autoplay) void engine.play().catch(() => {});
         // Opens on the starred preset, if it is still there.
         const starred = binding?.presets.find(p => p.id === binding.defaultId);
         if (starred) {
@@ -434,15 +537,37 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
   // Every render may have moved a bound or the bars: redraw the moving parts.
   useEffect(updateMoving);
 
-  // The animation frame runs only while playing.
+  // A region imposed from outside after loading (hooks.region): taken as it
+  // comes, playback carrying on under it.
   useEffect(() => {
-    if (!playing) return;
-    let id = 0;
-    const loop = () => { updateMoving(); id = requestAnimationFrame(loop); };
+    if (status.kind !== 'ready' || !askedRegion) return;
+    // The one it opened on was applied by the load.
+    if (askedRegion === appliedAsk.current) return;
+    appliedAsk.current = askedRegion;
+    const d = durationRef.current;
+    const start = Math.max(0, Math.min(askedRegion.start, d - MIN_REGION_S));
+    setRegion({ start, end: Math.max(start + MIN_REGION_S, Math.min(askedRegion.end, d)) });
+    engine.applyRegion();
+    // eslint-disable-next-line
+  }, [askedRegion, status.kind]);
+
+  // The animation frame runs all along, but redraws only when the playhead
+  // moved: paused, it is still moved by Stop, by a score's note or arrow
+  // keys, none of which renders this player (2026-10-28).
+  useEffect(() => {
+    if (status.kind !== 'ready') return;
+    let id = 0, last = -1;
+    const loop = () => {
+      id = requestAnimationFrame(loop);
+      const pos = engine.position();
+      if (pos === last) return;
+      last = pos;
+      updateMoving();
+    };
     id = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line
-  }, [playing]);
+  }, [status.kind]);
 
   // A ref, not the render's `effects`: two slider events can land before the
   // next render, and the second must build on the first.
@@ -525,7 +650,8 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
    *  would be the file itself, unchanged. */
   const wholeFile = region.start < 0.05 && region.end > duration - 0.05;
   const onExtractClip = binding?.onExtractClip;
-  const extract = !onExtractClip ? undefined
+  // Clips come out of a file entry: none, no clip (a player loaded by hooks).
+  const extract = !onExtractClip || !entry ? undefined
     : wholeFile && neutralEffects(current) ? null
     : () => onExtractClip({ entry, settings: current, presetName: currentPreset?.name ?? null });
 
@@ -587,7 +713,14 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
 
   if (status.kind !== 'ready') {
     return (
-      <div style={{ width: '100%', padding: '14px 16px', boxSizing: 'border-box' }}>
+      <div style={{ width: '100%', padding: '14px 16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {/* The score is there before the sound is: something to read. */}
+        {score && (
+          <SyncedScore
+            abc={score.abc} meter={score.meter} follow={score.follow} engine={null} region={null}
+            transpose={0} playing={false} maxHeight={score.maxHeight} face={score.face} tools={score.tools}
+          />
+        )}
         <div style={{ fontSize: '11px', color: 'var(--color-dim)', textAlign: 'center', padding: '20px 0' }}>
           {status.kind === 'loading' ? t('audioPlayer.loading') : t('audioPlayer.error', { msg: status.msg })}
         </div>
@@ -616,6 +749,21 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
           setNaming={setNaming}
           onChoose={choosePreset}
           actions={presetActions}
+        />
+      )}
+
+      {score && (
+        <SyncedScore
+          abc={score.abc}
+          meter={score.meter}
+          follow={score.follow}
+          engine={engine}
+          region={region}
+          transpose={effects.transpose}
+          playing={playing}
+          maxHeight={score.maxHeight}
+          face={score.face}
+          tools={score.tools}
         />
       )}
 
@@ -657,6 +805,31 @@ function AudioPlayer({ entry, binding }: { entry: FileEntry; binding?: AudioPres
               onPointerDown={onHandleDown(isStart)}
             >
               <div style={{ width: '3px', height: '100%', background: 'var(--color-accent)', pointerEvents: 'none' }} />
+            </div>
+          ))}
+          {/* The score's passes, ON the waveform (the user, 2026-10-28): a
+              full-height line where each starts, and its number at the top
+              just after it — pressed, it goes there. Under the region's
+              handles (z 4), over the bars. */}
+          {marks.map((at, i) => (
+            <div key={at}>
+              <div
+                style={{
+                  position: 'absolute', top: 0, bottom: 0, width: '2px', zIndex: 2, pointerEvents: 'none',
+                  left: `${(at / duration) * 100}%`, transform: 'translateX(-1px)',
+                  background: currentMark === i ? 'var(--color-accent)' : 'var(--color-primary)', opacity: currentMark === i ? 0.9 : 0.45,
+                }}
+              />
+              <button
+                type="button"
+                title={t('sessions.follow.toPass', { n: i + 1 })}
+                class={`absolute top-0 z-[3] px-1 rounded-sm text-[10px] leading-[14px] font-semibold tabular-nums cursor-pointer transition-colors ${currentMark === i ? 'bg-accent text-white' : 'bg-surface/85 text-muted hover:text-primary'}`}
+                style={{ left: `calc(${(at / duration) * 100}% + 3px)`, fontFamily: MONO }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); engine.seek(at); updateMoving(); }}
+              >
+                {i + 1}
+              </button>
             </div>
           ))}
         </div>

@@ -134,20 +134,70 @@ export interface SettingAbcMeta {
 
 let abcMetaPromise: Promise<Map<string, SettingAbcMeta> | null> | null = null;
 let abcMetaMap: Map<string, SettingAbcMeta> | null = null;
+let abcMetaLooks = 0;
 
+/** An absent index is NOT kept: only the recognition worker downloads it, and
+ *  a device that received its analyses through Drive has never run one. Kept,
+ *  that absence greyed every score button until the app restarted, even after
+ *  a recognition had brought the index in (seen 2026-10-29 after a reinstall).
+ *  So the next call looks again — a missing key costs IndexedDB next to
+ *  nothing. */
 export function getSettingAbcMeta(settingId: string): Promise<SettingAbcMeta | null> {
-  abcMetaPromise ??= (async () => {
-    const cached = await kvGet<TuneIndexData>(KV_INDEX);
-    if (!cached) return null;
-    const map = new Map<string, SettingAbcMeta>();
-    for (const id in cached.indexData.settings) {
-      const s = cached.indexData.settings[id]!;
-      map.set(id, { abc: cached.abcStrings[id] ?? '', meter: s.meter, mode: s.mode, dance: s.dance, tune_id: s.tune_id });
-    }
-    abcMetaMap = map;
-    return map;
-  })();
+  if (!abcMetaPromise) {
+    const look = ++abcMetaLooks;
+    abcMetaPromise = (async () => {
+      const cached = await kvGet<TuneIndexData>(KV_INDEX);
+      if (!cached) {
+        // Unless a newer look has started meanwhile (noteTuneIndexCached).
+        if (look === abcMetaLooks) abcMetaPromise = null;
+        return null;
+      }
+      const map = new Map<string, SettingAbcMeta>();
+      for (const id in cached.indexData.settings) {
+        const s = cached.indexData.settings[id]!;
+        map.set(id, { abc: cached.abcStrings[id] ?? '', meter: s.meter, mode: s.mode, dance: s.dance, tune_id: s.tune_id });
+      }
+      abcMetaMap = map;
+      return map;
+    })();
+  }
   return abcMetaPromise.then(map => map?.get(settingId) ?? null);
+}
+
+const indexCachedListeners = new Set<() => void>();
+
+/** Main thread, from recognitionClient.ts: the worker is ready, so the index
+ *  is in IndexedDB now. Whatever found it missing is told to look again. */
+export function noteTuneIndexCached(): void {
+  if (abcMetaMap) return;
+  abcMetaPromise = null;
+  for (const listener of indexCachedListeners) listener();
+}
+
+/** Called back by noteTuneIndexCached; returns the unsubscribe, effect-style. */
+export function onTuneIndexCached(listener: () => void): () => void {
+  indexCachedListeners.add(listener);
+  return () => { indexCachedListeners.delete(listener); };
+}
+
+/** The contour of one setting — one symbol per quaver, repeats unfolded — for
+ *  score following (scoreFollow.ts, in its worker), where it competes with
+ *  the drawn score. Not kept with the ABC map: ~55k contours would add ~11 MB
+ *  to a map every score preview loads, for a feature that needs one at a
+ *  time. Read from the cached index the first time — the whole 34 MB has to
+ *  come out of IndexedDB for it, most of a second, several on a phone — then
+ *  kept under a key of its own, a few hundred bytes, so a tune followed again
+ *  starts at once. A contour belongs to its setting for good: the index's
+ *  refresh does not touch it. Null when the index is not cached or does not
+ *  hold the setting. */
+const KV_CONTOUR = (settingId: string) => `tuneContour:${settingId}`;
+export async function getSettingContour(settingId: string): Promise<string | null> {
+  const kept = await kvGet<string>(KV_CONTOUR(settingId));
+  if (kept) return kept;
+  const cached = await kvGet<TuneIndexData>(KV_INDEX);
+  const contour = cached?.indexData.settings[settingId]?.contour || null;
+  if (contour) await kvSet(KV_CONTOUR(settingId), contour).catch(() => { /* a cache, nothing lost */ });
+  return contour;
 }
 
 /** Synchronous lookup once the map is loaded — undefined while still loading.

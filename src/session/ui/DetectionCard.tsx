@@ -6,7 +6,7 @@ import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon } from
 import { findByExternalId } from '../../services/theSessionService';
 import { hasLibrary } from '../../services/pageMode';
 import { AbcPreview, TuneFacts } from './abcPreview';
-import { PlayDisc, playDiscTitle } from './PassRow';
+import { PlayDisc, playDiscTitle, detectionPlayAlong } from './PassRow';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
 import { getContext } from '../../store';
@@ -40,6 +40,22 @@ export interface DetectionCardOptions {
   playFromDrive?: boolean;
   /** The detection whose passage is on its way from Drive. */
   playLoadingId?: string | null;
+  /** The score viewer's "Play along" with this recording (PassRow.tsx's
+   *  detectionPlayAlong). Only on a saved analysis: the feeds' recording is
+   *  still being written. */
+  follow?: {
+    /** The recording is on this device; otherwise it is read from Drive, if
+     *  it is there. */
+    here: boolean;
+    /** Silences the screen's own player when it is turned on. */
+    beforeOpen?: () => void;
+  };
+  /** The meta line — dance, mode, times, and `metaActions` — under the name.
+   *  Default true; the analysis's simple view leaves it out (analysisView.ts). */
+  details?: boolean;
+  /** The "log this as a review" row. Default true; the analysis shows it only
+   *  with its "Study" switch on (analysisView.ts). */
+  study?: boolean;
   /** Extra controls rendered at the bottom of the card (bound-adjust/clip
    *  buttons — finalized annotations only, gated by the caller). */
   extraControls?: () => ComponentChild;
@@ -345,7 +361,10 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
           return <PlayDisc {...state} title={playDiscTitle(state)} onClick={() => opts.onPlay!(ann)} />;
         })()}
 
-        <AbcPreview settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx} />
+        <AbcPreview
+          settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx}
+          playAlong={opts.follow && detectionPlayAlong(opts.sessionId, ann, opts.follow.here, opts.follow.beforeOpen)}
+        />
 
         <TuneDeckButton
           tuneId={ann.tuneId}
@@ -477,8 +496,10 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
         )}
       </div>
 
-      <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
-        <span><TuneFacts dance={ann.dance} meter={ann.meter} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} /> ·</span>
+      {opts.details !== false && <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
+        {/* No meter (2026-10-28, the user's call): a reel's 4/4 and a jig's
+            6/8 are in the dance's name already. */}
+        <span><TuneFacts dance={ann.dance} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} /> ·</span>
         {opts.onEditBounds ? (
           <button
             class="inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 font-mono tabular-nums text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer group"
@@ -495,9 +516,9 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             this stretch of recording, so it belongs beside the times that
             define it rather than on a row of its own (2026-09-20). */}
         {opts.metaActions && <span class="ml-auto flex items-center gap-1.5">{opts.metaActions()}</span>}
-      </div>
+      </div>}
 
-      {showReviewLog && (
+      {showReviewLog && opts.study !== false && (
         <div class="flex items-center gap-3 flex-wrap">
           <ReviewLogControl cardId={known!.id} reviewId={reviewId} ts={reviewTs} ctx={opts.ctx} onRated={confirmOnRating} />
         </div>

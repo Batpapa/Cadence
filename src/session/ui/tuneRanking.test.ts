@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankDetectedTunes, occurrencesOf, sortTuneRows, TUNE_SORT_DEFAULT_ASC, filterByFacets, passesChips, type PassFacet } from './tuneRanking';
+import { rankDetectedTunes, occurrencesOf, sortTuneRows, TUNE_SORT_DEFAULT_ASC, filterByFacets, passesChips, heardFacts, type PassFacet } from './tuneRanking';
 import type { FilterState } from '../../types';
 import type { Analysis, Detection } from '../model';
 
@@ -408,5 +408,42 @@ describe('filterByFacets', () => {
     const s = session('s1', null, [det({ tuneId: '1', dance: 'reel' }), det({ tuneId: '2', start: 90, dance: 'jig' })]);
     filterByFacets([s], [types(false, ['jig', 'include'], ['reel', 'include'])]);
     expect(s.annotations).toHaveLength(2);
+  });
+});
+
+describe('heardFacts (what an export says about a row)', () => {
+  const keyOf = (d: Detection) => (d.settingId === 'none' ? undefined : `${d.settingId}major`);
+
+  it('gathers the dances and keys of every hearing, each once, in the order heard', () => {
+    const f = heardFacts([
+      [det({ tuneId: '1', settingId: 'D', dance: 'reel' })],
+      [det({ tuneId: '1', settingId: 'G', dance: 'reel' })],
+      [det({ tuneId: '1', settingId: 'D', dance: 'reel' })],
+    ], keyOf);
+    expect(f.dances).toEqual(['reel']);
+    expect(f.keys).toEqual(['Dmajor', 'Gmajor']);
+  });
+
+  it('skips a pass whose key the index does not know, and one with no dance', () => {
+    const f = heardFacts([[det({ tuneId: '1', settingId: 'none', dance: '' })]], keyOf);
+    expect(f).toEqual({ dances: [], keys: [], confirmed: 0 });
+  });
+
+  it('counts the confirmed passes of a tune', () => {
+    const f = heardFacts([
+      [det({ tuneId: '1', userConfirmed: true })],
+      [det({ tuneId: '1' })],
+      [det({ tuneId: '1', userConfirmed: true })],
+    ], keyOf);
+    expect(f.confirmed).toBe(2);
+  });
+
+  it('counts a set as confirmed only when every one of its tunes is', () => {
+    const f = heardFacts([
+      [det({ tuneId: '1', userConfirmed: true }), det({ tuneId: '2', userConfirmed: true, dance: 'jig' })],
+      [det({ tuneId: '1', userConfirmed: true }), det({ tuneId: '2' })],
+    ], keyOf);
+    expect(f.confirmed).toBe(1);
+    expect(f.dances).toEqual(['reel', 'jig']);
   });
 });

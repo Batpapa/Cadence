@@ -11,13 +11,15 @@ import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../service
 import type { TuneSort } from '../../types';
 import { matchesSearch } from '../../utils';
 import type { Analysis, Detection } from '../model';
-import { getSettingAbcMeta, getSettingAbcMetaSync } from '../recognition/indexStore';
+import { getSettingAbcMeta, getSettingAbcMetaSync, onTuneIndexCached } from '../recognition/indexStore';
 import { loadSessionAudio } from '../db';
 import { tuneName, TuneDeckButton, attachClip, isClipAttached } from './sessionUiShared';
 import { showBatchProgress, type BatchStep, type StepOutcome } from './batchRunner';
 import { deckGain } from './tuneBatch';
 import { PassRow, useSlicePlayer } from './PassRow';
-import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesChips, rankDetectedSets, tuneIdsOfSetKey, type PassFacet } from './tuneRanking';
+import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesChips, rankDetectedSets, tuneIdsOfSetKey, heardFacts, type PassFacet } from './tuneRanking';
+import { showExportDetectionsModal } from './ExportDetectionsModal';
+import type { DetectedTuneLine } from '../../services/analysisExport';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey } from '../../services/cardTypeService';
 import { experimentalSets } from '../detections';
 import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
@@ -191,9 +193,13 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
   // recognition index knows. The map loads lazily — the ABC preview loads the
   // very same one — so the key section appears once it has arrived; on a device
   // that never had the index it stays away rather than offering chips that
-  // could match nothing.
-  const [, setIndexLoaded] = useState(false);
-  useEffect(() => { void getSettingAbcMeta('').then(() => setIndexLoaded(true)); }, []);
+  // could match nothing, until a recognition brings the index in.
+  const [, setIndexLoads] = useState(0);
+  useEffect(() => {
+    const load = () => { void getSettingAbcMeta('').then(() => setIndexLoads(n => n + 1)); };
+    load();
+    return onTuneIndexCached(load);
+  }, []);
   const modeOf = (d: Detection): string | undefined => getSettingAbcMetaSync(d.settingId)?.mode || undefined;
 
   /** The three sections that read a value off each pass — which analysis it is
@@ -549,6 +555,34 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
     return true;
   };
 
+  /** What the export writes: the selected rows AS SHOWN — this order, these
+   *  counts — unlike the two actions above, which read `all`. They act on
+   *  tunes, and a tune hidden by a filter is still that tune; a file carries
+   *  numbers, and a filtered screen's numbers are not the corpus's. Exporting
+   *  "main session only" must not hand back every evening's counts, and a
+   *  selected row a filter hides has no number on screen to export. */
+  const exportedRows = rows.filter(r => selected.has(r.row.tuneId));
+  const exportLines = (): DetectedTuneLine[] => {
+    // Every pass a tune row was counted from, gathered once, not per row.
+    const passes = new Map<string, Detection[][]>();
+    for (const s of heard) {
+      for (const d of s.annotations) {
+        const list = passes.get(d.tuneId);
+        if (list) list.push([d]); else passes.set(d.tuneId, [[d]]);
+      }
+    }
+    return exportedRows.map(({ row, name, cardId, members }) => ({
+      name,
+      isSet: !!members,
+      ...heardFacts(members ? (heardSets.occurrences.get(row.tuneId) ?? []).map(o => o.chain) : passes.get(row.tuneId) ?? [], modeOf),
+      detections: row.count,
+      lastHeard: row.lastHeard,
+      liked: row.liked,
+      hasCard: !!cardId,
+      tuneIds: members ?? [row.tuneId],
+    }));
+  };
+
   const bulkMenu = useContextMenu([
     { label: t('sessions.ranking.batch.decks'), onClick: addToDecks },
     { label: t('sessions.ranking.batch.attach'), onClick: attachClips },
@@ -703,6 +737,17 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
           </button>
           {hasSelection && <>
             <div class="w-px h-4 bg-border mx-1" />
+            {/* The card library's export button, first after the separator as
+                there. Needs no library, so the standalone page keeps it. */}
+            {exportedRows.length > 0 && (
+              <button
+                class="btn-ghost text-xs inline-flex items-center justify-center"
+                title={t('library.exportSelected')}
+                onClick={() => showExportDetectionsModal(exportLines())}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </button>
+            )}
             {/* The deck page's "view in library" button, carrying the selection
                 instead of a deck filter: the library opens limited to those
                 cards, where its own filters — decks, tags — apply to them.

@@ -91,6 +91,18 @@ async function decodeAudio(entry: FileEntry, ctx: AudioContext): Promise<AudioBu
   return ctx.decodeAudioData(arr.buffer);
 }
 
+/** The buffer at `rate`, rendered by an OfflineAudioContext — the browser's
+ *  own resampler, as decodeAudioData's. */
+async function resampleTo(buffer: AudioBuffer, rate: number): Promise<AudioBuffer> {
+  if (buffer.sampleRate === rate) return buffer;
+  const ctx = new OfflineAudioContext(buffer.numberOfChannels, Math.ceil(buffer.duration * rate), rate);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  src.start();
+  return ctx.startRendering();
+}
+
 function buildWaveformData(buffer: AudioBuffer, numBars = 120): number[] {
   const ch = buffer.getChannelData(0);
   const block = Math.floor(ch.length / numBars);
@@ -277,13 +289,30 @@ export class AudioEngine {
    *  is the file's outline, 120 bars normalised to the loudest. */
   async load(entry: FileEntry): Promise<{ duration: number; waveform: number[] }> {
     await this.ensureGraph();
-    this.buffer = await decodeAudio(entry, this.audioCtx!);
-    this.duration = this.buffer.duration;
+    return this.adopt(await decodeAudio(entry, this.audioCtx!), 120);
+  }
+
+  /** The same, from samples already decoded — a stretch of a recording far
+   *  too long to decode whole (score following, 2026-10-28). One array per
+   *  channel. The node plays raw samples at the CONTEXT's rate, so they are
+   *  brought to it first, as decodeAudioData does: a 44.1 kHz recording on a
+   *  48 kHz device otherwise played 9 % fast and sharp, the score's cursor
+   *  falling ever further behind (Curlews, 2026-10-28). */
+  async loadSamples(channels: Float32Array[], sampleRate: number, bars = 120): Promise<{ duration: number; waveform: number[] }> {
+    await this.ensureGraph();
+    const b = this.audioCtx!.createBuffer(channels.length, channels[0]!.length, sampleRate);
+    channels.forEach((c, i) => b.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+    return this.adopt(await resampleTo(b, this.audioCtx!.sampleRate), bars);
+  }
+
+  private async adopt(buffer: AudioBuffer, bars: number): Promise<{ duration: number; waveform: number[] }> {
+    this.buffer = buffer;
+    this.duration = buffer.duration;
     this.regionEnd = this.duration;
-    await this.loadInto(this.stretch!, this.buffer);
+    await this.loadInto(this.stretch!, buffer);
     // Silent until the user hits play.
     this.suspendSoon();
-    return { duration: this.duration, waveform: buildWaveformData(this.buffer) };
+    return { duration: this.duration, waveform: buildWaveformData(buffer, bars) };
   }
 
   async play(): Promise<void> {

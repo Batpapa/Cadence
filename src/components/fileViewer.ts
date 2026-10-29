@@ -4,9 +4,10 @@ import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop, do
 import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
+import { qualityColour, faded } from './followColour';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon,
-  WarningTriangleIcon, ChevronDownIcon } from './icons';
+  WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
@@ -14,7 +15,7 @@ import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes
   showAbcSyntaxCheck, blankForRender, locateAbcWarning, abcWarningRange,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcSwingAtOpen, meterCanSwing,
   ABC_PAPERS, SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
-import { sourceMeasures, scoreLineBreaks, type MeasuredSection, type SourceMeasures } from '../services/abcLineBreaks';
+import { engraveScore, type ScoreMeasure } from '../services/abcLineBreaks';
 import { swingAudioParams } from '../services/jigSwing';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import {
@@ -144,8 +145,10 @@ function abcTempoPercent(): number {
 //
 // WHERE the lines break is no longer abcjs's `wrap` either, since 2026-10-24:
 // the score follows the lines of the ABC, as TheSession draws it, and only cuts
-// one that does not fit — see abcLineBreaks.ts, and `engraveScore` below. The
-// "bars per line" setting went with it.
+// one that does not fit — see abcLineBreaks.ts and its `engraveScore`. The
+// "bars per line" setting went with it. And a line is never spread wider than
+// a readable width per quaver, however wide the box (2026-10-28): see
+// MAX_QUAVER_WIDTH.
 
 /** Narrower than this and abcjs is drawing for nobody — the modal itself never
  *  gets this small, but a box measured mid-layout can report anything. */
@@ -163,62 +166,6 @@ interface EngraveSettings {
   transpose: number;
 }
 
-/** How much room a bar is given beyond its natural width — abcjs's own unit,
- *  1 being notes as close as it will set them — before a line of the ABC is
- *  judged too long for the width. Today's phone layout, two bars to a line at
- *  a 348 px box, ran at about 1.45; 1.3 keeps a line of four jig bars whole
- *  from a ~520 px staff up, and two on a 360 px phone. */
-const MIN_BAR_SPACING = 1.3;
-
-/** abcjs's own wrapping: only what measures the bars now, and what draws a
- *  score whose bars could not be matched to its lines. */
-const FALLBACK_WRAP = {
-  minSpacing: 1.8, maxSpacing: 2.7,
-  // Required by abcjs's types, and 0 is how its code reads "none"
-  // (wrap_lines.js: a falsy value skips the fixed-count attempt).
-  preferredMeasuresPerLine: 0,
-};
-
-/** A source's bar structure and abcjs's measurement of it. The widths do not
- *  depend on the staff width, so one measurement serves every redraw of the
- *  same source — a resize, the paper — at the cost of a single drawing. */
-interface ScoreMeasure {
-  key: string;
-  structure: SourceMeasures;
-  sections: MeasuredSection[];
-}
-
-/** Draws a score with its lines where the ABC has them (abcLineBreaks.ts).
- *
- *  abcjs measures the natural width of each bar only on its way to wrapping a
- *  tune, so a source seen for the first time is drawn once WITH `wrap`, kept
- *  for its measurements (`tune.explanation`), then drawn again with the line
- *  breaks worked out from them. `cache` holds the last measurement. */
-function engraveScore(
-  abcjs: typeof import('abcjs'), targetId: string, source: string, options: Record<string, unknown>,
-  cache: { measure: ScoreMeasure | null },
-): ReturnType<typeof abcjs.renderAbc> {
-  // The transposition is in the key: accidentals change how wide a bar is.
-  const key = `${String(options.visualTranspose)}\n${source}`;
-  let measure = cache.measure?.key === key ? cache.measure : null;
-  if (!measure) {
-    const drawn = abcjs.renderAbc(targetId, source, { ...options, wrap: FALLBACK_WRAP });
-    const explanation = (drawn[0] as { explanation?: unknown } | undefined)?.explanation;
-    // A string when abcjs gave up wrapping ("narrower than the margin").
-    if (!Array.isArray(explanation)) { cache.measure = null; return drawn; }
-    measure = cache.measure = {
-      key,
-      structure: sourceMeasures(abcjs.parseOnly(source)[0]!),
-      sections: (explanation as { widths: MeasuredSection }[]).map(e => ({ left: e.widths.left, measureWidths: e.widths.measureWidths })),
-    };
-  }
-  const lineBreaks = scoreLineBreaks(measure.structure, measure.sections, options.staffwidth as number, MIN_BAR_SPACING);
-  if (!lineBreaks) return abcjs.renderAbc(targetId, source, { ...options, wrap: FALLBACK_WRAP });
-  // One array PER SECTION, which is what abcjs's code reads (wrap_lines.js,
-  // findLineBreaks) and what its own wrapping hands its parser; its type
-  // declaration says a flat `number[]`, which it is not.
-  return abcjs.renderAbc(targetId, source, { ...options, lineBreaks: lineBreaks as unknown as number[] });
-}
 
 /** Everything about how a score is DRAWN, in one place, so the four callers
  *  that redraw one cannot drift apart. */
@@ -791,6 +738,58 @@ export interface PreviewModalOpts {
   /** An audio file's presets (audioPresets.ts). Absent: the player has no
    *  preset bar — there is nowhere to keep them. */
   audioPresets?: AudioPresetsBinding;
+  /** A score with a recording of it: the viewer offers "Play along", which
+   *  puts that recording's player in the score's place, the score following
+   *  it (2026-10-28, the user). Today a detection's score, its recording the
+   *  analysis's (session/ui/ScoreFollowView.tsx). */
+  playAlong?: PlayAlongBinding;
+}
+
+/** What the viewer is handed to play a score along its recording. */
+export interface PlayAlongBinding {
+  /** The recording is only on Drive: the toggle wears the play button's cloud. */
+  fromDrive: boolean;
+  /** Whether this version — its ABC, as the viewer shows it — can be played
+   *  along: the toggle is offered on those only. */
+  plays: (version: string) => boolean;
+  /** Puts the play-along of `version` in `host`, on the viewer's face (stave
+   *  or text) and at its size. `onState` hears how its alignment goes. */
+  mount: (
+    host: HTMLElement, version: string, face: 'sheet' | 'text', expanded: boolean,
+    onState: (s: PlayAlongState) => void, forced: boolean,
+  ) => PlayAlongView;
+}
+
+/** Where a play-along's alignment stands — what its toggle shows (2026-10-29,
+ *  the user): filling up like a progress bar while it is made, then coloured
+ *  by how well it fits, on followColour.ts's red-to-green scale — red when
+ *  there is none to follow, too poor to be trusted or impossible. `percent`:
+ *  the share of notes on the score, when there was an alignment. `title` says
+ *  it in full, for the tooltip. */
+export type PlayAlongState =
+  | { kind: 'aligning'; ratio: number; title: string }
+  | { kind: 'aligned'; title: string; percent: number }
+  | { kind: 'none'; title: string; percent?: number };
+
+/** Room the toggle's label needs beyond its own width to come back once it
+ *  was dropped (fitPlayAlong). */
+const PLAY_ALONG_SLACK_PX = 8;
+
+/** A press this long on the toggle is the hidden "follow anyway". */
+const LONG_PRESS_MS = 550;
+
+/** A play-along in place, as the viewer drives it: its versions, its tabs,
+ *  its full page. */
+export interface PlayAlongView {
+  /** Another version on screen, one `plays` accepts: aligned anew, the
+   *  player kept — the recording has not changed (2026-10-29, the user). */
+  setVersion: (version: string) => void;
+  /** Followed even when the alignment is judged too poor to be (the hidden
+   *  gesture on the toggle). */
+  setForced: (forced: boolean) => void;
+  setFace: (face: 'sheet' | 'text') => void;
+  setExpanded: (expanded: boolean) => void;
+  unmount: () => void;
 }
 
 /** What a save did. `false`: nothing was saved — the user backed out of a
@@ -822,7 +821,10 @@ export function showPreviewModal(
   // Set by the ABC branch: a score given the whole page lives in an overlay of
   // its own, outside this dialog, and has to come down with it.
   let releaseFullscreen: () => void = () => {};
-  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); releaseFullscreen(); };
+  // Set by the ABC branch while a play-along is on: its player goes with the
+  // modal.
+  let releasePlayAlong: () => void = () => {};
+  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); releaseFullscreen(); releasePlayAlong(); };
 
   const body = document.createElement('div');
   body.className = 'w-full flex items-center justify-center';
@@ -1158,8 +1160,8 @@ export function showPreviewModal(
     };
     const sheetTabBtn = mkAbcTab(t('fileViewer.abc.sheetTab'));
     const textTabBtn  = mkAbcTab(t('fileViewer.abc.textTab'));
-    sheetTabBtn.onclick = () => setAbcMode('sheet');
-    textTabBtn.onclick  = () => setAbcMode('text');
+    sheetTabBtn.onclick = () => chooseMode('sheet');
+    textTabBtn.onclick  = () => chooseMode('text');
     tabBar.append(sheetTabBtn, textTabBtn);
     tabBar.dataset.tour = 'abc-tabs';
 
@@ -1226,6 +1228,232 @@ export function showPreviewModal(
     // the versions.
     topRow.append(tabBar, versionNav);
     container.appendChild(topRow);
+
+    // ── Play along (2026-10-28, the user) ────────────────────────────────────
+    // A toggle at the end of the row, for a score that comes with a recording
+    // of it: on, the recording's player takes the score's place — waveform,
+    // tempo, transposition, region — the score drawn above it following what
+    // is heard; off, the viewer is as it was left. The tabs stay and drive it
+    // (the text face lights the note heard, read-only), and so do the versions:
+    // another version is aligned anew (2026-10-29, the user — one may want to
+    // play along a version other than the one heard). Only a version the
+    // binding can follow offers it (`plays`). The viewer's own sound, its full
+    // page and its space bar stand down meanwhile.
+    const playAlong = opts?.playAlong;
+    let playAlongView: PlayAlongView | null = null;
+    let playAlongHost: HTMLElement | null = null;
+    /** What the play-along hid, with how each was shown, to put back. */
+    let hiddenByPlayAlong: Array<[HTMLElement, string]> = [];
+    const playAlongBtn = playAlong ? document.createElement('button') : null;
+    /** How the alignment of the version on screen stands: the toggle shows it
+     *  (PlayAlongState) instead of anything over the score. Kept when the
+     *  toggle is turned off once it is known — the alignment is still the
+     *  same — and dropped with the version. */
+    let playAlongState: PlayAlongState | null = null;
+    const paintPlayAlong = (): void => {
+      if (!playAlongBtn || !playAlong) return;
+      const on = !!playAlongView;
+      const s = playAlongState;
+      // Once the alignment is in: the quality's colour, continuous — the
+      // waveform's tint uses the same scale.
+      const colour = !s || s.kind === 'aligning' ? null
+        : s.percent !== undefined ? qualityColour(s.percent / 100) : 'var(--color-danger)';
+      const look = colour ? 'hover:brightness-110'
+        : on ? 'border-accent/60 text-accent' : 'border-border text-muted hover:text-primary hover:border-accent/50';
+      playAlongBtn.className = `ml-auto inline-flex items-center gap-1.5 ${playAlongCompact ? 'px-2.5' : 'px-3'} min-h-[2.25rem] text-xs font-medium rounded-full border transition-colors cursor-pointer ${look}`;
+      playAlongBtn.style.color = colour ?? '';
+      playAlongBtn.style.borderColor = colour ? faded(colour, on ? 0.6 : 0.4) : '';
+      playAlongBtn.style.backgroundColor = colour && on ? faded(colour, 0.14) : '';
+      // The toggle as a progress bar while the alignment is made: filled from
+      // the left as far as it has gone.
+      if (s?.kind === 'aligning') {
+        const p = Math.round(s.ratio * 100);
+        playAlongBtn.style.backgroundImage = `linear-gradient(to right, color-mix(in srgb, var(--color-accent) 22%, transparent) ${p}%, transparent ${p}%)`;
+      } else {
+        playAlongBtn.style.backgroundImage = '';
+      }
+      playAlongBtn.setAttribute('aria-pressed', String(on));
+      // How well, in figures, on the toggle itself (2026-10-29, the user).
+      const percent = s && s.kind !== 'aligning' ? s.percent : undefined;
+      const label = percent === undefined
+        ? t('fileViewer.abc.playAlong')
+        : t('fileViewer.abc.playAlong.percent', { percent });
+      playAlongLabel.textContent = label;
+      playAlongBtn.setAttribute('aria-label', label);
+      const title = s?.title ?? t(playAlong.fromDrive ? 'fileViewer.abc.playAlong.hintDrive' : 'fileViewer.abc.playAlong.hint');
+      // Its name in the tooltip once the label is gone.
+      playAlongBtn.title = playAlongCompact ? `${label} · ${title}` : title;
+      // The label may have grown (its figure): does it still fit?
+      fitPlayAlong();
+    };
+    const playAlongLabel = document.createElement('span');
+    /** The icon alone when the label does not fit at the end of the row (the
+     *  user, 2026-10-29) rather than the toggle wrapping onto a line of its
+     *  own: its colour still says how well, its tooltip the rest. */
+    let playAlongCompact = false;
+    const fitPlayAlong = (): void => {
+      if (!playAlongBtn || playAlongBtn.style.display === 'none' || !playAlongBtn.isConnected) return;
+      // Its width in its FULL shape, label shown and full padding — measured
+      // so whichever shape it is in, in the same task, so nothing is painted
+      // in between. Measured in the icon's narrower padding, the label seemed
+      // to fit by a few pixels, came back, overflowed, went: the toggle
+      // flickered between the two for as long as the width stood at the edge
+      // (2026-10-29, the user).
+      playAlongLabel.style.display = '';
+      playAlongBtn.classList.replace('px-2.5', 'px-3');
+      const full = playAlongBtn.offsetWidth;
+      playAlongBtn.classList.replace('px-3', playAlongCompact ? 'px-2.5' : 'px-3');
+      const gap = parseFloat(getComputedStyle(topRow).columnGap) || 0;
+      const others = Array.from(topRow.children).reduce((sum, el) => (
+        el === playAlongBtn || el === rowRuler || !(el as HTMLElement).offsetParent ? sum : sum + (el as HTMLElement).offsetWidth + gap
+      ), 0);
+      const room = topRow.clientWidth - others;
+      // And a few pixels to spare before the label comes back: at the edge,
+      // a rounding either way must not toggle it.
+      const compact = playAlongCompact ? full + PLAY_ALONG_SLACK_PX > room : full > room;
+      playAlongLabel.style.display = compact ? 'none' : '';
+      if (compact !== playAlongCompact) { playAlongCompact = compact; paintPlayAlong(); }
+    };
+    // At once, in the observer — which runs after layout and before paint: at
+    // the next frame, the toggle was seen wrapping onto a line of its own for
+    // one frame before it shrank (2026-10-29, the user). What is observed is
+    // a ruler as wide as the row and of no height, which the change cannot
+    // resize: observing the row itself, whose height the change does move,
+    // is the loop the browser reports (see syncedScore.tsx).
+    const rowRuler = document.createElement('div');
+    rowRuler.setAttribute('aria-hidden', 'true');
+    rowRuler.style.cssText = 'position:absolute;left:0;right:0;top:0;height:0;pointer-events:none';
+    const rowWatch = new ResizeObserver(() => fitPlayAlong());
+    const showPlayAlongBtn = (): void => {
+      if (!playAlongBtn || !playAlong) return;
+      playAlongBtn.style.display = playAlong.plays(shownBlock(currentIndex)) ? '' : 'none';
+      fitPlayAlong();
+    };
+    /** Puts the play-along of the version on screen in its place. */
+    const mountPlayAlong = (): void => {
+      playAlongState = null;
+      playAlongView = playAlong!.mount(playAlongHost!, shownBlock(currentIndex), currentMode, modalExpanded, (s) => {
+        // Not once it is turned off: an alignment stopped half-way says nothing.
+        if (!playAlongView) return;
+        playAlongState = s;
+        paintPlayAlong();
+      }, playAlongForced);
+    };
+    /** The hidden way round the verdict (2026-10-29, the user): a right click
+     *  — a long press on a touch screen — follows the alignment even when it
+     *  is judged too poor to be, turning the toggle on if it was off; the same
+     *  gesture again gives the verdict back. The toggle stays red: the
+     *  alignment is no better for being shown. Not advertised. */
+    let playAlongForced = false;
+    let lastForceAt = 0;
+    const forcePlayAlong = (): void => {
+      // Android sends both a long press and a contextmenu for one gesture.
+      const now = Date.now();
+      if (now - lastForceAt < 800) return;
+      lastForceAt = now;
+      if (!playAlongView) {
+        playAlongForced = true;
+        setPlayAlong(true);
+        return;
+      }
+      playAlongForced = !playAlongForced;
+      playAlongView.setForced(playAlongForced);
+    };
+    const setPlayAlong = (on: boolean): void => {
+      if (!playAlong || on === !!playAlongView) return;
+      if (on) {
+        // The score's own sound stops, for good. `pauseIfPlaying` and not just
+        // `stopAudio`: abcjs's pause leaves `isStarted` set, and hiding the
+        // stave — or leaving its full page — redraws it, a redraw that resumes
+        // whatever `isStarted` says was playing (pendingRestore): the tune
+        // started again under the play-along (2026-10-29, the user).
+        pauseIfPlaying();
+        stopAudio();
+        stopTextPlay();
+        if (fullscreen) exitFullscreen();
+        hiddenByPlayAlong = Array.from(container.children)
+          .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== topRow)
+          .map(el => [el, el.style.display]);
+        for (const [el] of hiddenByPlayAlong) el.style.display = 'none';
+        playAlongHost = document.createElement('div');
+        container.appendChild(playAlongHost);
+        mountPlayAlong();
+      } else {
+        playAlongView!.unmount();
+        playAlongView = null;
+        // Turned off, it starts afresh: forced only by the gesture again.
+        playAlongForced = false;
+        // An alignment stopped half-way is no alignment: the bar goes.
+        if (playAlongState?.kind === 'aligning') playAlongState = null;
+        playAlongHost?.remove();
+        playAlongHost = null;
+        for (const [el, display] of hiddenByPlayAlong) el.style.display = display;
+        hiddenByPlayAlong = [];
+        // Everything the face decides, decided again — the stave redrawn, as
+        // a version changed meanwhile was drawn into a hidden box.
+        sheetNeedsRerender = true;
+        setAbcMode(currentMode);
+      }
+      paintPlayAlong();
+    };
+    /** Another version on screen: its play-along, aligned anew under the same
+     *  player — or none, for a version the binding cannot follow. */
+    const versionChangedForPlayAlong = (): void => {
+      if (!playAlong) return;
+      playAlongState = null;
+      showPlayAlongBtn();
+      if (playAlongView) {
+        if (playAlong.plays(shownBlock(currentIndex))) {
+          playAlongView.setVersion(shownBlock(currentIndex));
+        } else {
+          setPlayAlong(false);
+        }
+      }
+      paintPlayAlong();
+    };
+    if (playAlongBtn && playAlong) {
+      playAlongBtn.type = 'button';
+      playAlongBtn.append(iconElement(ScoreFollowIcon, 13), playAlongLabel);
+      if (playAlong.fromDrive) playAlongBtn.appendChild(iconElement(CloudIcon, 11));
+      // A long press is not also a click once it has done its work.
+      let pressTimer = 0, pressed = false;
+      playAlongBtn.onclick = () => {
+        if (pressed) { pressed = false; return; }
+        setPlayAlong(!playAlongView);
+      };
+      playAlongBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); forcePlayAlong(); });
+      // iOS has no contextmenu on a long press: timed by hand, touch only —
+      // and its own callout and text selection kept off the button.
+      playAlongBtn.style.setProperty('-webkit-touch-callout', 'none');
+      playAlongBtn.style.userSelect = 'none';
+      playAlongBtn.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse') return;
+        pressed = false;
+        window.clearTimeout(pressTimer);
+        pressTimer = window.setTimeout(() => { pressed = true; forcePlayAlong(); }, LONG_PRESS_MS);
+      });
+      for (const end of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
+        playAlongBtn.addEventListener(end, () => window.clearTimeout(pressTimer));
+      }
+      paintPlayAlong();
+      showPlayAlongBtn();
+      topRow.appendChild(playAlongBtn);
+      topRow.classList.add('relative');
+      topRow.appendChild(rowRuler);
+      rowWatch.observe(rowRuler);
+      releasePlayAlong = () => {
+        rowWatch.disconnect();
+        playAlongView?.unmount();
+        playAlongView = null;
+      };
+    }
+    /** A tab pressed: the viewer's face, or the play-along's. */
+    const chooseMode = (mode: 'sheet' | 'text'): void => {
+      if (!playAlongView) { setAbcMode(mode); return; }
+      currentMode = mode;
+      paintTabs(mode);
+      playAlongView.setFace(mode);
+    };
 
     // ── What abcjs made of the ABC ───────────────────────────────────────────
     // On the ABC face only, and only for whoever turned the check on (the
@@ -1799,7 +2027,7 @@ export function showPreviewModal(
         : modalMaxH(0.62);
     };
     capScore();
-    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); };
+    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); playAlongView?.setExpanded(expanded); };
 
     /** Re-engraves for the box the score is in NOW, keeping the reader's place
      *  and whatever is playing. Assigned once abcjs has loaded; a resize that
@@ -2306,6 +2534,7 @@ export function showPreviewModal(
       versionNav.classList.toggle('hidden', versionCount <= 1);
       deleteVersionBtn.classList.toggle('hidden', versionCount <= 1);
       updateStarBtn?.();
+      versionChangedForPlayAlong();
       if (currentMode === 'sheet') {
         doRenderTune?.(currentIndex);
       } else {
@@ -2316,13 +2545,17 @@ export function showPreviewModal(
       }
     }
 
-    function setAbcMode(mode: 'sheet' | 'text'): void {
-      currentMode = mode;
+    function paintTabs(mode: 'sheet' | 'text'): void {
       const active = 'bg-accent text-white';
       const inactive = 'text-muted hover:text-primary hover:bg-elevated';
       const tabBase = 'px-3 min-h-[2.25rem] text-xs font-medium rounded transition-colors cursor-pointer';
       sheetTabBtn.className = `${tabBase} ${mode === 'sheet' ? active : inactive}`;
       textTabBtn.className  = `${tabBase} ${mode === 'text'  ? active : inactive}`;
+    }
+
+    function setAbcMode(mode: 'sheet' | 'text'): void {
+      currentMode = mode;
+      paintTabs(mode);
       // Sheet + synth toolbar fully hidden in text mode, not just visually behind
       // it — inline style.display, not just the 'hidden' class: abcjs's own
       // resize handling can otherwise leave the notation SVG visibly reflowing.
@@ -3648,6 +3881,8 @@ export function showPreviewModal(
       // the ABC text editor would make it impossible to type.
       const onKeyDown = (e: KeyboardEvent) => {
         if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey) return;
+        // The play-along's player has the key (syncedScore.tsx).
+        if (playAlongView) return;
         const active = document.activeElement as HTMLElement | null;
         const tag = active?.tagName.toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || active?.isContentEditable) return;

@@ -497,6 +497,7 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
           after: act => act.click('analyser-tab-sessions') },
         { target: 'analyser-start', titleKey: 'walkthrough.analyser.first.title', textKey: 'walkthrough.analyser.first.text', available: () => !hasAnalyses() },
         { target: 'analysis-row', action: 'click', titleKey: 'walkthrough.analyser.analysis.title', textKey: 'walkthrough.analyser.analysis.text', available: hasAnalyses },
+        { target: 'summary-views', titleKey: 'walkthrough.analyser.views.title', textKey: 'walkthrough.analyser.views.text', available: hasAnalyses },
         { target: 'summary-player', titleKey: 'walkthrough.analyser.player.title', textKey: 'walkthrough.analyser.player.text', available: hasAnalyses },
         { target: 'summary-audio', optional: true, titleKey: 'walkthrough.analyser.audio.title', textKey: 'walkthrough.analyser.audio.text', available: hasAnalyses },
         { target: 'detection', titleKey: 'walkthrough.analyser.detection.title', textKey: 'walkthrough.analyser.detection.text', available: hasAnalyses },

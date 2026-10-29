@@ -34,9 +34,38 @@ export interface MeasuredSection {
   measureWidths: number[];
 }
 
-interface ParsedVoiceElement { el_type?: string }
+interface ParsedVoiceElement {
+  el_type?: string;
+  /** A note's, in whole notes: a quaver is 0.125. */
+  duration?: unknown;
+  tripletMultiplier?: number;
+  endTriplet?: boolean;
+}
 interface ParsedTune {
   lines: { staff?: { voices?: ParsedVoiceElement[][] }[] }[];
+}
+
+/** Per section, flat as abcjs measures it: how many quavers of time each
+ *  segment between two bar lines holds, rests included, a tuplet at its played
+ *  length. Cut the same way as `sourceMeasures`. */
+export function sourceQuavers(tune: ParsedTune): number[][] {
+  const sections: number[][] = [];
+  let current: number[] | null = null;
+  let quavers = 0;
+  for (const line of tune.lines) {
+    const voice = line.staff?.[0]?.voices?.[0];
+    if (!voice) { current = null; continue; }
+    if (!current) { current = []; sections.push(current); quavers = 0; }
+    let tuplet = 1;
+    for (const el of voice) {
+      if (el.el_type === 'note') {
+        if (el.tripletMultiplier) tuplet = el.tripletMultiplier;
+        quavers += (typeof el.duration === 'number' ? el.duration / 0.125 : 0) * tuplet;
+        if (el.endTriplet) tuplet = 1;
+      } else if (el.el_type === 'bar') { current.push(quavers); quavers = 0; }
+    }
+  }
+  return sections;
 }
 
 /** The bar structure of a parsed tune, lines as written. Sections are split at
@@ -131,6 +160,107 @@ function splitLine(line: boolean[], first: number, start: number, last: number, 
     if (fits) return ends;
   }
   return most >= 2 ? shareEnds(bars, most, last) : [last];
+}
+
+/** The widest staff worth drawing these lines on. abcjs spreads every line
+ *  across the whole staff, so with the ABC's four bars to a line a wide box
+ *  drew them unreadably far apart — measured 2026-10-28, a quaver 88 px wide
+ *  on a 1900 px full screen. A line is given `maxQuaver` per quaver of time it
+ *  holds — the QUAVER is what reads, the user said, not the room an ornament
+ *  or a triplet takes — or, when that is too tight for what it carries, the
+ *  `minSpacing` it was broken at. The widest line decides, so every line keeps
+ *  the same width. In abcjs's units, which are layout pixels: the app's zoom
+ *  scales the cap with everything else. */
+export function cappedStaffWidth(
+  measured: MeasuredSection[], quavers: number[][], lineBreaks: number[][],
+  staffwidth: number, maxQuaver: number, minSpacing: number,
+): number {
+  let widest = 0;
+  measured.forEach((m, s) => {
+    let from = 0;
+    // The section's end closes its last line (sectionBreaks leaves it out).
+    for (const end of [...(lineBreaks[s] ?? []), m.measureWidths.length - 1]) {
+      let w = 0, q = 0;
+      for (let i = from; i <= end; i++) { w += m.measureWidths[i]!; q += quavers[s]?.[i] ?? 0; }
+      widest = Math.max(widest, m.left + Math.max(q * maxQuaver, w * minSpacing));
+      from = end + 1;
+    }
+  });
+  return widest > 0 ? Math.min(staffwidth, Math.ceil(widest)) : staffwidth;
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────────────
+// Every full score of the app is drawn by `engraveScore`: the score viewer
+// (fileViewer.ts) and the score that follows a recording (syncedScore.tsx).
+
+/** How much room a bar is given beyond its natural width — abcjs's own unit,
+ *  1 being notes as close as it will set them — before a line of the ABC is
+ *  judged too long for the width. Today's phone layout, two bars to a line at
+ *  a 348 px box, ran at about 1.45; 1.3 keeps a line of four jig bars whole
+ *  from a ~520 px staff up, and two on a 360 px phone. */
+const MIN_BAR_SPACING = 1.3;
+
+/** The most room a quaver of time is given, in layout pixels. */
+const MAX_QUAVER_WIDTH = 26;
+
+/** abcjs's own wrapping: only what measures the bars now, and what draws a
+ *  score whose bars could not be matched to its lines. */
+const FALLBACK_WRAP = {
+  minSpacing: 1.8, maxSpacing: 2.7,
+  // Required by abcjs's types, and 0 is how its code reads "none"
+  // (wrap_lines.js: a falsy value skips the fixed-count attempt).
+  preferredMeasuresPerLine: 0,
+};
+
+/** A source's bar structure and abcjs's measurement of it. The widths do not
+ *  depend on the staff width, so one measurement serves every redraw of the
+ *  same source — a resize, the paper — at the cost of a single drawing. */
+export interface ScoreMeasure {
+  key: string;
+  structure: SourceMeasures;
+  quavers: number[][];
+  sections: MeasuredSection[];
+}
+
+/** Draws a score with its lines where the ABC has them, on a staff no wider
+ *  than they read well at (`cappedStaffWidth`; the box centres a narrower
+ *  drawing, `.abc-score-paper svg`).
+ *
+ *  abcjs measures the natural width of each bar only on its way to wrapping a
+ *  tune, so a source seen for the first time is drawn once WITH `wrap`, kept
+ *  for its measurements (`tune.explanation`), then drawn again with the line
+ *  breaks worked out from them. `cache` holds the last measurement. */
+export function engraveScore(
+  abcjs: typeof import('abcjs'), target: string | HTMLElement, source: string, options: Record<string, unknown>,
+  cache: { measure: ScoreMeasure | null },
+): ReturnType<typeof abcjs.renderAbc> {
+  // The transposition is in the key: accidentals change how wide a bar is.
+  const key = `${String(options.visualTranspose)}\n${source}`;
+  let measure = cache.measure?.key === key ? cache.measure : null;
+  if (!measure) {
+    const drawn = abcjs.renderAbc(target, source, { ...options, wrap: FALLBACK_WRAP });
+    const explanation = (drawn[0] as { explanation?: unknown } | undefined)?.explanation;
+    // A string when abcjs gave up wrapping ("narrower than the margin").
+    if (!Array.isArray(explanation)) { cache.measure = null; return drawn; }
+    const parsed = abcjs.parseOnly(source)[0]!;
+    measure = cache.measure = {
+      key,
+      structure: sourceMeasures(parsed),
+      quavers: sourceQuavers(parsed),
+      sections: (explanation as { widths: MeasuredSection }[]).map(e => ({ left: e.widths.left, measureWidths: e.widths.measureWidths })),
+    };
+  }
+  const staffwidth = options.staffwidth as number;
+  const lineBreaks = scoreLineBreaks(measure.structure, measure.sections, staffwidth, MIN_BAR_SPACING);
+  if (!lineBreaks) return abcjs.renderAbc(target, source, { ...options, wrap: FALLBACK_WRAP });
+  // One array PER SECTION, which is what abcjs's code reads (wrap_lines.js,
+  // findLineBreaks) and what its own wrapping hands its parser; its type
+  // declaration says a flat `number[]`, which it is not.
+  return abcjs.renderAbc(target, source, {
+    ...options,
+    staffwidth: cappedStaffWidth(measure.sections, measure.quavers, lineBreaks, staffwidth, MAX_QUAVER_WIDTH, MIN_BAR_SPACING),
+    lineBreaks: lineBreaks as unknown as number[],
+  });
 }
 
 /** Cuts `bars` into `k` shares, the longer ones first, and returns where each

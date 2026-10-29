@@ -357,3 +357,36 @@ export function rankDetectedSets(
   }
   return { rows: [...byKey.values()].map(v => v.row), occurrences };
 }
+
+// ── What an export says about one row (2026-10-28) ───────────────────────────
+// The list shows a count; a file can carry what the screen has no room for.
+// Read off the SAME hearings the row was counted from — the passes the chips
+// let through — so the file never disagrees with the number beside the name.
+
+export interface HeardFacts {
+  /** Every tune type heard, in first-heard order: a set mixing a jig and a
+   *  slide carries both. */
+  dances: string[];
+  /** Every key heard — a key belongs to a pass, so one reel can carry two. */
+  keys: string[];
+  /** Hearings the user vouched for. A set's counts only when each of its
+   *  tunes was confirmed: half a set confirmed is not a confirmed set. */
+  confirmed: number;
+}
+
+/** A hearing is one pass for a tune, one chain for a set. `keyOf` comes from
+ *  the recognition index, which only the view holds. */
+export function heardFacts(hearings: readonly Detection[][], keyOf: (d: Detection) => string | undefined): HeardFacts {
+  const dances = new Set<string>();
+  const keys = new Set<string>();
+  let confirmed = 0;
+  for (const hearing of hearings) {
+    for (const d of hearing) {
+      if (d.dance) dances.add(d.dance);
+      const key = keyOf(d);
+      if (key) keys.add(key);
+    }
+    if (hearing.length > 0 && hearing.every(d => d.userConfirmed)) confirmed++;
+  }
+  return { dances: [...dances], keys: [...keys], confirmed };
+}
