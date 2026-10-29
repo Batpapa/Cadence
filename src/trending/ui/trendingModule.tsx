@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { TrendIcon, ResetIcon, MusicNoteIcon, PlusIcon } from '../../components/icons';
-import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { showPreviewModal } from '../../components/fileViewer';
 import { computeRows, sortRows, formatGain, growthIndex, inflationBetween, netGain, deflateFromRoute, type TuneRow, type GainMode } from '../../services/trendingService';
 import { syncPopularityHistory, type SyncProgress } from '../../services/trendingSyncService';
@@ -170,7 +170,6 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
         return;
       }
       setActionBusy(false);
-      if (!hasAnyDeck()) { void commitAdd(card, []); return; }
       showDeckChoiceModal({ pinned: getPinnedDeckIds(), onConfirm: (ids) => { void commitAdd(card, ids); } });
     })();
   };
@@ -203,10 +202,10 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
         <MusicNoteIcon size={12} />
       </button>
 
-      {!library ? null : known ? hasAnyDeck() && (
+      {!library ? null : known ? (
         // Card already exists: offer to put it in a deck instead — additive
-        // only, never unlinks from decks left unticked. With no deck at all
-        // there is nothing to offer, so the button is not rendered.
+        // only, never unlinks from decks left unticked. Shown with no deck at
+        // all too: the modal's "+ new deck" is then the way to make the first.
         <button
           class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
           title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}

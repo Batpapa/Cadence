@@ -3,7 +3,7 @@ import type { AppContext, Card } from '../../types';
 import { t } from '../../services/i18nService';
 import { PlusIcon, AddClipIcon, ClipAttachedIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
-import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { fileToEntry, downloadBlob, generateId } from '../../utils';
 import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile } from '../../services/attachmentStore';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
@@ -11,7 +11,8 @@ import { retargetedHistory } from '../../services/reviewEntries';
 import { extractClip } from '../audio/clipExtract';
 import { getContext } from '../../store';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
-import { buildDetectedSetCard, cardsByTuneId, setCardFor } from '../tunesets';
+import { cardsByTuneId, setCardFor } from '../tunesets';
+import { buildTunesetCard } from '../../services/tunesetCard';
 import { fmtTime, type ClipSessionRef } from './sessionUiShared';
 import { hasLibrary } from '../../services/pageMode';
 
@@ -236,7 +237,6 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
   // The standalone analyser has no library to file a set in (pageMode.ts).
   if (!hasLibrary()) return null;
   if (setCard) {
-    if (!hasAnyDeck()) return null;
     return (
       <button
         class={`${round} cursor-pointer bg-accent/10 text-accent hover:bg-accent/20 ${isInEveryDeck(setCard.id) ? 'opacity-40' : ''}`}
@@ -278,7 +278,7 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
         const map = cardsByTuneId(s.cards);
         const tunes = tuneIds.map(x => map.get(x)).filter((c): c is Card => !!c);
         if (tunes.length !== tuneIds.length) return;
-        const card = buildDetectedSetCard(tunes, {
+        const card = buildTunesetCard(tunes, {
           defaultRepeat: defaultTuneRepeat(s),
           attachments: addTunesetAbcOnConvert(s) ? [tunesetAbcPlaceholder()] : [],
           newId: generateId,
@@ -303,7 +303,6 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
       onClick={(e) => {
         e.stopPropagation();
         if (!ready) { onExplain(settled ? missing : null); return; }
-        if (!hasAnyDeck()) { create([]); return; }
         showDeckChoiceModal({ pinned: getPinnedDeckIds?.() ?? new Set(), onConfirm: create });
       }}
     >

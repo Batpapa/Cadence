@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { Card } from '../types';
 import type { Analysis, Detection, TunesetRecord } from './model';
 import {
-  reconcileTunesets, sameTunesets, recordOf, setCardFor, findSetHearings, buildDetectedSetCard, isSettled, chainSpan,
+  reconcileTunesets, sameTunesets, recordOf, setCardFor, findSetHearings, isSettled, chainSpan,
 } from './tunesets';
+import { buildTunesetCard } from '../services/tunesetCard';
 import { withChains, chainsOf } from './ui/timelineModel';
 import { DetectionTracker } from './detectionState';
 
@@ -127,12 +128,17 @@ describe('set cards', () => {
   const cards: Record<string, Card> = {
     ta: tuneCard('ta', '1'), tb: tuneCard('tb', '2'), tc: tuneCard('tc', '3'),
   };
-  const set = buildDetectedSetCard([cards.ta!, cards.tb!], { defaultRepeat: 3, attachments: [], newId: () => 'set' });
+  const set = buildTunesetCard([cards.ta!, cards.tb!], { defaultRepeat: 3, attachments: [], newId: () => 'set' });
   cards.set = set;
 
   it('builds a set named after its tunes, with the usual repeats', () => {
     expect(set).toMatchObject({ type: 'tuneset', computedName: true, name: 'TA / TB' });
     expect(set.tunes!.map(r => [r.id, r.repeat])).toEqual([['ta', 3], ['tb', 3]]);
+  });
+
+  it('writes a single pass by absence, as the card page does', () => {
+    const once = buildTunesetCard([cards.ta!, cards.tb!], { defaultRepeat: 1, attachments: [], newId: () => 'once' });
+    expect(once.tunes!.every(r => !('repeat' in r))).toBe(true);
   });
 
   it('matches the same tunes in the same order only', () => {

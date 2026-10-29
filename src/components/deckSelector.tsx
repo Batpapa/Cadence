@@ -51,13 +51,6 @@ export function decksContainingCard(cardId: string): Set<string> {
   );
 }
 
-/** True when there is somewhere to put a card at all. With no deck the modal
- *  has nothing to offer, so callers skip it entirely rather than showing an
- *  empty list. */
-export function hasAnyDeck(): boolean {
-  return Object.keys(appState.value.decks).length > 0;
-}
-
 /** Nothing left to add this card to. The trigger dims to say so, but stays
  *  clickable: the modal is then the only place that shows WHERE the card
  *  already lives, and taking that away to signal "nothing to do" would cost
@@ -134,6 +127,56 @@ function DeckRow({ name, state, already, onCycle }: {
   );
 }
 
+/** "+ new deck", then a field for its name. The deck is created at the root —
+ *  the same place as the sidebar's — and handed to the caller, which ticks it:
+ *  whoever opens this is choosing where cards go. Shared by every deck list
+ *  that adds cards (this modal, the card view's popover, the batch picker in
+ *  batchEdit), so that a library with no deck at all still has a way forward
+ *  from any of them (the user's rule, 2026-10-30). */
+export function NewDeckField({ onCreated }: { onCreated: (deckId: string, name: string) => void }) {
+  const [addingNew, setAddingNew] = useState(false);
+  const [newName, setNewName] = useState('');
+  const addInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (addingNew) addInputRef.current?.focus(); }, [addingNew]);
+
+  const commitAdd = () => {
+    const name = newName.trim();
+    setAddingNew(false);
+    setNewName('');
+    if (!name) return;
+    const id = generateId();
+    void mutate(s => {
+      s.decks[id] = { id, name, entries: [] };
+      s.rootDeckIds.push(id);
+    });
+    onCreated(id, name);
+  };
+
+  return addingNew ? (
+    <input
+      ref={addInputRef}
+      type="text"
+      class="input text-sm"
+      placeholder={t('modal.newDeck.label')}
+      value={newName}
+      onInput={(e) => setNewName((e.target as HTMLInputElement).value)}
+      onBlur={commitAdd}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') { e.stopPropagation(); setNewName(''); setAddingNew(false); }
+      }}
+    />
+  ) : (
+    <button
+      class="flex items-center gap-2 text-sm text-dim hover:text-accent transition-colors cursor-pointer"
+      onClick={() => setAddingNew(true)}
+    >
+      <span class="text-base leading-none">+</span><span>{t('newCard.newDeck')}</span>
+    </button>
+  );
+}
+
 function DeckChoiceBody({ pinned, alreadyIn, initial, draft }: {
   pinned: Set<string>;
   alreadyIn: Set<string>;
@@ -141,11 +184,6 @@ function DeckChoiceBody({ pinned, alreadyIn, initial, draft }: {
   draft: Draft;
 }) {
   const [ticked, setTicked] = useState<Set<string>>(() => new Set(initial));
-  const [addingNew, setAddingNew] = useState(false);
-  const [newName, setNewName] = useState('');
-  const addInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { if (addingNew) addInputRef.current?.focus(); }, [addingNew]);
 
   const stateOf = (id: string): DeckChoiceState =>
     pinned.has(id) ? 'pinned' : ticked.has(id) ? 'ticked' : 'off';
@@ -163,18 +201,8 @@ function DeckChoiceBody({ pinned, alreadyIn, initial, draft }: {
     draft.chosen = [...next];
   };
 
-  // "+ new deck" — creates at the root (same place as the sidebar's) and ticks
-  // it straight away, since the user is mid-pick.
-  const commitAdd = () => {
-    const name = newName.trim();
-    setAddingNew(false);
-    setNewName('');
-    if (!name) return;
-    const id = generateId();
-    void mutate(s => {
-      s.decks[id] = { id, name, entries: [] };
-      s.rootDeckIds.push(id);
-    });
+  // A deck made here is ticked straight away, since the user is mid-pick.
+  const onCreated = (id: string) => {
     const next = new Set(ticked); next.add(id);
     setTicked(next);
     draft.chosen = [...next];
@@ -195,28 +223,7 @@ function DeckChoiceBody({ pinned, alreadyIn, initial, draft }: {
       ))}
 
       <div class="px-2 pt-1">
-        {addingNew ? (
-          <input
-            ref={addInputRef}
-            type="text"
-            class="input text-sm"
-            placeholder={t('modal.newDeck.label')}
-            value={newName}
-            onInput={(e) => setNewName((e.target as HTMLInputElement).value)}
-            onBlur={commitAdd}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-              if (e.key === 'Escape') { e.stopPropagation(); setNewName(''); setAddingNew(false); }
-            }}
-          />
-        ) : (
-          <button
-            class="flex items-center gap-2 text-sm text-dim hover:text-accent transition-colors cursor-pointer"
-            onClick={() => setAddingNew(true)}
-          >
-            <span class="text-base leading-none">+</span><span>{t('newCard.newDeck')}</span>
-          </button>
-        )}
+        <NewDeckField onCreated={onCreated} />
       </div>
 
       <p class="text-xs text-dim px-2 pt-2 leading-relaxed">{t('deckChoice.pinHint')}</p>
@@ -275,16 +282,11 @@ function closePicker(): void {
 
 function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onChange: () => void }) {
   const [, bump] = useState(0);
-  const [addingNew, setAddingNew] = useState(false);
-  const [newName, setNewName] = useState('');
-  const addInputRef = useRef<HTMLInputElement>(null);
   const mouseDownOnOverlay = useRef(false);
 
   // Escape: see main.ts. This picker registers itself as an overlay, so the
   // single listener there closes it when it is the topmost thing — and leaves
   // it alone when it is not.
-
-  useEffect(() => { if (addingNew) addInputRef.current?.focus(); }, [addingNew]);
 
   const toggle = (deckId: string) => {
     if (selected.has(deckId)) selected.delete(deckId); else selected.add(deckId);
@@ -292,16 +294,7 @@ function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onCh
     bump(x => x + 1);
   };
 
-  const commitAdd = () => {
-    const name = newName.trim();
-    setAddingNew(false);
-    setNewName('');
-    if (!name) return;
-    const id = generateId();
-    void mutate(s => {
-      s.decks[id] = { id, name, entries: [] };
-      s.rootDeckIds.push(id);
-    });
+  const onCreated = (id: string) => {
     selected.add(id);
     onChange();
   };
@@ -337,28 +330,7 @@ function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onCh
           ))}
 
           <div class="px-4 py-2">
-            {addingNew ? (
-              <input
-                ref={addInputRef}
-                type="text"
-                class="input text-sm"
-                placeholder={t('modal.newDeck.label')}
-                value={newName}
-                onInput={(e) => setNewName((e.target as HTMLInputElement).value)}
-                onBlur={commitAdd}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                  if (e.key === 'Escape') { e.stopPropagation(); setNewName(''); setAddingNew(false); }
-                }}
-              />
-            ) : (
-              <button
-                class="flex items-center gap-2 text-sm text-dim hover:text-accent transition-colors cursor-pointer"
-                onClick={() => setAddingNew(true)}
-              >
-                <span class="text-base leading-none">+</span><span>{t('newCard.newDeck')}</span>
-              </button>
-            )}
+            <NewDeckField onCreated={onCreated} />
           </div>
         </div>
       </div>

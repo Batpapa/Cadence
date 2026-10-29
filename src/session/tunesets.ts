@@ -1,7 +1,6 @@
-import type { Attachment, Card } from '../types';
+import type { Card } from '../types';
 import { resolveCardRef } from '../services/cardRefService';
-import { CARD_TYPE_TUNESET, isTuneset } from '../services/cardTypeService';
-import { TUNESET_NAME_SEPARATOR } from '../services/stateNormalise';
+import { isTuneset } from '../services/cardTypeService';
 import { theSessionTuneId } from './detections';
 import { chainsOf } from './ui/timelineModel';
 import type { Analysis, Detection, TunesetRecord } from './model';
@@ -134,27 +133,6 @@ export function setCardFor(tuneIds: readonly string[], cards: Record<string, Car
     const ids = setTuneIds(card, cards);
     return !!ids && ids.every((id, i) => id === tuneIds[i]);
   });
-}
-
-/** A new set card for tunes that all have a card. Shaped like an imported
- *  set (theSessionService's buildSetCards): its name follows its tunes, each
- *  tune comes with the user's usual number of passes. */
-export function buildDetectedSetCard(
-  tunes: readonly Card[],
-  opts: { defaultRepeat: number; attachments: Attachment[]; newId: () => string },
-): Card {
-  return {
-    id: opts.newId(),
-    guid: opts.newId(),
-    // Replaced on the first normalisation anyway — computedName is on.
-    name: tunes.map(c => c.name).join(TUNESET_NAME_SEPARATOR),
-    defaultImportance: 1,
-    tags: [],
-    type: CARD_TYPE_TUNESET,
-    computedName: true,
-    tunes: tunes.map(c => ({ id: c.id, guid: c.guid, externalId: c.externalId, title: c.name, repeat: opts.defaultRepeat })),
-    content: { notes: '', attachments: opts.attachments },
-  };
 }
 
 // ── Where a set card was heard ───────────────────────────────────────────────

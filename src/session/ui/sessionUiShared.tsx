@@ -5,7 +5,7 @@ import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon } from '.
 import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
-import { showDeckChoiceModal, decksContainingCard, hasAnyDeck, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
+import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName, downloadBlob } from '../../utils';
 import { attachmentFor, uploadAttachmentSoon, condemnAttachmentFile, mutateWithRule } from '../../services/attachmentStore';
@@ -753,7 +753,6 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: T
         return;
       }
       setBusy(false);
-      if (!hasAnyDeck()) { void commitAdd(card, []); return; }
       showDeckChoiceModal({
         pinned: getPinnedDeckIds?.() ?? new Set(),
         onConfirm: (deckIds) => { void commitAdd(card, deckIds); },
@@ -782,7 +781,6 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: T
       </button>
     );
   }
-  if (!hasAnyDeck()) return null;
   // Dimmed, not disabled, once the card is in every deck: there is nothing
   // left to add, but this is also the only place that shows WHERE it already
   // sits, so it stays open for a look.

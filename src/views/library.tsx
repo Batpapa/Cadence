@@ -3,7 +3,10 @@ import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, type AliasMatch } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
-import { CARD_TYPES, cardTypeLabelKey, knownCardType } from '../services/cardTypeService';
+import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
+import { buildTunesetCard } from '../services/tunesetCard';
+import { showDeckChoiceModal } from '../components/deckSelector';
+import { generateId } from '../utils';
 import { tagsWithTunes, setsMatchTuneTags } from '../services/cardRefService';
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, exportCardsTXT, cardsTextReport, cardPackageText } from '../services/importExport';
@@ -16,7 +19,7 @@ import { localDayRange, hasReviewInRange } from '../services/reviewRange';
 import { showDeckPickerModal, showAddTagModal, showRemoveTagModal, showImportanceModal, showCardTypeModal, showRefreshModal } from '../components/batchEdit';
 import { fetchTuneById, applyTheSessionName, applyTheSessionAliases, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId } from '../services/theSessionService';
 import { ensureItiMapping } from '../services/itiMappingService';
-import { defaultTuneRepeat } from '../services/abcService';
+import { defaultTuneRepeat, addTunesetAbcOnConvert, tunesetAbcPlaceholder } from '../services/abcService';
 import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
@@ -291,6 +294,9 @@ export function LibraryView() {
   const [revTo,       setRevTo]       = useState(savedRoute?.reviewedTo ?? '');
   const [mapOpen,     setMapOpen]     = useState(false);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
+  /** Decks pinned in the deck choice of "Create a set" — kept for as long as
+   *  the library is on screen, as an import keeps them for its own screen. */
+  const setDeckPinsRef = useRef<Set<string>>(new Set());
   /** The cards another screen limited the library to (see Route's `cards`);
    *  null = every card. */
   const [onlyCards,   setOnlyCards]   = useState<string[] | null>(savedRoute?.cards ?? null);
@@ -595,9 +601,9 @@ export function LibraryView() {
 
   // Every bulk edit lives behind one ⋯ menu: the toolbar keeps only what you
   // reach for constantly (export, study, delete), so it stays readable on a
-  // portrait phone. Declared after the eligibility lists above so the deck
-  // entries can be dropped when no selected card can join or leave a deck —
-  // same condition that used to hide their toolbar buttons. Reuses the
+  // portrait phone. Declared after the eligibility lists above so "remove from
+  // decks" can be dropped when no selected card is in any deck — same
+  // condition that used to hide its toolbar button. Reuses the
   // right-click menu's hook (anchoring, dismissal, zoom) on a left click.
   // Three disjoint families, each with its own upstream and its own verb.
   // `thesession:` and `thesession-set:` never overlap — the dash form is
@@ -606,8 +612,52 @@ export function LibraryView() {
   const setIds        = selectedArr.filter(id => user.cards[id]?.externalId?.startsWith('thesession-set:'));
   const itiIds        = selectedArr.filter(id => user.cards[id]?.externalId?.startsWith('irishtuneinfo:'));
 
+  // A set made of the selection (a tester's request, 2026-10-29) — the six
+  // steps of a new card, its type and one + per tune, in one gesture. Offered
+  // only when there is a set to make: two tunes at least, and nothing else,
+  // since a set holds tunes only (canBeTuneOf). Retyping on the way was ruled
+  // out; the type stays something the user sets, from a card or in bulk.
+  //
+  // The tunes go in in the order they were ticked: `selected` is a Set, which
+  // keeps insertion order. A Shift range or a long press adds in list order,
+  // and the card page reorders by dragging afterwards.
+  //
+  // A set with the same tunes in the same order may already exist; another is
+  // made all the same — two can differ in repeats, decks or notes. The
+  // analyser files a heard set on the first one it finds (setCardFor), which
+  // the user accepted as is.
+  const canMakeSet = selectedArr.length >= 2 && selectedArr.every(id => isTune(user.cards[id]));
+  const createSet = (deckIds: string[]) => {
+    const tuneIds = selectedArr;
+    let setId: string | undefined;
+    void mutate(s => {
+      const tunes = tuneIds.map(id => s.cards[id]).filter((c): c is Card => !!c && isTune(c));
+      // Re-checked inside the write: a tune deleted or retyped meanwhile makes
+      // it a different set from the one asked for, so nothing is made at all.
+      if (tunes.length !== tuneIds.length) return;
+      const card = buildTunesetCard(tunes, {
+        defaultRepeat: defaultTuneRepeat(s),
+        attachments: addTunesetAbcOnConvert(s) ? [tunesetAbcPlaceholder()] : [],
+        newId: generateId,
+      });
+      s.cards[card.id] = card;
+      setId = card.id;
+      for (const deckId of deckIds) s.decks[deckId]?.entries.push({ cardId: card.id });
+    }).then(() => {
+      if (!setId) return;
+      setSelected(new Set());
+      navigate({ view: 'card', cardId: setId });
+    });
+  };
+
   const bulkMenu = useContextMenu([
-    ...(addEligible.length > 0 ? [{
+    ...(canMakeSet ? [{
+      label: t('library.batch.createSet'),
+      onClick: () => showDeckChoiceModal({ pinned: setDeckPinsRef.current, onConfirm: createSet }),
+    }] : []),
+    // Always offered, even with no deck the selection could join: the dialog's
+    // "+ new deck" makes one (the user's rule, 2026-10-30).
+    {
       label: t('library.batch.addToDecks'),
       onClick: () => showDeckPickerModal(
         'library.addToDecks.title', 'library.addToDecks.confirm', addEligible,
@@ -618,8 +668,9 @@ export function LibraryView() {
               if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
           }
         }),
+        t('library.deckInfo.add', { n: selectedArr.length }),
       ),
-    }] : []),
+    },
     ...(removeEligible.length > 0 ? [{
       label: t('library.batch.removeFromDecks'),
       onClick: () => showDeckPickerModal(

@@ -4,6 +4,7 @@ import type { ComponentChild } from 'preact';
 import { appState, mutate } from '../store';
 import { showModal, closeModal, renderModalBody } from './modal';
 import { TagPicker } from './tagModal';
+import { NewDeckField } from './deckSelector';
 import { CustomSelect } from './customSelect';
 import { cardTypeIcon } from './cardTypeIcon';
 import { CARD_TYPES, CARD_TYPE_TUNESET, cardTypeLabelKey, applyCardType, isTuneset } from '../services/cardTypeService';
@@ -44,44 +45,70 @@ function open(title: string, node: ComponentChild, confirmLabel: string, draft: 
 interface PickItem { id: string; label: string; info: string }
 
 /** Checkbox list used by both the deck picker and the tag remover — the two
- *  differ only in what they list, so the selection plumbing is shared. */
-function CheckboxList({ items, draft }: { items: PickItem[]; draft: Draft & { chosen: string[] } }) {
+ *  differ only in what they list, so the selection plumbing is shared.
+ *
+ *  `extra` renders under the list and may append an item, ticked: the deck
+ *  picker's "+ new deck", whose deck belongs in the list it was made from. */
+function CheckboxList({ items, draft, extra }: {
+  items: PickItem[];
+  draft: Draft & { chosen: string[] };
+  extra?: (addTicked: (item: PickItem) => void) => ComponentChild;
+}) {
   const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const toggle = (id: string) => {
-    const next = new Set(chosen);
-    next.has(id) ? next.delete(id) : next.add(id);
+  const [added, setAdded] = useState<PickItem[]>([]);
+  const select = (next: Set<string>) => {
     setChosen(next);
     draft.chosen = [...next];
     draft.noop.value = next.size === 0;
   };
+  const toggle = (id: string) => {
+    const next = new Set(chosen);
+    next.has(id) ? next.delete(id) : next.add(id);
+    select(next);
+  };
+  const addTicked = (item: PickItem) => {
+    setAdded(a => [...a, item]);
+    select(new Set(chosen).add(item.id));
+  };
   return (
     <div class="space-y-1">
-      {items.map(({ id, label, info }) => (
+      {[...items, ...added].map(({ id, label, info }) => (
         <label key={id} class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-elevated cursor-pointer">
           <input type="checkbox" class="card-checkbox" checked={chosen.has(id)} onChange={() => toggle(id)} />
           <span class="text-sm text-primary flex-1 truncate">{label}</span>
           <span class="text-xs text-dim shrink-0">{info}</span>
         </label>
       ))}
+      {extra && <div class="px-2 pt-1">{extra(addTicked)}</div>}
     </div>
   );
 }
 
 // ── Decks ────────────────────────────────────────────────────────────────────
 
-/** Add/remove a selection to/from several decks at once. */
+/** Add/remove a selection to/from several decks at once.
+ *
+ *  `newDeckInfo` turns on "+ new deck" — for adding only, since a deck made on
+ *  the spot holds nothing to remove — and is what the new deck's row says: it
+ *  starts empty, so it is the count of everything selected. With it, the
+ *  dialog is worth opening even with no eligible deck at all, which is how a
+ *  library without decks makes its first one from a selection. */
 export function showDeckPickerModal(
   titleKey: string,
   confirmKey: string,
   eligibleDecks: { id: string; info: string }[],
   onConfirm: (deckIds: string[]) => void,
+  newDeckInfo?: string,
 ): void {
   const user  = appState.value;
   const items = eligibleDecks
     .filter(({ id }) => user.decks[id])
     .map(({ id, info }) => ({ id, label: user.decks[id]!.name, info }));
   const draft = { chosen: [] as string[], noop: signal(true) };
-  open(t(titleKey), <CheckboxList items={items} draft={draft} />, t(confirmKey), draft, () => {
+  const extra = newDeckInfo === undefined ? undefined : (addTicked: (item: PickItem) => void) => (
+    <NewDeckField onCreated={(id, name) => addTicked({ id, label: name, info: newDeckInfo })} />
+  );
+  open(t(titleKey), <CheckboxList items={items} draft={draft} extra={extra} />, t(confirmKey), draft, () => {
     onConfirm(draft.chosen);
   });
 }
