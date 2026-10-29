@@ -5,6 +5,10 @@
 export class FolkFriendWASM {
   free(): void;
 /**
+* @returns {Float32Array}
+*/
+  take_features(): Float32Array;
+/**
 * @param {string} contour_string
 * @returns {string}
 */
@@ -136,6 +140,7 @@ export interface InitOutput {
   readonly folkfriendwasm_set_tempo_model: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_set_tempo_range: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_settings_from_tune_id: (a: number, b: number, c: number, d: number) => void;
+  readonly folkfriendwasm_take_features: (a: number) => number;
   readonly folkfriendwasm_transcribe_pcm_buffer: (a: number, b: number) => void;
   readonly folkfriendwasm_transcribe_pcm_buffer_debug: (a: number, b: number) => void;
   readonly folkfriendwasm_version: (a: number, b: number) => void;

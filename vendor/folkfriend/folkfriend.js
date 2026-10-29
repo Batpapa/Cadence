@@ -217,6 +217,13 @@ export class FolkFriendWASM {
         wasm.__wbg_folkfriendwasm_free(ptr);
     }
     /**
+    * @returns {Float32Array}
+    */
+    take_features() {
+        const ret = wasm.folkfriendwasm_take_features(this.__wbg_ptr);
+        return takeObject(ret);
+    }
+    /**
     * @param {string} contour_string
     * @returns {string}
     */
@@ -652,6 +659,10 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_newwithbyteoffsetandlength_4104c9568c7a9198 = function(arg0, arg1, arg2) {
         const ret = new Float32Array(getObject(arg0), arg1 >>> 0, arg2 >>> 0);
+        return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_new_bf29a5ad22392af7 = function(arg0) {
+        const ret = new Float32Array(getObject(arg0));
         return addHeapObject(ret);
     };
     imports.wbg.__wbg_instanceof_Uint8Array_fd17ec67c77de602 = function(arg0) {

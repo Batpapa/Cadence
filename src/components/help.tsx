@@ -166,6 +166,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
           title: t('help.context.sessionSummary'),
           sections: [
             { style: 'definition', heading: t('help.sessionSummary.screen.heading'),    items: [t('help.sessionSummary.screen.1'), t('help.sessionSummary.screen.2'), t('help.sessionSummary.screen.3'), t('help.sessionSummary.screen.4')] },
+            { style: 'logic',      heading: t('help.sessionSummary.views.heading'),     items: [t('help.sessionSummary.views.1'), t('help.sessionSummary.views.2')] },
             detectionSection(),
             // The sets only when they are on (an option, off by default).
             ...(experimentalSets(ctx.user) ? [{ style: 'logic' as const, heading: t('help.sessionSummary.sets.heading'), items: [t('help.sessionSummary.sets.1'), t('help.sessionSummary.sets.2'), t('help.sessionSummary.sets.3')] }] : []),

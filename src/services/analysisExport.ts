@@ -1,5 +1,5 @@
 import type { Analysis, Detection } from '../session/model';
-import { downloadBlob, downloadTextFile } from '../utils';
+import { downloadBlob, downloadTextFile, toDateStr } from '../utils';
 import { withChains } from '../session/ui/timelineModel';
 import { buildZip, type ZipEntry } from './zip';
 import { safeFileName } from './attachmentNames';
@@ -154,6 +154,98 @@ export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBrea
   });
 
   return rows.map(r => r.map(escape).join(',')).join('\r\n');
+}
+
+// ── The Detections tab, across analyses (2026-10-28) ─────────────────────────
+// Asked for by someone tallying 50 months of a session's recordings in a
+// spreadsheet, one analysis CSV per tab: the ranking the tab already shows,
+// as a file. Same gesture and same formats as the card library's export.
+//
+// One row per tune or set, exactly as the list reads — never one per pass:
+// the per-pass file is what each analysis already exports.
+
+/** One row of the list, everything already decided by the screen: the name as
+ *  shown, the counts as filtered. Nothing here looks anything up. */
+export interface DetectedTuneLine {
+  name: string;
+  isSet: boolean;
+  dances: string[];
+  keys: string[];
+  detections: number;
+  confirmed: number;
+  /** Epoch ms, or null when every analysis it was heard in is undated. */
+  lastHeard: number | null;
+  liked: boolean;
+  hasCard: boolean;
+  /** The tune's TheSession id, or a set's, in playing order. */
+  tuneIds: string[];
+}
+
+const theSessionUrl = (id: string) => `https://thesession.org/tunes/${id}`;
+/** The local day it was played: a session at 23:30 is that evening's, which
+ *  the UTC date would move to the next morning. */
+const lastHeardDay = (line: DetectedTuneLine) => (line.lastHeard === null ? '' : toDateStr(new Date(line.lastHeard)));
+
+export function detectedTunesCsv(lines: readonly DetectedTuneLine[]): string {
+  const rows: string[][] = [
+    ['Tune', 'Type', 'Dance', 'Key', 'Detections', 'Confirmed', 'Last heard', 'Liked', 'Card', 'TheSession'],
+  ];
+  for (const l of lines) {
+    rows.push([
+      l.name,
+      l.isSet ? 'set' : 'tune',
+      l.dances.join('; '),
+      l.keys.join('; '),
+      String(l.detections),
+      String(l.confirmed),
+      lastHeardDay(l),
+      l.liked ? 'yes' : '',
+      l.hasCard ? 'yes' : '',
+      l.tuneIds.map(theSessionUrl).join('; '),
+    ]);
+  }
+  return rows.map(r => r.map(escape).join(',')).join('\r\n');
+}
+
+export function exportDetectedTunesCSV(lines: readonly DetectedTuneLine[]): void {
+  // BOM: Excel and accented tune names, as for every other CSV here.
+  downloadTextFile('﻿' + detectedTunesCsv(lines),
+    `cadence-detections-${toDateStr(new Date())}.csv`, 'text/csv;charset=utf-8');
+}
+
+/** The list to read or paste — into a mail to the people you play with, say.
+ *  The CSV's fields but one: "Card" says what is in the exporter's own
+ *  library, which means nothing to whoever reads the text. The link to each
+ *  tune goes on its own line, where a mail client turns it into one. */
+export function detectedTunesTextReport(lines: readonly DetectedTuneLine[], now: Date = new Date()): string {
+  const sets = lines.filter(l => l.isSet).length;
+  const tunes = lines.length - sets;
+  const counted = [
+    `${tunes} tune${tunes === 1 ? '' : 's'}`,
+    ...(sets > 0 ? [`${sets} set${sets === 1 ? '' : 's'}`] : []),
+  ].join(', ');
+  const out: string[] = [`Cadence — detections export — ${toDateStr(now)}`, counted, ''];
+
+  for (const l of lines) {
+    const about = [...(l.isSet ? ['set'] : []), ...l.dances, ...l.keys].join(', ');
+    // Only what carries something, as in the card report: "0 confirmed" on
+    // every line is noise to skim past.
+    const parts = [
+      `- ${l.name}${about ? ` (${about})` : ''}`,
+      `${l.detections} detection${l.detections === 1 ? '' : 's'}${l.confirmed > 0 ? `, ${l.confirmed} confirmed` : ''}`,
+      ...(l.lastHeard !== null ? [`last heard ${lastHeardDay(l)}`] : []),
+      ...(l.liked ? ['liked'] : []),
+    ];
+    out.push(parts.join(' — '));
+    for (const id of l.tuneIds) out.push(`  ${theSessionUrl(id)}`);
+  }
+
+  return out.join('\r\n');
+}
+
+export function exportDetectedTunesTXT(lines: readonly DetectedTuneLine[]): void {
+  downloadTextFile(detectedTunesTextReport(lines),
+    `cadence-detections-${toDateStr(new Date())}.txt`, 'text/plain;charset=utf-8');
 }
 
 /** A clip's name inside a clips zip: "{index} - {tune}" and nothing else —

@@ -29,9 +29,13 @@ import {
 import { showBoundEditor, capitalizeWords, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
+import {
+  ANALYSIS_VIEWS, analysisView, analysisStudy, setAnalysisView, toggleAnalysisStudy, showsDetails, showsEditing,
+  type AnalysisView,
+} from './analysisView';
 import { devMode } from '../../services/devMode';
 import { appState } from '../../store';
-import { headPosition, withChains, withGaps, type ListGap } from './timelineModel';
+import { headPosition, withChains, withGaps, type ListAnn, type ListChain, type ListGap } from './timelineModel';
 import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
 import { experimentalSets } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
@@ -106,6 +110,12 @@ const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
  *  code — yellow-free here since a copy is either made or not — so "is this on
  *  Drive" is read the same way in both places. A second visual language for the
  *  same idea is how two indicators come to disagree. */
+const VIEW_LABEL: Record<AnalysisView, string> = {
+  simple:   'sessions.view.simple',
+  detailed: 'sessions.view.detailed',
+  editor:   'sessions.view.editor',
+};
+
 function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () => void }) {
   // Hover never changes the HUE, only its lightness, and only where there is
   // no state colour to confuse: the accent is already what "copying" looks
@@ -717,8 +727,18 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     });
   };
 
+  // What this device shows of an analysis (analysisView.ts). The callbacks a
+  // view leaves out are simply not handed to the cards, which then draw no
+  // control for them.
+  const view = analysisView.value;
+  const details = showsDetails(view);
+  const editing = showsEditing(view);
+  const study = analysisStudy.value;
+
   const cardOptsFor = (ann: Detection, i: number): DetectionCardOptions => ({
     ctx,
+    details,
+    study,
     // No ▶ at all when the recording is neither here nor on Drive.
     onPlay: audioUrl ? playSlice : synced ? (a) => { void drivePlayer.play(session.id, a); } : undefined,
     playingId: audioUrl ? playingId : drivePlayer.playingId,
@@ -774,7 +794,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // adjusting to be done — the range goes back to being plain text, and the
     // player area above already says where the recording is. Same reason the
     // gap rows stop offering to add a detection.
-    onEditBounds: !audioUrl ? undefined : () => {
+    onEditBounds: !audioUrl || !editing ? undefined : () => {
       audioRef.current?.pause();
       showBoundEditor({
         ann,
@@ -808,9 +828,17 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     metaActions: () => (
       <ClipControls ann={ann} session={session} audioAvailable={!!audioUrl} getAudio={() => loadSessionAudio(session.id)} ctx={ctx} onAttached={bump} />
     ),
+    // Score following (2026-10-28): the score of the version the recogniser
+    // heard, its cursor following this recording — from Drive when that is
+    // where the recording is. Both of the summary's players stop first, same
+    // reason as the bound editor's.
+    follow: {
+      here: !!audioUrl,
+      beforeOpen: () => { audioRef.current?.pause(); drivePlayer.stop(); },
+    },
     // Confirmed: the row carries hand-made work (bound adjustments, alternate
     // picks, attached clips) and there is no undo.
-    onDelete: () => confirmModal(
+    onDelete: !editing ? undefined : () => confirmModal(
       t('sessions.detection.delete.title'),
       t('sessions.detection.delete.message', { name: ann.displayName }),
       t('common.delete'),
@@ -834,7 +862,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // is a false set change. Every other card is now two lines.
     extraControls: () => {
       const prev = session.annotations[i - 1];
-      if (!prev || prev.tuneId !== ann.tuneId) return null;
+      if (!editing || !prev || prev.tuneId !== ann.tuneId) return null;
       return (
         <button
           class="text-[11px] text-accent hover:underline cursor-pointer"
@@ -896,6 +924,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     void settleSets();
   };
 
+  /** The lit unjoin mark above a tune or a set — in the editor view only. */
+  const cutMark = (item: ListAnn | ListChain, node: ComponentChild) => (editing ? withCutMark(item, node, setOpens) : node);
+
   /** A silence row — between two sets, or inside one linked across it.
    *
    *  What the timeline shows as a hole and the list used to swallow whole:
@@ -952,7 +983,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         lit.gapFrom === item.from ? 'text-accent' : 'text-dim'}`}
     >
       <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
-      {audioUrl ? (
+      {/* Filled or given away in the editor view only: outside it a silence
+          is read, not worked on (analysisView.ts). */}
+      {audioUrl && editing ? (
         <span class="shrink-0 inline-flex items-center gap-1">
           {/* Moving a bound needs the recording, for the reason onEditBounds
               gives — so these go with it, like the ⊕ beside them. Down from
@@ -973,7 +1006,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         <span class="shrink-0 tabular-nums">{t('sessions.gap', { d: fmtLongTime(item.len) })}</span>
       )}
       <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
-      {item.nextId && (
+      {item.nextId && editing && (
         <span class="mr-3 flex">
           <SetMarkButton kind="link" active={inSet} onClick={() => setOpens(item.nextId!, inSet ? undefined : false)} />
         </span>
@@ -991,6 +1024,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       ctx,
       session,
       record,
+      details,
+      study,
       onOpenCard,
       getPinnedDeckIds: () => pinnedDeckIdsRef.current,
       onChanged: bump,
@@ -1105,7 +1140,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           would let it scroll away immediately — which is exactly what it did. */}
       <div class="relative">
         {audioUrl && (
-          <div class="absolute top-3 right-0 z-20 h-7 flex items-center gap-3" data-tour="summary-audio">
+          // On the transport's line, under the row of views: the bar's `pt-3`,
+          // that row's 32 px (`p-1` around 24 px tabs), the transport's `mt-3`
+          // — 56 px, `top-14`. Change one and change this.
+          <div class="absolute top-14 right-0 z-20 h-7 flex items-center gap-3" data-tour="summary-audio">
             {/* A button, not a link to the stored blob: the file is only read
                 out of the local database on demand, which is also where its
                 extension gets settled (see downloadAudio). */}
@@ -1146,8 +1184,38 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             matches the timeline's `mt-3` just below, so the bar sits in equal
             air top and bottom. Change one of the three and change all three. */}
         <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3" data-tour="summary-player">
+          {/* How much of each tune is shown (analysisView.ts), as tabs above
+              the transport and pinned with it (the user's design): the view is
+              changed while reading the list, wherever it is scrolled. "Study"
+              on its own at the far end: it is not a fourth view but a switch
+              that holds in all three. 32 px tall — see `top-14` above. */}
+          <div class="flex items-center gap-2 h-8" data-tour="summary-views">
+            <div class="flex gap-1 p-1 bg-elevated rounded-lg" role="tablist" aria-label={t('sessions.view.label')}>
+              {ANALYSIS_VIEWS.map(v => (
+                <button
+                  key={v}
+                  role="tab"
+                  aria-selected={view === v}
+                  class={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+                    view === v ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-surface'}`}
+                  onClick={() => setAnalysisView(v)}
+                >
+                  {t(VIEW_LABEL[v] as Parameters<typeof t>[0])}
+                </button>
+              ))}
+            </div>
+            <button
+              class={`ml-auto px-3 py-1 text-xs font-medium rounded-full border transition-colors cursor-pointer ${
+                study ? 'border-accent/60 bg-accent/10 text-accent' : 'border-border text-muted hover:text-primary hover:border-accent/50'}`}
+              title={t('sessions.view.study.hint')}
+              aria-pressed={study}
+              onClick={toggleAnalysisStudy}
+            >
+              {t('sessions.view.study')}
+            </button>
+          </div>
           {audioUrl && (
-            <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap mt-3">
               <button
                 class="w-7 h-7 p-0 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
                 onClick={() => { const a = audioRef.current; if (!a) return; if (a.paused) void a.play(); else a.pause(); }}
@@ -1172,7 +1240,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           {!audioUrl && (
             synced && driveOn ? (
               <button
-                class="text-xs text-accent hover:brightness-110 transition-[filter] cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                class="mt-3 text-xs text-accent hover:brightness-110 transition-[filter] cursor-pointer disabled:opacity-40 disabled:cursor-default"
                 disabled={busySync || downloadProgress !== undefined}
                 onClick={downloadSynced}
               >
@@ -1185,7 +1253,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
                     : t('sessions.syncAudio.download', { size: formatBytes(synced.bytes) })}
               </button>
             ) : (
-              <p class="text-xs text-muted">{t('sessions.audioElsewhere')}</p>
+              <p class="mt-3 text-xs text-muted">{t('sessions.audioElsewhere')}</p>
             )
           )}
 
@@ -1252,17 +1320,18 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             ? withChains(session.annotations, session.duration)
             : withGaps(session.annotations, session.duration)
           ).map(item => (
-            item.kind === 'chain' ? withCutMark(item, (
+            // The set marks — unjoin, join — are edits: the editor view's.
+            item.kind === 'chain' ? cutMark(item, (
               <TunesetDetectionCard
                 key={`set-${item.members[0]!.ann.id}`}
                 chain={item.members.map(m => m.ann)}
                 opts={setOptsFor(item.members.map(m => m.ann))}
               >
-                {setRows(item.rows, r => annRow(r.ann, r.i), g => gapRow(g, true), setOpens)}
+                {setRows(item.rows, r => annRow(r.ann, r.i), g => gapRow(g, true), editing ? setOpens : undefined)}
               </TunesetDetectionCard>
-            ), setOpens)
+            ))
             : item.kind === 'gap' ? gapRow(item, false)
-            : 'cut' in item ? withCutMark(item, annRow(item.ann, item.i), setOpens)
+            : 'cut' in item ? cutMark(item, annRow(item.ann, item.i))
             : annRow(item.ann, item.i)
           ))}
         </div>

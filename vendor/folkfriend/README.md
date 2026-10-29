@@ -107,6 +107,18 @@ Pass 2 aligns the query against `QUERY_REPASS_SIZE` settings and was ~74 % of a 
 
 **Verification.** Both binaries produce `run_transcription_query` output **byte-for-byte identical** to the previous engine across the full corpus (~3 500 real contours plus degenerate ones). That is the strongest form available here: identical bytes out means the backtest result carries over unchanged, with nothing left to sample.
 
+## Score following export (2026-10-28)
+
+**`take_features()`** — new, additive like the `_debug` exports: returns the
+per-frame pitch energies fed so far as one `Float32Array`, row-major (frames ×
+48, MIDI 48 first), undecoded and unnormalised, then flushes them. It lets the
+caller align a whole performance against a KNOWN score (`session/scoreFollow.ts`)
+instead of transcribing it. Nothing else changed: the glue diff against the
+previous build is that method plus wasm-bindgen's `Float32Array` constructor
+import. Both binaries rebuilt with the commands above (out dirs
+`pkg-align-web` / `pkg-align-web-simd`); the offline harness uses
+`pkg-node-align` (`experiments/score-follow/`).
+
 ## Detector parameters (2026-09-13)
 
 **The engine is now a generic, caller-parameterised detector.** Five setters are

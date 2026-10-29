@@ -5,7 +5,7 @@
 // synchronous, so intercepting the construction is the only place the content
 // is still a string.
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport } from './analysisExport';
+import { exportAnalysisCSV, exportAnalysisTXT, analysisTextReport, exportDetectedTunesCSV, exportDetectedTunesTXT, detectedTunesTextReport, type DetectedTuneLine } from './analysisExport';
 import type { Analysis, Detection } from '../session/model';
 
 // ── Why this file exists ─────────────────────────────────────────────────────
@@ -232,5 +232,85 @@ describe('set breaks (experimental sets, 2026-10-19)', () => {
     ];
     const lines = analysisTextReport(analysis(marked), { setBreaks: true }).split('\r\n').slice(2);
     expect(lines).toEqual(['- A (reel)', '', '- B (reel)', '- C (reel)']);
+  });
+});
+
+// ── The Detections tab (2026-10-28) ──────────────────────────────────────────
+// One row per tune or set, as the list shows them. The numbers are handed in
+// already filtered — what is tested here is that they reach the file intact.
+
+function line(over: Partial<DetectedTuneLine>): DetectedTuneLine {
+  return {
+    name: 'The Silver Spear', isSet: false, dances: ['reel'], keys: ['Dmajor'],
+    detections: 12, confirmed: 3, lastHeard: new Date(2026, 9, 1, 21, 30).getTime(),
+    liked: false, hasCard: true, tuneIds: ['182'],
+    ...over,
+  };
+}
+
+describe('Detections CSV export', () => {
+  it('writes the header and one row per line, in the order handed over', () => {
+    exportDetectedTunesCSV([line({}), line({ name: 'Morrison\'s', dances: ['jig'], keys: [], detections: 4, confirmed: 0, hasCard: false, liked: true, tuneIds: ['71'] })]);
+    expect(csvRows()).toEqual([
+      'Tune,Type,Dance,Key,Detections,Confirmed,Last heard,Liked,Card,TheSession',
+      'The Silver Spear,tune,reel,Dmajor,12,3,2026-10-01,,yes,https://thesession.org/tunes/182',
+      'Morrison\'s,tune,jig,,4,0,2026-10-01,yes,,https://thesession.org/tunes/71',
+    ]);
+  });
+
+  it('leads with a BOM, as every other CSV here', () => {
+    exportDetectedTunesCSV([line({})]);
+    expect(captured[0]!.startsWith('﻿')).toBe(true);
+  });
+
+  it('writes the local day it was last heard — a late evening stays that evening', () => {
+    exportDetectedTunesCSV([line({ lastHeard: new Date(2026, 9, 1, 23, 50).getTime() })]);
+    expect(csvRows()[1]!.split(',')[6]).toBe('2026-10-01');
+  });
+
+  it('leaves the date empty when no analysis it was heard in is dated', () => {
+    exportDetectedTunesCSV([line({ lastHeard: null })]);
+    expect(csvRows()[1]!.split(',')[6]).toBe('');
+  });
+
+  it('writes a set as one row: its name, "set", every dance and every link', () => {
+    exportDetectedTunesCSV([line({ name: 'A / B', isSet: true, dances: ['jig', 'slide'], keys: ['Gmajor', 'Dmajor'], tuneIds: ['1', '2'] })]);
+    expect(csvRows()[1]).toBe('A / B,set,jig; slide,Gmajor; Dmajor,12,3,2026-10-01,,yes,https://thesession.org/tunes/1; https://thesession.org/tunes/2');
+  });
+
+  it('quotes a name containing a comma instead of splitting the row', () => {
+    exportDetectedTunesCSV([line({ name: 'Rakish Paddy, The' })]);
+    expect(csvRows()[1]!.startsWith('"Rakish Paddy, The",tune,')).toBe(true);
+  });
+});
+
+describe('Detections TXT export', () => {
+  const now = new Date(2026, 9, 28);
+
+  it('writes a header, then one line per tune with its link beneath', () => {
+    expect(detectedTunesTextReport([line({}), line({ name: 'Morrison\'s', dances: ['jig'], keys: [], detections: 1, confirmed: 0, lastHeard: null, liked: true, tuneIds: ['71'] })], now).split('\r\n')).toEqual([
+      'Cadence — detections export — 2026-10-28',
+      '2 tunes',
+      '',
+      '- The Silver Spear (reel, Dmajor) — 12 detections, 3 confirmed — last heard 2026-10-01',
+      '  https://thesession.org/tunes/182',
+      '- Morrison\'s (jig) — 1 detection — liked',
+      '  https://thesession.org/tunes/71',
+    ]);
+  });
+
+  it('counts the sets apart, and lists each of a set\'s links', () => {
+    const lines = detectedTunesTextReport([line({}), line({ name: 'A / B', isSet: true, dances: ['jig'], keys: [], tuneIds: ['1', '2'] })], now).split('\r\n');
+    expect(lines[1]).toBe('1 tune, 1 set');
+    expect(lines.slice(5)).toEqual([
+      '- A / B (set, jig) — 12 detections, 3 confirmed — last heard 2026-10-01',
+      '  https://thesession.org/tunes/1',
+      '  https://thesession.org/tunes/2',
+    ]);
+  });
+
+  it('the file holds what the clipboard gets', () => {
+    exportDetectedTunesTXT([line({})]);
+    expect(captured[0]!.split('\r\n').slice(1)).toEqual(detectedTunesTextReport([line({})]).split('\r\n').slice(1));
   });
 });

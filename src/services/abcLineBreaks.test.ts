@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import abcjs from 'abcjs';
-import { sourceMeasures, scoreLineBreaks, type MeasuredSection } from './abcLineBreaks';
+import { sourceMeasures, sourceQuavers, scoreLineBreaks, cappedStaffWidth, type MeasuredSection } from './abcLineBreaks';
 
 // Muireann's, setting 1902 on TheSession — the tune of the report (2026-10-23).
 const MUIREANNS = `X:1
@@ -81,5 +81,53 @@ describe('where the lines end', () => {
   it('gives up when the widths do not match the structure', () => {
     expect(scoreLineBreaks(structure, [{ left: 75, measureWidths: [80, 80] }], 970, 1.3)).toBeNull();
     expect(scoreLineBreaks(structure, [], 970, 1.3)).toBeNull();
+  });
+});
+
+describe('the time each bar holds', () => {
+  it('counts quavers, rests included, a triplet at its played length', () => {
+    const tune = abcjs.parseOnly('X:1\nM:4/4\nL:1/8\nK:D\nA|fB (3B/B/B/ Bcdef|z2 [FA]2 {g}f4|\n')[0]!;
+    expect(sourceQuavers(tune)).toEqual([[1, 8, 8]]);
+  });
+
+  it('lines up with the measured segments of Muireann\'s', () => {
+    const q = sourceQuavers(abcjs.parseOnly(MUIREANNS)[0]!);
+    expect(q[0]).toHaveLength(MEASURED[0]!.measureWidths.length);
+    // A segment without music holds no time; a whole jig bar holds six.
+    expect(q[0]![0]).toBe(0);
+    expect(q[0]![1]).toBe(6);
+  });
+});
+
+describe('the widest staff worth drawing on', () => {
+  const m = [{ left: 50, measureWidths: [100, 100, 100, 100] }];
+  const eights = [[8, 8, 8, 8]];
+
+  it('gives each quaver of the widest line at most its width', () => {
+    // Two lines of 16 quavers at 20 each, after the clef's 50.
+    expect(cappedStaffWidth(m, eights, [[1]], 1900, 20, 1)).toBe(370);
+    // Lines of 8 and 24 quavers: the longer one decides.
+    expect(cappedStaffWidth(m, eights, [[0]], 1900, 20, 1)).toBe(530);
+    // One line, the section's end closing it.
+    expect(cappedStaffWidth(m, eights, [[]], 1900, 20, 1)).toBe(690);
+  });
+
+  it('never squeezes a line below the spacing it was broken at', () => {
+    // 16 quavers at 20 = 320, but its 200 of natural width need 2 × 200.
+    expect(cappedStaffWidth(m, eights, [[1]], 1900, 20, 2)).toBe(450);
+  });
+
+  it('caps Muireann\'s on a full screen, four bars a line as written', () => {
+    const q = sourceQuavers(abcjs.parseOnly(MUIREANNS)[0]!);
+    const breaks = scoreLineBreaks(structure, MEASURED, 1900, 1.3)!;
+    const capped = cappedStaffWidth(MEASURED, q, breaks, 1900, 26, 1.3);
+    expect(capped).toBeGreaterThan(600);
+    expect(capped).toBeLessThan(1000);
+  });
+
+  it('leaves a box narrower than that as it is', () => {
+    const q = sourceQuavers(abcjs.parseOnly(MUIREANNS)[0]!);
+    const breaks = scoreLineBreaks(structure, MEASURED, 500, 1.3)!;
+    expect(cappedStaffWidth(MEASURED, q, breaks, 500, 26, 1.3)).toBe(500);
   });
 });

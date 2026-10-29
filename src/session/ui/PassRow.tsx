@@ -3,6 +3,7 @@ import type { VNode } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, CloudIcon } from '../../components/icons';
+import type { PlayAlongBinding } from '../../components/fileViewer';
 import { playIcon, pauseIcon, stopIcon } from '../../components/playbackIcons';
 import { showModal, closeModal, alertModal } from '../../components/modal';
 import { formatBytes } from '../../utils';
@@ -11,9 +12,11 @@ import { COMPANION_GONE, readCompanionRange } from '../../services/driveService'
 import { loadSessionAudio, fetchSyncedAudio, audioDownloadProgress, audioArrivals } from '../db';
 import { audioDownloadMode } from '../audioDownloads';
 import { fetchRemotePassage } from '../audio/remotePassage';
-import { TUNE_ANALYSER_MODULE_KEY, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
+import { TUNE_ANALYSER_MODULE_KEY, hasRecognisedSetting, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
+import { followFrom, followTo, type FollowAudio } from '../scoreFollowClient';
 import { BUCKET_TEXT, ClipControls, fmtLongTime, type ClipSessionRef } from './sessionUiShared';
 import { AbcPreview } from './abcPreview';
+import { mountScoreFollow } from './ScoreFollowView';
 import { useMediaVolume } from '../../components/useMediaVolume';
 
 // ── One pass through a tune, wherever a list of them is shown ─────────────────
@@ -26,7 +29,8 @@ import { useMediaVolume } from '../../components/useMediaVolume';
 //
 // Hearing and reading come first because both lists are for tunes being
 // learnt; the time and the analysis are where the pass lives, and lead there;
-// the clip controls close the line because they are what is done last.
+// the clip controls close the line because they are what is done last. The
+// score plays along the pass from its viewer (2026-10-28, detectionPlayAlong).
 
 /** Passages from several evenings, played through ONE audio element. */
 export interface SlicePlayer {
@@ -46,6 +50,8 @@ export interface SlicePlayer {
    *  neither by downloading the whole recording first, asking before that in
    *  the manual mode (audioDownloads.ts). */
   play: (sessionId: string, detection: Detection) => Promise<void>;
+  /** Silences it — before something else plays (the score following). */
+  stop: () => void;
 }
 
 /** The Drive copy of this analysis's recording, read live off the state: it
@@ -255,7 +261,13 @@ export function useSlicePlayer(): SlicePlayer {
 
   const isHere = (sessionId: string) => !!hasAudio[sessionId] || audioArrivals.value.has(sessionId);
 
-  return { audio, playingId, loadingId, isHere, probe, play };
+  const stop = () => {
+    // A passage still on its way must not start once it lands.
+    requestRef.current++;
+    audioRef.current?.pause();
+  };
+
+  return { audio, playingId, loadingId, isHere, probe, play, stop };
 }
 
 /** The play button of a passage, wherever one is shown — the lists of passes
@@ -340,6 +352,67 @@ export function PlayPassButton({ sessionId, detection, player }: {
   );
 }
 
+/** The recording a score follows when it is only on Drive: just the stretch
+ *  the follow reads, fetched on its own like a passage played from there —
+ *  the whole recording only for a format no passage can be read from, asked
+ *  first in the manual mode, as for playing. Undefined when it could not be
+ *  had, the user having been told. */
+async function followAudioFromDrive(sessionId: string, detection: Detection): Promise<FollowAudio | undefined> {
+  const entry = syncedAudioEntry(sessionId);
+  if (!entry) return undefined;
+  const from = followFrom(detection.start);
+  const to = followTo(detection.end ?? detection.start + 60);
+  try {
+    const clip = await fetchRemotePassage(
+      (s, e) => readCompanionRange(entry.fileId, s, e, true),
+      { bytes: entry.bytes, duration: sessionDuration(sessionId) },
+      from,
+      to,
+      entry.fileId,
+    );
+    if (clip) return { blob: clip.blob, start: from };
+  } catch (e) {
+    alertFailed(e);
+    return undefined;
+  }
+  const blob = await fetchForPlayback(sessionId);
+  return blob ? { blob, start: 0 } : undefined;
+}
+
+/** The score viewer's "Play along" for a detection (ScoreFollowView), wherever
+ *  its score opens from — its card in the analysis, and the lists of passes.
+ *  Only for a tune the recogniser heard: a tune named by hand has no heard
+ *  version to follow. Any version of it can be played along — the one heard,
+ *  or another (2026-10-29, the user), aligned anew: the alignment reads the
+ *  notes of the version as written (scoreContour). From this device's
+ *  recording, or from Drive's — then the toggle wears the cloud and the
+ *  stretch is fetched when it is turned on. Undefined when the recording is in
+ *  neither place. */
+export function detectionPlayAlong(sessionId: string, detection: Detection, here: boolean, beforeOpen?: () => void): PlayAlongBinding | undefined {
+  const fromDrive = !here && !!syncedAudioEntry(sessionId);
+  if (!hasRecognisedSetting(detection) || (!here && !fromDrive)) return undefined;
+  // From Drive, fetched once for the viewer: another version is the same
+  // stretch of the same recording.
+  let fromDriveAudio: Promise<FollowAudio | undefined> | null = null;
+  const getAudio = here
+    ? async (): Promise<FollowAudio | undefined> => { const blob = await loadSessionAudio(sessionId); return blob ? { blob, start: 0 } : undefined; }
+    : () => {
+      fromDriveAudio ??= followAudioFromDrive(sessionId, detection).then((a) => { if (!a) fromDriveAudio = null; return a; });
+      return fromDriveAudio;
+    };
+  return {
+    fromDrive,
+    // A version is a tune when it has a key: the header abcjs needs to read
+    // the notes. One without notes fails on its own, and says so.
+    plays: (version) => /^K:/m.test(version),
+    mount: (host, version, face, expanded, onState, forced) => {
+      // Two players at once would talk over each other from behind the dialog.
+      beforeOpen?.();
+      return mountScoreFollow(host, { ann: detection, version, getAudio, face, expanded, onState, forced });
+    },
+  };
+}
+
 export function PassRow({ session, detection, cardId, ctx, player, interactive, onOpen, onAttached }: {
   session: ClipSessionRef;
   detection: Detection;
@@ -366,7 +439,10 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
         <span class="w-6 flex items-center justify-center shrink-0">
           <PlayPassButton sessionId={session.id} detection={detection} player={player} />
         </span>
-        <AbcPreview settingId={detection.settingId} displayName={detection.displayName} cardId={cardId} ctx={ctx} />
+        <AbcPreview
+          settingId={detection.settingId} displayName={detection.displayName} cardId={cardId} ctx={ctx}
+          playAlong={detectionPlayAlong(session.id, detection, player.isHere(session.id), player.stop)}
+        />
       </div>
 
       <button

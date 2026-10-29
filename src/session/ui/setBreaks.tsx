@@ -21,17 +21,18 @@ import type { ListAnn, ListChain, ListGap } from './timelineModel';
 export type SetOpens = (detectionId: string, opens: boolean | undefined) => void;
 
 /** A set's inside, as every screen shows it: its tunes, the unjoin button on
- *  each join between two of them, and the silences it was joined across. */
+ *  each join between two of them, and the silences it was joined across. No
+ *  `onSetOpens`, no buttons: an analysis outside its editor view. */
 export function setRows(
   rows: ListChain['rows'],
   renderAnn: (row: ListAnn) => ComponentChild,
   renderGap: (gap: ListGap) => ComponentChild,
-  onSetOpens: SetOpens,
+  onSetOpens: SetOpens | undefined,
 ): ComponentChild[] {
   return rows.map((r, k) => {
     if (r.kind === 'gap') return renderGap(r);
     const prev = rows[k - 1];
-    if (!prev || prev.kind !== 'ann') return renderAnn(r);
+    if (!prev || prev.kind !== 'ann' || !onSetOpens) return renderAnn(r);
     return (
       <OnSeam key={r.ann.id} inSet mark={<SetMarkButton kind="unlink" active={false} onClick={() => onSetOpens(r.ann.id, true)} />}>
         {renderAnn(r)}

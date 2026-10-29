@@ -371,6 +371,20 @@ export function MusicNoteIcon({ size = 12 }: { size?: number }) {
   );
 }
 
+/** A score with a cursor running through it — the score following the
+ *  recording (session/ui/ScoreFollowView.tsx), told apart from the plain
+ *  score's note. */
+export function ScoreFollowIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+      <path d="M2 7h20M2 12h20M2 17h20" opacity=".55"/>
+      <path d="M15 3v18" stroke-width="2.6"/>
+      <ellipse cx="8.5" cy="14.5" rx="2.6" ry="2" fill="currentColor" stroke="none" transform="rotate(-20 8.5 14.5)"/>
+      <path d="M10.9 14V6.5" stroke-width="1.8"/>
+    </svg>
+  );
+}
+
 export function GaugeIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

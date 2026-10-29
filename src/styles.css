@@ -565,9 +565,32 @@
    was then centred in a box still as tall as before: an empty band above the
    first staff and below the last, ~65 px each on a 360 px phone (measured
    2026-10-24, a 328-wide drawing in a 302 box). Following the width keeps the
-   proportions, so the drawing fills its box. */
-.abc-score-paper svg { max-width: 100%; height: auto; display: block; }
+   proportions, so the drawing fills its box.
+   Centred: on a wide box the staff is capped at a readable spacing
+   (abcLineBreaks.ts, `cappedStaffWidth`) and comes out narrower than it. */
+.abc-score-paper svg { max-width: 100%; height: auto; display: block; margin-inline: auto; }
 .abc-score-paper .abcjs-tempo { display: none; }
+/* Score following (ScoreFollowView.tsx): a note pressed takes the recording
+   to where it is played. */
+.score-follow-paper .abcjs-note { cursor: pointer; }
+/* The player's region on the score (syncedScore.tsx), in the colours of a
+   passage's bounds on the score viewer: green where it starts, blue where it
+   ends — never to be mistaken for the cursor running between them. */
+.score-follow-bound-in, .score-follow-bound-out { stroke-width: 3px; stroke-linecap: round; pointer-events: none; }
+.score-follow-bound-in { stroke: var(--abc-in, #16a34a); }
+.score-follow-bound-out { stroke: var(--abc-out, #2563eb); }
+/* Each bound's pass number: a small square against the top of its line, on
+   its right — as the waveform shows a pass's number — in the bound's colour. */
+/* `stroke: none`: abcjs strokes its whole SVG in the ink's colour, and the
+   number came out ringed in black. */
+.score-follow-bound-badge-in, .score-follow-bound-badge-out { pointer-events: none; }
+.score-follow-bound-badge-in *, .score-follow-bound-badge-out * { stroke: none; }
+.score-follow-bound-badge-in rect { fill: var(--abc-in, #16a34a); }
+.score-follow-bound-badge-out rect { fill: var(--abc-out, #2563eb); }
+.score-follow-bound-badge-in text, .score-follow-bound-badge-out text {
+  font: 700 10px "IBM Plex Mono", ui-monospace, monospace;
+  fill: var(--abc-paper, #fff);
+}
 
 /* The scrollbar down a full-page score that fits was NOT the score. abcjs
    measures glyph widths by drawing them into a scratch SVG, and
