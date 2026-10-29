@@ -341,8 +341,8 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
   // Neither entry point runs showUserSelector(), which is where the language
   // is otherwise set: without this the screen spoke English to everyone.
   setLanguage(welcomeLanguage());
-  // Nor applyTheme(): index.html's bootstrap alone falls back to dark, where
-  // the app itself starts a phone in light.
+  // Nor applyTheme(): index.html's bootstrap paints the theme, but only
+  // applyTheme() brings the Android app's system bars along.
   applyTheme();
 
   // Redrawn in place when the language changes: let go of the previous controls.

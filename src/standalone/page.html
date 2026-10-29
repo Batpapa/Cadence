@@ -19,9 +19,12 @@
          setting with the app, as it shares its origin. -->
     <script>
       (function(){
-        var d=document.documentElement, nav=navigator, t=null;
+        var d=document.documentElement, t=null;
         try { t=localStorage.getItem('cadence_theme'); } catch(e) {}
-        t=t||(innerWidth<768&&nav.maxTouchPoints>0?'light':'dark');
+        if (!t) {
+          t=window.matchMedia&&matchMedia('(pointer: coarse)').matches?'light':'dark';
+          try { localStorage.setItem('cadence_theme', t); } catch(e) {}
+        }
         d.dataset.theme=t;
         d.style.background=t==='light'?'#ffffff':t==='green'?'#f7faf5':'#0a0a0a';
         document.querySelector('meta[name="theme-color"]').content=t==='light'?'#f5f5f5':t==='green'?'#edf4e8':'#141414';
