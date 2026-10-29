@@ -3,6 +3,7 @@ import type { AudioEngine } from './audioEngine';
 import { positionAt, slotNotes, alignContour, quaverToMs, msToQuaver, type FollowResult } from '../session/scoreFollow';
 import { abcPaper, ABC_PAPERS } from '../services/abcService';
 import { engraveScore, type ScoreMeasure } from '../services/abcLineBreaks';
+import { ENGRAVE_HYSTERESIS, engraveOptions, engraveWidthOf, cropToInk } from './scoreEngraving';
 import { getZoom } from '../services/zoomService';
 import { appState } from '../store';
 import { WakeLockManager } from '../session/audio/capture';
@@ -237,11 +238,11 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
     const ro = new ResizeObserver(() => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        const w = paper.clientWidth;
         // Hidden behind the text face: kept as it was drawn, the text's
         // cursor reads its timeline.
-        if (w === 0) return;
-        setWidth(prev => (Math.abs(w - prev) > 24 ? w : prev));
+        if (paper.clientWidth === 0) return;
+        const w = engraveWidthOf(paper);
+        setWidth(prev => (Math.abs(w - prev) >= ENGRAVE_HYSTERESIS ? w : prev));
       });
     });
     ro.observe(paper);
@@ -258,19 +259,20 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
       if (cancelled || !drawing) return;
       lit.current = [];
       lastTop.current = null;
-      // The lines of the ABC, as the score viewer draws them, at a readable
-      // spacing however wide the box (engraveScore).
+      // Drawn as the score viewer draws it — its options, its lines of the
+      // ABC at a readable spacing (engraveScore), its crop to the ink. Its
+      // own sizes once cut the last line: abcjs's svg, wider than the box,
+      // was shrunk by the paper's `max-width: 100%` and, with no viewBox to
+      // scale it, clipped instead — 52 px of the bottom staff gone on a
+      // 360 px phone (2026-10-30, the user). cropToInk writes the viewBox.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const visual: any = engraveScore(abcjs, drawing, abc, {
-        add_classes: true,
-        foregroundColor: colours.ink,
+        ...engraveOptions({ width, ink: colours.ink, transpose: shift }),
         // Notes are pressed to seek (onPaperClick); abcjs's own selection
         // would paint the pressed note red and leave it so.
         selectTypes: false,
-        visualTranspose: shift,
-        staffwidth: Math.max(260, width - 40),
-        paddingtop: 4,
       }, measure.current)[0];
+      cropToInk(drawing);
       // The alignment's quavers are matched to these drawn notes by pitch.
       timeline.current = timelineOf(abcjs, visual, meter);      dirty.current = true;
     });

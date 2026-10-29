@@ -573,6 +573,9 @@
 /* Score following (ScoreFollowView.tsx): a note pressed takes the recording
    to where it is played. */
 .score-follow-paper .abcjs-note { cursor: pointer; }
+/* The score is cropped to its ink (cropToInk); the region's bounds and their
+   numbers stand a few units past the notes, into the paper's padding. */
+.score-follow-paper svg { overflow: visible; }
 /* The player's region on the score (syncedScore.tsx), in the colours of a
    passage's bounds on the score viewer: green where it starts, blue where it
    ends — never to be mistaken for the cursor running between them. */
