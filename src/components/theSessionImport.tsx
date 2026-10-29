@@ -21,7 +21,7 @@ import { t } from '../services/i18nService';
 import { theSessionOffered, irishTuneInfoOffered } from '../services/extensions';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
-import { showDeckChoiceModal, hasAnyDeck } from './deckSelector';
+import { showDeckChoiceModal } from './deckSelector';
 import { CheckIcon } from './icons';
 import { registerOverlay } from './overlayStack';
 import { usePinnedTop } from './modal';
@@ -1459,14 +1459,14 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
   /** Gate for every creation/import trigger — a single tune or a whole batch,
    *  which is one "add" either way. `onReady` runs ONLY on confirm: dismissing
    *  the modal cancels the import itself, not just the deck choice, and
-   *  `onCancel` is how the caller lets go of the work it already did. With no
-   *  deck in the library there is nothing to ask, so it runs straight through.
+   *  `onCancel` is how the caller lets go of the work it already did. Asked
+   *  even with no deck in the library: the modal's "+ new deck" is then the
+   *  way to make the first one (the user's rule, 2026-10-30).
    *
    *  Callers fetch BEFORE calling this, and skip it entirely when the fetch came
    *  back empty: choosing a destination for zero cards asks a question whose
    *  answer cannot matter. */
   const withDeckChoice = (onReady: () => void, onCancel?: () => void): void => {
-    if (!hasAnyDeck()) { chosenDeckIdsRef.current = new Set(); onReady(); return; }
     showDeckChoiceModal({
       pinned: pinnedDeckIdsRef.current,
       // Opened from a deck view: that deck is the context, so it starts ticked

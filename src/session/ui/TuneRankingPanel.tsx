@@ -24,7 +24,8 @@ import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey } from '../../servi
 import { experimentalSets } from '../detections';
 import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
-import { recordOf, setCardFor, cardsByTuneId, buildDetectedSetCard, chainSpan } from '../tunesets';
+import { recordOf, setCardFor, cardsByTuneId, chainSpan } from '../tunesets';
+import { buildTunesetCard } from '../../services/tunesetCard';
 import { TunesetDeckButton, attachSetClip, isSetClipAttached } from './tunesetShared';
 import { SetHearingRow } from './DetectedIn';
 import { generateId } from '../../utils';
@@ -419,8 +420,9 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
       .filter(({ n }) => n > 0)
       .map(({ deck, n }) => ({ id: deck.id, info: t('library.deckInfo.add', { n }) }))
       .sort((a, b) => (user.decks[a.id]?.name ?? '').localeCompare(user.decks[b.id]?.name ?? ''));
-    if (eligible.length === 0) return;
 
+    // Opened even with no eligible deck (it used to return in silence): its
+    // "+ new deck" makes one, which starts empty and so gains every row.
     showDeckPickerModal('sessions.ranking.batch.decks.title', 'sessions.ranking.batch.decks.confirm', eligible, (deckIds) => {
       const steps: BatchStep[] = selectedRows.map(({ row, name }) => ({
         label: name,
@@ -436,7 +438,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
                 const map = cardsByTuneId(s.cards);
                 const tunes = setIds.map(x => map.get(x)).filter((c): c is Card => !!c);
                 if (tunes.length !== setIds.length) { outcome = { status: 'skipped', reason: t('sessions.batch.skip.noTuneCards') }; return; }
-                card = buildDetectedSetCard(tunes, {
+                card = buildTunesetCard(tunes, {
                   defaultRepeat: defaultTuneRepeat(s),
                   attachments: addTunesetAbcOnConvert(s) ? [tunesetAbcPlaceholder()] : [],
                   newId: generateId,
@@ -470,7 +472,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
         },
       }));
       showBatchProgress(t('sessions.ranking.batch.decks.title'), steps, refresh);
-    });
+    }, t('library.deckInfo.add', { n: ids.length }));
   };
 
   /** Add the audio clips — EVERY passage the list shows of every selected
