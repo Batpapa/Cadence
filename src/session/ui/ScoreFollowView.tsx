@@ -10,6 +10,7 @@ import { scoreContour } from '../../components/syncedScore';
 import { MATCH_GOOD, MATCH_USABLE } from '../scoreFollow';
 import type { PlayAlongState, PlayAlongView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
+import { stripForRender } from '../../services/abcService';
 import { ExpandIcon, CollapseIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 
@@ -59,10 +60,12 @@ function stageText(status: FollowStatus | null): string {
   }
 }
 
-/** The score for this view: the modal's header already names the tune, and
- *  the rhythm is on the detection — title and R: would only push the music down. */
+/** The score for this view: what the score viewer draws (stripForRender — no
+ *  `Z:` transcriber under the last line, 2026-10-30), less what it only
+ *  silences: the modal's header already names the tune, and the rhythm is on
+ *  the detection — title and R: would only push the music down. */
 function bareScore(abc: string): string {
-  return abc.split('\n').filter(l => !/^(T|R|S):/.test(l)).join('\n');
+  return stripForRender(abc).split('\n').filter(l => !/^(T|R):/.test(l)).join('\n');
 }
 
 /** The TheSession setting a version is, from its `S:` line
