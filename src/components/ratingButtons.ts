@@ -6,8 +6,8 @@ import type { SessionRating } from '../types';
 // drift apart in order, colour or wording.
 
 /** The study screen's grid: one column on a narrow screen, two, then the four
- *  in a row. The Focus view keeps the four in a row and drops their words
- *  instead (DetectionCard's ReviewRatingGrid). */
+ *  in a row. The Focus view starts from the same widths, and tightens further
+ *  when the buttons would run off the screen (DetectionCard's ratingFit). */
 export const RATING_GRID = 'grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-2';
 
 export const RATING_BUTTONS: Array<{ rating: SessionRating; key: string; cls: string; shortcut: string }> = [
