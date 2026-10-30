@@ -258,9 +258,10 @@ export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
 }
 
 /** The rating as the study screen gives it (2026-10-30, Focus view): the four
- *  labelled buttons, the one given ringed, another one replacing it, and its
- *  own button to take it back. Same entry, same id and same instant as
- *  ReviewLogControl's — only the way of giving it differs. */
+ *  labelled buttons, the one given ringed, another one replacing it — and the
+ *  same one again taking it back, with no button of its own for that (the
+ *  user's call). Same entry, same id and same instant as ReviewLogControl's —
+ *  only the way of giving it differs. */
 export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
   cardId: string;
   reviewId: string;
@@ -269,6 +270,7 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
   onRated?: () => void;
 }) {
   const [, setTick] = useState(0);
+  const ratedAt = useRef(0);
   const gridRef = useRef<HTMLDivElement>(null);
   const [bare, setBare] = useState(false);
   useLayoutEffect(() => {
@@ -291,7 +293,14 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
   if (!existing && ts === null) return null;
 
   const rate = (rating: SessionRating) => {
-    if (existing?.rating === rating) return;
+    if (existing?.rating === rating) {
+      // The second tap of a double tap would take straight back what the
+      // first just gave — the same guard as ReviewLogControl's.
+      if (Date.now() - ratedAt.current < REMOVE_GUARD_MS) return;
+      void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1));
+      return;
+    }
+    ratedAt.current = Date.now();
     if (!existing) onRated?.();
     void ctx.mutate(s => {
       const key = `${s.currentProfileId}:${cardId}`;
@@ -307,7 +316,9 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
 
   return (
     <div class="space-y-2">
-      <p class="text-xs text-dim text-center">{t(existing ? 'study.ratedHint' : 'study.ratingHint')}</p>
+      {/* The question only: tapping the given rating again to take it back
+          needs no saying (the user's call). */}
+      <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>
       {/* Always the four in a row (2026-10-30, the user's call); their words
           go — all at once, the glyphs staying — when any one of them would
           no longer fit its quarter. Measured on the words' natural widths
@@ -317,7 +328,8 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
           <button
             key={rating}
             class={`${cls} min-w-0 ${existing?.rating === rating ? 'ring-2 ring-current' : ''}`}
-            title={t(key)}
+            // The one given carries its date, as the old remove button did.
+            title={existing?.rating === rating ? `${t(key)} · ${fmtDateTime(existing.ts, { seconds: true })}` : t(key)}
             aria-label={t(key)}
             aria-pressed={existing ? existing.rating === rating : undefined}
             onClick={() => rate(rating)}
@@ -331,15 +343,6 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
           ))}
         </span>
       </div>
-      {existing && (
-        <button
-          class="btn-ghost py-1.5 text-xs w-full text-danger hover:text-danger"
-          title={fmtDateTime(existing.ts, { seconds: true })}
-          onClick={() => { void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1)); }}
-        >
-          {t('study.deleteReview')}
-        </button>
-      )}
     </div>
   );
 }
