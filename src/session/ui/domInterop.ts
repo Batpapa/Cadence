@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 // for the general "duplicate small local helpers" convention this codebase
 // otherwise follows).
 
-function scrollContainerOf(el: HTMLElement | null): HTMLElement | null {
+export function scrollContainerOf(el: HTMLElement | null): HTMLElement | null {
   // `el` itself (e.g. the feed wrapper) is a plain, non-scrolling content div
   // in every screen that uses this — the actual scrollable element is its
   // `.overflow-y-auto` ANCESTOR (the page's own wrapper). Auto-follow needs

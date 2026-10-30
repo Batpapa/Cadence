@@ -7,6 +7,7 @@ import { findByExternalId } from '../../services/theSessionService';
 import { hasLibrary } from '../../services/pageMode';
 import { AbcPreview, TuneFacts } from './abcPreview';
 import { PlayDisc, playDiscTitle, detectionPlayAlong } from './PassRow';
+import { scrollContainerOf } from './domInterop';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
 import { getContext } from '../../store';
@@ -257,6 +258,76 @@ export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
   );
 }
 
+// ── How the Focus view lays its four rating buttons out (2026-10-30) ─────────
+// The user's rule:
+//  • the study screen's layout, by the same SCREEN widths — one per line under
+//    520 px, two per line under 900, the four in a row above (RATING_GRID);
+//  • except that, when that pushes the buttons below the bottom of the
+//    screen — makes the page scroll — two per line, and if they still do not
+//    fit, the four in a row;
+//  • whatever the layout, if any one word would not fit its button, no word at
+//    all: the glyphs alone (✗ △ ○ ✓).
+// Worked out, never tried: each layout's height is computed from one button's
+// and the grid's place on the page.
+//
+// That place is NOT quite independent of the layout, and it froze the page
+// (2026-10-30, user test, a small window): the page scrolling brings a
+// scrollbar, the narrower card wraps the tune's name onto one more line, which
+// pushes the buttons down; the tighter layout ends the scrolling, the
+// scrollbar goes, the name takes one line less — and the looser layout seems
+// to fit again. So once the buttons have been tightened for the screen's
+// height, they stay so until the scrolling area's own size changes — its
+// OUTER size, scrollbar included, which none of this moves (RatingFloor).
+
+type RatingCols = 1 | 2 | 4;
+type RatingFit = { cols: RatingCols; bare: boolean };
+
+/** `gap-2`, and the buttons' `px-3` on both sides. */
+const RATING_GAP = 8;
+const RATING_PAD_X = 2 * 12;
+
+/** The study screen's own choice, by the screen's width (RATING_GRID). */
+function studyCols(): RatingCols {
+  return window.matchMedia('(min-width: 900px)').matches ? 4
+    : window.matchMedia('(min-width: 520px)').matches ? 2
+    : 1;
+}
+
+/** The tightest layout already chosen for this size of the scrolling area —
+ *  the layout never loosens below it while that size holds (see above). */
+type RatingFloor = { size: string; cols: RatingCols };
+
+function ratingFit(grid: HTMLElement, floor: { current: RatingFloor | null }): RatingFit {
+  const button = grid.querySelector<HTMLElement>('button');
+  const words = Array.from(grid.querySelectorAll<HTMLElement>('[data-rating-word]'));
+  const widest = Math.max(0, ...words.map(w => w.offsetWidth));
+  const bareAt = (cols: RatingCols) => widest + RATING_PAD_X + 1 > (grid.clientWidth - (cols - 1) * RATING_GAP) / cols;
+
+  const base = studyCols();
+  let cols = base;
+  const scroller = scrollContainerOf(grid);
+  if (button && scroller && scroller !== grid) {
+    // Layout pixels throughout: rects are on-screen pixels, after the app's
+    // zoom, so they are divided back by it.
+    const zoom = grid.getBoundingClientRect().width / (grid.offsetWidth || 1) || 1;
+    const gridRect = grid.getBoundingClientRect();
+    const top = (gridRect.top - scroller.getBoundingClientRect().top) / zoom + scroller.scrollTop;
+    const card = grid.closest<HTMLElement>('.detection-card');
+    const below = card ? (card.getBoundingClientRect().bottom - gridRect.bottom) / zoom : 0;
+    const fits = (c: RatingCols) => {
+      const rows = 4 / c;
+      return top + rows * button.offsetHeight + (rows - 1) * RATING_GAP + below <= scroller.clientHeight;
+    };
+    while (cols < 4 && !fits(cols)) cols = cols === 1 ? 2 : 4;
+
+    const size = `${scroller.offsetWidth}x${scroller.offsetHeight}x${base}`;
+    if (floor.current?.size === size) cols = Math.max(cols, floor.current.cols) as RatingCols;
+    else floor.current = null;
+    if (cols > base) floor.current = { size, cols };
+  }
+  return { cols, bare: bareAt(cols) };
+}
+
 /** The rating as the study screen gives it (2026-10-30, Focus view): the four
  *  labelled buttons, the one given ringed, another one replacing it — and the
  *  same one again taking it back, with no button of its own for that (the
@@ -272,25 +343,50 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
   const [, setTick] = useState(0);
   const ratedAt = useRef(0);
   const gridRef = useRef<HTMLDivElement>(null);
-  const [bare, setBare] = useState(false);
+  const [fit, setFit] = useState<RatingFit>(() => ({ cols: studyCols(), bare: false }));
+  const existing = ratingOf(cardId, reviewId, ts);
+  const shown = !!existing || ts !== null;
+
+  const floorRef = useRef<RatingFloor | null>(null);
+  // The last resort, should any other back-and-forth be left that the floor
+  // does not catch: a page frozen by a layout loop is the one failure this
+  // must never cause again. Past 6 changes in a second, the layout holds
+  // until the room next changes.
+  const changesRef = useRef<number[]>([]);
+  const heldRef = useRef(false);
+  const measureRef = useRef(() => {});
+  measureRef.current = () => {
+    const grid = gridRef.current;
+    if (!grid || heldRef.current) return;
+    const next = ratingFit(grid, floorRef);
+    if (next.cols === fit.cols && next.bare === fit.bare) return;
+    const now = performance.now();
+    changesRef.current = [...changesRef.current.filter(t => now - t < 1000), now];
+    if (changesRef.current.length > 6) { heldRef.current = true; return; }
+    setFit(next);
+  };
+  // After every render — the card above can grow or shrink with what it
+  // shows — and whenever the room changes.
+  useLayoutEffect(() => measureRef.current());
   useLayoutEffect(() => {
     const grid = gridRef.current;
     if (!grid) return;
-    const words = Array.from(grid.querySelectorAll<HTMLElement>('[data-rating-word]'));
-    const measure = () => {
-      // A quarter of the row, less the gaps; a word plus the buttons' `px-3`.
-      const each = (grid.clientWidth - 3 * 8) / 4;
-      const need = Math.max(...words.map(w => w.offsetWidth)) + 2 * 12 + 1;
-      setBare(need > each);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
+    const scroller = scrollContainerOf(grid);
+    let size = scroller ? `${scroller.offsetWidth}x${scroller.offsetHeight}` : '';
+    const ro = new ResizeObserver(() => {
+      // Only the scrolling area's outer size releases a held layout.
+      const now = scroller ? `${scroller.offsetWidth}x${scroller.offsetHeight}` : '';
+      if (now !== size) { size = now; heldRef.current = false; changesRef.current = []; }
+      measureRef.current();
+    });
     ro.observe(grid);
-    for (const w of words) ro.observe(w);
+    if (scroller && scroller !== grid) ro.observe(scroller);
+    const card = grid.closest<HTMLElement>('.detection-card');
+    if (card) ro.observe(card);
+    for (const w of Array.from(grid.querySelectorAll<HTMLElement>('[data-rating-word]'))) ro.observe(w);
     return () => ro.disconnect();
-  });
-  const existing = ratingOf(cardId, reviewId, ts);
-  if (!existing && ts === null) return null;
+  }, [shown]);
+  if (!shown) return null;
 
   const rate = (rating: SessionRating) => {
     if (existing?.rating === rating) {
@@ -319,11 +415,8 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
       {/* The question only: tapping the given rating again to take it back
           needs no saying (the user's call). */}
       <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>
-      {/* Always the four in a row (2026-10-30, the user's call); their words
-          go — all at once, the glyphs staying — when any one of them would
-          no longer fit its quarter. Measured on the words' natural widths
-          (the twins below), never on what is shown, so it cannot flip. */}
-      <div ref={gridRef} class="relative grid grid-cols-4 gap-2">
+      {/* Laid out by ratingFit. */}
+      <div ref={gridRef} class={`relative grid gap-2 ${fit.cols === 4 ? 'grid-cols-4' : fit.cols === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
         {RATING_BUTTONS.map(({ rating, key, cls }) => (
           <button
             key={rating}
@@ -334,7 +427,7 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
             aria-pressed={existing ? existing.rating === rating : undefined}
             onClick={() => rate(rating)}
           >
-            {bare ? glyphOf(rating) : t(key)}
+            {fit.bare ? glyphOf(rating) : t(key)}
           </button>
         ))}
         <span class="absolute w-0 h-0 overflow-hidden invisible pointer-events-none" aria-hidden="true">
