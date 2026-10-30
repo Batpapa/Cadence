@@ -226,7 +226,7 @@ export function startScenario(id: string): void {
     // lit button, and the step never moved on (2026-10-27). The step moves on
     // once the click has done what it does.
     clicked: node => {
-      if (activeStep()?.action === 'click' && d?.getActiveElement()?.contains(node)) setTimeout(advance, 0);
+      if (activeStep()?.action === 'click' && d?.getActiveElement()?.contains(node)) setTimeout(clickedThrough, 0);
     },
   };
 
@@ -292,6 +292,15 @@ export function startScenario(id: string): void {
     settled = false;
     if (next >= steps.length) { finished = true; d.destroy(); return; }
     d.moveTo(next);
+  };
+
+  /** A 'click' step whose press has done what it does: its tidying first —
+   *  the side panel a deck was opened from, put away where it covers the
+   *  page — then on. */
+  const clickedThrough = () => {
+    if (!d || !settled) return;
+    activeStep()?.after?.(act);
+    advance();
   };
 
   // The lit box and the bubble follow what moves under them, frame by frame:

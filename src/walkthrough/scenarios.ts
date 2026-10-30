@@ -6,6 +6,7 @@ import { onScreen, type TourTarget } from './targets';
 import { irishTradEnabled, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered, type ExtensionId } from '../services/extensions';
 import { sessionsOf } from '../session/detections';
 import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
+import { decksInSidebarOrder, revealDeckInSidebar } from '../components/sidebar';
 
 // ── Guided walkthroughs (2026-10-27) ─────────────────────────────────────────
 // Short scenarios in which the user does the real thing, step by step: the
@@ -63,9 +64,10 @@ export interface TourStep {
   /** Left out of the run when false at its start — a button that only exists
    *  once there are cards, say. Decided up front so the count is right. */
   available?: () => boolean;
-  /** Run on « Suivant », before the next step: the walkthrough tidying up
-   *  after itself — closing the menu it had them open, emptying the search
-   *  it had them type. */
+  /** Run on « Suivant » — or, on a 'click' step, once the press has done
+   *  what it does — before the next step: the walkthrough tidying up after
+   *  itself — closing the menu it had them open, emptying the search it had
+   *  them type, putting away the side panel where it covers the page. */
   after?: (act: TourAct) => void;
 }
 
@@ -99,12 +101,31 @@ const deckIds = () => Object.keys(appState.value.decks);
 const reviewCount = () => Object.values(appState.value.cardWorks).reduce((n, w) => n + w.history.length, 0);
 const needsACard = { met: () => cardCount() > 0, hintKey: 'walkthrough.needsCard' };
 
-/** A deck with cards in it, on Home where a step can have the user open it. */
-function homeDeckWithCards(): string | undefined {
+/** A deck with cards in it, the first the side panel lists, wherever it is
+ *  filed: the panel reaches any depth in one press (2026-10-30) — Home only
+ *  showed the decks at its root, and the example library has none there. */
+function deckWithCards(): string | undefined {
   const u = appState.value;
-  return u.rootDeckIds.find(id => (u.decks[id]?.entries.length ?? 0) > 0);
+  return decksInSidebarOrder(u).find(id => (u.decks[id]?.entries.length ?? 0) > 0);
 }
-const needsAHomeDeck = { met: () => !!homeDeckWithCards(), hintKey: 'walkthrough.needsDeck' };
+const needsADeck = { met: () => !!deckWithCards(), hintKey: 'walkthrough.needsDeck' };
+
+/** The steps that open `deckId` from the side panel: the panel opened if it
+ *  is put away, the deck's row shown — its two dots, when `dots` — then
+ *  pressed. Its folders are unfolded up front, the row must be there to light.
+ *  Where the panel slides over the page (a narrow window), it is put away
+ *  once the deck is open: what follows is on the page beneath (the author,
+ *  2026-10-30). */
+function openDeckFromSidebar(deckId: string, openKeys: { titleKey: string; textKey: string }, dots: boolean): TourStep[] {
+  revealDeckInSidebar(deckId, appState.value);
+  const row = `sidebar-deck-${deckId}`;
+  return [
+    { target: 'sidebar', action: 'click', titleKey: 'walkthrough.discover.sidebar.title', textKey: 'walkthrough.discover.sidebar.open',
+      available: () => !onScreen('sidebar-panel') },
+    ...(dots ? [{ target: row, side: 'right' as const, titleKey: 'walkthrough.progress.dots.title', textKey: 'walkthrough.progress.dots.text' }] : []),
+    { target: row, side: 'right', action: 'click', ...openKeys, after: act => act.click('sidebar-backdrop') },
+  ];
+}
 const profileIds = () => appState.value.profileIds ?? [];
 const tuneCount = () => Object.values(appState.value.cards).filter(c => c.type === CARD_TYPE_TUNE).length;
 const analysisCount = () => Object.keys(sessionsOf(appState.value)).length;
@@ -138,12 +159,14 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
       { target: 'folders', titleKey: 'walkthrough.discover.folders.title', textKey: 'walkthrough.discover.folders.text' },
       { target: 'decks', titleKey: 'walkthrough.discover.decks.title', textKey: 'walkthrough.discover.decks.text' },
       // The side panel: opened by the user if it is put away, then shown.
-      // Left open — it is where they will find their decks from now on.
+      // Left open — it is where they will find their decks from now on —
+      // except where it slides over the page, which the steps after need.
       { target: 'sidebar', action: 'click', titleKey: 'walkthrough.discover.sidebar.title', textKey: 'walkthrough.discover.sidebar.open',
         available: () => !onScreen('sidebar-panel') },
       { target: 'sidebar', titleKey: 'walkthrough.discover.sidebar.title', textKey: 'walkthrough.discover.sidebar.toggle',
         available: () => onScreen('sidebar-panel') },
-      { target: 'sidebar-panel', side: 'right', titleKey: 'walkthrough.discover.sidebarPanel.title', textKey: 'walkthrough.discover.sidebarPanel.text' },
+      { target: 'sidebar-panel', side: 'right', titleKey: 'walkthrough.discover.sidebarPanel.title', textKey: 'walkthrough.discover.sidebarPanel.text',
+        after: act => act.click('sidebar-backdrop') },
       { target: 'nav-modules', titleKey: 'walkthrough.discover.modules.title', textKey: 'walkthrough.discover.modules.text' },
       { target: 'search', titleKey: 'walkthrough.discover.search.title', textKey: 'walkthrough.discover.search.text',
         available: () => onScreen('search') },
@@ -312,14 +335,13 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
     titleKey: 'walkthrough.progress.title',
     descKey: 'walkthrough.progress.desc',
     offered: () => true,
-    requires: needsAHomeDeck,
+    requires: needsADeck,
     steps: () => {
-      const deckId = homeDeckWithCards();
+      const deckId = deckWithCards()!;
       return [
         { target: 'dashboard', titleKey: 'walkthrough.progress.dashboard.title', textKey: 'walkthrough.progress.dashboard.text' },
         { target: 'activity', action: 'do', deny: ['activity-library'], titleKey: 'walkthrough.progress.activity.title', textKey: 'walkthrough.progress.activity.text' },
-        { target: 'decks', titleKey: 'walkthrough.progress.dots.title', textKey: 'walkthrough.progress.dots.text' },
-        { target: `deck-${deckId}`, action: 'click', titleKey: 'walkthrough.progress.openDeck.title', textKey: 'walkthrough.progress.openDeck.text' },
+        ...openDeckFromSidebar(deckId, { titleKey: 'walkthrough.progress.openDeck.title', textKey: 'walkthrough.progress.openDeck.text' }, true),
         { target: 'deck-stats', titleKey: 'walkthrough.progress.deckStats.title', textKey: 'walkthrough.progress.deckStats.text' },
         { target: 'deck-card-list', titleKey: 'walkthrough.progress.deckCards.title', textKey: 'walkthrough.progress.deckCards.text' },
         { target: 'deck-row-name', action: 'click', titleKey: 'walkthrough.progress.openCard.title', textKey: 'walkthrough.progress.openCard.text' },
@@ -337,15 +359,15 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
     titleKey: 'walkthrough.importance.title',
     descKey: 'walkthrough.importance.desc',
     offered: () => true,
-    requires: needsAHomeDeck,
+    requires: needsADeck,
     steps: () => {
-      const deckId = homeDeckWithCards()!;
+      const deckId = deckWithCards()!;
       // The first card of the deck — the first row, the one the steps light.
       const entry = () => appState.value.decks[deckId]?.entries[0];
       const before = entry()?.importance;
       return [
         { titleKey: 'walkthrough.importance.intro.title', textKey: 'walkthrough.importance.intro.text' },
-        { target: `deck-${deckId}`, action: 'click', titleKey: 'walkthrough.importance.openDeck.title', textKey: 'walkthrough.importance.openDeck.text' },
+        ...openDeckFromSidebar(deckId, { titleKey: 'walkthrough.importance.openDeck.title', textKey: 'walkthrough.importance.openDeck.text' }, false),
         { target: 'deck-card-list', titleKey: 'walkthrough.importance.column.title', textKey: 'walkthrough.importance.column.text' },
         { target: 'deck-importance', action: 'do', until: () => entry()?.importance !== before,
           titleKey: 'walkthrough.importance.set.title', textKey: 'walkthrough.importance.set.text' },

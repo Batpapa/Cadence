@@ -164,7 +164,7 @@ function AppRoot() {
       <AppHeader ctx={ctx} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} isPortraitPhone={isPortraitPhone} />
       <div class="relative flex flex-1 overflow-hidden min-h-0">
         {isNarrow && !sidebarCollapsed && (
-          <div class="absolute inset-0 z-20 bg-black/40" onClick={toggleSidebar} />
+          <div class="absolute inset-0 z-20 bg-black/40" data-tour="sidebar-backdrop" onClick={toggleSidebar} />
         )}
         <div
           ref={wrapperRef}
