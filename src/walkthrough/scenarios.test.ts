@@ -51,6 +51,7 @@ describe('walkthrough scenarios', () => {
     // whatever starts that way.
     const prefixes = [...source.matchAll(/\bdata-tour=\{`([^`$]+)\$\{/g)].map(m => m[1]!);
     expect(prefixes).toContain('deck-');
+    expect(prefixes).toContain('sidebar-deck-');
     // A target computed during the run (the deck just made) cannot be checked
     // here; the template that names it is, just above.
     const targets = steps.flatMap(st => [

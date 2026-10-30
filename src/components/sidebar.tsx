@@ -197,6 +197,28 @@ function expandAncestors(collapsed: Set<string>, id: string, type: 'deck' | 'fol
   }
 }
 
+/** Opens every folder above a deck, so its row can be shown — what a guided
+ *  walkthrough needs when it points at a deck the user may have folded away. */
+export function revealDeckInSidebar(deckId: string, user: AppState): void {
+  updateCollapsed(next => expandAncestors(next, deckId, 'deck', user));
+}
+
+/** The decks in the order the panel lists them: each folder's sub-folders,
+ *  then its decks, and the decks at the root last. */
+export function decksInSidebarOrder(user: AppState): string[] {
+  const out: string[] = [];
+  const visit = (folderIds: string[]) => {
+    for (const id of folderIds) {
+      const f = user.folders[id];
+      if (!f) continue;
+      visit(f.folderIds);
+      out.push(...f.deckIds);
+    }
+  };
+  visit(user.rootFolderIds);
+  return [...out, ...user.rootDeckIds];
+}
+
 function collectAllFolderIds(user: AppState): string[] {
   const ids: string[] = [];
   const visit = (folderIds: string[]) => {
@@ -240,6 +262,7 @@ function DeckItem({ ctx, deck, depth }: { ctx: AppContext; deck: Deck; depth: nu
   return (
     <div
       ref={ref}
+      data-tour={`sidebar-deck-${deck.id}`}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
       class={`flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer group transition-colors text-sm ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`}
       onClick={() => ctx.navigate({ view: 'deck', deckId: deck.id })}
