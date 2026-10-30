@@ -145,16 +145,6 @@ export function withChains(anns: Detection[], duration: number): Array<ListGap |
   return out;
 }
 
-/** Whether a set holds a silence — one it was linked across by hand. */
-export function hasPause(chain: readonly Detection[], duration: number): boolean {
-  let cursor = chain[0]?.start ?? 0;
-  for (const d of chain) {
-    if (d.start - cursor >= GAP_MIN_S) return true;
-    cursor = Math.max(cursor, d.end ?? duration);
-  }
-  return false;
-}
-
 /** Just the chains, as lists of detections — what the set table and the
  *  searches across analyses are built from. */
 export function chainsOf(anns: Detection[], duration: number): Detection[][] {

@@ -22,7 +22,7 @@ import { theSessionOffered, irishTuneInfoOffered } from '../services/extensions'
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
 import { showDeckChoiceModal } from './deckSelector';
-import { CheckIcon } from './icons';
+import { CheckIcon, ArrowLeftIcon, ArrowRightIcon } from './icons';
 import { registerOverlay } from './overlayStack';
 import { usePinnedTop } from './modal';
 
@@ -1206,7 +1206,7 @@ function ChoiceCard({ icon, label, desc, accentColor, tour, onClick }: {
     >
       <span class="shrink-0 flex items-center" style={{ color: accentColor }} dangerouslySetInnerHTML={{ __html: icon }} />
       <div class="flex-1 text-sm font-medium text-primary">{label}</div>
-      <span class="text-dim text-base leading-none shrink-0">›</span>
+      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
     </button>
   );
 }
@@ -1520,7 +1520,7 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
         <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div class="flex items-center gap-2 min-w-0">
             {step !== 'root' && (
-              <button class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0" onClick={() => setStep(backParent(step))}>←</button>
+              <button class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0 flex items-center" aria-label={t('modal.back')} onClick={() => setStep(backParent(step))}><ArrowLeftIcon size={16} /></button>
             )}
             <h2 class="text-sm font-semibold text-primary truncate">{TITLES[step]}</h2>
           </div>

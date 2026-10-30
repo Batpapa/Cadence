@@ -2,7 +2,7 @@ import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { CardSearchField } from '../components/cardSearchField';
-import { TrashIcon, StarIcon, PlusIcon, LibraryIcon } from '../components/icons';
+import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, StudyIcon } from '../components/icons';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckToParent } from '../services/deckService';
@@ -191,12 +191,13 @@ export function DeckView({ deckId }: { deckId: string }) {
             {/* Stays clickable when all cards are mastered: the study modal
                 hosts the "exclude mastered" toggle that unlocks that case. */}
             <button
-              class={noCards
+              class={`${noCards
                 ? 'btn px-3 bg-elevated text-dim cursor-default text-sm font-medium'
-                : 'btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium'}
+                : 'btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium'} inline-flex items-center gap-1.5`}
               title={t('deck.studyTitle')}
               onClick={!noCards ? () => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId }) : undefined}
             >
+              <StudyIcon size={15} />
               {t('deck.study')}
             </button>
             <button

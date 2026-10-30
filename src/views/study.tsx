@@ -10,6 +10,7 @@ import { isTuneset } from '../services/cardTypeService';
 import { IncipitRow } from '../components/incipit';
 import { TuneIcon } from '../components/icons';
 import { STRATEGY_ICONS } from '../components/studyModal';
+import { RATING_BUTTONS, RATING_GRID } from '../components/ratingButtons';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
 import { fmtDate } from '../services/dateFormat';
 
@@ -24,12 +25,7 @@ function isRandomDraw(strategy: StudyStrategy): boolean {
   return strategy === 'random' || strategy === 'stochastic';
 }
 
-const RATINGS: Array<{ rating: SessionRating; key: string; cls: string; shortcut: string }> = [
-  { rating: 'again', key: 'rating.again', cls: 'btn py-2.5 text-sm font-semibold bg-danger/10 hover:bg-danger/20 text-danger',   shortcut: '1' },
-  { rating: 'hard',  key: 'rating.hard',  cls: 'btn py-2.5 text-sm font-semibold bg-warn/10 hover:bg-warn/20 text-warn',          shortcut: '2' },
-  { rating: 'good',  key: 'rating.good',  cls: 'btn py-2.5 text-sm font-semibold bg-accent/10 hover:bg-accent/20 text-accent',    shortcut: '3' },
-  { rating: 'easy',  key: 'rating.easy',  cls: 'btn py-2.5 text-sm font-semibold bg-success/10 hover:bg-success/20 text-success', shortcut: '4' },
-];
+const RATINGS = RATING_BUTTONS;
 
 function buildDeck(user: AppState, deckId?: string, cardIds?: string[], studyTitle?: string): Deck | undefined {
   if (deckId) return user.decks[deckId];
@@ -366,7 +362,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
 
           <div class="space-y-2">
             <p class="text-xs text-dim text-center">{t(ratedEntry ? 'study.ratedHint' : 'study.ratingHint')}</p>
-            <div class="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-2" data-tour="study-ratings">
+            <div class={RATING_GRID} data-tour="study-ratings">
               {RATINGS.map(({ rating, key, cls, shortcut }) => (
                 <button
                   key={rating}

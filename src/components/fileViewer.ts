@@ -7,7 +7,7 @@ import { mkCustomSelect } from './customSelectVanilla';
 import { qualityColour, faded } from './followColour';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon,
-  WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon } from './icons';
+  WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
@@ -1055,16 +1055,18 @@ export function showPreviewModal(
 
     const versionNav = document.createElement('div');
     versionNav.className = `flex items-center gap-1 p-1 bg-bg rounded-lg w-fit ${versionCount <= 1 ? 'hidden' : ''}`;
-    const mkNavBtn = (glyph: string): HTMLButtonElement => {
+    const mkNavBtn = (icon: typeof ArrowLeftIcon, label: string): HTMLButtonElement => {
       const b = document.createElement('button');
-      b.textContent = glyph;
+      b.append(iconElement(icon, 16));
+      b.setAttribute('aria-label', label);
+      b.title = label;
       b.className = 'abc-tool-btn text-xs font-medium text-muted hover:text-primary hover:bg-elevated disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted';
       return b;
     };
-    const prevBtn = mkNavBtn('←');
+    const prevBtn = mkNavBtn(ArrowLeftIcon, t('fileViewer.abc.prevVersion'));
     const versionLabel = document.createElement('span');
     versionLabel.className = 'px-1 text-xs font-medium text-muted tabular-nums';
-    const nextBtn = mkNavBtn('→');
+    const nextBtn = mkNavBtn(ArrowRightIcon, t('fileViewer.abc.nextVersion'));
     // Leaving a version with an edit pending asks first — see `draft`.
     prevBtn.onclick = () => settleDraft(() => goToVersion(currentIndex - 1));
     nextBtn.onclick = () => settleDraft(() => goToVersion(currentIndex + 1));

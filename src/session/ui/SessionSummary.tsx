@@ -30,12 +30,13 @@ import { showBoundEditor, capitalizeWords, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import {
-  ANALYSIS_VIEWS, analysisView, analysisStudy, setAnalysisView, toggleAnalysisStudy, showsDetails, showsEditing,
-  type AnalysisView,
+  analysisView, analysisStudy, showsDetails, showsEditing, showsFocus,
 } from './analysisView';
+import { AnalysisViewBar } from './AnalysisViewBar';
+import { FocusView, type FocusSpot } from './FocusView';
 import { devMode } from '../../services/devMode';
 import { appState } from '../../store';
-import { headPosition, withChains, withGaps, type ListAnn, type ListChain, type ListGap } from './timelineModel';
+import { headPosition, withChains, withGaps, chainsOf, type ListAnn, type ListChain, type ListGap } from './timelineModel';
 import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
 import { experimentalSets } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
@@ -110,12 +111,6 @@ const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
  *  code — yellow-free here since a copy is either made or not — so "is this on
  *  Drive" is read the same way in both places. A second visual language for the
  *  same idea is how two indicators come to disagree. */
-const VIEW_LABEL: Record<AnalysisView, string> = {
-  simple:   'sessions.view.simple',
-  detailed: 'sessions.view.detailed',
-  editor:   'sessions.view.editor',
-};
-
 function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () => void }) {
   // Hover never changes the HUE, only its lightness, and only where there is
   // no state colour to confuse: the accent is already what "copying" looks
@@ -246,6 +241,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // The last reading, as a key, so the list only re-renders when the answer
   // actually changes — a couple of times a tune, not four times a second.
   const litKeyRef = useRef('');
+  // The one detection the Focus view shows when the head lights several — the
+  // one it already showed, as long as it is still lit, so that crossing a join
+  // does not flick between the two. See focusSpot below.
+  const focusIdRef = useRef<string | null>(annotationId ?? null);
 
   /** Moves the head to `tSec` and re-reads what it covers. The single place
    *  the head is written, whether the audio drove it or a pointer did — with
@@ -564,7 +563,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  long list being an animation nobody asked to watch. */
   const goToAnn = (ann: Detection, behavior: ScrollBehavior = 'smooth') => {
     setTargetId(ann.id);
+    // The Focus view shows the one pointed at, not its lit neighbour.
+    focusIdRef.current = ann.id;
     seekTo(ann.start);
+    if (showsFocus(analysisView.value)) return;
     requestAnimationFrame(() => {
       listWrapRef.current?.querySelector(`[data-ann-id="${ann.id}"]`)?.scrollIntoView({ behavior, block: 'center' });
     });
@@ -608,7 +610,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // it is the gap row that gets centred.
   useEffect(() => {
     const wrap = listWrapRef.current;
-    if (!wrap) return;
+    // The Focus view has no list to follow: it shows the lit tune in place.
+    if (!wrap || showsFocus(analysisView.value)) return;
     const sel = lit.gapFrom !== null ? `[data-gap-from="${lit.gapFrom}"]`
       : lit.ids.length > 0 ? `[data-ann-id="${lit.ids[0]}"]`
       : null;
@@ -746,6 +749,36 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const details = showsDetails(view);
   const editing = showsEditing(view);
   const study = analysisStudy.value;
+  const focusOn = showsFocus(view);
+
+  /** What the Focus view shows: wherever the head stands, as the list lights
+   *  it. A silence when it stands in one; of several tunes lit across a join,
+   *  the one already shown, else the last to start (the one being entered);
+   *  where nothing is lit — a hole too short to be a silence, or nothing
+   *  played yet — the last one shown, else the first. */
+  const focusSpot = ((): FocusSpot => {
+    const anns = session.annotations;
+    if (lit.gapFrom !== null) {
+      const gap = withGaps(anns, session.duration).find((x): x is Extract<typeof x, { kind: 'gap' }> => x.kind === 'gap' && x.from === lit.gapFrom);
+      if (gap) return { kind: 'gap', gap };
+    }
+    const held = focusIdRef.current;
+    const id = lit.ids.length > 0
+      ? (held !== null && lit.ids.includes(held) ? held : lit.ids[lit.ids.length - 1]!)
+      : (held !== null && anns.some(a => a.id === held) ? held : anns[0]?.id);
+    if (!id) return null;
+    focusIdRef.current = id;
+    return { kind: 'ann', id };
+  })();
+
+  /** The Focus view's arrows and set names: the head goes to that tune's start,
+   *  as a click on its segment does. */
+  const focusGo = (ann: Detection) => {
+    dropTarget();
+    focusIdRef.current = ann.id;
+    seekTo(ann.start);
+    bump();
+  };
 
   const cardOptsFor = (ann: Detection, i: number): DetectionCardOptions => ({
     ctx,
@@ -1198,36 +1231,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             matches the timeline's `mt-3` just below, so the bar sits in equal
             air top and bottom. Change one of the three and change all three. */}
         <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3" data-tour="summary-player">
-          {/* How much of each tune is shown (analysisView.ts), as tabs above
-              the transport and pinned with it (the user's design): the view is
-              changed while reading the list, wherever it is scrolled. "Study"
-              on its own at the far end: it is not a fourth view but a switch
-              that holds in all three. 32 px tall — see `top-14` above. */}
-          <div class="flex items-center gap-2 h-8" data-tour="summary-views">
-            <div class="flex gap-1 p-1 bg-elevated rounded-lg" role="tablist" aria-label={t('sessions.view.label')}>
-              {ANALYSIS_VIEWS.map(v => (
-                <button
-                  key={v}
-                  role="tab"
-                  aria-selected={view === v}
-                  class={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                    view === v ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-surface'}`}
-                  onClick={() => setAnalysisView(v)}
-                >
-                  {t(VIEW_LABEL[v] as Parameters<typeof t>[0])}
-                </button>
-              ))}
-            </div>
-            <button
-              class={`ml-auto px-3 py-1 text-xs font-medium rounded-full border transition-colors cursor-pointer ${
-                study ? 'border-accent/60 bg-accent/10 text-accent' : 'border-border text-muted hover:text-primary hover:border-accent/50'}`}
-              title={t('sessions.view.study.hint')}
-              aria-pressed={study}
-              onClick={toggleAnalysisStudy}
-            >
-              {t('sessions.view.study')}
-            </button>
-          </div>
+          {/* How much of each tune is shown, as tabs above the transport and
+              pinned with it (the user's design): the view is changed while
+              reading the list, wherever it is scrolled. 32 px tall — see
+              `top-14` above. */}
+          <AnalysisViewBar />
           {audioUrl && (
             <div class="flex items-center gap-2 flex-wrap mt-3">
               <button
@@ -1329,8 +1337,18 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           )}
         </div>
 
-        <div ref={listWrapRef} class="mt-3 space-y-2">
-          {(setsOn
+        {/* `analysis-list`: its width decides where every card's name goes
+            (styles.css). */}
+        <div ref={listWrapRef} class="analysis-list mt-3 space-y-2">
+          {focusOn ? (
+            <FocusView
+              anns={session.annotations}
+              spot={focusSpot}
+              chains={setsOn ? chainsOf(session.annotations, session.duration) : []}
+              renderCard={(ann, note) => <DetectionCard key={ann.id} ann={ann} opts={{ ...cardOptsFor(ann, session.annotations.indexOf(ann)), focus: true, focusNote: note }} />}
+              onGo={focusGo}
+            />
+          ) : (setsOn
             ? withChains(session.annotations, session.duration)
             : withGaps(session.annotations, session.duration)
           ).map(item => (

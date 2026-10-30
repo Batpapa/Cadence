@@ -4,7 +4,10 @@ import type { AppContext } from '../../types';
 import type { ImportSession, ImportProgress } from '../importSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
-import { TunesetDetectionCard, FeedList, feedItems } from './TunesetDetectionCard';
+import { TunesetDetectionCard, FeedList, feedItems, feedChains } from './TunesetDetectionCard';
+import { AnalysisViewBar } from './AnalysisViewBar';
+import { analysisView, analysisStudy, showsDetails, showsEditing, showsFocus } from './analysisView';
+import { FocusView, useFeedFocus } from './FocusView';
 import { recordOf } from '../tunesets';
 import { useAutoFollowScroll } from './domInterop';
 import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta, repinSessionDate } from './sessionUiShared';
@@ -119,8 +122,17 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   // alternatives picker — and logging a practice, which claims only that the
   // tune was played and needs no listening back.
 
+  // The analysis views and "Study", as on the live feed (2026-10-30).
+  const view = analysisView.value;
+  const details = showsDetails(view);
+  const editing = showsEditing(view);
+  const study = analysisStudy.value;
+  const focus = useFeedFocus(annotations);
+
   const cardOpts: DetectionCardOptions = {
     ctx,
+    details,
+    study,
     onOpenCard,
     onCardAdded: () => setDetections(imp.getDetections()),
     getPinnedDeckIds: () => imp.pinnedDeckIds,
@@ -137,7 +149,8 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     sessionId: imp.sessionId,
   };
 
-  useAutoFollowScroll(feedAnchorRef, [annotations]);
+  // Not in the Focus view — see LiveSession's.
+  useAutoFollowScroll(feedAnchorRef, [showsFocus(view) ? null : annotations]);
 
   const pct = progress.totalS > 0 ? Math.min(100, (progress.analyzedS / progress.totalS) * 100) : 0;
 
@@ -173,10 +186,22 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
           transport — see LiveSession.tsx for the three classes that make it
           hold. */}
       <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3">
-        <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg">
+        <AnalysisViewBar />
+        <div class="flex items-center gap-3 p-3 mt-3 rounded-lg border border-border bg-bg">
           <span class="text-xs font-mono text-muted shrink-0 tabular-nums">{fmtLongTime(progress.analyzedS)} / {fmtLongTime(progress.totalS)}</span>
-          <div class="flex-1 h-1.5 rounded-full bg-elevated overflow-hidden">
-            <div class="h-full bg-accent transition-[width] duration-200" style={{ width: `${pct}%` }} />
+          <div class="relative flex-1">
+            <div class="h-1.5 rounded-full bg-elevated overflow-hidden">
+              <div class="h-full bg-accent transition-[width] duration-200" style={{ width: `${pct}%` }} />
+            </div>
+            {/* The time left, right under the bar and centred on it, in the
+                room the row already has below it (2026-10-30, the user's
+                call): out of the flow, so it moves nothing and saves the line
+                it used to take under the bar's box. */}
+            {progress.etaS !== null && (
+              <p class="absolute inset-x-0 top-full mt-1 text-[11px] leading-none text-dim text-center whitespace-nowrap">
+                {t('sessions.etaRemaining', { eta: fmtEta(progress.etaS) })}
+              </p>
+            )}
           </div>
           <button
             class="btn-danger px-3 shrink-0 disabled:opacity-50"
@@ -188,14 +213,26 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         </div>
       </div>
 
-      <p class="text-[11px] text-dim text-center">{progress.etaS !== null ? t('sessions.etaRemaining', { eta: fmtEta(progress.etaS) }) : ''}</p>
       <p class="text-xs text-dim mt-2 text-center">{statusText}</p>
       {importPlaybackWarn.value && <p class="text-xs text-amber-500 mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
 
-      <div ref={feedAnchorRef} class="mt-3 space-y-2">
+      {/* `analysis-list`: see the summary's. */}
+      <div ref={feedAnchorRef} class="analysis-list mt-3 space-y-2">
         {(() => {
           // The sets as they form — see LiveSession's feed.
           const feed = feedItems(annotations);
+          if (showsFocus(view)) {
+            return (
+              <FocusView
+                anns={annotations}
+                spot={focus.spot}
+                chains={feedChains(feed)}
+                renderCard={(ann, note) => <DetectionCard key={ann.id} ann={ann} opts={{ ...cardOpts, focus: true, focusNote: note }} />}
+                onGo={focus.onGo}
+                feed={{ kind: 'import', latest: focus.latest, onBack: focus.onBack }}
+              />
+            );
+          }
           // The table only when there is a set to show: never asked, nothing
           // is saved with the analysis (the sets off).
           const table = feed.items.some(x => x.kind === 'chain') ? imp.getTunesets() : [];
@@ -216,12 +253,14 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
                     record: recordOf(table, chain),
                     onToggleLike: (r) => { imp.toggleSetLike(r.id); setDetections(imp.getDetections()); },
                     sessionStartMs: imp.dateOverride ? Date.parse(imp.dateOverride) : undefined,
+                    details,
+                    study,
                   }}
                 >
                   {children}
                 </TunesetDetectionCard>
               )}
-              onSetOpens={(id, opens) => { imp.setOpensSet(id, opens); setDetections(imp.getDetections()); }}
+              onSetOpens={editing ? (id, opens) => { imp.setOpensSet(id, opens); setDetections(imp.getDetections()); } : undefined}
             />
           );
         })()}

@@ -9,15 +9,22 @@ import { signal } from '@preact/signals';
 //   detailed — and the dance, the mode, the times, the clip controls;
 //   editor   — and everything that changes the analysis: bounds, silences
 //              (fill, give), deletion, merge, set links. What it always was.
-// Ratings are a fourth switch beside them, "Study", whatever the view.
+//   focus    — one tune at a time, large, with the detailed view's facts, and
+//              arrows to the tune before and after (2026-10-30, a tester's
+//              request: a phone put down beside you at a session). See
+//              FocusView.tsx.
+// Ratings are a switch beside them, "Study", whatever the view.
+//
+// The same views, and the same switch, on the live and import feeds since
+// 2026-10-30: they are analyses too, only still being made.
 //
 // Per DEVICE, in localStorage (the user's call): a phone at a session and a
 // desk with the analysis open are not doing the same thing. Absent means the
 // default — simple, study off — and only another choice is stored.
 
-export type AnalysisView = 'simple' | 'detailed' | 'editor';
+export type AnalysisView = 'simple' | 'detailed' | 'editor' | 'focus';
 
-export const ANALYSIS_VIEWS: readonly AnalysisView[] = ['simple', 'detailed', 'editor'];
+export const ANALYSIS_VIEWS: readonly AnalysisView[] = ['simple', 'detailed', 'editor', 'focus'];
 
 const VIEW_KEY = 'cadence_analysis_view';
 const STUDY_KEY = 'cadence_analysis_study';
@@ -25,7 +32,7 @@ const STUDY_KEY = 'cadence_analysis_study';
 function readView(): AnalysisView {
   try {
     const v = localStorage.getItem(VIEW_KEY);
-    return v === 'detailed' || v === 'editor' ? v : 'simple';
+    return v === 'detailed' || v === 'editor' || v === 'focus' ? v : 'simple';
   } catch {
     return 'simple';
   }
@@ -62,3 +69,4 @@ export function toggleAnalysisStudy(): void {
 /** What a view shows, asked by name rather than by comparing views. */
 export const showsDetails = (v: AnalysisView) => v !== 'simple';
 export const showsEditing = (v: AnalysisView) => v === 'editor';
+export const showsFocus = (v: AnalysisView) => v === 'focus';

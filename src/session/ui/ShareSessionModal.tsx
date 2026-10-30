@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal, updateTopModal } from '../../components/modal';
+import { ArrowRightIcon } from '../../components/icons';
 import { loadSessionAudio, probeSyncedAudio, downloadSyncedAudioOnce, type SyncedAudioProbe } from '../db';
 import { shareSession, exportSessionFile } from '../../services/sessionShareService';
 import { exportAnalysisCSV, exportAnalysisTXT, exportAnalysisClipsZip, analysisTextReport } from '../../services/analysisExport';
@@ -43,7 +44,7 @@ export function ShareChoiceCard({ icon, label, desc, color, onClick, disabled = 
     >
       <span class="shrink-0 flex items-center" style={{ color }} dangerouslySetInnerHTML={{ __html: icon }} />
       <div class="flex-1 text-sm font-medium text-primary">{label}</div>
-      <span class="text-dim text-base leading-none shrink-0">›</span>
+      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
     </button>
   );
 }

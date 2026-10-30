@@ -15,9 +15,8 @@ import { fmtLongTime, tuneName, type ClipSessionRef } from './sessionUiShared';
 import { SetClipControls, TunesetDeckButton, setReviewId } from './tunesetShared';
 import { reviewEntryTs } from '../reviewLink';
 import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
-import { withChains, hasPause, type ListAnn, type ListChain, type ListGap } from './timelineModel';
+import { withChains, type ListAnn, type ListChain, type ListGap } from './timelineModel';
 import { FeedSilence, setRows, withCutMark, type SetOpens } from './setBreaks';
-
 // ── A set heard in an analysis (2026-10-19) ──────────────────────────────────
 // Shaped like a detection and holding its detections, shown as they are —
 // "detections inside a detection" (the user's design). A set here is only a
@@ -60,22 +59,24 @@ type FeedItem = ListAnn | ListChain | ListGap;
 
 export function feedItems(anns: Detection[]): { duration: number; items: FeedItem[] } {
   const duration = anns.reduce((m, a) => Math.max(m, a.end ?? a.start), 0);
-  // Off (the default while it is iterated on), the feed is the flat list it
-  // always was.
+  // With the sets turned off in the module's settings, the feed is the flat
+  // list it always was.
   if (!experimentalSets(getContext().user)) return { duration, items: anns.map((ann, i) => ({ kind: 'ann', ann, i, cut: false })) };
   return { duration, items: withChains(anns, duration).filter(x => x.kind !== 'gap' || !!x.nextId) };
 }
 
 /** A feed, its marks and the controls that set them — the same for a live
- *  recording and an import. The screen draws each tune and each set. */
+ *  recording and an import. The screen draws each tune and each set.
+ *  No `onSetOpens`, no controls: a feed outside the editor view
+ *  (analysisView.ts), as the finished analysis does it. */
 export function FeedList({ feed, renderAnn, renderSet, onSetOpens }: {
   feed: ReturnType<typeof feedItems>;
   renderAnn: (ann: Detection) => ComponentChild;
   renderSet: (chain: Detection[], children: ComponentChild) => ComponentChild;
-  onSetOpens: SetOpens;
+  onSetOpens?: SetOpens;
 }) {
   const silence = (g: ListGap, linked: boolean) => (
-    <FeedSilence key={`gap-${g.from}`} len={g.len} linked={linked} onSetOpens={(o) => onSetOpens(g.nextId!, o)} />
+    <FeedSilence key={`gap-${g.from}`} len={g.len} linked={linked} onSetOpens={onSetOpens && ((o) => onSetOpens(g.nextId!, o))} />
   );
   return (
     <>
@@ -84,10 +85,17 @@ export function FeedList({ feed, renderAnn, renderSet, onSetOpens }: {
         const node = item.kind === 'ann'
           ? renderAnn(item.ann)
           : renderSet(item.members.map(m => m.ann), setRows(item.rows, r => renderAnn(r.ann), g => silence(g, true), onSetOpens));
-        return withCutMark(item, node, onSetOpens);
+        return onSetOpens ? withCutMark(item, node, onSetOpens) : node;
       })}
     </>
   );
+}
+
+/** A feed's sets, each as its detections — what the Focus view names. */
+export function feedChains(feed: ReturnType<typeof feedItems>): Detection[][] {
+  return feed.items
+    .filter((x): x is ListChain => x.kind === 'chain')
+    .map(x => x.members.map(m => m.ann));
 }
 
 /** The id the set plays under, in whichever player plays it. */
@@ -159,25 +167,29 @@ export function TunesetDetectionCard({ chain, opts, children }: {
           onExplain={(ids) => setMissing(m => (m ? null : ids ?? []))}
         />
 
-        {setCard ? (
-          <span
-            class="text-sm font-semibold text-primary truncate flex-1 cursor-pointer hover:text-accent transition-colors"
-            title={t('sessions.openCard')}
-            onClick={() => opts.onOpenCard?.(setCard.id)}
-          >
-            {name}
-          </span>
-        ) : (
-          // No library (pageMode.ts): shown as a known set, not a muted one.
-          <span class={`text-sm font-semibold ${hasLibrary() ? 'text-muted' : 'text-primary'} truncate flex-1`}>{name}</span>
-        )}
+        {/* No name (2026-10-30, the user's call): its tunes, just below, say
+            it already, each on its own card. Only the Focus view, which shows
+            one tune at a time, names the set (FocusView.tsx). */}
+        <span class="flex-1" />
 
         {/* Where a tune shows how sure the recogniser is: a set is not one of
-            its results, so it says what it is instead. */}
-        <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted">
-          <TuneSetIcon size={11} />
-          {t('sessions.set.label')}
-        </span>
+            its results, so it says what it is instead. Once the set is a card,
+            the way to it — the name used to be. */}
+        {setCard ? (
+          <button
+            class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted cursor-pointer hover:text-accent hover:border-accent/50 transition-colors"
+            title={`${name} · ${t('sessions.openCard')}`}
+            onClick={() => opts.onOpenCard?.(setCard.id)}
+          >
+            <TuneSetIcon size={11} />
+            {t('sessions.set.label')}
+          </button>
+        ) : (
+          <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted" title={name}>
+            <TuneSetIcon size={11} />
+            {t('sessions.set.label')}
+          </span>
+        )}
 
         {opts.onToggleLike && opts.record && (
           <button
@@ -190,13 +202,23 @@ export function TunesetDetectionCard({ chain, opts, children }: {
         )}
       </div>
 
-      {/* The span only: its tunes say what they are, and how many there are
-          is in plain sight just below (the user's call, 2026-10-19). Plain
+      {/* Under the + it answers. */}
+      {missing && (
+        <p class="text-[11px] text-dim leading-snug">
+          {missing.length > 0
+            ? t('sessions.set.needCards', { names: missing.map(id => names[tuneIds.indexOf(id)]).join(', ') })
+            : t('sessions.set.notSettled')}
+        </p>
+      )}
+
+      <div class="space-y-1.5">{children}</div>
+
+      {/* The set's own lines AFTER its tunes (2026-10-30, the user's call):
+          the span sums up what was just read, and the review closes the set.
+          The span only: its tunes say what they are (2026-10-19). Plain
           text — no pencil: the set's bounds are its tunes'. */}
       {opts.details !== false && <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
         <span class="font-mono tabular-nums">{range}</span>
-        {/* Linked across a silence: it plays, and clips, with the pause. */}
-        {hasPause(chain, opts.session.duration) && <span class="text-[11px] text-dim">· {t('sessions.set.pauseIncluded')}</span>}
         {opts.clip && (
           <span class="ml-auto flex items-center gap-1.5">
             <SetClipControls
@@ -213,21 +235,11 @@ export function TunesetDetectionCard({ chain, opts, children }: {
         )}
       </div>}
 
-      {missing && (
-        <p class="text-[11px] text-dim leading-snug">
-          {missing.length > 0
-            ? t('sessions.set.needCards', { names: missing.map(id => names[tuneIds.indexOf(id)]).join(', ') })
-            : t('sessions.set.notSettled')}
-        </p>
-      )}
-
       {showReview && opts.study !== false && (
         <div class="flex items-center gap-3 flex-wrap">
           <ReviewLogControl cardId={setCard!.id} reviewId={reviewId!} ts={reviewTs} ctx={opts.ctx} />
         </div>
       )}
-
-      <div class="space-y-1.5">{children}</div>
     </div>
   );
 }

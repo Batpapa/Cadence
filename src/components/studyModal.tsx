@@ -6,7 +6,7 @@ import { pickRandom, pickOptimal, pickStochastic, pickSequential } from '../serv
 import { buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { showModal, closeModal, renderModalBody } from './modal';
-import { DiceIcon, BullseyeIcon, WeightedBarsIcon, SequentialIcon } from './icons';
+import { DiceIcon, BullseyeIcon, WeightedBarsIcon, SequentialIcon, ArrowRightIcon } from './icons';
 import type { Deck, StudyStrategy, DeckEntry } from '../types';
 
 export interface StudyModalOpts {
@@ -163,7 +163,7 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
                     <div class="text-sm font-medium text-primary">{t(s.labelKey)}</div>
                     <div class="text-xs text-muted mt-0.5">{t(s.subKey)}</div>
                   </div>
-                  <div class="shrink-0 text-dim text-base leading-none">›</div>
+                  <div class="shrink-0 text-dim flex items-center"><ArrowRightIcon size={16} /></div>
                 </div>
               </button>
             );

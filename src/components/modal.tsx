@@ -6,7 +6,7 @@ import type { ComponentChild } from 'preact';
 import { t } from '../services/i18nService';
 import { focusIfDesktop } from '../utils';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
-import { ExpandIcon, CollapseIcon } from './icons';
+import { ExpandIcon, CollapseIcon, ArrowLeftIcon } from './icons';
 import { registerOverlay } from './overlayStack';
 
 // ── Modal infrastructure (Preact — 2026-08-26) ──────────────────────────────────
@@ -522,10 +522,11 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
           <div class="flex items-center gap-2 min-w-0">
             {entry.onBack && (
               <button
-                class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0"
+                class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0 flex items-center"
                 title={t('modal.back')}
+                aria-label={t('modal.back')}
                 onClick={entry.onBack}
-              >←</button>
+              ><ArrowLeftIcon size={16} /></button>
             )}
             <ModalTitle title={entry.title} titleEdit={entry.titleEdit} />
           </div>
