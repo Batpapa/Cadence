@@ -92,17 +92,20 @@ export function SetMarkButton({ kind, active, onClick }: { kind: 'link' | 'unlin
 export function FeedSilence({ len, linked, onSetOpens }: {
   len: number;
   linked: boolean;
-  /** The mark on the detection after it. */
-  onSetOpens: (opens: boolean | undefined) => void;
+  /** The mark on the detection after it. Absent outside the editor view: the
+   *  silence is only read. */
+  onSetOpens?: (opens: boolean | undefined) => void;
 }) {
   return (
     <div class="flex items-center gap-2 py-0.5 text-[11px] text-dim">
       <span class="h-px flex-1 bg-border" />
       <span class="shrink-0 tabular-nums">{fmtLongTime(len)}</span>
       <span class="h-px flex-1 bg-border" />
-      <span class="mr-3 flex">
-        <SetMarkButton kind="link" active={linked} onClick={() => onSetOpens(linked ? undefined : false)} />
-      </span>
+      {onSetOpens && (
+        <span class="mr-3 flex">
+          <SetMarkButton kind="link" active={linked} onClick={() => onSetOpens(linked ? undefined : false)} />
+        </span>
+      )}
     </div>
   );
 }

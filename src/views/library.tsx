@@ -2,7 +2,7 @@
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, type AliasMatch } from '../utils';
-import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon } from '../components/icons';
+import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, iconElement } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
 import { buildTunesetCard } from '../services/tunesetCard';
 import { showDeckChoiceModal } from '../components/deckSelector';
@@ -89,8 +89,9 @@ function showExportModal(cards: Card[], user: AppState): void {
   const headerLeft = document.createElement('div');
   headerLeft.className = 'flex items-center gap-2 min-w-0';
   const backBtn = document.createElement('button');
-  backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0 hidden';
-  backBtn.textContent = '←';
+  backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0 flex hidden items-center';
+  backBtn.append(iconElement(ArrowLeftIcon, 16));
+  backBtn.setAttribute('aria-label', t('modal.back'));
   const titleEl = document.createElement('h2');
   titleEl.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
   headerLeft.append(backBtn, titleEl);
@@ -127,8 +128,8 @@ function showExportModal(cards: Card[], user: AppState): void {
   labelEl.className = 'js-choice-label flex-1 text-sm font-medium text-primary';
     labelEl.textContent = label;
     const arrow = document.createElement('span');
-    arrow.className = 'text-dim text-base leading-none shrink-0';
-    arrow.textContent = '›';
+    arrow.className = 'text-dim shrink-0 flex items-center';
+    arrow.append(iconElement(ArrowRightIcon, 16));
     btn.append(iconWrap, labelEl, arrow);
     btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
     btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
@@ -1028,7 +1029,7 @@ export function LibraryView() {
                 showStudyModal({ entries: pool, title: t('library.title'), defaultContext: null });
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>
+              <StudyIcon size={14} />
             </button>
             <button
               class="btn-danger text-xs flex items-center gap-1.5"

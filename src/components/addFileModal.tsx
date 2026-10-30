@@ -8,7 +8,7 @@ import { pickFiles } from '../services/filePicker';
 import { appState } from '../store';
 import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
 import { CustomSelect } from './customSelect';
-import { FileIcon, ClipboardIcon } from './icons';
+import { FileIcon, ClipboardIcon, ArrowRightIcon } from './icons';
 import { t } from '../services/i18nService';
 import {
   TEXT_FORMAT_IDS, TEXT_FORMATS, detectTextFormat, suggestedTextName, textAttachment,
@@ -56,7 +56,7 @@ function SourceRow({ icon, label, onClick }: {
     >
       <span class="shrink-0 flex items-center text-accent">{icon}</span>
       <span class="flex-1 min-w-0 text-sm font-medium text-primary">{label}</span>
-      <span class="text-dim text-base leading-none shrink-0">›</span>
+      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
     </button>
   );
 }

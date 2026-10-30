@@ -9,7 +9,10 @@ import { alertModal } from '../../components/modal';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
-import { TunesetDetectionCard, FeedList, feedItems } from './TunesetDetectionCard';
+import { TunesetDetectionCard, FeedList, feedItems, feedChains } from './TunesetDetectionCard';
+import { AnalysisViewBar } from './AnalysisViewBar';
+import { analysisView, analysisStudy, showsDetails, showsEditing, showsFocus } from './analysisView';
+import { FocusView, useFeedFocus } from './FocusView';
 import { recordOf } from '../tunesets';
 import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
@@ -187,8 +190,19 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
   // One object for the whole feed, not one per detection: with the four
   // recording-time controls gone, nothing left here differs from one card to
   // the next.
+  // The analysis views and "Study" hold here too (2026-10-30): this is an
+  // analysis being made. The editor view has little to add on a feed — only
+  // the set marks.
+  const view = analysisView.value;
+  const details = showsDetails(view);
+  const editing = showsEditing(view);
+  const study = analysisStudy.value;
+  const focus = useFeedFocus(annotations);
+
   const cardOpts: DetectionCardOptions = {
     ctx,
+    details,
+    study,
     onOpenCard,
     onCardAdded: () => setDetections(live.getDetections()),
     // Logging a practice needs a date, nothing more: a tune can be rated —
@@ -206,7 +220,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     getLatestDetection: (id) => live.getDetections().find(a => a.id === id),
   };
 
-  useAutoFollowScroll(feedAnchorRef, [annotations]);
+  // Not in the Focus view: one card, which a scroll to the bottom would only
+  // push up under the pinned bar.
+  useAutoFollowScroll(feedAnchorRef, [showsFocus(view) ? null : annotations]);
 
   const paused = phase === 'paused';
 
@@ -242,7 +258,10 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
           The bordered row alone used to carry `sticky`, with nothing to keep
           the feed from drawing over it. */}
       <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3">
-        <div class="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg">
+        {/* Above the recording's own row, as above the finished analysis's
+            player. */}
+        <AnalysisViewBar />
+        <div class="flex items-center gap-3 p-3 mt-3 rounded-lg border border-border bg-bg">
           <span class={`w-2.5 h-2.5 rounded-full shrink-0 ${paused ? 'bg-dim' : 'bg-danger animate-pulse'}`} />
           <span class="text-xs font-mono font-bold text-danger">{paused ? t('sessions.paused') : 'REC'}</span>
           <span ref={chronoRef} class="text-sm font-mono text-primary tabular-nums">0:00</span>
@@ -291,11 +310,24 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}
       </>}
 
-      <div ref={feedAnchorRef} class="mt-3 space-y-2">
+      {/* `analysis-list`: see the summary's. */}
+      <div ref={feedAnchorRef} class="analysis-list mt-3 space-y-2">
         {(() => {
           // The sets as they form: readable and playable-as-a-score only — the
           // feed keeps no table, so nothing that needs the set's identity.
           const feed = feedItems(annotations);
+          if (showsFocus(view)) {
+            return (
+              <FocusView
+                anns={annotations}
+                spot={focus.spot}
+                chains={feedChains(feed)}
+                renderCard={(ann, note) => <DetectionCard key={ann.id} ann={ann} opts={{ ...cardOpts, focus: true, focusNote: note }} />}
+                onGo={focus.onGo}
+                feed={{ kind: 'live', latest: focus.latest, onBack: focus.onBack }}
+              />
+            );
+          }
           // The table only when there is a set to show: never asked, nothing
           // is saved with the analysis (the sets off).
           const table = feed.items.some(x => x.kind === 'chain') ? live.getTunesets() : [];
@@ -316,12 +348,14 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
                     record: recordOf(table, chain),
                     onToggleLike: (r) => { live.toggleSetLike(r.id); setDetections(live.getDetections()); },
                     sessionStartMs: live.startedAt || undefined,
+                    details,
+                    study,
                   }}
                 >
                   {children}
                 </TunesetDetectionCard>
               )}
-              onSetOpens={(id, opens) => { live.setOpensSet(id, opens); setDetections(live.getDetections()); }}
+              onSetOpens={editing ? (id, opens) => { live.setOpensSet(id, opens); setDetections(live.getDetections()); } : undefined}
             />
           );
         })()}

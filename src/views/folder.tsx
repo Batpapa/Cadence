@@ -1,7 +1,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon, StarIcon, LibraryIcon, WandIcon } from '../components/icons';
+import { TrashIcon, StarIcon, LibraryIcon, WandIcon, StudyIcon } from '../components/icons';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
@@ -503,11 +503,12 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               "Study all" and a tooltip there would just repeat the label. */}
           {folderEntries.length > 0 && (
             <button
-              class="btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium"
+              class="btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium inline-flex items-center gap-1.5"
               title={folderId ? t('folder.studyTitle') : undefined}
               data-tour="study-all"
               onClick={() => showStudyModal({ entries: folderEntries, title: folderTitle, defaultContext: null })}
             >
+              <StudyIcon size={15} />
               {folderId ? t('folder.study') : t('folder.studyAll')}
             </button>
           )}

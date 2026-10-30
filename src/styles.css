@@ -787,30 +787,40 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
   .stats-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
-/* Detection card — the confidence badge gives up its width to the tune name
-   as the card narrows (2026-09-21, user request: "on sacrifie trop le titre").
-   Under 400 px the qualifier goes and the number stays: "élevée 87 %" → "87 %".
+/* An analysis's list of detections, and what its width decides — for EVERY
+   card of the list at once, never card by card (2026-10-30, the user's call):
+   a tune inside a set is a little narrower than one on its own, and would tip
+   over at another width than its neighbours — which is what both rules below
+   did while each card was its own container.
 
-   The number always stays, settled by the user after a first pass dropped it
-   too below a second breakpoint. A bare coloured pill reads as decoration; the
-   percentage is the one part that says something on its own, and it is also
-   the short part — the word is what costs the title its room.
+   1. Where a detection's name goes: on the line of its controls, or on a line
+      of its own below them, so that the lines stay aligned from one card to
+      the next (a name that only went down when it did not fit broke them).
+      Both forms of the name are drawn (DetectionCard's NavigableName); the
+      spacer holds the end of the line while the name is not on it. Under
+      440 px the names go below.
+
+   2. The confidence badge's word: "élevée 87 %" → "87 %" under 340 px. It
+      used to give its room to the name on the line (2026-09-21, "on sacrifie
+      trop le titre"); with the names below by then, it only goes when the
+      line itself runs short. The number always stays, settled by the user
+      after a first pass dropped it too: a bare coloured pill reads as
+      decoration, and the percentage is the part that says something.
 
    A CONTAINER query, not a media query. The app runs under a CSS zoom on
-   <html> — 125 % on a desktop by default, and the user can set anything from
-   25 % to 500 % (zoomService) — so the viewport's pixels and the card's are
-   not the same pixels: at 125 % a 600 px window lays the card out in 480. A
-   media query would read 600 there and keep the full badge on a card that has
-   no room for it, which is the very bug this fixes, only triggered by zoom
-   instead of by screen size.
-
-   The 400 is therefore the card's own INNER width (a container query measures
-   the content box), which is the room the title actually has. That runs
-   roughly 40-60 px narrower than the screen once the page's padding and the
-   card's own are taken out, so it bites on a slightly wider screen than
-   400 px. One number to shift if it should bite later. */
-.detection-card { container-type: inline-size; }
-@container (max-width: 399.98px) { .detection-conf-word { display: none; } }
+   <html> — 125 % on a desktop by default, 80 % on a phone, anything from 25 %
+   to 500 % (zoomService) — so the viewport's pixels and the list's are not the
+   same pixels. The list is measured in layout pixels, after the zoom: at
+   125 % both rules bite on a window 1.25 times wider, at 80 % on one 0.8
+   times as wide. One number each to move. */
+.analysis-list { container: analysis-list / inline-size; }
+.detection-name-below, .detection-name-spacer { display: none; }
+@container analysis-list (max-width: 439.98px) {
+  .detection-name-inline { display: none; }
+  .detection-name-below { display: block; }
+  .detection-name-spacer { display: block; }
+}
+@container analysis-list (max-width: 339.98px) { .detection-conf-word { display: none; } }
 
 /* Drag & drop indicators */
 .drop-before { box-shadow: inset 0 2px 0 0 var(--color-accent); }

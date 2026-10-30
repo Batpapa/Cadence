@@ -440,6 +440,9 @@ export function VennOrIcon({ size = 12 }: { size?: number }) {
   );
 }
 
+/** The left and right arrows of every control — never the ← → ‹ › characters:
+ *  a phone draws those in a font, or as emoji, at a size and weight of its own
+ *  (the user's rule). */
 export function ArrowLeftIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -452,6 +455,17 @@ export function ArrowRightIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="9 18 15 12 9 6"/>
+    </svg>
+  );
+}
+
+/** ArrowRightIcon against a bar: to the end — the latest tune of an import
+ *  (the Focus view). Not the ⏭ glyph: drawn, as every arrow is. */
+export function SkipToEndIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="7 18 13 12 7 6"/>
+      <line x1="17" y1="6" x2="17" y2="18"/>
     </svg>
   );
 }
@@ -929,6 +943,21 @@ export function TuneIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+/** A graduation cap: studying, wherever it is offered — the study buttons,
+ *  the settings' study section, an analysis's "Study" switch (2026-10-30, the
+ *  user's call: the ▶ it replaces also meant "play", everywhere). */
+const STUDY_ICON_PATHS = '<path d="M21.4 10.9a1 1 0 0 0 0-1.8L12.8 5.2a2 2 0 0 0-1.6 0L2.6 9.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>';
+
+export function StudyIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: STUDY_ICON_PATHS }} />
+  );
+}
+
+/** StudyIcon as markup, for the places that hold their icons as strings. */
+export const studyIconSvg = (size = 14): string =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STUDY_ICON_PATHS}</svg>`;
 
 /** Three quavers under one beam: a set. Deliberately the same note head and
  *  stroke weight as TuneIcon, so the two read as one shape repeated rather

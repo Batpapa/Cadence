@@ -1,4 +1,4 @@
-import { useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
@@ -15,7 +15,7 @@ import { reviewEntryIndex } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { currentPick, provisionalEnd } from '../detectionState';
 import { fmtDateTime } from '../../services/dateFormat';
-
+import { RATING_BUTTONS } from '../../components/ratingButtons';
 // ── DetectionCard ────────────────────────────────────────────────────────────
 // The central unit of the session feed/summary: one recognised tune, with its
 // play/ABC-preview/add-to-library/like controls and (when applicable) review
@@ -56,6 +56,13 @@ export interface DetectionCardOptions {
   /** The "log this as a review" row. Default true; the analysis shows it only
    *  with its "Study" switch on (analysisView.ts). */
   study?: boolean;
+  /** Drawn large, alone on the screen — the Focus view (FocusView.tsx): the
+   *  name on a line of its own, and the study screen's four rating buttons in
+   *  place of the small glyphs. */
+  focus?: boolean;
+  /** In the Focus view, under the name: the view's word on where the tune
+   *  stands (FocusView.tsx). */
+  focusNote?: ComponentChild;
   /** Extra controls rendered at the bottom of the card (bound-adjust/clip
    *  buttons — finalized annotations only, gated by the caller). */
   extraControls?: () => ComponentChild;
@@ -147,6 +154,9 @@ const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: string; cls: string; 
   { rating: 'good',  glyph: '○', cls: 'text-accent',  btn: 'bg-accent/10 hover:bg-accent/20 text-accent',    labelKey: 'rating.good' },
   { rating: 'easy',  glyph: '✓', cls: 'text-success', btn: 'bg-success/10 hover:bg-success/20 text-success', labelKey: 'rating.easy' },
 ];
+
+/** A rating's glyph alone — the Focus view's buttons once their words go. */
+const glyphOf = (rating: SessionRating) => RATING_GLYPHS.find(g => g.rating === rating)?.glyph ?? '';
 
 /** How long the "remove" control ignores taps after a rating is given. It
  *  appears where the rating buttons were, so the second tap of a double tap
@@ -247,8 +257,99 @@ export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
   );
 }
 
-function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard }: {
+/** The rating as the study screen gives it (2026-10-30, Focus view): the four
+ *  labelled buttons, the one given ringed, another one replacing it, and its
+ *  own button to take it back. Same entry, same id and same instant as
+ *  ReviewLogControl's — only the way of giving it differs. */
+export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
+  cardId: string;
+  reviewId: string;
+  ts: number | null;
+  ctx: AppContext;
+  onRated?: () => void;
+}) {
+  const [, setTick] = useState(0);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [bare, setBare] = useState(false);
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const words = Array.from(grid.querySelectorAll<HTMLElement>('[data-rating-word]'));
+    const measure = () => {
+      // A quarter of the row, less the gaps; a word plus the buttons' `px-3`.
+      const each = (grid.clientWidth - 3 * 8) / 4;
+      const need = Math.max(...words.map(w => w.offsetWidth)) + 2 * 12 + 1;
+      setBare(need > each);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(grid);
+    for (const w of words) ro.observe(w);
+    return () => ro.disconnect();
+  });
+  const existing = ratingOf(cardId, reviewId, ts);
+  if (!existing && ts === null) return null;
+
+  const rate = (rating: SessionRating) => {
+    if (existing?.rating === rating) return;
+    if (!existing) onRated?.();
+    void ctx.mutate(s => {
+      const key = `${s.currentProfileId}:${cardId}`;
+      if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
+      const h = s.cardWorks[key]!.history;
+      const i = reviewEntryIndex(h, reviewId, ts);
+      if (i !== -1) { h[i]!.rating = rating; return; }
+      if (ts === null) return;
+      h.push({ ts, rating, id: reviewId });
+      h.sort((a, b) => a.ts - b.ts);
+    }).then(() => setTick(x => x + 1));
+  };
+
+  return (
+    <div class="space-y-2">
+      <p class="text-xs text-dim text-center">{t(existing ? 'study.ratedHint' : 'study.ratingHint')}</p>
+      {/* Always the four in a row (2026-10-30, the user's call); their words
+          go — all at once, the glyphs staying — when any one of them would
+          no longer fit its quarter. Measured on the words' natural widths
+          (the twins below), never on what is shown, so it cannot flip. */}
+      <div ref={gridRef} class="relative grid grid-cols-4 gap-2">
+        {RATING_BUTTONS.map(({ rating, key, cls }) => (
+          <button
+            key={rating}
+            class={`${cls} min-w-0 ${existing?.rating === rating ? 'ring-2 ring-current' : ''}`}
+            title={t(key)}
+            aria-label={t(key)}
+            aria-pressed={existing ? existing.rating === rating : undefined}
+            onClick={() => rate(rating)}
+          >
+            {bare ? glyphOf(rating) : t(key)}
+          </button>
+        ))}
+        <span class="absolute w-0 h-0 overflow-hidden invisible pointer-events-none" aria-hidden="true">
+          {RATING_BUTTONS.map(({ rating, key }) => (
+            <span key={rating} data-rating-word class="block w-max whitespace-nowrap text-sm font-semibold">{t(key)}</span>
+          ))}
+        </span>
+      </div>
+      {existing && (
+        <button
+          class="btn-ghost py-1.5 text-xs w-full text-danger hover:text-danger"
+          title={fmtDateTime(existing.ts, { seconds: true })}
+          onClick={() => { void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1)); }}
+        >
+          {t('study.deleteReview')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard, layout }: {
   label: string; tuneId: string; settingId: string; knownCardId: string | undefined; onOpenCard?: (cardId: string) => void;
+  /** On the controls' line, or on a line of its own below them — both are
+   *  drawn, and the list's width shows one (styles.css, `.analysis-list`); or
+   *  below and large, the Focus view's. */
+  layout: 'inline' | 'below' | 'large';
 }) {
   // The card's name, else TheSession's, else the recogniser's re-cased — see
   // tuneName in sessionUiShared. No CSS `capitalize` any more: it was what
@@ -258,7 +359,11 @@ function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard }: {
   // out what is already in the collection without reading the deck button.
   // Muted when there is no card — unless there is no library at all (the
   // standalone page, pageMode.ts), where every tune is shown as a known one.
-  const cls = `text-sm font-semibold ${knownCardId || !hasLibrary() ? 'text-primary' : 'text-muted'} truncate flex-1 cursor-pointer hover:text-accent transition-colors`;
+  // No `block` on the line below: its display is the stylesheet's to give.
+  const size = layout === 'large' ? 'block w-fit max-w-full break-words text-2xl min-[480px]:text-3xl font-bold leading-tight'
+    : layout === 'below' ? 'detection-name-below w-fit max-w-full break-words text-sm font-semibold leading-snug'
+    : 'detection-name-inline text-sm font-semibold truncate flex-1 min-w-0';
+  const cls = `${size} ${knownCardId || !hasLibrary() ? 'text-primary' : 'text-muted'} cursor-pointer hover:text-accent transition-colors`;
   label = tuneName({ tuneId, displayName: label }).text;
   if (knownCardId) {
     return <span class={cls} title={t('sessions.openCard')} onClick={() => onOpenCard?.(knownCardId)}>{label}</span>;
@@ -344,6 +449,8 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // is what i18nKeys.test.ts counts.
   const bucketWord = t(`sessions.confidence.${ann.bucket}`);
   const confidencePct = `${Math.round(ann.confidence * 100)}%`;
+  const focus = !!opts.focus;
+
 
   return (
     // A tune that IS a card sits on `surface`, one without stays on the page's
@@ -351,7 +458,8 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
     // themes. Both ways round were tried on screen and the user kept this one —
     // what is yours has substance, what is not stays flat. A neutral tone on
     // purpose: an accent tint would read as a call to attention.
-    <div class={`detection-card p-3 rounded-lg border ${known || !hasLibrary() ? 'bg-surface' : 'bg-bg'} space-y-1.5 ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id} data-tour="detection">
+    <div class={`detection-card border ${known || !hasLibrary() ? 'bg-surface' : 'bg-bg'} ${
+      focus ? 'p-4 min-[480px]:p-5 rounded-xl space-y-3' : 'p-3 rounded-lg space-y-1.5'} ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id} data-tour="detection">
       <div class="flex items-center gap-2">
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
@@ -373,7 +481,12 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
           onCardAdded={opts.onCardAdded}
         />
 
-        <NavigableName label={ann.displayName} tuneId={ann.tuneId} settingId={ann.settingId} knownCardId={known?.id} onOpenCard={opts.onOpenCard} />
+        {/* On this line, or below it on a narrow list — one rule for every
+            card of the list, so that their lines stay aligned (the user's
+            call, 2026-10-30). The spacer holds the line's end when the name
+            is not on it. Always below in the Focus view. */}
+        {!focus && <NavigableName layout="inline" label={ann.displayName} tuneId={ann.tuneId} settingId={ann.settingId} knownCardId={known?.id} onOpenCard={opts.onOpenCard} />}
+        <span class={focus ? 'flex-1' : 'detection-name-spacer flex-1'} />
 
         {/* Two states in one control. Unconfirmed, it is the confidence badge:
             a number the algorithm is offering. Confirmed, it collapses to a
@@ -391,7 +504,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             this" without a word, in any language, and it appears only when the
             picker can actually be opened. */}
         <button
-          class={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 ${
+          class={`${focus ? 'text-xs px-2.5 py-1' : 'text-[10px] px-1.5 py-0.5'} rounded-full shrink-0 inline-flex items-center gap-1 ${
             ann.userConfirmed ? 'bg-success/15 text-success' : BUCKET_BADGE[ann.bucket]
           } ${opts.onSelectAlternate ? 'cursor-pointer hover:brightness-110 transition-[filter]' : 'cursor-default'}`}
           title={opts.onSelectAlternate
@@ -452,17 +565,17 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             );
           } : undefined}
         >
-          {/* Three widths, one badge. The word and the number drop out in turn
-              as the card narrows (see .detection-card in styles.css) so the
-              tune's NAME keeps the room — it is the thing being read, and the
-              badge's colour already carries the verdict on its own. Confirmed,
-              there is only ever the check. */}
+          {/* Two widths, one badge. The word drops out on a narrow list (see
+              .analysis-list in styles.css) — the list's width, not the card's,
+              so that every card of it, in a set or not, says the same thing
+              (the user's call, 2026-10-30). The badge's colour already carries
+              the verdict on its own. Confirmed, there is only ever the check. */}
           {ann.userConfirmed ? <span>✓</span> : (
             <>
               {/* Siblings of the chevron rather than a wrapper around them: the
                   button's own flex gap then simply skips the word once the
                   container query hides it, instead of spacing an empty box.
-                  The percentage never hides — see .detection-card. */}
+                  The percentage never hides — see .analysis-list. */}
               <span class="detection-conf-word">{bucketWord}</span>
               <span class="tabular-nums">{confidencePct}</span>
             </>
@@ -478,7 +591,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             title={t(ann.liked ? 'sessions.unlike' : 'sessions.like')}
             onClick={(e) => { e.stopPropagation(); opts.onToggleLike!(ann.id); }}
           >
-            <HeartIcon size={13} filled={ann.liked} />
+            <HeartIcon size={focus ? 20 : 13} filled={ann.liked} />
           </button>
         )}
 
@@ -496,7 +609,10 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
         )}
       </div>
 
-      {opts.details !== false && <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
+      <NavigableName layout={focus ? 'large' : 'below'} label={ann.displayName} tuneId={ann.tuneId} settingId={ann.settingId} knownCardId={known?.id} onOpenCard={opts.onOpenCard} />
+      {focus && opts.focusNote && <div class="flex">{opts.focusNote}</div>}
+
+      {opts.details !== false && <div class={`${focus ? 'text-sm' : 'text-xs'} text-muted flex items-center gap-1.5 flex-wrap`}>
         {/* No meter (2026-10-28, the user's call): a reel's 4/4 and a jig's
             6/8 are in the dance's name already. */}
         <span><TuneFacts dance={ann.dance} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} /> ·</span>
@@ -518,11 +634,15 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
         {opts.metaActions && <span class="ml-auto flex items-center gap-1.5">{opts.metaActions()}</span>}
       </div>}
 
-      {showReviewLog && opts.study !== false && (
+      {showReviewLog && opts.study !== false && (focus ? (
+        <div class="pt-2">
+          <ReviewRatingGrid cardId={known!.id} reviewId={reviewId} ts={reviewTs} ctx={opts.ctx} onRated={confirmOnRating} />
+        </div>
+      ) : (
         <div class="flex items-center gap-3 flex-wrap">
           <ReviewLogControl cardId={known!.id} reviewId={reviewId} ts={reviewTs} ctx={opts.ctx} onRated={confirmOnRating} />
         </div>
-      )}
+      ))}
 
       {opts.extraControls?.()}
     </div>

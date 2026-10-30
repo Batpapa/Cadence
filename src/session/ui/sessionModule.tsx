@@ -42,7 +42,7 @@ import {
   lastImportDump, importStarting, importPlaybackWarn,
 } from './sessionStore';
 import { registerCardPanel } from '../../services/cardPanels';
-import { HelpIcon } from '../../components/icons';
+import { HelpIcon, ArrowRightIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
 import { DetectedIn } from './DetectedIn';
 import { showLinkImportModal } from './LinkImportModal';
@@ -81,7 +81,7 @@ function ShareChoiceCard({ icon, label, desc, accentColor, onClick }: {
     >
       <span class="shrink-0 flex items-center" style={{ color: accentColor }} dangerouslySetInnerHTML={{ __html: icon }} />
       <div class="flex-1 text-sm font-medium text-primary">{label}</div>
-      <span class="text-dim text-base leading-none shrink-0">›</span>
+      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
     </button>
   );
 }
