@@ -626,49 +626,49 @@ export interface PreviewModalOpts {
   /** An audio file's presets (audioPresets.ts). Absent: the player has no
    *  preset bar — there is nowhere to keep them. */
   audioPresets?: AudioPresetsBinding;
-  /** A score with a recording of it: the viewer offers "Play along", which
+  /** A score with a recording of it: the viewer offers "Audio sync", which
    *  puts that recording's player in the score's place, the score following
    *  it (2026-10-28, the user). Today a detection's score, its recording the
    *  analysis's (session/ui/ScoreFollowView.tsx). */
-  playAlong?: PlayAlongBinding;
+  audioSync?: AudioSyncBinding;
 }
 
 /** What the viewer is handed to play a score along its recording. */
-export interface PlayAlongBinding {
+export interface AudioSyncBinding {
   /** The recording is only on Drive: the toggle wears the play button's cloud. */
   fromDrive: boolean;
   /** Whether this version — its ABC, as the viewer shows it — can be played
    *  along: the toggle is offered on those only. */
   plays: (version: string) => boolean;
-  /** Puts the play-along of `version` in `host`, on the viewer's face (stave
+  /** Puts the audio sync of `version` in `host`, on the viewer's face (stave
    *  or text) and at its size. `onState` hears how its alignment goes. */
   mount: (
     host: HTMLElement, version: string, face: 'sheet' | 'text', expanded: boolean,
-    onState: (s: PlayAlongState) => void, forced: boolean,
-  ) => PlayAlongView;
+    onState: (s: AudioSyncState) => void, forced: boolean,
+  ) => AudioSyncView;
 }
 
-/** Where a play-along's alignment stands — what its toggle shows (2026-10-29,
+/** Where an audio sync's alignment stands — what its toggle shows (2026-10-29,
  *  the user): filling up like a progress bar while it is made, then coloured
  *  by how well it fits, on followColour.ts's red-to-green scale — red when
  *  there is none to follow, too poor to be trusted or impossible. `percent`:
  *  the share of notes on the score, when there was an alignment. `title` says
  *  it in full, for the tooltip. */
-export type PlayAlongState =
+export type AudioSyncState =
   | { kind: 'aligning'; ratio: number; title: string }
   | { kind: 'aligned'; title: string; percent: number }
   | { kind: 'none'; title: string; percent?: number };
 
 /** Room the toggle's label needs beyond its own width to come back once it
- *  was dropped (fitPlayAlong). */
-const PLAY_ALONG_SLACK_PX = 8;
+ *  was dropped (fitAudioSync). */
+const AUDIO_SYNC_SLACK_PX = 8;
 
 /** A press this long on the toggle is the hidden "follow anyway". */
 const LONG_PRESS_MS = 550;
 
-/** A play-along in place, as the viewer drives it: its versions, its tabs,
+/** An audio sync in place, as the viewer drives it: its versions, its tabs,
  *  its full page. */
-export interface PlayAlongView {
+export interface AudioSyncView {
   /** Another version on screen, one `plays` accepts: aligned anew, the
    *  player kept — the recording has not changed (2026-10-29, the user). */
   setVersion: (version: string) => void;
@@ -709,10 +709,10 @@ export function showPreviewModal(
   // Set by the ABC branch: a score given the whole page lives in an overlay of
   // its own, outside this dialog, and has to come down with it.
   let releaseFullscreen: () => void = () => {};
-  // Set by the ABC branch while a play-along is on: its player goes with the
+  // Set by the ABC branch while an audio sync is on: its player goes with the
   // modal.
-  let releasePlayAlong: () => void = () => {};
-  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); releaseFullscreen(); releasePlayAlong(); };
+  let releaseAudioSync: () => void = () => {};
+  const onDismiss = () => { closed = true; stopAudio(); releaseKeys(); releasePdf(); releaseFullscreen(); releaseAudioSync(); };
 
   const body = document.createElement('div');
   body.className = 'w-full flex items-center justify-center';
@@ -1119,90 +1119,90 @@ export function showPreviewModal(
     topRow.append(tabBar, versionNav);
     container.appendChild(topRow);
 
-    // ── Play along (2026-10-28, the user) ────────────────────────────────────
+    // ── Audio sync (2026-10-28, the user) ────────────────────────────────────
     // A toggle at the end of the row, for a score that comes with a recording
     // of it: on, the recording's player takes the score's place — waveform,
     // tempo, transposition, region — the score drawn above it following what
     // is heard; off, the viewer is as it was left. The tabs stay and drive it
     // (the text face lights the note heard, read-only), and so do the versions:
     // another version is aligned anew (2026-10-29, the user — one may want to
-    // play along a version other than the one heard). Only a version the
-    // binding can follow offers it (`plays`). The viewer's own sound, its full
-    // page and its space bar stand down meanwhile.
-    const playAlong = opts?.playAlong;
-    let playAlongView: PlayAlongView | null = null;
-    let playAlongHost: HTMLElement | null = null;
-    /** What the play-along hid, with how each was shown, to put back. */
-    let hiddenByPlayAlong: Array<[HTMLElement, string]> = [];
-    const playAlongBtn = playAlong ? document.createElement('button') : null;
+    // sync the recording to a version other than the one heard). Only a
+    // version the binding can follow offers it (`plays`). The viewer's own
+    // sound, its full page and its space bar stand down meanwhile.
+    const audioSync = opts?.audioSync;
+    let audioSyncView: AudioSyncView | null = null;
+    let audioSyncHost: HTMLElement | null = null;
+    /** What the audio sync hid, with how each was shown, to put back. */
+    let hiddenByAudioSync: Array<[HTMLElement, string]> = [];
+    const audioSyncBtn = audioSync ? document.createElement('button') : null;
     /** How the alignment of the version on screen stands: the toggle shows it
-     *  (PlayAlongState) instead of anything over the score. Kept when the
+     *  (AudioSyncState) instead of anything over the score. Kept when the
      *  toggle is turned off once it is known — the alignment is still the
      *  same — and dropped with the version. */
-    let playAlongState: PlayAlongState | null = null;
-    const paintPlayAlong = (): void => {
-      if (!playAlongBtn || !playAlong) return;
-      const on = !!playAlongView;
-      const s = playAlongState;
+    let audioSyncState: AudioSyncState | null = null;
+    const paintAudioSync = (): void => {
+      if (!audioSyncBtn || !audioSync) return;
+      const on = !!audioSyncView;
+      const s = audioSyncState;
       // Once the alignment is in: the quality's colour, continuous — the
       // waveform's tint uses the same scale.
       const colour = !s || s.kind === 'aligning' ? null
         : s.percent !== undefined ? qualityColour(s.percent / 100) : 'var(--color-danger)';
       const look = colour ? 'hover:brightness-110'
         : on ? 'border-accent/60 text-accent' : 'border-border text-muted hover:text-primary hover:border-accent/50';
-      playAlongBtn.className = `ml-auto inline-flex items-center gap-1.5 ${playAlongCompact ? 'px-2.5' : 'px-3'} min-h-[2.25rem] text-xs font-medium rounded-full border transition-colors cursor-pointer ${look}`;
-      playAlongBtn.style.color = colour ?? '';
-      playAlongBtn.style.borderColor = colour ? faded(colour, on ? 0.6 : 0.4) : '';
-      playAlongBtn.style.backgroundColor = colour && on ? faded(colour, 0.14) : '';
+      audioSyncBtn.className = `ml-auto inline-flex items-center gap-1.5 ${audioSyncCompact ? 'px-2.5' : 'px-3'} min-h-[2.25rem] text-xs font-medium rounded-full border transition-colors cursor-pointer ${look}`;
+      audioSyncBtn.style.color = colour ?? '';
+      audioSyncBtn.style.borderColor = colour ? faded(colour, on ? 0.6 : 0.4) : '';
+      audioSyncBtn.style.backgroundColor = colour && on ? faded(colour, 0.14) : '';
       // The toggle as a progress bar while the alignment is made: filled from
       // the left as far as it has gone.
       if (s?.kind === 'aligning') {
         const p = Math.round(s.ratio * 100);
-        playAlongBtn.style.backgroundImage = `linear-gradient(to right, color-mix(in srgb, var(--color-accent) 22%, transparent) ${p}%, transparent ${p}%)`;
+        audioSyncBtn.style.backgroundImage = `linear-gradient(to right, color-mix(in srgb, var(--color-accent) 22%, transparent) ${p}%, transparent ${p}%)`;
       } else {
-        playAlongBtn.style.backgroundImage = '';
+        audioSyncBtn.style.backgroundImage = '';
       }
-      playAlongBtn.setAttribute('aria-pressed', String(on));
+      audioSyncBtn.setAttribute('aria-pressed', String(on));
       // How well, in figures, on the toggle itself (2026-10-29, the user).
       const percent = s && s.kind !== 'aligning' ? s.percent : undefined;
       const label = percent === undefined
-        ? t('fileViewer.abc.playAlong')
-        : t('fileViewer.abc.playAlong.percent', { percent });
-      playAlongLabel.textContent = label;
-      playAlongBtn.setAttribute('aria-label', label);
-      const title = s?.title ?? t(playAlong.fromDrive ? 'fileViewer.abc.playAlong.hintDrive' : 'fileViewer.abc.playAlong.hint');
+        ? t('fileViewer.abc.audioSync')
+        : t('fileViewer.abc.audioSync.percent', { percent });
+      audioSyncLabel.textContent = label;
+      audioSyncBtn.setAttribute('aria-label', label);
+      const title = s?.title ?? t(audioSync.fromDrive ? 'fileViewer.abc.audioSync.hintDrive' : 'fileViewer.abc.audioSync.hint');
       // Its name in the tooltip once the label is gone.
-      playAlongBtn.title = playAlongCompact ? `${label} · ${title}` : title;
+      audioSyncBtn.title = audioSyncCompact ? `${label} · ${title}` : title;
       // The label may have grown (its figure): does it still fit?
-      fitPlayAlong();
+      fitAudioSync();
     };
-    const playAlongLabel = document.createElement('span');
+    const audioSyncLabel = document.createElement('span');
     /** The icon alone when the label does not fit at the end of the row (the
      *  user, 2026-10-29) rather than the toggle wrapping onto a line of its
      *  own: its colour still says how well, its tooltip the rest. */
-    let playAlongCompact = false;
-    const fitPlayAlong = (): void => {
-      if (!playAlongBtn || playAlongBtn.style.display === 'none' || !playAlongBtn.isConnected) return;
+    let audioSyncCompact = false;
+    const fitAudioSync = (): void => {
+      if (!audioSyncBtn || audioSyncBtn.style.display === 'none' || !audioSyncBtn.isConnected) return;
       // Its width in its FULL shape, label shown and full padding — measured
       // so whichever shape it is in, in the same task, so nothing is painted
       // in between. Measured in the icon's narrower padding, the label seemed
       // to fit by a few pixels, came back, overflowed, went: the toggle
       // flickered between the two for as long as the width stood at the edge
       // (2026-10-29, the user).
-      playAlongLabel.style.display = '';
-      playAlongBtn.classList.replace('px-2.5', 'px-3');
-      const full = playAlongBtn.offsetWidth;
-      playAlongBtn.classList.replace('px-3', playAlongCompact ? 'px-2.5' : 'px-3');
+      audioSyncLabel.style.display = '';
+      audioSyncBtn.classList.replace('px-2.5', 'px-3');
+      const full = audioSyncBtn.offsetWidth;
+      audioSyncBtn.classList.replace('px-3', audioSyncCompact ? 'px-2.5' : 'px-3');
       const gap = parseFloat(getComputedStyle(topRow).columnGap) || 0;
       const others = Array.from(topRow.children).reduce((sum, el) => (
-        el === playAlongBtn || el === rowRuler || !(el as HTMLElement).offsetParent ? sum : sum + (el as HTMLElement).offsetWidth + gap
+        el === audioSyncBtn || el === rowRuler || !(el as HTMLElement).offsetParent ? sum : sum + (el as HTMLElement).offsetWidth + gap
       ), 0);
       const room = topRow.clientWidth - others;
       // And a few pixels to spare before the label comes back: at the edge,
       // a rounding either way must not toggle it.
-      const compact = playAlongCompact ? full + PLAY_ALONG_SLACK_PX > room : full > room;
-      playAlongLabel.style.display = compact ? 'none' : '';
-      if (compact !== playAlongCompact) { playAlongCompact = compact; paintPlayAlong(); }
+      const compact = audioSyncCompact ? full + AUDIO_SYNC_SLACK_PX > room : full > room;
+      audioSyncLabel.style.display = compact ? 'none' : '';
+      if (compact !== audioSyncCompact) { audioSyncCompact = compact; paintAudioSync(); }
     };
     // At once, in the observer — which runs after layout and before paint: at
     // the next frame, the toggle was seen wrapping onto a line of its own for
@@ -1213,136 +1213,136 @@ export function showPreviewModal(
     const rowRuler = document.createElement('div');
     rowRuler.setAttribute('aria-hidden', 'true');
     rowRuler.style.cssText = 'position:absolute;left:0;right:0;top:0;height:0;pointer-events:none';
-    const rowWatch = new ResizeObserver(() => fitPlayAlong());
-    const showPlayAlongBtn = (): void => {
-      if (!playAlongBtn || !playAlong) return;
-      playAlongBtn.style.display = playAlong.plays(shownBlock(currentIndex)) ? '' : 'none';
-      fitPlayAlong();
+    const rowWatch = new ResizeObserver(() => fitAudioSync());
+    const showAudioSyncBtn = (): void => {
+      if (!audioSyncBtn || !audioSync) return;
+      audioSyncBtn.style.display = audioSync.plays(shownBlock(currentIndex)) ? '' : 'none';
+      fitAudioSync();
     };
-    /** Puts the play-along of the version on screen in its place. */
-    const mountPlayAlong = (): void => {
-      playAlongState = null;
-      playAlongView = playAlong!.mount(playAlongHost!, shownBlock(currentIndex), currentMode, modalExpanded, (s) => {
+    /** Puts the audio sync of the version on screen in its place. */
+    const mountAudioSync = (): void => {
+      audioSyncState = null;
+      audioSyncView = audioSync!.mount(audioSyncHost!, shownBlock(currentIndex), currentMode, modalExpanded, (s) => {
         // Not once it is turned off: an alignment stopped half-way says nothing.
-        if (!playAlongView) return;
-        playAlongState = s;
-        paintPlayAlong();
-      }, playAlongForced);
+        if (!audioSyncView) return;
+        audioSyncState = s;
+        paintAudioSync();
+      }, audioSyncForced);
     };
     /** The hidden way round the verdict (2026-10-29, the user): a right click
      *  — a long press on a touch screen — follows the alignment even when it
      *  is judged too poor to be, turning the toggle on if it was off; the same
      *  gesture again gives the verdict back. The toggle stays red: the
      *  alignment is no better for being shown. Not advertised. */
-    let playAlongForced = false;
+    let audioSyncForced = false;
     let lastForceAt = 0;
-    const forcePlayAlong = (): void => {
+    const forceAudioSync = (): void => {
       // Android sends both a long press and a contextmenu for one gesture.
       const now = Date.now();
       if (now - lastForceAt < 800) return;
       lastForceAt = now;
-      if (!playAlongView) {
-        playAlongForced = true;
-        setPlayAlong(true);
+      if (!audioSyncView) {
+        audioSyncForced = true;
+        setAudioSync(true);
         return;
       }
-      playAlongForced = !playAlongForced;
-      playAlongView.setForced(playAlongForced);
+      audioSyncForced = !audioSyncForced;
+      audioSyncView.setForced(audioSyncForced);
     };
-    const setPlayAlong = (on: boolean): void => {
-      if (!playAlong || on === !!playAlongView) return;
+    const setAudioSync = (on: boolean): void => {
+      if (!audioSync || on === !!audioSyncView) return;
       if (on) {
         // The score's own sound stops, for good. `pauseIfPlaying` and not just
         // `stopAudio`: abcjs's pause leaves `isStarted` set, and hiding the
         // stave — or leaving its full page — redraws it, a redraw that resumes
         // whatever `isStarted` says was playing (pendingRestore): the tune
-        // started again under the play-along (2026-10-29, the user).
+        // started again under the audio sync (2026-10-29, the user).
         pauseIfPlaying();
         stopAudio();
         stopTextPlay();
         if (fullscreen) exitFullscreen();
-        hiddenByPlayAlong = Array.from(container.children)
+        hiddenByAudioSync = Array.from(container.children)
           .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== topRow)
           .map(el => [el, el.style.display]);
-        for (const [el] of hiddenByPlayAlong) el.style.display = 'none';
-        playAlongHost = document.createElement('div');
-        container.appendChild(playAlongHost);
-        mountPlayAlong();
+        for (const [el] of hiddenByAudioSync) el.style.display = 'none';
+        audioSyncHost = document.createElement('div');
+        container.appendChild(audioSyncHost);
+        mountAudioSync();
       } else {
-        playAlongView!.unmount();
-        playAlongView = null;
+        audioSyncView!.unmount();
+        audioSyncView = null;
         // Turned off, it starts afresh: forced only by the gesture again.
-        playAlongForced = false;
+        audioSyncForced = false;
         // An alignment stopped half-way is no alignment: the bar goes.
-        if (playAlongState?.kind === 'aligning') playAlongState = null;
-        playAlongHost?.remove();
-        playAlongHost = null;
-        for (const [el, display] of hiddenByPlayAlong) el.style.display = display;
-        hiddenByPlayAlong = [];
+        if (audioSyncState?.kind === 'aligning') audioSyncState = null;
+        audioSyncHost?.remove();
+        audioSyncHost = null;
+        for (const [el, display] of hiddenByAudioSync) el.style.display = display;
+        hiddenByAudioSync = [];
         // Everything the face decides, decided again — the stave redrawn, as
         // a version changed meanwhile was drawn into a hidden box.
         sheetNeedsRerender = true;
         setAbcMode(currentMode);
       }
-      paintPlayAlong();
+      paintAudioSync();
     };
-    /** Another version on screen: its play-along, aligned anew under the same
+    /** Another version on screen: its audio sync, aligned anew under the same
      *  player — or none, for a version the binding cannot follow. */
-    const versionChangedForPlayAlong = (): void => {
-      if (!playAlong) return;
-      playAlongState = null;
-      showPlayAlongBtn();
-      if (playAlongView) {
-        if (playAlong.plays(shownBlock(currentIndex))) {
-          playAlongView.setVersion(shownBlock(currentIndex));
+    const versionChangedForAudioSync = (): void => {
+      if (!audioSync) return;
+      audioSyncState = null;
+      showAudioSyncBtn();
+      if (audioSyncView) {
+        if (audioSync.plays(shownBlock(currentIndex))) {
+          audioSyncView.setVersion(shownBlock(currentIndex));
         } else {
-          setPlayAlong(false);
+          setAudioSync(false);
         }
       }
-      paintPlayAlong();
+      paintAudioSync();
     };
-    if (playAlongBtn && playAlong) {
-      playAlongBtn.type = 'button';
-      playAlongBtn.append(iconElement(ScoreFollowIcon, 13), playAlongLabel);
-      if (playAlong.fromDrive) playAlongBtn.appendChild(iconElement(CloudIcon, 11));
+    if (audioSyncBtn && audioSync) {
+      audioSyncBtn.type = 'button';
+      audioSyncBtn.append(iconElement(ScoreFollowIcon, 13), audioSyncLabel);
+      if (audioSync.fromDrive) audioSyncBtn.appendChild(iconElement(CloudIcon, 11));
       // A long press is not also a click once it has done its work.
       let pressTimer = 0, pressed = false;
-      playAlongBtn.onclick = () => {
+      audioSyncBtn.onclick = () => {
         if (pressed) { pressed = false; return; }
-        setPlayAlong(!playAlongView);
+        setAudioSync(!audioSyncView);
       };
-      playAlongBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); forcePlayAlong(); });
+      audioSyncBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); forceAudioSync(); });
       // iOS has no contextmenu on a long press: timed by hand, touch only —
       // and its own callout and text selection kept off the button.
-      playAlongBtn.style.setProperty('-webkit-touch-callout', 'none');
-      playAlongBtn.style.userSelect = 'none';
-      playAlongBtn.addEventListener('pointerdown', (e) => {
+      audioSyncBtn.style.setProperty('-webkit-touch-callout', 'none');
+      audioSyncBtn.style.userSelect = 'none';
+      audioSyncBtn.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'mouse') return;
         pressed = false;
         window.clearTimeout(pressTimer);
-        pressTimer = window.setTimeout(() => { pressed = true; forcePlayAlong(); }, LONG_PRESS_MS);
+        pressTimer = window.setTimeout(() => { pressed = true; forceAudioSync(); }, LONG_PRESS_MS);
       });
       for (const end of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
-        playAlongBtn.addEventListener(end, () => window.clearTimeout(pressTimer));
+        audioSyncBtn.addEventListener(end, () => window.clearTimeout(pressTimer));
       }
-      paintPlayAlong();
-      showPlayAlongBtn();
-      topRow.appendChild(playAlongBtn);
+      paintAudioSync();
+      showAudioSyncBtn();
+      topRow.appendChild(audioSyncBtn);
       topRow.classList.add('relative');
       topRow.appendChild(rowRuler);
       rowWatch.observe(rowRuler);
-      releasePlayAlong = () => {
+      releaseAudioSync = () => {
         rowWatch.disconnect();
-        playAlongView?.unmount();
-        playAlongView = null;
+        audioSyncView?.unmount();
+        audioSyncView = null;
       };
     }
-    /** A tab pressed: the viewer's face, or the play-along's. */
+    /** A tab pressed: the viewer's face, or the audio sync's. */
     const chooseMode = (mode: 'sheet' | 'text'): void => {
-      if (!playAlongView) { setAbcMode(mode); return; }
+      if (!audioSyncView) { setAbcMode(mode); return; }
       currentMode = mode;
       paintTabs(mode);
-      playAlongView.setFace(mode);
+      audioSyncView.setFace(mode);
     };
 
     // ── What abcjs made of the ABC ───────────────────────────────────────────
@@ -1917,7 +1917,7 @@ export function showPreviewModal(
         : modalMaxH(0.62);
     };
     capScore();
-    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); playAlongView?.setExpanded(expanded); };
+    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); audioSyncView?.setExpanded(expanded); };
 
     /** Re-engraves for the box the score is in NOW, keeping the reader's place
      *  and whatever is playing. Assigned once abcjs has loaded; a resize that
@@ -2424,7 +2424,7 @@ export function showPreviewModal(
       versionNav.classList.toggle('hidden', versionCount <= 1);
       deleteVersionBtn.classList.toggle('hidden', versionCount <= 1);
       updateStarBtn?.();
-      versionChangedForPlayAlong();
+      versionChangedForAudioSync();
       if (currentMode === 'sheet') {
         doRenderTune?.(currentIndex);
       } else {
@@ -3760,8 +3760,8 @@ export function showPreviewModal(
       // the ABC text editor would make it impossible to type.
       const onKeyDown = (e: KeyboardEvent) => {
         if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey) return;
-        // The play-along's player has the key (syncedScore.tsx).
-        if (playAlongView) return;
+        // The audio sync's player has the key (syncedScore.tsx).
+        if (audioSyncView) return;
         const active = document.activeElement as HTMLElement | null;
         const tag = active?.tagName.toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || active?.isContentEditable) return;

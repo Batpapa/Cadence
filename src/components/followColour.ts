@@ -2,7 +2,7 @@ import { MATCH_GOOD, MATCH_USABLE } from '../session/scoreFollow';
 
 // ── The colour of an alignment's quality ─────────────────────────────────────
 // One continuous scale for how well a score holds on a recording — the
-// Play-along toggle's colour for the whole, the waveform's bar by bar
+// Audio sync toggle's colour for the whole, the waveform's bar by bar
 // (2026-10-29, the user: a gradient rather than three steps). Red up to a
 // little below MATCH_USABLE, amber halfway to MATCH_GOOD, green from it on;
 // mixed in between, in the theme's own three colours.

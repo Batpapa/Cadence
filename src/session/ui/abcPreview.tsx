@@ -5,7 +5,7 @@ import { isAbcFile, buildHeardSetAbc, tunesetAbcFileName } from '../../services/
 import { hydratedEntry } from '../../services/attachmentStore';
 import { getAttachmentBlob } from '../../services/attachmentDb';
 import { arrayBufferToBase64 } from '../../utils';
-import { showPreviewModal, type PlayAlongBinding } from '../../components/fileViewer';
+import { showPreviewModal, type AudioSyncBinding } from '../../components/fileViewer';
 import { getContext } from '../../store';
 import type { AppContext, Card } from '../../types';
 import { MusicNoteIcon } from '../../components/icons';
@@ -38,12 +38,12 @@ export function settingAbcText(displayName: string, settingId: string, meta: Set
   ].join('\n');
 }
 
-function showAbcPreview(displayName: string, settingId: string, meta: SettingAbcMeta, playAlong?: PlayAlongBinding): void {
+function showAbcPreview(displayName: string, settingId: string, meta: SettingAbcMeta, audioSync?: AudioSyncBinding): void {
   showPreviewModal({
     name: `${displayName}.abc`,
     mimeType: 'text/vnd.abc',
     data: toBase64(settingAbcText(displayName, settingId, meta)),
-  }, undefined, { playAlong });
+  }, undefined, { audioSync });
 }
 
 /** The score of a set heard in an analysis: its tunes fused into one, each in
@@ -160,7 +160,7 @@ export function TuneFacts({ dance, meter, settingId }: { dance: string; meter?: 
  *  Which of the card's scores is findSettingInScore's call: the TheSession
  *  score first, then any ABC carrying the setting — asking the FILE, so a score
  *  predating the `generatedBy` marker is never passed over for a label. */
-async function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined, playAlong?: PlayAlongBinding) {
+async function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined, audioSync?: AudioSyncBinding) {
   if (!cardId || !ctx) return null;
   const card = getContext().user.cards[cardId];
   const id = parseInt(settingId, 10);
@@ -189,7 +189,7 @@ async function cardScorePreview(settingId: string, cardId: string | undefined, c
   const entry = resolved.content.attachments[target.attachmentIndex];
   if (!entry || entry.type !== 'file') return null;
   return () => showPreviewModal(entry, undefined, {
-    playAlong,
+    audioSync,
     initialIndex: target.blockIndex,
     // The star stays where the card put it, NOT on the version we opened at.
     favoriteIndex: target.preferredIndex,
@@ -243,7 +243,7 @@ function useCardCarries(settingId: string, card: Card | undefined, ask: boolean)
  * is none. Same geometry as the slice play button: w-6 h-6 circle, icon
  * flex-centered.
  */
-export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, playAlong }: {
+export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, audioSync }: {
   settingId: string;
   displayName: string;
   size?: number;
@@ -254,8 +254,8 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, pla
   cardId?: string;
   ctx?: AppContext;
   /** The detection's recording, to play the score along (PassRow.tsx's
-   *  detectionPlayAlong) — any version of the tune. */
-  playAlong?: PlayAlongBinding;
+   *  detectionAudioSync) — any version of the tune. */
+  audioSync?: AudioSyncBinding;
 }) {
   const meta = useSettingMeta(settingId);
   const cardCarries = useCardCarries(settingId, cardId ? ctx?.user.cards[cardId] : undefined, meta !== undefined && !meta?.abc);
@@ -283,10 +283,10 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, pla
         e.stopPropagation();
         // Asynchronous now: the card's score may have to come back from Drive
         // before we can even tell whether it carries this setting.
-        void cardScorePreview(settingId, cardId, ctx, playAlong)
+        void cardScorePreview(settingId, cardId, ctx, audioSync)
           .then(fromCard => {
             if (fromCard) fromCard();
-            else if (meta?.abc) showAbcPreview(displayName, settingId, meta, playAlong);
+            else if (meta?.abc) showAbcPreview(displayName, settingId, meta, audioSync);
           });
       }}
     >
