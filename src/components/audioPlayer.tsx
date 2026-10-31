@@ -445,7 +445,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
   const [currentMark, setCurrentMark] = useState(-1);
 
   // The waveform in the alignment's colours (2026-10-29, the user): each bar
-  // tinted by how well the score holds around it — the Play-along toggle's
+  // tinted by how well the score holds around it — the Audio sync toggle's
   // scale (followColour.ts), over a couple of seconds either side. Outside
   // the aligned span, the waveform's own colours.
   const barCount = status.kind === 'ready' ? status.waveform.length : 0;

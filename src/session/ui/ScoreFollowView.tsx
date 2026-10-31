@@ -8,14 +8,14 @@ import {
 import { AudioPlayer, stopCurrentAudio, type AudioPlayerHooks, type Region } from '../../components/audioPlayer';
 import { scoreContour } from '../../components/syncedScore';
 import { MATCH_GOOD, MATCH_USABLE } from '../scoreFollow';
-import type { PlayAlongState, PlayAlongView } from '../../components/fileViewer';
+import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
 import { stripForRender } from '../../services/abcService';
 import { ExpandIcon, CollapseIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 
 // ── A detection's score, following its recording ─────────────────────────────
-// The score viewer's "Play along" (2026-10-28, the user: one way in, the
+// The score viewer's "Audio sync" (2026-10-28, the user: one way in, the
 // score, rather than a button of its own beside it): the file viewer's audio
 // player (waveform, A-B region, tempo, transposition, fine pitch — no presets)
 // with a setting's score drawn above it and following what is heard — on the
@@ -32,7 +32,7 @@ import { registerOverlay } from '../../components/overlayStack';
 // its notes off the drawing (scoreContour). A version changed aligns anew
 // under the SAME player (the user, 2026-10-29: the recording has not changed,
 // so neither does its half). How the alignment goes is the viewer's toggle's
-// to show (PlayAlongState).
+// to show (AudioSyncState).
 
 type Phase =
   | { kind: 'aligning'; status: FollowStatus | null }
@@ -105,17 +105,17 @@ function usable(phase: Phase, span: number, forced: boolean): SessionFollow | nu
   return phase.follow.match >= MATCH_USABLE && coverOf(phase.follow, span) >= USABLE_COVER ? phase.follow : null;
 }
 
-/** What the viewer's Play-along toggle shows of the alignment (PlayAlongState):
+/** What the viewer's Audio sync toggle shows of the alignment (AudioSyncState):
  *  its colour, the words and figures in its tooltip — which, followed by
  *  force, says so: the colour stays the verdict. */
-function stateOf(phase: Phase, span: number, forced: boolean): PlayAlongState {
+function stateOf(phase: Phase, span: number, forced: boolean): AudioSyncState {
   const s = verdictOf(phase, span);
   return forced && s.kind === 'none' && phase.kind === 'ready'
-    ? { ...s, title: `${t('fileViewer.abc.playAlong.forced')} · ${s.title}` }
+    ? { ...s, title: `${t('fileViewer.abc.audioSync.forced')} · ${s.title}` }
     : s;
 }
 
-function verdictOf(phase: Phase, span: number): PlayAlongState {
+function verdictOf(phase: Phase, span: number): AudioSyncState {
   if (phase.kind === 'aligning') {
     const ratio = phase.status?.ratio ?? 0;
     return { kind: 'aligning', ratio, title: `${stageText(phase.status)} · ${Math.round(ratio * 100)} %` };
@@ -159,7 +159,7 @@ function ScoreFollowView({ ann, version, getAudio, expanded, face, onState, forc
   getAudio: () => Promise<FollowAudio | undefined>;
   expanded: Signal<boolean>;
   face: Signal<'sheet' | 'text'>;
-  onState: (s: PlayAlongState) => void;
+  onState: (s: AudioSyncState) => void;
   /** Followed whatever the verdict (the viewer's hidden gesture). */
   forced: Signal<boolean>;
 }) {
@@ -351,8 +351,8 @@ function ScoreFollowView({ ann, version, getAudio, expanded, face, onState, forc
 }
 
 /** `version` — a version of `ann`'s tune, its ABC — its cursor following
- *  `ann`'s recording, in `host`: the score viewer's play-along (fileViewer.ts,
- *  PreviewModalOpts.playAlong). The paper is the viewer's setting, read live,
+ *  `ann`'s recording, in `host`: the score viewer's audio sync (fileViewer.ts,
+ *  PreviewModalOpts.audioSync). The paper is the viewer's setting, read live,
  *  and its gear changes it. */
 export function mountScoreFollow(host: HTMLElement, opts: {
   ann: Detection;
@@ -360,9 +360,9 @@ export function mountScoreFollow(host: HTMLElement, opts: {
   getAudio: () => Promise<FollowAudio | undefined>;
   face: 'sheet' | 'text';
   expanded: boolean;
-  onState: (s: PlayAlongState) => void;
+  onState: (s: AudioSyncState) => void;
   forced: boolean;
-}): PlayAlongView {
+}): AudioSyncView {
   const version = signal(opts.version);
   const face = signal(opts.face);
   const expanded = signal(opts.expanded);

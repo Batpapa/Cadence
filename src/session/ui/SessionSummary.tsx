@@ -94,9 +94,9 @@ const DOUBLE_CLICK_MS = 400;
 
 /** Where this recording's Drive copy stands. Same four readings as the header's
  *  own sync indicator, because it is the same question about a smaller thing. */
-type AudioSyncState = 'off' | 'uploading' | 'on' | 'error' | 'waiting' | 'wifi';
+type DriveAudioState = 'off' | 'uploading' | 'on' | 'error' | 'waiting' | 'wifi';
 
-const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
+const DRIVE_AUDIO_TITLE: Record<DriveAudioState, string> = {
   off:       'sessions.syncAudio.off',
   uploading: 'sessions.syncAudio.uploading',
   on:        'sessions.syncAudio.on',
@@ -111,7 +111,7 @@ const AUDIO_SYNC_TITLE: Record<AudioSyncState, string> = {
  *  code — yellow-free here since a copy is either made or not — so "is this on
  *  Drive" is read the same way in both places. A second visual language for the
  *  same idea is how two indicators come to disagree. */
-function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () => void }) {
+function DriveAudioBtn({ state, onClick }: { state: DriveAudioState; onClick: () => void }) {
   // Hover never changes the HUE, only its lightness, and only where there is
   // no state colour to confuse: the accent is already what "copying" looks
   // like, so an accent-on-hover idle button read as an upload that had started
@@ -128,7 +128,7 @@ function AudioSyncBtn({ state, onClick }: { state: AudioSyncState; onClick: () =
   return (
     <button
       class={`flex items-center shrink-0 transition-colors ${cls}`}
-      title={t(AUDIO_SYNC_TITLE[state] as Parameters<typeof t>[0])}
+      title={t(DRIVE_AUDIO_TITLE[state] as Parameters<typeof t>[0])}
       aria-pressed={state === 'on'}
       disabled={state === 'uploading'}
       onClick={state === 'uploading' ? undefined : onClick}
@@ -321,7 +321,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // here too, so that a recording stopped a moment ago reads as on its way
   // rather than as never copied.
   const autoUpload = synced ? undefined : autoUploadState.value[session.id];
-  const audioSyncState: AudioSyncState =
+  const driveAudioState: DriveAudioState =
     busySync || autoUpload === 'uploading' ? 'uploading'
       : syncFailed ? 'error'
       : synced ? 'on'
@@ -1202,7 +1202,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             >
               <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />
             </button>
-            {driveOn && <AudioSyncBtn state={audioSyncState} onClick={toggleSync} />}
+            {driveOn && <DriveAudioBtn state={driveAudioState} onClick={toggleSync} />}
             <button
               class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0"
               title={t('sessions.reanalyze.hint')}

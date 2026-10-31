@@ -3,7 +3,7 @@ import type { VNode } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, CloudIcon } from '../../components/icons';
-import type { PlayAlongBinding } from '../../components/fileViewer';
+import type { AudioSyncBinding } from '../../components/fileViewer';
 import { playIcon, pauseIcon, stopIcon } from '../../components/playbackIcons';
 import { showModal, closeModal, alertModal } from '../../components/modal';
 import { formatBytes } from '../../utils';
@@ -30,7 +30,7 @@ import { useMediaVolume } from '../../components/useMediaVolume';
 // Hearing and reading come first because both lists are for tunes being
 // learnt; the time and the analysis are where the pass lives, and lead there;
 // the clip controls close the line because they are what is done last. The
-// score plays along the pass from its viewer (2026-10-28, detectionPlayAlong).
+// score plays along the pass from its viewer (2026-10-28, detectionAudioSync).
 
 /** Passages from several evenings, played through ONE audio element. */
 export interface SlicePlayer {
@@ -379,7 +379,7 @@ async function followAudioFromDrive(sessionId: string, detection: Detection): Pr
   return blob ? { blob, start: 0 } : undefined;
 }
 
-/** The score viewer's "Play along" for a detection (ScoreFollowView), wherever
+/** The score viewer's "Audio sync" for a detection (ScoreFollowView), wherever
  *  its score opens from — its card in the analysis, and the lists of passes.
  *  Only for a tune the recogniser heard: a tune named by hand has no heard
  *  version to follow. Any version of it can be played along — the one heard,
@@ -388,7 +388,7 @@ async function followAudioFromDrive(sessionId: string, detection: Detection): Pr
  *  recording, or from Drive's — then the toggle wears the cloud and the
  *  stretch is fetched when it is turned on. Undefined when the recording is in
  *  neither place. */
-export function detectionPlayAlong(sessionId: string, detection: Detection, here: boolean, beforeOpen?: () => void): PlayAlongBinding | undefined {
+export function detectionAudioSync(sessionId: string, detection: Detection, here: boolean, beforeOpen?: () => void): AudioSyncBinding | undefined {
   const fromDrive = !here && !!syncedAudioEntry(sessionId);
   if (!hasRecognisedSetting(detection) || (!here && !fromDrive)) return undefined;
   // From Drive, fetched once for the viewer: another version is the same
@@ -441,7 +441,7 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
         </span>
         <AbcPreview
           settingId={detection.settingId} displayName={detection.displayName} cardId={cardId} ctx={ctx}
-          playAlong={detectionPlayAlong(session.id, detection, player.isHere(session.id), player.stop)}
+          audioSync={detectionAudioSync(session.id, detection, player.isHere(session.id), player.stop)}
         />
       </div>
 

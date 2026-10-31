@@ -6,7 +6,7 @@ import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon } from
 import { findByExternalId } from '../../services/theSessionService';
 import { hasLibrary } from '../../services/pageMode';
 import { AbcPreview, TuneFacts } from './abcPreview';
-import { PlayDisc, playDiscTitle, detectionPlayAlong } from './PassRow';
+import { PlayDisc, playDiscTitle, detectionAudioSync } from './PassRow';
 import { scrollContainerOf } from './domInterop';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
@@ -41,8 +41,8 @@ export interface DetectionCardOptions {
   playFromDrive?: boolean;
   /** The detection whose passage is on its way from Drive. */
   playLoadingId?: string | null;
-  /** The score viewer's "Play along" with this recording (PassRow.tsx's
-   *  detectionPlayAlong). Only on a saved analysis: the feeds' recording is
+  /** The score viewer's "Audio sync" with this recording (PassRow.tsx's
+   *  detectionAudioSync). Only on a saved analysis: the feeds' recording is
    *  still being written. */
   follow?: {
     /** The recording is on this device; otherwise it is read from Drive, if
@@ -567,7 +567,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
 
         <AbcPreview
           settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx}
-          playAlong={opts.follow && detectionPlayAlong(opts.sessionId, ann, opts.follow.here, opts.follow.beforeOpen)}
+          audioSync={opts.follow && detectionAudioSync(opts.sessionId, ann, opts.follow.here, opts.follow.beforeOpen)}
         />
 
         <TuneDeckButton
