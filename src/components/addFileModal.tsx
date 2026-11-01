@@ -8,7 +8,8 @@ import { pickFiles } from '../services/filePicker';
 import { appState } from '../store';
 import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
 import { CustomSelect } from './customSelect';
-import { FileIcon, ClipboardIcon, ArrowRightIcon } from './icons';
+import { FileIcon, ClipboardIcon, MicIcon, ArrowRightIcon } from './icons';
+import { showRecordMicModal } from './recordMicModal';
 import { t } from '../services/i18nService';
 import {
   TEXT_FORMAT_IDS, TEXT_FORMATS, detectTextFormat, suggestedTextName, textAttachment,
@@ -16,8 +17,9 @@ import {
 } from '../services/textAttachment';
 
 // ── Where a file comes from ──────────────────────────────────────────────────
-// Two sources behind the attachment list's "File" entry: the device's own
-// picker, and a text pasted straight in. The second exists because the formats
+// Three sources behind the attachment list's "File" entry: the device's own
+// picker, a text pasted straight in, and the microphone (recordMicModal.tsx,
+// 2026-11-01). The second exists because the formats
 // this app reads best — an ABC above all, but also a plain note or a markdown
 // one — usually arrive as text in a clipboard, out of a forum post or another
 // app, and writing them to a file first only to pick that file back up is a
@@ -79,6 +81,11 @@ export function showAddFileModal(onAdd: (a: Attachment) => void): void {
         icon={<ClipboardIcon size={18} />}
         label={t('fileViewer.source.clipboard')}
         onClick={() => { leave(); showPasteTextModal(onAdd); }}
+      />
+      <SourceRow
+        icon={<MicIcon size={18} />}
+        label={t('fileViewer.source.mic')}
+        onClick={() => { leave(); showRecordMicModal(onAdd, () => showAddFileModal(onAdd)); }}
       />
     </div>,
   );
