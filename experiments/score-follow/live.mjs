@@ -32,7 +32,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const { featuresOf, decodeSpan } = require('./lib/engine');
 const { renderSequence } = require('./lib/render');
 const { align, FPS, MIDI_LOW } = require('./lib/align');
-const { LiveFollower, LiveCursor } = await import(pathToFileURL(path.resolve(here, '../../src/session/liveFollow.ts')).href);
+const { LiveFollower, LiveCursor, VersionWatch, versionMerge } = await import(pathToFileURL(path.resolve(here, '../../src/session/liveFollow.ts')).href);
 
 const ROOT = path.resolve(here, '../..');
 const INDEX = path.resolve(here, '../noise-study/.cache/tune-index.json');
@@ -42,8 +42,8 @@ const idx = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
 
 const env = (k) => (process.env[k] !== undefined ? Number(process.env[k]) : undefined);
 const followOpts = Object.fromEntries(Object.entries({
-  lagFrames: env('LAG'), octaveWeight: env('OCT'), wrongPenalty: env('WRONG'), quietPenalty: env('QUIET'), pitchShare: env('PITCH'), jumpMargin: env('JMARGIN'), jumpFrames: env('JFRAMES'), enterPenalty: env('ENTER'), exitPenalty: env('EXIT'), switchPenalty: env('SWITCH'),
-  showFrames: env('SHOW'), hideFrames: env('HIDE'),
+  lagFrames: env('LAG'), durWeight: env('DUR'), octaveWeight: env('OCT'), wrongPenalty: env('WRONG'), quietPenalty: env('QUIET'), pitchShare: env('PITCH'), jumpMargin: env('JMARGIN'), jumpFrames: env('JFRAMES'), enterPenalty: env('ENTER'), exitPenalty: env('EXIT'), switchPenalty: env('SWITCH'),
+  showFrames: env('SHOW'), hideFrames: env('HIDE'), rateSeconds: env('RATESEC'),
   bpms: process.env.BPMS ? process.env.BPMS.split(',').map(Number) : undefined,
   fps: FPS,
 }).filter(([, v]) => v !== undefined));
@@ -120,7 +120,7 @@ function runCase(feats, levels, score, truth) {
   };
   const lf = new LiveFollower(score, followOpts);
   const cursors = HS.map(() => new LiveCursor(N, cursorOpts));
-  const acc = HS.map(() => ({ steady: 0, shown: 0, on: 0, far: 0, errs: [], outside: 0, ghost: 0, backs: 0, backsOut: 0, jumps: 0, prev: null }));
+  const acc = HS.map(() => ({ steady: 0, shown: 0, on: 0, far: 0, errs: [], outside: 0, ghost: 0, backs: 0, backsOut: 0, jumps: 0, prev: null, errq: [] }));
   const raw = { n: 0, on: 0 };
   // Acquisition at H_ACQ: from the start of each stretch of playing to the
   // first second spent on the right quaver throughout.
@@ -179,6 +179,7 @@ function runCase(feats, levels, score, truth) {
       // Elsewhere in the tune: more than two quavers off what is played.
       if (drawnGap(p, tr.q) > 2) a.far++;
       a.errs.push(drawnGap(p, tr.q) / tr.rate);
+      a.errq.push(drawnGap(p, tr.q));
     });
   }
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
@@ -371,9 +372,113 @@ function traceTake(feats, levels, score, truth) {
   }
 }
 
+// ── Which version is being played (VersionWatch) ─────────────────────────────
+// Every setting of a tune followed side by side, one of them "on screen":
+// whether another is offered, which, and when. Synthetic: the first setting
+// played (solo, then session), on screen in turn itself — any offer is a
+// false one — and up to SHOWN others (the played one, or a near twin, should
+// be offered: `same` is the share of quavers the offer has in common with
+// what is played). Takes: `versions take tuneId shownId file.json`.
+// Settings: MERGE, WIN, MARGIN, HOLD.
+const watchOpts = Object.fromEntries(Object.entries({ merge: env('MERGE'), windowSeconds: env('WIN'), margin: env('MARGIN'), holdSeconds: env('HOLD') }).filter(([, v]) => v !== undefined));
+const twin = (a, b) => { const n = Math.min(a.length, b.length); let s = 0; for (let i = 0; i < n; i++) if (a[i] === b[i]) s++; return s / Math.max(a.length, b.length); };
+
+function watchRun(feats, levels, scores, shown) {
+  const w = new VersionWatch(scores, shown, { merge: versionMerge(scores.length), ...watchOpts, fps: FPS, follow: followOpts });
+  let first = null, last = null;
+  const t0 = performance.now();
+  const frames = feats.length / 48;
+  for (let fr = 0; fr < frames; fr++) {
+    const o = w.push(feats.subarray(fr * 48, fr * 48 + 48), levels?.[fr]);
+    if (o !== null && first === null) first = { v: o, t: fr / FPS };
+    last = o;
+  }
+  return { first, last, ms: (performance.now() - t0) / frames };
+}
+
+function versions() {
+  if (process.argv[3] === 'take') {
+    const [tuneId, shownId, ...files] = process.argv.slice(4);
+    const ids = Object.keys(idx.settings).filter((k) => idx.settings[k].tune_id === tuneId);
+    const scores = ids.map((id) => toMidi(idx.settings[id].contour));
+    const f32 = (b64) => { const b = Buffer.from(b64, 'base64'); return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); };
+    for (const file of files) {
+      const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const r = watchRun(f32(j.features), f32(j.levels), scores, ids.indexOf(shownId));
+      console.log(`${path.basename(file)} on screen ${shownId}: offered ${r.first ? `${ids[r.first.v]} at ${f1(r.first.t)} s` : 'nothing'}, at the end ${r.last === null ? 'nothing' : ids[r.last]}  (${ids.length} versions, ${r.ms.toFixed(2)} ms/frame)`);
+    }
+    return;
+  }
+  const SHOWN = Number(process.env.SHOWN || 4);
+  const tunes = [['1', 112], ['55', 115], ['2', 110], ['71', 105], ['27', 120], ['248', 90], ['3', 100], ['52', 118], ['65', 112], ['16', 105]];
+  const tally = { false: 0, quiet: 0, right: 0, twin: 0, wrong: 0, missed: 0, delays: [], ms: [] };
+  for (const way of ['solo', 'session']) {
+    for (const [tuneId, bpm0] of tunes) {
+      const ids = Object.keys(idx.settings).filter((k) => idx.settings[k].tune_id === tuneId);
+      const scores = ids.map((id) => toMidi(idx.settings[id].contour));
+      const played = 0, score = scores[played], N = score.length;
+      const solo = way === 'solo';
+      const { pcm } = renderSequence(score, Array.from({ length: 3 * N }, (_, k) => k % N), { bpm: Math.round(bpm0 * (solo ? 1 : 1.8)), accomp: !solo, snrDb: solo ? 25 : 10 });
+      const feats = featuresOf(pcm), levels = levelsOf(pcm);
+      const step = Math.max(1, Math.floor((ids.length - 1) / SHOWN));
+      const shownList = [played, ...Array.from({ length: Math.min(SHOWN, ids.length - 1) }, (_, k) => 1 + k * step)];
+      const out = [];
+      for (const shown of shownList) {
+        const r = watchRun(feats, levels, scores, shown);
+        tally.ms.push(r.ms);
+        const near = twin(scores[shown], score);
+        if (shown === played) {
+          if (r.first) { tally.false++; out.push(`FALSE ${ids[r.first.v]} (same ${f0(100 * twin(scores[r.first.v], score))} %)`); } else { tally.quiet++; out.push('none'); }
+          continue;
+        }
+        if (!r.first) { tally.missed++; out.push(`${ids[shown]} (same ${f0(100 * near)} %): none`); continue; }
+        const same = twin(scores[r.first.v], score);
+        if (r.first.v === played) tally.right++; else if (same >= near) tally.twin++; else tally.wrong++;
+        tally.delays.push(r.first.t);
+        out.push(`${ids[shown]} (same ${f0(100 * near)} %): ${ids[r.first.v]} (same ${f0(100 * same)} %) at ${f1(r.first.t)} s`);
+      }
+      console.log(`${way.padEnd(8)} ${(idx.aliases[tuneId] || ['?'])[0].slice(0, 22).padEnd(22)} ${String(ids.length).padStart(2)} versions  ${out.join(' | ')}`);
+    }
+  }
+  const d = tally.delays.sort((a, b) => a - b);
+  console.log(`played on screen: ${tally.false} false offers, ${tally.quiet} none · another on screen: ${tally.right} played offered, ${tally.twin} a closer twin, ${tally.wrong} a farther one, ${tally.missed} none · delay med ${f1(pct(d, 0.5))} s · ${pct(tally.ms.sort((a, b) => a - b), 0.5).toFixed(2)} ms/frame med`);
+}
+
+// ── Fast against slow (2026-11-01) ───────────────────────────────────────────
+// « It feels far more in time played fast than slow » (the user). The same
+// tunes played solo, twice through, at each tempo: the error at H = 150 ms in
+// milliseconds and in quavers — if it is a fraction of a quaver, slow playing
+// shows it longer. HELD=1: quavers of one pitch in a row are one held note
+// (a crotchet as played: no attack between its halves).
+function tempo() {
+  const settingsOf = new Map();
+  for (const [id, s] of Object.entries(idx.settings)) (settingsOf.get(s.tune_id) || settingsOf.set(s.tune_id, []).get(s.tune_id)).push(id);
+  const tunes = ['1', '55', '2', '71', '27', '248', '3', '52', '65', '16'];
+  const bpms = process.env.TEMPI ? process.env.TEMPI.split(',').map(Number) : [80, 100, 120, 140, 160, 180, 200, 220];
+  const H = HS.indexOf(0.15);
+  for (const bpm of bpms) {
+    const errs = [], errq = [], rates = [];
+    let on = 0, steady = 0, far = 0, backs = 0;
+    for (const tuneId of tunes) {
+      const sid = idx.settings[tuneId] ? tuneId : (settingsOf.get(tuneId) || [])[0];
+      if (!sid) continue;
+      const score = toMidi(idx.settings[sid].contour);
+      const played = Array.from({ length: 2 * score.length }, (_, k) => k % score.length);
+      const { pcm, notes, end } = renderSequence(score, played, { bpm, accomp: false, snrDb: 25, held: !!process.env.HELD });
+      const r = runCase(featuresOf(pcm), levelsOf(pcm), score, truthOf(notes, end));
+      const a = r.acc[H];
+      errs.push(...a.errs); errq.push(...a.errq);
+      on += a.on; steady += a.steady; far += a.far; backs += a.backs;
+    }
+    console.log(`bpm ${String(bpm).padStart(3)}  quaver ${f0(30000 / bpm)} ms  on ${f1(100 * on / steady)} %  err med ${f0(1000 * pct(errs, 0.5))} / p90 ${f0(1000 * pct(errs, 0.9))} ms  = ${pct(errq, 0.5).toFixed(2)} / ${pct(errq, 0.9).toFixed(2)} quaver  elsewhere ${f1(100 * far / steady)} %  jumps back ${backs}`);
+  }
+}
+
 const mode = process.argv[2] || 'synth';
-console.log(`follower ${JSON.stringify(followOpts)}  cursor ${JSON.stringify(cursorOpts)}`);
+console.log(`follower ${JSON.stringify(followOpts)}  cursor ${JSON.stringify(cursorOpts)}  watch ${JSON.stringify(watchOpts)}`);
 if (mode === 'synth') synth();
 else if (mode === 'real') real();
 else if (mode === 'take') takes();
-else console.log('usage: live.mjs synth [session|solo|practice] | real [session-substring] [maxTunes] | take file.json…');
+else if (mode === 'versions') versions();
+else if (mode === 'tempo') tempo();
+else console.log('usage: live.mjs synth [session|solo|practice] | real [session-substring] [maxTunes] | take file.json… | versions [take tuneId shownId file.json…]');

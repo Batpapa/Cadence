@@ -1,13 +1,15 @@
 import { LiveCursor, type LiveEstimate } from './liveFollow';
 import type { LiveFollowRequest, LiveFollowResponse } from './recognition/liveFollowWorker';
+import type { VersionWatchRequest, VersionWatchResponse } from './recognition/versionWatchWorker';
 import { attachStampedPcmWorklet } from './audio/pcmWorklet';
-import { openMicForMusic, openDeviceAudio, WakeLockManager } from './audio/capture';
+import { openMicForMusic, WakeLockManager } from './audio/capture';
 import { beginCaptureSession, endCaptureSession } from '../services/audioSession';
 import { ANALYSIS_SAMPLE_RATE, FF_PCM_WINDOW, FF_SAMPLE_RATE_MIN, FF_SAMPLE_RATE_MAX } from './sessionConfig';
 
 // ── Play-along: the score following what is being played, live ──────────────
-// Developer mode only for now (2026-10-31, the user). The microphone — or, on
-// a computer, a tab's sound, to try it on a video — through a worklet posting
+// Since 2026-10-31 (the user; out of developer mode 2026-11-01). The microphone
+// — its only source since then: a tab's sound, offered to the developer to
+// try it on a video, is gone — through a worklet posting
 // one FolkFriend window at a time, stamped on the context's clock, to the
 // live follower's worker (liveFollowWorker.ts). Its estimates come back late:
 // by the microphone's latency, the window, the follower's lag. The page
@@ -17,10 +19,8 @@ import { ANALYSIS_SAMPLE_RATE, FF_PCM_WINDOW, FF_SAMPLE_RATE_MIN, FF_SAMPLE_RATE
 // as a sample captured is output, in a pass-through, at the time it is
 // labelled with — so the round trip is the two latencies. The browser says
 // the output's (`outputLatency`); Chrome says the input's
-// (`getSettings().latency`); the rest is the developer's offset, kept on the
+// (`getSettings().latency`); the rest is the capture latency set by hand, kept on the
 // device, and one frame of the screen's.
-
-export type PlayAlongSource = 'mic' | 'tab';
 
 /** What the diagnostic line shows. */
 export interface PlayAlongStatus {
@@ -41,8 +41,20 @@ export interface PlayAlong {
    *  null — read by the score at every frame. */
   position(): number | null;
   status(): PlayAlongStatus;
+  /** Every version of the file followed too, to tell which one is being
+   *  played (versionWatchWorker.ts): `onOffer` hears the one offered in
+   *  place of `shown`, or null. Again replaces the watch before. */
+  watchVersions(scores: number[][], shown: number, onOffer: (version: number | null) => void): VersionWatchHandle;
   /** What was heard, for the bench: JSON. */
   dump(): Promise<Blob>;
+  stop(): void;
+}
+
+export interface VersionWatchHandle {
+  /** Another version on screen. */
+  setShown(shown: number): void;
+  /** Turned down: not offered again. */
+  mute(version: number): void;
   stop(): void;
 }
 
@@ -54,7 +66,8 @@ const OFFSET_KEY = 'cadence_play_along_offset_ms';
 /** Read once: the cursor asks at every frame. */
 let offsetMs: number | null = null;
 
-/** The developer's own correction of the cursor's lead, in ms: per device,
+/** The capture latency set by hand — the correction of the cursor's lead,
+ *  in ms: per device and for all its users (2026-11-01, the user),
  *  as the latencies it makes up for are. */
 export function playAlongOffset(): number {
   if (offsetMs !== null) return offsetMs;
@@ -76,19 +89,18 @@ export function setPlayAlongOffset(ms: number): void {
   } catch { /* private mode: it lasts as long as the page */ }
 }
 
-/** Starts listening to `source` — following nothing until `setScore`.
- *  Call it from the tap: the microphone and a tab's
- *  sound are asked for before anything is awaited — a tab's must be, and an
- *  iPhone's audio session must allow recording first. `onEnded`: the source
- *  went (a tab's sharing stopped from the browser's own bar). */
-export async function startPlayAlong(source: PlayAlongSource, onEnded: () => void): Promise<PlayAlong> {
-  if (source === 'mic') beginCaptureSession();
-  const opening = source === 'mic' ? openMicForMusic() : openDeviceAudio();
+/** Starts listening to the microphone — following nothing until
+ *  `setScore`. Call it from the tap: it is asked for before anything is
+ *  awaited — an iPhone's audio session must allow recording first.
+ *  `onEnded`: the microphone went (unplugged, taken by the system). */
+export async function startPlayAlong(onEnded: () => void): Promise<PlayAlong> {
+  beginCaptureSession();
+  const opening = openMicForMusic();
   let stream: MediaStream;
   try {
     stream = await opening;
   } catch (err) {
-    if (source === 'mic') endCaptureSession();
+    endCaptureSession();
     throw err;
   }
   let ctx = new AudioContext();
@@ -129,16 +141,20 @@ export async function startPlayAlong(source: PlayAlongSource, onEnded: () => voi
   const wake = new WakeLockManager();
   void wake.start();
 
+  let watcher: Worker | null = null;
+  const stopWatch = () => { watcher?.terminate(); watcher = null; };
+
   let stopped = false;
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    stopWatch();
     try { input.disconnect(); node.disconnect(); } catch { /* already gone */ }
     stream.getTracks().forEach(trk => trk.stop());
     void ctx.close().catch(() => { /* closing */ });
     worker.terminate();
     wake.stop();
-    if (source === 'mic') endCaptureSession();
+    endCaptureSession();
   };
   track?.addEventListener('ended', () => { if (!stopped) { stop(); onEnded(); } });
 
@@ -179,6 +195,22 @@ export async function startPlayAlong(source: PlayAlongSource, onEnded: () => voi
         outputLatency: outputLatency(),
         horizon: now === null || !last ? null : now - (last.frames * FF_PCM_WINDOW) / rate,
         rate,
+      };
+    },
+    watchVersions: (scores, shown, onOffer) => {
+      stopWatch();
+      const w = new Worker(new URL('./recognition/versionWatchWorker.ts', import.meta.url), { type: 'module' });
+      watcher = w;
+      const ch = new MessageChannel();
+      w.onmessage = (e: MessageEvent<VersionWatchResponse>) => { if (watcher === w) onOffer(e.data.version); };
+      const post = (req: VersionWatchRequest, transfer: Transferable[] = []) => w.postMessage(req, transfer);
+      post({ type: 'start', scores, shown, fps: rate / FF_PCM_WINDOW, port: ch.port2 }, [ch.port2]);
+      const tap: LiveFollowRequest = { type: 'tap', port: ch.port1 };
+      worker.postMessage(tap, [ch.port1]);
+      return {
+        setShown: (v) => post({ type: 'shown', shown: v }),
+        mute: (v) => post({ type: 'mute', version: v }),
+        stop: () => { if (watcher === w) stopWatch(); },
       };
     },
     dump: () => new Promise<Blob>((resolve) => {

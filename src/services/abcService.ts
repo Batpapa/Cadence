@@ -620,6 +620,13 @@ export function showAbcSyntaxCheck(user: { abcShowSyntaxCheck?: boolean }): bool
   return user.abcShowSyntaxCheck === true;
 }
 
+/** The Play-along offers the file's version being played when it is not the
+ *  one on screen (2026-11-01, the user: an option, on by default). Absent =
+ *  on; turning it off is written as an explicit `false`. */
+export function suggestPlayedVersion(user: { abcSuggestPlayedVersion?: boolean }): boolean {
+  return user.abcSuggestPlayedVersion !== false;
+}
+
 /** `stripForRender`, line for line: a dropped field becomes a comment line
  *  instead of disappearing, so line N of the result is line N of the input —
  *  which is what lets a warning's line number be found again in the text. */

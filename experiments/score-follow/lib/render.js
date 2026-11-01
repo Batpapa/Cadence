@@ -10,7 +10,7 @@ const hz = (m) => 440 * 2 ** ((m - 69) / 12);
 
 /** `played`: quaver indices into `score`, null for a quaver's rest.
  *  Returns the PCM and the notes: { t, dur, index } (index null in a rest). */
-function renderSequence(score, played, { bpm, swing = 0.55, drift = 0.06, jitter = 0.008, snrDb = 10, lead = 3, accomp = true, cuts = 0.1, seed = 12345 }) {
+function renderSequence(score, played, { bpm, swing = 0.55, drift = 0.06, jitter = 0.008, snrDb = 10, lead = 3, accomp = true, cuts = 0.1, seed = 12345, held = false }) {
   let s0 = seed;
   const rnd = () => ((s0 = (s0 * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
   const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
@@ -28,10 +28,15 @@ function renderSequence(score, played, { bpm, swing = 0.55, drift = 0.06, jitter
   const end = t;
   const len = Math.ceil((t + lead) * RATE);
   const pcm = new Float32Array(len);
-  for (const nt of notes) {
+  for (let k = 0; k < notes.length; k++) {
+    const nt = notes[k];
     if (nt.index === null) continue;
+    // held: quavers of one pitch in a row are one note held, as a crotchet
+    // is played — no attack to tell where the second begins.
+    let endT = nt.t + nt.dur;
+    while (held && k + 1 < notes.length && notes[k + 1].index !== null && score[notes[k + 1].index] === score[nt.index]) { k++; endT = notes[k].t + notes[k].dur; }
     const a = Math.max(0, Math.floor(nt.t * RATE));
-    const b = Math.min(len, Math.floor((nt.t + nt.dur) * RATE));
+    const b = Math.min(len, Math.floor(endT * RATE));
     const f0 = hz(score[nt.index]);
     const cut = rnd() < cuts ? Math.floor(0.03 * RATE) : 0;
     let phase = 0;

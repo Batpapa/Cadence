@@ -1,7 +1,8 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
-import { LiveFollower, type LiveEstimate } from '../liveFollow';
+import { LiveFollower, TAP_STRIDE, type LiveEstimate } from '../liveFollow';
 import { FF_PCM_WINDOW } from '../sessionConfig';
 import type { StampedChunk } from '../audio/pcmWorklet';
+import type { FrameBatch } from './versionWatchWorker';
 
 // ── Play-along worker ────────────────────────────────────────────────────────
 // The microphone, one FolkFriend window at a time (the stamped worklet posts
@@ -22,7 +23,10 @@ export type LiveFollowRequest =
    *  scratch, the follower's clock starting at the next chunk — and what was
    *  kept for the download with it, a take being of one score. */
   | { type: 'score'; score: number[] }
-  | { type: 'dump' };
+  | { type: 'dump' }
+  /** Where every frame's features and level go too, in batches: the
+   *  versions' watch (versionWatchWorker.ts). */
+  | { type: 'tap'; port: MessagePort };
 
 export type LiveFollowResponse =
   /** `origin`: the context's sample frame of the first sample followed —
@@ -49,6 +53,11 @@ let rate = 48000;
 let origin = -1;
 let frames = 0;
 const kept: { features: Float32Array[]; levels: number[] } = { features: [], levels: [] };
+/** The versions' watch, and the frames not posted to it yet. */
+let tap: MessagePort | null = null;
+const TAP_BATCH = 8;
+let tapped = new Float32Array(TAP_BATCH * TAP_STRIDE);
+let tapN = 0;
 /** Samples waiting for a window to fill, should a chunk not be one. */
 let pending = new Float32Array(0);
 
@@ -87,6 +96,16 @@ function onChunk(chunk: StampedChunk): void {
     const estimate = follower.push(frame, level);
     frames++;
     if (kept.levels.length < KEEP_FRAMES) { kept.features.push(frame.slice()); kept.levels.push(level); }
+    if (tap) {
+      tapped.set(frame, tapN * TAP_STRIDE);
+      tapped[tapN * TAP_STRIDE + MIDI_NUM] = level;
+      if (++tapN === TAP_BATCH) {
+        const batch: FrameBatch = { frames: tapped };
+        tap.postMessage(batch, [tapped.buffer]);
+        tapped = new Float32Array(TAP_BATCH * TAP_STRIDE);
+        tapN = 0;
+      }
+    }
     ctx.postMessage({ type: 'estimate', estimate, origin, frames });
   }
   pending = pcm.slice(at);
@@ -113,6 +132,9 @@ ctx.onmessage = (e) => {
     score = msg.score;
     // Before the engine is ready, `start` takes it from here.
     if (ff) follow(score);
+  } else if (msg.type === 'tap') {
+    tap = msg.port;
+    tapN = 0;
   } else if (msg.type === 'dump') {
     const features = new Float32Array(kept.features.length * MIDI_NUM);
     kept.features.forEach((f, k) => features.set(f, k * MIDI_NUM));

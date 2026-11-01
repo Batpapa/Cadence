@@ -12,7 +12,7 @@ import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
-  showAbcSyntaxCheck, blankForRender, locateAbcWarning, abcWarningRange,
+  showAbcSyntaxCheck, suggestPlayedVersion, blankForRender, locateAbcWarning, abcWarningRange,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcSwingAtOpen, meterCanSwing,
   ABC_PAPERS, SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
 import { engraveScore, type ScoreMeasure } from '../services/abcLineBreaks';
@@ -31,7 +31,6 @@ import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon, boundIcon } from './playbackIcons';
 import { appState, mutate } from '../store';
 import { registerOverlay } from './overlayStack';
-import { devMode } from '../services/devMode';
 import { mountPlayAlong } from '../session/ui/PlayAlongView';
 
 // ── ABC Transcription Tools share-link integration ────────────────────────────
@@ -400,6 +399,18 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
       .then(() => onSyntaxCheck?.());
   });
 
+  // ── The Play-along's offer of the version being played ──
+  // Read when the Play-along is turned on: one already listening goes on as
+  // it started.
+  const suggestBox = document.createElement('input');
+  suggestBox.type = 'checkbox';
+  suggestBox.className = 'card-checkbox';
+  suggestBox.checked = suggestPlayedVersion(appState.value);
+  suggestBox.addEventListener('change', () => {
+    const on = suggestBox.checked;
+    void mutate(st => { if (on) delete st.abcSuggestPlayedVersion; else st.abcSuggestPlayedVersion = false; });
+  });
+
   // ── Which face a score opens on ──
   // Saved only, like the speed: it describes the NEXT score to be opened, and
   // flipping the one already on screen would answer a question nobody asked —
@@ -454,6 +465,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
     row('fileViewer.abc.prefs.includeRepeats', repeatsBox),
     row('fileViewer.abc.prefs.tapPlaysNote', tapBox),
     row('fileViewer.abc.prefs.syntaxCheck', syntaxBox),
+    row('fileViewer.abc.prefs.suggestVersion', suggestBox),
     row('fileViewer.abc.prefs.openOn', openSelect),
   );
 
@@ -689,7 +701,8 @@ export interface AudioSyncView {
  *  following what the microphone hears, driven by the viewer's versions,
  *  tabs and full page as the audio sync is. */
 export interface PlayAlongView {
-  setVersion: (version: string) => void;
+  /** The version on screen now: its ABC, and its index in the file. */
+  setVersion: (version: string, index: number) => void;
   setFace: (face: 'sheet' | 'text') => void;
   setExpanded: (expanded: boolean) => void;
   unmount: () => void;
@@ -1363,16 +1376,16 @@ export function showPreviewModal(
     // the versions and the full page driving it the same way, the viewer's
     // own sound and space bar standing down. The two exclude each other: one
     // score, one cursor. Labelled as the audio sync's is, the two labels
-    // dropped together when the row is short (2026-10-31, the user).
+    // dropped together when the row is short (2026-10-31, the user). Out of
+    // developer mode since 2026-11-01 (the user: « it pleases me »).
     let playAlongView: PlayAlongView | null = null;
     let playAlongHost: HTMLElement | null = null;
     /** What the Play-along hid, with how each was shown, to put back. */
     let hiddenByPlayAlong: Array<[HTMLElement, string]> = [];
-    const playAlongBtn = devMode.value ? document.createElement('button') : null;
+    const playAlongBtn = document.createElement('button');
     const playAlongLabel = document.createElement('span');
     playAlongLabel.textContent = t('fileViewer.abc.playAlong');
     const paintPlayAlong = (): void => {
-      if (!playAlongBtn) return;
       const on = !!playAlongView;
       // At the end of the row: the audio sync's toggle has the margin that
       // puts it there, when it is shown.
@@ -1390,7 +1403,7 @@ export function showPreviewModal(
     /** Offered on a version with a key, as the audio sync's is. */
     const playsAlong = (): boolean => /^K:/m.test(shownBlock(currentIndex));
     const setPlayAlong = (on: boolean): void => {
-      if (!playAlongBtn || on === !!playAlongView) return;
+      if (on === !!playAlongView) return;
       if (on) {
         if (audioSyncView) setAudioSync(false);
         // As for the audio sync: the score's own sound stops for good.
@@ -1405,7 +1418,15 @@ export function showPreviewModal(
         playAlongHost = document.createElement('div');
         container.appendChild(playAlongHost);
         // Within the tap: the microphone is asked for at once.
-        playAlongView = mountPlayAlong(playAlongHost, { version: shownBlock(currentIndex), face: currentMode, expanded: modalExpanded });
+        playAlongView = mountPlayAlong(playAlongHost, {
+          versions: Array.from({ length: versionCount }, (_, i) => shownBlock(i)),
+          index: currentIndex,
+          suggest: suggestPlayedVersion(appState.value),
+          // The offer taken: that version on screen, as its arrow would.
+          onShowVersion: (i) => settleDraft(() => goToVersion(i)),
+          face: currentMode,
+          expanded: modalExpanded,
+        });
       } else {
         playAlongView!.unmount();
         playAlongView = null;
@@ -1421,30 +1442,27 @@ export function showPreviewModal(
     /** Another version on screen: followed in its turn — or no Play-along,
      *  for one without a key. */
     const versionChangedForPlayAlong = (): void => {
-      if (!playAlongBtn) return;
       playAlongBtn.style.display = playsAlong() ? '' : 'none';
       if (playAlongView) {
-        if (playsAlong()) playAlongView.setVersion(shownBlock(currentIndex));
+        if (playsAlong()) playAlongView.setVersion(shownBlock(currentIndex), currentIndex);
         else setPlayAlong(false);
       }
       paintPlayAlong();
     };
-    if (playAlongBtn) {
-      playAlongBtn.type = 'button';
-      playAlongBtn.append(iconElement(MicIcon, 13), playAlongLabel);
-      playAlongBtn.setAttribute('aria-label', t('fileViewer.abc.playAlong'));
-      playAlongBtn.onclick = () => setPlayAlong(!playAlongView);
-      topRow.appendChild(playAlongBtn);
-      versionChangedForPlayAlong();
-      releasePlayAlong = () => {
-        playAlongView?.unmount();
-        playAlongView = null;
-      };
-    }
+    playAlongBtn.type = 'button';
+    playAlongBtn.append(iconElement(MicIcon, 13), playAlongLabel);
+    playAlongBtn.setAttribute('aria-label', t('fileViewer.abc.playAlong'));
+    playAlongBtn.onclick = () => setPlayAlong(!playAlongView);
+    topRow.appendChild(playAlongBtn);
+    versionChangedForPlayAlong();
+    releasePlayAlong = () => {
+      playAlongView?.unmount();
+      playAlongView = null;
+    };
     // ── The toggles' labels: both, or neither ────────────────────────────────
     const toggles: Array<[HTMLElement, HTMLElement]> = [];
     if (audioSyncBtn) toggles.push([audioSyncBtn, audioSyncLabel]);
-    if (playAlongBtn) toggles.push([playAlongBtn, playAlongLabel]);
+    toggles.push([playAlongBtn, playAlongLabel]);
     // At once, in the observer — which runs after layout and before paint: at
     // the next frame, the toggle was seen wrapping onto a line of its own for
     // one frame before it shrank (2026-10-29, the user). What is observed is
