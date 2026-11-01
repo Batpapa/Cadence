@@ -127,8 +127,8 @@ export interface Detection {
    *  never contradict each other (the user's call).
    *
    *  Only the user's decisions are stored, like a confirmation; absent on every
-   *  detection before this existed — no migration. Ignored with the
-   *  experimental sets off, and on the first detection, which always opens. */
+   *  detection before this existed — no migration. Ignored with set
+   *  detection off, and on the first detection, which always opens. */
   opensSet?: boolean;
   /** The bounds the recogniser found, once the analysis has put them on the
    *  passes of the tune (boundSuggest.ts, 2026-11-01) — the same as the
@@ -267,7 +267,10 @@ export interface TuneAnalyserModuleData {
    *  name): tunes played without a silence between them shown as sets,
    *  everywhere the analyser shows its results. Absent = on; only `false` is
    *  ever written. A `true` from the experimental days reads as on too. Read it
-   *  through `experimentalSets()`. */
+   *  through `setDetectionOn()`.
+   *
+   *  FROZEN name: it is in every user's synced blob, and a renamed field would
+   *  read as absent — on — for everyone who had switched sets off. */
   experimentalSets?: boolean;
   /** How far the instruments are tuned off written pitch, in ENGINE semitones
    *  (see PitchShiftControl's `flip` for why that is the opposite sign of what a

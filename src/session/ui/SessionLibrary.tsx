@@ -12,7 +12,9 @@ import { isNative } from '../../native/platform';
 import { activeLive } from './sessionStore';
 import { useTuneNames } from './sessionUiShared';
 import { AnalysisBrowser } from './AnalysisBrowser';
-import { TuneRankingPanel, type TuneViewState } from './TuneRankingPanel';
+import { TuneRankingPanel, tuneFilterCount, type TuneViewState } from './TuneRankingPanel';
+import { FiltersButton, useFiltersPanel } from '../../components/filterSection';
+import { SearchField } from '../../components/searchField';
 import { TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
 import { replaceRoute } from '../../store';
 import { mayHoldAudio } from '../../services/audioSniff';
@@ -107,6 +109,15 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
     tagsOr: initialTagsOr ?? false,
     kinds: new Map(initialKinds ?? []),
   }));
+  /** The tune list's funnel, beside the search box both tabs share — shown on
+   *  the tunes tab only, the analyses having no filter sections. Held here with
+   *  the view it clears; kept across a tab switch, like the view. Counted
+   *  before the first read too: the analyses chips then count for nothing,
+   *  and the sections open once the read brings them in (useFiltersPanel). */
+  const tuneFilters = tuneFilterCount(tuneView, allSessions, ctx.user);
+  const filters = useFiltersPanel(tuneFilters, () => setTuneView(v => ({
+    ...v, analyses: new Map(), tags: new Map(), others: new Map(), kinds: new Map(),
+  })));
   const [source, setSource] = useState<LiveSourceKind>('mic');
   // Where an import comes from, chosen the same way and kept the same way:
   // for now, not as a preference (see the live source's split button below).
@@ -332,15 +343,16 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
       {/* Outside the tabs: one search box, whichever way the list is being
           read. On the tunes side it filters tune names, on this side session
           names — the same question either way, "where is the Kesh". */}
-      <input
-        type="text"
-        class="input text-sm mt-3"
-        placeholder={t(tab === 'tunes' ? 'sessions.ranking.search' : 'sessions.search')}
-        value={query}
-        onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
-      />
+      <div class="flex gap-2 mt-3">
+        <SearchField
+          value={query}
+          onInput={setQuery}
+          placeholder={t(tab === 'tunes' ? 'sessions.ranking.search' : 'sessions.search')}
+        />
+        {tab === 'tunes' && <FiltersButton shown={filters.shown} count={tuneFilters} onPress={filters.press} />}
+      </div>
 
-      {tab === 'tunes' && sessionsLoaded && <div class="mt-3"><TuneRankingPanel sessions={allSessions} query={q} view={tuneView} onView={(patch) => setTuneView(v => ({ ...v, ...patch }))} /></div>}
+      {tab === 'tunes' && sessionsLoaded && <div class="mt-3"><TuneRankingPanel sessions={allSessions} query={q} view={tuneView} onView={(patch) => setTuneView(v => ({ ...v, ...patch }))} filtersShown={filters.shown} /></div>}
 
       {tab === 'sessions' && (
         <AnalysisBrowser

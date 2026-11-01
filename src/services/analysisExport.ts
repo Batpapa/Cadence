@@ -68,7 +68,7 @@ export interface TextReportOptions {
    *  full report read as noise there). */
   detailed?: boolean;
   nameOf?: NameOf;
-  /** A blank line between sets — only with the experimental sets on. */
+  /** A blank line between sets — only with set detection on. */
   setBreaks?: boolean;
 }
 

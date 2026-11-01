@@ -1,7 +1,7 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
-import { ChevronDownIcon, FolderIcon, PencilIcon, VennAndIcon, VennOrIcon } from './icons';
+import { ChevronDownIcon, FilterClearIcon, FilterIcon, FolderIcon, PencilIcon, VennAndIcon, VennOrIcon } from './icons';
 import { matchesSearch } from '../utils';
 import { DateField } from './dateField';
 
@@ -161,6 +161,69 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
         </div>
       )}
     </div>
+  );
+}
+
+/** Whether a list's filter sections show, behind the funnel button beside its
+ *  search box — hidden by default, to lighten the screen (user's call,
+ *  2026-11-01).
+ *
+ *  `count` = the chips and dates that do filter the list, as the screen reads
+ *  them (a chip naming something deleted since does not count). While there
+ *  is one, the sections show and cannot be hidden: the button then CLEARS the
+ *  filters instead, so no filter ever narrows the list out of sight. Once one
+ *  has been active the sections stay open after it goes — cleared by the
+ *  button or chip by chip — rather than folding away under the finger; the
+ *  next press hides them.
+ *
+ *  An effect rather than a value taken at mount: the analyser learns which of
+ *  its pinned analyses still exist only once it has read them, after mount. */
+export function useFiltersPanel(count: number, clear: () => void): { shown: boolean; press: () => void } {
+  const active = count > 0;
+  const [open, setOpen] = useState(active);
+  useEffect(() => { if (active) setOpen(true); }, [active]);
+  return {
+    shown: open || active,
+    press: () => {
+      if (active) { clear(); setOpen(true); }
+      else setOpen(o => !o);
+    },
+  };
+}
+
+/** The funnel beside a search box (see useFiltersPanel). Its label when there
+ *  is room for it. With a filter active it changes face — accent, the funnel
+ *  crossed out, how many — because its press then clears them all, and a
+ *  press meant to fold the sections away must not do that by surprise. */
+export function FiltersButton({ shown, count, onPress, tour }: {
+  shown: boolean;
+  count: number;
+  onPress: () => void;
+  /** The walkthrough's handle (data-tour), only while the sections are hidden:
+   *  a step that has the user press it must never press "clear", nor fold away
+   *  the sections the next step lights. */
+  tour?: string;
+}) {
+  const active = count > 0;
+  const title = t(active ? 'library.filters.clear' : shown ? 'library.filters.hide' : 'library.filters.show');
+  return (
+    <button
+      type="button"
+      class={`shrink-0 inline-flex items-center gap-1.5 px-2.5 rounded border text-xs transition-colors cursor-pointer ${
+        active ? 'bg-accent/10 border-accent text-accent hoverable:bg-accent/20' :
+        shown  ? 'border-accent/50 text-primary hoverable:border-accent' :
+                 'border-border text-muted hoverable:border-accent hoverable:text-primary'
+      }`}
+      title={title}
+      aria-label={title}
+      aria-expanded={shown}
+      data-tour={shown ? undefined : tour}
+      onClick={onPress}
+    >
+      {active ? <FilterClearIcon size={14} /> : <FilterIcon size={14} />}
+      <span class="hidden sm:inline">{t('library.filters')}</span>
+      {active && <span class="font-semibold tabular-nums">{count}</span>}
+    </button>
   );
 }
 

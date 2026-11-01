@@ -309,6 +309,11 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
       { target: 'nav-library', action: 'click', titleKey: 'walkthrough.library.open.title', textKey: 'walkthrough.library.open.text' },
       { target: 'library-search', action: 'do', titleKey: 'walkthrough.library.search.title', textKey: 'walkthrough.library.search.text',
         after: act => act.clear('library-search') },
+      // The funnel, which carries this handle only while the filters are
+      // hidden: shown already (one is active, and the press would CLEAR
+      // them), the step is passed over.
+      { target: 'library-filters-toggle', action: 'click', optional: true,
+        titleKey: 'walkthrough.library.filtersOpen.title', textKey: 'walkthrough.library.filtersOpen.text' },
       { target: 'library-filters', action: 'do', titleKey: 'walkthrough.library.filters.title', textKey: 'walkthrough.library.filters.text' },
       { target: 'library-sort', action: 'click', titleKey: 'walkthrough.library.sort.title', textKey: 'walkthrough.library.sort.text' },
       { target: 'library-sort-menu', action: 'do', until: () => !onScreen('library-sort-menu'),

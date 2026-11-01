@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { appState, navigate, getContext } from '../../store';
 import { t } from '../../services/i18nService';
 import { tuneAnalyserOffered } from '../../services/extensions';
-import { findCardDetections, sessionsOf, detectionsOnCards, experimentalSets } from '../detections';
+import { findCardDetections, sessionsOf, detectionsOnCards, setDetectionOn } from '../detections';
 import { PassRow, PlayPassButton, useSlicePlayer, type SlicePlayer } from './PassRow';
 import { HeartIcon } from '../../components/icons';
 import { isTuneset } from '../../services/cardTypeService';
@@ -37,7 +37,7 @@ export function DetectedIn({ cardId }: { cardId: string }) {
   // A set is heard as a set: its own list, of the analyses where these tunes
   // were played one after the other in this order (2026-10-19) — never its
   // tunes' detections, which are each tune's own business.
-  if (card && isTuneset(card)) return experimentalSets(appState.value) ? <SetDetectedIn cardId={cardId} /> : null;
+  if (card && isTuneset(card)) return setDetectionOn(appState.value) ? <SetDetectedIn cardId={cardId} /> : null;
   return <TuneDetectedIn cardId={cardId} />;
 }
 

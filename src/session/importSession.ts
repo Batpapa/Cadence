@@ -375,7 +375,7 @@ export class ImportSession {
   }
 
   /** The sets heard so far, with the identity a heart or a review hangs on —
-   *  asked for by the feed, and only with the experimental sets on. Handed to
+   *  asked for by the feed, and only with set detection on. Handed to
    *  the analysis when it is saved (see DetectionTracker.finalSets). */
   getTunesets(): TunesetRecord[] {
     return this.tracker.setTable(() => crypto.randomUUID());

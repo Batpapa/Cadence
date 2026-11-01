@@ -30,7 +30,8 @@ import { showRenameTagEverywhereModal } from '../components/tagModal';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
-import { FilterSection, ReviewedRangeSection, cycleFilter, type FilterMap } from '../components/filterSection';
+import { FilterSection, FiltersButton, ReviewedRangeSection, cycleFilter, useFiltersPanel, type FilterMap } from '../components/filterSection';
+import { SearchField } from '../components/searchField';
 import { createLongPressHandlers } from '../components/longPress';
 import { registerOverlay } from '../components/overlayStack';
 
@@ -427,6 +428,21 @@ export function LibraryView() {
   // questions — everything, or the empty set that proves nothing was revised in
   // that window — and unlike a chip, an unset date range shows nothing about
   // what it would match, so hiding it would hide the question itself.
+
+  /** The filters the funnel counts, opens on and clears (useFiltersPanel): the
+   *  live chips, never the pinned ones, and the dates as one. The AND/OR
+   *  toggles filter nothing on their own; the search and the "N cards" limit
+   *  each have their own cross. The clear empties the pinned maps whole, so a
+   *  chip of a deck deleted since does not ride along in the route. */
+  const filterCount = liveDecks.size + liveTypes.size + liveTags.size
+    + (revFrom !== '' || revTo !== '' ? 1 : 0);
+  const filters = useFiltersPanel(filterCount, () => {
+    setActiveDecks(new Map());
+    setActiveTypes(new Map());
+    setActiveTags(new Map());
+    setRevFrom('');
+    setRevTo('');
+  });
 
   // ── Filtered list (recomputed every render) ───────────────────────────────────
   const q = searchQuery.toLowerCase();
@@ -860,14 +876,15 @@ export function LibraryView() {
 
       {/* ── Search + filters ── */}
       <div class="px-6 pb-2 space-y-1">
-        <input
-          type="text"
-          placeholder={t('library.search')}
-          data-tour="library-search"
-          class="input"
-          value={searchQuery}
-          onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
-        />
+        <div class="flex gap-2">
+          <SearchField
+            value={searchQuery}
+            onInput={setSearchQuery}
+            placeholder={t('library.search')}
+            tour="library-search"
+          />
+          <FiltersButton shown={filters.shown} count={filterCount} onPress={filters.press} tour="library-filters-toggle" />
+        </div>
 
         {/* Always in sight while it applies: a library that silently holds
             fewer cards than the user owns reads as lost data. It says how many,
@@ -888,6 +905,7 @@ export function LibraryView() {
         )}
 
         {/* The filter families, one block for the walkthrough to light. */}
+        {filters.shown && (
         <div class="space-y-1" data-tour="library-filters">
         {hasDeckMix && (
           <FilterSection
@@ -948,6 +966,7 @@ export function LibraryView() {
           onChange={(f, to) => { setRevFrom(f); setRevTo(to); }}
         />
         </div>
+        )}
       </div>
 
       {/* ── Selection toolbar ── */}
