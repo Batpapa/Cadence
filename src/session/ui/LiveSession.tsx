@@ -9,6 +9,7 @@ import { alertModal } from '../../components/modal';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
+import { finishingTrackerFor } from './finishingModal';
 import { TunesetDetectionCard, FeedList, feedItems, feedChains } from './TunesetDetectionCard';
 import { AnalysisViewBar } from './AnalysisViewBar';
 import { analysisView, analysisStudy, showsDetails, showsEditing, showsFocus } from './analysisView';
@@ -96,6 +97,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         setAbcTickerText(abc ?? '');
       },
       onDetections: (_events, all) => setDetections(all),
+      onFinishing: finishingTrackerFor(live),
       onError: (message) => setInitStatus(`⚠ ${message}`),
       // The capture died under us — browser's own "Stop sharing", the shared
       // tab closed, a microphone unplugged. Save rather than discard: what was
@@ -204,6 +206,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     details,
     study,
     onOpenCard,
+    unrefined: ann => live.unrefinedBounds(ann.id),
     onCardAdded: () => setDetections(live.getDetections()),
     // Logging a practice needs a date, nothing more: a tune can be rated —
     // and confirmed — while it is still playing (2026-10-10, group feedback),

@@ -34,6 +34,10 @@ export interface DetectionCardOptions {
   onCardAdded?: () => void;
   /** Play/stop this detection's audio slice; shows a ▶ button when provided. */
   onPlay?: (ann: Detection) => void;
+  /** Which of its bounds the analysis has yet to put on the tune's passes —
+   *  drawn with a ~. A live recording's or an import's
+   *  (boundSuggest.ts); null or absent, none. */
+  unrefined?: (ann: Detection) => { start: boolean; end: boolean } | null;
   playingId?: string | null;
   /** The recording is only on Drive: the ▶ wears a small cloud, and the
    *  passage is played straight from there (2026-10-10) — the same button as
@@ -502,11 +506,15 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   const pending = !isOpen && !ann.finalized;
   const playing = opts.onPlay && opts.playingId === ann.id;
 
+  // A bound the analysis has yet to put on the tune's passes reads "about".
+  const rough = opts.unrefined?.(ann);
+  const from = `${rough?.start ? '~' : ''}${fmtLongTime(ann.start)}`;
+  const to = ann.end === null ? '' : `${rough?.end ? '~' : ''}${fmtLongTime(ann.end)}`;
   const range = ann.end === null
-    ? `${fmtLongTime(ann.start)} · ${t('sessions.inProgress')}`
+    ? `${from} · ${t('sessions.inProgress')}`
     : pending
-      ? `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)} · ${t('sessions.consolidating')}`
-      : `${fmtLongTime(ann.start)} – ${fmtLongTime(ann.end)}`;
+      ? `${from} – ${to} · ${t('sessions.consolidating')}`
+      : `${from} – ${to}`;
 
   // Any detection can be rated, even one still playing (2026-10-10, group
   // feedback: rate it while it is in the ear). It is only the EDIT controls

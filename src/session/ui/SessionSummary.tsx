@@ -1,9 +1,9 @@
-import type { ComponentChild } from 'preact';
+import { Fragment, type ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { formatBytes, downloadBlob } from '../../utils';
-import { TrashIcon, ResetIcon, CloudUpIcon, PlusIcon, ExtendDownIcon, ExtendUpIcon } from '../../components/icons';
+import { TrashIcon, ResetIcon, CloudUpIcon, PlusIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
 import { confirmModal, alertModal } from '../../components/modal';
 import {
@@ -26,7 +26,7 @@ import {
   fmtLongTime, TitleRow, DateRow,
   ClipControls, recutAttachedClip, repinReviewEntry, absorbReviewEntry, dropReviewEntry, repinSessionDate,
 } from './sessionUiShared';
-import { showBoundEditor, capitalizeWords, type TwinEdit } from './BoundEditor';
+import { showBoundEditor, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
 import {
@@ -36,7 +36,7 @@ import { AnalysisViewBar } from './AnalysisViewBar';
 import { FocusView, type FocusSpot } from './FocusView';
 import { devMode } from '../../services/devMode';
 import { appState } from '../../store';
-import { headPosition, withChains, withGaps, chainsOf, type ListAnn, type ListChain, type ListGap } from './timelineModel';
+import { headPosition, withChains, withGaps, chainsOf, shortGapsOf, type ListAnn, type ListChain, type ListGap, type ShortGap } from './timelineModel';
 import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
 import { experimentalSets } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
@@ -748,6 +748,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const view = analysisView.value;
   const details = showsDetails(view);
   const editing = showsEditing(view);
+  /** The holes under a silence row's length — the editor view's, in
+   *  developer mode (2026-10-31, the user: every hole shown there). */
+  const shortGaps = devMode.value && editing ? shortGapsOf(session.annotations, session.duration) : null;
   const study = analysisStudy.value;
   const focusOn = showsFocus(view);
 
@@ -848,6 +851,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         anns: session.annotations,
         duration: session.duration,
         getAudio: () => loadSessionAudio(session.id),
+        pauses: session.pauses,
         onSave: (edit) => {
           const previous = { start: ann.start, end: ann.end };
           ann.start = edit.start;
@@ -890,6 +894,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       t('sessions.detection.delete.message', { name: ann.displayName }),
       t('common.delete'),
       () => {
+        // Its passage stops with it — often the very reason for deleting
+        // (listened to, found to be talk) — and its card, the only stop button
+        // it had, is about to go. Only ITS passage: any other playback stands.
+        if (playingIdRef.current === ann.id) audioRef.current?.pause();
+        if (drivePlayer.playingId === ann.id) drivePlayer.stop();
         session.annotations.splice(i, 1);
         persist();
         bump();
@@ -946,19 +955,48 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   /** One detection's row — alone in the list, or inside its set. A plain
    *  function returning a vnode, never a component declared here (see
    *  ClipControls' `slot` for why that matters). */
-  const annRow = (ann: Detection, i: number) => (
-    <div
-      key={ann.id}
-      data-ann-id={ann.id}
-      // The answer to "which one did I just scroll to": the card is
-      // ringed, not merely centred among identical neighbours.
-      class={`rounded-lg transition-shadow ${
-        ann.id === targetId ? 'ring-2 ring-warn'
-        : lit.ids.includes(ann.id) ? 'ring-2 ring-accent' : ''}`}
-    >
-      <DetectionCard ann={ann} opts={cardOptsFor(ann, i)} />
-    </div>
-  );
+  /** `withHole`: draws the short hole above it — false for the first tune of
+   *  a set or a tune alone, whose hole goes BETWEEN the items (listItem): a
+   *  hole that breaks a set is not inside either. */
+  const annRow = (ann: Detection, i: number, withHole = true) => {
+    const card = (
+      <div
+        key={ann.id}
+        data-ann-id={ann.id}
+        // The answer to "which one did I just scroll to": the card is
+        // ringed, not merely centred among identical neighbours.
+        class={`rounded-lg transition-shadow ${
+          ann.id === targetId ? 'ring-2 ring-warn'
+          : lit.ids.includes(ann.id) ? 'ring-2 ring-accent' : ''}`}
+      >
+        <DetectionCard ann={ann} opts={cardOptsFor(ann, i)} />
+      </div>
+    );
+    // The hole above it no silence row shows (developer mode).
+    const hole = withHole ? shortGaps?.get(ann.id) : undefined;
+    return hole ? <Fragment key={ann.id}>{shortGapRow(hole)}{card}</Fragment> : card;
+  };
+
+  /** One item of the list: a set, a tune alone, a silence — with the short
+   *  hole before its first tune, when there is one, drawn before it. */
+  const listItem = (item: ListGap | ListAnn | ListChain | { kind: 'ann'; ann: Detection; i: number }) => {
+    const node = item.kind === 'chain' ? cutMark(item, (
+      <TunesetDetectionCard
+        key={`set-${item.members[0]!.ann.id}`}
+        chain={item.members.map(m => m.ann)}
+        opts={setOptsFor(item.members.map(m => m.ann))}
+      >
+        {setRows(item.rows, r => annRow(r.ann, r.i, r !== item.rows[0]), g => gapRow(g, true), editing ? setOpens : undefined, hasShortGap)}
+      </TunesetDetectionCard>
+    ))
+      : item.kind === 'gap' ? gapRow(item, false)
+      // The set marks — unjoin, join — are edits: the editor view's.
+      : 'cut' in item ? cutMark(item, annRow(item.ann, item.i, false))
+      : annRow(item.ann, item.i, false);
+    const firstId = item.kind === 'chain' ? item.members[0]!.ann.id : item.kind === 'ann' ? item.ann.id : null;
+    const hole = firstId ? shortGaps?.get(firstId) : undefined;
+    return hole ? <Fragment key={`hole-${firstId}`}>{shortGapRow(hole)}{node}</Fragment> : node;
+  };
 
   /** A cut, a link, or the rule again — see model.ts's opensSet. The sets on
    *  either side move with it, and drag their rating and clip (settleSets). */
@@ -972,7 +1010,34 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   };
 
   /** The lit unjoin mark above a tune or a set — in the editor view only. */
-  const cutMark = (item: ListAnn | ListChain, node: ComponentChild) => (editing ? withCutMark(item, node, setOpens) : node);
+  const cutMark = (item: ListAnn | ListChain, node: ComponentChild) => (editing ? withCutMark(item, node, setOpens, hasShortGap) : node);
+
+  /** Whether a detection has a short hole's row above it — which then
+   *  carries the set mark of that join, instead of the card's seam. */
+  const hasShortGap = (id: string) => !!shortGaps?.has(id);
+
+  /** Developer mode: a hole too short for a silence row, drawn above the
+   *  tune after it, in a set or not — it breaks nothing. Read, not worked on
+   *  (2026-11-01, the user): no giving it away, and nothing to add in a few
+   *  seconds — a detection is offered from GAP_MIN_S up, on silence rows.
+   *  The set mark of the join, though, as on every join (2026-11-01, the
+   *  user): no silence here, so the two tunes are one set unless cut — the
+   *  unjoin button, lit when the user cut. */
+  const shortGapRow = (hole: ShortGap) => {
+    const cut = session.annotations.find(a => a.id === hole.nextId)?.opensSet === true;
+    return (
+      <div class="flex items-center gap-3 py-0.5 text-[11px] text-dim">
+        <span class="h-px flex-1 bg-border" />
+        <span class="shrink-0 px-1 tabular-nums">{t('sessions.gap', { d: fmtLongTime(hole.len) })}</span>
+        <span class="h-px flex-1 bg-border" />
+        {setsOn && (
+          <span class="mr-3 flex">
+            <SetMarkButton kind="unlink" active={cut} onClick={() => setOpens(hole.nextId, cut ? undefined : true)} />
+          </span>
+        )}
+      </div>
+    );
+  };
 
   /** A silence row — between two sets, or inside one linked across it.
    *
@@ -986,39 +1051,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  target, which on a phone is a comfortable strip, and the ⊕ is what says so
    *  without a hover anyone can have (see hoverOnlyWhenSupported). A set linked
    *  across it keeps it all the same (the user's call, 2026-10-20). */
-  /** Hands a whole silence to the tune on one side of it — the one before
-   *  ends where the next begins, or the one after begins where the previous
-   *  ended (2026-10-27, user request: the bound editor for the commonest
-   *  correction there is, in one press). Settles like any other moved bound:
-   *  rating, clip, sets. */
-  const giveGapTo = (id: string, item: ListGap) => {
-    const target = session.annotations.find(a => a.id === id);
-    if (!target) return;
-    audioRef.current?.pause();
-    const previous = { start: target.start, end: target.end };
-    if (id === item.prevId) target.end = item.from + item.len;
-    else target.start = item.from;
-    persist();
-    bump();
-    void settleMoved([{ ann: target, previous }]);
-  };
-
-  /** One of the two "give it to…" buttons of a gap row. */
-  const gapGiveBtn = (id: string | undefined, item: ListGap, key: 'sessions.gap.toPrev' | 'sessions.gap.toNext', icon: ComponentChild) => {
-    const target = id ? session.annotations.find(a => a.id === id) : undefined;
-    if (!target) return null;
-    return (
-      <button
-        class="shrink-0 w-6 h-6 flex items-center justify-center rounded-full hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
-        title={t(key, { name: capitalizeWords(target.displayName) })}
-        aria-label={t(key, { name: capitalizeWords(target.displayName) })}
-        onClick={() => giveGapTo(target.id, item)}
-      >
-        {icon}
-      </button>
-    );
-  };
-
   const gapRow = (item: ListGap, inSet: boolean) => (
     <div
       key={`gap-${item.from}`}
@@ -1030,15 +1062,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         lit.gapFrom === item.from ? 'text-accent' : 'text-dim'}`}
     >
       <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
-      {/* Filled or given away in the editor view only: outside it a silence
+      {/* Filled in the editor view only: outside it a silence
           is read, not worked on (analysisView.ts). */}
       {audioUrl && editing ? (
         <span class="shrink-0 inline-flex items-center gap-1">
-          {/* Moving a bound needs the recording, for the reason onEditBounds
-              gives — so these go with it, like the ⊕ beside them. Down from
-              the tune above, up from the tune below: each arrow points the
-              way its tune would grow. */}
-          {gapGiveBtn(item.prevId, item, 'sessions.gap.toPrev', <ExtendDownIcon size={12} />)}
           <button
             class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
             title={t('sessions.addDetection.hint')}
@@ -1047,7 +1074,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             <PlusIcon size={9} />
             {t('sessions.gap', { d: fmtLongTime(item.len) })}
           </button>
-          {gapGiveBtn(item.followingId, item, 'sessions.gap.toNext', <ExtendUpIcon size={12} />)}
         </span>
       ) : (
         <span class="shrink-0 tabular-nums">{t('sessions.gap', { d: fmtLongTime(item.len) })}</span>
@@ -1351,21 +1377,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           ) : (setsOn
             ? withChains(session.annotations, session.duration)
             : withGaps(session.annotations, session.duration)
-          ).map(item => (
-            // The set marks — unjoin, join — are edits: the editor view's.
-            item.kind === 'chain' ? cutMark(item, (
-              <TunesetDetectionCard
-                key={`set-${item.members[0]!.ann.id}`}
-                chain={item.members.map(m => m.ann)}
-                opts={setOptsFor(item.members.map(m => m.ann))}
-              >
-                {setRows(item.rows, r => annRow(r.ann, r.i), g => gapRow(g, true), editing ? setOpens : undefined)}
-              </TunesetDetectionCard>
-            ))
-            : item.kind === 'gap' ? gapRow(item, false)
-            : 'cut' in item ? cutMark(item, annRow(item.ann, item.i))
-            : annRow(item.ann, item.i)
-          ))}
+          ).map(listItem)}
         </div>
       </div>
     </>

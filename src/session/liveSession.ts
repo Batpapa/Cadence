@@ -3,7 +3,7 @@ import { startLiveForeground, refreshLiveForeground, stopLiveForeground } from '
 import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
 import { RecognitionClient } from './recognitionClient';
-import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession } from './db';
+import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession, collectChunks } from './db';
 import { holdAnalysisLock } from './recovery';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate, TunesetRecord } from './model';
 import { withSets } from './tunesets';
@@ -11,6 +11,12 @@ import { DetectionTracker } from './detectionState';
 import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
+import type { BoundAligner } from './boundSuggestClient';
+import type { FinishingState } from './ui/finishingModal';
+
+/** How long stopping a recording waits for the bounds still being put on
+ *  their passes before saving without them. */
+const ALIGN_DRAIN_MAX_MS = 15_000;
 
 // ── Live session orchestrator ─────────────────────────────────────────────────
 // One MediaStream, two parallel consumers:
@@ -33,6 +39,9 @@ export interface LiveSessionCallbacks {
   onIndexProgress?: (p: IndexProgress) => void;
   onWindow?: (result: WindowResult, abc: string | null) => void;
   onDetections?: (events: DetectionEvent[], all: Detection[]) => void;
+  /** Stopping, past the recorder: the tunes still being put on their
+   *  passes, then the saving — null once over (finishingModal). */
+  onFinishing?: (state: FinishingState | null) => void;
   onError?: (message: string) => void;
   /** #17: forwarded straight from RecognitionClient — see its onLiveGap doc. */
   onLiveGap?: (seconds: number) => void;
@@ -65,6 +74,8 @@ export class LiveSession {
   private readonly tracker = new DetectionTracker();
   private pauseStartedAt = 0;
   private pausedAccumMs = 0;
+  /** Where the recording was paused, in its own seconds (Analysis.pauses). */
+  private readonly pauses: number[] = [];
   /** Raw per-window results with a wall-clock cross-reference — doubles as
    *  (a) a diagnostic dump for comparing the worker's sample-counted clock
    *  (tWindowStart/End) against real elapsed time during a LIVE recording,
@@ -181,6 +192,7 @@ export class LiveSession {
       // Unlike the snapshot above, these ARE trusted by a recovery: they are
       // the user's word, applied again to the replayed detections.
       confirmations: this.tracker.snapshot(),
+      ...(this.pauses.length ? { pauses: [...this.pauses] } : {}),
     };
     void saveSessionMeta(session).catch(() => { /* best-effort — stop() still writes the final copy */ });
   }
@@ -244,6 +256,7 @@ export class LiveSession {
       this.recorder = new SessionFileRecorder(this.source.recordingStream, this.sessionId);
       this.recorder.start();
       this.startedAt = Date.now();
+      this.startAligner();
       this.persistDraft();
 
       await this.wakeLock.start();
@@ -274,10 +287,18 @@ export class LiveSession {
   /** `final` for the decoder's last events, at stop. */
   private applyEvents(events: DetectionEvent[], final = false): void {
     if (final) this.tracker.finish(events); else this.tracker.apply(events);
+    this.afterChange(events);
+  }
+
+  /** The list moved — the decoder's events, or a detection's bounds put on
+   *  its passes: the draft, the ratings and the screen follow, and what is
+   *  newly finalized goes to the aligner. */
+  private afterChange(events: DetectionEvent[]): void {
     this.persistDraft();
     this.followRatings();
     this.cb.onDetections?.(events, this.getDetections());
     void refreshLiveForeground();
+    this.aligner?.offer(this.tracker.toAlign());
   }
 
   /** A rating given while its tune played gets its definitive instant once
@@ -386,6 +407,10 @@ export class LiveSession {
     }
     if (DEBUG_LIVE_AUDIO) console.log(`[live] --- PAUSE demandee${auto ? ' (systeme)' : ''} ---`);
     this.recorder?.pause();
+    // Where, in the recording: what comes before and after will be joined
+    // end to end in the file (Analysis.pauses). Pauses excluded, as the
+    // recorder counts — read while still 'recording'.
+    this.pauses.push(this.getElapsedMs() / 1000);
     // Stamped before the await: a system cut is dated from when it was seen.
     this.pauseStartedAt = Date.now();
     await this.source.suspend(auto);
@@ -440,10 +465,17 @@ export class LiveSession {
   /** Stops everything and persists the session (audio + annotations). */
   async stop(): Promise<Analysis> {
     this.setPhase('stopping');
+    this.reportFinishing();
     try {
       const fileResult = await this.recorder!.stop();
+      // The chunks are gone with the recorder: the file in their place.
+      this.aligner?.setAudio(async () => fileResult.blob);
       const { events, tFinal } = await this.recognition!.stop();
       this.applyEvents(events, true);
+      // The last tunes, finalized only now: a second or two each.
+      this.reportFinishing();
+      await this.aligner?.drain(ALIGN_DRAIN_MAX_MS);
+      this.reportFinishing();
       const dominated = this.tracker.dominated();
       if (dominated.length > 0) {
         const ref = { id: this.sessionId, date: new Date(this.startedAt).toISOString() };
@@ -474,6 +506,7 @@ export class LiveSession {
         source,
         annotations: this.getDetections(),
         ...withSets(this.tracker.finalSets(() => crypto.randomUUID())),
+        ...(this.pauses.length ? { pauses: [...this.pauses] } : {}),
       };
       await saveSessionAudio(session.id, fileResult.blob);
       // Another device may have written to Drive during the recording — the
@@ -532,5 +565,53 @@ export class LiveSession {
     this.recognition?.dispose();
     this.recognition = null;
     this.source.stop();
+    this.alignerOff = true;
+    this.aligner?.dispose();
+    // Whatever the way out — saved, cancelled, failed — the end is over.
+    this.cb.onFinishing?.(null);
+  }
+
+  /** The bounds put on the tunes' passes as the recording
+   *  goes (boundSuggest.ts) — about a second of work for each tune
+   *  finalized, every few minutes. Read from the chunks already in the
+   *  database: the recording as it stands. Loaded only then: it brings the
+   *  score's drawing with it. */
+  private aligner: BoundAligner | null = null;
+  private alignerOff = false;
+  /** The aligner was asked for: bounds not yet put on the passes are marked. */
+  private refining = false;
+
+  /** Which bounds of a detection are yet to be put on the passes — the ~ of
+   *  the feed. Null when the analysis does not refine its bounds. */
+  unrefinedBounds(id: string): { start: boolean; end: boolean } | null {
+    return this.refining ? this.tracker.unrefined(id) : null;
+  }
+
+  /** While stopping, so the screen hears of it (finishingModal). */
+  private reportFinishing(): void {
+    if (this.phase === 'stopping') this.cb.onFinishing?.({ aligning: this.aligner?.pending() ?? 0 });
+  }
+
+  private startAligner(): void {
+    this.refining = true;
+    void import('./boundSuggestClient').then(({ BoundAligner }) => {
+      if (this.alignerOff) return;
+      this.aligner = new BoundAligner(
+        async () => {
+          const chunks = await collectChunks(this.sessionId);
+          return chunks.length ? new Blob(chunks, { type: this.recorder?.mimeType || 'audio/webm' }) : undefined;
+        },
+        // No end yet while it is being made: a tune heard up to now has not
+        // run into the end of the recording.
+        () => (this.phase === 'recording' || this.phase === 'paused' ? Infinity : this.getElapsedMs() / 1000),
+        () => this.pauses,
+        (key, suggestion) => {
+          this.tracker.setSuggestion(key, suggestion);
+          this.afterChange([]);
+          this.reportFinishing();
+        },
+      );
+      this.aligner.offer(this.tracker.toAlign());
+    }).catch(() => { /* not loaded: the bounds stay the recogniser's */ });
   }
 }

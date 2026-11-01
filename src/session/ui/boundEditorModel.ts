@@ -1,4 +1,5 @@
 import type { Detection } from '../model';
+import type { PassMark } from '../boundSuggest';
 
 // ── The arithmetic behind the bound editor ───────────────────────────────────
 // Pure, and in its own file for the same reason timelineModel.ts is: these
@@ -75,7 +76,45 @@ export interface SnapMark {
    *  has listened somewhere (2026-09-22, user request: it replaces the "Bound
    *  here" button, which named a spot nothing on screen pointed at). */
   head?: true;
+  /** A boundary between two passes of the tune, read off its alignment on
+   *  the score (boundSuggest.ts) — where pass `n` begins, or ends (`end`).
+   *  Added by the component, like the head. */
+  pass?: { n: number; end?: true };
+  /** The bound the passes suggest (boundSuggest.ts). */
+  suggested?: true;
+  /** The bound the recogniser found, before the analysis put it on the
+   *  passes (Detection.detected) — offered back (2026-11-01, the user). */
+  detected?: true;
+  /** Where the recording was paused and resumed (Analysis.pauses): the
+   *  music on either side is of two moments, so a tune cut or resumed there
+   *  has its bound on it (2026-11-01, the user). */
+  pause?: true;
 }
+
+/** Within this of a suggested bound, a pass boundary is the same boundary
+ *  estimated another way — the suggestion extrapolates from the median pass,
+ *  the boundary is where the score went back to its top — and gives way to
+ *  it: the magnet would otherwise land a few tenths off the suggestion. */
+const SHADOW_S = 1;
+
+/** What the magnet clicks onto from the alignment: the pass boundaries, and
+ *  the suggestion for the bound being worked on, which takes the place of
+ *  the boundary next to it. */
+export function alignmentMarks(passes: SnapMark[], suggested: number | null): SnapMark[] {
+  if (suggested === null) return passes;
+  return [...passes.filter(m => Math.abs(m.t - suggested) > SHADOW_S), { t: suggested, suggested: true }];
+}
+
+/** The pass boundaries as marks. */
+export function passMarks(marks: PassMark[], duration: number): SnapMark[] {
+  return marks.filter(m => m.t >= 0 && m.t <= duration)
+    .map(m => ({ t: m.t, pass: m.end ? { n: m.pass, end: true as const } : { n: m.pass } }));
+}
+
+/** How close, in pixels, a dragged handle of the context strip clicks onto a
+ *  mark — there a second is a couple of pixels, and SNAP_TOLERANCE_S would
+ *  be less than one. */
+export const CTX_SNAP_PX = 8;
 
 /** What the editor shows and what its bounds may reach, fixed at open time.
  *  Clamped to the recording, so the edges of a session are safe. */

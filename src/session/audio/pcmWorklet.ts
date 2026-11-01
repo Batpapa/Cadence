@@ -108,3 +108,76 @@ export async function attachPcmWorklet(
   input.connect(node);
   return node;
 }
+
+// ── Small stamped chunks, for following live ─────────────────────────────────
+// The Play-along (session/liveFollow.ts) is late by whatever sits in a buffer:
+// the chunks above hold 340 ms, longer than a quaver of a reel. These hold one
+// FolkFriend window (1024 samples, 21 ms at 48 kHz) and say when it ends on
+// the context's clock (`end`, in sample frames) — what lets the page carry
+// the score's position to the moment it draws. A processor of its own: the
+// recognition's worker reads the chunks above as bare buffers.
+
+const STAMPED_NAME = 'cadence-pcm-stamped';
+
+const STAMPED_SOURCE = `
+class PcmStamped extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.chunkSize = options.processorOptions.chunkSize;
+    this.buf = new Float32Array(this.chunkSize);
+    this.fill = 0;
+    this.out = this.port;
+    this.port.onmessage = (e) => { if (e.data && e.data.port) this.out = e.data.port; };
+  }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    let i = 0;
+    while (i < ch.length) {
+      const n = Math.min(ch.length - i, this.chunkSize - this.fill);
+      this.buf.set(ch.subarray(i, i + n), this.fill);
+      this.fill += n;
+      i += n;
+      if (this.fill === this.chunkSize) {
+        const copy = this.buf.slice(0);
+        this.out.postMessage({ pcm: copy, end: currentFrame + i }, [copy.buffer]);
+        this.fill = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('${STAMPED_NAME}', PcmStamped);
+`;
+
+let stampedUrl: string | null = null;
+
+/** What the stamped worklet posts: `chunkSize` samples, and the context's
+ *  sample frame just after the last of them. */
+export interface StampedChunk { pcm: Float32Array; end: number }
+
+/** Attaches a worklet posting `chunkSize`-sample mono chunks of `input`,
+ *  stamped (StampedChunk), straight to `workerPort`. */
+export async function attachStampedPcmWorklet(
+  audioContext: AudioContext,
+  input: AudioNode,
+  workerPort: MessagePort,
+  chunkSize: number,
+): Promise<AudioWorkletNode> {
+  if (!stampedUrl) {
+    stampedUrl = URL.createObjectURL(new Blob([STAMPED_SOURCE], { type: 'application/javascript' }));
+  }
+  await audioContext.audioWorklet.addModule(stampedUrl);
+  const node = new AudioWorkletNode(audioContext, STAMPED_NAME, {
+    numberOfInputs: 1,
+    numberOfOutputs: 0,
+    // Mono before the processor, as above: a captured tab is stereo.
+    channelCount: 1,
+    channelCountMode: 'explicit',
+    channelInterpretation: 'speakers',
+    processorOptions: { chunkSize },
+  });
+  node.port.postMessage({ port: workerPort }, [workerPort]);
+  input.connect(node);
+  return node;
+}

@@ -3,7 +3,7 @@ import { useRef, useState } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal } from '../../components/modal';
-import { BoundEditor, type BoundEdit, type TwinEdit } from './BoundEditor';
+import { BoundEditor, resetAction, type BoundEdit, type TwinEdit } from './BoundEditor';
 import { TuneLookupField } from './ManualTunePick';
 import { TuneFacts } from './abcPreview';
 import { fmtTime } from './sessionUiShared';
@@ -56,13 +56,14 @@ function draftDetection(start: number, end: number): Detection {
   };
 }
 
-function AddDetectionBody({ seed, anns, duration, getAudio, onDraft, onTune }: {
+function AddDetectionBody({ seed, anns, duration, getAudio, onDraft, onTune, resetRef }: {
   seed: { start: number; end: number };
   anns: Detection[];
   duration: number;
   getAudio: () => Promise<Blob | undefined>;
   onDraft: (edit: BoundEdit) => void;
   onTune: (tune: DetectionAlternate | null) => void;
+  resetRef: { current: (() => void) | null };
 }) {
   const [tune, setTune] = useState<DetectionAlternate | null>(null);
   const placeholder = useRef(draftDetection(seed.start, seed.end)).current;
@@ -76,6 +77,7 @@ function AddDetectionBody({ seed, anns, duration, getAudio, onDraft, onTune }: {
       duration={duration}
       getAudio={getAudio}
       onDraft={onDraft}
+      resetRef={resetRef}
       linkByDefault={false}
       identitySlot={(draft) => (
         <div class="space-y-1.5">
@@ -117,6 +119,9 @@ export function showAddDetection(opts: {
   // (see ModalAction.disabled). Naming the tune is the one thing this dialog
   // cannot do without: the bounds always have an answer, the identity does not.
   const nothingToAdd = signal(true);
+  /** The bounds still where the hole put them: nothing to reset. */
+  const unmoved = signal(true);
+  const resetRef: { current: (() => void) | null } = { current: null };
 
   render(
     <AddDetectionBody
@@ -124,13 +129,18 @@ export function showAddDetection(opts: {
       anns={opts.anns}
       duration={opts.duration}
       getAudio={opts.getAudio}
-      onDraft={(edit) => { draft = edit; }}
+      onDraft={(edit) => {
+        draft = edit;
+        unmoved.value = Math.abs(edit.start - opts.seed.start) <= .004 && Math.abs(edit.end - opts.seed.end) <= .004;
+      }}
       onTune={(next) => { tune = next; nothingToAdd.value = next === null; }}
+      resetRef={resetRef}
     />,
     body,
   );
 
   showModal(t('sessions.addDetection.title'), body, [
+    resetAction(resetRef, unmoved),
     { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
     {
       label: t('common.add'),

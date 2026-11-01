@@ -194,6 +194,18 @@ export function closeModal(): void {
   modalStack.value = modalStack.value.slice(0, -1);
 }
 
+/** Closes the modal showing `body`, wherever it stands in the stack — for one
+ *  that closes on its own once its work is done, whatever was opened over it
+ *  meanwhile (closeModal would take that one instead). No-op when it is not
+ *  open any more. */
+export function closeModalOf(body: HTMLElement): void {
+  const entry = modalStack.value.find(e => e.body === body);
+  if (!entry) return;
+  _unregisterByModalId.get(entry.id)?.();
+  _unregisterByModalId.delete(entry.id);
+  modalStack.value = modalStack.value.filter(e => e !== entry);
+}
+
 /** Pops the whole stack, running every entry's `onDismiss`. For the rare
  *  action inside a modal that navigates elsewhere: popping one would leave the
  *  dialogs below it hanging over a view they have nothing to do with. */
@@ -568,7 +580,9 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
             {entry.actions.map((action, i) => (
               <button
                 key={i}
-                class={(action.primary ? 'btn-primary' : action.danger ? 'btn-danger px-2' : 'btn-ghost') + (action.align === 'start' ? ' mr-auto' : '')}
+                class={(action.primary ? 'btn-primary' : action.danger ? 'btn-danger px-2' : 'btn-ghost') + (action.align === 'start' ? ' mr-auto' : '')
+                  // An icon beside a label: side by side, centred, apart.
+                  + (action.icon ? ' inline-flex items-center gap-1.5' : '')}
                 data-tour={action.tour}
                 disabled={action.disabled?.value}
                 onClick={async () => { await action.onClick(); }}

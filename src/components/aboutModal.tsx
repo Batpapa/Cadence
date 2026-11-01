@@ -103,6 +103,12 @@ function AboutBody() {
           {t('settings.aboutFolkFriend')}{' '}
           <a href="https://github.com/TomWyllie/folkfriend" target="_blank" rel="noopener" class="text-accent hover:underline">github.com/TomWyllie/folkfriend (GPLv3)</a>
         </p>
+        {/* The shipped WASM is a modified build: GPLv3 section 6 requires a
+            pointer to its corresponding source. */}
+        <p class="text-xs text-muted">
+          {t('settings.aboutFolkFriendFork')}{' '}
+          <a href="https://github.com/Batpapa/folkfriend" target="_blank" rel="noopener" class="text-accent hover:underline">github.com/Batpapa/folkfriend</a>
+        </p>
         {/* Their only place once a user is open: the static footer of
             index.html shows on the user selector and recovery screens alone. */}
         <p class="text-xs text-muted">

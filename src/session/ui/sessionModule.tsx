@@ -468,6 +468,8 @@ export async function startReanalyze(ctx: AppContext, session: Analysis): Promis
     imp.dateOverride = session.date;
     imp.sourceOverride = session.source;
     imp.notes = session.notes;
+    // Still where the live recording was paused: the file is the same.
+    imp.pauses = session.pauses ? [...session.pauses] : [];
     // The setting as it is NOW, not as it was for the first analysis: this
     // re-runs the recording with what the user currently says about it.
     imp.pitchShift = pitchShiftSetting(appState.value);

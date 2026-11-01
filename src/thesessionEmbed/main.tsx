@@ -31,8 +31,10 @@ import './embed.css';
 //
 // Nothing here reads or writes the app's data: no user, no AppState, no
 // Drive. The only storage touched is the shared tune-index cache
-// (`cadence-sessions`), which inside a third-party frame is partitioned by the
-// browser under the embedding site anyway.
+// (`cadence-sessions`), and the list of the tunes heard while the page is open
+// (runStore.ts: taken away when the page is left, handed on when it dies) —
+// both partitioned by the browser under the embedding site anyway, inside a
+// third-party frame.
 
 const params = new URLSearchParams(location.search);
 const theme = params.get('theme');

@@ -20,6 +20,23 @@ import type { Detection } from '../model';
  *  (model.ts's opensSet, 2026-10-20). */
 export const GAP_MIN_S = 15;
 
+/** The same between two detections whose bounds the analysis has put on
+ *  their tunes' passes (Detection.detected — boundSuggest.ts): the artefact
+ *  of the windows is gone from such a join, and a real pause of 8 to 15 s,
+ *  which the old threshold took for a set, shows at its true size
+ *  (2026-11-01, the user). Measured end to end on the seven annotated
+ *  sessions: of 189 joins within a set and 90 pairs of tunes apart, 163 and
+ *  7 taken for a set at 8 s, where the detected bounds at 15 s gave 154 and
+ *  9 — 169 and 17 aligned at 15 s. Both the user's recordings and YouTube's
+ *  gained. Join by join: one not yet aligned keeps its artefact, and the
+ *  old threshold. */
+export const GAP_REFINED_S = 8;
+
+/** The threshold between `a` and the detection `b` after it. */
+export function gapMinBetween(a: Detection | undefined, b: Detection): number {
+  return a?.detected && b.detected ? GAP_REFINED_S : GAP_MIN_S;
+}
+
 /** EVERY detection covering `t` — none, one, or several.
  *
  *  Detections OVERLAP as a rule, not as an edge case: 22 of 37 boundaries on a
@@ -55,22 +72,43 @@ export function withGaps(anns: Detection[], duration: number): Array<
 > {
   const out: ReturnType<typeof withGaps> = [];
   let cursor = 0;
-  let reachedBy: string | undefined;
+  let reachedBy: Detection | undefined;
   const gap = (from: number, len: number, followingId: string | undefined): Omit<ListGap, 'nextId'> => ({
     kind: 'gap', from, len,
-    ...(reachedBy ? { prevId: reachedBy } : {}),
+    ...(reachedBy ? { prevId: reachedBy.id } : {}),
     ...(followingId ? { followingId } : {}),
   });
   anns.forEach((ann, i) => {
     const hole = ann.start - cursor;
-    if (hole >= GAP_MIN_S) out.push(gap(cursor, hole, ann.id));
+    if (hole >= gapMinBetween(reachedBy, ann)) out.push(gap(cursor, hole, ann.id));
     out.push({ kind: 'ann', ann, i });
     // Overlaps mean the next tune can start before this one ends; the cursor
     // only ever moves forward, so a negative hole simply never shows.
     const end = ann.end ?? duration;
-    if (end > cursor) { cursor = end; reachedBy = ann.id; }
+    if (end > cursor) { cursor = end; reachedBy = ann; }
   });
   if (duration - cursor >= GAP_MIN_S) out.push(gap(cursor, duration - cursor, undefined));
+  return out;
+}
+
+/** A hole too short for a silence row (gapMinBetween), by the detection
+ *  after it: from the end of the one reaching furthest before it — the
+ *  neighbour withGaps names — to its start. */
+export type ShortGap = { prevId: string; nextId: string; from: number; len: number };
+
+/** Every such hole — the editor view shows them all in developer mode
+ *  (2026-10-31, the user), above the tune after it, inside a set: they break
+ *  nothing. Two tunes touching or overlapping leave none. */
+export function shortGapsOf(anns: Detection[], duration: number): Map<string, ShortGap> {
+  const out = new Map<string, ShortGap>();
+  let cursor = 0;
+  let reachedBy: Detection | undefined;
+  for (const ann of anns) {
+    const hole = ann.start - cursor;
+    if (reachedBy && hole > 0.01 && hole < gapMinBetween(reachedBy, ann)) out.set(ann.id, { prevId: reachedBy.id, nextId: ann.id, from: cursor, len: hole });
+    const end = ann.end ?? duration;
+    if (end > cursor) { cursor = end; reachedBy = ann; }
+  }
   return out;
 }
 

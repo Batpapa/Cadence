@@ -203,3 +203,61 @@ describe('DetectionTracker.takeSettled', () => {
     expect(t.takeSettled().map(d => d.end)).toEqual([64]);
   });
 });
+
+describe('DetectionTracker — bounds on the passes (2026-11-01)', () => {
+  it('hands out finalized detections only, once each', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a', { start: 10, end: 60 })), open(det('b', { start: 70, end: null, finalized: false, heardTo: 90 }))]);
+    expect(t.toAlign().map(j => [j.start, j.end])).toEqual([[10, 60]]);
+    t.setSuggestion(t.toAlign()[0]!.key, null);
+    expect(t.toAlign()).toEqual([]);
+  });
+
+  it('shows the suggested bounds over the decoder\'s, which it keeps', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a', { start: 10, end: 60 })), open(det('b', { start: 65, end: 120 }))]);
+    const [ja, jb] = t.toAlign();
+    t.setSuggestion(ja!.key, { start: null, end: 62.4 });
+    t.setSuggestion(jb!.key, { start: 62, end: null });
+    const [a, b] = t.list();
+    expect(a!.end).toBeCloseTo(62.2);
+    expect(b!.start).toBeCloseTo(62.2);
+    expect(a!.detected).toEqual({ start: 10, end: 60 });
+    expect(b!.detected).toEqual({ start: 65, end: 120 });
+  });
+
+  it('asks again once the decoder revises a detection, showing its bounds meanwhile', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a', { start: 10, end: 60 }))]);
+    t.finish([]);
+    t.setSuggestion(t.toAlign()[0]!.key, { start: 8, end: 62 });
+    expect(t.list()[0]!.start).toBe(8);
+    t.apply([update(det('a', { start: 10, end: 75 }))]);
+    expect(t.list()[0]!.start).toBe(10);
+    expect(t.list()[0]!.detected).toBeUndefined();
+    expect(t.toAlign()).toHaveLength(1);
+  });
+});
+
+describe('DetectionTracker.unrefined — the ~ of the feeds', () => {
+  it('settles a start once answered, an end once the next tune is too', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a', { start: 10, end: 60 })), open(det('b', { start: 65, end: 120 }))]);
+    expect(t.unrefined('a')).toEqual({ start: true, end: true });
+    const [ja, jb] = t.toAlign();
+    t.setSuggestion(ja!.key, null);
+    expect(t.unrefined('a')).toEqual({ start: false, end: true });
+    t.setSuggestion(jb!.key, null);
+    expect(t.unrefined('a')).toEqual({ start: false, end: false });
+    // The last one's end: once nothing more can follow.
+    expect(t.unrefined('b')).toEqual({ start: false, end: true });
+    t.finish([]);
+    expect(t.unrefined('b')).toEqual({ start: false, end: false });
+  });
+
+  it('marks everything of a detection still being decoded', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a', { start: 10, end: null, finalized: false, heardTo: 40 }))]);
+    expect(t.unrefined('a')).toEqual({ start: true, end: true });
+  });
+});

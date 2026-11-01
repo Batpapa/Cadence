@@ -8,6 +8,13 @@ import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAltern
 import { withSets } from './tunesets';
 import { DetectionTracker } from './detectionState';
 import type { IndexProgress } from './recognition/indexStore';
+import type { BoundAligner } from './boundSuggestClient';
+import type { FinishingState } from './ui/finishingModal';
+
+/** How long the end of an import waits for the bounds still being put on
+ *  their passes — a second or two each, measured — before saving without
+ *  them. */
+const ALIGN_DRAIN_MAX_MS = 20_000;
 
 // ── Import session orchestrator ───────────────────────────────────────────────
 // Turns a user-provided audio file into a full Cadence session: the original
@@ -67,6 +74,9 @@ export interface ImportSessionCallbacks {
   onIndexProgress?: (p: IndexProgress) => void;
   onProgress?: (p: ImportProgress) => void;
   onDetections?: (events: DetectionEvent[], all: Detection[]) => void;
+  /** The end of the analysis, past the recognition: the tunes still being
+   *  put on their passes, then the saving — null once over (finishingModal). */
+  onFinishing?: (state: FinishingState | null) => void;
   /** 0 → 1 while a video's audio is being copied out of it (phase
    *  'extracting'). Never called for a file that keeps its own bytes. */
   onExtractProgress?: (ratio: number) => void;
@@ -123,6 +133,10 @@ export class ImportSession {
    *  which builds the Analysis from scratch and would otherwise drop them.
    *  Undefined for a fresh import. */
   notes: string | undefined = undefined;
+  /** The pauses of the live recording being re-analyzed (Analysis.pauses),
+   *  carried over by save() and heeded when bounds are put on the passes.
+   *  Empty for a fresh import: a file has none anyone knows of. */
+  pauses: number[] = [];
   /** Decks PINNED in the deck choice modal while this import is open — they
    *  come back ticked on the next add or link, and that is all they do. Purely
    *  in-memory and never persisted: picking a destination is a decision about
@@ -218,6 +232,7 @@ export class ImportSession {
 
       await this.wakeLock.start();
       this.setPhase('analyzing');
+      this.startAligner();
       await this.source.start(this.recognition); // resolves when fully emitted or stopped
 
       const { events, tFinal } = await this.recognition.stop();
@@ -230,6 +245,11 @@ export class ImportSession {
       }
 
       this.applyEvents(events, true);
+      // The last detections, finalized only now: a second or two each.
+      this.finishing = true;
+      this.reportFinishing();
+      await this.aligner?.drain(ALIGN_DRAIN_MAX_MS);
+      this.reportFinishing();
       return await this.save();
     } catch (err) {
       this.setPhase('error');
@@ -239,7 +259,51 @@ export class ImportSession {
       this.wakeLock.stop();
       this.recognition?.dispose();
       this.recognition = null;
+      // A partial keep after a cancellation saves what is there: no more.
+      this.alignerOff = true;
+      this.aligner?.dispose();
+      if (this.finishing) { this.finishing = false; this.cb.onFinishing?.(null); }
     }
+  }
+
+  /** In the end of the analysis (start's), so the screen hears of it. */
+  private finishing = false;
+
+  private reportFinishing(): void {
+    if (this.finishing) this.cb.onFinishing?.({ aligning: this.aligner?.pending() ?? 0 });
+  }
+
+  /** The bounds put on the tunes' passes as the analysis
+   *  goes (boundSuggest.ts). Off the recognition's worker — in a worker of
+   *  its own — and on the file being analysed. Loaded only then: it brings
+   *  the score's drawing with it. */
+  private aligner: BoundAligner | null = null;
+  private alignerOff = false;
+  /** The aligner was asked for: bounds not yet put on the passes are marked. */
+  private refining = false;
+
+  /** Which bounds of a detection are yet to be put on the passes — the ~ of
+   *  the feed. Null when the analysis does not refine its bounds. */
+  unrefinedBounds(id: string): { start: boolean; end: boolean } | null {
+    return this.refining ? this.tracker.unrefined(id) : null;
+  }
+
+  private startAligner(): void {
+    this.refining = true;
+    void import('./boundSuggestClient').then(({ BoundAligner }) => {
+      if (this.alignerOff) return;
+      this.aligner = new BoundAligner(
+        async () => this.playbackFile,
+        () => Math.max(this.analyzedDurationS, this.source?.duration ?? 0),
+        () => this.pauses,
+        (key, suggestion) => {
+          this.tracker.setSuggestion(key, suggestion);
+          this.afterChange([], false);
+          this.reportFinishing();
+        },
+      );
+      this.aligner.offer(this.tracker.toAlign());
+    }).catch(() => { /* not loaded: the bounds stay the recogniser's */ });
   }
 
   /** Set when the cancellation came from DELETE rather than from "Cancel"
@@ -285,6 +349,13 @@ export class ImportSession {
    *  as LiveSession's do — see ratingFollow.ts. */
   private applyEvents(events: DetectionEvent[], final = false): void {
     if (final) this.tracker.finish(events); else this.tracker.apply(events);
+    this.afterChange(events, final);
+  }
+
+  /** The list moved — the decoder's events, or a detection's bounds put on
+   *  its passes: ratings follow, the screen hears of it, and what is newly
+   *  finalized goes to the aligner. */
+  private afterChange(events: DetectionEvent[], final: boolean): void {
     const settled = this.tracker.takeSettled();
     const dominated = final ? this.tracker.dominated() : [];
     if (this.dateOverride !== null && (settled.length > 0 || dominated.length > 0)) {
@@ -295,6 +366,7 @@ export class ImportSession {
       }).catch(() => { /* best-effort */ });
     }
     this.cb.onDetections?.(events, this.getDetections());
+    this.aligner?.offer(this.tracker.toAlign());
   }
 
   /** Toggle the "I liked this tune" marker — no bearing on recognition. */
@@ -454,6 +526,7 @@ export class ImportSession {
       annotations: this.getDetections(),
       ...withSets(this.tracker.finalSets(() => crypto.randomUUID())),
       ...(this.notes ? { notes: this.notes } : {}),
+      ...(this.pauses.length ? { pauses: [...this.pauses] } : {}),
     };
     // A video's picture is dropped before anything is stored — see
     // extractAudioOnly for what is and is not allowed to happen to the file.

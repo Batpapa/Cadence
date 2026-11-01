@@ -130,6 +130,14 @@ export interface Detection {
    *  detection before this existed — no migration. Ignored with the
    *  experimental sets off, and on the first detection, which always opens. */
   opensSet?: boolean;
+  /** The bounds the recogniser found, once the analysis has put them on the
+   *  passes of the tune (boundSuggest.ts, 2026-11-01) — the same as the
+   *  bounds when they did not move. Kept so the bound editor can offer them
+   *  back, and what tells an aligned join from one that is not (the shorter
+   *  silence threshold, timelineModel's gapMinBetween). Absent where nothing
+   *  could be aligned, and on every analysis made before this existed. A
+   *  bound moved by hand afterwards leaves it as it is. */
+  detected?: { start: number; end: number };
   /** false while the Viterbi detector could still revise this detection's
    *  bounds or existence as more windows arrive (see viterbiSegmenter.ts) —
    *  the UI gates the actions that act on the bounds (delete, merge, edit,
@@ -195,6 +203,14 @@ export interface Analysis {
    *  recovery applies again to the detections it replays (recovery.ts). Never
    *  on a saved analysis — its detections already carry them. */
   confirmations?: DetectionConfirmation[];
+  /** Where a live recording was paused and resumed, in seconds of the
+   *  recording, in order (2026-11-01). A pause leaves no gap in the file:
+   *  what came before and after are joined end to end, and the music on
+   *  either side belongs to two moments. Putting bounds on the tune's passes
+   *  (boundSuggest.ts) treats each as an edge of the recording, and the bound
+   *  editor offers them as marks. Absent when there was none, and on every
+   *  analysis recorded before this existed. */
+  pauses?: number[];
   /** The user's free notes on the analysis, markdown (2026-10-15). Absent = no
    *  note; a cleared note is deleted rather than stored empty. Everything that
    *  builds an Analysis from scratch over an existing one must carry it — a

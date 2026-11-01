@@ -2,6 +2,7 @@ import type { Detection, DetectionAlternate, DetectionEvent, TunesetRecord } fro
 import { reconcileTunesets } from './tunesets';
 import { chainsOf } from './ui/timelineModel';
 import { withManualAlternate } from './model';
+import { alignKey, alignedBounds } from './boundSuggest';
 
 // ── The detection list both engines keep ─────────────────────────────────────
 // LiveSession and ImportSession held byte-identical copies of this until
@@ -359,6 +360,14 @@ export class DetectionTracker {
     return [...this.confirmations.values()].map(c => ({ ...c }));
   }
 
+  /** The decoder's own detections, under the confirmations — what, with
+   *  snapshot(), puts the list back together: restore() them, then finish()
+   *  these. The widget keeps them through a crash, having no windows to
+   *  replay (thesessionEmbed/runStore.ts). */
+  decoderDetections(): Detection[] {
+    return [...this.raw.values()].map(d => ({ ...d }));
+  }
+
   /** Puts a draft's confirmations back, before replaying its windows. */
   restore(confirmations: readonly DetectionConfirmation[]): void {
     for (const c of confirmations) {
@@ -411,8 +420,75 @@ export class DetectionTracker {
     this.refresh();
   }
 
+  // ── Bounds on the tune's passes (2026-11-01) ──
+  // The decoder's bounds are kept as they are, and the bounds the passes
+  // suggest (boundSuggest.ts, worked out outside, in a worker) are laid over
+  // them on every rebuild, as the confirmations are: a detection the decoder
+  // revises, or retunes, is a new question (alignKey), and shows its own
+  // bounds until it is answered. What moved carries the decoder's bounds in
+  // `detected`.
+  private readonly suggestions = new Map<string, { start: number | null; end: number | null } | null>();
+
+  /** The detections whose suggestion is still to be worked out: finalized —
+   *  the decoder will not move them any more — with a tune, and not already
+   *  answered. */
+  toAlign(): Array<{ key: string; start: number; end: number; settingId: string; meter: string }> {
+    return this.unaligned
+      .filter(d => d.finalized && d.end !== null && d.settingId && !d.detected && !this.suggestions.has(alignKey(d)))
+      .map(d => ({ key: alignKey(d), start: d.start, end: d.end!, settingId: d.settingId, meter: d.meter }));
+  }
+
+  /** The answer for one detection, by its alignKey: null when nothing could
+   *  be aligned. */
+  setSuggestion(key: string, suggestion: { start: number | null; end: number | null } | null): void {
+    this.suggestions.set(key, suggestion);
+    this.refresh();
+  }
+
+  /** Which bounds of a shown detection are yet to be put on the passes — what
+   *  the feeds mark with a ~ (2026-11-01, the user). Its start, until it is
+   *  answered; its end, until the tune after it is too, which may move it
+   *  again (the join) — or, for the last one, until nothing more can follow.
+   *  A detection answered with nothing, or with no tune to align, is
+   *  settled as it is. */
+  unrefined(id: string): { start: boolean; end: boolean } | null {
+    const dets = this.unaligned;
+    const k = dets.findIndex(d => d.id === id);
+    if (k < 0) return null;
+    const answered = (d: Detection) => d.finalized && d.end !== null
+      && (!d.settingId || !!d.detected || this.suggestions.has(alignKey(d)));
+    const self = answered(dets[k]!);
+    const next = dets[k + 1];
+    return { start: !self, end: !self || (next ? !answered(next) : !this.final) };
+  }
+
+  /** The detections as resolved, before the suggestions are laid over them. */
+  private unaligned: Detection[] = [];
+
+  private withSuggestions(dets: Detection[]): Detection[] {
+    this.unaligned = dets;
+    if (this.suggestions.size === 0) return dets;
+    const targets = dets.map(d => ({
+      id: d.id, start: d.start, end: provisionalEnd(d),
+      // One already carrying `detected` is a confirmation standing on
+      // nothing, as last shown: moved already.
+      suggestion: d.finalized && d.end !== null && !d.detected ? this.suggestions.get(alignKey(d)) : undefined,
+    }));
+    const changes = alignedBounds(targets, this.final);
+    const answered = new Set(targets.filter(x => x.suggestion).map(x => x.id));
+    if (changes.size === 0 && answered.size === 0) return dets;
+    // Answered, moved or not, it carries the decoder's bounds: what tells an
+    // aligned join from one that is not (timelineModel's gapMinBetween).
+    return dets.map((d) => {
+      const n = changes.get(d.id);
+      if (n) return { ...d, start: n.start, end: n.end, detected: { start: d.start, end: d.end! } };
+      return answered.has(d.id) ? { ...d, detected: { start: d.start, end: d.end! } } : d;
+    }).sort((a, b) => a.start - b.start);
+  }
+
   private refresh(): void {
     this.resolution = resolveDetections([...this.raw.values()], [...this.confirmations.values()], this.final);
+    this.resolution = { ...this.resolution, detections: this.withSuggestions(this.resolution.detections) };
     // Each confirmation remembers how it last looked on screen — what stays
     // should the decoder abandon its range.
     for (const d of this.resolution.detections) {
