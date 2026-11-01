@@ -137,7 +137,7 @@ const DEFAULTS = {
   // Crotchets per minute, FolkFriend's convention (one contour symbol = a
   // quaver). Session reels run near 190-230: measured 2026-10-28, a 256-quaver
   // pass in 40 s.
-  bpms: [80, 100, 120, 140, 160, 180, 200, 220, 240, 260],
+  bpms: [60, 70, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260], // 60 and 70 since 2026-10-31, as the app
   transposes: [0],
 };
 

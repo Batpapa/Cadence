@@ -8,6 +8,7 @@ import { isMobileDevice, isAppleTouchDevice } from '../utils';
 import type { Detection, DetectionAlternate } from '../session/model';
 import type { IndexProgress } from '../session/recognition/indexStore';
 import { MemoryRecorder } from './memoryRecorder';
+import { trackerOf, type SavedRun } from './runStore';
 
 // ── Listen-and-name, with nothing kept ────────────────────────────────────────
 // The analyser's pipelines with everything an analysis needs taken out: no
@@ -25,6 +26,8 @@ import { MemoryRecorder } from './memoryRecorder';
 // run's tracker outlives it: a detection can still be confirmed afterwards,
 // as in the analyser's summary, and its sound kept to play the detections
 // back: the file itself for a recording, a MemoryRecorder for a live run.
+// Nothing outlives the page, save the list itself when the page dies rather
+// than being left (runStore.ts) — handed to the next one, without its sound.
 
 export type SourceKind = 'mic' | 'device' | 'file' | 'link';
 
@@ -73,6 +76,10 @@ interface RunState {
   /** While it is analysed again: what it had, given back should the new
    *  analysis fail or be cancelled before it began. */
   previous?: DetectionTracker;
+  /** How far into it the decoder has heard, in seconds. */
+  heardS: number;
+  /** Put back from a page that died (runStore.ts): its list only, no sound. */
+  recovered?: boolean;
 }
 
 /** A failure that already knows what to tell the user. */
@@ -196,7 +203,51 @@ export class TuneFinder {
     return !!r?.sound && !(r === this.active && (this.op === 'mic' || this.op === 'device'));
   }
 
-  /** The file a run's detections are played from, as it stands. */
+  /** Whether a run has a sound at all — what a render may ask. Never sound()
+   *  there: a live run's file is rebuilt from every chunk whenever one has
+   *  come, and asked for by each line on each render it piled up faster than
+   *  it was collected — 10 GB in 33 minutes on a PC, the frame killed at 21 on
+   *  an 8 GB Android phone (2026-10-31). */
+  hasSound(runIndex: number): boolean {
+    return !!this.all[runIndex]?.sound;
+  }
+
+  /** Put back from a page that died: its list, without its sound. */
+  isRecovered(runIndex: number): boolean {
+    return !!this.all[runIndex]?.recovered;
+  }
+
+  /** What runStore.ts keeps of the runs: each one that has heard a tune. */
+  saved(): SavedRun[] {
+    return this.all
+      .map(r => ({
+        kind: r.kind, label: r.label, startedAt: r.startedAt, heardS: r.heardS,
+        decoder: r.tracker.decoderDetections(), confirmations: r.tracker.snapshot(),
+      }))
+      .filter(r => r.decoder.length > 0 || r.confirmations.length > 0);
+  }
+
+  /** Whether nothing has run on this page yet — the only time the runs of a
+   *  page that died are taken in: their indexes then come first, and nothing
+   *  already keyed by index on screen moves. */
+  get untouched(): boolean {
+    return this.all.length === 0 && !this.active;
+  }
+
+  /** The runs of a page that died, as they were when it last saved them, and
+   *  over (trackerOf). */
+  restore(saved: readonly SavedRun[]): void {
+    if (!this.untouched || saved.length === 0) return;
+    this.all = saved.map(s => ({
+      kind: s.kind, label: s.label, startedAt: s.startedAt, heardS: s.heardS,
+      tracker: trackerOf(s), sound: null, input: null, stale: false, recovered: true,
+    }));
+    this.latest = this.all[this.all.length - 1] ?? null;
+    this.onChange();
+  }
+
+  /** The file a run's detections are played from, as it stands. For a click,
+   *  never a render (see hasSound). */
   sound(runIndex: number): Promise<Blob> | null {
     const s = this.all[runIndex]?.sound;
     if (!s) return null;
@@ -238,7 +289,7 @@ export class TuneFinder {
       return null;
     }
     this.active = {
-      kind, label, startedAt: Date.now(), tracker: new DetectionTracker(), sound: null, input: null, stale: false,
+      kind, label, startedAt: Date.now(), tracker: new DetectionTracker(), sound: null, input: null, stale: false, heardS: 0,
     };
     this.all = [...this.all, this.active];
     this.op = kind;
@@ -416,12 +467,14 @@ export class TuneFinder {
   }
 
   private newRecognition(run: number, sampleRate: number, fromFile = false): RecognitionClient {
-    const tracker = this.active!.tracker;
+    const state = this.active!;
+    const tracker = state.tracker;
     const recognition = new RecognitionClient(sampleRate, {
       onIndexProgress: progress => {
         if (run === this.run && this.status.kind === 'loading') this.set({ kind: 'loading', progress });
       },
       onWindow: result => {
+        if (run === this.run) state.heardS = result.tWindowEnd;
         if (run === this.run && this.status.kind === 'analysing') {
           this.set({ kind: 'analysing', analyzedS: result.tWindowEnd, totalS: this.status.totalS });
         }

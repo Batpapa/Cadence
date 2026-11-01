@@ -359,7 +359,7 @@ function PresetFooter({ current, dirty, suggestedName, setNaming, actions, onExt
 
 type Status =
   | { kind: 'loading' }
-  | { kind: 'ready'; duration: number; waveform: number[] }
+  | { kind: 'ready'; duration: number; waveform: number[]; origin?: number }
   | { kind: 'error'; msg: string };
 
 export interface Region { start: number; end: number }
@@ -369,8 +369,11 @@ export interface Region { start: number; end: number }
  *  which is this player with a score drawn above it. All optional: without
  *  them, the player is exactly the file viewer's. */
 export interface AudioPlayerHooks {
-  /** Loads the engine instead of decoding a file entry. */
-  load?: (engine: AudioEngine) => Promise<{ duration: number; waveform: number[] }>;
+  /** Loads the engine instead of decoding a file entry. `origin`: where in
+   *  the recording what was loaded starts, in seconds — the times shown are
+   *  the recording's (2026-11-01, the user: a tune found 24 min into a
+   *  session read 0:00). */
+  load?: (engine: AudioEngine) => Promise<{ duration: number; waveform: number[]; origin?: number }>;
   /** The region to open on, instead of the whole file — and to move to,
    *  whenever a new object is passed. */
   region?: Region;
@@ -417,6 +420,10 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
   const regionRef = useRef(region);
   const durationRef = useRef(duration);
   durationRef.current = duration;
+  /** Added to every time shown (AudioPlayerHooks.load). */
+  const origin = status.kind === 'ready' ? status.origin ?? 0 : 0;
+  const originRef = useRef(origin);
+  originRef.current = origin;
   // The region asked from outside (hooks.region), and the last one applied.
   const askedRegion = hooks?.region;
   const askedRef = useRef(askedRegion);
@@ -473,7 +480,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
     setCurrentMark(c => (c === mark ? c : mark));
     const d = durationRef.current;
     if (playheadRef.current) playheadRef.current.style.left = `${(pos / d) * 100}%`;
-    if (timeCurrentRef.current) timeCurrentRef.current.textContent = fmtTime(pos);
+    if (timeCurrentRef.current) timeCurrentRef.current.textContent = fmtTime(originRef.current + pos);
     const rects = waveSvgRef.current?.children;
     if (!rects) return;
     const n = rects.length;
@@ -835,8 +842,8 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--color-dim)', fontFamily: MONO }}>
           <span ref={timeCurrentRef} />
-          <span style={{ textAlign: 'center' }}>{`${fmtTime(region.start)} → ${fmtTime(region.end)}`}</span>
-          <span>{fmtTime(duration)}</span>
+          <span style={{ textAlign: 'center' }}>{`${fmtTime(origin + region.start)} → ${fmtTime(origin + region.end)}`}</span>
+          <span>{fmtTime(origin + duration)}</span>
         </div>
       </div>
 

@@ -7,7 +7,8 @@ import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
 import { alertModal } from './modal';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon } from './icons';
 import { useContextMenu } from './contextMenu';
-import { showPreviewModal, type PreviewSaveResult } from './fileViewer';
+import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding } from './fileViewer';
+import { cardAudioSync } from './cardAudioSync';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
 import { showAddFileModal } from './addFileModal';
@@ -315,7 +316,7 @@ function clipExtractor(card: Card | undefined): AudioPresetsBinding['onExtractCl
 
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, audioPresets, glyph, onOpen, onDownload }: {
+function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, audioPresets, audioSync, glyph, onOpen, onDownload }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
@@ -325,6 +326,8 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   onSetPreferredIndex?: (index: number | undefined) => void;
   /** An audio file's presets, for its player. */
   audioPresets?: AudioPresetsBinding;
+  /** A score's audio sync with the card's recordings (cardAudioSync.ts). */
+  audioSync?: AudioSyncBinding;
   /** Replaces the MIME glyph. Used to mark a file the app generates, which is
    *  not the same kind of thing as one the user attached. */
   glyph?: ComponentChild;
@@ -397,7 +400,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
           // Favoriting a version isn't "editing" the card — available regardless of `editable`.
           onClick={!previewable ? undefined : onOpen ?? (() => void withResolvedEntry(entry, resolved => showPreviewModal(resolved, editable ? onSave : undefined, {
             initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex,
-            onRename: editable ? onRename : undefined, audioPresets,
+            onRename: editable ? onRename : undefined, audioPresets, audioSync,
           })))}
         >
           {entry.name}
@@ -982,6 +985,9 @@ async function openResolvedScore(
     reloadEntry: isSet && card
       ? () => tunesetAbcEntry(card, cards, { includeRepeats: appState.value.abcIncludeRepeats })
       : undefined,
+    // Its score following one of its recordings — not a set's generated
+    // score for now (2026-10-31, the user).
+    audioSync: att.generatedBy === 'tuneset' ? undefined : cardAudioSync(options.attachments),
   });
 }
 
@@ -1093,6 +1099,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   onRename={onRenameFile && att.generatedBy !== 'tuneset' ? (name) => onRenameFile(i, name) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
                   audioPresets={onSetAudioPresets ? audioPresetsBinding(att, i, onSetAudioPresets, card) : undefined}
+                  audioSync={isAbcFile(att) && att.generatedBy !== 'tuneset' ? cardAudioSync(attachments) : undefined}
                   // A set's fused score has no bytes of its own — see `resolve`
                   // above. Both gestures rebuild it from members whose scores
                   // are actually in hand, and say so when one is not.

@@ -25,6 +25,8 @@ import { ANALYSIS_SAMPLE_RATE, FF_PCM_WINDOW } from './sessionConfig';
 
 const MIDI_LOW = 48;
 const MIDI_NUM = 48;
+/** Pitches per feature frame: `features` is frames × this. */
+export const FEATURE_PITCHES = MIDI_NUM;
 /** Feature frames per second at the analysis rate — the default; a
  *  recording decoded at its own rate has rate / FF_PCM_WINDOW. */
 export const FOLLOW_FPS = ANALYSIS_SAMPLE_RATE / FF_PCM_WINDOW;
@@ -74,7 +76,10 @@ export const FOLLOW_DEFAULTS: FollowOptions = {
   // aligns anywhere.
   otherPenalty: 1.2,
   noiseFloor: Math.log(0.01 + 2 / MIDI_NUM),
-  bpms: [80, 100, 120, 140, 160, 180, 200, 220, 240, 260],
+  // From 60 since 2026-10-31 (the user): a card's recording may be a tune
+  // slowed down to learn it. On the 336 annotated session tunes, 60 and 70
+  // never won — every result the same — for a fifth more time.
+  bpms: [60, 70, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260],
   transposes: [0],
   fps: FOLLOW_FPS,
 };
@@ -107,6 +112,41 @@ export interface FollowResult {
   /** The score aligned to, one MIDI pitch per quaver: what places each quaver
    *  on the drawn score (`alignContour`). */
   pitches: number[];
+  /** Aligned quavers at the head that are the first pass's pickup, not a pass
+   *  of their own (`withPickup`); none when absent. */
+  pickup?: number;
+}
+
+/** Quavers in a bar of `meter` ("6/8" → 6, "4/4" → 8): the contour's unit. */
+export function barQuavers(meter: string): number {
+  const [n, d] = meter.split('/').map(Number);
+  return n && d ? Math.max(1, Math.round((n * 8) / d)) : 8;
+}
+
+/** `r`, its head taken for the first pass's pickup when it is one: begun in
+ *  the score's last bar, back at its start before a bar was played. A pickup
+ *  written at the end of the score, or the last notes of the tune before in a
+ *  set taken for it, made a "pass" of a few notes, and the tune proper was
+ *  numbered from 2 (2026-11-01, the user: The Kesh in a set, its first note
+ *  aligned to the score's last quaver). A recording begun further in keeps
+ *  its first pass, however partial. */
+export function withPickup<R extends FollowResult>(r: R, meter: string): R {
+  const { indices } = r;
+  if (indices.length < 2 || indices[0]! < r.quavers - barQuavers(meter)) return r;
+  for (let k = 1; k < indices.length; k++) {
+    if (indices[k]! <= indices[k - 1]!) return { ...r, pickup: k };
+  }
+  return r;
+}
+
+/** Index of the onset each pass starts on: the first, then every return to
+ *  the score's start — the pickup's own return excepted (`withPickup`). */
+export function passStarts(r: FollowResult): number[] {
+  const out = [0];
+  for (let k = 1; k < r.indices.length; k++) {
+    if (r.indices[k]! <= r.indices[k - 1]! && k !== r.pickup) out.push(k);
+  }
+  return out;
 }
 
 /** Per-frame log share of each pitch, octave-folded. Quiet frames say nothing:
@@ -381,7 +421,7 @@ export function positionAt(r: FollowResult, t: number): { quaver: number; pass: 
   const next = lo + 1 < times.length ? times[lo + 1]! : r.end;
   const frac = next > times[lo]! ? (t - times[lo]!) / (next - times[lo]!) : 0;
   let pass = 0;
-  for (let k = 1; k <= lo; k++) if (indices[k]! <= indices[k - 1]!) pass++;
+  for (let k = 1; k <= lo; k++) if (indices[k]! <= indices[k - 1]! && k !== r.pickup) pass++;
   return { quaver: indices[lo]! + Math.min(1, Math.max(0, frac)), pass };
 }
 

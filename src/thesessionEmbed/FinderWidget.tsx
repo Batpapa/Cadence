@@ -7,6 +7,7 @@ import { DETECTION_TEMPORAL_CONFIG } from '../session/recognition/detectionTempo
 import { withChains } from '../session/ui/timelineModel';
 import { viterbiPickOf, type Detection, type DetectionAlternate } from '../session/model';
 import { TuneFinder, canOfferCapture, type FinderStatus, type Run, type SourceKind } from './tuneFinder';
+import { RunStore } from './runStore';
 import { Menu, type MenuEntry } from './Menu';
 import { GearIcon, ExportIcon, CadenceLogo, TuningForkIcon, ResetIcon } from './icons';
 import {
@@ -282,6 +283,10 @@ interface RowControls {
    *  detection is the one being heard. Marked in both cases, as the
    *  analyser's cards mark theirs. */
   live: boolean;
+  /** The run has no sound, and none will come — a list put back after its
+   *  page went, a browser without MediaRecorder, a video it cannot play: no
+   *  play button at all, nor clip, rather than ones forever greyed. */
+  soundless: boolean;
   /** Why the play button is off, or null when it can play. */
   playOff: string | null;
   playing: boolean;
@@ -310,14 +315,16 @@ function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
   return (
     <li class={`detection${open && c.live ? ' open' : ''}`} data-latest={c.latest ? '' : undefined}>
       <div class="row">
-        <button
-          type="button"
-          class={`play${c.playing ? ' playing' : ''}`}
-          disabled={!!c.playOff}
-          title={c.playOff ?? tr(lang, c.playing ? 'pause' : 'play')}
-          aria-label={tr(lang, c.playing ? 'pause' : 'play')}
-          onClick={c.onPlay}
-        >{c.loading ? '…' : c.playing ? '❚❚' : '▶'}</button>
+        {!c.soundless && (
+          <button
+            type="button"
+            class={`play${c.playing ? ' playing' : ''}`}
+            disabled={!!c.playOff}
+            title={c.playOff ?? tr(lang, c.playing ? 'pause' : 'play')}
+            aria-label={tr(lang, c.playing ? 'pause' : 'play')}
+            onClick={c.onPlay}
+          >{c.loading ? '…' : c.playing ? '❚❚' : '▶'}</button>
+        )}
         {/* No times: the order says when, and ▶ plays it — the analyser's
             ranges are for editing bounds, which nobody does here. */}
         <span class="what">
@@ -341,7 +348,7 @@ function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
           {d.userConfirmed ? '✓' : pct}
           <span class="chevron" aria-hidden="true">{c.expanded ? '▴' : '▾'}</span>
         </button>
-        {c.opts.tools && (
+        {c.opts.tools && !c.soundless && (
           <button
             type="button"
             class="icon-button clip"
@@ -359,12 +366,19 @@ function DetectionRow({ d, c }: { d: Detection; c: RowControls }) {
 
 // ── The widget ──
 
-export function FinderWidget({ opts }: { opts: WidgetOptions }) {
-  const { lang } = opts;
+export function FinderWidget({ opts: given }: { opts: WidgetOptions }) {
+  const { lang } = given;
   const [, setTick] = useState(0);
   const rerender = () => setTick(n => n + 1);
+  const storeRef = useRef<RunStore | null>(null);
+  storeRef.current ??= new RunStore();
+  const store = storeRef.current;
   const finderRef = useRef<TuneFinder | null>(null);
-  finderRef.current ??= new TuneFinder(rerender);
+  // Every change is saved a moment later, should the page die (runStore.ts).
+  finderRef.current ??= new TuneFinder(() => {
+    rerender();
+    store.schedule(() => finderRef.current?.saved() ?? []);
+  });
   const finder = finderRef.current;
   const meterRef = useRef<HTMLSpanElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -379,7 +393,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const [following, setFollowing] = useState(true);
   const player = usePlayer(finder);
 
-  const [tabs] = useState(() => opts.sources.filter(k => k !== 'device' || canOfferCapture()));
+  const [tabs] = useState(() => given.sources.filter(k => k !== 'device' || canOfferCapture()));
   const [tab, setTab] = useState<SourceKind>(tabs[0] ?? 'mic');
   /** The tab's own invitation (and the link's field) rather than the last
    *  run's result — true from a tab change until the next run starts. */
@@ -392,7 +406,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const [heard, setHeard] = useState(0);
   /** Per analysis, as an analysis is where a set is: the box in its title. */
   const [setsShown, setSetsShown] = useState<ReadonlyMap<number, boolean>>(new Map());
-  const showsSets = (run: Run) => setsShown.get(run.index) ?? opts.sets;
+  const showsSets = (run: Run) => setsShown.get(run.index) ?? given.sets;
   /** Per analysis too: where each tune is in it, under its name. */
   const [timingsShown, setTimingsShown] = useState<ReadonlySet<number>>(new Set());
   const showsTimings = (run: Run) => timingsShown.has(run.index);
@@ -408,6 +422,11 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   const listening = status.kind === 'listening';
   const busy = finder.running !== null;
   const editingLink = tab === 'link' && fresh && !busy;
+  // While something is running, a tune opens in a new tab whatever `links`
+  // says: in this one it would leave the page, and the page's leaving stops
+  // the listening — mid-session, at the tap on a name (2026-11-01). The
+  // embedding page's choice holds again once it is over.
+  const opts: WidgetOptions = busy && given.sameTab ? { ...given, sameTab: false } : given;
 
   const runs = finder.runs();
   const latestIndex = finder.latestIndex;
@@ -434,11 +453,22 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   }, [listening]);
 
   // Leaving the page: give the microphone back at once rather than whenever
-  // the browser gets round to it.
+  // the browser gets round to it — and the list goes with the page, unless it
+  // went to a tune's page (onClickCapture below). A page that dies instead
+  // leaves it to the next one, taken in here.
   useEffect(() => {
-    const onHide = () => { void finderRef.current?.stop(); };
+    void store.takeOrphans(() => finder.untouched).then(saved => finder.restore(saved));
+    const onHide = () => {
+      store.leave();
+      void finderRef.current?.stop();
+    };
+    const onShow = (e: PageTransitionEvent) => { if (e.persisted) store.back(); };
     addEventListener('pagehide', onHide);
-    return () => removeEventListener('pagehide', onHide);
+    addEventListener('pageshow', onShow);
+    return () => {
+      removeEventListener('pagehide', onHide);
+      removeEventListener('pageshow', onShow);
+    };
   }, []);
 
   // The field, ready to paste into once the link tab is chosen. Not scrolled
@@ -655,7 +685,8 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   };
 
   /** The sound a run's clips and audio come from, or why there is none. */
-  const soundOff = (run: Run): string | null => finder.sound(run.index) ? null : tr(lang, 'cantPlay');
+  const soundOff = (run: Run): string | null => finder.hasSound(run.index) ? null
+    : tr(lang, finder.isRecovered(run.index) ? 'soundLost' : 'cantPlay');
 
   const gearEntries = (run: Run): MenuEntry[] => [
     {
@@ -712,8 +743,9 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
     return {
       opts,
       live: inProgress,
-      playOff: playable ? null
-        : finder.sound(run.index) ? tr(lang, 'playAfterStop') : tr(lang, 'cantPlay'),
+      soundless: !finder.hasSound(run.index),
+      // With a sound, only a listening still going keeps it from playing.
+      playOff: playable ? null : tr(lang, 'playAfterStop'),
       playing: player.playing === key,
       loading: player.loading === key,
       onPlay: () => { void player.toggle(run, d); },
@@ -751,7 +783,7 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
           <div class="set-head">
             <span class="set-label">{app(lang, 'sessions.set.label')}</span>
             <span class="set-names">{setName}</span>
-            {opts.tools && (
+            {opts.tools && finder.hasSound(run.index) && (
               <button
                 type="button"
                 class="icon-button clip"
@@ -774,6 +806,13 @@ export function FinderWidget({ opts }: { opts: WidgetOptions }) {
   return (
     <div
       class={`finder${dragOver ? ' drag' : ''}`}
+      // A tune's page opened in this tab — the name, or ↗ in the alternatives:
+      // the list waits for the back button (runStore.ts). A modified click
+      // opens a new tab instead, and this page stays.
+      onClickCapture={e => {
+        const link = (e.target as Element | null)?.closest?.('a[target="_top"]');
+        if (link && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) store.leavingByLink();
+      }}
       onDragOver={e => {
         if (!canDrop || busy || !e.dataTransfer?.types.includes('Files')) return;
         e.preventDefault();

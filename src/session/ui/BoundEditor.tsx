@@ -1,17 +1,18 @@
 import { render } from 'preact';
-import { signal } from '@preact/signals';
+import { signal, type Signal } from '@preact/signals';
 import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, closeModal, askUnsavedChanges } from '../../components/modal';
+import { showModal, closeModal, askUnsavedChanges, type ModalAction } from '../../components/modal';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
-import { ResetIcon } from '../../components/icons';
+import { ResetIcon, ScoreFollowIcon, MagnetIcon, iconElement } from '../../components/icons';
 import { hasRecognisedSetting, type Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
-  snapMarks, findSnap, findTwin, clampLinked, closingSnap, missingRanges,
-  LOUPE_HALF_S, PEAK_BUCKET_S, type SnapMark, type BoundTwin,
+  snapMarks, passMarks, alignmentMarks, findSnap, findTwin, clampLinked, closingSnap, missingRanges,
+  LOUPE_HALF_S, PEAK_BUCKET_S, SNAP_TOLERANCE_S, CTX_SNAP_PX, type SnapMark, type BoundTwin,
 } from './boundEditorModel';
+import { suggestBounds, type BoundSuggestion } from '../boundSuggestClient';
 import {
   makePeakBuffer, readInto, isRead, levelOver,
   type PeakBuffer, type WaveRead,
@@ -212,9 +213,15 @@ interface BoundEditorProps {
    *  default would stretch the tunes on either side over the pause as soon as
    *  the user tightened the new detection. The toggle is still offered, off. */
   linkByDefault?: boolean;
+  /** Filled with what puts the bounds back as they opened: the modal's
+   *  footer offers it, beside Cancel and Save (2026-11-01, the user). */
+  resetRef?: { current: (() => void) | null };
+  /** Where the recording was paused (Analysis.pauses): marks, and edges for
+   *  the alignment. */
+  pauses?: readonly number[];
 }
 
-export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySlot, linkByDefault = true }: BoundEditorProps) {
+export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySlot, linkByDefault = true, resetRef, pauses = [] }: BoundEditorProps) {
   const origin = useRef({ start: ann.start, end: ann.end ?? duration }).current;
   /** The whole recording — what a bound may reach. */
   const reach: [number, number] = [0, duration];
@@ -239,6 +246,13 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
    *  read (a live recording's blob is assembled from its chunks and takes a
    *  moment). */
   const [audioMissing, setAudioMissing] = useState(false);
+
+  /** The bounds the passes of the tune suggest (boundSuggest.ts), worked out
+   *  in the background from the moment the recording is here — developer
+   *  mode, and not on a detection being added, whose tune is still being
+   *  chosen. 'busy' meanwhile, null when nothing could be aligned. */
+  const suggesting = !identitySlot && !!ann.settingId;
+  const [suggestion, setSuggestion] = useState<BoundSuggestion | null | 'busy'>(suggesting ? 'busy' : null);
 
   const bufRef = useRef<PeakBuffer | null>(null);
   const blobRef = useRef<Blob | null>(null);
@@ -356,7 +370,19 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
 
   /** The fixed marks — neighbouring bounds and this detection's other one.
    *  What the magnifier DRAWS, since a canvas only repaints on a render. */
-  const marks = snapMarks(anns, ann.id, draft, bound, duration, linkedIds);
+  const aligned = suggestion && suggestion !== 'busy' ? suggestion : null;
+  /** Where a pass of the tune begins or ends: marks too, the magnet's as
+   *  much as the neighbours' bounds. */
+  const passes = aligned ? passMarks(aligned.marks, duration) : [];
+  /** What the passes suggest for the bound being worked on. */
+  const suggested = aligned ? aligned[bound] : null;
+  const marks: SnapMark[] = [
+    ...snapMarks(anns, ann.id, draft, bound, duration, linkedIds),
+    ...alignmentMarks(passes, suggested),
+    // Where the recogniser had it, when the analysis moved it.
+    ...(ann.detected ? [{ t: ann.detected[bound], detected: true as const }] : []),
+    ...pauses.map(t => ({ t, pause: true as const })),
+  ];
 
   /** The marks as they stand at this instant, play head included.
    *
@@ -437,18 +463,26 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   useEffect(() => {
     let cancelled = false;
     let url: string | null = null;
+    const stopSuggesting = new AbortController();
     void getAudio().then(blob => {
       if (cancelled) return;
-      if (!blob) { setAudioMissing(true); return; }
+      if (!blob) { setAudioMissing(true); setSuggestion(null); return; }
       blobRef.current = blob;
       url = URL.createObjectURL(blob);
       setAudioUrl(url);
       bufRef.current = makePeakBuffer(0, duration);
       ensureDecoded(...loupeDecodeWindow(origin.start, reach));
       setWaveTick(x => x + 1);
+      // From the bounds as stored, whatever the draft does meanwhile.
+      if (suggesting) {
+        suggestBounds(blob, { start: origin.start, end: origin.end, settingId: ann.settingId, meter: ann.meter }, duration, stopSuggesting.signal, pauses)
+          .then(s => { if (!cancelled) setSuggestion(s); })
+          .catch(() => { if (!cancelled) setSuggestion(null); });
+      }
     });
     return () => {
       cancelled = true;
+      stopSuggesting.abort();
       for (const r of readsRef.current) r.cancel();
       readsRef.current = [];
       if (url) URL.revokeObjectURL(url);
@@ -567,6 +601,40 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
 
     drawWave(g, w, yWav, hWav, t0, t1, bufRef.current, draft.start, draft.end);
 
+    // The passes of the tune, as its alignment on the score finds them:
+    // a line where each begins, its number just after it at the top, as the
+    // Synchro audio draws them.
+    g.fillStyle = cssVar('--color-warn');
+    g.font = '600 9px "IBM Plex Mono", ui-monospace, monospace';
+    for (const m of passes) {
+      const x = X(m.t);
+      if (x < 0 || x > w) continue;
+      g.globalAlpha = .7;
+      g.fillRect(Math.round(x), yWav - 2, 1, hWav + 4);
+      g.globalAlpha = 1;
+      if (!m.pass!.end) g.fillText(String(m.pass!.n), Math.round(x) + 3, yWav + 8);
+    }
+    g.globalAlpha = 1;
+
+    // Where the recogniser had the bound being worked on, and where the
+    // passes suggest it: dashed, full height — the loupe shows 8 s, and
+    // either may lie well outside them (2026-11-01, the user).
+    g.setLineDash([3, 3]);
+    g.lineWidth = 1;
+    for (const m of marks) {
+      if (!m.detected && !m.suggested && !m.pause) continue;
+      const x = Math.round(X(m.t)) + .5;
+      if (x < 0 || x > w) continue;
+      g.strokeStyle = cssVar(m.suggested ? '--color-warn' : m.pause ? '--color-danger' : '--color-primary');
+      g.globalAlpha = .8;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.lineTo(x, h);
+      g.stroke();
+    }
+    g.setLineDash([]);
+    g.globalAlpha = 1;
+
     // The neighbours, drawn plainly even where they bite into this one: joins
     // overlap as a rule, and hiding that would make the strip lie.
     g.font = '500 9px "IBM Plex Sans", system-ui, sans-serif';
@@ -650,7 +718,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
       // is exactly what it looked like: a name with its first letters eaten.
       if (Math.abs(m.t - c) < .01) continue;
       const x = Math.round(X(m.t)) + .5;
-      const colour = cssVar('--color-muted');
+      const colour = cssVar(m.pass || m.suggested ? '--color-warn' : '--color-muted');
       g.strokeStyle = colour;
       g.setLineDash([2, 4]);
       g.beginPath();
@@ -680,6 +748,10 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
 
   const labelOf = (m: SnapMark): string => {
     if (m.head) return t('sessions.bounds.snapHead');
+    if (m.pass) return t(m.pass.end ? 'sessions.bounds.snapPassEnd' : 'sessions.bounds.snapPass', { n: m.pass.n });
+    if (m.suggested) return t('sessions.bounds.snapSuggested');
+    if (m.detected) return t('sessions.bounds.snapDetected');
+    if (m.pause) return t('sessions.bounds.snapPause');
     if (!m.name) return t(m.edge === 'start' ? 'sessions.bounds.snapOwnStart' : 'sessions.bounds.snapOwnEnd');
     return t(m.edge === 'start' ? 'sessions.bounds.snapStart' : 'sessions.bounds.snapEnd', { name: capitalizeWords(m.name) });
   };
@@ -745,9 +817,13 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     setGesturing(true);
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture(e.pointerId);
+    // The magnet's reach in pixels, not seconds: a few seconds here, where the
+    // loupe's 0.3 s would be less than a pixel and never catch anything.
+    const boxWidth = ctxBoxRef.current?.getBoundingClientRect().width || 1;
+    const reachS = Math.max(SNAP_TOLERANCE_S, (CTX_SNAP_PX * (win[1] - win[0])) / boxWidth);
     const move = (ev: PointerEvent) => {
       const v = ctxTimeAt(ev.clientX);
-      const target = magnet ? (findSnap(v, marksNow())?.t ?? v) : v;
+      const target = magnet ? (findSnap(v, marksNow(), reachS)?.t ?? v) : v;
       setDraft(withTwins(clampBound(which, target, draft, win)));
     };
     const up = () => {
@@ -819,20 +895,62 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  // Again on every render: the draft's closures are this render's.
+  if (resetRef) resetRef.current = () => { setDraft({ ...origin }); rearmListening(); };
   const dStart = draft.start - origin.start;
   const dEnd = draft.end - origin.end;
-  const dirty = Math.abs(dStart) > .004 || Math.abs(dEnd) > .004;
   const noWave = !waveformFitsContext(win);
   const snapped = magnet ? findSnap(active, marksNow(), 0.002) : null;
   /** Not during a gesture: the button would come and go under the finger. */
   const closing = gesturing ? null : closingSnap(anns, ann.id, origin.start, bound, draft, duration);
+
+  /** The alignment's verdict on the bound being worked on,
+   *  and its suggestion one press away — into the draft, like any move. */
+  const suggestPanel = () => {
+    // One line, whatever it says.
+    const line = (text: string) => (
+      <p class="flex items-center gap-2.5 px-3 py-2 text-dim">
+        <span class="shrink-0 text-warn"><ScoreFollowIcon size={13} /></span>
+        <span class="flex-1 min-w-0 truncate">{text}</span>
+      </p>
+    );
+    if (suggestion === 'busy') return line(t('sessions.bounds.suggestBusy'));
+    if (!aligned) return line(t('sessions.bounds.suggestFailed'));
+    if (suggested === null) {
+      const why = aligned.why[bound] ?? 'midPass';
+      return line(t(why === 'unsure' ? 'sessions.bounds.suggestUnsure'
+        : why === 'far' ? 'sessions.bounds.suggestFar'
+        : 'sessions.bounds.suggestMidPass'));
+    }
+    if (Math.abs(suggested - active) <= .02) return line(t('sessions.bounds.suggestHere'));
+    return (
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-muted hover:text-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+        disabled={locked}
+        title={t('sessions.bounds.suggestHint')}
+        onClick={() => { moveTo(suggested, { snap: false }); rearmListening(); }}
+      >
+        <span class="shrink-0 text-warn"><ScoreFollowIcon size={13} /></span>
+        <span class="flex-1 min-w-0 truncate">
+          {t('sessions.bounds.suggestApply', { t: fmtFine(suggested), d: fmtDelta(suggested - active) })}
+        </span>
+      </button>
+    );
+  };
 
   const boundBtn = (which: 'start' | 'end', value: number, delta: number) => (
     <button
       class={`rounded-lg border px-3 py-1.5 text-left transition-colors cursor-pointer ${
         bound === which ? 'border-accent bg-accent/10' : 'border-border bg-bg hover:border-dim'}`}
       aria-pressed={bound === which}
-      onClick={() => { setBound(which); rearmListening(); }}
+      onClick={() => {
+        setBound(which);
+        // Now, not at the next render: listening starts again from the
+        // bound just chosen, which activeRef only learns once rendered — it
+        // replayed the other one (2026-11-01, the user).
+        activeRef.current = value;
+        rearmListening();
+      }}
     >
       <span class={`block text-[10px] uppercase tracking-widest ${bound === which ? 'text-accent' : 'text-dim'}`}>
         {t(which === 'start' ? 'sessions.bounds.start' : 'sessions.bounds.end')}
@@ -921,6 +1039,12 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           </span>
         </button>
       )}
+      {/* The bound the tune's passes suggest (boundSuggest.ts). */}
+      {suggesting && (
+        <div class="rounded-lg border border-border text-[11px]">
+          {suggestPanel()}
+        </div>
+      )}
 
       {/* ── Context ── */}
       <div>
@@ -995,8 +1119,8 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
             {fmtFine(active)}
           </span>
           {snapped && (
-            <span class="absolute left-1/2 -translate-x-1/2 bottom-1.5 z-[4] pointer-events-none rounded-full bg-bg px-2 text-[10px] text-warn whitespace-nowrap">
-              ◎ {labelOf(snapped)}
+            <span class="absolute left-1/2 -translate-x-1/2 bottom-1.5 z-[4] pointer-events-none rounded-full bg-bg px-2 text-[10px] text-warn whitespace-nowrap inline-flex items-center gap-1">
+              <MagnetIcon size={10} /> {labelOf(snapped)}
             </span>
           )}
           <div ref={loupeHeadRef} class="absolute inset-y-0 w-0.5 bg-primary pointer-events-none z-[4]" style={{ left: '0px', opacity: 0 }} />
@@ -1046,7 +1170,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           title={t('sessions.bounds.magnetHint')}
           onClick={() => setMagnet(m => !m)}
         >
-          ◎ {t('sessions.bounds.magnet')}
+          <MagnetIcon size={13} /> {t('sessions.bounds.magnet')}
         </button>
       </div>
 
@@ -1054,22 +1178,23 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           request — "très clair déjà": the accent block is under the crosshair
           being dragged and the grey ones carry the neighbours' names, so both
           say what they are without a key. */}
-      {/* Nothing but Reset is left on this line, so it only exists once there
-          is something to reset — an empty row would still spend its margin. */}
-      {dirty && (
-        <div class="flex items-center justify-end">
-          <button
-            class="text-[11px] text-dim hover:text-primary inline-flex items-center gap-1 transition-colors cursor-pointer"
-            onClick={() => { setDraft({ ...origin }); rearmListening(); }}
-          >
-            <ResetIcon size={11} /> {t('sessions.bounds.reset')}
-          </button>
-        </div>
-      )}
+      {/* Reset stood on its own line here until 2026-11-01: it is in the
+          modal's footer now, beside Cancel and Save (resetRef). */}
 
       <audio ref={audioRef} class="hidden" src={audioUrl ?? undefined} onPause={() => setPlaying(false)} />
     </div>
   );
+}
+
+/** The footer's Reset, at the far left: greyed while nothing has moved. */
+export function resetAction(resetRef: { current: (() => void) | null }, unchanged: Signal<boolean>): ModalAction {
+  return {
+    label: t('sessions.bounds.reset'),
+    icon: iconElement(ResetIcon, 13),
+    align: 'start',
+    disabled: unchanged,
+    onClick: () => { resetRef.current?.(); },
+  };
 }
 
 /** Imperative bridge — showModal still needs a plain HTMLElement body, and it
@@ -1086,6 +1211,7 @@ export function showBoundEditor(opts: {
   duration: number;
   getAudio: () => Promise<Blob | undefined>;
   onSave: (edit: BoundEdit) => void;
+  pauses?: readonly number[];
 }): void {
   const body = document.createElement('div');
   const cleanup = () => render(null, body);
@@ -1098,6 +1224,7 @@ export function showBoundEditor(opts: {
   const moved = () => Math.abs(draft.start - opts.ann.start) > .004
     || Math.abs(draft.end - (opts.ann.end ?? opts.duration)) > .004;
   const unchanged = signal(true);
+  const resetRef: { current: (() => void) | null } = { current: null };
 
   render(
     <BoundEditor
@@ -1106,12 +1233,15 @@ export function showBoundEditor(opts: {
       duration={opts.duration}
       getAudio={opts.getAudio}
       onDraft={(edit) => { draft = edit; unchanged.value = !moved(); }}
+      resetRef={resetRef}
+      pauses={opts.pauses}
     />,
     body,
   );
 
   const save = () => { closeModal(); cleanup(); opts.onSave(draft); };
   showModal(t('sessions.bounds.title'), body, [
+    resetAction(resetRef, unchanged),
     { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
     { label: t('common.save'), primary: true, disabled: unchanged, onClick: save },
   ], {

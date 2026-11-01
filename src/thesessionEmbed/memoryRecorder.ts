@@ -9,7 +9,10 @@ import { patchWebmDuration } from '../session/audio/webmDuration';
 //
 // The chunks are short (1 s, against the analyser's 5) because a detection
 // can be played as soon as it is closed, and what the recorder holds since
-// its last chunk is not playable yet.
+// its last chunk is not playable yet. Which is also why file() is never for a
+// render: it builds from every chunk, and each line asking for it on each
+// render ran a live run out of memory in 21 minutes (2026-10-31, hasSound in
+// tuneFinder.ts).
 
 const TIMESLICE_MS = 1000;
 /** How long stop() waits for the recorder to say it has stopped — the
@@ -22,8 +25,9 @@ export class MemoryRecorder {
   private startedAt = 0;
   private stoppedAt = 0;
   private readonly mime: string;
-  /** The last file handed out, while no chunk has come since. */
-  private cached: { chunks: number; blob: Blob } | null = null;
+  /** The last file asked for, while no chunk has come since — the promise
+   *  rather than the Blob, so that two asks while it is being made share it. */
+  private cached: { chunks: number; file: Promise<Blob> } | null = null;
 
   constructor(stream: MediaStream) {
     this.mime = pickRecorderMime();
@@ -58,16 +62,15 @@ export class MemoryRecorder {
   /** Everything recorded so far, as one playable file. A MediaRecorder WebM
    *  has no Duration, and without one it does not seek — which is all playing
    *  a detection does. */
-  async file(): Promise<Blob> {
-    if (this.cached?.chunks === this.chunks.length) return this.cached.blob;
+  file(): Promise<Blob> {
+    if (this.cached?.chunks === this.chunks.length) return this.cached.file;
     const type = this.recorder.mimeType || this.mime || 'audio/webm';
     const parts = [...this.chunks];
     const durationMs = (this.stoppedAt || Date.now()) - this.startedAt;
-    let blob = new Blob(parts, { type });
-    if (type.includes('webm')) {
-      try { blob = await patchWebmDuration(parts, type, durationMs); } catch { /* plays, seeks badly */ }
-    }
-    this.cached = { chunks: parts.length, blob };
-    return blob;
+    const file = type.includes('webm')
+      ? patchWebmDuration(parts, type, durationMs).catch(() => new Blob(parts, { type })) // plays, seeks badly
+      : Promise.resolve(new Blob(parts, { type }));
+    this.cached = { chunks: parts.length, file };
+    return file;
   }
 }

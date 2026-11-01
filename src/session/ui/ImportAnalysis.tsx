@@ -4,6 +4,7 @@ import type { AppContext } from '../../types';
 import type { ImportSession, ImportProgress } from '../importSession';
 import type { Detection } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
+import { finishingTrackerFor } from './finishingModal';
 import { TunesetDetectionCard, FeedList, feedItems, feedChains } from './TunesetDetectionCard';
 import { AnalysisViewBar } from './AnalysisViewBar';
 import { analysisView, analysisStudy, showsDetails, showsEditing, showsFocus } from './analysisView';
@@ -94,6 +95,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       onPlaybackFile: (file) => { importPlaybackWarn.value = !canPlayFile(file); },
       onProgress,
       onDetections: (_events, all) => onDetections(all),
+      onFinishing: finishingTrackerFor(imp),
       onError: (message) => setStatusText(`⚠ ${message}`),
     });
     // First render happens just before start() (phase 'idle'), or as a
@@ -134,6 +136,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     details,
     study,
     onOpenCard,
+    unrefined: ann => imp.unrefinedBounds(ann.id),
     onCardAdded: () => setDetections(imp.getDetections()),
     getPinnedDeckIds: () => imp.pinnedDeckIds,
     onToggleLike: (id) => { imp.toggleLike(id); setDetections(imp.getDetections()); },

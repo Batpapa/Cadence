@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { followScore, positionAt, contourToMidi, contourSlots, alignContour, localMatch, quaverToMs, msToQuaver, FOLLOW_FPS, type TimelineEvent } from './scoreFollow';
+import { followScore, positionAt, withPickup, passStarts, barQuavers, contourToMidi, contourSlots, alignContour, localMatch, quaverToMs, msToQuaver, FOLLOW_FPS, type TimelineEvent, type FollowResult } from './scoreFollow';
 
 describe('contour quavers on the drawn score', () => {
   // |:D|G3 GAB|A/B/c z B3:| in 6/8, a quaver = 333 ms, played twice by abcjs.
@@ -103,6 +103,28 @@ describe('score following', () => {
     const at = positionAt(r, second.t + 0.07)!;
     expect(at.pass).toBe(1);
     expect(Math.abs(at.quaver - 5.5)).toBeLessThan(0.6);
+  });
+
+  it('takes a head begun in the last bar for the first pass\'s pickup', () => {
+    // A 4-bar 6/8 score (24 quavers): its last quaver heard, then the tune.
+    const base = { times: [] as number[], indices: [] as number[], end: 0, quavers: 24 };
+    const indices = [23, ...Array.from({ length: 48 }, (_, k) => k % 24)];
+    const r = { ...base, indices, times: indices.map((_, k) => k * 0.2), end: indices.length * 0.2 } as unknown as FollowResult;
+    const p = withPickup(r, '6/8');
+    expect(p.pickup).toBe(1);
+    expect(positionAt(r, 0.5)!.pass).toBe(1);
+    expect(positionAt(p, 0.5)!.pass).toBe(0);
+    expect(positionAt(p, 0.05)!.pass).toBe(0);
+    expect(positionAt(p, 26 * 0.2 + 0.05)!.pass).toBe(1);
+    expect(passStarts(p)).toEqual([0, 25]);
+    expect(passStarts(r)).toEqual([0, 1, 25]);
+    // Begun mid-score: a partial first pass, kept.
+    const mid = [12, 13, 14, ...Array.from({ length: 24 }, (_, k) => k)];
+    const m = { ...base, indices: mid, times: mid.map((_, k) => k * 0.2), end: mid.length * 0.2 } as unknown as FollowResult;
+    expect(withPickup(m, '6/8').pickup).toBeUndefined();
+    expect(barQuavers('4/4')).toBe(8);
+    expect(barQuavers('9/8')).toBe(9);
+    expect(barQuavers('2/4')).toBe(4);
   });
 
   it('knows the score\'s length when the recording covers only part of it', () => {

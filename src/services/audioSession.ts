@@ -56,6 +56,12 @@ export function beginCaptureSession(): void {
   if (s) s.type = 'play-and-record';
 }
 
+/** Whether something holds the microphone, or a captured tab, right now —
+ *  a live recording: the Play-along does not take it from under it. */
+export function capturing(): boolean {
+  return captures > 0;
+}
+
 export function endCaptureSession(): void {
   if (captures === 0) return;
   captures--;

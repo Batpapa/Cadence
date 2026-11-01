@@ -408,7 +408,10 @@ export function detectionAudioSync(sessionId: string, detection: Detection, here
     mount: (host, version, face, expanded, onState, forced) => {
       // Two players at once would talk over each other from behind the dialog.
       beforeOpen?.();
-      return mountScoreFollow(host, { ann: detection, version, getAudio, face, expanded, onState, forced });
+      return mountScoreFollow(host, {
+        target: { kind: 'passage', start: detection.start, end: detection.end ?? detection.start + 60 },
+        version, getAudio, face, expanded, onState, forced,
+      });
     },
   };
 }

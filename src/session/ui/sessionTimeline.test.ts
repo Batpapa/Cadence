@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectionsAt, withGaps, headPosition } from './timelineModel';
+import { detectionsAt, withGaps, headPosition, shortGapsOf } from './timelineModel';
 import type { Detection } from '../model';
 
 const ann = (id: string, start: number, end: number | null): Detection => ({
@@ -95,5 +95,28 @@ describe('the silences shown in the list', () => {
       { kind: 'gap', from: 200, len: 60, prevId: 'a', followingId: 'c' },
       { kind: 'gap', from: 300, len: 100, prevId: 'c' },
     ]);
+  });
+});
+
+describe('the holes too short for a silence row', () => {
+  it('lists them by the tune after, and nothing where tunes touch or overlap', () => {
+    const gaps = shortGapsOf([ann('a', 0, 60), ann('b', 65, 120), ann('c', 120, 200), ann('d', 190, 300), ann('e', 400, 500)], 500);
+    expect([...gaps.values()]).toEqual([{ prevId: 'a', nextId: 'b', from: 60, len: 5 }]);
+  });
+
+  it('measures from the tune reaching furthest, as the silence rows do', () => {
+    const gaps = shortGapsOf([ann('a', 0, 200), ann('b', 20, 40), ann('c', 210, 300)], 300);
+    expect(gaps.get('c')).toEqual({ prevId: 'a', nextId: 'c', from: 200, len: 10 });
+  });
+});
+
+describe('the silence threshold of an aligned join', () => {
+  const aligned = (id: string, start: number, end: number) => ({ ...ann(id, start, end), detected: { start, end } });
+
+  it('is 8 s between two detections put on their passes, 15 s otherwise', () => {
+    const kinds = (items: ReturnType<typeof withGaps>) => items.map((i: { kind: string }) => i.kind).join(',');
+    expect(kinds(withGaps([aligned('a', 0, 60), aligned('b', 70, 120)], 120))).toBe('ann,gap,ann');
+    expect(kinds(withGaps([ann('a', 0, 60), aligned('b', 70, 120)], 120))).toBe('ann,ann');
+    expect(shortGapsOf([aligned('a', 0, 60), aligned('b', 70, 120)], 120).size).toBe(0);
   });
 });

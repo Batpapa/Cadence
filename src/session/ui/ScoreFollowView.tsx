@@ -1,16 +1,14 @@
 import { signal, type Signal } from '@preact/signals';
 import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { Detection } from '../model';
 import {
-  followDetection, followFrom, type SessionFollow, type FollowFailure, type FollowStatus, type FollowSamples, type FollowAudio,
+  followAudio, followFrom, type SessionFollow, type FollowFailure, type FollowStatus, type FollowSamples, type FollowAudio,
 } from '../scoreFollowClient';
 import { AudioPlayer, stopCurrentAudio, type AudioPlayerHooks, type Region } from '../../components/audioPlayer';
-import { scoreContour } from '../../components/syncedScore';
-import { MATCH_GOOD, MATCH_USABLE } from '../scoreFollow';
+import { scoreContour, bareScore, meterOf } from '../../components/syncedScore';
+import { MATCH_GOOD, MATCH_USABLE, withPickup } from '../scoreFollow';
 import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
-import { stripForRender } from '../../services/abcService';
 import { ExpandIcon, CollapseIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 
@@ -33,6 +31,18 @@ import { registerOverlay } from '../../components/overlayStack';
 // under the SAME player (the user, 2026-10-29: the recording has not changed,
 // so neither does its half). How the alignment goes is the viewer's toggle's
 // to show (AudioSyncState).
+//
+// A card's recording too (2026-10-31, the user, developer mode for now): its
+// ABC with one of its audio or video attachments (cardAudioSync.ts). No
+// detection says where the tune is: the whole recording is aligned, a long
+// one searched first (scoreFollowWorker) — the player then gets what was
+// aligned, and opens on the whole of it.
+
+/** What is followed: the passage a detection heard the tune in, in session
+ *  time; or a recording the tune is anywhere in. */
+export type FollowTarget =
+  | { kind: 'passage'; start: number; end: number }
+  | { kind: 'recording' };
 
 type Phase =
   | { kind: 'aligning'; status: FollowStatus | null }
@@ -42,7 +52,7 @@ type Phase =
 /** Waveform bars: a tune is a few minutes, more detail than a short clip's 120. */
 const WAVE_BARS = 240;
 
-function failureText(reason: FollowFailure | 'error'): string {
+export function failureText(reason: FollowFailure | 'error'): string {
   switch (reason) {
     case 'no_contour': return t('sessions.follow.failed.no_contour');
     case 'no_audio': return t('sessions.follow.failed.no_audio');
@@ -51,8 +61,10 @@ function failureText(reason: FollowFailure | 'error'): string {
   }
 }
 
-function stageText(status: FollowStatus | null): string {
+export function stageText(status: FollowStatus | null): string {
   switch (status?.stage) {
+    case 'scan': return t('sessions.follow.stage.scan');
+    case 'locate': return t('sessions.follow.stage.locate');
     case 'listen': return t('sessions.follow.stage.listen');
     case 'tempo': return t('sessions.follow.stage.tempo');
     case 'align': return t('sessions.follow.stage.align');
@@ -60,25 +72,11 @@ function stageText(status: FollowStatus | null): string {
   }
 }
 
-/** The score for this view: what the score viewer draws (stripForRender — no
- *  `Z:` transcriber under the last line, 2026-10-30), less what it only
- *  silences: the modal's header already names the tune, and the rhythm is on
- *  the detection — title and R: would only push the music down. */
-function bareScore(abc: string): string {
-  return stripForRender(abc).split('\n').filter(l => !/^(T|R):/.test(l)).join('\n');
-}
-
 /** The TheSession setting a version is, from its `S:` line
  *  ("…/tunes/1633#setting46304"): its index contour competes with the drawn
  *  score (the worker's header). */
-function settingOfVersion(abc: string): string | undefined {
+export function settingOfVersion(abc: string): string | undefined {
   return /^S:.*#setting(\d+)(?!\d)/m.exec(abc)?.[1];
-}
-
-/** The version's meter, as slotNotes wants it: "C" is 4/4, "C|" 2/2. */
-function meterOf(abc: string): string {
-  const m = /^M:\s*(\S+)/m.exec(abc)?.[1];
-  return m === 'C' ? '4/4' : m === 'C|' ? '2/2' : m && /^\d+\/\d+$/.test(m) ? m : '4/4';
 }
 
 // How far the alignment can be trusted: scoreFollow.ts's MATCH_GOOD and
@@ -89,43 +87,63 @@ function meterOf(abc: string): string {
 /** The share of the detected passage the alignment must cover. The match is
  *  counted on what was aligned only: a version in another key had 13 quavers
  *  of 110 s aligned by chance, half of them "right", and showed amber
- *  (2026-10-29, the user). Below this it is no alignment. */
+ *  (2026-10-29, the user). Below this it is no alignment. In a card's
+ *  recording, which holds whatever else around the tune, the share of ONE
+ *  PASS of the tune at the tempo found — or of the recording, if shorter. */
 const USABLE_COVER = 0.5;
 
-/** The share of the detection's span (`span` s) the alignment covers. */
-function coverOf(f: SessionFollow, span: number): number {
+/** The share the alignment covers of what it must (USABLE_COVER). */
+function coverOf(f: SessionFollow, target: FollowTarget): number {
+  const span = target.kind === 'passage' ? target.end - target.start
+    : Math.min(f.seconds, (f.quavers * 30) / f.bpm);
   return span > 0 ? (f.end - f.times[0]!) / span : 1;
+}
+
+/** Whether an alignment is worth following, short of being forced. */
+function followable(f: SessionFollow, target: FollowTarget): boolean {
+  return f.match >= MATCH_USABLE && coverOf(f, target) >= USABLE_COVER;
 }
 
 /** An alignment worth following, or null. `forced`: any there is (the
  *  viewer's hidden gesture). */
-function usable(phase: Phase, span: number, forced: boolean): SessionFollow | null {
+function usable(phase: Phase, target: FollowTarget, forced: boolean): SessionFollow | null {
   if (phase.kind !== 'ready') return null;
   if (forced) return phase.follow;
-  return phase.follow.match >= MATCH_USABLE && coverOf(phase.follow, span) >= USABLE_COVER ? phase.follow : null;
+  return followable(phase.follow, target) ? phase.follow : null;
 }
 
 /** What the viewer's Audio sync toggle shows of the alignment (AudioSyncState):
  *  its colour, the words and figures in its tooltip — which, followed by
  *  force, says so: the colour stays the verdict. */
-function stateOf(phase: Phase, span: number, forced: boolean): AudioSyncState {
-  const s = verdictOf(phase, span);
+function stateOf(phase: Phase, target: FollowTarget, forced: boolean): AudioSyncState {
+  const s = verdictOf(phase, target);
   return forced && s.kind === 'none' && phase.kind === 'ready'
     ? { ...s, title: `${t('fileViewer.abc.audioSync.forced')} · ${s.title}` }
     : s;
 }
 
-function verdictOf(phase: Phase, span: number): AudioSyncState {
+function verdictOf(phase: Phase, target: FollowTarget): AudioSyncState {
   if (phase.kind === 'aligning') {
     const ratio = phase.status?.ratio ?? 0;
     return { kind: 'aligning', ratio, title: `${stageText(phase.status)} · ${Math.round(ratio * 100)} %` };
   }
   if (phase.kind === 'failed') return { kind: 'none', title: failureText(phase.reason) };
-  const f = phase.follow;
+  return alignedVerdict(phase.follow, target);
+}
+
+/** The verdict on an alignment made: the toggle's, and each recording's in a
+ *  card's chooser (RecordingChooser). */
+export function alignedVerdict(f: SessionFollow, target: FollowTarget): AudioSyncState {
   const stats = t('sessions.follow.stats', { match: Math.round(f.match * 100), bpm: f.bpm });
-  const cover = coverOf(f, span);
+  const cover = coverOf(f, target);
   // No figure for a part aligned by chance: its share of notes says nothing.
-  if (cover < USABLE_COVER) return { kind: 'none', title: t('sessions.follow.quality.partial', { part: Math.round(cover * 100) }) };
+  if (cover < USABLE_COVER) {
+    const part = Math.round(cover * 100);
+    return {
+      kind: 'none',
+      title: target.kind === 'passage' ? t('sessions.follow.quality.partial', { part }) : t('sessions.follow.quality.partialPass', { part }),
+    };
+  }
   const percent = Math.round(f.match * 100);
   if (f.match < MATCH_USABLE) return { kind: 'none', title: `${t('sessions.follow.quality.poor')} · ${stats}`, percent };
   const word = f.match >= MATCH_GOOD ? t('sessions.follow.quality.good') : t('sessions.follow.quality.fair');
@@ -152,8 +170,11 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
   return { promise, resolve, reject };
 }
 
-function ScoreFollowView({ ann, version, getAudio, expanded, face, onState, forced }: {
-  ann: Detection;
+/** The whole of what was loaded: the player brings the end within it. */
+const WHOLE: Region = { start: 0, end: Number.POSITIVE_INFINITY };
+
+function ScoreFollowView({ target, version, getAudio, expanded, face, onState, forced }: {
+  target: FollowTarget;
   /** The version on the viewer's screen: its ABC. */
   version: Signal<string>;
   getAudio: () => Promise<FollowAudio | undefined>;
@@ -168,28 +189,30 @@ function ScoreFollowView({ ann, version, getAudio, expanded, face, onState, forc
   const [phase, setPhase] = useState<Phase>({ kind: 'aligning', status: null });
   const [score, setScore] = useState<{ abc: string; meter: string } | null>(null);
   const samples = useMemo(() => deferred<FollowSamples>(), []);
-  const span = (ann.end ?? ann.start + 60) - ann.start;
-  const follow = usable(phase, span, isForced);
-  const from = followFrom(ann.start);
+  const follow = usable(phase, target, isForced);
 
-  // The region the player opens on: the detection's range; then the tune's
-  // own span once an alignment worth following knows it. Kept while another
-  // version is aligned: the recording is the same, and so is the tune in it.
-  // Back to the detection's range when no alignment is followed any more —
-  // judged too poor, or no longer forced: a forced one may have held a few
-  // seconds of it.
-  const detectionRegion = (): Region => ({ start: ann.start - from, end: (ann.end ?? ann.start + 60) - from });
-  const regionRef = useRef<Region>(detectionRegion());
+  // The region the player opens on: the detection's range — a recording's
+  // whole; then the tune's own span once an alignment worth following knows
+  // it. Kept while another version is aligned: the recording is the same, and
+  // so is the tune in it. Back to the first when no alignment is followed any
+  // more — judged too poor, or no longer forced: a forced one may have held a
+  // few seconds of it.
+  const firstRegion = (): Region => {
+    if (target.kind === 'recording') return WHOLE;
+    const from = followFrom(target.start);
+    return { start: target.start - from, end: target.end - from };
+  };
+  const regionRef = useRef<Region>(firstRegion());
   const region = useMemo<Region>(() => {
     if (follow) regionRef.current = { start: follow.times[0]!, end: follow.end };
-    else if (phase.kind !== 'aligning') regionRef.current = detectionRegion();
+    else if (phase.kind !== 'aligning') regionRef.current = firstRegion();
     return regionRef.current;
   }, [follow, phase.kind]);
 
   const hooks = useMemo<AudioPlayerHooks>(() => ({
     load: async (engine) => {
       const s = await samples.promise;
-      return engine.loadSamples([s.pcm], s.rate, WAVE_BARS);
+      return { ...(await engine.loadSamples([s.pcm], s.rate, WAVE_BARS)), origin: s.from };
     },
     autoplay: true,
   }), []);
@@ -209,18 +232,22 @@ function ScoreFollowView({ ann, version, getAudio, expanded, face, onState, forc
         if (cancelled) return;
         if (!audio) { samples.reject(new Error(failureText('no_audio'))); setPhase({ kind: 'failed', reason: 'no_audio' }); return; }
         if (!contour) { setPhase({ kind: 'failed', reason: 'no_contour' }); return; }
-        const result = await followDetection(audio, contour, settingOfVersion(shown), ann.start, ann.end ?? ann.start + 60,
+        const result = await followAudio(audio, contour, settingOfVersion(shown),
+          target.kind === 'passage' ? { start: target.start, end: target.end } : null,
           status => { if (!cancelled) setPhase(p => (p.kind === 'aligning' ? { kind: 'aligning', status } : p)); },
           stopWork.signal,
           // Only the first time counts: the player has its samples already.
           s => samples.resolve(s));
         if (cancelled) return;
         if (typeof result === 'string') {
-          if (result === 'no_audio') samples.reject(new Error(failureText('no_audio')));
+          // Nothing to play when nothing was decoded — the recording
+          // unreadable, or the tune not found in it — and the player would
+          // wait for it for ever. A no-op once it has its samples.
+          samples.reject(new Error(failureText(result)));
           setPhase({ kind: 'failed', reason: result });
           return;
         }
-        setPhase({ kind: 'ready', follow: result });
+        setPhase({ kind: 'ready', follow: withPickup(result, meter) });
       } catch (err) {
         console.error('[score-follow]', err);
         samples.reject(err);
@@ -237,11 +264,11 @@ function ScoreFollowView({ ann, version, getAudio, expanded, face, onState, forc
   // with a version, which keeps the player.
   useEffect(() => () => stopCurrentAudio(), []);
 
-  useEffect(() => { onState(stateOf(phase, span, isForced)); }, [phase, isForced]);
+  useEffect(() => { onState(stateOf(phase, target, isForced)); }, [phase, isForced]);
   // No alignment followed: the whole waveform in its verdict's colour — the
   // share of notes when there is a fair one, red for a part aligned by
   // chance or none at all.
-  const verdict = verdictOf(phase, span);
+  const verdict = verdictOf(phase, target);
   const tint = follow || phase.kind === 'aligning' ? undefined
     : verdict.kind !== 'aligning' && verdict.percent !== undefined ? verdict.percent / 100 : 0;
 
@@ -350,12 +377,12 @@ function ScoreFollowView({ ann, version, getAudio, expanded, face, onState, forc
   );
 }
 
-/** `version` — a version of `ann`'s tune, its ABC — its cursor following
- *  `ann`'s recording, in `host`: the score viewer's audio sync (fileViewer.ts,
- *  PreviewModalOpts.audioSync). The paper is the viewer's setting, read live,
- *  and its gear changes it. */
+/** `version` — a version of the tune, its ABC — its cursor following
+ *  `target` of the recording `getAudio` gives, in `host`: the score viewer's
+ *  audio sync (fileViewer.ts, PreviewModalOpts.audioSync). The paper is the
+ *  viewer's setting, read live, and its gear changes it. */
 export function mountScoreFollow(host: HTMLElement, opts: {
-  ann: Detection;
+  target: FollowTarget;
   version: string;
   getAudio: () => Promise<FollowAudio | undefined>;
   face: 'sheet' | 'text';
@@ -369,7 +396,7 @@ export function mountScoreFollow(host: HTMLElement, opts: {
   const forced = signal(opts.forced);
   render(
     <ScoreFollowView
-      ann={opts.ann} version={version} getAudio={opts.getAudio} expanded={expanded} face={face}
+      target={opts.target} version={version} getAudio={opts.getAudio} expanded={expanded} face={face}
       onState={opts.onState} forced={forced}
     />,
     host,

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
-  snapMarks, findSnap, findTwin, clampLinked, closingSnap, missingRanges,
+  snapMarks, alignmentMarks, findSnap, findTwin, clampLinked, closingSnap, missingRanges,
   CTX_PAD_S, MIN_SPAN_S,
 } from './boundEditorModel';
 
@@ -209,5 +209,19 @@ describe('clampLinked', () => {
     // Squeezing from both sides would leave nothing between them.
     const pair = { start: 60, end: 60.5 };
     expect(clampLinked(pair, det('a', 59.9, 60), det('c', 60.5, 60.6), 200)).toBe(pair);
+  });
+});
+
+describe('the marks the alignment adds', () => {
+  const passes = [{ t: 100, pass: { n: 1 } }, { t: 140.3, pass: { n: 2 } }, { t: 180, pass: { n: 3 } }];
+
+  it('lets the suggestion stand in for the boundary it estimates', () => {
+    const marks = alignmentMarks(passes, 140);
+    expect(marks.map(m => m.t)).toEqual([100, 180, 140]);
+    expect(findSnap(140.2, marks)).toEqual({ t: 140, suggested: true });
+  });
+
+  it('keeps every boundary when nothing is suggested', () => {
+    expect(alignmentMarks(passes, null)).toBe(passes);
   });
 });

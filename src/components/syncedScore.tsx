@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AudioEngine } from './audioEngine';
-import { positionAt, slotNotes, alignContour, quaverToMs, msToQuaver, type FollowResult } from '../session/scoreFollow';
-import { abcPaper, ABC_PAPERS } from '../services/abcService';
+import { positionAt, passStarts, slotNotes, alignContour, quaverToMs, msToQuaver, type FollowResult } from '../session/scoreFollow';
+import { abcPaper, ABC_PAPERS, stripForRender } from '../services/abcService';
 import { engraveScore, type ScoreMeasure } from '../services/abcLineBreaks';
 import { ENGRAVE_HYSTERESIS, engraveOptions, engraveWidthOf, cropToInk } from './scoreEngraving';
 import { getZoom } from '../services/zoomService';
@@ -35,13 +35,29 @@ interface Timeline {
   /** The drawing's quaver slots, with their pitches (slotNotes). */
   notes: { ms: number[]; pitch: (number | undefined)[] };
   /** The moment of each quaver of the alignment's score, for `slotsFor`. */
-  slots: number[]; slotsFor: FollowResult | null;
+  slots: number[]; slotsFor: Scored | null;
+}
+
+/** What places a quaver on the drawing: the score aligned or followed, one
+ *  MIDI pitch per quaver — an alignment's, or a live clock's. */
+type Scored = Pick<FollowResult, 'pitches'>;
+
+/** A score followed live instead of along a recording — the Play-along
+ *  (session/liveFollow.ts, 2026-10-31): what it is followed on, and where the
+ *  music is now. */
+export interface LiveClock {
+  /** The score followed, one MIDI pitch per quaver of a pass: matched to the
+   *  drawing as an alignment's is (slotsOf). */
+  pitches: number[];
+  /** Where the music is, read at every frame: a quaver of one pass with its
+   *  fraction, or null for no cursor. */
+  position: () => number | null;
 }
 
 /** The moment of each quaver of `f`'s score on the drawing: its pitches
  *  matched to the drawn notes, else the slots stretched (quaverToMs). Kept
  *  until the alignment or the drawing changes. */
-function slotsOf(tl: Timeline, f: FollowResult): number[] {
+function slotsOf(tl: Timeline, f: Scored): number[] {
   if (tl.slotsFor !== f) {
     tl.slots = alignContour(f.pitches, tl.notes) ?? tl.notes.ms;
     tl.slotsFor = f;
@@ -90,6 +106,20 @@ export async function scoreContour(abc: string, meter: string): Promise<number[]
   if (first === undefined || pitch.length < 2) return null;
   let last = first;
   return pitch.map(p => (last = p ?? last));
+}
+
+/** A version as a synced score draws it: what the score viewer draws
+ *  (stripForRender — no `Z:` transcriber under the last line, 2026-10-30),
+ *  less what it only silences: the dialog's header already names the tune,
+ *  and title and R: would only push the music down. */
+export function bareScore(abc: string): string {
+  return stripForRender(abc).split('\n').filter(l => !/^(T|R):/.test(l)).join('\n');
+}
+
+/** A version's meter, as slotNotes wants it: "C" is 4/4, "C|" 2/2. */
+export function meterOf(abc: string): string {
+  const m = /^M:\s*(\S+)/m.exec(abc)?.[1];
+  return m === 'C' ? '4/4' : m === 'C|' ? '2/2' : m && /^\d+\/\d+$/.test(m) ? m : '4/4';
 }
 
 /** Characters [from, to) of the ABC text. */
@@ -177,9 +207,12 @@ export interface SyncedScoreProps {
   /** Buttons over the paper's top right corner, as the score viewer has its
    *  full page there; the paper leaves them their room. */
   tools?: preact.ComponentChildren;
+  /** Followed live rather than along `engine`: the cursor goes where this
+   *  says, and `follow`, `engine` and `region` are not read. */
+  clock?: LiveClock;
 }
 
-export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, face = 'sheet', tools }: SyncedScoreProps) {
+export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, face = 'sheet', tools, clock }: SyncedScoreProps) {
   const paperRef = useRef<HTMLDivElement>(null);
   /** What abcjs draws into, inside the paper — never the paper itself: abcjs
    *  writes `overflow: hidden` and a height on its target, and the score,
@@ -206,14 +239,14 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
   const lit = useRef<Element[]>([]);
   const lastTop = useRef<number | null>(null);
   // What the animation frame reads: never a render's copy.
-  const live = useRef({ follow, engine, region });
-  live.current = { follow, engine, region };
+  const live = useRef({ follow, engine, region, clock });
+  live.current = { follow, engine, region, clock };
   /** Forces the next frame to redraw everything. */
   const dirty = useRef(true);
   const colours = ABC_PAPERS[abcPaper(appState.value)];
   const shift = Math.round(transpose);
 
-  useEffect(() => { dirty.current = true; }, [follow, region?.start, region?.end, face]);
+  useEffect(() => { dirty.current = true; }, [follow, region?.start, region?.end, face, clock]);
 
   // The text face: the whole text, nothing marked, until the frame marks it.
   useEffect(() => {
@@ -308,11 +341,16 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
   // ran while playing would miss those.
   useEffect(() => {
     let raf = 0, lastPos = -1;
+    let lastQuaver: number | null = -1;
     /** The note drawn for an instant of the recording, and where along it. */
     const noteAt = (tl: Timeline, f: FollowResult, t: number) => {
       const pos = positionAt(f, t);
-      if (!pos) return null;
-      const ms = quaverToMs(pos.quaver, f.quavers, slotsOf(tl, f), tl.lastMoment);
+      return pos ? noteOfQuaver(tl, f, f.quavers, pos.quaver, pos.pass) : null;
+    };
+    /** The note drawn for a quaver of the score (with its fraction). */
+    const noteOfQuaver = (tl: Timeline, sc: Scored, quavers: number, quaver: number, pass: number) => {
+      const pos = { quaver, pass };
+      const ms = quaverToMs(pos.quaver, quavers, slotsOf(tl, sc), tl.lastMoment);
       let lo = 0;
       for (let k = 0; k < tl.events.length; k++) { if (tl.events[k]!.milliseconds <= ms + 0.5) lo = k; else break; }
       const ev = tl.events[lo];
@@ -363,10 +401,54 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         }
       }
     };
+    /** The cursor on its note — or none — and the note lit; a new system
+     *  scrolled into the middle of the score box. */
+    const drawCursor = (svg: SVGSVGElement, paper: HTMLElement, at: { ev: NoteEvent; x: number } | null) => {
+      const cursor = svgLine(svg, 'abcjs-cursor');
+      if (!at) { cursor.setAttribute('visibility', 'hidden'); return; }
+      cursor.setAttribute('visibility', 'visible');
+      cursor.setAttribute('x1', String(at.x - 3)); cursor.setAttribute('x2', String(at.x - 3));
+      cursor.setAttribute('y1', String(at.ev.top)); cursor.setAttribute('y2', String(at.ev.top + at.ev.height));
+      for (const group of at.ev.elements ?? []) for (const el of group) { el.classList.add('abcjs-highlight'); lit.current.push(el); }
+      // A new system: centred in the score box — and only there.
+      // scrollIntoView would scroll every ancestor too, taking the player out
+      // of sight. Rects are window pixels, scrollBy wants layout pixels.
+      if (at.ev.top !== lastTop.current) {
+        lastTop.current = at.ev.top;
+        const note = at.ev.elements?.[0]?.[0] as Element | undefined;
+        if (note) {
+          const z = getZoom() / 100;
+          const n = note.getBoundingClientRect(), p = paper.getBoundingClientRect();
+          paper.scrollBy({ top: (n.top + n.height / 2 - p.top) / z - paper.clientHeight / 2, behavior: 'smooth' });
+        }
+      }
+    };
     const frame = () => {
       raf = requestAnimationFrame(frame);
-      const { follow: f, engine: eng, region: r } = live.current;
+      const { follow: f, engine: eng, region: r, clock } = live.current;
       const tl = timeline.current, paper = paperRef.current;
+      // Followed live: only the cursor, where the clock says — no region,
+      // no passes to number.
+      if (clock) {
+        if (!tl || !paper) return;
+        const q = clock.position();
+        if (q === lastQuaver && !dirty.current) return;
+        lastQuaver = q;
+        const svg = paper.querySelector('svg');
+        if (!svg) return;
+        for (const el of lit.current) el.classList.remove('abcjs-highlight');
+        lit.current = [];
+        const at = q === null ? null : noteOfQuaver(tl, clock, clock.pitches.length, q, 0);
+        if (dirty.current) {
+          paper.querySelectorAll('[class^="score-follow-bound"]').forEach(el => el.setAttribute('visibility', 'hidden'));
+          textBounds.current = { in: null, out: null };
+          textDrawn.current = '';
+        }
+        if (faceRef.current === 'text') markText(at?.ev ?? null);
+        drawCursor(svg, paper, at);
+        dirty.current = false;
+        return;
+      }
       // No alignment any more — no longer forced, another version on its
       // way: what the last one drew goes, once, rather than standing there.
       if (!f && dirty.current && paper) {
@@ -394,27 +476,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         textDrawn.current = '';
       }
       if (faceRef.current === 'text') markText(at?.ev ?? null);
-      const cursor = svgLine(svg, 'abcjs-cursor');
-      if (at) {
-        cursor.setAttribute('visibility', 'visible');
-        cursor.setAttribute('x1', String(at.x - 3)); cursor.setAttribute('x2', String(at.x - 3));
-        cursor.setAttribute('y1', String(at.ev.top)); cursor.setAttribute('y2', String(at.ev.top + at.ev.height));
-        for (const group of at.ev.elements ?? []) for (const el of group) { el.classList.add('abcjs-highlight'); lit.current.push(el); }
-        // A new system: centred in the score box — and only there.
-        // scrollIntoView would scroll every ancestor too, taking the player out
-        // of sight. Rects are window pixels, scrollBy wants layout pixels.
-        if (at.ev.top !== lastTop.current) {
-          lastTop.current = at.ev.top;
-          const note = at.ev.elements?.[0]?.[0] as Element | undefined;
-          if (note) {
-            const z = getZoom() / 100;
-            const n = note.getBoundingClientRect(), p = paper.getBoundingClientRect();
-            paper.scrollBy({ top: (n.top + n.height / 2 - p.top) / z - paper.clientHeight / 2, behavior: 'smooth' });
-          }
-        }
-      } else {
-        cursor.setAttribute('visibility', 'hidden');
-      }
+      drawCursor(svg, paper, at);
       // The region's bounds, where they fall in the score — each with the
       // number of the pass it is in, the waveform's numbers: one score drawn
       // for several passes, a start and an end on the same page would
@@ -522,7 +584,5 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
 
 /** Where each pass of the score starts in the recording — the player's marks. */
 export function passStartsOf(follow: FollowResult): number[] {
-  const out = [follow.times[0]!];
-  for (let k = 1; k < follow.indices.length; k++) if (follow.indices[k]! <= follow.indices[k - 1]!) out.push(follow.times[k]!);
-  return out;
+  return passStarts(follow).map(k => follow.times[k]!);
 }

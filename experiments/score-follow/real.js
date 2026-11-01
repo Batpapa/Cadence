@@ -102,7 +102,9 @@ for (const [fixture, audioName] of Object.entries(AUDIO)) {
     const feats = featuresOf(decodeSpan(audio, from, end + M - from));
     const frames = feats.length / MIDI_NUM;
     const t0 = Date.now();
-    const opts = { transposes: [0], otherPenalty: Number(process.env.OTHER || 1.2), exhaustive: !!process.env.EXHAUSTIVE };
+    const opts = { transposes: [0], otherPenalty: Number(process.env.OTHER || 1.2), exhaustive: !!process.env.EXHAUSTIVE,
+      // `BPMS=60,70,80,...`: another list of candidate tempi.
+      ...(process.env.BPMS ? { bpms: process.env.BPMS.split(',').map(Number) } : {}) };
     const candidates = CONTOURS?.[settingId]
       ? (BEST ? [CONTOURS[settingId], toMidi(setting.contour)] : [CONTOURS[settingId]])
       : [toMidi(setting.contour)];
@@ -143,7 +145,7 @@ for (const [fixture, audioName] of Object.entries(AUDIO)) {
   }
 }
 fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
-fs.writeFileSync(path.join(__dirname, 'output', `real${filter ? '-' + filter : ''}${process.env.OTHER ? '-p' + process.env.OTHER : ''}.json`), JSON.stringify(out));
+fs.writeFileSync(path.join(__dirname, 'output', `real${filter ? '-' + filter : ''}${process.env.OTHER ? '-p' + process.env.OTHER : ''}${process.env.BPMS ? '-bpm' + process.env.BPMS.split(',')[0] : ''}.json`), JSON.stringify(out));
 const ok = out.filter((r) => r.perFrame > r.decoyBest);
 console.log(`\n${out.length} tunes; true setting beats every decoy: ${ok.length}; median match ${(median(out.map((r) => r.match)) * 100).toFixed(0)}% ; median covered ${(median(out.map((r) => r.covered)) * 100).toFixed(0)}% vs decoy claims ${(median(out.map((r) => r.decoyClaimed)) * 100).toFixed(0)}%; median pass CV ${(median(out.map((r) => r.passCv).filter((x) => !isNaN(x))) * 100).toFixed(1)}%`);
 function median(xs) { const s = xs.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; }

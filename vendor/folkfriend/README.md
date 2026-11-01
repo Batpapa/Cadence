@@ -7,6 +7,14 @@ by Tom Wyllie — transcription and recognition of traditional instrumental folk
 Session recording / tune recognition feature; attribution is shown in the app's
 About screen.
 
+**Source: [github.com/Batpapa/folkfriend](https://github.com/Batpapa/folkfriend)**,
+a fork of upstream carrying Cadence's changes. The files here are built from its
+commit **`1b37f01`** and that build reproduces them byte for byte
+(`folkfriend_bg.wasm` MD5 `1f3d9b1cf282bec2bec48eb5c46d9711`,
+`folkfriend_bg_simd.wasm` MD5 `22892f631ec9c8a974317c1de34669a7`). The module
+shipped from 2026-09-13 to 2026-10-29 is commit `b0d0a58`. **Whenever these files
+change, commit to the fork first and update the commit named here.**
+
 ## Contents
 
 | File | Role |
@@ -22,10 +30,9 @@ About screen.
 Prerequisites: Rust toolchain (`rustup`, host `x86_64-pc-windows-gnu` works fine,
 no Visual Studio needed), target `wasm32-unknown-unknown`, and `wasm-pack`.
 
-**As of 2026-08-18, the source of truth is the locally-patched fork at
-`C:\Perso\IrishMusicExperiments\folkfriend-src`, NOT upstream master** — it
-carries the `_debug` export additions described above. Diff against upstream
-before assuming a fresh `git clone` is equivalent.
+**The source of truth is the fork above, NOT upstream master** (local clone:
+`C:\Perso\IrishMusicExperiments\folkfriend-src`). A fresh clone of upstream
+builds a different engine.
 
 ```sh
 cd C:\Perso\IrishMusicExperiments\folkfriend-src\rust
