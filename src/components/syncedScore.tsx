@@ -201,6 +201,9 @@ export interface SyncedScoreProps {
   playing: boolean;
   /** The score box's height cap (CSS). */
   maxHeight: string;
+  /** Its floor (CSS), 8rem unless said: a full page gives it its whole
+   *  height, as the viewer's full page fills the screen with paper. */
+  minHeight?: string;
   /** The stave, or the ABC text it is drawn from, read-only, the note heard
    *  lit in it (the user, 2026-10-28) — the score viewer's two faces. */
   face?: 'sheet' | 'text';
@@ -212,7 +215,7 @@ export interface SyncedScoreProps {
   clock?: LiveClock;
 }
 
-export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, face = 'sheet', tools, clock }: SyncedScoreProps) {
+export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, minHeight = '8rem', face = 'sheet', tools, clock }: SyncedScoreProps) {
   const paperRef = useRef<HTMLDivElement>(null);
   /** What abcjs draws into, inside the paper — never the paper itself: abcjs
    *  writes `overflow: hidden` and a height on its target, and the score,
@@ -561,7 +564,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
           ref={paperRef}
           onClick={onPaperClick}
           class={`abc-score-paper score-follow-paper overflow-y-auto p-2 ${tools ? 'pt-8' : ''}`}
-          style={{ color: colours.ink, '--abc-paper': colours.paper, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, maxHeight, minHeight: '8rem' }}
+          style={{ color: colours.ink, '--abc-paper': colours.paper, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, maxHeight, minHeight }}
         >
           <div ref={drawingRef} />
         </div>
@@ -571,12 +574,14 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         <pre
           ref={textRef}
           class={`score-follow-text relative m-0 overflow-y-auto p-3 font-mono text-xs whitespace-pre-wrap break-words ${tools ? 'pt-8' : ''}`}
-          style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, maxHeight, minHeight: '8rem' }}
+          style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, maxHeight, minHeight }}
         />
       )}
-      {/* Over the paper, in its ink — the score viewer's own corner. */}
+      {/* Over the paper, in its ink — the score viewer's own corner, to the
+          pixel (its scoreTools, `top-1 right-1`): `right-3` here put the
+          button 8 px off the viewer's (2026-11-01, the user). */}
       {tools && (
-        <div class="absolute top-1 right-3 z-20 flex items-center" style={{ '--abc-ink': colours.ink }}>{tools}</div>
+        <div class="absolute top-1 right-1 z-20 flex items-center" style={{ '--abc-ink': colours.ink }}>{tools}</div>
       )}
     </div>
   );

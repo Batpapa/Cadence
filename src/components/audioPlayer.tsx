@@ -390,6 +390,8 @@ export interface PlayerScore {
   meter: string;
   follow: FollowResult | null;
   maxHeight: string;
+  /** Its floor (SyncedScoreProps.minHeight). */
+  minHeight?: string;
   /** The stave, or its ABC text (SyncedScoreProps.face). */
   face?: 'sheet' | 'text';
   /** Buttons over the score's corner (SyncedScoreProps.tools). */
@@ -725,7 +727,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
         {score && (
           <SyncedScore
             abc={score.abc} meter={score.meter} follow={score.follow} engine={null} region={null}
-            transpose={0} playing={false} maxHeight={score.maxHeight} face={score.face} tools={score.tools}
+            transpose={0} playing={false} maxHeight={score.maxHeight} minHeight={score.minHeight} face={score.face} tools={score.tools}
           />
         )}
         <div style={{ fontSize: '11px', color: 'var(--color-dim)', textAlign: 'center', padding: '20px 0' }}>
@@ -769,6 +771,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
           transpose={effects.transpose}
           playing={playing}
           maxHeight={score.maxHeight}
+          minHeight={score.minHeight}
           face={score.face}
           tools={score.tools}
         />
