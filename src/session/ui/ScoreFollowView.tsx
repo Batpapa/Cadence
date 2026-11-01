@@ -32,7 +32,7 @@ import { registerOverlay } from '../../components/overlayStack';
 // so neither does its half). How the alignment goes is the viewer's toggle's
 // to show (AudioSyncState).
 //
-// A card's recording too (2026-10-31, the user, developer mode for now): its
+// A card's recording too (2026-10-31, the user; for everyone since 11-01): its
 // ABC with one of its audio or video attachments (cardAudioSync.ts). No
 // detection says where the tune is: the whole recording is aligned, a long
 // one searched first (scoreFollowWorker) — the player then gets what was
