@@ -1,6 +1,6 @@
 // ── Live score following: where a tune being played is in its score, NOW ─────
 // The live counterpart of scoreFollow.ts, for the score viewer's Play-along
-// (2026-10-31, the user; developer mode only for now): the microphone heard
+// (2026-10-31, the user; for everyone since 2026-11-01): the microphone heard
 // frame by frame, the score's cursor kept on what is being played.
 //
 // The same hidden semi-Markov model as scoreFollow.ts — each quaver a segment
@@ -128,7 +128,17 @@ export const LIVE_FOLLOW_DEFAULTS: LiveFollowOptions = {
   enterPenalty: 15,
   // 40, not 4: see wrongPenalty above.
   exitPenalty: 40,
-  switchPenalty: 2,
+  // 15, not 2 (2026-11-01): « far more in time played fast than slow » (the
+  // user). Takes of one reel (Martin Wynne's) at 90, 140 and 200: played
+  // slow, the path hopped to faster tempi — ornaments and held notes fit
+  // them for a moment, and a hop cost next to nothing against frames
+  // that last twice as long — the cursor running at 1.7 times the music
+  // for seconds. At 15: on the right note 76.5 % of the time instead of 64.5
+  // (slow), 85 and 87.5 instead of 81 and 83 (140, 200), elsewhere in the
+  // tune 9 % instead of 20 (slow) and none instead of 1 (the others); real
+  // pubs (Anglade, 12 tunes) 82 % instead of 79, p90 error 135 ms instead of
+  // 178; synthetic runs unchanged. 30 and 60: the same as 15.
+  switchPenalty: 15,
   lagFrames: 3,
   // 15 over 5: a little fewer cursors outside the tune, no later acquisition.
   showFrames: 15,
@@ -224,6 +234,7 @@ export class LiveFollower {
    *  the music has been better elsewhere (jumpMargin). */
   private curI = -1;
   private away = 0;
+  private v = 0;
 
   /** `score`: MIDI pitches, one per quaver of a pass (scoreFollow.ts). */
   constructor(score: number[], options: Partial<LiveFollowOptions> = {}) {
@@ -275,6 +286,11 @@ export class LiveFollower {
 
   /** Frames heard so far. */
   get frames(): number { return this.T; }
+
+  /** The best path's log-likelihood now, in the tune or outside it: of two
+   *  scores fed the same frames, the one the music fits better grows less
+   *  negative (VersionWatch). */
+  get value(): number { return this.v; }
 
   /** One more frame of pitch energies (MIDI_NUM values, FolkFriend's
    *  `take_features`), and where the score now stands. `level`: the mean
@@ -396,6 +412,7 @@ export class LiveFollower {
     for (let i = 0; i < N; i++) if (inI < 0 ? inV[i]! > -Infinity : inV[i]! > inV[inI]!) inI = i;
     const inBest = inI >= 0 ? inV[inI]! : -Infinity;
     const inTune = inI >= 0 && inBest > oNow;
+    this.v = inTune ? inBest : oNow;
     const following = this.state === 'follow';
     if (inTune === following) this.run = 0;
     else if (++this.run >= (inTune ? opt.showFrames : opt.hideFrames)) {
@@ -482,6 +499,184 @@ export class LiveFollower {
       }
     }
     return { quaver, at: u / opt.fps, rate, match: heard ? hit / heard : null };
+  }
+}
+
+// ── The tempo, as the score counts it ────────────────────────────────────────
+
+export interface Beat {
+  unit: 'minim' | 'dottedMinim' | 'crotchet' | 'dottedCrotchet' | 'quaver';
+  /** Its length in quavers — LiveEstimate.rate's unit. */
+  quavers: number;
+}
+
+const NOTE_OF_QUAVERS: Record<number, Beat['unit']> = { 1: 'quaver', 2: 'crotchet', 3: 'dottedCrotchet', 4: 'minim', 6: 'dottedMinim' };
+
+/** The beat a tempo is given in (2026-11-01, the user). The tempo field's
+ *  own note when the version has one (`Q:1/2=110`: minims; several notes,
+ *  `Q:1/4 1/8=…`, add up) — a reel written in 4/4 is felt in minims, which
+ *  only that field can say. Else the metre's: the denominator's note — a
+ *  minim in 2/2, a crotchet in 4/4 — except in a compound metre, counted in
+ *  dotted crotchets as the viewer's metronome counts it (fileViewer's
+ *  beatsPerBar): a jig is two beats a bar, not six. `meter` as meterOf gives
+ *  it ("C" already 4/4); `tempo`: the Q: field's text, if any. */
+export function beatOf(meter: string, tempo?: string): Beat {
+  const q = tempo ? /^((?:\s*\d+\/\d+)+)\s*=/.exec(tempo.replace(/"[^"]*"/g, '').trim()) : null;
+  if (q) {
+    const quavers = q[1]!.trim().split(/\s+/).reduce((sum, f) => {
+      const [a, b] = f.split('/').map(Number);
+      return sum + (8 * a!) / b!;
+    }, 0);
+    const unit = NOTE_OF_QUAVERS[quavers];
+    if (unit) return { unit, quavers };
+  }
+  const m = /^(\d+)\s*\/\s*(\d+)/.exec(meter.trim());
+  const top = m ? parseInt(m[1]!, 10) : 4;
+  const bottom = m ? parseInt(m[2]!, 10) : 4;
+  if (bottom === 8 && top % 3 === 0 && top > 3) return { unit: 'dottedCrotchet', quavers: 3 };
+  if (bottom === 2) return { unit: 'minim', quavers: 4 };
+  if (bottom === 8) return { unit: 'quaver', quavers: 1 };
+  return { unit: 'crotchet', quavers: 2 };
+}
+
+// ── Which version is being played ────────────────────────────────────────────
+// The second take from the app (2026-11-01): the cursor « still jumps between
+// bars 1-4 and 5-8 » — the player played another setting of the tune than
+// the one on screen, the same tune with bars 2, 4, 6 and 8 otherwise. Every
+// version of the file followed side by side on the same frames: the one the
+// music fits best is the one whose best path loses least over the last
+// seconds. When another version than the one on screen has done better by a
+// margin for a while, the viewer offers it (the user: an option of the
+// viewer, on by default).
+
+export interface VersionWatchOptions {
+  /** Frames summed into one for the versions' followers: a follower costs
+   *  about the square of its frame rate, and a likelihood needs no fine
+   *  timing. */
+  merge: number;
+  /** The span each version's fit is measured over, seconds. */
+  windowSeconds: number;
+  /** How much better than the version on screen another must fit over that
+   *  span, log-likelihood, and for how long, before it is offered — and how
+   *  long the one on screen must fit as well before the offer goes. */
+  margin: number;
+  holdSeconds: number;
+  /** The frames' rate, as given (LiveFollowOptions.fps). */
+  fps: number;
+  follow: Partial<LiveFollowOptions>;
+}
+
+export const VERSION_WATCH_DEFAULTS: VersionWatchOptions = {
+  merge: 2,
+  windowSeconds: 20,
+  margin: 20,
+  holdSeconds: 5,
+  fps: 48000 / 1024,
+  follow: {},
+};
+
+/** What the Play-along's worker posts per frame to the versions' watch: the
+ *  pitch energies, then the level. */
+export const TAP_STRIDE = MIDI_NUM + 1;
+
+/** Frames summed per step, from the number of versions followed: a follower
+ *  costs about the square of its rate. */
+export function versionMerge(versions: number): number {
+  return versions <= 8 ? 2 : versions <= 18 ? 3 : 4;
+}
+
+export class VersionWatch {
+  private readonly opt: VersionWatchOptions;
+  private readonly followers: LiveFollower[];
+  /** Each version's value at the last `span` merged frames, a ring. */
+  private readonly hist: Float64Array[];
+  private readonly span: number;
+  private readonly holdFrames: number;
+  private readonly acc = new Float64Array(MIDI_NUM);
+  private accLevel = 0;
+  private accN = 0;
+  private hasLevel = false;
+  private n = 0;
+  private shown: number;
+  private offered: number | null = null;
+  private held = 0;
+  private clear = 0;
+  private readonly muted = new Set<number>();
+
+  /** `scores`: every version, as LiveFollower takes one; `shown`: the one on
+   *  screen. */
+  constructor(scores: number[][], shown: number, options: Partial<VersionWatchOptions> = {}) {
+    const opt = { ...VERSION_WATCH_DEFAULTS, ...options };
+    this.opt = opt;
+    const fps = opt.fps / opt.merge;
+    this.followers = scores.map(s => new LiveFollower(s, { ...opt.follow, fps }));
+    this.span = Math.max(1, Math.round(opt.windowSeconds * fps));
+    this.hist = scores.map(() => new Float64Array(this.span + 1));
+    this.holdFrames = Math.max(1, Math.round(opt.holdSeconds * fps));
+    this.shown = shown;
+  }
+
+  /** Another version on screen: whatever was offered is asked again. */
+  setShown(shown: number): void {
+    this.shown = shown;
+    this.offered = null;
+    this.held = 0;
+    this.clear = 0;
+  }
+
+  /** Not to be offered again: turned down. */
+  mute(version: number): void {
+    this.muted.add(version);
+    if (this.offered === version) { this.offered = null; this.held = 0; this.clear = 0; }
+  }
+
+  /** One more frame, as LiveFollower.push takes it; the version offered in
+   *  place of the one on screen, or null. */
+  push(frame: ArrayLike<number>, level?: number): number | null {
+    const { acc, opt } = this;
+    for (let p = 0; p < MIDI_NUM; p++) acc[p] = acc[p]! + frame[p]!;
+    if (level !== undefined) { this.accLevel += level; this.hasLevel = true; }
+    if (++this.accN < opt.merge) return this.offered;
+    const lvl = this.hasLevel ? this.accLevel / this.accN : undefined;
+    const ring = this.span + 1, now = (this.n + 1) % ring, back = this.n + 1 > this.span ? (this.n + 1 - this.span) % ring : 0;
+    const gains = this.followers.map((f, v) => {
+      f.push(acc, lvl);
+      const h = this.hist[v]!;
+      h[now] = f.value;
+      return f.value - h[back]!;
+    });
+    this.n++;
+    acc.fill(0);
+    this.accLevel = 0;
+    this.accN = 0;
+    this.hasLevel = false;
+
+    const shownGain = gains[this.shown] ?? 0;
+    let best = -1;
+    for (let v = 0; v < gains.length; v++) {
+      if (v === this.shown || this.muted.has(v)) continue;
+      if (best < 0 || gains[v]! > gains[best]!) best = v;
+    }
+    if (best < 0) return this.offered;
+    if (this.offered === null) {
+      this.held = gains[best]! - shownGain >= opt.margin ? this.held + 1 : 0;
+      if (this.held >= this.holdFrames) { this.offered = best; this.held = 0; }
+    } else {
+      // Gone once the version on screen fits better — by a quarter of the
+      // margin: in silence every version scores alike, and the window
+      // sliding past the music evens them out, which is no evidence (the
+      // first take: the offer went as the tune ended). Replaced only by one
+      // that fits better than it by the margin, as long — two near-twins
+      // trade places all the time.
+      const o = this.offered;
+      this.clear = gains[o]! - shownGain <= -opt.margin / 4 ? this.clear + 1 : 0;
+      if (this.clear >= this.holdFrames) { this.offered = null; this.clear = 0; this.held = 0; }
+      else if (best !== o) {
+        this.held = gains[best]! - gains[o]! >= opt.margin ? this.held + 1 : 0;
+        if (this.held >= this.holdFrames) { this.offered = best; this.held = 0; }
+      } else this.held = 0;
+    }
+    return this.offered;
   }
 }
 

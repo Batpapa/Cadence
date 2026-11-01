@@ -309,6 +309,10 @@ export interface User {
    *  objects to, and the list of its warnings. Absent = off; see
    *  `showAbcSyntaxCheck` in abcService. */
   abcShowSyntaxCheck?: boolean;
+  /** The Play-along offers the file's version being played when it is not
+   *  the one on screen. Absent = on; turning it off is written as an
+   *  explicit `false` — see `suggestPlayedVersion` in abcService. */
+  abcSuggestPlayedVersion?: boolean;
 
   // Score engraving — how ABC READS. Measured on 2026-09-21: with no
   // `staffwidth` abcjs lays every score out at its own default of 740 units

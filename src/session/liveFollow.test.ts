@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LiveFollower, LiveCursor, type LiveEstimate, type LiveFollowOptions } from './liveFollow';
+import { LiveFollower, LiveCursor, VersionWatch, beatOf, type LiveEstimate, type LiveFollowOptions } from './liveFollow';
 import { contourToMidi, FOLLOW_FPS } from './scoreFollow';
 
 const tune = contourToMidi('ooqxxvxxqxxxvxAxvtsovoxovosovoAvsoqxxvxxqxxxvxACEFHECzAxvsoqsoqq');
@@ -125,6 +125,66 @@ describe('live score following', () => {
     // Where it used to jump, for most of a second: leaving the tune and
     // coming back in cost 19, and nothing kept the part being played.
     expect(off({ exitPenalty: 4, wrongPenalty: Infinity, quietPenalty: 0, jumpMargin: 0, jumpFrames: 0 })).toBeGreaterThan(30);
+  });
+});
+
+describe('which version is played', () => {
+  // Another setting of the tune: bars 2, 4, 6 and 8 otherwise — the second
+  // take from the app, where bars 1, 3 and 5 were the same.
+  const other = tune.map((m, i) => (Math.floor(i / 8) % 2 === 1 ? m + 2 : m));
+  const watch = (shown: number) => {
+    const { f, frames } = perform(passes(3));
+    const w = new VersionWatch([tune, other], shown, { fps: FOLLOW_FPS });
+    let first: number | null = null, last: number | null = null;
+    for (let fr = 0; fr < frames; fr++) {
+      last = w.push(f.subarray(fr * 48, (fr + 1) * 48));
+      if (last !== null && first === null) first = fr / FOLLOW_FPS;
+    }
+    return { first, last };
+  };
+
+  it('offers the version played when another is on screen', () => {
+    const r = watch(1);
+    expect(r.first).not.toBeNull();
+    // Some seconds of evidence, then holdSeconds.
+    expect(r.first!).toBeLessThan(20);
+    expect(r.last).toBe(0);
+  });
+
+  it('offers nothing while the version on screen is the one played', () => {
+    expect(watch(0).first).toBeNull();
+  });
+
+  it('asks again for another version on screen, and not for one turned down', () => {
+    const { f, frames } = perform(passes(3));
+    const w = new VersionWatch([tune, other, other.map(m => m + 1)], 1, { fps: FOLLOW_FPS });
+    let fr = 0, o: number | null = null;
+    for (; fr < frames && o === null; fr++) o = w.push(f.subarray(fr * 48, (fr + 1) * 48));
+    expect(o).toBe(0);
+    w.mute(0);
+    for (; fr < frames; fr++) o = w.push(f.subarray(fr * 48, (fr + 1) * 48));
+    expect(o).not.toBe(0);
+  });
+});
+
+describe('the beat a tempo is given in', () => {
+  it('is the metre\'s note, dotted in compound time', () => {
+    expect(beatOf('4/4')).toEqual({ unit: 'crotchet', quavers: 2 });
+    expect(beatOf('2/2')).toEqual({ unit: 'minim', quavers: 4 });
+    expect(beatOf('6/8')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOf('9/8')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOf('12/8')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOf('3/8')).toEqual({ unit: 'quaver', quavers: 1 });
+    expect(beatOf('3/4')).toEqual({ unit: 'crotchet', quavers: 2 });
+  });
+
+  it('is the tempo field\'s note when there is one', () => {
+    expect(beatOf('4/4', '1/2=110')).toEqual({ unit: 'minim', quavers: 4 });
+    expect(beatOf('6/8', ' "Lively" 3/8=120')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOf('3/4', '1/4 1/2=60')).toEqual({ unit: 'dottedMinim', quavers: 6 });
+    // No note, or one with no name here: the metre's.
+    expect(beatOf('4/4', '120')).toEqual({ unit: 'crotchet', quavers: 2 });
+    expect(beatOf('4/4', '5/8=80')).toEqual({ unit: 'crotchet', quavers: 2 });
   });
 });
 

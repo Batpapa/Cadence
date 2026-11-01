@@ -168,3 +168,48 @@ an accompaniment that goes on. The "same place" measure now takes any
 stretch of 25 identical quavers holding both positions, however it sits
 around them (near the end of a part played twice the next quavers differ,
 the notes are drawn once).
+
+### Which version is being played (2026-11-01)
+
+The second take was of another setting than the one on screen (Man of Aran,
+29013 played, 973 shown): bars 2, 4, 6 and 8 otherwise, and the cursor
+jumping between the two halves of each part. `VersionWatch`
+(liveFollow.ts) follows every version of the file side by side on summed
+frames (2 up to 8 versions, 3 up to 18, 4 beyond: a follower costs about
+the square of its rate) and compares how much each one's best path loses
+over 20 s; another version is offered once it beats the one on screen by 20
+for 5 s. `node live.mjs versions` (synthetic, each tune's first setting
+played solo then in session, all its settings in the file) and
+`node live.mjs versions take tuneId shownId file.json…`:
+
+| | |
+|---|---|
+| played version on screen (20 runs) | 0 offers |
+| another on screen (60 runs) | the played one offered 41, a closer twin 13, a farther one 0, nothing 6 (versions 92-100 % alike) |
+| delay of the offer, median | 12.4 s |
+| the two takes, 4 versions on screen each | 29013 offered at 13-28 s every time; nothing with 29013 on screen |
+| cost, 5-42 versions | 2.1 ms a frame median (laptop on battery saver) |
+
+### Fast against slow (2026-11-01)
+
+« Far more in time played fast than slow » (the user). `node live.mjs tempo`
+(HELD=1: quavers of one pitch in a row held as one note): the same 10 tunes
+solo at 80-220 — 100 % on the right note throughout, error 0.05 quaver
+median at every tempo (18 ms at 80, 8 ms at 220). The synthetic playing does
+not show it. Three takes of one reel (Martin Wynne's, 347) at 90, 140 and
+200 do: on the right note 64.5 / 81 / 82.6 %, elsewhere in the tune 20 / 0.6
+/ 1 %. Played slow, the path hopped to faster tempi (the cursor at 1.7 times
+the music for seconds): a tempo switch cost 2 against frames that last twice
+as long. A finer tempo grid and a longer tempo window changed nothing;
+`switchPenalty` 15 (30 and 60 the same):
+
+| | switch 2 | **switch 15 (kept)** |
+|---|---|---|
+| takes 90 / 140 / 200: on the right note | 64.5 / 81.0 / 82.6 % | 76.5 / 85.2 / 87.5 % |
+| takes: elsewhere in the tune | 19.9 / 0.6 / 1.0 % | 9.2 / 0 / 0 % |
+| real pub, Anglade (12 tunes): on the note / p90 error | 79.0 % / 178 ms | 82.3 % / 135 ms |
+| synthetic session, solo, practice | 99.9 / 100 / 98.0 % | 100 / 100 / 98.0 % |
+
+What is left slow is mostly the start: bars 1-4 and 5-8 of the A part
+alike, the follower settles on the right half only once the notes that
+differ have been played — at 90, ten seconds in.
