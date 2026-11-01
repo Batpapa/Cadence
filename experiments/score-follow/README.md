@@ -138,3 +138,33 @@ confirmed on real takes. Measures that settled the settings:
 - cursor confirm 0.4 s: a third of the jumps, the same notes right;
 - hide 33 → 20 frames: outside the tune 12 % instead of 17 (solo);
 - lag 0 / 6 / 12 / 24 frames: within a point of each other.
+
+### The first take from the app (2026-11-01)
+
+`node live.mjs take file.json…` replays takes downloaded from the app
+(TRACE=1: the cursor drawn every quarter second, next to the offline truth
+and the note heard). The first, Man of Aran played once through at 215:
+« it jumps all over ». Wherever the player left the version on screen — a
+variation of a bar — the path left the tune (4) and came back in elsewhere
+(15): 19 for a jump, when one wrong quaver cost 20 to 30. Now (the user's
+rule: going on with a wrong note costs less than jumping, a jump waits for
+evidence, the part being played is kept): a wrong frame costs 2.5 at most,
+leaving the tune 40 — paid in silence, a quiet frame costing 2 inside the
+tune — coming back in after a stop still 15, and a path elsewhere must beat
+the one going on by 15 for 10 frames. Frames with no pitch (the loudest
+under a tenth of the energy) count as quiet.
+
+| at H = 150 ms | before | now |
+|---|---|---|
+| the take: cursor elsewhere in the tune / visible jumps | 30 % / 8 | 6 % / 0 |
+| real pub, Anglade (12 tunes): on the right note / p90 error / jumps back | 73 % / 2.3 s / 85 | 79 % / 178 ms / 16 |
+| synthetic practice: on the note / acquisition p90 / jumps back | 98.4 % / 3.6 s / 12 | 98.0 % / 3.9 s / 8 |
+| synthetic solo: acquisition max | 1.2 s | 3.5 s (The Clumsy Lover, 511 quavers) |
+| synthetic session: cursor shown outside the tune | 11 % | 27 % |
+
+The price: on a long, very repetitive tune a wrong first guess takes longer
+to correct, and a cursor lingers about a second on a tune that stops under
+an accompaniment that goes on. The "same place" measure now takes any
+stretch of 25 identical quavers holding both positions, however it sits
+around them (near the end of a part played twice the next quavers differ,
+the notes are drawn once).

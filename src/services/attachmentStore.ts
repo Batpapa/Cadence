@@ -324,8 +324,13 @@ export class AttachmentNotHere extends Error {
  *
  *  `interactive` is passed on to Drive: opening an attachment IS a user
  *  gesture, so it may legitimately raise a token window — unlike the
- *  background work, which never may (see driveService's token rules). */
-export async function attachmentBlob(f: ResolvableFile, interactive = false): Promise<Blob> {
+ *  background work, which never may (see driveService's token rules).
+ *  `onProgress`: how much of a Drive download has come down (a card's audio
+ *  sync shows it); nothing is said of bytes already on this device. */
+export async function attachmentBlob(
+  f: ResolvableFile, interactive = false,
+  onProgress?: (loaded: number, total: number | null) => void,
+): Promise<Blob> {
   if (!f.external) return base64ToBlobLocal(f.data, f.mimeType);
   const external = f.external;
   const typed = (b: Blob) =>
@@ -343,7 +348,7 @@ export async function attachmentBlob(f: ResolvableFile, interactive = false): Pr
 
   let fetched: Blob | null;
   try {
-    fetched = await (await driveModule()).downloadCompanionFile(external.driveFileId, interactive);
+    fetched = await (await driveModule()).downloadCompanionFile(external.driveFileId, interactive, onProgress);
   } catch (e) {
     console.warn('[attachments] could not fetch ' + f.name + ' from Drive', e);
     throw missing('offline');

@@ -46,8 +46,10 @@ export interface SessionFollow extends FollowResult {
 }
 
 /** Where the work is, for the waiting screen. `ratio` is the whole job's,
- *  from 0 to 1, weighted by what each step costs. */
-export interface FollowStatus { stage: FollowStage; ratio: number }
+ *  from 0 to 1, weighted by what each step costs. Before it, 'download': the
+ *  recording coming down (a card's, from Drive or a link — 2026-11-01), its
+ *  own ratio, 0 with only `received` bytes when the size is not told. */
+export interface FollowStatus { stage: FollowStage | 'download'; ratio: number; received?: number }
 
 // Share of the whole each step takes, in order — measured 2026-10-28. A long
 // recording is first scanned and searched for the tune (scoreFollowWorker),
@@ -72,9 +74,9 @@ const overall = (weights: Record<FollowStage, [number, number]>, stage: FollowSt
   weights[stage][0] + (weights[stage][1] - weights[stage][0]) * Math.min(1, Math.max(0, r));
 
 /** The stretch the alignment was made on, as the player gets it: mono, at
- *  the recording's own rate, starting at the alignment's time 0. */
-/** `from`: where the samples start in the recording, in seconds — the
- *  session's time for a detection's passage. */
+ *  the recording's own rate, starting at the alignment's time 0. `from`:
+ *  where they start in the recording, in seconds — the session's time for a
+ *  detection's passage. */
 export interface FollowSamples { pcm: Float32Array; rate: number; from: number }
 
 /** Alignments already made in this page, so a tune reopened is followed at

@@ -9,6 +9,7 @@ import { scoreContour, bareScore, meterOf } from '../../components/syncedScore';
 import { MATCH_GOOD, MATCH_USABLE, withPickup } from '../scoreFollow';
 import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
+import { formatBytes } from '../../utils';
 import { ExpandIcon, CollapseIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 
@@ -63,6 +64,10 @@ export function failureText(reason: FollowFailure | 'error'): string {
 
 export function stageText(status: FollowStatus | null): string {
   switch (status?.stage) {
+    // With what has come down when the size is not told: no ratio to show.
+    case 'download': return sizeUnknown(status)
+      ? `${t('sessions.follow.stage.download')} ${formatBytes(status.received ?? 0)}`
+      : t('sessions.follow.stage.download');
     case 'scan': return t('sessions.follow.stage.scan');
     case 'locate': return t('sessions.follow.stage.locate');
     case 'listen': return t('sessions.follow.stage.listen');
@@ -70,6 +75,11 @@ export function stageText(status: FollowStatus | null): string {
     case 'align': return t('sessions.follow.stage.align');
     default: return t('sessions.follow.stage.decode');
   }
+}
+
+/** A download whose size its server did not tell: bytes, not a ratio. */
+export function sizeUnknown(status: FollowStatus | null): boolean {
+  return status?.stage === 'download' && status.received !== undefined;
 }
 
 /** The TheSession setting a version is, from its `S:` line
@@ -125,7 +135,8 @@ function stateOf(phase: Phase, target: FollowTarget, forced: boolean): AudioSync
 function verdictOf(phase: Phase, target: FollowTarget): AudioSyncState {
   if (phase.kind === 'aligning') {
     const ratio = phase.status?.ratio ?? 0;
-    return { kind: 'aligning', ratio, title: `${stageText(phase.status)} · ${Math.round(ratio * 100)} %` };
+    const title = sizeUnknown(phase.status) ? stageText(phase.status) : `${stageText(phase.status)} · ${Math.round(ratio * 100)} %`;
+    return { kind: 'aligning', ratio, title };
   }
   if (phase.kind === 'failed') return { kind: 'none', title: failureText(phase.reason) };
   return alignedVerdict(phase.follow, target);
@@ -173,11 +184,16 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
 /** The whole of what was loaded: the player brings the end within it. */
 const WHOLE: Region = { start: 0, end: Number.POSITIVE_INFINITY };
 
+/** The recording, or undefined having said why. A card's may have to come
+ *  down first: how far, through `onStatus` ('download'); `signal`, the view
+ *  closed meanwhile. */
+type GetAudio = (onStatus: (s: FollowStatus) => void, signal: AbortSignal) => Promise<FollowAudio | undefined>;
+
 function ScoreFollowView({ target, version, getAudio, expanded, face, onState, forced }: {
   target: FollowTarget;
   /** The version on the viewer's screen: its ABC. */
   version: Signal<string>;
-  getAudio: () => Promise<FollowAudio | undefined>;
+  getAudio: GetAudio;
   expanded: Signal<boolean>;
   face: Signal<'sheet' | 'text'>;
   onState: (s: AudioSyncState) => void;
@@ -228,13 +244,14 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
     setScore({ abc, meter });
     void (async () => {
       try {
-        const [contour, audio] = await Promise.all([scoreContour(abc, meter), getAudio()]);
+        const setStatus = (status: FollowStatus) => { if (!cancelled) setPhase(p => (p.kind === 'aligning' ? { kind: 'aligning', status } : p)); };
+        const [contour, audio] = await Promise.all([scoreContour(abc, meter), getAudio(setStatus, stopWork.signal)]);
         if (cancelled) return;
         if (!audio) { samples.reject(new Error(failureText('no_audio'))); setPhase({ kind: 'failed', reason: 'no_audio' }); return; }
         if (!contour) { setPhase({ kind: 'failed', reason: 'no_contour' }); return; }
         const result = await followAudio(audio, contour, settingOfVersion(shown),
           target.kind === 'passage' ? { start: target.start, end: target.end } : null,
-          status => { if (!cancelled) setPhase(p => (p.kind === 'aligning' ? { kind: 'aligning', status } : p)); },
+          setStatus,
           stopWork.signal,
           // Only the first time counts: the player has its samples already.
           s => samples.resolve(s));
@@ -384,7 +401,7 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
 export function mountScoreFollow(host: HTMLElement, opts: {
   target: FollowTarget;
   version: string;
-  getAudio: () => Promise<FollowAudio | undefined>;
+  getAudio: GetAudio;
   face: 'sheet' | 'text';
   expanded: boolean;
   onState: (s: AudioSyncState) => void;

@@ -9,6 +9,7 @@ import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding } from './fileViewer';
 import { cardAudioSync } from './cardAudioSync';
+import { showRemoteFailure } from './remoteFailure';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
 import { showAddFileModal } from './addFileModal';
@@ -137,27 +138,6 @@ function openRemoteFile(entry: EmbedEntry, audioPresets?: AudioPresetsBinding): 
     if (!(e instanceof RemoteFileError)) console.warn('[links] could not open ' + entry.url, e);
     showRemoteFailure(entry, e instanceof RemoteFileError ? refusalMessage(e.refusal) : t('embed.error'));
   });
-}
-
-/** Why a file link did not open, with the way out that always exists: the
- *  file itself in a tab. A button rather than opening the tab by itself — the
- *  failure comes back after an await, past the click that would have let a
- *  popup through, and a tab appearing on its own seconds later explains
- *  nothing. Rare by construction: the link dialog refuses a file its server
- *  will not let Cadence read, so this is a server that changed its mind, or
- *  is not there right now. */
-function showRemoteFailure(entry: EmbedEntry, message: string): void {
-  const href = safeExternalUrl(entry.url);
-  const body = document.createElement('p');
-  body.className = 'text-sm text-muted leading-relaxed';
-  body.textContent = message;
-  showModal(t('embed.file.failedTitle'), body, [
-    { label: t('common.close'), onClick: closeModal },
-    ...(href ? [{
-      label: t('embed.open'), primary: true,
-      onClick: () => { window.open(href, '_blank', 'noopener,noreferrer'); closeModal(); },
-    }] : []),
-  ]);
 }
 
 function mimeIcon(entry: FileEntry): string {
