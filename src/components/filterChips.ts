@@ -39,6 +39,23 @@ export function knownChips<M extends ReadonlyMap<string, FilterState>>(
   return chips;
 }
 
+/** The chip map once `from` has been renamed `to` everywhere: a chip pinned on
+ *  the old name follows to the new one, in its place, rather than being dropped
+ *  by `knownChips` the moment no card carries the old name any more. When the
+ *  new name is pinned too (a merge), its own state wins. Returns the map itself
+ *  when the old name is not pinned. */
+export function renameChip<M extends ReadonlyMap<string, FilterState>>(
+  chips: M, from: string, to: string,
+): M | Map<string, FilterState> {
+  if (!chips.has(from) || from === to) return chips;
+  const out = new Map<string, FilterState>();
+  for (const [k, s] of chips) {
+    if (k !== from) out.set(k, s);
+    else if (!chips.has(to)) out.set(to, s);
+  }
+  return out;
+}
+
 /** The chips an INCLUDED folder already covers — the things inside it, and the
  *  folders below it — so the section can show what that folder pulled in, and
  *  one of them can be excluded from it in a click.
