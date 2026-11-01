@@ -42,7 +42,7 @@ const idx = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
 
 const env = (k) => (process.env[k] !== undefined ? Number(process.env[k]) : undefined);
 const followOpts = Object.fromEntries(Object.entries({
-  lagFrames: env('LAG'), enterPenalty: env('ENTER'), exitPenalty: env('EXIT'), switchPenalty: env('SWITCH'),
+  lagFrames: env('LAG'), octaveWeight: env('OCT'), wrongPenalty: env('WRONG'), quietPenalty: env('QUIET'), pitchShare: env('PITCH'), jumpMargin: env('JMARGIN'), jumpFrames: env('JFRAMES'), enterPenalty: env('ENTER'), exitPenalty: env('EXIT'), switchPenalty: env('SWITCH'),
   showFrames: env('SHOW'), hideFrames: env('HIDE'),
   bpms: process.env.BPMS ? process.env.BPMS.split(',').map(Number) : undefined,
   fps: FPS,
@@ -95,12 +95,18 @@ function runCase(feats, levels, score, truth) {
   const W = env('SAME') ?? 12;
   const same = Array.from({ length: N }, (_, i) => {
     const out = [i];
+    // Alike over a stretch of 2·SAME + 1 quavers that holds both, however it
+    // sits around them: near the end of a part played twice, what follows
+    // differs (the part again, or the next) though the notes are drawn once
+    // (2026-11-01, a take of Man of Aran).
+    const at = (k) => score[((k % N) + N) % N];
     if (W > 0) {
       for (let j = 0; j < N; j++) {
-        if (j === i) continue;
-        let ok = true;
-        for (let d = -W; d <= W && ok; d++) ok = score[((i + d) % N + N) % N] === score[((j + d) % N + N) % N];
-        if (ok) out.push(j);
+        if (j === i || at(i) !== at(j)) continue;
+        let back = 0, ahead = 0;
+        while (back < 2 * W && at(i - back - 1) === at(j - back - 1)) back++;
+        while (ahead < 2 * W && at(i + ahead + 1) === at(j + ahead + 1)) ahead++;
+        if (back + ahead + 1 >= 2 * W + 1) out.push(j);
       }
     }
     return out;
@@ -114,7 +120,7 @@ function runCase(feats, levels, score, truth) {
   };
   const lf = new LiveFollower(score, followOpts);
   const cursors = HS.map(() => new LiveCursor(N, cursorOpts));
-  const acc = HS.map(() => ({ steady: 0, shown: 0, on: 0, errs: [], outside: 0, ghost: 0, backs: 0, backsOut: 0, prev: null }));
+  const acc = HS.map(() => ({ steady: 0, shown: 0, on: 0, far: 0, errs: [], outside: 0, ghost: 0, backs: 0, backsOut: 0, jumps: 0, prev: null }));
   const raw = { n: 0, on: 0 };
   // Acquisition at H_ACQ: from the start of each stretch of playing to the
   // first second spent on the right quaver throughout.
@@ -144,6 +150,9 @@ function runCase(feats, levels, score, truth) {
       if (p !== null && a.prev !== null) {
         const d = ((p - a.prev) % N + N) % N;
         if (d > N / 2 && N - d > 1 && drawnGap(p, a.prev) > 1) { if (tr) a.backs++; else a.backsOut++; }
+        // Any visible jump, either way: the drawn place moved by more than two
+        // quavers in one frame.
+        if (tr && drawnGap(p, a.prev) > 2) a.jumps++;
       }
       a.prev = p;
       if (!tr) {
@@ -167,6 +176,8 @@ function runCase(feats, levels, score, truth) {
       if (p === null) return;
       a.shown++;
       if (on) a.on++;
+      // Elsewhere in the tune: more than two quavers off what is played.
+      if (drawnGap(p, tr.q) > 2) a.far++;
       a.errs.push(drawnGap(p, tr.q) / tr.rate);
     });
   }
@@ -304,14 +315,65 @@ function real() {
       r.acqStretches = notes.length ? 1 : 0;
       runs.push(r);
       const h = r.acc[H_ACQ];
-      console.log(`${fixture.slice(0, 14).padEnd(14)} ${(idx.aliases[tuneId] || ['?'])[0].slice(0, 26).padEnd(26)} ${setting.dance.padEnd(9)} ${String(Math.round(end - start)).padStart(4)} s bpm ${off.bpm}  on ${f1(100 * h.on / h.steady)} %  shown ${f1(100 * h.shown / h.steady)} %  err med ${f0(1000 * pct(h.errs, 0.5))} ms  acq [${r.acqs.map(f1).join(' ')}] s`);
+      console.log(`${fixture.slice(0, 14).padEnd(14)} ${(idx.aliases[tuneId] || ['?'])[0].slice(0, 26).padEnd(26)} ${setting.dance.padEnd(9)} ${String(Math.round(end - start)).padStart(4)} s bpm ${off.bpm}  on ${f1(100 * h.on / h.steady)} %  shown ${f1(100 * h.shown / h.steady)} %  elsewhere ${f1(100 * h.far / h.steady)} %  err med ${f0(1000 * pct(h.errs, 0.5))} ms  acq [${r.acqs.map(f1).join(' ')}] s`);
     }
   }
   summarise('real sessions', runs);
+}
+
+// ── Takes downloaded from the app ────────────────────────────────────────────
+// The Play-along's « download the take » (developer mode): the features and
+// levels the app's worker computed, the score it followed. The truth, as for
+// the real sessions, is the offline alignment of that score over the take.
+// TRACE=1 prints the cursor drawn at H = 150 ms every quarter of a second,
+// next to that truth and the note heard.
+function takes() {
+  const files = process.argv.slice(3);
+  const runs = [];
+  const f32 = (b64) => { const b = Buffer.from(b64, 'base64'); return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); };
+  for (const file of files) {
+    const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (j.kind !== 'cadence-play-along') { console.log(file, ': not a take'); continue; }
+    const feats = f32(j.features), levels = process.env.NOLEVEL ? null : f32(j.levels);
+    const score = j.score;
+    const off = align(feats, score, { transposes: [0], otherPenalty: 1.2 });
+    const notes = off.onsets.map((o) => ({ t: o.frame / FPS, index: o.index }));
+    const truth = truthOf(notes, off.end / FPS);
+    const r = runCase(feats, levels, score, truth);
+    r.acqStretches = notes.length ? 1 : 0;
+    runs.push(r);
+    const h = r.acc[H_ACQ];
+    console.log(`${path.basename(file)}  ${(feats.length / 48 / FPS).toFixed(0)} s  N=${score.length}  offline bpm ${off.bpm}  on ${f1(100 * h.on / h.steady)} %  shown ${f1(100 * h.shown / h.steady)} %  elsewhere ${f1(100 * h.far / h.steady)} %  err med ${f0(1000 * pct(h.errs, 0.5))} ms  jumps back ${h.backs}  all jumps ${h.jumps}  acq [${r.acqs.map(f1).join(' ')}] s`);
+    if (process.env.TRACE) traceTake(feats, levels, score, truth);
+  }
+  if (runs.length > 1) summarise('takes', runs);
+}
+
+function traceTake(feats, levels, score, truth) {
+  const N = score.length;
+  const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const name = (m) => NAMES[((m % 12) + 12) % 12];
+  const lf = new LiveFollower(score, followOpts);
+  const cur = new LiveCursor(N, cursorOpts);
+  const every = Math.round(FPS / 4);
+  for (let fr = 0; fr < feats.length / 48; fr++) {
+    const fe = feats.subarray(fr * 48, fr * 48 + 48);
+    const e = lf.push(fe, levels?.[fr]);
+    cur.update(e);
+    const now = (fr + 1) / FPS + 0.15;
+    const p = cur.position(now);
+    if (fr % every) continue;
+    let top = 0;
+    for (let i = 1; i < 48; i++) if (fe[i] > fe[top]) top = i;
+    const tr = truth(now);
+    const show = (q) => (q === null ? '    –    ' : `${q.toFixed(1).padStart(5)} ${name(score[Math.floor(q) % N]).padEnd(2)}`);
+    console.log(`  ${now.toFixed(2).padStart(6)} s  heard ${name(MIDI_LOW + top).padEnd(2)}  ${e.state.padEnd(6)} cursor ${show(p)}  truth ${show(tr ? tr.q : null)}`);
+  }
 }
 
 const mode = process.argv[2] || 'synth';
 console.log(`follower ${JSON.stringify(followOpts)}  cursor ${JSON.stringify(cursorOpts)}`);
 if (mode === 'synth') synth();
 else if (mode === 'real') real();
-else console.log('usage: live.mjs synth [session|solo|practice] | real [session-substring] [maxTunes]');
+else if (mode === 'take') takes();
+else console.log('usage: live.mjs synth [session|solo|practice] | real [session-substring] [maxTunes] | take file.json…');

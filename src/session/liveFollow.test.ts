@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LiveFollower, LiveCursor, type LiveEstimate } from './liveFollow';
+import { LiveFollower, LiveCursor, type LiveEstimate, type LiveFollowOptions } from './liveFollow';
 import { contourToMidi, FOLLOW_FPS } from './scoreFollow';
 
 const tune = contourToMidi('ooqxxvxxqxxxvxAxvtsovoxovosovoAvsoqxxvxxqxxxvxACEFHECzAxvsoqsoqq');
@@ -8,7 +8,7 @@ const N = tune.length;
 /** A played sequence: quaver indices, a null being a quaver's worth of
  *  silence. Each quaver lights its pitch (plus some spread) over a little
  *  noise, as scoreFollow.test.ts's performances do. */
-function perform(played: Array<number | null>, { quaverS = 0.14, lead = 2, drift = 0.08 } = {}) {
+function perform(played: Array<number | null>, { quaverS = 0.14, lead = 2, drift = 0.08 } = {}, sounds: Array<number | null> = played) {
   const notes: Array<{ t: number; index: number | null }> = [];
   let t = lead;
   played.forEach((index, n) => {
@@ -25,7 +25,7 @@ function perform(played: Array<number | null>, { quaverS = 0.14, lead = 2, drift
     if (nt.index === null) return;
     const a = Math.floor(nt.t * FOLLOW_FPS);
     const b = Math.floor((k + 1 < notes.length ? notes[k + 1]!.t : end) * FOLLOW_FPS);
-    const p = tune[nt.index]! - 48;
+    const p = tune[sounds[k] ?? nt.index]! - 48;
     for (let fr = a; fr < b; fr++) {
       f[fr * 48 + p] = 1;
       if (p + 1 < 48) f[fr * 48 + p + 1] = 0.2;
@@ -49,8 +49,8 @@ const gap = (q: number, n: number) => {
   return Math.min(d, N - d);
 };
 
-function run(f: Float32Array, frames: number): LiveEstimate[] {
-  const lf = new LiveFollower(tune);
+function run(f: Float32Array, frames: number, options: Partial<LiveFollowOptions> = {}): LiveEstimate[] {
+  const lf = new LiveFollower(tune, options);
   const out: LiveEstimate[] = [];
   for (let fr = 0; fr < frames; fr++) out.push(lf.push(f.subarray(fr * 48, (fr + 1) * 48)));
   return out;
@@ -106,6 +106,25 @@ describe('live score following', () => {
     expect(after.length).toBeGreaterThan(200);
     const right = after.filter(e => gap(e.quaver!, truth(e.at)!) < 0.6).length;
     expect(right / after.length).toBeGreaterThan(0.95);
+  });
+
+  it('goes on through a bar played otherwise rather than jumping', () => {
+    // The first take from the app (2026-11-01): a bar varied, the cursor
+    // jumped to where those notes are written. Here bar 3 of the second pass
+    // sounds, note for note, as bar 7 is written — the hardest variation:
+    // a whole bar of evidence for elsewhere. The place stays bar 3, then
+    // bar 4, all but a tenth of a second or so.
+    const played = passes(2);
+    const sounds = played.map((q, k) => (k >= N + 16 && k < N + 24 ? q + 32 : q));
+    const { f, frames, truth } = perform(played, {}, sounds);
+    const from = 2 + (N + 16) * 0.14, to = from + 3;
+    const off = (opts: Partial<LiveFollowOptions>) => run(f, frames, opts)
+      .filter(e => e.at > from && e.at < to && e.quaver !== null && truth(e.at) !== null)
+      .filter(e => gap(e.quaver!, truth(e.at)!) > 2).length;
+    expect(off({})).toBeLessThan(8);
+    // Where it used to jump, for most of a second: leaving the tune and
+    // coming back in cost 19, and nothing kept the part being played.
+    expect(off({ exitPenalty: 4, wrongPenalty: Infinity, quietPenalty: 0, jumpMargin: 0, jumpFrames: 0 })).toBeGreaterThan(30);
   });
 });
 

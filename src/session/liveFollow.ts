@@ -38,6 +38,24 @@ export interface LiveFollowOptions {
    *  noise floor (scoreFollow.ts). */
   otherPenalty: number;
   noiseFloor: number;
+  /** What the octave above or below the score's pitch is worth. */
+  octaveWeight: number;
+  /** A frame on the score is worth at least its best pitch minus this: a
+   *  wrong note costs that much, and no more — going on with it must stay
+   *  cheaper than leaving the tune and coming back in elsewhere. */
+  wrongPenalty: number;
+  /** What a quiet frame costs inside the tune, beyond saying nothing: a
+   *  breath is a few of them, a stop many — enough to pay `exitPenalty`. */
+  quietPenalty: number;
+  /** A frame whose loudest pitch holds less than this share of its energy
+   *  has no pitch: it says nothing, as a quiet one. */
+  pitchShare: number;
+  /** How much better a path elsewhere in the score must be than the best one
+   *  going on from where the follower is, and for how many frames, before
+   *  the position moves there: parts repeat, and the one being played is
+   *  kept until the music has said otherwise. */
+  jumpMargin: number;
+  jumpFrames: number;
   /** Crotchets per minute of the tempi followed side by side. */
   bpms: number[];
   /** What coming into the tune from outside costs, and leaving it. */
@@ -64,6 +82,39 @@ export const LIVE_FOLLOW_DEFAULTS: LiveFollowOptions = {
   durWeight: 2,
   otherPenalty: 1.2,
   noiseFloor: Math.log(0.01 + 2 / MIDI_NUM),
+  octaveWeight: 0.6,
+  // The first take from the app (2026-11-01, the user, Man of Aran played
+  // once through at 215): the cursor « jumps all over ». Wherever the player
+  // left the version on screen — a variation of a bar — the path left the
+  // tune (4) and came back in elsewhere (15): 19 for a jump, when ONE wrong
+  // quaver cost 20 to 30. The user's rule: going on with a wrong note must
+  // cost less than jumping, and a jump wait for enough evidence. So a wrong
+  // frame costs 2.5 at most; leaving the tune while playing 40 — a stop pays
+  // it in silence, each quiet frame costing 2 inside the tune (a breath is a
+  // few) — and coming back in after a stop stays at 15: a restart elsewhere
+  // after a pause is as quick as before. On that take: the cursor elsewhere
+  // in the tune 6 % of the time instead of 30, no jump instead of 8. Real
+  // pubs (Anglade, 12 tunes): 79 % on the right note instead of 73, p90 error
+  // 178 ms instead of 2.3 s, 16 jumps back instead of 85. Practice: the same
+  // notes right, the same acquisition, 8 jumps back instead of 12 (the
+  // replays). The price: on a long and very repetitive tune (The Clumsy
+  // Lover, 511 quavers) a wrong first guess takes longer to correct (3.3 s
+  // to acquire instead of 1.2), and a cursor lingers about a second on a
+  // tune that stops under an accompaniment that goes on.
+  wrongPenalty: 2.5,
+  quietPenalty: 2,
+  // Since leaving costs 40, a stop under loud noise (a fifth of the music's
+  // energy over every pitch) was never left: half a second at 0.1. A note
+  // played holds a fifth of the frame at the least (the take); nothing
+  // measured moved, synthetic or real.
+  pitchShare: 0.1,
+  // And the part being played is kept (the user, same day): parts repeat. A
+  // path elsewhere must be better by 15 for 10 frames — below what leaving
+  // and coming back in costs (55), or the path that does so, which is always
+  // near, would hold the follower for good. On the take: 6 % elsewhere
+  // instead of 13, no jump instead of 4.
+  jumpMargin: 15,
+  jumpFrames: 10,
   bpms: [60, 80, 100, 120, 140, 160, 180, 200, 220, 240],
   // Measured with live.mjs (2026-10-31). On the synthetic solo and practice
   // runs, 6 over 4 kept the same quavers right and the same acquisition with
@@ -75,14 +126,18 @@ export const LIVE_FOLLOW_DEFAULTS: LiveFollowOptions = {
   // instead of 864 (Anglade, 20 tunes), 45 % and 227 instead of 37 % and
   // 1996 (the pub afternoon).
   enterPenalty: 15,
-  exitPenalty: 4,
+  // 40, not 4: see wrongPenalty above.
+  exitPenalty: 40,
   switchPenalty: 2,
   lagFrames: 3,
   // 15 over 5: a little fewer cursors outside the tune, no later acquisition.
   showFrames: 15,
   // 20 over 33: a cursor left on a stopped tune 12 % of the time outside it
   // instead of 17 (solo), 21 instead of 29 (practice); nothing else moved.
-  hideFrames: 20,
+  // 10 since leaving costs 40 (2026-11-01): the stop is already a little
+  // later to win; practice back to 20 % outside the tune with the cursor
+  // shown, 26 % at 20.
+  hideFrames: 10,
   loudSeconds: 15,
   rateSeconds: 3,
   fps: 48000 / 1024,
@@ -159,6 +214,16 @@ export class LiveFollower {
   private T = 0;
   private state: LiveState = 'search';
   private run = 0;
+  /** The best quaver under way at this boundary, per quaver: its value, its
+   *  tempo, its length so far and how it was come to. */
+  private readonly inV: Float64Array;
+  private readonly inHs: Int8Array;
+  private readonly inKs: Int16Array;
+  private readonly inSs: Int8Array;
+  /** The quaver under way the position was read from, -1 for none; frames
+   *  the music has been better elsewhere (jumpMargin). */
+  private curI = -1;
+  private away = 0;
 
   /** `score`: MIDI pitches, one per quaver of a pass (scoreFollow.ts). */
   constructor(score: number[], options: Partial<LiveFollowOptions> = {}) {
@@ -199,6 +264,10 @@ export class LiveFollower {
     this.M = new Float64Array(this.ringB * N).fill(-Infinity);
     this.mArg = new Int8Array(this.ringB * N);
     this.top = new Int8Array(this.ringF).fill(-1);
+    this.inV = new Float64Array(N);
+    this.inHs = new Int8Array(N);
+    this.inKs = new Int16Array(N);
+    this.inSs = new Int8Array(N);
     const loudFrames = Math.max(1, Math.ceil(opt.loudSeconds * opt.fps));
     this.energy = new Float32Array(loudFrames);
     this.sorted = new Float32Array(loudFrames);
@@ -239,7 +308,10 @@ export class LiveFollower {
       s.sort();
       this.loud = s[Math.floor(n * 0.9)] || 1;
     }
-    const quiet = sum <= 0 || loudness < this.loud * quietBelow;
+    // Nor does a frame with no pitch to speak of — noise, however loud: its
+    // energy spread over every pitch, the score's own scores barely worse
+    // than anything, and the tune it once was would never be left.
+    const quiet = sum <= 0 || loudness < this.loud * quietBelow || topV < opt.pitchShare * sum;
     // A quiet frame has no pitch to match either.
     this.top[f % ringF] = quiet || topP < 0 ? -1 : (topP + MIDI_LOW) % 12;
 
@@ -247,16 +319,18 @@ export class LiveFollower {
     const flat = Math.log(0.01 + 1 / MIDI_NUM);
     let topL = flat;
     if (quiet) {
-      L.fill(flat);
+      L.fill(flat - opt.quietPenalty);
     } else {
       topL = -Infinity;
       for (let p = 0; p < MIDI_NUM; p++) {
         const below = p >= 12 ? frame[p - 12]! : 0;
         const above = p + 12 < MIDI_NUM ? frame[p + 12]! : 0;
-        const v = Math.log(0.01 + (frame[p]! + 0.6 * Math.max(below, above)) / sum);
+        const v = Math.log(0.01 + (frame[p]! + opt.octaveWeight * Math.max(below, above)) / sum);
         L[p] = v;
         if (v > topL) topL = v;
       }
+      const floor = topL - opt.wrongPenalty;
+      for (let p = 0; p < MIDI_NUM; p++) if (L[p]! < floor) L[p] = floor;
     }
     const cPrev = (f % ringB) * MIDI_NUM, cNow = (T1 % ringB) * MIDI_NUM;
     for (let p = 0; p < MIDI_NUM; p++) C[cNow + p] = C[cPrev + p]! + L[p]!;
@@ -274,7 +348,8 @@ export class LiveFollower {
     const H = this.tempi.length;
     const mNow = (T1 % ringB) * N;
     M.fill(-Infinity, mNow, mNow + N);
-    let inBest = -Infinity, inH = -1, inI = -1, inK = 0, inSrc = H;
+    const { inV, inHs, inKs, inSs } = this;
+    inV.fill(-Infinity);
     for (let h = 0; h < H; h++) {
       const tp = this.tempi[h]!;
       const { best, pen, d, dMin } = tp;
@@ -303,7 +378,7 @@ export class LiveFollower {
           }
           // Under way, a quaver costs nothing until it outlasts its tempo's.
           const u = k <= d ? v : v + pen[k]!;
-          if (u > inBest) { inBest = u; inH = h; inI = i; inK = k; inSrc = src; }
+          if (u > inV[i]!) { inV[i] = u; inHs[i] = h; inKs[i] = k; inSs[i] = src; }
         }
         best[bNow + i] = b;
         tp.fromK[fNow + i] = bk;
@@ -317,18 +392,42 @@ export class LiveFollower {
     }
     this.T = T1;
 
-    const inTune = inH >= 0 && inBest > oNow;
+    let inI = -1;
+    for (let i = 0; i < N; i++) if (inI < 0 ? inV[i]! > -Infinity : inV[i]! > inV[inI]!) inI = i;
+    const inBest = inI >= 0 ? inV[inI]! : -Infinity;
+    const inTune = inI >= 0 && inBest > oNow;
     const following = this.state === 'follow';
     if (inTune === following) this.run = 0;
     else if (++this.run >= (inTune ? opt.showFrames : opt.hideFrames)) {
       this.state = inTune ? 'follow' : 'lost';
       this.run = 0;
     }
+    if (this.state !== 'follow') { this.curI = -1; this.away = 0; }
     const lagAt = (T1 - opt.lagFrames) / opt.fps;
     if (!inTune || this.state !== 'follow') {
       return { state: this.state, quaver: null, at: lagAt, rate: 0, bpm: 0, match: null };
     }
-    return { state: this.state, ...this.trace(inH, inI, inK, inSrc, T1), bpm: this.tempi[inH]!.bpm };
+    // Where the follower is, kept unless the music says otherwise: the best
+    // quaver under way around the one it was in — a little behind, a few
+    // ahead — against the best anywhere.
+    let at = inI;
+    if (this.curI >= 0) {
+      let near = -1;
+      for (let d = -2; d <= 4; d++) {
+        const i = ((this.curI + d) % N + N) % N;
+        if (inV[i]! > -Infinity && (near < 0 || inV[i]! > inV[near]!)) near = i;
+      }
+      if (near >= 0 && near !== inI) {
+        if (inBest - inV[near]! <= opt.jumpMargin) this.away = 0;
+        else this.away++;
+        if (this.away <= opt.jumpFrames) at = near;
+        else this.away = 0;
+      } else {
+        this.away = 0;
+      }
+    }
+    this.curI = at;
+    return { state: this.state, ...this.trace(inHs[at]!, at, inKs[at]!, inSs[at]!, T1), bpm: this.tempi[inHs[at]!]!.bpm };
   }
 
   /** The best path back from the quaver under way: the position `lagFrames`
