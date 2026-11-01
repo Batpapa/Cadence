@@ -2194,6 +2194,7 @@
   "sessions.pitchShift.semitones.higher": "{n} semitones above the written tune",
   "sessions.inProgress": "playing…",
   "sessions.gap": "{d} with nothing detected",
+  "sessions.overlap": "{d} overlap",
   "sessions.consolidating": "consolidating",
   "sessions.alternates.title": "Explore alternatives",
   "sessions.alternates.trigger": "Explore alternative matches",

@@ -748,9 +748,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const view = analysisView.value;
   const details = showsDetails(view);
   const editing = showsEditing(view);
-  /** The holes under a silence row's length — the editor view's, in
-   *  developer mode (2026-10-31, the user: every hole shown there). */
-  const shortGaps = devMode.value && editing ? shortGapsOf(session.annotations, session.duration) : null;
+  /** The holes under a silence row's length, and the overlaps — the editor
+   *  view's (2026-10-31, the user: every hole shown there). */
+  const shortGaps = editing ? shortGapsOf(session.annotations, session.duration) : null;
   const study = analysisStudy.value;
   const focusOn = showsFocus(view);
 
@@ -1016,7 +1016,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  carries the set mark of that join, instead of the card's seam. */
   const hasShortGap = (id: string) => !!shortGaps?.has(id);
 
-  /** Developer mode: a hole too short for a silence row, drawn above the
+  /** A hole too short for a silence row, or an overlap, drawn above the
    *  tune after it, in a set or not — it breaks nothing. Read, not worked on
    *  (2026-11-01, the user): no giving it away, and nothing to add in a few
    *  seconds — a detection is offered from GAP_MIN_S up, on silence rows.
@@ -1028,7 +1028,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     return (
       <div class="flex items-center gap-3 py-0.5 text-[11px] text-dim">
         <span class="h-px flex-1 bg-border" />
-        <span class="shrink-0 px-1 tabular-nums">{t('sessions.gap', { d: fmtLongTime(hole.len) })}</span>
+        <span class="shrink-0 px-1 tabular-nums">
+          {hole.len > 0 ? t('sessions.gap', { d: fmtLongTime(hole.len) }) : t('sessions.overlap', { d: fmtLongTime(-hole.len) })}
+        </span>
         <span class="h-px flex-1 bg-border" />
         {setsOn && (
           <span class="mr-3 flex">

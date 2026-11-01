@@ -99,9 +99,12 @@ describe('the silences shown in the list', () => {
 });
 
 describe('the holes too short for a silence row', () => {
-  it('lists them by the tune after, and nothing where tunes touch or overlap', () => {
+  it('lists holes and overlaps by the tune after, nothing where tunes touch', () => {
     const gaps = shortGapsOf([ann('a', 0, 60), ann('b', 65, 120), ann('c', 120, 200), ann('d', 190, 300), ann('e', 400, 500)], 500);
-    expect([...gaps.values()]).toEqual([{ prevId: 'a', nextId: 'b', from: 60, len: 5 }]);
+    expect([...gaps.values()]).toEqual([
+      { prevId: 'a', nextId: 'b', from: 60, len: 5 },
+      { prevId: 'c', nextId: 'd', from: 200, len: -10 },
+    ]);
   });
 
   it('measures from the tune reaching furthest, as the silence rows do', () => {

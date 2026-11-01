@@ -5,9 +5,6 @@ import { signal } from '@preact/signals';
 // recognition's windows under an analysis — it used to be shown to everyone
 // after an import, and a first-time user from TheSession (2026-10-23) clicked
 // it looking for the list of tunes, and got a JSON file they could not read.
-// And, in an analysis's editor view, the holes too short for a silence row
-// (2026-11-01) — the bounds put on the tunes' passes that came with them
-// went out to everyone the same day.
 //
 // Switched on and off by seven taps on the version line of "About Cadence" —
 // the Android convention for its own developer options, and a gesture nobody
