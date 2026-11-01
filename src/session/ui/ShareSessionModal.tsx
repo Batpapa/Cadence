@@ -11,7 +11,7 @@ import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { copyText, formatBytes } from '../../utils';
 import type { Analysis, Detection } from '../model';
 import { tuneName, useTuneNames } from './sessionUiShared';
-import { experimentalSets } from '../detections';
+import { setDetectionOn } from '../detections';
 import { getContext } from '../../store';
 
 // ── Share a session (annotations + optionally the audio) via a short key —
@@ -105,8 +105,8 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   // detections ran first (a share from the analysis browser does not).
   useTuneNames();
   const nameOf = (d: Detection) => tuneName(d).text;
-  // A blank line between sets, with the experimental sets on (2026-10-19).
-  const setBreaks = experimentalSets(getContext().user);
+  // A blank line between sets, with set detection on (2026-10-19).
+  const setBreaks = setDetectionOn(getContext().user);
 
   // The header belongs to the shell, not to this body, so the two levels are
   // kept in step from here — same title-plus-back-arrow the card export modal

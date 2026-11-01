@@ -193,7 +193,7 @@ describe('tune names', () => {
   });
 });
 
-describe('set breaks (experimental sets, 2026-10-19)', () => {
+describe('set breaks (set detection, 2026-10-19)', () => {
   // Two sets: a 5 s hole is one hop of blur inside a set, 30 s is a silence.
   const dets = () => [
     det({ id: 'a', displayName: 'A', start: 0, end: 100 }),

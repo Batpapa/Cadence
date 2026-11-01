@@ -21,7 +21,7 @@ import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesC
 import { showExportDetectionsModal } from './ExportDetectionsModal';
 import type { DetectedTuneLine } from '../../services/analysisExport';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey } from '../../services/cardTypeService';
-import { experimentalSets } from '../detections';
+import { setDetectionOn } from '../detections';
 import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
 import { recordOf, setCardFor, cardsByTuneId, chainSpan } from '../tunesets';
@@ -29,9 +29,9 @@ import { buildTunesetCard } from '../../services/tunesetCard';
 import { TunesetDeckButton, attachSetClip, isSetClipAttached } from './tunesetShared';
 import { SetHearingRow } from './DetectedIn';
 import { generateId } from '../../utils';
-import type { Card } from '../../types';
+import type { AppState, Card } from '../../types';
 import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../../components/filterChips';
-import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf } from '../sessionTree';
+import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf, type SessionTree } from '../sessionTree';
 import { mutateWithRule } from '../../services/attachmentStore';
 import { hasLibrary } from '../../services/pageMode';
 
@@ -96,7 +96,7 @@ export interface TuneViewState {
   tagsOr: boolean;
   /** Tunes, sets, or both (2026-10-19) — the card library's "Types" section,
    *  with the same keys and in the same place (second): a set heard is what a
-   *  set card is made from. Only with the experimental sets on. */
+   *  set card is made from. Only with set detection on. */
   kinds: FilterMap;
 }
 
@@ -107,17 +107,39 @@ export const OTHER_NO_CARD = 'noCard';
 const KIND_TUNE = CARD_TYPE_TUNE;
 const KIND_SET = CARD_TYPE_TUNESET;
 
-export function TuneRankingPanel({ sessions, query, view, onView }: {
+/** A chip naming an analysis or a folder deleted since is ignored rather than
+ *  left filtering the list from nowhere (see knownChips). */
+function knownAnalysisChips(chips: FilterMap, sessionIds: ReadonlySet<string>, tree: SessionTree) {
+  return knownChips(chips, key => {
+    const folderId = folderIdOfChip(key);
+    return folderId === null ? sessionIds.has(key) : !!tree.folders[folderId];
+  });
+}
+
+/** The filters the funnel beside the analyser's search box counts, opens on
+ *  and clears (useFiltersPanel): what the list below applies. The analyses
+ *  chips still naming something, the tags, the "other" chips — and the kinds
+ *  even with the sets off, because `kindOk` applies them all the same, and the
+ *  funnel's clear is then the one way out. Here, beside the list, so that the
+ *  rule for a dead analysis chip is written once. */
+export function tuneFilterCount(view: TuneViewState, sessions: readonly Analysis[], user: AppState): number {
+  const known = knownAnalysisChips(view.analyses, new Set(sessions.map(s => s.id)), sessionTreeOf(user));
+  return known.size + view.tags.size + view.others.size + view.kinds.size;
+}
+
+export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }: {
   sessions: Analysis[];
   query: string;
   view: TuneViewState;
   onView: (patch: Partial<TuneViewState>) => void;
+  /** The funnel beside the search box, which the screen above holds. */
+  filtersShown: boolean;
 }) {
   const ctx = getContext();
   const { sort: sortMode, sortAsc, analyses: pinnedAnalyses, analysesOr, others, othersOr, tags, tagsOr, kinds } = view;
-  /** The experimental sets (an option of the module, off by default): off,
-   *  this panel lists tunes only, exactly as before. */
-  const setsOn = experimentalSets(ctx.user);
+  /** Set detection (an option of the module, on by default): off, this panel
+   *  lists tunes only, exactly as before sets existed. */
+  const setsOn = setDetectionOn(ctx.user);
 
   // ── The analyses section: the evenings, and the folders they are filed in ──
   // One section, not two: a folder chip is a group of evening chips, and only
@@ -131,12 +153,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
     s.id,
     folderChain(tree, parentFolderOf(tree, { type: 'session', id: s.id })).map(f => folderChipKey(f.id)),
   ]));
-  /** A chip naming an analysis or a folder deleted since is ignored rather than
-   *  left filtering the list from nowhere (see knownChips). */
-  const activeAnalyses = knownChips(pinnedAnalyses, key => {
-    const folderId = folderIdOfChip(key);
-    return folderId === null ? sessionIds.has(key) : !!tree.folders[folderId];
-  });
+  const activeAnalyses = knownAnalysisChips(pinnedAnalyses, sessionIds, tree);
   // Every folder holding an analysis, at any depth, plus any folder pinned — a
   // pinned chip always shows. By path, so a sub-folder follows its parent.
   const offeredFolders = new Set<string>();
@@ -594,7 +611,8 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
     <div>
       {player.audio}
 
-      <div class="mt-3 space-y-1">
+      {filtersShown && (
+      <div class="space-y-1">
         <FilterSection
           labelKey="sessions.ranking.filterAnalyses"
           items={sessions.map(s => s.id)}
@@ -659,6 +677,7 @@ export function TuneRankingPanel({ sessions, query, view, onView }: {
           onToggleOr={() => onView({ othersOr: !othersOr })}
         />
       </div>
+      )}
 
       {/* ── Selection toolbar — the card library's, with this list's actions ── */}
       <div class="flex items-center justify-between h-9 mt-1">

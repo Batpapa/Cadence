@@ -1044,6 +1044,37 @@ export function EyeOffIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** A cross — "empty this field", inside a search box. */
+export function CrossIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 6 6 18"/>
+      <path d="m6 6 12 12"/>
+    </svg>
+  );
+}
+
+/** A funnel — the filter sections of a list, shown or hidden. */
+export function FilterIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 4h18l-7 8.5V19l-4 2v-8.5Z"/>
+    </svg>
+  );
+}
+
+/** The funnel with a cross beside it — "clear the filters", what the funnel's
+ *  button does while one is active. */
+export function FilterClearIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 4h14l-5.5 6.7V18l-3 1.5v-8.8Z"/>
+      <path d="m16 13 6 6"/>
+      <path d="m22 13-6 6"/>
+    </svg>
+  );
+}
+
 /** Floppy disk — "save". Closes the notes editor, which is what saves them. */
 export function SaveIcon({ size = 14 }: { size?: number }) {
   return (

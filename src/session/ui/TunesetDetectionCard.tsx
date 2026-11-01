@@ -7,7 +7,7 @@ import { getContext } from '../../store';
 import { hasRecognisedSetting, type Detection, type TunesetRecord } from '../model';
 import { setCardFor, chainSpan, isSettled } from '../tunesets';
 import { hasLibrary } from '../../services/pageMode';
-import { experimentalSets } from '../detections';
+import { setDetectionOn } from '../detections';
 import { HeardSetAbc } from './abcPreview';
 import { PlayDisc, playDiscTitle } from './PassRow';
 import { ReviewLogControl, ratingOf } from './DetectionCard';
@@ -61,7 +61,7 @@ export function feedItems(anns: Detection[]): { duration: number; items: FeedIte
   const duration = anns.reduce((m, a) => Math.max(m, a.end ?? a.start), 0);
   // With the sets turned off in the module's settings, the feed is the flat
   // list it always was.
-  if (!experimentalSets(getContext().user)) return { duration, items: anns.map((ann, i) => ({ kind: 'ann', ann, i, cut: false })) };
+  if (!setDetectionOn(getContext().user)) return { duration, items: anns.map((ann, i) => ({ kind: 'ann', ann, i, cut: false })) };
   return { duration, items: withChains(anns, duration).filter(x => x.kind !== 'gap' || !!x.nextId) };
 }
 

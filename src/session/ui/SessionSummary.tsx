@@ -38,7 +38,7 @@ import { devMode } from '../../services/devMode';
 import { appState } from '../../store';
 import { headPosition, withChains, withGaps, chainsOf, shortGapsOf, type ListAnn, type ListChain, type ListGap, type ShortGap } from './timelineModel';
 import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
-import { experimentalSets } from '../detections';
+import { setDetectionOn } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
 import { generateId } from '../../utils';
 import { getContext } from '../../store';
@@ -266,7 +266,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // line here, written back only when it actually changed.
   // Behind an option while it is iterated on with the testers (2026-10-19):
   // off, nothing here runs and the table is never written.
-  const setsOn = experimentalSets(appState.value);
+  const setsOn = setDetectionOn(appState.value);
   const tablePendingRef = useRef(false);
   const reconciled = setsOn ? tunesetsOf(session, generateId) : session.tunesets ?? [];
   if (setsOn && !sameTunesets(session.tunesets, reconciled)) {

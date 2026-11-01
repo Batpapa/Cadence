@@ -28,7 +28,7 @@ import {
 import { importSharedSession, importSessionFile } from '../../services/sessionShareService';
 import { isDriveConnected } from '../../services/driveService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } from '../model';
-import { detectionsOnCards, experimentalSets, pitchShiftSetting } from '../detections';
+import { detectionsOnCards, setDetectionOn, pitchShiftSetting } from '../detections';
 import { appState, mutate, getContext } from '../../store';
 import { listLiveBackups, restoreLiveBackup, discardLiveBackup, type LiveBackupEntry } from '../liveBackup';
 import { showRecoveryFailures } from './RecoveryFailureModal';
@@ -1199,12 +1199,11 @@ function SessionSettingsBody() {
         }}
       />
 
-      {/* On by default since 2026-10-23, no longer experimental. Written only
-          to turn it OFF: absence is the default. */}
+      {/* On by default. Written only to turn it OFF: absence is the default. */}
       <SettingRow
-        checked={experimentalSets(appState.value)}
-        label={t('sessions.experimentalSets')}
-        hint={t('sessions.experimentalSets.hint')}
+        checked={setDetectionOn(appState.value)}
+        label={t('sessions.setDetection')}
+        hint={t('sessions.setDetection.hint')}
         onToggle={(next) => {
           void mutate(s => {
             const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };

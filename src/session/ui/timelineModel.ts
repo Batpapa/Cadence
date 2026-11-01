@@ -11,7 +11,7 @@ import type { Detection } from '../model';
  *  sessions (2026-09-05): every genuine pause was 15 s or more, every artefact
  *  was exactly one or two hops.
  *
- *  With the experimental sets on (2026-10-19) it is also, by construction, the
+ *  With set detection on (2026-10-19) it is also, by construction, the
  *  ONE rule that makes a set — the user's decision: detections with no hole of
  *  this size between them were played without stopping, and form one chain
  *  (see withChains). A silence row in the list and a break between two sets

@@ -288,7 +288,7 @@ export class DetectionTracker {
   // give a set its heart and its review before the analysis exists — the table
   // is handed to the analysis when it is saved (finalSets), under the same ids,
   // and a review given now still finds its set in the summary. Only ever asked
-  // for with the experimental sets on: never asked, nothing is saved.
+  // for with set detection on: never asked, nothing is saved.
   private sets: TunesetRecord[] = [];
   private setsAsked = false;
 
