@@ -7,7 +7,8 @@ import { beatOf, type Beat } from '../liveFollow';
 import { capturing } from '../../services/audioSession';
 import { devMode } from '../../services/devMode';
 import { qualityColour } from '../../components/followColour';
-import { CrossIcon, MinusIcon, PlusIcon } from '../../components/icons';
+import { CrossIcon, MinusIcon, PlusIcon, ExpandIcon, CollapseIcon } from '../../components/icons';
+import { registerOverlay } from '../../components/overlayStack';
 import type { PlayAlongView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
 import { downloadBlob } from '../../utils';
@@ -42,6 +43,8 @@ const SMOOTH_MATCH_S = 4;
 const BPM_HYSTERESIS = 1.5;
 
 interface Smoothed { rate: number | null; match: number | null; at: number }
+/** The score's floor on its full page, as the audio sync's. */
+const MIN_SCORE_PX = 128;
 /** The pane's gap above the offer (gap-3). */
 const OFFER_GAP_REM = 0.75;
 /** One press of − or + on the latency. */
@@ -213,6 +216,71 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
    *  minute: rounding alone made it hop between two neighbours. */
   const shownBpm = useRef<number | null>(null);
 
+  // ── The score's own full page (2026-11-01, the user) ──
+  // As the viewer and the audio sync have one (ScoreFollowView.tsx): the
+  // score, the offer and the bar over everything. The view's container (the
+  // viewer's host) is moved into an overlay and back, never the view itself:
+  // the microphone and the follow go on as they were. Escape and the back
+  // gesture leave it (overlayStack).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(false);
+  const pageRef = useRef<{ overlay: HTMLElement; anchor: Comment; host: HTMLElement; unregister: () => void } | null>(null);
+  const leavePage = (rerender = true) => {
+    const p = pageRef.current;
+    if (!p) return;
+    pageRef.current = null;
+    p.unregister();
+    p.anchor.replaceWith(p.host);
+    p.overlay.remove();
+    if (rerender) setPage(false);
+  };
+  const enterPage = () => {
+    const host = rootRef.current?.parentElement;
+    if (!host || pageRef.current) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-[100] flex flex-col overflow-hidden safe-area-pad';
+    overlay.style.background = 'var(--color-elevated)';
+    const anchor = document.createComment('play-along');
+    host.replaceWith(anchor);
+    overlay.appendChild(host);
+    document.body.appendChild(overlay);
+    pageRef.current = { overlay, anchor, host, unregister: registerOverlay(() => leavePage()) };
+    setPage(true);
+  };
+  // The view can go while on its full page — the dialog closed from
+  // elsewhere — and an overlay nothing points at would stay on screen.
+  useEffect(() => () => leavePage(false), []);
+
+  // Full page, the score takes what the overlay leaves: its box as it is,
+  // plus the room to spare (or minus what overflows). Measured at the next
+  // frame, not in the observer: the height set resizes what is observed
+  // (ScoreFollowView's, 2026-10-29).
+  const [fit, setFit] = useState<number | null>(null);
+  const shownFace = face.value;
+  useEffect(() => {
+    setFit(null);
+    const root = rootRef.current;
+    const body = page ? pageRef.current?.overlay ?? null : null;
+    if (!root || !body) return;
+    const measure = () => {
+      const box = root.querySelector<HTMLElement>(shownFace === 'text' ? '.score-follow-text' : '.score-follow-paper');
+      if (!box) return;
+      const cs = getComputedStyle(body);
+      const space = body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      const used = Array.from(body.children).reduce((sum, c) => sum + (c as HTMLElement).offsetHeight, 0);
+      const next = Math.max(MIN_SCORE_PX, box.clientHeight + space - used);
+      setFit(prev => (prev !== null && Math.abs(prev - next) < 2 ? prev : next));
+    };
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measure);
+    });
+    ro.observe(body);
+    ro.observe(root);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+  }, [page, shownFace, score]);
+
   const nudge = (by: number) => {
     const next = offset + by;
     setPlayAlongOffset(next);
@@ -247,16 +315,36 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   // above it. No loop: that height follows the width alone, and the score
   // gives up exactly what the offer takes.
   const room = offering && offerPx > 0 ? ` - ${offerPx}px - ${OFFER_GAP_REM}rem` : '';
-  const maxHeight = expanded.value
-    ? `calc(100dvh / var(--zoom-factor, 1) - 17rem${room})`
-    : `min(${offering ? `calc(60vh${room})` : '60vh'}, calc(100dvh / var(--zoom-factor, 1) - 21rem${room}))`;
+  // Full page: all the height the overlay has, measured (the offer and the
+  // bar are counted in it); until it is in, a guess. Floor and cap alike
+  // there (2026-11-01, the user): the paper fills the page, as the viewer's
+  // full page does, however short the tune.
+  const maxHeight = page
+    ? (fit !== null ? `${fit}px` : `calc(100dvh / var(--zoom-factor, 1) - 8rem${room})`)
+    : expanded.value
+      ? `calc(100dvh / var(--zoom-factor, 1) - 17rem${room})`
+      : `min(${offering ? `calc(60vh${room})` : '60vh'}, calc(100dvh / var(--zoom-factor, 1) - 21rem${room}))`;
+
+  // In the score's corner, as in the viewer and the audio sync: the way in,
+  // then the way out.
+  const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
+  const tools = (
+    <button
+      class="abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center"
+      title={pageLabel}
+      aria-label={pageLabel}
+      onClick={(ev) => { ev.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
+    >
+      {page ? <CollapseIcon size={13} /> : <ExpandIcon size={13} />}
+    </button>
+  );
 
   return (
-    <div class="flex flex-col gap-3">
+    <div ref={rootRef} class={`flex flex-col gap-3${page ? ' p-3' : ''}`}>
       {score && (
         <SyncedScore
           abc={score.abc} meter={score.meter} follow={null} engine={null} region={null}
-          transpose={0} playing={false} maxHeight={maxHeight} face={face.value} clock={clock ?? undefined}
+          transpose={0} playing={false} maxHeight={maxHeight} minHeight={page ? maxHeight : undefined} face={face.value} clock={clock ?? undefined} tools={tools}
         />
       )}
       {src.kind === 'failed' && src.message && <div class="text-xs text-danger text-center">{src.message}</div>}

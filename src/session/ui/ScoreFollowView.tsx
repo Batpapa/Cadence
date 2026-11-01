@@ -369,6 +369,9 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
     ? (fit !== null ? `${fit}px` : 'calc(100dvh / var(--zoom-factor, 1) - 28rem)')
     : 'min(46vh, calc(100dvh / var(--zoom-factor, 1) - 32rem))';
 
+  // Full page, floor and cap alike (2026-11-01, the user): the paper fills
+  // the page, as the viewer's full page does, however short the tune.
+
   // In the score's corner, as in the viewer: the way in, then the way out.
   const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
   const tools = (
@@ -388,7 +391,7 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
     <div ref={rootRef} class={page ? '' : '-mx-4 -mt-1'}>
       <AudioPlayer
         hooks={{ ...hooks, region }}
-        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight, face: face.value, tools, tint } : undefined}
+        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight, minHeight: page ? maxHeight : undefined, face: face.value, tools, tint } : undefined}
       />
     </div>
   );
