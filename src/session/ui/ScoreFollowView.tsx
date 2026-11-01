@@ -25,7 +25,8 @@ import { registerOverlay } from '../../components/overlayStack';
 //     the very samples the alignment is made on, one clock to the sample;
 //   - the setting's ABC, at once, and the alignment when it lands — the wait
 //     is spent listening, the cursor joins in;
-//   - the region: the detection's range, then the tune's own span.
+//   - the region: the detection's range — a card's recording, its whole, then
+//     the tune's own span.
 // The score is the version on the viewer's screen, as written there — the
 // one heard, or another, in the recognition index or not: the alignment reads
 // its notes off the drawing (scoreContour). A version changed aligns anew
@@ -207,12 +208,17 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   const samples = useMemo(() => deferred<FollowSamples>(), []);
   const follow = usable(phase, target, isForced);
 
-  // The region the player opens on: the detection's range — a recording's
-  // whole; then the tune's own span once an alignment worth following knows
-  // it. Kept while another version is aligned: the recording is the same, and
-  // so is the tune in it. Back to the first when no alignment is followed any
-  // more — judged too poor, or no longer forced: a forced one may have held a
-  // few seconds of it.
+  // The region the player opens on. A detection's: its range, always — not
+  // the span the alignment found, which it used to switch to (2026-11-01, the
+  // user): with the bounds now put on the tune's passes (boundSuggest.ts), the
+  // two came from two alignments of two stretches — this one reads 3 s round
+  // the bounds, and cannot enter the tune before them — and the player opened
+  // seconds away from where the card says the tune is. The cursor starts with
+  // the first note aligned; the sound, with the bound. A recording's: its
+  // whole, then the tune's own span once an alignment worth following knows
+  // it — no bounds to go by there. Kept while another version is aligned: the
+  // recording is the same, and so is the tune in it. Back to the whole when
+  // no alignment is followed any more — judged too poor, or no longer forced.
   const firstRegion = (): Region => {
     if (target.kind === 'recording') return WHOLE;
     const from = followFrom(target.start);
@@ -220,6 +226,7 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   };
   const regionRef = useRef<Region>(firstRegion());
   const region = useMemo<Region>(() => {
+    if (target.kind === 'passage') return regionRef.current;
     if (follow) regionRef.current = { start: follow.times[0]!, end: follow.end };
     else if (phase.kind !== 'aligning') regionRef.current = firstRegion();
     return regionRef.current;
