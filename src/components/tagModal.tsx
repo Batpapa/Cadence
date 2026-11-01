@@ -4,6 +4,7 @@ import { appState, mutate } from '../store';
 import { showModal, closeModal, renderModalBody } from './modal';
 import { focusIfDesktop, matchesSearch } from '../utils';
 import { t } from '../services/i18nService';
+import { renameTagEverywhere } from '../services/cardService';
 
 /** Every tag the library has ever been given, sorted — the suggestion pool
  *  behind each of these fields. */
@@ -28,7 +29,8 @@ export function TagPicker({ value, onChange, exclude, readout, note, onSubmit }:
   exclude?: readonly string[];
   /** Right-aligned inside the field: what confirming would do. */
   readout?: string | null;
-  /** Under the field: why confirming would currently do nothing. */
+  /** Under the field: why confirming would currently do nothing, or what it
+   *  would do beyond the obvious (a merge). */
   note?: string | null;
   /** Enter in the field does this. The modal shell handles no key but Escape,
    *  so a dialog where the field IS the interaction has to say so itself —
@@ -211,6 +213,75 @@ export function showCardTagModal(
       disabled: noop,
       onClick: commit,
     }],
+    { maxWidth: '28rem', onDismiss: cleanup },
+  );
+}
+
+function LibraryTagBody({ tag, draft, noop, onSubmit }: {
+  tag: string;
+  draft: { tag: string };
+  noop: Signal<boolean>;
+  onSubmit: () => void;
+}) {
+  const [value, setValue] = useState(tag);
+  const clean = value.trim().replace(/,/g, '');
+  const cards = Object.values(appState.value.cards);
+  // The cards' OWN tags, which are all the rename touches — not the library
+  // filter's view, where a set also answers to its tunes' tags.
+  const carrying = cards.filter(c => (c.tags ?? []).includes(tag)).length;
+  // Case-sensitive, like every other tag comparison: "jig" → "Jig" is a plain
+  // rename, unless a "Jig" already exists.
+  const merging  = clean !== '' && clean !== tag && cards.some(c => (c.tags ?? []).includes(clean));
+
+  // From the input event, not an effect — see CardTagBody's `set`.
+  const set = (v: string) => {
+    setValue(v);
+    const c = v.trim().replace(/,/g, '');
+    draft.tag = c === tag ? '' : c;
+  };
+
+  useEffect(() => { noop.value = !clean || clean === tag; });
+
+  return (
+    <TagPicker
+      value={value}
+      onChange={set}
+      // Choosing the tag itself would mean "no change".
+      exclude={[tag]}
+      readout={t(carrying === 1 ? 'library.tags.rename.cards' : 'library.tags.rename.cardsPlural', { n: carrying })}
+      note={merging ? t('library.tags.rename.merge', { tag: clean }) : null}
+      onSubmit={onSubmit}
+    />
+  );
+}
+
+/** Rename a tag on every card of the library — the pencil of the library's
+ *  tag filter. Same field as the card page's rename, but the opposite answer to
+ *  a name that already exists: there it would collapse two of one card's tags
+ *  and is refused, here it is what cleaning up imported cards IS ("Em" into an
+ *  existing "Eminor"), so it merges and says so under the field. See
+ *  `renameTagEverywhere` for what a merge does to each card.
+ *
+ *  Starts on the current name rather than empty: fixing a tag is usually a
+ *  small edit of it. `onDone` gets the new name, so the filter can follow it. */
+export function showRenameTagEverywhereModal(tag: string, onDone?: (to: string) => void): void {
+  const noop  = signal(true);
+  const draft = { tag: '' };
+
+  const commit = () => {
+    const to = draft.tag;
+    if (!to) return;
+    closeModal();
+    void mutate(s => { renameTagEverywhere(s, tag, to); }).then(() => onDone?.(to));
+  };
+
+  const { el, cleanup } = renderModalBody(
+    <LibraryTagBody tag={tag} draft={draft} noop={noop} onSubmit={commit} />,
+  );
+  showModal(
+    t('library.tags.rename.title', { tag }),
+    el,
+    [{ label: t('common.save'), primary: true, disabled: noop, onClick: commit }],
     { maxWidth: '28rem', onDismiss: cleanup },
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
-import { ChevronDownIcon, FolderIcon, VennAndIcon, VennOrIcon } from './icons';
+import { ChevronDownIcon, FolderIcon, PencilIcon, VennAndIcon, VennOrIcon } from './icons';
 import { matchesSearch } from '../utils';
 import { DateField } from './dateField';
 
@@ -29,7 +29,7 @@ export function cycleFilter(prev: FilterMap, key: string, back = false): FilterM
   return n;
 }
 
-export function FilterSection({ labelKey, items, folderItems = [], covered, activeMap, labelOf, titleOf, available, onToggle, highlight, orMode, onToggleOr }: {
+export function FilterSection({ labelKey, items, folderItems = [], covered, activeMap, labelOf, titleOf, available, onToggle, highlight, orMode, onToggleOr, onRename }: {
   labelKey: string;
   items: string[];
   /** Folder chips (keys from `folderChipKey`), shown first with a folder glyph
@@ -49,11 +49,36 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
   highlight?: string;
   orMode?: boolean;
   onToggleOr?: () => void;
+  /** Given, the open section gets a pencil: pressed, a chip click renames that
+   *  chip instead of filtering on it — the card page's gesture (pick the tag,
+   *  then rename it) turned round, because here a click on a chip is already
+   *  taken. It stays pressed across renames, since cleaning up after an import
+   *  is several in a row (user's call, 2026-11-01). */
+  onRename?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(() => activeMap.size > 0);
+  const [renaming, setRenaming] = useState(false);
   const showOrToggle = !!onToggleOr;
 
   const chip = (id: string, isFolder: boolean) => {
+    // Every chip is a legal pick while renaming: a greyed-out chip only means
+    // no card would match the filter, which has nothing to do with its name.
+    // One look for all of them, dashed, so the mode cannot be mistaken for the
+    // filter quietly no longer answering.
+    if (renaming && onRename) {
+      return (
+        <button
+          key={id}
+          class={`text-xs px-2 py-0.5 rounded-full border border-dashed border-accent/60 text-primary hoverable:border-accent hoverable:text-accent transition-colors cursor-pointer ${isFolder ? 'inline-flex items-center gap-1' : ''}`}
+          title={titleOf(id)}
+          onClick={() => onRename(id)}
+          onContextMenu={(e) => { e.preventDefault(); onRename(id); }}
+        >
+          {isFolder && <span class="flex items-center shrink-0"><FolderIcon size={10} /></span>}
+          {labelOf(id)}
+        </button>
+      );
+    }
     const state        = activeMap.get(id);
     const isAvail      = state !== undefined || available.has(id);
     const label        = labelOf(id);
@@ -91,7 +116,9 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
       <div class="flex items-center">
         <button
           class="flex items-center gap-1.5 text-xs text-dim hover:text-primary transition-colors py-0.5"
-          onClick={() => setOpen(o => !o)}
+          // Folding the section leaves the rename mode: reopened, its chips
+          // filter again, as anyone coming back to it would expect.
+          onClick={() => { if (open) setRenaming(false); setOpen(o => !o); }}
         >
           <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
             <ChevronDownIcon size={10} />
@@ -106,6 +133,24 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
           >
             {orMode ? <VennOrIcon size={15} /> : <VennAndIcon size={15} />}
           </button>
+        )}
+        {/* Only on an open section: the pencil acts on chips, so it shows
+            with them (user's call, 2026-11-01). `hoverable:`, because it has
+            a pressed state a stuck hover would fake. */}
+        {open && onRename && (
+          <button
+            class={`ml-1 flex items-center p-1 rounded transition-colors cursor-pointer ${
+              renaming ? 'text-accent bg-accent/10' : 'text-muted hoverable:text-primary'
+            }`}
+            title={t('library.tags.rename.mode')}
+            aria-pressed={renaming}
+            onClick={() => setRenaming(r => !r)}
+          >
+            <PencilIcon size={12} />
+          </button>
+        )}
+        {open && renaming && onRename && (
+          <span class="ml-1.5 text-xs text-accent">{t('library.tags.rename.hint')}</span>
         )}
       </div>
       {open && (

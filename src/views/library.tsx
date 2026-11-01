@@ -25,7 +25,8 @@ import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard, deckPath, folderPath, findParentFolder, folderChainIds } from '../services/deckService';
-import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../components/filterChips';
+import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels, renameChip } from '../components/filterChips';
+import { showRenameTagEverywhereModal } from '../components/tagModal';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
@@ -542,6 +543,8 @@ export function LibraryView() {
   const toggleTag  = (tag: string, back?: boolean) => setActiveTags(prev  => cycleFilter(knownChips(prev, tagKnown), tag, back));
   const toggleDeck = (id: string,  back?: boolean) => setActiveDecks(prev => cycleFilter(knownChips(prev, deckKnown), id, back));
   const toggleType = (id: string,  back?: boolean) => setActiveTypes(prev => cycleFilter(knownChips(prev, typeKnown), id, back));
+  // A chip pinned on the old name follows the rename instead of vanishing.
+  const renameTag  = (tag: string) => showRenameTagEverywhereModal(tag, to => setActiveTags(prev => renameChip(prev, tag, to)));
 
   // ── Selection toolbar data ────────────────────────────────────────────────────
   const selectedArr   = [...selected];
@@ -936,6 +939,7 @@ export function LibraryView() {
             highlight={q}
             orMode={tagFilterOr}
             onToggleOr={() => setTagFilterOr(o => !o)}
+            onRename={renameTag}
           />
         )}
         <ReviewedRangeSection

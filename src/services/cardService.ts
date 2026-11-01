@@ -23,3 +23,29 @@ export function removeCards(state: AppState, cardIds: string[]): void {
     for (const profileId of state.profileIds) delete state.cardWorks[`${profileId}:${cardId}`];
   }
 }
+
+/** Renames a tag on every card that carries it — the library's rename, as
+ *  opposed to the card page's, which is card-local by design (tagModal.tsx).
+ *  Asked for after importing a friend's cards tagged "Em" where the library
+ *  said "Eminor" (2026-11-01), so a name that already exists is not refused:
+ *  it is the point, and the two tags MERGE.
+ *
+ *  In place, like the card page's rename: a card's tags show in stored order,
+ *  so the new name takes the old one's slot. A card that already carries both
+ *  keeps the slot of the name it keeps, and simply loses the old one — never
+ *  the same tag twice. Only the cards' own `tags`: a set found by its tunes'
+ *  tags reads them live (tagsWithTunes), so it follows without being touched.
+ *
+ *  Returns how many cards changed. */
+export function renameTagEverywhere(state: AppState, from: string, to: string): number {
+  if (!to || from === to) return 0;
+  let n = 0;
+  for (const card of Object.values(state.cards)) {
+    if (!card.tags?.includes(from)) continue;
+    card.tags = card.tags.includes(to)
+      ? card.tags.filter(tg => tg !== from)
+      : card.tags.map(tg => tg === from ? to : tg);
+    n++;
+  }
+  return n;
+}
