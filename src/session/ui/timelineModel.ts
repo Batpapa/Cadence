@@ -91,21 +91,23 @@ export function withGaps(anns: Detection[], duration: number): Array<
   return out;
 }
 
-/** A hole too short for a silence row (gapMinBetween), by the detection
- *  after it: from the end of the one reaching furthest before it — the
- *  neighbour withGaps names — to its start. */
+/** A hole too short for a silence row (gapMinBetween), or an overlap, by
+ *  the detection after it: from the end of the one reaching furthest before
+ *  it — the neighbour withGaps names — to its start. `len` negative for an
+ *  overlap. */
 export type ShortGap = { prevId: string; nextId: string; from: number; len: number };
 
-/** Every such hole — the editor view shows them all in developer mode
- *  (2026-10-31, the user), above the tune after it, inside a set: they break
- *  nothing. Two tunes touching or overlapping leave none. */
+/** Every such hole and overlap — the editor view shows them all
+ *  (2026-10-31, the user; overlaps too, 2026-11-01), above the tune after it,
+ *  inside a set: they break nothing. Two tunes touching exactly leave none:
+ *  that join is made. */
 export function shortGapsOf(anns: Detection[], duration: number): Map<string, ShortGap> {
   const out = new Map<string, ShortGap>();
   let cursor = 0;
   let reachedBy: Detection | undefined;
   for (const ann of anns) {
     const hole = ann.start - cursor;
-    if (reachedBy && hole > 0.01 && hole < gapMinBetween(reachedBy, ann)) out.set(ann.id, { prevId: reachedBy.id, nextId: ann.id, from: cursor, len: hole });
+    if (reachedBy && Math.abs(hole) > 0.01 && hole < gapMinBetween(reachedBy, ann)) out.set(ann.id, { prevId: reachedBy.id, nextId: ann.id, from: cursor, len: hole });
     const end = ann.end ?? duration;
     if (end > cursor) { cursor = end; reachedBy = ann; }
   }

@@ -2194,6 +2194,7 @@
   "sessions.pitchShift.semitones.higher": "{n} demi-tons plus haut que la partition",
   "sessions.inProgress": "en cours…",
   "sessions.gap": "{d} sans détection",
+  "sessions.overlap": "chevauchement de {d}",
   "sessions.consolidating": "en consolidation",
   "sessions.alternates.title": "Explorer les alternatives",
   "sessions.alternates.trigger": "Explorer les résultats alternatifs",
