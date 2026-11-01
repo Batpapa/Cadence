@@ -296,7 +296,7 @@ function clipExtractor(card: Card | undefined): AudioPresetsBinding['onExtractCl
 
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, audioPresets, audioSync, glyph, onOpen, onDownload }: {
+function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, audioPresets, audioSync, onKeepRecording, glyph, onOpen, onDownload }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
@@ -308,6 +308,8 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   audioPresets?: AudioPresetsBinding;
   /** A score's audio sync with the card's recordings (cardAudioSync.ts). */
   audioSync?: AudioSyncBinding;
+  /** Where a score's Play-along take goes once kept (the card). */
+  onKeepRecording?: (a: Attachment) => void;
   /** Replaces the MIME glyph. Used to mark a file the app generates, which is
    *  not the same kind of thing as one the user attached. */
   glyph?: ComponentChild;
@@ -380,7 +382,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
           // Favoriting a version isn't "editing" the card — available regardless of `editable`.
           onClick={!previewable ? undefined : onOpen ?? (() => void withResolvedEntry(entry, resolved => showPreviewModal(resolved, editable ? onSave : undefined, {
             initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex,
-            onRename: editable ? onRename : undefined, audioPresets, audioSync,
+            onRename: editable ? onRename : undefined, audioPresets, audioSync, onKeepRecording,
           })))}
         >
           {entry.name}
@@ -822,6 +824,10 @@ export interface AttachmentListOptions {
   attachments: Attachment[];
   editable: boolean;
   onAdd?: (a: Attachment) => void;
+  /** Adds a recording made while reading the card's score — the
+   *  Play-along's take. Wired in study too, where `onAdd` is not: playing
+   *  along is a way to review. */
+  onKeepRecording?: (a: Attachment) => void;
   onRemove?: (i: number) => void;
   onReorder?: (from: number, insertBefore: number) => void;
   /** Persists an edited file's content (currently only wired for the ABC
@@ -968,6 +974,7 @@ async function openResolvedScore(
     // Its score following one of its recordings — not a set's generated
     // score for now (2026-10-31, the user).
     audioSync: att.generatedBy === 'tuneset' ? undefined : cardAudioSync(options.attachments),
+    onKeepRecording: options.onKeepRecording,
   });
 }
 
@@ -1080,6 +1087,10 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
                   audioPresets={onSetAudioPresets ? audioPresetsBinding(att, i, onSetAudioPresets, card) : undefined}
                   audioSync={isAbcFile(att) && att.generatedBy !== 'tuneset' ? cardAudioSync(attachments) : undefined}
+                  // The row opens the score itself (not openResolvedScore):
+                  // the take's way to the card has to be handed to it too —
+                  // missed at first, the record button was nowhere (2026-11-01).
+                  onKeepRecording={isAbcFile(att) ? options.onKeepRecording : undefined}
                   // A set's fused score has no bytes of its own — see `resolve`
                   // above. Both gestures rebuild it from members whose scores
                   // are actually in hand, and say so when one is not.

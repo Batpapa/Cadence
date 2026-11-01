@@ -4,6 +4,7 @@ import type { VersionWatchRequest, VersionWatchResponse } from './recognition/ve
 import { attachStampedPcmWorklet } from './audio/pcmWorklet';
 import { openMicForMusic, WakeLockManager } from './audio/capture';
 import { beginCaptureSession, endCaptureSession } from '../services/audioSession';
+import { MemoryRecorder } from '../thesessionEmbed/memoryRecorder';
 import { ANALYSIS_SAMPLE_RATE, FF_PCM_WINDOW, FF_SAMPLE_RATE_MIN, FF_SAMPLE_RATE_MAX } from './sessionConfig';
 
 // ── Play-along: the score following what is being played, live ──────────────
@@ -45,6 +46,13 @@ export interface PlayAlong {
    *  played (versionWatchWorker.ts): `onOffer` hears the one offered in
    *  place of `shown`, or null. Again replaces the watch before. */
   watchVersions(scores: number[][], shown: number, onOffer: (version: number | null) => void): VersionWatchHandle;
+  /** A take of what the microphone hears, started now (2026-11-01, the
+   *  user: the take kept on the card) — held in memory, on the stream the
+   *  follower listens to: no second microphone. It ends with the source. */
+  recordTake(): MemoryRecorder;
+  /** How loud the microphone is now, 0-1 — the take's level meter, scaled as
+   *  the analyser's own (MicSource.getLevel). */
+  level(): number;
   /** What was heard, for the bench: JSON. */
   dump(): Promise<Blob>;
   stop(): void;
@@ -138,6 +146,10 @@ export async function startPlayAlong(onEnded: () => void): Promise<PlayAlong> {
 
   const input = ctx.createMediaStreamSource(stream);
   const node = await attachStampedPcmWorklet(ctx, input, channel.port1, FF_PCM_WINDOW);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  input.connect(analyser);
+  const levelData = new Uint8Array(analyser.fftSize);
   const wake = new WakeLockManager();
   void wake.start();
 
@@ -149,7 +161,7 @@ export async function startPlayAlong(onEnded: () => void): Promise<PlayAlong> {
     if (stopped) return;
     stopped = true;
     stopWatch();
-    try { input.disconnect(); node.disconnect(); } catch { /* already gone */ }
+    try { input.disconnect(); node.disconnect(); analyser.disconnect(); } catch { /* already gone */ }
     stream.getTracks().forEach(trk => trk.stop());
     void ctx.close().catch(() => { /* closing */ });
     worker.terminate();
@@ -212,6 +224,20 @@ export async function startPlayAlong(onEnded: () => void): Promise<PlayAlong> {
         mute: (v) => post({ type: 'mute', version: v }),
         stop: () => { if (watcher === w) stopWatch(); },
       };
+    },
+    level: () => {
+      analyser.getByteTimeDomainData(levelData);
+      let sum = 0;
+      for (let i = 0; i < levelData.length; i++) {
+        const v = (levelData[i]! - 128) / 128;
+        sum += v * v;
+      }
+      return Math.min(1, Math.sqrt(sum / levelData.length) * 4);
+    },
+    recordTake: () => {
+      const recorder = new MemoryRecorder(stream);
+      recorder.start();
+      return recorder;
     },
     dump: () => new Promise<Blob>((resolve) => {
       dumpWaiter = (r) => {

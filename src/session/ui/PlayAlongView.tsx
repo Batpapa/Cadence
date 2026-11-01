@@ -7,9 +7,13 @@ import { beatOf, type Beat } from '../liveFollow';
 import { capturing } from '../../services/audioSession';
 import { devMode } from '../../services/devMode';
 import { qualityColour } from '../../components/followColour';
-import { CrossIcon, MinusIcon, PlusIcon, ExpandIcon, CollapseIcon } from '../../components/icons';
+import { CrossIcon, MinusIcon, PlusIcon, ExpandIcon, CollapseIcon, SaveIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 import type { PlayAlongView } from '../../components/fileViewer';
+import type { Attachment } from '../../types';
+import { askRecordingName, recordingAttachment, stampedName, RecorderRow } from '../../components/recordMicModal';
+import { askUnsavedChanges } from '../../components/modal';
+import type { MemoryRecorder } from '../../thesessionEmbed/memoryRecorder';
 import { t } from '../../services/i18nService';
 import { downloadBlob } from '../../utils';
 
@@ -45,8 +49,13 @@ const BPM_HYSTERESIS = 1.5;
 interface Smoothed { rate: number | null; match: number | null; at: number }
 /** The score's floor on its full page, as the audio sync's. */
 const MIN_SCORE_PX = 128;
-/** The pane's gap above the offer (gap-3). */
-const OFFER_GAP_REM = 0.75;
+/** The pane's gap between the score and what is under it (gap-3). */
+const BELOW_GAP_REM = 0.75;
+/** What the dialog keeps around the pane — its header and padding, the
+ *  viewer's row of tabs — taken from the score's height with what is
+ *  under it (measured): expanded, and not. */
+const AROUND_EXPANDED_REM = 13.5;
+const AROUND_REM = 17.5;
 /** One press of − or + on the latency. */
 const OFFSET_STEP_MS = 10;
 
@@ -88,6 +97,116 @@ function open(into: Signal<Source>, onEnded: () => void): void {
   );
 }
 
+// ── The take: what was played, kept on the card (2026-11-01, the user) ──────
+// On a line of its own under the follower's: the microphone attachment's own
+// recording row (RecorderRow, a little lower), for coherence. On demand:
+// Start, Stop, then the save icon — which asks for the name — or Start
+// again, which drops the take for a new one: no Discard button (the user's
+// call). No listening
+// back first, as the microphone's own attachment dialog (recordMicModal.tsx):
+// kept, it plays from the card, and the audio sync follows it on the score.
+// On the microphone the follower listens to (PlayAlong.recordTake). Leaving
+// with a take not kept asks first (settle).
+
+type TakePhase = 'idle' | 'recording' | 'stopping' | 'stopped' | 'keeping';
+
+/** How long "added" shows once a take is kept. */
+const KEPT_MS = 4000;
+
+class PlayAlongTake {
+  readonly phase = signal<TakePhase>('idle');
+  /** A word after Keep: added, or why not. */
+  readonly note = signal<{ kind: 'kept' | 'failed' } | null>(null);
+  durationMs = 0;
+  private recorder: MemoryRecorder | null = null;
+  private startedAt = 0;
+  private file: Blob | null = null;
+  private noteTimer = 0;
+
+  constructor(private readonly keep: (a: Attachment) => void) {}
+
+  start(client: PlayAlong): void {
+    this.drop();
+    this.recorder = client.recordTake();
+    this.startedAt = Date.now();
+    this.phase.value = 'recording';
+  }
+
+  /** Stops the recording and holds the take. Twice is once. */
+  async stop(): Promise<void> {
+    const recorder = this.recorder;
+    if (this.phase.value !== 'recording' || !recorder) return;
+    this.phase.value = 'stopping';
+    this.durationMs = Date.now() - this.startedAt;
+    await recorder.stop();
+    const file = await recorder.file();
+    if (this.recorder !== recorder) return;   // dropped meanwhile
+    this.recorder = null;
+    this.file = file;
+    this.phase.value = 'stopped';
+  }
+
+  /** Adds the take to the card — stopping it first, then asking its name;
+   *  whether it was. */
+  async save(): Promise<boolean> {
+    await this.stop();
+    const file = this.file;
+    if (this.phase.value !== 'stopped' || !file) return false;
+    this.phase.value = 'keeping';
+    const name = await askRecordingName(file, stampedName('fileViewer.abc.playAlong.take.fileName'));
+    if (name === null) { this.phase.value = 'stopped'; return false; }
+    try {
+      this.keep(await recordingAttachment(file, name));
+    } catch (err) {
+      console.error('[play-along] take', err);
+      this.phase.value = 'stopped';
+      this.say('failed');
+      return false;
+    }
+    this.file = null;
+    this.phase.value = 'idle';
+    this.say('kept');
+    return true;
+  }
+
+  drop(): void {
+    void this.recorder?.stop();
+    this.recorder = null;
+    this.file = null;
+    this.phase.value = 'idle';
+  }
+
+  /** Whether leaving would lose something. */
+  get holds(): boolean {
+    const ph = this.phase.value;
+    return ph === 'recording' || ph === 'stopping' || ph === 'stopped';
+  }
+
+  elapsedMs(): number {
+    return this.phase.value === 'recording' ? Date.now() - this.startedAt : this.durationMs;
+  }
+
+  /** Leaving with a take in hand asks first, as the microphone's dialog
+   *  does; true when it asked — `proceed` then runs once it is answered. */
+  settle(proceed: () => void): boolean {
+    if (!this.holds) return false;
+    askUnsavedChanges({
+      message: t('unsaved.message.recording'),
+      saveLabel: t('common.add'),
+      save: () => this.save(),
+      discard: () => this.drop(),
+      proceed,
+    });
+    return true;
+  }
+
+  private say(kind: 'kept' | 'failed'): void {
+    window.clearTimeout(this.noteTimer);
+    this.note.value = { kind };
+    this.noteTimer = window.setTimeout(() => { this.note.value = null; }, KEPT_MS);
+  }
+}
+
 interface PaneProps {
   version: Signal<string>;
   index: Signal<number>;
@@ -99,9 +218,11 @@ interface PaneProps {
   face: Signal<'sheet' | 'text'>;
   expanded: Signal<boolean>;
   source: Signal<Source>;
+  /** Null where there is no card to keep a take on: no record button. */
+  take: PlayAlongTake | null;
 }
 
-function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face, expanded, source }: PaneProps) {
+function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face, expanded, source, take }: PaneProps) {
   const shown = version.value;
   const shownIndex = index.value;
   const src = source.value;
@@ -117,19 +238,30 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   const [watch, setWatch] = useState<{ slots: number[]; setShown: (slot: number) => void; mute: (slot: number) => void } | null>(null);
   /** The version offered, by its index in the file. */
   const [offer, setOffer] = useState<number | null>(null);
-  /** The offer's height, layout pixels (offsetHeight: the space rem and
-   *  the score's calc are in, whatever the app's zoom); 0 when none. */
-  const offerRef = useRef<HTMLDivElement>(null);
-  const [offerPx, setOfferPx] = useState(0);
+  /** The height of everything under the score — the messages, the offer,
+   *  the bar and its take line — in layout pixels (offsetHeight: the space
+   *  rem and the score's calc are in, whatever the app's zoom). The score
+   *  gives it up: counted as a fixed allowance, the bar's second line (the
+   *  take) pushed the pane out of the dialog (2026-11-01, the user). */
+  const belowRef = useRef<HTMLDivElement>(null);
+  const [belowPx, setBelowPx] = useState(0);
   useLayoutEffect(() => {
-    const el = offerRef.current;
-    if (!el) { setOfferPx(0); return; }
-    const measure = () => setOfferPx(el.offsetHeight);
+    const el = belowRef.current;
+    if (!el) return;
+    const measure = () => setBelowPx(prev => (prev === el.offsetHeight ? prev : el.offsetHeight));
+    // At once, before the first paint; then at the next frame, not in the
+    // observer: the score's height follows, a scrollbar may come or go with
+    // it, the width and the lines under it with that — inside the observer
+    // the browser reports a loop (2026-11-01, the user, resizing the window).
     measure();
-    const watch = new ResizeObserver(measure);
+    let raf = 0;
+    const watch = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measure);
+    });
     watch.observe(el);
-    return () => watch.disconnect();
-  }, [offer, shownIndex]);
+    return () => { watch.disconnect(); cancelAnimationFrame(raf); };
+  }, []);
 
   // The version's notes, as drawn, given to the follower — again for another
   // version, or another source.
@@ -224,12 +356,13 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   // gesture leave it (overlayStack).
   const rootRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(false);
-  const pageRef = useRef<{ overlay: HTMLElement; anchor: Comment; host: HTMLElement; unregister: () => void } | null>(null);
+  const pageRef = useRef<{ overlay: HTMLElement; anchor: Comment; host: HTMLElement; hostStyle: string; unregister: () => void } | null>(null);
   const leavePage = (rerender = true) => {
     const p = pageRef.current;
     if (!p) return;
     pageRef.current = null;
     p.unregister();
+    p.host.style.cssText = p.hostStyle;
     p.anchor.replaceWith(p.host);
     p.overlay.remove();
     if (rerender) setPage(false);
@@ -241,26 +374,31 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
     overlay.className = 'fixed inset-0 z-[100] flex flex-col overflow-hidden safe-area-pad';
     overlay.style.background = 'var(--color-elevated)';
     const anchor = document.createComment('play-along');
+    // Laid over the viewer in the dialog (fileViewer.ts): in the overlay it
+    // is a plain box, its place given back on the way out.
+    const hostStyle = host.style.cssText;
+    host.style.cssText = '';
     host.replaceWith(anchor);
     overlay.appendChild(host);
     document.body.appendChild(overlay);
-    pageRef.current = { overlay, anchor, host, unregister: registerOverlay(() => leavePage()) };
+    pageRef.current = { overlay, anchor, host, hostStyle, unregister: registerOverlay(() => leavePage()) };
     setPage(true);
   };
   // The view can go while on its full page — the dialog closed from
   // elsewhere — and an overlay nothing points at would stay on screen.
   useEffect(() => () => leavePage(false), []);
 
-  // Full page, the score takes what the overlay leaves: its box as it is,
-  // plus the room to spare (or minus what overflows). Measured at the next
-  // frame, not in the observer: the height set resizes what is observed
-  // (ScoreFollowView's, 2026-10-29).
+  // The score takes what is left — of the overlay on the full page, of the
+  // place the viewer's own takes in the dialog (fileViewer.ts lays the
+  // Play-along over it): its box as it is, plus the room to spare (or minus
+  // what overflows). Measured at the next frame, not in the observer: the
+  // height set resizes what is observed (ScoreFollowView's, 2026-10-29).
   const [fit, setFit] = useState<number | null>(null);
   const shownFace = face.value;
   useEffect(() => {
     setFit(null);
     const root = rootRef.current;
-    const body = page ? pageRef.current?.overlay ?? null : null;
+    const body = page ? pageRef.current?.overlay ?? null : root?.parentElement ?? null;
     if (!root || !body) return;
     const measure = () => {
       const box = root.querySelector<HTMLElement>(shownFace === 'text' ? '.score-follow-text' : '.score-follow-paper');
@@ -307,23 +445,25 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
     shownBpm.current = null;
   }
   const dot = following && match !== null ? qualityColour(match) : 'var(--color-text-dim)';
+  const takePhase = take?.phase.value ?? 'idle';
+  const takeNote = take?.note.value ?? null;
   const chip = 'inline-flex items-center justify-center rounded-full border transition-colors cursor-pointer';
   const idle = `${chip} border-border text-muted hover:text-primary hover:border-accent/50`;
   const offering = offer !== null && offer !== shownIndex;
-  // The offer takes its room from the score (2026-11-01, the user): its
-  // height as measured — its words wrap on a narrow screen — and the gap
-  // above it. No loop: that height follows the width alone, and the score
-  // gives up exactly what the offer takes.
-  const room = offering && offerPx > 0 ? ` - ${offerPx}px - ${OFFER_GAP_REM}rem` : '';
-  // Full page: all the height the overlay has, measured (the offer and the
-  // bar are counted in it); until it is in, a guess. Floor and cap alike
+  // What is under the score takes its room from it (2026-11-01, the user):
+  // its height as measured — the offer's words wrap on a narrow screen, the
+  // take adds a line — and the gap above it. No loop: that height follows
+  // the width alone, and the score gives up exactly what it takes.
+  const room = ` - ${belowPx}px - ${BELOW_GAP_REM}rem`;
+  // Full page: all the height the overlay has, measured (what is under the
+  // score is counted in it); until it is in, a guess. Floor and cap alike
   // there (2026-11-01, the user): the paper fills the page, as the viewer's
   // full page does, however short the tune.
-  const maxHeight = page
-    ? (fit !== null ? `${fit}px` : `calc(100dvh / var(--zoom-factor, 1) - 8rem${room})`)
+  const maxHeight = fit !== null ? `${fit}px`
+    : page ? `calc(100dvh / var(--zoom-factor, 1) - 4.5rem${room})`
     : expanded.value
-      ? `calc(100dvh / var(--zoom-factor, 1) - 17rem${room})`
-      : `min(${offering ? `calc(60vh${room})` : '60vh'}, calc(100dvh / var(--zoom-factor, 1) - 21rem${room}))`;
+      ? `calc(100dvh / var(--zoom-factor, 1) - ${AROUND_EXPANDED_REM}rem${room})`
+      : `min(60vh, calc(100dvh / var(--zoom-factor, 1) - ${AROUND_REM}rem${room}))`;
 
   // In the score's corner, as in the viewer and the audio sync: the way in,
   // then the way out.
@@ -344,70 +484,107 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
       {score && (
         <SyncedScore
           abc={score.abc} meter={score.meter} follow={null} engine={null} region={null}
-          transpose={0} playing={false} maxHeight={maxHeight} minHeight={page ? maxHeight : undefined} face={face.value} clock={clock ?? undefined} tools={tools}
+          transpose={0} playing={false} maxHeight={maxHeight} minHeight={fit !== null ? maxHeight : undefined} face={face.value} clock={clock ?? undefined} tools={tools}
         />
       )}
-      {src.kind === 'failed' && src.message && <div class="text-xs text-danger text-center">{src.message}</div>}
-      {noNotes && <div class="text-xs text-danger text-center">{t('fileViewer.abc.playAlong.noNotes')}</div>}
-      {offering && offer !== null && (
-        <div class="flex justify-center" ref={offerRef}>
-          <div class="inline-flex items-center gap-2 min-h-9 max-w-full rounded-2xl border border-accent/40 bg-accent/10 pl-3.5 pr-1 py-1 text-xs text-primary">
-            <span class="min-w-0">{t('fileViewer.abc.playAlong.suggest', { n: offer + 1 })}</span>
-            <button
-              type="button"
-              class="shrink-0 rounded-full bg-accent text-white px-3 min-h-[1.75rem] font-medium hover:opacity-90 transition-opacity cursor-pointer"
-              onClick={() => onShowVersion(offer)}
-            >
-              {t('fileViewer.abc.playAlong.suggest.show')}
-            </button>
-            <button
-              type="button"
-              class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full text-muted hover:text-primary hover:bg-elevated transition-colors cursor-pointer"
-              title={t('fileViewer.abc.playAlong.suggest.dismiss')}
-              aria-label={t('fileViewer.abc.playAlong.suggest.dismiss')}
-              onClick={dismiss}
-            >
-              <CrossIcon size={12} />
-            </button>
-          </div>
-        </div>
-      )}
-      {/* One line: the state, cut short when too long, and the latency held
-          at the right — its buttons never move under the finger between two
-          presses (2026-11-01, the user). Developer mode adds the take's dump
-          under it, and nothing else. */}
-      <div class="flex flex-col gap-1.5 rounded-xl border border-border bg-bg px-3 py-2 text-xs">
-        <div class="flex items-center gap-4">
-          <div class="flex flex-1 items-center gap-2 min-w-0 font-medium text-primary">
-            <span class="relative inline-flex shrink-0 w-2.5 h-2.5">
-              {(state === 'search' || state === 'opening') && (
-                <span class="absolute inset-0 rounded-full animate-ping opacity-60" style={{ background: 'var(--color-accent)' }} />
-              )}
-              <span class="relative inline-block w-2.5 h-2.5 rounded-full transition-colors duration-700" style={{ background: state === 'search' ? 'var(--color-accent)' : dot }} />
-            </span>
-            <span class="min-w-0 truncate">
-              {state === 'opening' ? t('fileViewer.abc.playAlong.opening') : t(STATE_TEXT[state])}
-              {tempo && <span class="ml-2 font-normal text-muted tabular-nums">{t(tempo.key, { bpm: tempo.bpm })}</span>}
-            </span>
-          </div>
-          <span class="shrink-0 inline-flex items-center gap-1.5 text-muted" title={t('fileViewer.abc.playAlong.offsetHint')}>
-            {t('fileViewer.abc.playAlong.offset')}
-            <button type="button" class={`${idle} w-7 h-7`} aria-label="−" onClick={() => nudge(-OFFSET_STEP_MS)}><MinusIcon size={12} /></button>
-            <span class="tabular-nums w-14 text-center text-primary">{offset} ms</span>
-            <button type="button" class={`${idle} w-7 h-7`} aria-label="+" onClick={() => nudge(OFFSET_STEP_MS)}><PlusIcon size={12} /></button>
-          </span>
-        </div>
-        {dev && client && (
-          <div class="flex justify-end">
-            <button
-              type="button"
-              class="text-[11px] text-dim hover:text-primary hover:underline cursor-pointer"
-              onClick={() => void client.dump().then(b => downloadBlob(b, `play-along-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`))}
-            >
-              {t('fileViewer.abc.playAlong.dump')}
-            </button>
+      {/* Under the score, measured as one (belowRef). */}
+      <div ref={belowRef} class="flex flex-col gap-3">
+        {src.kind === 'failed' && src.message && <div class="text-xs text-danger text-center">{src.message}</div>}
+        {noNotes && <div class="text-xs text-danger text-center">{t('fileViewer.abc.playAlong.noNotes')}</div>}
+        {offering && offer !== null && (
+          <div class="flex justify-center">
+            <div class="inline-flex items-center gap-2 min-h-9 max-w-full rounded-2xl border border-accent/40 bg-accent/10 pl-3.5 pr-1 py-1 text-xs text-primary">
+              <span class="min-w-0">{t('fileViewer.abc.playAlong.suggest', { n: offer + 1 })}</span>
+              <button
+                type="button"
+                class="shrink-0 rounded-full bg-accent text-white px-3 min-h-[1.75rem] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+                onClick={() => onShowVersion(offer)}
+              >
+                {t('fileViewer.abc.playAlong.suggest.show')}
+              </button>
+              <button
+                type="button"
+                class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full text-muted hover:text-primary hover:bg-elevated transition-colors cursor-pointer"
+                title={t('fileViewer.abc.playAlong.suggest.dismiss')}
+                aria-label={t('fileViewer.abc.playAlong.suggest.dismiss')}
+                onClick={dismiss}
+              >
+                <CrossIcon size={12} />
+              </button>
+            </div>
           </div>
         )}
+        {/* One line: the state, cut short when too long, and the latency held
+            at the right — its buttons never move under the finger between two
+            presses (2026-11-01, the user). Developer mode adds the take's dump
+            under it, and nothing else. */}
+        <div class="flex flex-col gap-1.5 rounded-xl border border-border bg-bg px-3 py-2 text-xs">
+          <div class="flex items-center gap-4">
+            <div class="flex flex-1 items-center gap-2 min-w-0 font-medium text-primary">
+              <span class="relative inline-flex shrink-0 w-2.5 h-2.5">
+                {(state === 'search' || state === 'opening') && (
+                  <span class="absolute inset-0 rounded-full animate-ping opacity-60" style={{ background: 'var(--color-accent)' }} />
+                )}
+                <span class="relative inline-block w-2.5 h-2.5 rounded-full transition-colors duration-700" style={{ background: state === 'search' ? 'var(--color-accent)' : dot }} />
+              </span>
+              <span class="min-w-0 truncate">
+                {state === 'opening' ? t('fileViewer.abc.playAlong.opening') : t(STATE_TEXT[state])}
+                {tempo && <span class="ml-2 font-normal text-muted tabular-nums">{t(tempo.key, { bpm: tempo.bpm })}</span>}
+              </span>
+            </div>
+            <span class="shrink-0 inline-flex items-center gap-1.5 text-muted" title={t('fileViewer.abc.playAlong.offsetHint')}>
+              {t('fileViewer.abc.playAlong.offset')}
+              <button type="button" class={`${idle} w-7 h-7`} aria-label="−" onClick={() => nudge(-OFFSET_STEP_MS)}><MinusIcon size={12} /></button>
+              <span class="tabular-nums w-14 text-center text-primary">{offset} ms</span>
+              <button type="button" class={`${idle} w-7 h-7`} aria-label="+" onClick={() => nudge(OFFSET_STEP_MS)}><PlusIcon size={12} /></button>
+            </span>
+          </div>
+          {/* The take, on a line of its own (2026-11-01, the user): Record —
+              again, a new take in place of the last — or ■ while it records;
+              then the take's length and Keep. */}
+          {take && client && (
+            <div class="flex flex-col gap-1 border-t border-border pt-2">
+              <RecorderRow
+                compact
+                phase={takePhase === 'keeping' ? 'stopped' : takePhase}
+                elapsedMs={() => take.elapsedMs()}
+                level={() => client.level()}
+                onStart={() => take.start(client)}
+                onStop={() => void take.stop()}
+                after={(takePhase === 'stopped' || takePhase === 'keeping') && (
+                  // The save icon, as the card's notes have it (2026-11-01,
+                  // the user), not a word.
+                  <button
+                    type="button"
+                    class={`${chip} shrink-0 w-7 h-7 border-accent/60 text-accent bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-default`}
+                    title={t('fileViewer.abc.playAlong.take.nameTitle')}
+                    aria-label={t('fileViewer.abc.playAlong.take.nameTitle')}
+                    disabled={takePhase !== 'stopped'}
+                    onClick={() => void take.save()}
+                  >
+                    <SaveIcon size={13} />
+                  </button>
+                )}
+              />
+              {takePhase === 'idle' && takeNote && (
+                <span class={`text-center ${takeNote.kind === 'failed' ? 'text-danger' : 'text-muted'}`}>
+                  {t(takeNote.kind === 'failed' ? 'fileViewer.abc.playAlong.take.failed' : 'fileViewer.abc.playAlong.take.kept')}
+                </span>
+              )}
+            </div>
+          )}
+          {dev && client && (
+            <div class="flex justify-end">
+              <button
+                type="button"
+                class="text-[11px] text-dim hover:text-primary hover:underline cursor-pointer"
+                onClick={() => void client.dump().then(b => downloadBlob(b, `play-along-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`))}
+              >
+                {t('fileViewer.abc.playAlong.dump')}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -423,7 +600,10 @@ export function mountPlayAlong(host: HTMLElement, opts: {
   onShowVersion: (index: number) => void;
   face: 'sheet' | 'text';
   expanded: boolean;
+  /** Adds a take to the card the score belongs to; absent, no record button. */
+  onKeepRecording?: (a: Attachment) => void;
 }): PlayAlongView {
+  const take = opts.onKeepRecording ? new PlayAlongTake(opts.onKeepRecording) : null;
   const version = signal(opts.versions[opts.index] ?? '');
   const index = signal(opts.index);
   const face = signal(opts.face);
@@ -433,7 +613,7 @@ export function mountPlayAlong(host: HTMLElement, opts: {
   render(
     <PlayAlongPane
       version={version} index={index} versions={opts.versions} suggest={opts.suggest} onShowVersion={opts.onShowVersion}
-      face={face} expanded={expanded} source={source}
+      face={face} expanded={expanded} source={source} take={take}
     />,
     host,
   );
@@ -441,7 +621,9 @@ export function mountPlayAlong(host: HTMLElement, opts: {
     setVersion: (v, i) => { version.value = v; index.value = i; },
     setFace: (f) => { face.value = f; },
     setExpanded: (v) => { expanded.value = v; },
+    settleTake: (proceed) => take?.settle(proceed) ?? false,
     unmount: () => {
+      take?.drop();
       // Opening still: it stops itself when it lands (`open`).
       const s = source.value;
       source.value = { kind: 'failed', message: '' };

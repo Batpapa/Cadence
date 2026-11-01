@@ -649,6 +649,8 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
     // that can be found again rather than a file nobody claims.
     onAdd:     (a) => mutate(s => { s.cards[cardId]!.content.attachments.push(a); })
       .then(() => uploadAttachmentSoon(a)),
+    // The Play-along's take, kept: added as any file is.
+    onKeepRecording: (a) => attachmentOptions.onAdd!(a),
     // The bytes go with it, but only once the state no longer points at them —
     // and only for an attachment whose bytes live outside the blob, where
     // "removed from the card" and "delete the file" are two different acts.
