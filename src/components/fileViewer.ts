@@ -1,5 +1,5 @@
 import LZString from 'lz-string';
-import type { AbcOpenMode, AbcPaper, FileEntry } from '../types';
+import type { AbcOpenMode, AbcPaper, Attachment, FileEntry } from '../types';
 import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop, downloadBlob, isAppleTouchDevice } from '../utils';
 import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
@@ -645,6 +645,10 @@ export interface PreviewModalOpts {
    *  it (2026-10-28, the user). Today a detection's score, its recording the
    *  analysis's (session/ui/ScoreFollowView.tsx). */
   audioSync?: AudioSyncBinding;
+  /** Adds a recording to the card the score belongs to: the Play-along's
+   *  take, kept (2026-11-01, the user). Absent — a score with no card, a
+   *  detection's — the Play-along has no record button. */
+  onKeepRecording?: (a: Attachment) => void;
 }
 
 /** What the viewer is handed to play a score along its recording. */
@@ -705,6 +709,9 @@ export interface PlayAlongView {
   setVersion: (version: string, index: number) => void;
   setFace: (face: 'sheet' | 'text') => void;
   setExpanded: (expanded: boolean) => void;
+  /** A take recorded and neither kept nor discarded: asks first, and true
+   *  when it did — `proceed` runs once it is answered. */
+  settleTake: (proceed: () => void) => boolean;
   unmount: () => void;
 }
 
@@ -1266,6 +1273,8 @@ export function showPreviewModal(
      *  closed or another way turned it on meanwhile. */
     let choosing = false;
     const turnOnAudioSync = (forced: boolean): void => {
+      // It takes the Play-along's place: a take in hand is asked about first.
+      if (playAlongView?.settleTake(() => turnOnAudioSync(forced))) return;
       if (!audioSync?.choose) {
         audioSyncForced = forced;
         setAudioSync(true);
@@ -1411,11 +1420,20 @@ export function showPreviewModal(
         stopAudio();
         stopTextPlay();
         if (fullscreen) exitFullscreen();
+        // The viewer stays where it is, laid out but unseen, and the
+        // Play-along is laid over it: the dialog keeps the very size it had
+        // (2026-11-01, the user: it shrank on turning the Play-along on and
+        // grew back on turning it off, the pane sizing itself on its own
+        // allowances). The score inside fills what the bar leaves.
         hiddenByPlayAlong = Array.from(container.children)
           .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== topRow)
-          .map(el => [el, el.style.display]);
-        for (const [el] of hiddenByPlayAlong) el.style.display = 'none';
+          .map(el => [el, el.style.visibility]);
+        for (const [el] of hiddenByPlayAlong) el.style.visibility = 'hidden';
+        container.classList.add('relative');
         playAlongHost = document.createElement('div');
+        // From under the tabs' row (the container's gap is the host's own
+        // margin) to the bottom of what the viewer takes.
+        playAlongHost.style.cssText = `position:absolute;left:0;right:0;bottom:0;top:${topRow.offsetTop + topRow.offsetHeight}px`;
         container.appendChild(playAlongHost);
         // Within the tap: the microphone is asked for at once.
         playAlongView = mountPlayAlong(playAlongHost, {
@@ -1426,14 +1444,16 @@ export function showPreviewModal(
           onShowVersion: (i) => settleDraft(() => goToVersion(i)),
           face: currentMode,
           expanded: modalExpanded,
+          onKeepRecording: opts?.onKeepRecording,
         });
       } else {
         playAlongView!.unmount();
         playAlongView = null;
         playAlongHost?.remove();
         playAlongHost = null;
-        for (const [el, display] of hiddenByPlayAlong) el.style.display = display;
+        for (const [el, visibility] of hiddenByPlayAlong) el.style.visibility = visibility;
         hiddenByPlayAlong = [];
+        container.classList.remove('relative');
         sheetNeedsRerender = true;
         setAbcMode(currentMode);
       }
@@ -1452,7 +1472,11 @@ export function showPreviewModal(
     playAlongBtn.type = 'button';
     playAlongBtn.append(iconElement(MicIcon, 13), playAlongLabel);
     playAlongBtn.setAttribute('aria-label', t('fileViewer.abc.playAlong'));
-    playAlongBtn.onclick = () => setPlayAlong(!playAlongView);
+    // Turned off with a take in hand: asked first (PlayAlongView.settleTake).
+    playAlongBtn.onclick = () => {
+      if (playAlongView?.settleTake(() => setPlayAlong(false))) return;
+      setPlayAlong(!playAlongView);
+    };
     topRow.appendChild(playAlongBtn);
     versionChangedForPlayAlong();
     releasePlayAlong = () => {
@@ -2605,10 +2629,15 @@ export function showPreviewModal(
       });
     }
     // Read-only viewers never have a draft, so this holds nothing for them.
-    guardClose = (dismiss) => {
+    // The Play-along's take first, then the draft.
+    const guardDraft = (dismiss: () => void): boolean => {
       if (!draft) return false;
       settleDraft(dismiss);
       return true;
+    };
+    guardClose = (dismiss) => {
+      if (playAlongView?.settleTake(() => { if (!guardDraft(dismiss)) dismiss(); })) return true;
+      return guardDraft(dismiss);
     };
 
     function goToVersion(index: number): void {

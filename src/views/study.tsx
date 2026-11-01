@@ -1,5 +1,6 @@
 import { useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, leaveStudy, replaceRouteNow } from '../store';
+import { uploadAttachmentSoon } from '../services/attachmentStore';
 import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets';
 import { pickRandom, pickOptimal, pickStochastic, pickSequential, advanceSkips, decksContainingCard } from '../services/deckService';
 import { isAvailable, buildContextualEntries } from '../services/knowledgeService';
@@ -325,6 +326,10 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
         if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
       }
     }),
+    // The Play-along's take, kept: playing along is a way to review
+    // (2026-11-01, the user) — added and uploaded as on the card's page.
+    onKeepRecording: (a) => mutate(s => { s.cards[cardId!]?.content.attachments.push(a); })
+      .then(() => uploadAttachmentSoon(a)),
   };
 
   return (
