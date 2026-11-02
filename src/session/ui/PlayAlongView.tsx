@@ -3,7 +3,7 @@ import { render } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { SyncedScore, scoreContour, bareScore, meterOf, type LiveClock } from '../../components/syncedScore';
 import { startPlayAlong, playAlongOffset, setPlayAlongOffset, type PlayAlong, type PlayAlongStatus } from '../playAlongClient';
-import { beatOf, type Beat } from '../liveFollow';
+import { beatOfDance, type Beat } from '../liveFollow';
 import { capturing } from '../../services/audioSession';
 import { devMode } from '../../services/devMode';
 import { qualityColour } from '../../components/followColour';
@@ -66,7 +66,7 @@ const STATE_TEXT = {
   lost: 'fileViewer.abc.playAlong.state.lost',
 } as const;
 
-/** The tempo's words, per beat (liveFollow.ts's beatOf) — whole keys. */
+/** The tempo's words, per beat (liveFollow.ts's beatOfDance) — whole keys. */
 const TEMPO_TEXT: Record<Beat['unit'], 'fileViewer.abc.playAlong.tempo.minim' | 'fileViewer.abc.playAlong.tempo.dottedMinim' | 'fileViewer.abc.playAlong.tempo.crotchet' | 'fileViewer.abc.playAlong.tempo.dottedCrotchet' | 'fileViewer.abc.playAlong.tempo.quaver'> = {
   minim: 'fileViewer.abc.playAlong.tempo.minim',
   dottedMinim: 'fileViewer.abc.playAlong.tempo.dottedMinim',
@@ -228,7 +228,7 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   const src = source.value;
   const client = src.kind === 'open' ? src.client : null;
   const dev = devMode.value;
-  const [score, setScore] = useState<{ abc: string; meter: string } | null>(null);
+  const [score, setScore] = useState<{ abc: string; meter: string; dance?: string } | null>(null);
   const [clock, setClock] = useState<LiveClock | null>(null);
   const [noNotes, setNoNotes] = useState(false);
   const [status, setStatus] = useState<PlayAlongStatus | null>(null);
@@ -269,7 +269,8 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
     let cancelled = false;
     const abc = bareScore(shown);
     const meter = meterOf(shown);
-    setScore({ abc, meter });
+    // Off the version itself: bareScore takes R: out with T:.
+    setScore({ abc, meter, dance: /^R:(.*)$/m.exec(shown)?.[1] });
     setClock(null);
     setNoNotes(false);
     void scoreContour(abc, meter).then((pitches) => {
@@ -435,7 +436,8 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   const state = src.kind === 'opening' ? 'opening' : e?.state ?? 'search';
   const following = state === 'follow';
   const { rate, match } = smooth.current;
-  const beat = score ? beatOf(score.meter, /^Q:(.*)$/m.exec(score.abc)?.[1]) : null;
+  // The dance's beat (R:), else the tempo field's or the metre's (beatOfDance).
+  const beat = score ? beatOfDance(score.dance, score.meter, /^Q:(.*)$/m.exec(score.abc)?.[1]) : null;
   let tempo: { bpm: number; key: (typeof TEMPO_TEXT)[Beat['unit']] } | null = null;
   if (following && rate !== null && beat) {
     const exact = (rate * 60) / beat.quavers;

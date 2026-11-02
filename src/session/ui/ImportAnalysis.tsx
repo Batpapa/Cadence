@@ -12,6 +12,7 @@ import { FocusView, useFeedFocus } from './FocusView';
 import { recordOf } from '../tunesets';
 import { useAutoFollowScroll } from './domInterop';
 import { fmtLongTime, TitleRow, DateRow, indexProgressText, fmtEta, repinSessionDate } from './sessionUiShared';
+import { showDetectionTempo } from './LiveTempo';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { importPlaybackWarn } from './sessionStore';
 import { canPlayFile } from '../audio/sources';
@@ -144,6 +145,9 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     onAddManualAlternate: (id, tune) => { imp.addManualAlternate(id, tune); setDetections(imp.getDetections()); },
     onRemoveManualAlternate: (id, tuneId) => { imp.removeManualAlternate(id, tuneId); setDetections(imp.getDetections()); },
     getLatestDetection: (id) => imp.getDetections().find(a => a.id === id),
+    // From the readings so far; saved with the detection at the end.
+    tempoOf: ann => imp.tempoCache.get(ann, imp.novelty),
+    onTempo: ann => showDetectionTempo(ann, { novelty: () => imp.novelty, cache: imp.tempoCache }),
     // Logging a practice needs a date, nothing more — a detection still
     // consolidating, or even open, can be rated (2026-10-10, see LiveSession).
     // The date is the one the file's own modification time guessed, editable

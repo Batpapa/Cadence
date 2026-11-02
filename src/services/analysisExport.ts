@@ -1,6 +1,8 @@
 import type { Analysis, Detection } from '../session/model';
 import { downloadBlob, downloadTextFile, toDateStr } from '../utils';
 import { withChains } from '../session/ui/timelineModel';
+import { inBeats } from '../session/tempoSummary';
+import type { Beat } from '../session/liveFollow';
 import { buildZip, type ZipEntry } from './zip';
 import { safeFileName } from './attachmentNames';
 
@@ -123,7 +125,12 @@ function escape(v: string): string {
   return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** Same fields as the detailed TXT, one row per detection. */
+/** The beat's name in the CSV, which, like its headers, is in English. */
+const BEAT_NAME: Record<Beat['unit'], string> = {
+  quaver: 'quaver', crotchet: 'crotchet', dottedCrotchet: 'dotted crotchet', minim: 'minim', dottedMinim: 'dotted minim',
+};
+
+/** Same fields as the detailed TXT, one row per detection — and the tempo. */
 export function exportAnalysisCSV(session: Analysis, nameOf: NameOf = rawName, { setBreaks = false }: { setBreaks?: boolean } = {}): void {
   // BOM: without it Excel reads the file as the system codepage and mangles
   // every accented tune name. Same prefix the card CSV export carries.
@@ -133,14 +140,18 @@ export function exportAnalysisCSV(session: Analysis, nameOf: NameOf = rawName, {
 /** The CSV's text — with an empty row between sets when asked, which a
  *  spreadsheet shows as the gap it is. */
 export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBreaks = false): string {
+  // The tempo (2026-11-01, the user): in the beat of the tune's dance, as the
+  // cards show it, and in quavers — the one count that compares a reel with a
+  // jig. Empty where none was saved (Detection.quaverRate).
   const rows: string[][] = [
-    ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked'],
+    ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked', 'Tempo', 'Beat', 'Quavers/min'],
   ];
 
   const dets = ordered(session);
   const brk = setBreaks ? breaksBefore(dets, session) : dets.map(() => false);
   dets.forEach((d, i) => {
     if (brk[i]) rows.push([]);
+    const tempo = d.quaverRate === undefined ? null : inBeats(d.quaverRate, d);
     rows.push([
       hms(d.start),
       hms(endOf(d, session)),
@@ -150,6 +161,9 @@ export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBrea
       String(Math.round(d.confidence * 100)),
       d.userConfirmed ? 'yes' : '',
       d.liked ? 'yes' : '',
+      tempo ? String(Math.round(tempo.value)) : '',
+      tempo ? BEAT_NAME[tempo.unit] : '',
+      tempo ? String(Math.round(tempo.quaversPerMinute)) : '',
     ]);
   });
 

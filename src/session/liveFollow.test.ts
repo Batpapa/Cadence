@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LiveFollower, LiveCursor, VersionWatch, beatOf, type LiveEstimate, type LiveFollowOptions } from './liveFollow';
+import { LiveFollower, LiveCursor, VersionWatch, beatOf, beatOfDance, type LiveEstimate, type LiveFollowOptions } from './liveFollow';
 import { contourToMidi, FOLLOW_FPS } from './scoreFollow';
 
 const tune = contourToMidi('ooqxxvxxqxxxvxAxvtsovoxovosovoAvsoqxxvxxqxxxvxACEFHECzAxvsoqsoqq');
@@ -185,6 +185,22 @@ describe('the beat a tempo is given in', () => {
     // No note, or one with no name here: the metre's.
     expect(beatOf('4/4', '120')).toEqual({ unit: 'crotchet', quavers: 2 });
     expect(beatOf('4/4', '5/8=80')).toEqual({ unit: 'crotchet', quavers: 2 });
+  });
+
+  it("is the dance's beat when the dance is known, whatever the metre or the tempo field", () => {
+    expect(beatOfDance('reel', '4/4', '1/4=220')).toEqual({ unit: 'minim', quavers: 4 });
+    expect(beatOfDance(' Hornpipe', '4/4')).toEqual({ unit: 'minim', quavers: 4 });
+    expect(beatOfDance('Barn Dance', 'C')).toEqual({ unit: 'minim', quavers: 4 });
+    expect(beatOfDance('three-two', '3/2')).toEqual({ unit: 'minim', quavers: 4 });
+    expect(beatOfDance('Double jig', '6/8')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOfDance('slip jig', '9/8')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOfDance('slide', '12/8')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOfDance('polka', '2/4')).toEqual({ unit: 'crotchet', quavers: 2 });
+    expect(beatOfDance('waltz', '3/4')).toEqual({ unit: 'crotchet', quavers: 2 });
+    expect(beatOfDance('strathspey', '4/4')).toEqual({ unit: 'crotchet', quavers: 2 });
+    // Another dance, or none: the tempo field's, else the metre's.
+    expect(beatOfDance('march', '6/8')).toEqual({ unit: 'dottedCrotchet', quavers: 3 });
+    expect(beatOfDance(undefined, '4/4', '1/2=110')).toEqual({ unit: 'minim', quavers: 4 });
   });
 });
 

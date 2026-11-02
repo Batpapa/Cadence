@@ -16,6 +16,7 @@ import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '.
 import { TUNE_ANALYSER_MODULE_KEY } from '../model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields, insertionIndex } from '../model';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
+import { showDetectionTempo } from './LiveTempo';
 import { useSlicePlayer } from './PassRow';
 import { showShareSessionModal } from './ShareSessionModal';
 import { showAnalysisNotesModal } from './AnalysisNotesModal';
@@ -798,6 +799,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     sessionId: session.id,
     onOpenCard,
     onCardAdded: bump,
+    // The curve is worked out from the recording: only when it is here.
+    onTempo: audioUrl ? (a) => showDetectionTempo(a, { audio: () => loadSessionAudio(session.id) }) : undefined,
     getPinnedDeckIds: () => pinnedDeckIdsRef.current,
     onToggleLike: (id) => {
       const target = session.annotations.find(a => a.id === id);

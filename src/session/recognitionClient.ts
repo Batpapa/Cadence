@@ -1,6 +1,7 @@
 import type { FFWorkerRequest, FFWorkerResponse } from './recognition/ffWorker';
 import { noteTuneIndexCached, type IndexProgress } from './recognition/indexStore';
 import type { WindowResult, DetectionEvent } from './model';
+import type { TempoReading } from './liveTempo';
 import type { RecognitionSink } from './audio/sources';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
 
@@ -16,11 +17,17 @@ export interface RecognitionCallbacks {
   /** #17: a real live-capture gap was caught up on (worklet path only) — how
    *  many seconds of silence got padded in to keep pace with wall-clock time. */
   onLiveGap?: (seconds: number) => void;
+  /** About once a second, with `tempo` on (liveTempo.ts). */
+  /** `novelty`: the curve since the last reading, from frame `at` on. */
+  onTempo?: (reading: TempoReading, novelty: Float32Array, at: number) => void;
 }
 
 export interface RecognitionOptions {
   /** Analysis hop in seconds — HOP_S_IMPORT for file imports, default for live. */
   hopS?: number;
+  /** Follow the tempo of the audio too (liveTempo.ts): a reading a second of
+   *  signal, through `onTempo`. */
+  tempo?: boolean;
 }
 
 export class RecognitionClient implements RecognitionSink {
@@ -42,6 +49,10 @@ export class RecognitionClient implements RecognitionSink {
     // A worker that fails to load or crashes outside a message handler never
     // posts anything — surface it instead of hanging on `ready` forever.
     this.worker.onerror = (e: ErrorEvent) => {
+      // Handled: not to go on up to the page as uncaught — a worker's error
+      // not cancelled is reported again in the page's scope (2026-11-02, a
+      // WASM "unreachable" over the whole screen in development).
+      e.preventDefault();
       const msg = `Recognition worker error: ${e.message || 'failed to load'}`;
       this.cb.onError?.(msg);
       rejectReady(new Error(msg));
@@ -63,6 +74,7 @@ export class RecognitionClient implements RecognitionSink {
         case 'stopped':       this.stopDone?.({ events: msg.events, tFinal: msg.tFinal }); this.stopDone = null; break;
         case 'live-gap':      if (DEBUG_LIVE_AUDIO) console.log(`[live] gap comble par le worker : ${msg.seconds.toFixed(1)}s de silence`);
           this.cb.onLiveGap?.(msg.seconds); break;
+        case 'tempo':         this.cb.onTempo?.(msg.reading, msg.novelty, msg.at); break;
         // The worker cannot write to the page console usefully on its own (its
         // lines land in a separate context), so it ships them here.
         case 'debug':         console.log(`[live] worker: ${msg.line}`); break;
@@ -70,7 +82,7 @@ export class RecognitionClient implements RecognitionSink {
       }
     };
 
-    this.send({ type: 'init', sampleRate, hopS: options.hopS });
+    this.send({ type: 'init', sampleRate, hopS: options.hopS, tempo: options.tempo });
   }
 
   private send(msg: FFWorkerRequest, transfer?: Transferable[]): void {

@@ -17,6 +17,9 @@ import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { currentPick, provisionalEnd } from '../detectionState';
 import { fmtDateTime } from '../../services/dateFormat';
 import { RATING_BUTTONS } from '../../components/ratingButtons';
+import { tempoText } from './tempoText';
+import { analysisTempo } from './analysisView';
+import { approxTempo } from '../tempoSummary';
 // ── DetectionCard ────────────────────────────────────────────────────────────
 // The central unit of the session feed/summary: one recognised tune, with its
 // play/ABC-preview/add-to-library/like controls and (when applicable) review
@@ -55,9 +58,19 @@ export interface DetectionCardOptions {
     /** Silences the screen's own player when it is turned on. */
     beforeOpen?: () => void;
   };
-  /** The meta line — dance, mode, times, and `metaActions` — under the name.
-   *  Default true; the analysis's simple view leaves it out (analysisView.ts). */
+  /** The meta line — dance, mode, times, tempo and `metaActions` — under the
+   *  name. Default true; the analysis's simple view leaves it out
+   *  (analysisView.ts). */
   details?: boolean;
+  /** The detection's tempo, quavers a second, on a feed still being analysed
+   *  — read inside it in the engine's novelty so far (tempoSummary.ts's
+   *  insideTempo); `approx` for the "~". Absent: the tempo saved with it
+   *  (Detection.quaverRate), if any. */
+  tempoOf?: (ann: Detection) => { rate: number; approx: boolean } | null;
+  /** Opens the curve of the detection's tempo (LiveTempo.tsx's
+   *  showDetectionTempo): the tempo shown becomes the way in. Absent, it is
+   *  plain text — a saved analysis whose recording is not on this device. */
+  onTempo?: (ann: Detection) => void;
   /** The "log this as a review" row. Default true; the analysis shows it only
    *  with its "Study" switch on (analysisView.ts). */
   study?: boolean;
@@ -554,6 +567,11 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   const bucketWord = t(`sessions.confidence.${ann.bucket}`);
   const confidencePct = `${Math.round(ann.confidence * 100)}%`;
   const focus = !!opts.focus;
+  // Only with the "BPM" switch on (analysisView.ts) — read here, so the card
+  // redraws when it is turned.
+  const tempo = !analysisTempo.value ? null
+    : opts.tempoOf ? opts.tempoOf(ann)
+    : ann.quaverRate !== undefined ? { rate: ann.quaverRate, approx: approxTempo(ann) } : null;
 
 
   return (
@@ -732,6 +750,18 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
         ) : (
           <span>{range}</span>
         )}
+        {/* The tempo it was played at, in the beat of the tune shown — after
+            the times, as a fact about this stretch of recording (2026-11-01).
+            Nothing where too little pulse was heard. */}
+        {tempo !== null && <span class="tabular-nums">·{' '}
+          {opts.onTempo ? (
+            <button
+              class="tabular-nums hover:text-accent transition-colors cursor-pointer"
+              title={t('sessions.tempo.detection.open')}
+              onClick={(e) => { e.stopPropagation(); opts.onTempo!(ann); }}
+            >{tempoText(tempo.rate, ann, tempo.approx)}</button>
+          ) : tempoText(tempo.rate, ann, tempo.approx)}
+        </span>}
         {/* Pushed to the far end of the same line: cutting a clip is an act on
             this stretch of recording, so it belongs beside the times that
             define it rather than on a row of its own (2026-09-20). */}

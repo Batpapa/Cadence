@@ -123,7 +123,19 @@ ctx.onmessage = (e) => {
         ff.set_sample_rate(rate);
         ff.flush_pcm_buffer();
         if (score.length) follow(score);
-        msg.port.onmessage = (ev: MessageEvent<StampedChunk>) => onChunk(ev.data);
+        // Out of the try above, an error here went up to the page uncaught
+        // (ffWorker.ts's live path, 2026-11-02). Said once: an engine that
+        // failed is not fed again.
+        let failed = false;
+        msg.port.onmessage = (ev: MessageEvent<StampedChunk>) => {
+          if (failed) return;
+          try {
+            onChunk(ev.data);
+          } catch (err) {
+            failed = true;
+            ctx.postMessage({ type: 'error', message: err instanceof Error ? err.stack ?? err.message : String(err) });
+          }
+        };
       } catch (err) {
         ctx.postMessage({ type: 'error', message: String(err) });
       }

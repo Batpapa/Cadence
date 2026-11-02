@@ -9,6 +9,27 @@ ABC, import TheSession / irishtune.info — tourne dans le navigateur.
 
 ~175 fichiers TS/TSX, 46 fichiers de tests.
 
+## Philosophie produit
+
+**Cadence est un carnet de progression, pas une méthode d'apprentissage.** Elle planifie
+(FSRS décide *quand* revoir), elle ne dit jamais *comment* devenir meilleur. Chacun a sa façon
+d'apprendre (à l'oreille, sur partition, avec un prof, en session) ; une application qui
+imposerait la sienne perdrait tout le monde.
+
+- Les outils de l'application (play-along, swing, tempo, synchro audio, bornes, analyses…)
+  servent à **explorer ses propres données**. Ce ne sont pas des exercices : chacun en fait ce
+  qu'il veut.
+- Deux questions avant toute fonctionnalité : est-ce qu'elle mesure ou facilite ce que
+  l'utilisateur a *décidé* de faire, ou est-ce qu'elle lui dit quoi faire ? Si on l'ignore,
+  est-ce que rien ne casse et rien ne culpabilise ?
+- Hors sujet dans le cœur : parcours imposés, niveaux, déblocages, exercices prescrits,
+  verdict « prêt », objectifs fixés par l'application, compétences prédéfinies livrées. Exemple
+  abandonné pour cette raison : le tempo cible du play-along.
+- Guider un débutant passe par des **exemples** (bibliothèque d'exemple, scénarios guidés), pas
+  par une méthode.
+- **Une bonne idée qui sort de ce cadre mais mérite d'entrer dans l'application n'y entre que
+  par un module**, jamais par le cœur.
+
 ## Commandes
 
 ```bash

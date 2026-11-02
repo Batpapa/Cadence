@@ -28,6 +28,7 @@ export const ANALYSIS_VIEWS: readonly AnalysisView[] = ['simple', 'detailed', 'e
 
 const VIEW_KEY = 'cadence_analysis_view';
 const STUDY_KEY = 'cadence_analysis_study';
+const TEMPO_KEY = 'cadence_analysis_tempo';
 
 function readView(): AnalysisView {
   try {
@@ -38,16 +39,22 @@ function readView(): AnalysisView {
   }
 }
 
-function readStudy(): boolean {
+function readFlag(key: string): boolean {
   try {
-    return localStorage.getItem(STUDY_KEY) === '1';
+    return localStorage.getItem(key) === '1';
   } catch {
     return false;
   }
 }
 
 export const analysisView = signal<AnalysisView>(readView());
-export const analysisStudy = signal<boolean>(readStudy());
+export const analysisStudy = signal<boolean>(readFlag(STUDY_KEY));
+/** "BPM" (2026-11-02, the user): each tune's tempo on its card, and the live
+ *  tempo at the bottom of a recording. A switch beside "Study", per device and
+ *  off by default as it is. Only what is SHOWN: the tempo is worked out by
+ *  every analysis and saved with it whatever this says (Detection.quaverRate)
+ *  — it costs some 7 % of an import. */
+export const analysisTempo = signal<boolean>(readFlag(TEMPO_KEY));
 
 export function setAnalysisView(v: AnalysisView): void {
   analysisView.value = v;
@@ -57,14 +64,17 @@ export function setAnalysisView(v: AnalysisView): void {
   } catch { /* private mode: it lasts as long as the page */ }
 }
 
-export function toggleAnalysisStudy(): void {
-  const on = !analysisStudy.value;
-  analysisStudy.value = on;
+function toggle(flag: typeof analysisStudy, key: string): void {
+  const on = !flag.value;
+  flag.value = on;
   try {
-    if (on) localStorage.setItem(STUDY_KEY, '1');
-    else localStorage.removeItem(STUDY_KEY);
+    if (on) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
   } catch { /* private mode: it lasts as long as the page */ }
 }
+
+export function toggleAnalysisStudy(): void { toggle(analysisStudy, STUDY_KEY); }
+export function toggleAnalysisTempo(): void { toggle(analysisTempo, TEMPO_KEY); }
 
 /** What a view shows, asked by name rather than by comparing views. */
 export const showsDetails = (v: AnalysisView) => v !== 'simple';

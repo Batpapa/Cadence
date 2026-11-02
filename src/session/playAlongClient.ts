@@ -141,6 +141,8 @@ export async function startPlayAlong(onEnded: () => void): Promise<PlayAlong> {
       console.error('[play-along]', msg.message);
     }
   };
+  // Handled here, not left to reach the page (recognitionClient.ts).
+  worker.onerror = (e) => { e.preventDefault(); console.error('[play-along]', e.message); };
   const start: LiveFollowRequest = { type: 'start', rate, port: channel.port2 };
   worker.postMessage(start, [channel.port2]);
 
@@ -215,6 +217,7 @@ export async function startPlayAlong(onEnded: () => void): Promise<PlayAlong> {
       watcher = w;
       const ch = new MessageChannel();
       w.onmessage = (e: MessageEvent<VersionWatchResponse>) => { if (watcher === w) onOffer(e.data.version); };
+      w.onerror = (e) => { e.preventDefault(); console.error('[play-along] version watch', e.message); };
       const post = (req: VersionWatchRequest, transfer: Transferable[] = []) => w.postMessage(req, transfer);
       post({ type: 'start', scores, shown, fps: rate / FF_PCM_WINDOW, port: ch.port2 }, [ch.port2]);
       const tap: LiveFollowRequest = { type: 'tap', port: ch.port1 };

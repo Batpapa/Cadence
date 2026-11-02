@@ -539,6 +539,31 @@ export function beatOf(meter: string, tempo?: string): Beat {
   return { unit: 'crotchet', quavers: 2 };
 }
 
+const MINIM: Beat = { unit: 'minim', quavers: 4 };
+const CROTCHET: Beat = { unit: 'crotchet', quavers: 2 };
+const DOTTED_CROTCHET: Beat = { unit: 'dottedCrotchet', quavers: 3 };
+
+/** The beat danced to, by dance — TheSession's names, and what an ABC's R:
+ *  field says ("Double jig", "Slip Jig", "Barn Dance"). In order: "slip jig"
+ *  is a jig. */
+const DANCE_BEATS: [RegExp, Beat][] = [
+  [/\b(reel|hornpipe|barn ?dance|three-two)\b/, MINIM],
+  [/\bstrathspey\b/, CROTCHET],
+  [/\b(jig|slide)\b/, DOTTED_CROTCHET],
+  [/\b(polka|waltz|mazurka)\b/, CROTCHET],
+];
+
+/** The beat a tempo is given in, by the kind of tune (2026-11-01, the user,
+ *  later the same day as beatOf's rule: "le temps de danse") — reels and
+ *  hornpipes in minims, jigs, slides and slip jigs in dotted crotchets,
+ *  polkas, waltzes and mazurkas in crotchets. A dance it does not know —
+ *  a march, a set dance, none — is counted by beatOf. */
+export function beatOfDance(dance: string | undefined, meter: string, tempo?: string): Beat {
+  const d = (dance ?? '').toLowerCase();
+  for (const [re, beat] of DANCE_BEATS) if (re.test(d)) return beat;
+  return beatOf(meter, tempo);
+}
+
 // ── Which version is being played ────────────────────────────────────────────
 // The second take from the app (2026-11-01): the cursor « still jumps between
 // bars 1-4 and 5-8 » — the player played another setting of the tune than

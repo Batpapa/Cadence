@@ -11,6 +11,8 @@ import { ImportAnalysis } from '../session/ui/ImportAnalysis';
 import { SessionSummary } from '../session/ui/SessionSummary';
 import { startLiveSession, startImport, startLinkImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive, setPitchShiftSetting } from '../session/ui/sessionModule';
 import { PitchShiftControl } from '../session/ui/PitchShiftControl';
+import { LiveTempoBar } from '../session/ui/LiveTempo';
+import { analysisTempo } from '../session/ui/analysisView';
 import { pitchShiftSetting } from '../session/detections';
 import { GearIcon, WaveformIcon } from '../components/icons';
 
@@ -133,9 +135,16 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
     );
   }
 
+  // The live tempo (the "BPM" switch, analysisView.ts): a line of its own at
+  // the very bottom of the screen, however short the page (2026-11-01) —
+  // after the page in a column, which the page fills, and sticky when the
+  // page is longer. The page's own content keeps its block flow: only its box
+  // is a flex item.
+  const tempoBar = !sessionId && live && liveScreenActive() && analysisTempo.value ? live : null;
   return (
-    <div class="h-full overflow-y-auto view-enter">
-      <div class="p-6">{content}</div>
+    <div class={`h-full overflow-y-auto view-enter ${tempoBar ? 'flex flex-col' : ''}`}>
+      <div class={tempoBar ? 'p-6 flex-1' : 'p-6'}>{content}</div>
+      {tempoBar && <LiveTempoBar live={tempoBar} />}
     </div>
   );
 }
