@@ -1391,6 +1391,34 @@ export function showPreviewModal(
     let playAlongHost: HTMLElement | null = null;
     /** What the Play-along hid, with how each was shown, to put back. */
     let hiddenByPlayAlong: Array<[HTMLElement, string]> = [];
+    /** The viewer's height held at what the dialog shows of it while the
+     *  Play-along is laid over it. A long tune makes the viewer taller than
+     *  the dialog, whose body scrolls with the transport stuck at its foot
+     *  (BOTTOM_ROW_CLASS): laid over the whole viewer, the Play-along ran on
+     *  under that foot and its bar was cut off (2026-11-02, the user). It now
+     *  ends above the body's bottom padding — not over it, as the transport
+     *  does: its bar would touch the dialog's edge (2026-11-02, the user) —
+     *  and nothing scrolls under it. */
+    const holdPlayAlongHeight = (): void => {
+      const s = container.style;
+      s.height = s.overflow = '';
+      const scroller = container.parentElement ? nearestScroller(container.parentElement) : null;
+      if (scroller) scroller.scrollTop = 0;
+      const box = container.getBoundingClientRect();
+      // Rects are in the page's pixels, styles in layout ones (the app's zoom).
+      const scale = container.offsetHeight > 0 ? box.height / container.offsetHeight : 1;
+      const limit = scroller
+        ? scroller.getBoundingClientRect().top
+          + (scroller.clientTop + scroller.clientHeight - parseFloat(getComputedStyle(scroller).paddingBottom)) * scale
+        : box.bottom;
+      s.height = `${(Math.min(box.bottom, limit) - box.top) / scale}px`;
+      s.overflow = 'hidden';
+    };
+    const releasePlayAlongHeight = (): void => {
+      const s = container.style;
+      s.height = s.overflow = '';
+      window.removeEventListener('resize', holdPlayAlongHeight);
+    };
     const playAlongBtn = document.createElement('button');
     const playAlongLabel = document.createElement('span');
     playAlongLabel.textContent = t('fileViewer.abc.playAlong');
@@ -1430,6 +1458,8 @@ export function showPreviewModal(
           .map(el => [el, el.style.visibility]);
         for (const [el] of hiddenByPlayAlong) el.style.visibility = 'hidden';
         container.classList.add('relative');
+        holdPlayAlongHeight();
+        window.addEventListener('resize', holdPlayAlongHeight);
         playAlongHost = document.createElement('div');
         // From under the tabs' row (the container's gap is the host's own
         // margin) to the bottom of what the viewer takes.
@@ -1454,6 +1484,7 @@ export function showPreviewModal(
         for (const [el, visibility] of hiddenByPlayAlong) el.style.visibility = visibility;
         hiddenByPlayAlong = [];
         container.classList.remove('relative');
+        releasePlayAlongHeight();
         sheetNeedsRerender = true;
         setAbcMode(currentMode);
       }
@@ -1482,6 +1513,7 @@ export function showPreviewModal(
     releasePlayAlong = () => {
       playAlongView?.unmount();
       playAlongView = null;
+      releasePlayAlongHeight();
     };
     // ── The toggles' labels: both, or neither ────────────────────────────────
     const toggles: Array<[HTMLElement, HTMLElement]> = [];
@@ -2141,7 +2173,7 @@ export function showPreviewModal(
         : modalMaxH(0.62);
     };
     capScore();
-    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); audioSyncView?.setExpanded(expanded); playAlongView?.setExpanded(expanded); };
+    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); audioSyncView?.setExpanded(expanded); if (playAlongView) { holdPlayAlongHeight(); playAlongView.setExpanded(expanded); } };
 
     /** Re-engraves for the box the score is in NOW, keeping the reader's place
      *  and whatever is playing. Assigned once abcjs has loaded; a resize that

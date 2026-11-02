@@ -4,6 +4,8 @@ import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { shiftContour } from './contourShift';
 import { normalizeDisplayName } from '../../utils';
 import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, DetectionEvent } from '../model';
+import { TempoTracker, type TempoReading } from '../liveTempo';
+import { FEATURE_PITCHES } from '../scoreFollow';
 import {
   ANALYSIS_HOP_S, ANALYSIS_WINDOW_S, FF_PCM_WINDOW, DEBUG_LIVE_AUDIO,
   FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM, FF_QUERY_REPASS_SIZE, FF_MIN_QUERY_LENGTH,
@@ -23,7 +25,9 @@ interface RawQueryRecord {
 }
 
 export type FFWorkerRequest =
-  | { type: 'init'; sampleRate: number; hopS?: number }
+  /** `tempo`: follow the tempo of the audio too (liveTempo.ts) — every
+   *  analysis, live or file; not the TheSession widget's finder. */
+  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean }
   | { type: 'worklet-port'; port: MessagePort }
   | { type: 'pcm'; buffer: ArrayBuffer; ack?: boolean }
   | { type: 'set-pitch-shift'; semitones: number }
@@ -38,6 +42,9 @@ export type FFWorkerResponse =
   | { type: 'pcm-ack' }
   | { type: 'stopped'; events: DetectionEvent[]; tFinal: number }
   | { type: 'live-gap'; seconds: number }
+  /** `novelty`: the curve's values since the last reading, from frame `at`
+   *  of the recording on. */
+  | { type: 'tempo'; reading: TempoReading; novelty: Float32Array; at: number }
   | { type: 'debug'; line: string }
   | { type: 'error'; message: string };
 
@@ -78,6 +85,74 @@ let lastAnalysisAt = 0;   // totalSamples value at last analysis
 let liveWallClockAnchorMs: number | null = null;
 const LIVE_DEFICIT_SAFETY_MARGIN_S = 1;
 
+// The tempo (liveTempo.ts), when asked for at init. Its own engine, with
+// no index: the features of the analysis windows cannot be borrowed —
+// `take_features` empties the buffer the transcription reads, and a window is
+// fed again whole every hop anyway. Features only, about a third more of what
+// the live analysis already extracts.
+let tempoFf: FolkFriendWASM | null = null;
+let tempoPtr = 0;
+let tempoTracker: TempoTracker | null = null;
+/** Samples of the last chunk short of a whole frame, for the next one. */
+let tempoRest = new Float32Array(0);
+/** Tracker frames at which the next reading is due: one a second. */
+let tempoNextRead = 0;
+
+function resetTempo(): void {
+  tempoTracker?.reset();
+  tempoRest = new Float32Array(0);
+  tempoNextRead = 0;
+  tempoPending = [];
+}
+
+/** The novelty since the last reading (TempoTracker.push), sent with the
+ *  next — the engines keep the whole curve (NoveltyStore), and read each
+ *  detection's own tempo in it. `tempoPendingAt`: the frame of its first. */
+let tempoPending: Float32Array[] = [];
+let tempoPendingAt = 0;
+
+/** Feeds a chunk to the tempo tracker — after it has been counted in
+ *  totalSamples, whose clock the readings are stamped with. A file's chunks
+ *  come as fast as they are analysed: a reading per second of SIGNAL. */
+function feedTempo(chunk: Float32Array): void {
+  if (!tempoFf || !tempoTracker) return;
+  let all = chunk;
+  if (tempoRest.length) {
+    all = new Float32Array(tempoRest.length + chunk.length);
+    all.set(tempoRest);
+    all.set(chunk, tempoRest.length);
+  }
+  const frames = Math.floor(all.length / FF_PCM_WINDOW);
+  for (let i = 0; i < frames; i++) {
+    // Re-acquired every time, as in analyzeSignal: memory growth stales it.
+    tempoFf.get_allocated_pcm_window(tempoPtr).set(all.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
+    tempoFf.feed_single_pcm_window(tempoPtr);
+  }
+  tempoRest = all.slice(frames * FF_PCM_WINDOW);
+  if (frames === 0) return;
+  // A reading at every second of signal INSIDE the chunk, stamped with its
+  // own time: a file's chunks are five seconds long, and one reading per
+  // chunk gave the agreement rule (TEMPO_OPTIONS) 25 s to agree over — the
+  // first tune of the import test had no tempo (2026-11-01).
+  const features = tempoFf.take_features();
+  const n = Math.floor(features.length / FEATURE_PITCHES);
+  // The recording's frame the first of these is, for the novelty sent along.
+  const firstFrame = Math.round((totalSamples - tempoRest.length - n * FF_PCM_WINDOW) / FF_PCM_WINDOW);
+  for (let i = 0; i < n;) {
+    const take = Math.min(n - i, Math.max(1, tempoNextRead - tempoTracker.frames));
+    if (!tempoPending.length) tempoPendingAt = firstFrame + i;
+    tempoPending.push(tempoTracker.push(features.subarray(i * FEATURE_PITCHES, (i + take) * FEATURE_PITCHES)));
+    i += take;
+    if (tempoTracker.frames < tempoNextRead) continue;
+    tempoNextRead = tempoTracker.frames + Math.round(tempoTracker.fps);
+    const t = (totalSamples - tempoRest.length - (n - i) * FF_PCM_WINDOW) / sampleRate;
+    const novelty = new Float32Array(tempoPending.reduce((k, p) => k + p.length, 0));
+    tempoPending.reduce((at, p) => { novelty.set(p, at); return at + p.length; }, 0);
+    tempoPending = [];
+    ctx.postMessage({ type: 'tempo', reading: tempoTracker.read(t).reading, novelty, at: tempoPendingAt }, [novelty.buffer]);
+  }
+}
+
 /** Pads the ring with silence if totalSamples has fallen behind real wall-clock
  *  time since the anchor — called once per worklet message, before the new
  *  chunk is appended, never for file-import PCM. */
@@ -90,6 +165,8 @@ function padToWallClock(): void {
   const deficit = expectedSamples - totalSamples - Math.round(LIVE_DEFICIT_SAFETY_MARGIN_S * sampleRate);
   if (deficit > 0) {
     appendToRing(new Float32Array(deficit));
+    // Not fed as silence: the tempo starts again after the hole.
+    resetTempo();
     // #17: tells the UI a real gap was caught up on (and how much), instead
     // of the old unconditional "may have been interrupted" guess on every
     // visibility change regardless of whether anything actually happened.
@@ -130,7 +207,7 @@ function supportsSimd(): boolean {
   }
 }
 
-async function handleInit(sr: number, hop?: number): Promise<void> {
+async function handleInit(sr: number, hop?: number, tempo?: boolean): Promise<void> {
   sampleRate = sr;
   hopS = hop ?? ANALYSIS_HOP_S;
   // Two builds of the same engine, bit-identical in their results — the SIMD
@@ -167,6 +244,13 @@ async function handleInit(sr: number, hop?: number): Promise<void> {
   ff.set_num_repass(FF_QUERY_REPASS_SIZE);
   ff.set_min_query_length(FF_MIN_QUERY_LENGTH);
   pcmPtr = ff.alloc_single_pcm_window();
+  if (tempo) {
+    tempoFf = new FolkFriendWASM();
+    tempoFf.set_sample_rate(sampleRate);
+    tempoPtr = tempoFf.alloc_single_pcm_window();
+    tempoTracker = new TempoTracker(sampleRate / FF_PCM_WINDOW);
+    resetTempo();
+  }
 
   const index = await loadTuneIndex(progress => post({ type: 'init-progress', progress }));
   ff.load_index_from_json_obj(index.indexData);
@@ -352,12 +436,27 @@ function maybeAnalyzeLive(): void {
 }
 
 function handlePcm(buffer: ArrayBuffer): void {
-  appendToRing(new Float32Array(buffer));
+  const chunk = new Float32Array(buffer);
+  appendToRing(chunk);
   maybeAnalyzeLive();
+  try {
+    feedTempo(chunk);
+  } catch (err) {
+    // The tempo is a display: whatever fails in it leaves the recognition
+    // going, and stops for the rest of the recording — an engine that
+    // panicked is not to be fed again. A WASM "unreachable" was seen live
+    // (2026-11-02, a tab pulled out of its window while capturing), its cause
+    // unknown: the engine's own message is logged just before this one.
+    tempoFf = null;
+    tempoTracker = null;
+    console.error('[tempo] stopped for this recording:', err instanceof Error ? err.stack ?? err.message : err);
+  }
 }
 
 /** Worklet (live) path only — file import never calls this, see padToWallClock(). */
 let workletChunks = 0;
+/** The live analysis threw: its engine is not to be fed again. */
+let liveFailed = false;
 /** Chunks still to be logged individually — set on live-resume so the first
  *  arrivals after a resume are always visible, however rare they are. */
 let verboseChunks = 3;
@@ -385,7 +484,9 @@ function handleStop(): void {
   // usual hop; windowRangeToTime reads real window centres, so an uneven last
   // step needs no special handling there.
   let tailEvents: DetectionEvent[] = [];
-  if (totalSamples >= ANALYSIS_WINDOW_S * sampleRate && totalSamples > lastAnalysisAt) {
+  // Not on an engine that failed: it would throw again, and 'stopped' never
+  // be sent — what was recognised before still is, and gets saved.
+  if (!liveFailed && totalSamples >= ANALYSIS_WINDOW_S * sampleRate && totalSamples > lastAnalysisAt) {
     const windowSamples = ANALYSIS_WINDOW_S * sampleRate;
     const tEnd = totalSamples / sampleRate;
     const { result, abc } = analyzeSignal(tailOfRing(windowSamples), tEnd - ANALYSIS_WINDOW_S, tEnd);
@@ -404,6 +505,7 @@ function handleStop(): void {
   lastAnalysisAt = 0;
   liveWallClockAnchorMs = null;
   segmenter = new IncrementalViterbiSegmenter(hopS);
+  resetTempo();
 }
 
 function onRequest(e: MessageEvent<FFWorkerRequest>): void {
@@ -411,10 +513,22 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
   try {
     switch (msg.type) {
       case 'init':
-        void handleInit(msg.sampleRate, msg.hopS).catch(err => post({ type: 'error', message: String(err) }));
+        void handleInit(msg.sampleRate, msg.hopS, msg.tempo).catch(err => post({ type: 'error', message: String(err) }));
         break;
       case 'worklet-port':
-        msg.port.onmessage = (ev: MessageEvent<ArrayBuffer>) => handleWorkletPcm(ev.data);
+        // Out of onRequest's try: an error here went up to the page uncaught,
+        // and the live screen said nothing of a recognition gone dead
+        // (2026-11-02). Said once — every chunk after would fail the same.
+        msg.port.onmessage = (ev: MessageEvent<ArrayBuffer>) => {
+          if (liveFailed) return;
+          try {
+            handleWorkletPcm(ev.data);
+          } catch (err) {
+            liveFailed = true;
+            console.error('[recognition] live analysis stopped:', err instanceof Error ? err.stack ?? err.message : err);
+            post({ type: 'error', message: String(err) });
+          }
+        };
         break;
       case 'pcm':
         handlePcm(msg.buffer);
@@ -430,6 +544,8 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
         // audio — re-anchor so "expected samples" picks up exactly where
         // totalSamples already is, with no gap to catch up on.
         liveWallClockAnchorMs = Date.now() - (totalSamples / sampleRate) * 1000;
+        // The music after a pause is not the music before it.
+        resetTempo();
         if (DEBUG_LIVE_AUDIO) {
           verboseChunks = 3;   // make the first arrivals after this visible
           post({ type: 'debug', line: `live-resume recu, re-ancre a total=${(totalSamples / sampleRate).toFixed(1)}s` });

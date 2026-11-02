@@ -1,4 +1,5 @@
 import type { FollowResult } from './scoreFollow';
+import { NoveltyStore } from './liveTempo';
 import type { ScoreFollowRequest, ScoreFollowResponse, FollowFailure, FollowStage } from './recognition/scoreFollowWorker';
 
 export type { FollowFailure } from './recognition/scoreFollowWorker';
@@ -146,9 +147,9 @@ export function followAudio(
         done.set(key, { follow, from: at.from, to: at.to });
         resolve(follow);
       } else if (msg.type === 'failed') resolve(msg.reason);
-      else reject(new Error(msg.message));
+      else reject(new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`));
     };
-    worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message)); };
+    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new Error(e.message)); };
     worker.postMessage(request);
   });
 }
@@ -171,9 +172,46 @@ export function followSpan(
       worker.terminate();
       if (msg.type === 'followed') resolve({ ...msg.result, from, seconds: to - from });
       else if (msg.type === 'failed') resolve(msg.reason);
-      else reject(new Error(msg.message));
+      else reject(new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`));
     };
-    worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message)); };
+    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new Error(e.message)); };
+    worker.postMessage(request);
+  });
+}
+
+/** The tempo's novelty of [from, to) of `audio` (liveTempo.ts), worked out in
+ *  the worker — a detection's curve on a saved analysis, whose novelty was not
+ *  kept (2026-11-01) — handed over as it comes, so the curve grows
+ *  (2026-11-02). `onRatio` 0 to 1 along the decoding then the features.
+ *  `signal` as followAudio's. */
+export function tempoOfSpan(
+  audio: Blob, from: number, to: number,
+  /** The curve so far, at each new stretch: frame 0 is `from`. */
+  onNovelty: (store: NoveltyStore) => void,
+  onRatio?: (r: number) => void, signal?: AbortSignal,
+): Promise<NoveltyStore | FollowFailure> {
+  const request: ScoreFollowRequest = { type: 'tempo', audio, from, to };
+  let store: NoveltyStore | null = null;
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./recognition/scoreFollowWorker.ts', import.meta.url), { type: 'module' });
+    signal?.addEventListener('abort', () => worker.terminate(), { once: true });
+    worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => {
+      const msg = e.data;
+      if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio / 2 : 0.5 + msg.ratio / 2); return; }
+      if (msg.type === 'decoded') return;
+      if (msg.type === 'novelty') {
+        store ??= new NoveltyStore(msg.fps);
+        store.write(store.length, msg.values);
+        onNovelty(store);
+        return;
+      }
+      worker.terminate();
+      if (msg.type === 'tempo-done') resolve(store ?? 'no_audio');
+      else if (msg.type === 'failed') resolve(msg.reason);
+      else if (msg.type === 'error') reject(new Error(msg.message));
+      else reject(new Error(`unexpected ${msg.type}`));
+    };
+    worker.onerror = (e) => { e.preventDefault(); worker.terminate(); reject(new Error(e.message)); };
     worker.postMessage(request);
   });
 }

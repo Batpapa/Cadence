@@ -3,6 +3,7 @@ import { followScore, contourToMidi, FEATURE_PITCHES, MATCH_USABLE, type FollowR
 import { openAudioInput } from '../audio/clipExtract';
 import { getSettingContour } from './indexStore';
 import { FF_PCM_WINDOW } from '../sessionConfig';
+import { Novelty } from '../liveTempo';
 
 // ── Score following worker ───────────────────────────────────────────────────
 // All of the work, off the main thread — which is playing the recording and
@@ -43,7 +44,11 @@ export type FollowStage = 'scan' | 'locate' | 'decode' | 'listen' | 'tempo' | 'a
  *  are not (scoreFollowClient keeps those for the last one only). */
 export type ScoreFollowRequest =
   | { type: 'follow'; audio: Blob; score: number[]; settingId?: string; from: number; to: number | null; samples?: false }
-  | { type: 'decode'; audio: Blob; from: number; to: number };
+  | { type: 'decode'; audio: Blob; from: number; to: number }
+  /** The tempo's novelty of [from, to) (liveTempo.ts), for a detection's
+   *  curve worked out when asked (2026-11-01): the novelty is never saved.
+   *  Sent as it is worked out, so the curve grows (2026-11-02, the user). */
+  | { type: 'tempo'; audio: Blob; from: number; to: number };
 export type ScoreFollowResponse =
   | { type: 'progress'; stage: FollowStage; ratio: number }
   /** The stretch, mono, at its own rate — sent before the alignment is done.
@@ -51,6 +56,9 @@ export type ScoreFollowResponse =
    *  decodes it again to the same first sample. */
   | { type: 'decoded'; pcm: Float32Array; rate: number; from: number; to: number }
   | { type: 'followed'; result: FollowResult }
+  /** The next stretch of novelty: `fps` frames a second, from the request's `from`. */
+  | { type: 'novelty'; fps: number; values: Float32Array }
+  | { type: 'tempo-done' }
   | { type: 'failed'; reason: FollowFailure }
   | { type: 'error'; message: string };
 
@@ -285,6 +293,32 @@ ctx.onmessage = (e) => {
         const d = await decodeSpan(msg.audio, msg.from, msg.to, r => progress('decode', r));
         if (!d) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
         ctx.postMessage({ type: 'decoded', pcm: d.pcm, rate: d.rate, from: msg.from, to: msg.to }, [d.pcm.buffer]);
+        return;
+      }
+      if (msg.type === 'tempo') {
+        progress('decode', 0);
+        const d = await decodeSpan(msg.audio, msg.from, msg.to, r => progress('decode', r));
+        if (!d) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
+        const f = await engine();
+        f.set_sample_rate(d.rate);
+        f.flush_pcm_buffer();
+        f.take_features();
+        // At the recording's own rate, as for an alignment: the windows are
+        // counted in frames of it.
+        const fps = d.rate / FF_PCM_WINDOW;
+        const novelty = new Novelty();
+        // Two seconds at a time: the page works the new windows out at each.
+        const every = Math.round(2 * fps);
+        let fed = 0;
+        for (let i = 0; i + FF_PCM_WINDOW <= d.pcm.length; i += FF_PCM_WINDOW) {
+          f.get_allocated_pcm_window(ptr).set(d.pcm.subarray(i, i + FF_PCM_WINDOW));
+          f.feed_single_pcm_window(ptr);
+          if (++fed % every !== 0 && i + 2 * FF_PCM_WINDOW <= d.pcm.length) continue;
+          const values = novelty.of(f.take_features());
+          ctx.postMessage({ type: 'novelty', fps, values }, [values.buffer]);
+          progress('tempo', i / d.pcm.length);
+        }
+        ctx.postMessage({ type: 'tempo-done' });
         return;
       }
       let from = msg.from;

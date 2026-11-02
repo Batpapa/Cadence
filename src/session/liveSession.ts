@@ -10,9 +10,11 @@ import { withSets } from './tunesets';
 import { DetectionTracker } from './detectionState';
 import { generatedSessionName } from './sessionNaming';
 import type { IndexProgress } from './recognition/indexStore';
-import { DEBUG_LIVE_AUDIO } from './sessionConfig';
+import { DEBUG_LIVE_AUDIO, FF_PCM_WINDOW } from './sessionConfig';
 import type { BoundAligner } from './boundSuggestClient';
 import type { FinishingState } from './ui/finishingModal';
+import { NoveltyStore, type TempoReading } from './liveTempo';
+import { withTempo, DetectionTempoCache } from './tempoSummary';
 
 /** How long stopping a recording waits for the bounds still being put on
  *  their passes before saving without them. */
@@ -107,6 +109,28 @@ export class LiveSession {
    *  PitchShiftControl.tsx. In-memory only, resets to 0 next recording. */
   pitchShift = 0;
 
+  /** Every tempo reading since the start, about one a second — always
+   *  followed, shown or not (the "BPM" switch, analysisView.ts). In memory
+   *  only: what is saved is each detection's tempo, taken from these at the
+   *  stop (Detection.quaverRate). A few hundred kilobytes for three hours. */
+  readonly tempo: TempoReading[] = [];
+  /** The tempo's novelty since the start, frame by frame: each detection's
+   *  own tempo is read in it (tempoSummary.ts's insideTempo). Its rate is the
+   *  source's, set when it opens. */
+  novelty = new NoveltyStore(48000 / FF_PCM_WINDOW);
+  /** Each detection's tempo, worked out once per bounds (DetectionTempoCache). */
+  readonly tempoCache = new DetectionTempoCache();
+  private readonly tempoListeners = new Set<() => void>();
+
+  /** Called on every new tempo reading, and on every change of phase — no
+   *  reading comes during a pause, and the bar greys then; returns the way to
+   *  stop. The bar and its chart both listen, so not one of the screen's
+   *  callbacks. */
+  listenTempo(fn: () => void): () => void {
+    this.tempoListeners.add(fn);
+    return () => { this.tempoListeners.delete(fn); };
+  }
+
   /** Live-adjustable: affects analysis windows from now on, not past ones. */
   setPitchShift(semitones: number): void {
     this.pitchShift = semitones;
@@ -129,6 +153,7 @@ export class LiveSession {
   private setPhase(phase: LiveSessionPhase): void {
     this.phase = phase;
     this.cb.onPhase?.(phase);
+    for (const fn of this.tempoListeners) fn();
   }
 
   getPhase(): LiveSessionPhase { return this.phase; }
@@ -217,6 +242,8 @@ export class LiveSession {
       await this.source.open();
 
       // Recognition worker: WASM + index (may trigger the big first download).
+      // The novelty comes at the source's own rate, a frame per 1024 samples.
+      this.novelty = new NoveltyStore(this.source.sampleRate / FF_PCM_WINDOW);
       this.recognition = new RecognitionClient(this.source.sampleRate, {
         onIndexProgress: p => this.cb.onIndexProgress?.(p),
         onWindow: (result, abc) => {
@@ -235,7 +262,12 @@ export class LiveSession {
         onDetections: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
         onLiveGap: seconds => this.cb.onLiveGap?.(seconds),
-      });
+        onTempo: (reading, novelty, at) => {
+          this.tempo.push(reading);
+          this.novelty.write(at, novelty);
+          for (const fn of this.tempoListeners) fn();
+        },
+      }, { tempo: true });
       if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       await this.recognition.ready;
 
@@ -504,7 +536,8 @@ export class LiveSession {
         duration: Math.max(tFinal, fileResult.durationMs / 1000),
         mimeType: fileResult.mimeType,
         source,
-        annotations: this.getDetections(),
+        // Each tune's tempo. A crash recovery has no readings, and saves none.
+        annotations: withTempo(this.getDetections(), this.novelty),
         ...withSets(this.tracker.finalSets(() => crypto.randomUUID())),
         ...(this.pauses.length ? { pauses: [...this.pauses] } : {}),
       };

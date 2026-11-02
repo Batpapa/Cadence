@@ -20,6 +20,7 @@ import { useAutoFollowScroll } from './domInterop';
 import { fmtLongTime, indexProgressText, TitleRow } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { LiveBackupIndicator } from './LiveBackupIndicator';
+import { showDetectionTempo } from './LiveTempo';
 import { generatedSessionName } from '../sessionNaming';
 import { setActiveLive, lastLiveDump } from './sessionStore';
 import { setPitchShiftSetting } from './sessionModule';
@@ -221,6 +222,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
     onAddManualAlternate: (id, tune) => { live.addManualAlternate(id, tune); setDetections(live.getDetections()); },
     onRemoveManualAlternate: (id, tuneId) => { live.removeManualAlternate(id, tuneId); setDetections(live.getDetections()); },
     getLatestDetection: (id) => live.getDetections().find(a => a.id === id),
+    // Shown with the "BPM" switch (DetectionCard reads it).
+    tempoOf: ann => live.tempoCache.get(ann, live.novelty),
+    onTempo: ann => showDetectionTempo(ann, { novelty: () => live.novelty, cache: live.tempoCache }),
   };
 
   // Not in the Focus view: one card, which a scroll to the bottom would only

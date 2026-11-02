@@ -73,7 +73,17 @@ describe('analysis CSV export', () => {
     exportAnalysisCSV(analysis([det({ displayName: 'Cooley\u2019s, The' })]));
     const rows = csvRows();
     expect(rows[1]).toContain('"Cooley\u2019s, The"');
-    expect(rows[0]!.split(',')).toHaveLength(8);
+    expect(rows[0]!.split(',')).toHaveLength(11);
+  });
+
+  it("gives the tempo saved with a detection, in its dance's beat and in quavers", () => {
+    exportAnalysisCSV(analysis([det({ start: 0, end: 90, quaverRate: 7.05 }), det({ start: 100, end: 200 }),
+      det({ start: 300, end: 400, dance: 'jig', meter: '6/8', quaverRate: 6.3 })]));
+    const rows = csvRows().map(r => r.split(','));
+    expect(rows[0]!.slice(8)).toEqual(['Tempo', 'Beat', 'Quavers/min']);
+    expect(rows[1]!.slice(8)).toEqual(['106', 'minim', '423']);
+    expect(rows[2]!.slice(8)).toEqual(['', '', '']);
+    expect(rows[3]!.slice(8)).toEqual(['126', 'dotted crotchet', '378']);
   });
 
   it('falls back to the recording duration for a detection left open', () => {

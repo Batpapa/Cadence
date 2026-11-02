@@ -3,13 +3,15 @@ import { createFileSource } from './audio/sources';
 import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
-import { ANALYSIS_SAMPLE_RATE, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
+import { ANALYSIS_SAMPLE_RATE, FF_PCM_WINDOW, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate, TunesetRecord } from './model';
 import { withSets } from './tunesets';
 import { DetectionTracker } from './detectionState';
 import type { IndexProgress } from './recognition/indexStore';
 import type { BoundAligner } from './boundSuggestClient';
 import type { FinishingState } from './ui/finishingModal';
+import { NoveltyStore, type TempoReading } from './liveTempo';
+import { withTempo, DetectionTempoCache } from './tempoSummary';
 
 /** How long the end of an import waits for the bounds still being put on
  *  their passes — a second or two each, measured — before saving without
@@ -175,6 +177,18 @@ export class ImportSession {
     return this.tracker.list();
   }
 
+  /** The tempo readings so far, one a second of the file (liveTempo.ts) —
+   *  what each detection's tempo is taken from when the analysis is saved
+   *  (2026-11-01, the user: an import and a re-analysis give every detection
+   *  its tempo). Always followed, shown or not, as by a live recording: the
+   *  cost is a second extraction of the features, some 7 % of an import
+   *  (experiments/tempo). */
+  readonly tempo: TempoReading[] = [];
+  /** Their novelty, frame by frame: each detection's own tempo is read in it
+   *  (tempoSummary.ts's insideTempo), at the save and on the feed. */
+  readonly novelty = new NoveltyStore(ANALYSIS_SAMPLE_RATE / FF_PCM_WINDOW);
+  readonly tempoCache = new DetectionTempoCache();
+
   /** Closed annotations — what a partial keep after cancellation would retain. */
   getClosedCount(): number {
     return this.getDetections().filter(a => a.end !== null).length;
@@ -193,7 +207,8 @@ export class ImportSession {
         onWindow: result => this.onWindow(result),
         onDetections: events => this.applyEvents(events),
         onError: message => this.cb.onError?.(message),
-      }, { hopS: HOP_S_IMPORT });
+        onTempo: (reading, novelty, at) => { this.tempo.push(reading); this.novelty.write(at, novelty); },
+      }, { hopS: HOP_S_IMPORT, tempo: true });
       if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       const version = await this.recognition.ready;
       console.debug(`[import] engine ready (FolkFriend ${version})`);
@@ -523,7 +538,7 @@ export class ImportSession {
       // video: the player reads this to decide how to open the recording.
       mimeType: this.playbackFile.type || 'application/octet-stream',
       source: this.sourceOverride ?? 'import',
-      annotations: this.getDetections(),
+      annotations: withTempo(this.getDetections(), this.novelty),
       ...withSets(this.tracker.finalSets(() => crypto.randomUUID())),
       ...(this.notes ? { notes: this.notes } : {}),
       ...(this.pauses.length ? { pauses: [...this.pauses] } : {}),

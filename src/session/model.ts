@@ -138,6 +138,15 @@ export interface Detection {
    *  could be aligned, and on every analysis made before this existed. A
    *  bound moved by hand afterwards leaves it as it is. */
   detected?: { start: number; end: number };
+  /** The tempo it was played at, in QUAVERS a second — the median of the
+   *  tempo readings inside it (liveTempo.ts, tempoSummary.ts's withTempo).
+   *  Quavers, not beats: the beat is the metre's, and the metre is the shown
+   *  tune's, which the user can change afterwards. Written when the analysis is
+   *  saved — an import, a re-analysis, a live recording with the tempo shown
+   *  (2026-11-01) — and absent where too little pulse was heard, on a detection
+   *  added by hand, and on every analysis made before. A bound moved
+   *  afterwards leaves it as it is. */
+  quaverRate?: number;
   /** false while the Viterbi detector could still revise this detection's
    *  bounds or existence as more windows arrive (see viterbiSegmenter.ts) —
    *  the UI gates the actions that act on the bounds (delete, merge, edit,
