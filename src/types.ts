@@ -468,6 +468,11 @@ export type IncipitDisplay = 'none' | 'card' | 'study';
  *  this decides where you land and never where you can go. */
 export type AbcOpenMode = 'sheet' | 'text';
 
+/** The face a score viewer is showing: one of the two a score opens on, or
+ *  both at once — the stave and its ABC side by side (2026-11-04). Never
+ *  stored: "both" is a tab, not a preference. */
+export type ScoreFace = AbcOpenMode | 'both';
+
 /** The paper a score is drawn on. Not a theme of its own: `white` is the sheet
  *  of paper this viewer always forced, `dark` is the app's own surface with the
  *  ink inverted, `sepia` is the warm page people read long from. Absent means

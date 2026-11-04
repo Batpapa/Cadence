@@ -15,6 +15,7 @@ import { t } from '../../services/i18nService';
 import {
   mountScoreFollow, alignedVerdict, failureText, settingOfVersion, stageText, sizeUnknown, type FollowTarget,
 } from './ScoreFollowView';
+import type { ScoreFace } from '../../types';
 
 // ── Which of a card's recordings the score follows ───────────────────────────
 // The part of components/cardAudioSync.ts loaded when it is used: the chooser
@@ -365,7 +366,7 @@ export function chooseRecording(recordings: CardRecording[], version: string): P
 /** The follow of `r`, the whole recording, in the viewer's `host`. */
 export function mountRecordingFollow(host: HTMLElement, r: CardRecording, opts: {
   version: string;
-  face: 'sheet' | 'text';
+  face: ScoreFace;
   expanded: boolean;
   onState: (s: AudioSyncState) => void;
   forced: boolean;

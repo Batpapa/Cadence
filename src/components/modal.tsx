@@ -228,6 +228,17 @@ export function updateTopModal(patch: { title?: string; onBack?: (() => void) | 
   modalStack.value = [...stack.slice(0, -1), { ...top, ...patch }];
 }
 
+/** Changes the width of the modal showing `body`, wherever it stands in the
+ *  stack — for a body that changes shape under its own controls: the score
+ *  viewer, wider while it shows the stave and the ABC side by side. No-op
+ *  once it is closed. */
+export function setModalMaxWidth(body: HTMLElement, maxWidth: string): void {
+  const stack = modalStack.value;
+  const entry = stack.find(e => e.body === body);
+  if (!entry || entry.maxWidth === maxWidth) return;
+  modalStack.value = stack.map(e => (e === entry ? { ...e, maxWidth } : e));
+}
+
 /** Closes modal `id` the way a USER dismissal does — which is not what
  *  `closeModal` alone does: that one pops the stack and stops there, while a
  *  dismissal also runs `onDismiss`, and `onDismiss` is where a Preact body

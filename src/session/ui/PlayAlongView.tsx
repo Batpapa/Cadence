@@ -10,7 +10,7 @@ import { qualityColour } from '../../components/followColour';
 import { CrossIcon, MinusIcon, PlusIcon, ExpandIcon, CollapseIcon, SaveIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 import type { PlayAlongView } from '../../components/fileViewer';
-import type { Attachment } from '../../types';
+import type { Attachment, ScoreFace } from '../../types';
 import { askRecordingName, recordingAttachment, stampedName, RecorderRow } from '../../components/recordMicModal';
 import { askUnsavedChanges } from '../../components/modal';
 import type { MemoryRecorder } from '../../thesessionEmbed/memoryRecorder';
@@ -215,7 +215,7 @@ interface PaneProps {
   /** Whether to offer the version being played (the viewer's option). */
   suggest: boolean;
   onShowVersion: (index: number) => void;
-  face: Signal<'sheet' | 'text'>;
+  face: Signal<ScoreFace>;
   expanded: Signal<boolean>;
   source: Signal<Source>;
   /** Null where there is no card to keep a take on: no record button. */
@@ -468,9 +468,10 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
       : `min(60vh, calc(100dvh / var(--zoom-factor, 1) - ${AROUND_REM}rem${room}))`;
 
   // In the score's corner, as in the viewer and the audio sync: the way in,
-  // then the way out.
+  // then the way out — and, as in the viewer, none with the stave and the
+  // text together (the user, 2026-11-04).
   const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
-  const tools = (
+  const tools = shownFace === 'both' && !page ? undefined : (
     <button
       class="abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center"
       title={pageLabel}
@@ -600,7 +601,7 @@ export function mountPlayAlong(host: HTMLElement, opts: {
   index: number;
   suggest: boolean;
   onShowVersion: (index: number) => void;
-  face: 'sheet' | 'text';
+  face: ScoreFace;
   expanded: boolean;
   /** Adds a take to the card the score belongs to; absent, no record button. */
   onKeepRecording?: (a: Attachment) => void;
