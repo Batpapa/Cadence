@@ -22,6 +22,7 @@ import {
   notesOf, startNoteAt, boxRange, bodyIndex, type ParsedNote, type PlayableSource, type TimingEvent,
 } from '../services/abcTextPlayback';
 import { createAbcPlayer, type AbcPlayer, type PlayState, type Place, type PlayerRun } from './abcPlayer';
+import { bindFaceSplit } from './faceSplit';
 import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
 import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds } from '../services/abcBounds';
 import { showModal, updateTopModal, setModalMaxWidth, confirmModal, askUnsavedChanges } from './modal';
@@ -180,6 +181,13 @@ const TAP_SLOP_PX = 10;
  *  "both" face — the syntax check's pace, a little slower: engraving costs
  *  more than parsing. */
 const TYPING_REDRAW_MS = 300;
+
+/** How long things settle before the tune's sound is made ahead of the next
+ *  press — the stave drawn first, a run of presses on a stepper folded into
+ *  one. After a keystroke, longer: a whole performance is rendered each
+ *  time, which typing would otherwise pay for at every pause. */
+const PREPARE_DELAY_MS = 400;
+const PREPARE_AFTER_TYPING_MS = 1500;
 
 /** The nearest scrolling box, starting with the element itself — the score has
  *  its own viewport, and it is that one, not the modal around it, that should
@@ -578,28 +586,6 @@ function modalWidth(entry: FileEntry): string {
  *  face): room for the two side by side, the stave keeping about the width it
  *  has alone. Still capped by the screen (modal.tsx's `modalMaxW`). */
 const BOTH_FACES_WIDTH = '1400px';
-
-/** The text's share of the width, side by side: the device's own, kept as
- *  the sidebar's width is (appRoot.tsx) — a laptop and a large screen want
- *  different ones. Half and half until it is dragged; never so far that
- *  either face is left a sliver. */
-const SPLIT_KEY = 'cadence_abc_split';
-const SPLIT_DEFAULT = 0.5;
-const SPLIT_MIN = 0.2;
-const SPLIT_MAX = 0.8;
-/** One press of an arrow key on the line. */
-const SPLIT_STEP = 0.05;
-
-const clampSplit = (r: number): number => Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, r));
-function readSplit(): number {
-  try {
-    const r = parseFloat(localStorage.getItem(SPLIT_KEY) ?? '');
-    return Number.isFinite(r) ? clampSplit(r) : SPLIT_DEFAULT;
-  } catch { return SPLIT_DEFAULT; }
-}
-function writeSplit(r: number): void {
-  try { localStorage.setItem(SPLIT_KEY, String(r)); } catch { /* back to half and half next time, nothing worse */ }
-}
 
 /** Which faces a face shows. */
 const showsSheet = (face: ScoreFace): boolean => face !== 'text';
@@ -2137,6 +2123,9 @@ export function showPreviewModal(
     let redrawScore: () => void = () => {};
     /** The stave redrawn once the typing pauses, on the "both" face. */
     let redrawAfterTyping: () => void = () => { sheetNeedsRerender = true; };
+    /** The sound of the tune made ahead of the next press, once things
+     *  settle — assigned once abcjs has loaded. */
+    let prepareSound: (delay?: number) => void = () => {};
     /** Re-reads the editor's text and refreshes the warning strip. */
     let checkWarnings: () => void = () => {};
     /** The width the score on screen was engraved for, so a resize that changes
@@ -2290,74 +2279,14 @@ export function showPreviewModal(
     facesBox.appendChild(textBox);
 
     // ── The line between the two, side by side (2026-11-04, the user) ──
-    // Dragged, it shares the width between the text and the stave; a double
-    // click puts them back half and half, and the arrow keys move it once it
-    // has the focus. Shown only where the two faces stand side by side — the
-    // stylesheet's call, as the layout is (`.abc-faces-split`).
-    let split = readSplit();
-    /** True while the line is held: the stave is engraved once, at the end,
-     *  not at every width it passes through. */
-    let splitting = false;
-    const applySplit = (): void => {
-      // Shares of 100 rather than of 1: flex factors adding up to less than
-      // one would leave part of the row empty.
-      facesBox.style.setProperty('--abc-text-fr', `${split * 100}fr`);
-      facesBox.style.setProperty('--abc-score-fr', `${(1 - split) * 100}fr`);
-    };
-    applySplit();
+    // See faceSplit.ts. Lives as long as the dialog: nothing to release.
     const splitter = document.createElement('div');
     splitter.className = 'abc-faces-split';
-    splitter.tabIndex = 0;
-    splitter.title = t('fileViewer.abc.split');
-    splitter.setAttribute('role', 'separator');
-    splitter.setAttribute('aria-orientation', 'vertical');
-    splitter.setAttribute('aria-label', t('fileViewer.abc.split'));
     const splitLine = document.createElement('div');
     splitLine.className = 'abc-faces-split-line';
     splitter.appendChild(splitLine);
     facesBox.appendChild(splitter);
-    /** The share set: kept for next time, and the stave engraved for it. */
-    const settleSplit = (): void => {
-      writeSplit(split);
-      remeasure();
-    };
-    splitter.addEventListener('pointerdown', (e) => {
-      if (!e.isPrimary || e.button !== 0) return;
-      // No text selection starting under the drag.
-      e.preventDefault();
-      splitting = true;
-      splitter.setPointerCapture(e.pointerId);
-      splitter.classList.add('abc-faces-split-active');
-    });
-    splitter.addEventListener('pointermove', (e) => {
-      if (!splitting) return;
-      // Both in window pixels, whatever the app's zoom: a ratio of the two
-      // needs no conversion.
-      const box = facesBox.getBoundingClientRect();
-      if (box.width <= 0) return;
-      split = clampSplit((e.clientX - box.left) / box.width);
-      applySplit();
-    });
-    const endSplit = (): void => {
-      if (!splitting) return;
-      splitting = false;
-      splitter.classList.remove('abc-faces-split-active');
-      settleSplit();
-    };
-    splitter.addEventListener('pointerup', endSplit);
-    splitter.addEventListener('pointercancel', endSplit);
-    splitter.addEventListener('dblclick', () => {
-      split = SPLIT_DEFAULT;
-      applySplit();
-      settleSplit();
-    });
-    splitter.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-      e.preventDefault();
-      split = clampSplit(split + (e.key === 'ArrowLeft' ? -SPLIT_STEP : SPLIT_STEP));
-      applySplit();
-      settleSplit();
-    });
+    const faceSplit = bindFaceSplit(splitter, facesBox, () => remeasure());
 
     const bottomRow = document.createElement('div');
     bottomRow.className = BOTTOM_ROW_CLASS;
@@ -2759,6 +2688,8 @@ export function showPreviewModal(
         checkWarnings();
         previewText();
       }
+      // The sound of the version now on screen.
+      prepareSound();
     }
 
     function paintTabs(mode: ScoreFace): void {
@@ -2787,6 +2718,8 @@ export function showPreviewModal(
       // visibly reflowing. The transport is the same on every face, and so
       // is whatever it is doing: changing the face does not stop the music.
       facesBox.classList.toggle('abc-faces-both', mode === 'both');
+      // The share as stored: the audio sync's line may have moved it.
+      if (mode === 'both') faceSplit.refresh();
       // The frame, not the score inside it: the reading tools act on the
       // picture and would otherwise stay hanging over the ABC source.
       scoreFrame.style.display = showsSheet(mode) ? '' : 'none';
@@ -2820,6 +2753,8 @@ export function showPreviewModal(
       // who had not asked to type. The box is one tap away.
       if (textShown) checkWarnings();
       showCursor();
+      // Back from the audio sync or the Play-along, which had the sound.
+      prepareSound();
     }
 
     if (onSave) {
@@ -3152,8 +3087,9 @@ export function showPreviewModal(
        *  software, does not. Every play after that is already open, which is
        *  exactly the shape of what was reported.
        *
-       *  One inaudible sample, once, just before the first tune is prepared —
-       *  the preparation then gives the device the time to open. Silent, so it
+       *  One inaudible sample, once, at the first press — before the sound is
+       *  made when it was not made ahead, which then gives the device the
+       *  time to open. Silent, so it
        *  cannot be heard; a single frame, so it cannot be felt; and guarded on
        *  `running`, because a context still suspended has had no user gesture
        *  and would refuse anyway.
@@ -3193,6 +3129,8 @@ export function showPreviewModal(
             // the reader has put it somewhere since.
             if (playFrom && runGen === cursorGen) { cursorAt = playFrom.at; cursorPass = playFrom.pass; }
             playFrom = null;
+            // Stopped by a keystroke, the next sound is of another text.
+            prepareSound();
           }
           showCursor();
         },
@@ -3208,6 +3146,23 @@ export function showPreviewModal(
       });
       /** Another app took the sound (Android app): as the pause button does. */
       const pauseForFocus = (): void => player.pause();
+
+      // ── The sound made ahead (2026-11-04, the user) ──
+      // So that play starts at once, as it did when abcjs's controller made
+      // the sound with the drawing: made once things settle — the score
+      // opened, a version changed, a setting changed, the music stopped —
+      // and later after a keystroke, so that typing a set on the "both" face
+      // does not pay for a whole performance at every pause. Not while the
+      // audio sync or the Play-along has the score: theirs is the sound.
+      let prepareTimer = 0;
+      prepareSound = (delay = PREPARE_DELAY_MS) => {
+        window.clearTimeout(prepareTimer);
+        prepareTimer = window.setTimeout(() => {
+          if (closed || audioSyncView || playAlongView) return;
+          player.prepare();
+        }, delay);
+      };
+      textarea.addEventListener('input', () => prepareSound(PREPARE_AFTER_TYPING_MS));
 
       /** Whether the music holds the cursor: playing, or paused and left where
        *  it stopped. */
@@ -3667,7 +3622,7 @@ export function showPreviewModal(
         },
         stop: () => player.stop(),
         // The same note, the same time round — rebuilt.
-        retime: () => player.retime(),
+        retime: () => { player.retime(); prepareSound(); },
       };
       // Space toggles playback, the way it does in every player.
       //
@@ -3783,7 +3738,7 @@ export function showPreviewModal(
       releaseKeys = () => { stopWarnTimer(); window.clearTimeout(warnTimer); window.clearTimeout(typingTimer); };
       remeasure = () => {
         // The line between the faces held: engraved once it is let go.
-        if (splitting || !showsSheet(currentMode) || !notation.querySelector('svg')) return;
+        if (faceSplit.splitting() || !showsSheet(currentMode) || !notation.querySelector('svg')) return;
         if (Math.abs(engraveWidth() - lastEngravedWidth) < ENGRAVE_HYSTERESIS) return;
         redrawScore();
       };
@@ -3803,7 +3758,9 @@ export function showPreviewModal(
       const stopWithPlayer = releaseKeys;
       releaseKeys = () => {
         stopWithPlayer();
-        player.stop();
+        // Stopped, and the sound made ahead let go of.
+        window.clearTimeout(prepareTimer);
+        player.dispose();
         document.removeEventListener('selectionchange', onSelectionChange);
         cancelAnimationFrame(previewRaf);
       };
@@ -3837,6 +3794,7 @@ export function showPreviewModal(
       if (showsSheet(currentMode)) renderTune(currentIndex);
       else sheetNeedsRerender = true;
       showCursor();
+      prepareSound();
     }).catch(() => {
       const err = document.createElement('p');
       err.className = 'text-sm text-dim italic';

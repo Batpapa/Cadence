@@ -8,6 +8,7 @@ import { getZoom } from '../services/zoomService';
 import { appState } from '../store';
 import { WakeLockManager } from '../session/audio/capture';
 import type { ScoreFace } from '../types';
+import { bindFaceSplit, type FaceSplit } from './faceSplit';
 
 // ── A score that follows a recording ─────────────────────────────────────────
 // Drawn above the audio player's waveform when the player is given a score
@@ -266,6 +267,11 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
   // a phone turned). Only real changes count — a scrollbar coming and going is
   // a few pixels, and re-engraving for it could chase its own tail.
   const [width, setWidth] = useState(0);
+  /** The line between the stave and the text on the "both" face, while it
+   *  is there (faceSplit.ts). */
+  const faceSplit = useRef<FaceSplit | null>(null);
+  /** The width read again — once the line is let go. */
+  const remeasure = useRef<() => void>(() => {});
   useEffect(() => {
     const paper = paperRef.current;
     if (!paper) return;
@@ -273,19 +279,33 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
     // the score inside the observation, and the browser reported it as a
     // loop on every resize of the window (2026-10-29, the user).
     let raf = 0;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         // Hidden behind the text face: kept as it was drawn, the text's
-        // cursor reads its timeline.
-        if (paper.clientWidth === 0) return;
+        // cursor reads its timeline. And not while the line between the
+        // faces is held: engraved once, where it is let go.
+        if (paper.clientWidth === 0 || faceSplit.current?.splitting()) return;
         const w = engraveWidthOf(paper);
         setWidth(prev => (Math.abs(w - prev) >= ENGRAVE_HYSTERESIS ? w : prev));
       });
-    });
+    };
+    remeasure.current = measure;
+    const ro = new ResizeObserver(measure);
     ro.observe(paper);
     return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, []);
+
+  // The line, on the "both" face only.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const splitRef = useRef<HTMLDivElement>(null);
+  const both = face === 'both';
+  useEffect(() => {
+    if (!both || !gridRef.current || !splitRef.current) return;
+    const split = bindFaceSplit(splitRef.current, gridRef.current, () => remeasure.current());
+    faceSplit.current = split;
+    return () => { split.release(); faceSplit.current = null; };
+  }, [both]);
 
   // Engraving: at the box's width, in the paper's ink, in the key the sound is
   // transposed to — again whenever one of those changes.
@@ -555,8 +575,8 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
 
   // The two together (2026-11-04): the stave and the text each on a paper of
   // its own, side by side or one above the other as the score viewer lays
-  // its own faces out (styles.css, `.abc-faces-both`).
-  const both = face === 'both';
+  // its own faces out (styles.css, `.abc-faces-both`), with its line between
+  // them (`both`, above).
   const paperStyle = { background: colours.paper };
   /** Over the paper, in its ink — the score viewer's own corner, to the pixel
    *  (its scoreTools, `top-1 right-1`): `right-3` here put the button 8 px off
@@ -565,7 +585,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
     <div class="absolute top-1 right-1 z-20 flex items-center" style={{ '--abc-ink': colours.ink }}>{tools}</div>
   );
   return (
-    <div class={both ? 'abc-faces-both' : 'relative rounded overflow-hidden'} style={both ? undefined : paperStyle}>
+    <div ref={gridRef} class={both ? 'abc-faces-both' : 'relative rounded overflow-hidden'} style={both ? undefined : paperStyle}>
       {/* Behind the text face the stave is still drawn, at the box's width:
           its timeline is what the text's cursor reads. Out of sight in a box
           of no height that clips it all — not display:none, a box of no width
@@ -598,6 +618,9 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
             style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, ...(both ? {} : { maxHeight, minHeight }) }}
           />
         </div>
+      )}
+      {both && (
+        <div ref={splitRef} class="abc-faces-split"><div class="abc-faces-split-line" /></div>
       )}
       {!both && toolsBox}
     </div>

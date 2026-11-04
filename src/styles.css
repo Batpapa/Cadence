@@ -534,10 +534,10 @@
    set — the text's must not depend on it. */
 .abc-faces-both > .abc-text-box > .score-follow-text { max-height: 12rem; }
 @container abc-viewer (min-width: 56rem) {
-  /* Text, line, stave — placed by column, not by order: the audio sync's and
-     the Play-along's (syncedScore.tsx) have no line, and keep its column
-     as the gap. The shares are the line's (`--abc-text-fr`), half and half
-     where it is not. */
+  /* Text, line, stave — placed by column, not by order: the DOM keeps the
+     stave first. The shares are the line's (`--abc-text-fr`, faceSplit.ts),
+     the same in the viewer and in the audio sync's and the Play-along's
+     score (syncedScore.tsx). */
   .abc-faces-both {
     grid-template-columns: minmax(0, var(--abc-text-fr, 1fr)) 0.75rem minmax(0, var(--abc-score-fr, 1fr));
     grid-auto-rows: minmax(18rem, auto);
