@@ -3,6 +3,8 @@ import { resolveCardRef } from './cardRefService';
 import { isTuneset, hasTunesetScore } from './cardTypeService';
 import { sanitizeFileBase } from './attachmentNames';
 import { getTheme } from './themeService';
+import { isFileEmbed } from './embedService';
+import { typeFromUrl } from './remoteFile';
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 // Shared with fileViewer.ts, which used to own private copies. Splitting and
@@ -77,6 +79,23 @@ export function isAbcFile(entry: { name: string; mimeType: string }): boolean {
   return entry.name.endsWith('.abc') || entry.mimeType === 'text/vnd.abc';
 }
 
+/** A link to an ABC file that Cadence reads itself (remoteFile.ts) — a card's
+ *  score as much as an attached one (2026-11-04, the user), but read-only:
+ *  nothing of it is stored, so no favourite version and nothing to save to.
+ *  Told by the URL alone: what the server says is only known once asked, and
+ *  a card is not to send a request to learn whether it has a score. Its bytes
+ *  come through abcLink.ts. */
+export function isAbcLink(a: Attachment): a is Extract<Attachment, { type: 'embed' }> {
+  return a.type === 'embed' && isFileEmbed(a) && typeFromUrl(a.url) === 'text/vnd.abc';
+}
+
+/** Where a card's score sits among its attachments: its first ABC, attached
+ *  or linked, in list order — what the score button opens, what the incipit
+ *  draws, what a set takes of the tune. -1 when it has none. */
+export function cardScoreIndex(attachments: Attachment[]): number {
+  return attachments.findIndex(a => (a.type === 'file' && isAbcFile(a)) || isAbcLink(a));
+}
+
 export function decodeAbc(entry: FileEntry): string {
   const bytes = atob(entry.data);
   const arr = new Uint8Array(bytes.length);
@@ -148,9 +167,11 @@ function tempoOf(block: AbcBlock): string {
 /** The ABC block a member tune contributes: its first ABC attachment, opened at
  *  the version the card itself is set to. Exactly the rule the viewer applies
  *  when you open that card's score, so the set can never show a different
- *  version from the tune. */
+ *  version from the tune. A linked score counts only once its caller has put
+ *  its bytes in its place (attachmentList's resolvedMemberCards). */
 function blockForTune(tune: Card): AbcBlock | null {
-  const attachment = tune.content?.attachments?.find(a => a.type === 'file' && isAbcFile(a));
+  const attachments = tune.content?.attachments ?? [];
+  const attachment = attachments[cardScoreIndex(attachments)];
   if (!attachment || attachment.type !== 'file') return null;
   let blocks: string[];
   try { blocks = splitAbcTunes(decodeAbc(attachment)); } catch { return null; }

@@ -7,7 +7,7 @@ import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
 import { alertModal } from './modal';
 import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon } from './icons';
 import { useContextMenu } from './contextMenu';
-import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding } from './fileViewer';
+import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding, type PreviewModalOpts } from './fileViewer';
 import { cardAudioSync } from './cardAudioSync';
 import { showRemoteFailure } from './remoteFailure';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
@@ -17,7 +17,8 @@ import { showAddLinkModal, showEditLinkModal } from './addLinkModal';
 import { detectPlatform, PLATFORM_ICONS, linkMode, safeExternalUrl, isFileEmbed } from '../services/embedService';
 import { fetchRemoteFile, remoteDisplayName, refusalMessage, typeFromUrl, RemoteFileError } from '../services/remoteFile';
 import { resolveCardRef } from '../services/cardRefService';
-import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder, isAbcFile } from '../services/abcService';
+import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder, isAbcFile, isAbcLink, cardScoreIndex } from '../services/abcService';
+import { fetchAbcLink } from '../services/abcLink';
 import { isTuneset, hasTunesetScore, CARD_TYPE_TUNE } from '../services/cardTypeService';
 import { appState, navigate, getContext, mutate } from '../store';
 import { showModal, closeModal, confirmModal, renderModalBody } from './modal';
@@ -88,14 +89,19 @@ function showFetchingModal(name: string): void {
 /** Opens an in-app link that is a plain file (remoteFile.ts) in the viewer an
  *  attached one would get — read-only, since none of it is stored here: no
  *  save, no rename, no favourite version. Presets are the exception: they are
- *  how the file is listened to, and they are kept on the link itself.
+ *  how the file is listened to, and they are kept on the link itself. So is
+ *  what a score is followed with (`score`): the card's recordings, and the
+ *  way a take reaches the card — neither writes to the link.
  *
  *  Waits like withResolvedEntry, with two differences. The waiting dialog
  *  shows how much has come down, a file on someone's server being anything
  *  from a page of ABC to an hour of audio. And dismissing it CANCELS: an
  *  attachment coming down from Drive is worth finishing, since it lands on the
  *  device, whereas this one would only open a viewer nobody is waiting for. */
-function openRemoteFile(entry: EmbedEntry, audioPresets?: AudioPresetsBinding): void {
+function openRemoteFile(
+  entry: EmbedEntry, audioPresets?: AudioPresetsBinding,
+  score?: Pick<PreviewModalOpts, 'audioSync' | 'onKeepRecording'>,
+): void {
   const ctrl = new AbortController();
   let shown = false;
   let walkedAway = false;
@@ -131,7 +137,9 @@ function openRemoteFile(entry: EmbedEntry, audioPresets?: AudioPresetsBinding): 
   }).then((remote) => fileToEntry(new File([remote.blob], name, { type: remote.blob.type }))).then((file) => {
     stop();
     // Its type is only known now, sniffed from the bytes if need be.
-    if (!walkedAway) showPreviewModal(file, undefined, file.mimeType.startsWith('audio/') ? { audioPresets } : undefined);
+    if (!walkedAway) {
+      showPreviewModal(file, undefined, file.mimeType.startsWith('audio/') ? { audioPresets } : isAbcFile(file) ? score : undefined);
+    }
   }).catch((e: unknown) => {
     stop();
     if (walkedAway) return;
@@ -424,13 +432,15 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   );
 }
 
-function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets }: {
+function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets, score }: {
   entry: EmbedEntry;
   onRemove: () => void;
   onEdit?: () => void;
   editable: boolean;
   /** A link to an audio file's presets, for its player. */
   audioPresets?: AudioPresetsBinding;
+  /** A link to an ABC file: what an attached score's row hands its viewer. */
+  score?: Pick<PreviewModalOpts, 'audioSync' | 'onKeepRecording'>;
 }) {
   const mode = linkMode(entry);
   const platform = detectPlatform(entry.url);
@@ -449,7 +459,7 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets }: {
   // gets here. A file's is the way out to the raw file: to download it, or
   // when its server has stopped letting Cadence read it.
   const href = mode === 'link' || file ? safeExternalUrl(entry.url) : null;
-  const play = () => (file ? openRemoteFile(entry, audioPresets) : showEmbedModal(entry));
+  const play = () => (file ? openRemoteFile(entry, audioPresets, score) : showEmbedModal(entry));
 
   let label = entry.title;
   if (!label) {
@@ -877,8 +887,12 @@ export interface AttachmentListOptions {
  *  matters (see theSessionScoreSaver). */
 export function openCardScore(options: AttachmentListOptions): boolean {
   const { attachments } = options;
-  const i = attachments.findIndex(a => a.type === 'file' && isAbcFile(a));
+  const i = cardScoreIndex(attachments);
   const att = attachments[i];
+  if (att && isAbcLink(att)) {
+    openRemoteFile(att, undefined, { audioSync: cardAudioSync(attachments), onKeepRecording: options.onKeepRecording });
+    return true;
+  }
   if (!att || att.type !== 'file') return false;
   // Whether there is a score to open is answered here and now; GETTING it may
   // take a download, and that is the resolver's business — the same door every
@@ -905,7 +919,21 @@ async function resolvedMemberCards(card: Card): Promise<Record<string, Card> | n
     .map(ref => appState.value.cards[ref.id])
     .filter((c): c is Card => !!c));
   for (const member of clones) {
-    const abc = member.content?.attachments?.find(a => a.type === 'file' && isAbcFile(a));
+    const attachments = member.content?.attachments ?? [];
+    const at = cardScoreIndex(attachments);
+    const abc = attachments[at];
+    // A linked score is read now and stands in the link's place, where
+    // blockForTune looks for the tune's score.
+    if (abc && isAbcLink(abc)) {
+      try {
+        attachments[at] = await fetchAbcLink(abc);
+      } catch (e) {
+        if (!(e instanceof RemoteFileError)) console.warn('[links] could not read ' + abc.url, e);
+        showRemoteFailure(abc, e instanceof RemoteFileError ? refusalMessage(e.refusal) : t('embed.error'));
+        return null;
+      }
+      continue;
+    }
     if (abc?.type !== 'file' || !abc.external) continue;
     let resolved = false;
     await withResolvedEntry(abc, e => { abc.data = e.data; delete abc.external; resolved = true; });
@@ -989,7 +1017,7 @@ function openScoreEntry(options: AttachmentListOptions, att: FileAttachment, i: 
 
 /** Whether `openCardScore` would have anything to open. */
 export function hasScore(attachments: Attachment[]): boolean {
-  return attachments.some(a => a.type === 'file' && isAbcFile(a));
+  return cardScoreIndex(attachments) !== -1;
 }
 
 export function AttachmentList({ options }: { options: AttachmentListOptions }) {
@@ -1109,6 +1137,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   entry={att} onRemove={() => onRemove(i)} editable={editable}
                   onEdit={onUpdateLink ? () => showEditLinkModal(att, (next) => onUpdateLink(i, next)) : undefined}
                   audioPresets={onSetAudioPresets ? linkPresetsBinding(att, i, onSetAudioPresets, card) : undefined}
+                  score={isAbcLink(att) ? { audioSync: cardAudioSync(attachments), onKeepRecording: options.onKeepRecording } : undefined}
                 />
               )}
             </AttachmentRow>
