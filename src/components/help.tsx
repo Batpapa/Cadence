@@ -4,7 +4,7 @@ import type { AppContext, Route } from '../types';
 import { showModal, renderModalBody } from './modal';
 import { t } from '../services/i18nService';
 import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
-import { isAbcFile } from '../services/abcService';
+import { cardScoreIndex } from '../services/abcService';
 import { liveScreenActive, importScreenActive } from '../session/ui/sessionModule';
 import { setDetectionOn } from '../session/detections';
 import { EXTENSIONS, type ExtensionId, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered } from '../services/extensions';
@@ -63,7 +63,7 @@ function cardSections(ctx: AppContext, cardId: string): HelpSection[] {
   const isSet = !!card && isTuneset(card);
   const isMusic = !!card && (card.type === CARD_TYPE_TUNE || isSet);
   const imported = !!card?.externalId;
-  const hasScore = isMusic || !!card?.content.attachments.some(a => a.type === 'file' && isAbcFile(a));
+  const hasScore = isMusic || (!!card && cardScoreIndex(card.content.attachments) !== -1);
 
   return [
     { style: 'definition', heading: t('help.card.what.heading'), items: [t('help.card.what.1'), t('help.card.what.2'), t('help.card.what.3')] },

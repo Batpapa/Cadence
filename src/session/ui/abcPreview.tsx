@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { getSettingAbcMeta, getSettingAbcMetaSync, onTuneIndexCached, type SettingAbcMeta } from '../recognition/indexStore';
 import { theSessionKeyToAbc, findSettingInScore } from '../../services/theSessionService';
-import { isAbcFile, buildHeardSetAbc, tunesetAbcFileName } from '../../services/abcService';
+import { isAbcFile, isAbcLink, buildHeardSetAbc, tunesetAbcFileName } from '../../services/abcService';
+import { fetchAbcLink, peekAbcLink } from '../../services/abcLink';
 import { hydratedEntry } from '../../services/attachmentStore';
 import { getAttachmentBlob } from '../../services/attachmentDb';
 import { arrayBufferToBase64 } from '../../utils';
 import { showPreviewModal, type AudioSyncBinding } from '../../components/fileViewer';
 import { getContext } from '../../store';
-import type { AppContext, Card } from '../../types';
+import type { AppContext, Attachment, Card } from '../../types';
 import { MusicNoteIcon } from '../../components/icons';
 import { t } from '../../services/i18nService';
 
@@ -176,8 +177,16 @@ async function cardScorePreview(settingId: string, cardId: string | undefined, c
   // would pull a card's audio clips down to draw a stave. A failure falls back
   // to the index stand-in rather than raising anything — that rendition IS
   // what was recognised, so it is an answer, not an error.
+  //
+  // A link to an ABC file the same way (2026-11-04): read, and put in the
+  // link's place on the copy, as an attached score would be.
   const resolved = structuredClone(card);
-  for (const att of resolved.content?.attachments ?? []) {
+  const attachments = resolved.content?.attachments ?? [];
+  for (const [i, att] of attachments.entries()) {
+    if (isAbcLink(att)) {
+      try { attachments[i] = await fetchAbcLink(att); } catch { /* findSettingInScore will not match it */ }
+      continue;
+    }
     if (att.type !== 'file' || !att.external || !isAbcFile(att)) continue;
     try {
       att.data = (await hydratedEntry(att, true)).data;
@@ -193,7 +202,8 @@ async function cardScorePreview(settingId: string, cardId: string | undefined, c
     initialIndex: target.blockIndex,
     // The star stays where the card put it, NOT on the version we opened at.
     favoriteIndex: target.preferredIndex,
-    onSetPreferredIndex: (index) => {
+    // None on a link: it keeps nothing but its URL.
+    onSetPreferredIndex: card.content.attachments[target.attachmentIndex]?.type !== 'file' ? undefined : (index) => {
       void ctx.mutate(s => {
         const att = s.cards[cardId]?.content.attachments[target.attachmentIndex];
         if (att && att.type === 'file') {
@@ -217,12 +227,19 @@ function useCardCarries(settingId: string, card: Card | undefined, ask: boolean)
   const [held, setHeld] = useState<{ card: Card; id: number } | null>(null);
   useEffect(() => {
     if (!look || inline) return;
-    const external = (card!.content?.attachments ?? []).some(a => a.type === 'file' && a.external && isAbcFile(a));
+    // A link to an ABC file only as far as this session has already read it.
+    const linkRead = (a: Attachment) => isAbcLink(a) && !!peekAbcLink(a.url);
+    const external = (card!.content?.attachments ?? []).some(a => (a.type === 'file' && a.external && isAbcFile(a)) || linkRead(a));
     if (!external) return;
     let cancelled = false;
     void (async () => {
       const copy = structuredClone(card!);
-      for (const att of copy.content.attachments) {
+      for (const [i, att] of copy.content.attachments.entries()) {
+        if (isAbcLink(att)) {
+          const file = peekAbcLink(att.url);
+          if (file) copy.content.attachments[i] = file;
+          continue;
+        }
         if (att.type !== 'file' || !att.external || !isAbcFile(att)) continue;
         const blob = await getAttachmentBlob(att.external.id).catch(() => undefined);
         if (!blob) continue;

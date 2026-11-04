@@ -5,7 +5,8 @@ import type { AbcOpenMode, AppState, Card, ExternalFile, FileAttachment, Incipit
 // module itself stays lazily imported below.
 import type { TuneObject, MidiBuffer } from 'abcjs';
 import { isTuneset } from '../services/cardTypeService';
-import { INCIPIT_BARS, abcIncipit, abcOpenMode, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcSwingAtOpen } from '../services/abcService';
+import { INCIPIT_BARS, abcIncipit, abcOpenMode, cardScoreIndex, isAbcLink, decodeAbc, splitAbcTunes, parseAbcBlock, abcSwingAtOpen } from '../services/abcService';
+import { abcLinkFile, abcLinkArrived } from '../services/abcLink';
 import { swingAudioParams } from '../services/jigSwing';
 import { resolveCardRef } from '../services/cardRefService';
 import { appState } from '../store';
@@ -110,8 +111,14 @@ function externalAbcText(att: FileAttachment & { external: ExternalFile }): stri
  *  when it HAS one that this device cannot produce, which is a different thing
  *  and is said out loud. */
 function tuneIncipit(card: Card | null | undefined): string | null | false {
-  const attachment = card?.content?.attachments?.find(a => a.type === 'file' && isAbcFile(a));
-  if (!attachment || attachment.type !== 'file') return null;
+  const attachments = card?.content?.attachments ?? [];
+  const score = attachments[cardScoreIndex(attachments)];
+  // A link's file, remembered once read (abcLink.ts) — the same three
+  // answers as a score kept outside the blob.
+  const attachment = score && isAbcLink(score) ? abcLinkFile(score) : score;
+  if (attachment === undefined) return null;
+  if (attachment === null) return false;
+  if (attachment.type !== 'file') return null;
   let text: string;
   if (attachment.external) {
     const fetched = externalAbcText(attachment as FileAttachment & { external: ExternalFile });
@@ -184,6 +191,7 @@ export function IncipitRow({ card, where, onOpenScore, class: className = '' }: 
   if (!showsIncipit(user, where)) return null;
   // Read so this row redraws when a score kept outside the blob comes down.
   _abcArrived.value;
+  abcLinkArrived.value;
   const scores = incipitScores(card, user.cards);
   if (scores.length === 0) return null;
   return (

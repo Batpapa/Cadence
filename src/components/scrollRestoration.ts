@@ -122,6 +122,14 @@ function subscribeToStateEpoch(): number {
   return stateEpoch.value;
 }
 
+/** True when the entry on screen has an offset of its own to go back to — a
+ *  back or forward to somewhere already scrolled. A view that places itself
+ *  on arrival (centring a linked row) must leave it to the restoration then,
+ *  or it undoes it. */
+export function returningToOffset(): boolean {
+  return recallScroll(navEntry.peek()) > 0;
+}
+
 let started = false;
 
 /** Call once, after the app tree is mounted. Idempotent: logging out and back

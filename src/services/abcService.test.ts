@@ -5,10 +5,11 @@ import {
   musicIncipit, abcDurationUnits, abcIncipit, TUNE_TEMPOS,
   abcOpenMode, ABC_OPEN_MODE_DEFAULT,
   showAbcSyntaxCheck, blankForRender, stripForRender, locateAbcWarning, abcWarningRange,
+  isAbcLink, cardScoreIndex,
 } from './abcService';
 import abcjs from 'abcjs';
 import { hasTunesetScore } from './cardTypeService';
-import type { Card, CardRef } from '../types';
+import type { Attachment, Card, CardRef } from '../types';
 
 function abcBlock(x: number, title: string, rhythm: string, meter: string, key: string, music: string): string {
   return `X: ${x}\nT: ${title}\nR: ${rhythm}\nM: ${meter}\nL: 1/8\nK: ${key}\n${music}`;
@@ -86,6 +87,41 @@ describe('buildTunesetAbc — a member whose score is not in the blob', () => {
     // Not merely degraded — null, which is the row falling back to the stored
     // placeholder's own name. Another reason the caller must resolve first.
     expect(buildTunesetAbc(set('Set', [ref(cooleys)]), lib(externalised(cooleys)))).toBeNull();
+  });
+});
+
+describe('a link to an ABC file is a score', () => {
+  const link = (url: string, mode?: 'embed' | 'link'): Attachment => ({ type: 'embed', id: url, url, ...(mode ? { mode } : {}) });
+  const file = (name: string, mimeType = 'text/plain'): Attachment => ({ type: 'file', name, mimeType, data: '' });
+
+  it('when Cadence reads it itself and its URL ends in .abc', () => {
+    expect(isAbcLink(link('https://host/reel.abc'))).toBe(true);
+    expect(isAbcLink(link('https://host/Reel.ABC?v=2'))).toBe(true);
+    expect(isAbcLink(link('https://host/reel.abc', 'embed'))).toBe(true);
+  });
+
+  it('not when it opens in a tab, nor when its URL says something else', () => {
+    expect(isAbcLink(link('https://host/reel.abc', 'link'))).toBe(false);
+    expect(isAbcLink(link('https://host/reel.pdf'))).toBe(false);
+    expect(isAbcLink(link('https://host/tunes/12/abc'))).toBe(false);
+    expect(isAbcLink(file('reel.abc'))).toBe(false);
+  });
+
+  it("the card's score is its first ABC, attached or linked, in list order", () => {
+    expect(cardScoreIndex([file('a.pdf', 'application/pdf'), link('https://host/x.abc'), file('y.abc')])).toBe(1);
+    expect(cardScoreIndex([file('y.abc'), link('https://host/x.abc')])).toBe(0);
+    expect(cardScoreIndex([link('https://host/x.abc', 'link'), link('https://host/x.mp3')])).toBe(-1);
+  });
+
+  it('a set leaves a linked score out until its caller has read it', () => {
+    // resolvedMemberCards puts the file in the link's place first; read as it
+    // stands, the link is the tune's score and it has no notation — the file
+    // after it is NOT taken instead, which would be another score than the
+    // card's own.
+    const linked: Card = { ...cooleys, content: { ...cooleys.content, attachments: [link('https://host/c.abc'), ...cooleys.content.attachments] } };
+    const abc = buildTunesetAbc(set('Set', [ref(linked), ref(kesh)]), lib(linked, kesh))!;
+    expect(abc).not.toContain('EBBA B2 EB|');
+    expect(abc).toContain('G3 GAB|');
   });
 });
 

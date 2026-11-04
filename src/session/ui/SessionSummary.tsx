@@ -41,6 +41,7 @@ import { headPosition, withChains, withGaps, chainsOf, shortGapsOf, type ListAnn
 import { SetMarkButton, setRows, withCutMark, type SetOpens } from './setBreaks';
 import { setDetectionOn } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
+import { returningToOffset } from '../../components/scrollRestoration';
 import { generateId } from '../../utils';
 import { getContext } from '../../store';
 import { tunesetsOf, sameTunesets, chainSpan, setCardFor } from '../tunesets';
@@ -224,7 +225,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // Not a selection — a READING of where the play head stands. Every detection
   // covering that instant is lit, in the strip and in the list alike: none in a
   // silence, two across a join. Nothing is remembered, so nothing can go stale.
-  const [lit, setLit] = useState<{ ids: string[]; gapFrom: number | null }>({ ids: [], gapFrom: null });
+  //
+  // `follow` says whether the list should come to it: a head that MOVED (the
+  // audio playing, a gesture) yes; a head merely PLACED — the recording
+  // loading at 0, a link's detection on a back — no. The page is wherever the
+  // reader left it then, and centring the first row took a back from the
+  // middle of a long analysis to its top (reported 2026-11-04).
+  const [lit, setLit] = useState<{ ids: string[]; gapFrom: number | null; follow?: boolean }>({ ids: [], gapFrom: null });
   // The detection that was POINTED AT — clicked on the strip, or followed here
   // from a card's "detected in" link. A different question from `lit`, which
   // answers "what covers the play head" and is plural by nature: detections
@@ -251,11 +258,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  the head is written, whether the audio drove it or a pointer did — with
    *  the audio forgotten there is no player to ask, and the strip still works
    *  as a map. */
-  const applyHead = (tSec: number) => {
+  const applyHead = (tSec: number, follow = true) => {
     if (headRef.current) headRef.current.style.left = `${Math.min(100, (tSec / (session.duration || 1)) * 100)}%`;
     const pos = headPosition(session.annotations, tSec, session.duration);
     const key = `${pos.ids.join('|')}#${pos.gapFrom ?? ''}`;
-    if (key !== litKeyRef.current) { litKeyRef.current = key; setLit(pos); }
+    if (key !== litKeyRef.current) { litKeyRef.current = key; setLit({ ...pos, follow }); }
   };
 
   const persist = () => { void saveSessionMeta(session); };
@@ -485,12 +492,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       if (a.currentTime >= floor) { seekFloorRef.current = null; return a.currentTime; }
       return floor;
     };
-    const updateTime = () => {
+    const updateTime = (follow = true) => {
       const t = headTime();
       if (timeLblRef.current) timeLblRef.current.textContent = `${fmtLongTime(t)} / ${fmtLongTime(a.duration || 0)}`;
-      applyHead(t);
+      applyHead(t, follow);
     };
-    const onLoadedMeta = () => updateTime();
+    // The first reading, not a movement: see `lit`.
+    const onLoadedMeta = () => updateTime(false);
     const onTimeUpdate = () => {
       updateTime();
       if (playingIdRef.current !== null && a.currentTime >= sliceEndRef.current) a.pause();
@@ -538,12 +546,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     return Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * session.duration;
   };
 
-  const seekTo = (tSec: number) => {
+  const seekTo = (tSec: number, follow = true) => {
     const a = audioRef.current;
     if (a) { a.currentTime = tSec; seekFloorRef.current = tSec; }
     // Applied here too, not only from the audio events: with the audio
     // forgotten nothing would ever fire them, and the strip is still a map.
-    applyHead(tSec);
+    applyHead(tSec, follow);
   };
 
   /** "I mean THIS detection" — mark it, put the head at its start, bring its
@@ -561,13 +569,16 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *
    *  Scrolled after paint, because arriving from a link happens before the row
    *  exists — and instantly in that case, a smooth scroll from the top of a
-   *  long list being an animation nobody asked to watch. */
-  const goToAnn = (ann: Detection, behavior: ScrollBehavior = 'smooth') => {
+   *  long list being an animation nobody asked to watch.
+   *
+   *  `null` marks and places without scrolling, for a back to a page whose
+   *  own offset is being restored. */
+  const goToAnn = (ann: Detection, behavior: ScrollBehavior | null = 'smooth') => {
     setTargetId(ann.id);
     // The Focus view shows the one pointed at, not its lit neighbour.
     focusIdRef.current = ann.id;
-    seekTo(ann.start);
-    if (showsFocus(analysisView.value)) return;
+    seekTo(ann.start, behavior !== null);
+    if (behavior === null || showsFocus(analysisView.value)) return;
     requestAnimationFrame(() => {
       listWrapRef.current?.querySelector(`[data-ann-id="${ann.id}"]`)?.scrollIntoView({ behavior, block: 'center' });
     });
@@ -585,9 +596,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   //
   // The amber mark on top of that answers the one question the strip cannot:
   // which of the detections lit by this instant is the one that was clicked.
+  //
+  // Except for the scroll on a back: the link stays in the route, and the
+  // reader had left the page somewhere else since.
   useEffect(() => {
     const ann = annotationId ? session.annotations.find(a => a.id === annotationId) : undefined;
-    if (ann) goToAnn(ann, 'auto');
+    if (ann) goToAnn(ann, returningToOffset() ? null : 'auto');
     // eslint-disable-next-line
   }, [annotationId, session.id]);
 
@@ -598,7 +612,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   useEffect(() => {
     if (!audioUrl || targetId === null) return;
     const ann = session.annotations.find(a => a.id === targetId);
-    if (ann) seekTo(ann.start);
+    if (ann) seekTo(ann.start, false);
     // eslint-disable-next-line
   }, [audioUrl]);
 
@@ -612,7 +626,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   useEffect(() => {
     const wrap = listWrapRef.current;
     // The Focus view has no list to follow: it shows the lit tune in place.
-    if (!wrap || showsFocus(analysisView.value)) return;
+    if (!wrap || !lit.follow || showsFocus(analysisView.value)) return;
     const sel = lit.gapFrom !== null ? `[data-gap-from="${lit.gapFrom}"]`
       : lit.ids.length > 0 ? `[data-ann-id="${lit.ids[0]}"]`
       : null;
