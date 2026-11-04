@@ -124,10 +124,18 @@ export interface AbcPlayer {
   stop: () => void;
   /** A setting changed: the same note, the same time round, rebuilt. */
   retime: () => void;
+  /** Stopped: the sound made now, for the text and the settings as they
+   *  are, so that play starts at once. Nothing while something plays, and
+   *  nothing when the sound already made is of this very text. */
+  prepare: () => void;
+  /** The dialog going: stopped, and nothing kept. */
+  dispose: () => void;
 }
 
 interface Run extends PlayerRun {
   id: number;
+  /** What it was built from — see keyOf. */
+  key: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   synth: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,8 +146,34 @@ interface Run extends PlayerRun {
 
 interface Resume { at: Place; playedTo: number; paused: boolean }
 
+/** A performance made ahead: being made, or ready. `taken` once a start has
+ *  claimed it, so that its coming back does not throw it away. */
+interface Prepared { key: string; build: Promise<Run>; run: Run | null; taken: boolean }
+
+/** What a performance is made of: the text abcjs plays and how it sounds. Two
+ *  runs of one key are the same sound — the one already made is played again
+ *  rather than made anew. */
+const keyOf = (ps: PlayableSource, s: PlaySettings): string => `${JSON.stringify(s)}\n${ps.source}`;
+
 export function createAbcPlayer(abcjs: typeof import('abcjs'), host: AbcPlayerHost): AbcPlayer {
   let run: Run | null = null;
+  // ── The sound made ahead (2026-11-04, the user) ──
+  // abcjs renders a whole tune into one buffer before the first note, which
+  // takes a moment — a long set, more than one. abcjs's own controller paid
+  // it when the score was drawn; this player paid it at the press, the
+  // spinner turning. It is paid ahead again: once the viewer has a tune, and
+  // whenever the tune or how it sounds changes while nothing plays. And a
+  // run stopped, or replaced, is kept: played again from anywhere, it is the
+  // same sound.
+  //
+  // Made outside any tap, it can finish only once the browser lets the audio
+  // context run: abcjs's `prime` ends by resuming a suspended context
+  // (create-synth.js), which waits for the first gesture on the page. A press
+  // made meanwhile takes the preparation as it stands and waits for it — the
+  // press is that gesture (`unlockAbcjsAudio`, before every play). And one
+  // that fails — Safari refusing outside a tap — is simply made again at the
+  // press, as it always was.
+  let prepared: Prepared | null = null;
   /** Bumped by every start and every stop, so a preparation that comes back
    *  after either is dropped rather than started. */
   let runId = 0;
@@ -219,14 +253,91 @@ export function createAbcPlayer(abcjs: typeof import('abcjs'), host: AbcPlayerHo
     return undefined;
   };
 
-  /** The run on its way out, silenced — not a stop: the state is left to
-   *  whoever replaces it. */
+  /** A performance made: the text engraved off screen, its sound rendered,
+   *  its timer built — not started, and no one's yet (`id`). */
+  const build = async (ps: PlayableSource, s: PlaySettings, key: string): Promise<Run> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const visualObj: any = abcjs.renderAbc('*', ps.source, {})[0];
+    if (!visualObj) throw new Error('no tune');
+    const audioParams: Record<string, unknown> = { soundFontVolumeMultiplier: abcjsVolumeMultiplier() };
+    if (s.program !== undefined) audioParams.program = s.program;
+    // The stave draws the transposition as `visualTranspose`, which
+    // abc_midi_sequencer subtracts back out on the way to MIDI; this
+    // engraving has none, so the sound is moved here, by the same amount.
+    if (s.transpose !== 0) audioParams.midiTranspose = s.transpose;
+    const meter = parseAbcBlock(ps.source).meter;
+    if (s.metronome) { audioParams.drum = drumPattern(beatsPerBar(meter)); audioParams.drumBars = 1; }
+    // abcjs's `swing` in a reel, our own note-map pass in a jig — see
+    // swingAudioParams. Both read the metre and the pickup from abcjs's
+    // own parse, the one the notes are timed from.
+    if (s.swing !== NO_SWING && meterCanSwing(meter)) {
+      Object.assign(audioParams, swingAudioParams(s.swing, visualObj.getMeterFraction(), visualObj.getPickupLength()));
+    }
+    // As SynthController.go() does it, at the chosen speed.
+    const millisecondsPerMeasure = visualObj.millisecondsPerMeasure() * 100 / s.tempoPercent;
+    const qpm = Math.round(visualObj.getBeatsPerMeasure() / millisecondsPerMeasure * 60000);
+    const synth = new abcjs.synth.CreateSynth();
+    await synth.init({ visualObj, options: audioParams, millisecondsPerMeasure });
+    await synth.prime();
+    const r: Run = { id: -1, key, synth, timer: null, ps, timings: [], playedTo: -1, last: null };
+    r.timer = new abcjs.TimingCallbacks(visualObj, {
+      qpm,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      eventCallback: (ev: any) => onEvent(r, ev),
+    });
+    r.timings = r.timer.noteTimings as TimingEvent[];
+    return r;
+  };
+
+  /** Silenced: its sound and its timer stopped. */
+  const silence = (r: Run) => {
+    try { r.timer.stop(); } catch { /* already stopped */ }
+    try { r.synth.stop(); } catch { /* never started */ }
+  };
+
+  /** The sound made ahead let go of — once it is made, if it is not yet. */
+  const discardPrepared = () => {
+    const p = prepared;
+    prepared = null;
+    if (p?.run) silence(p.run);
+  };
+
+  /** A run no longer played, kept to be played again: it is the sound of a
+   *  text and settings that may well be the next ones asked for. */
+  const keep = (r: Run) => {
+    r.id = -1;
+    if (prepared?.key === r.key) return;
+    discardPrepared();
+    prepared = { key: r.key, build: Promise.resolve(r), run: r, taken: false };
+  };
+
+  /** The run on its way out, silenced and kept — not a stop: the state is
+   *  left to whoever replaces it. */
   const halt = () => {
     const r = run;
     run = null;
     if (!r) return;
-    try { r.timer.stop(); } catch { /* already stopped */ }
-    try { r.synth.stop(); } catch { /* never started */ }
+    silence(r);
+    keep(r);
+  };
+
+  const prepare = () => {
+    if (state !== 'idle') return;
+    const ps = host.source();
+    const s = host.settings();
+    const key = keyOf(ps, s);
+    if (prepared?.key === key) return;
+    discardPrepared();
+    const entry: Prepared = { key, build: null as unknown as Promise<Run>, run: null, taken: false };
+    entry.build = build(ps, s, key).then((r) => {
+      // Let go of meanwhile — another text, another setting: silenced.
+      if (prepared !== entry && !entry.taken) silence(r);
+      else entry.run = r;
+      return r;
+    });
+    // A failure is the press's to retry; nothing to say here.
+    entry.build.catch(() => { if (prepared === entry) prepared = null; });
+    prepared = entry;
   };
 
   const start = (from: Place | null, resume: Resume | null = null) => {
@@ -237,45 +348,27 @@ export function createAbcPlayer(abcjs: typeof import('abcjs'), host: AbcPlayerHo
     loading = { from, resume };
     const ps = host.source();
     const s = host.settings();
+    const key = keyOf(ps, s);
     setState('loading');
     host.beforeBuild?.();
+    // The sound made ahead, when it is of this very text and these settings
+    // — ready, or still being made; else made now.
+    const ahead = prepared?.key === key ? prepared : null;
+    if (ahead) ahead.taken = true;
+    else discardPrepared();
+    prepared = null;
     void (async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const visualObj: any = abcjs.renderAbc('*', ps.source, {})[0];
-        if (!visualObj) throw new Error('no tune');
-        const audioParams: Record<string, unknown> = { soundFontVolumeMultiplier: abcjsVolumeMultiplier() };
-        if (s.program !== undefined) audioParams.program = s.program;
-        // The stave draws the transposition as `visualTranspose`, which
-        // abc_midi_sequencer subtracts back out on the way to MIDI; this
-        // engraving has none, so the sound is moved here, by the same amount.
-        if (s.transpose !== 0) audioParams.midiTranspose = s.transpose;
-        const meter = parseAbcBlock(ps.source).meter;
-        if (s.metronome) { audioParams.drum = drumPattern(beatsPerBar(meter)); audioParams.drumBars = 1; }
-        // abcjs's `swing` in a reel, our own note-map pass in a jig — see
-        // swingAudioParams. Both read the metre and the pickup from abcjs's
-        // own parse, the one the notes are timed from.
-        if (s.swing !== NO_SWING && meterCanSwing(meter)) {
-          Object.assign(audioParams, swingAudioParams(s.swing, visualObj.getMeterFraction(), visualObj.getPickupLength()));
-        }
-        // As SynthController.go() does it, at the chosen speed.
-        const millisecondsPerMeasure = visualObj.millisecondsPerMeasure() * 100 / s.tempoPercent;
-        const qpm = Math.round(visualObj.getBeatsPerMeasure() / millisecondsPerMeasure * 60000);
-        const synth = new abcjs.synth.CreateSynth();
-        await synth.init({ visualObj, options: audioParams, millisecondsPerMeasure });
-        await synth.prime();
-        if (id !== runId) return;
-        // eslint-disable-next-line prefer-const
-        let r: Run;
-        const timer = new abcjs.TimingCallbacks(visualObj, {
-          qpm,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          eventCallback: (ev: any) => onEvent(r, ev),
-        });
-        const timings = timer.noteTimings as TimingEvent[];
-        r = { id, synth, timer, ps, timings, playedTo: resume ? resume.playedTo : -1, last: null };
+        let r = ahead ? await ahead.build.catch(() => null) : null;
+        if (id === runId && !r) r = await build(ps, s, key);
+        if (!r) return;
+        // Stopped or started again meanwhile: kept for the next time.
+        if (id !== runId) { keep(r); return; }
+        r.id = id;
+        r.playedTo = resume ? resume.playedTo : -1;
+        r.last = null;
         const startAt = regionStart(r);
-        if (!startAt) { stop(); return; }
+        if (!startAt) { keep(r); stop(); return; }
         const place = resume?.at ?? from;
         const at = (place && eventOf(r, place)) ?? startAt;
         run = r;
@@ -283,17 +376,17 @@ export function createAbcPlayer(abcjs: typeof import('abcjs'), host: AbcPlayerHo
         // The note it starts on, shown before the first one sounds.
         r.last = at;
         const seekTo = Math.max(0, at.milliseconds - SEEK_BACKOFF_MS) / 1000;
-        synth.seek(seekTo, 'seconds');
+        r.synth.seek(seekTo, 'seconds');
         if (resume?.paused) {
           setState('paused');
-          timer.setProgress(seekTo, 'seconds');
+          r.timer.setProgress(seekTo, 'seconds');
           host.onNote(at, r);
           return;
         }
         host.onNote(at, r);
         setState('playing');
-        synth.start();
-        timer.start(seekTo, 'seconds');
+        r.synth.start();
+        r.timer.start(seekTo, 'seconds');
       } catch (err) {
         if (id !== runId) return;
         console.warn('[abc] could not play the tune', err);
@@ -365,10 +458,15 @@ export function createAbcPlayer(abcjs: typeof import('abcjs'), host: AbcPlayerHo
     start(null, next);
   };
 
+  const dispose = () => {
+    stop();
+    discardPrepared();
+  };
+
   return {
     state: () => state,
     run: () => run,
     start: (from) => start(from),
-    pause, resume, jump, rewind, stop, retime,
+    pause, resume, jump, rewind, stop, retime, prepare, dispose,
   };
 }

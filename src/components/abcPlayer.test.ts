@@ -70,9 +70,11 @@ function setup(overrides: Partial<AbcPlayerHost> = {}) {
   const notes: number[] = [];
   let region: { from: number; to: number } | null = null;
   let looping = true;
+  let tempoPercent = 100;
+  let source = 'X:1\nK:C\n|:AB:|C';
   const host: AbcPlayerHost = {
-    source: () => ({ source: 'X:1\nK:C\n|:AB:|C', segments: [] }),
-    settings: () => ({ program: undefined, transpose: 0, metronome: false, swing: 0, tempoPercent: 100 }),
+    source: () => ({ source, segments: [] }),
+    settings: () => ({ program: undefined, transpose: 0, metronome: false, swing: 0, tempoPercent }),
     region: () => region,
     looping: () => looping,
     onState: (s) => states.push(s),
@@ -84,6 +86,8 @@ function setup(overrides: Partial<AbcPlayerHost> = {}) {
     ...fake, player, states, notes,
     setRegion: (r: typeof region) => { region = r; },
     setLooping: (on: boolean) => { looping = on; },
+    setTempo: (p: number) => { tempoPercent = p; },
+    setSource: (s: string) => { source = s; },
   };
 }
 
@@ -180,11 +184,12 @@ describe('the score player', () => {
   });
 
   it('rebuilds at the same note and time round, still paused', async () => {
-    const { player, notes, synths, timers, states } = setup();
+    const { player, notes, synths, timers, states, setTempo } = setup();
     player.start(null);
     await settle();
     timers[0]!.callback(TIMINGS[3]);
     player.pause();
+    setTempo(80);
     player.retime();
     await settle();
     expect(synths).toHaveLength(2);
@@ -195,7 +200,7 @@ describe('the score player', () => {
     expect(states).not.toContain('idle');
   });
 
-  it('a new start silences the run it replaces', async () => {
+  it('a new start silences the run it replaces — and plays the same sound again', async () => {
     const { player, synths } = setup();
     player.start(null);
     await settle();
@@ -203,7 +208,80 @@ describe('the score player', () => {
     player.start({ char: 20, pass: 0 });
     await settle();
     expect(synths[0]!.calls).toContain('stop');
+    expect(synths).toHaveLength(1);
     expect(player.run()?.last).toBe(TIMINGS[4]);
+  });
+
+  describe('the sound made ahead', () => {
+    it('is what a start plays, without making it again', async () => {
+      const { player, synths, states } = setup();
+      player.prepare();
+      await settle();
+      expect(synths).toHaveLength(1);
+      expect(states).toEqual([]);
+      player.start(null);
+      await settle();
+      expect(synths).toHaveLength(1);
+      expect(player.state()).toBe('playing');
+    });
+
+    it('is waited for when the press comes while it is being made', async () => {
+      const { player, synths } = setup();
+      player.prepare();
+      player.start(null);
+      expect(player.state()).toBe('loading');
+      await settle();
+      expect(synths).toHaveLength(1);
+      expect(player.state()).toBe('playing');
+    });
+
+    it('is the stopped run, played again from anywhere', async () => {
+      const { player, synths, notes } = setup();
+      player.start(null);
+      await settle();
+      player.stop();
+      player.prepare();
+      player.start({ char: 12, pass: 1 });
+      await settle();
+      expect(synths).toHaveLength(1);
+      expect(notes.at(-1)).toBe(750);
+    });
+
+    it('is made again for another text or another setting', async () => {
+      const { player, synths, setSource, setTempo } = setup();
+      player.prepare();
+      await settle();
+      setSource('X:1\nK:D\n|:AB:|C');
+      player.prepare();
+      await settle();
+      setTempo(60);
+      player.start(null);
+      await settle();
+      expect(synths).toHaveLength(3);
+      // The ones let go of are silenced.
+      expect(synths[0]!.calls).toContain('stop');
+      expect(synths[1]!.calls).toContain('stop');
+    });
+
+    it('is not made while something plays', async () => {
+      const { player, synths } = setup();
+      player.start(null);
+      await settle();
+      player.prepare();
+      await settle();
+      expect(synths).toHaveLength(1);
+    });
+
+    it('is let go of with the dialog', async () => {
+      const { player, synths } = setup();
+      player.prepare();
+      await settle();
+      player.dispose();
+      expect(synths[0]!.calls).toContain('stop');
+      player.start(null);
+      await settle();
+      expect(synths).toHaveLength(2);
+    });
   });
 
   it('asks for the sound only once it has been asked to play', () => {
