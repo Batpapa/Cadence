@@ -12,6 +12,7 @@ import { t } from '../../services/i18nService';
 import { formatBytes } from '../../utils';
 import { ExpandIcon, CollapseIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
+import type { ScoreFace } from '../../types';
 
 // ── A detection's score, following its recording ─────────────────────────────
 // The score viewer's "Audio sync" (2026-10-28, the user: one way in, the
@@ -196,7 +197,7 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   version: Signal<string>;
   getAudio: GetAudio;
   expanded: Signal<boolean>;
-  face: Signal<'sheet' | 'text'>;
+  face: Signal<ScoreFace>;
   onState: (s: AudioSyncState) => void;
   /** Followed whatever the verdict (the viewer's hidden gesture). */
   forced: Signal<boolean>;
@@ -379,9 +380,11 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   // Full page, floor and cap alike (2026-11-01, the user): the paper fills
   // the page, as the viewer's full page does, however short the tune.
 
-  // In the score's corner, as in the viewer: the way in, then the way out.
+  // In the score's corner, as in the viewer: the way in, then the way out —
+  // and, as in the viewer, none with the stave and the text together (the
+  // user, 2026-11-04).
   const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
-  const tools = (
+  const tools = shownFace === 'both' && !page ? undefined : (
     <button
       class="abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center"
       title={pageLabel}
@@ -412,7 +415,7 @@ export function mountScoreFollow(host: HTMLElement, opts: {
   target: FollowTarget;
   version: string;
   getAudio: GetAudio;
-  face: 'sheet' | 'text';
+  face: ScoreFace;
   expanded: boolean;
   onState: (s: AudioSyncState) => void;
   forced: boolean;

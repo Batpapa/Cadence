@@ -1,5 +1,5 @@
 import LZString from 'lz-string';
-import type { AbcOpenMode, AbcPaper, Attachment, FileEntry } from '../types';
+import type { AbcOpenMode, AbcPaper, Attachment, FileEntry, ScoreFace } from '../types';
 import { entryToObjectUrl, entryToBytes, arrayBufferToBase64, focusIfDesktop, downloadBlob, isAppleTouchDevice } from '../utils';
 import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
@@ -10,22 +10,21 @@ import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, Pl
   WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
-import { abcjsVolumeMultiplier } from '../services/playbackVolume';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
   showAbcSyntaxCheck, suggestPlayedVersion, blankForRender, locateAbcWarning, abcWarningRange,
   abcPaper, abcPaperSetting, ABC_PAPER_AUTO, abcSwingAtOpen, meterCanSwing,
   ABC_PAPERS, SWING_CHOICES, NO_SWING, stepSwingChoice } from '../services/abcService';
 import { engraveScore, type ScoreMeasure } from '../services/abcLineBreaks';
 import { ENGRAVE_HYSTERESIS, engraveOptions, engraveWidthOf, cropToInk } from './scoreEngraving';
-import { swingAudioParams } from '../services/jigSwing';
 import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
 import {
-  playableSource, sourceIndex, playPlan, noteRanges, resumeInside, passOf, eventAt,
-  notesOf, startNoteAt, boxRange, bodyIndex, isNote, touches, type ParsedNote, type PlayableSource, type TimingEvent,
+  playableSource, sourceIndex, noteRanges, passOf, eventAt, isNote,
+  notesOf, startNoteAt, boxRange, bodyIndex, type ParsedNote, type PlayableSource, type TimingEvent,
 } from '../services/abcTextPlayback';
+import { createAbcPlayer, type AbcPlayer, type PlayState, type Place, type PlayerRun } from './abcPlayer';
 import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
 import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds } from '../services/abcBounds';
-import { showModal, updateTopModal, confirmModal, askUnsavedChanges } from './modal';
+import { showModal, updateTopModal, setModalMaxWidth, confirmModal, askUnsavedChanges } from './modal';
 import { splitFileName, renamedFileName, safeFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon, boundIcon } from './playbackIcons';
@@ -155,36 +154,6 @@ function abcTempoPercent(): number {
 // The options and the crop to the ink are in scoreEngraving.ts, shared with
 // the score that follows a recording (syncedScore.tsx).
 
-/** How many beats a bar of this metre is counted in, for the metronome.
- *
- *  A compound metre is counted in dotted beats, not in its own denominator: a
- *  jig in 6/8 is TWO, not six, and clicking six would be unusable at any speed
- *  this music is played at. 9/8 is three, 12/8 four; everything else counts its
- *  numerator. */
-function beatsPerBar(meter: string): number {
-  const m = /^(\d+)\s*\/\s*(\d+)/.exec(meter.trim());
-  if (!m) return 4;
-  const top = parseInt(m[1]!, 10);
-  const bottom = parseInt(m[2]!, 10);
-  if (!Number.isFinite(top) || top <= 0) return 4;
-  if (bottom === 8 && top % 3 === 0 && top > 3) return top / 3;
-  return top;
-}
-
-/** A `%%MIDI drum` pattern: one stroke per beat, the first one accented.
- *
- *  The spec is a run of `d`/`z` followed by one MIDI note per stroke and then
- *  one velocity per stroke. 76 and 77 are the two woodblocks — the pair every
- *  metronome sound in General MIDI is built from — and the first is louder so
- *  the bar has a shape to follow rather than a flat tick. */
-function drumPattern(beats: number): string {
-  const n = Math.max(1, Math.min(12, beats));
-  const strokes = 'd'.repeat(n);
-  const notes = ['76', ...Array(n - 1).fill('77')].join(' ');
-  const volumes = ['95', ...Array(n - 1).fill('60')].join(' ');
-  return `${strokes} ${notes} ${volumes}`;
-}
-
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
 function isText(entry: FileEntry): boolean {
@@ -197,10 +166,6 @@ function isMarkdown(entry: FileEntry): boolean {
 }
 
 
-/** How far before a clicked note to seek — see the click handler for why an
- *  exact seek lands on the wrong note. */
-const SEEK_BACKOFF_MS = 10;
-
 /** How far from a note a tap may land and still mean it, in window pixels —
  *  across, to the nearest note of the system, and above or below the system.
  *  About half a fingertip: notes in a phone-width bar sit a dozen pixels
@@ -210,6 +175,11 @@ const TAP_REACH_PX = 20;
 
 /** How far a press may travel and still be a tap rather than a drag. */
 const TAP_SLOP_PX = 10;
+
+/** How long the typing pauses before the stave beside it is redrawn, on the
+ *  "both" face — the syntax check's pace, a little slower: engraving costs
+ *  more than parsing. */
+const TYPING_REDRAW_MS = 300;
 
 /** The nearest scrolling box, starting with the element itself — the score has
  *  its own viewport, and it is that one, not the modal around it, that should
@@ -604,6 +574,37 @@ function modalWidth(entry: FileEntry): string {
   return '860px';
 }
 
+/** A score's dialog while it shows the stave and the ABC together (the "both"
+ *  face): room for the two side by side, the stave keeping about the width it
+ *  has alone. Still capped by the screen (modal.tsx's `modalMaxW`). */
+const BOTH_FACES_WIDTH = '1400px';
+
+/** The text's share of the width, side by side: the device's own, kept as
+ *  the sidebar's width is (appRoot.tsx) — a laptop and a large screen want
+ *  different ones. Half and half until it is dragged; never so far that
+ *  either face is left a sliver. */
+const SPLIT_KEY = 'cadence_abc_split';
+const SPLIT_DEFAULT = 0.5;
+const SPLIT_MIN = 0.2;
+const SPLIT_MAX = 0.8;
+/** One press of an arrow key on the line. */
+const SPLIT_STEP = 0.05;
+
+const clampSplit = (r: number): number => Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, r));
+function readSplit(): number {
+  try {
+    const r = parseFloat(localStorage.getItem(SPLIT_KEY) ?? '');
+    return Number.isFinite(r) ? clampSplit(r) : SPLIT_DEFAULT;
+  } catch { return SPLIT_DEFAULT; }
+}
+function writeSplit(r: number): void {
+  try { localStorage.setItem(SPLIT_KEY, String(r)); } catch { /* back to half and half next time, nothing worse */ }
+}
+
+/** Which faces a face shows. */
+const showsSheet = (face: ScoreFace): boolean => face !== 'text';
+const showsText = (face: ScoreFace): boolean => face !== 'sheet';
+
 export interface PreviewModalOpts {
   /** Multi-tune ABC files: which splitAbcTunes() index to open at — the
    *  attachment's stored `preferredIndex`, if any. */
@@ -664,7 +665,7 @@ export interface AudioSyncBinding {
   /** Puts the audio sync of `version` in `host`, on the viewer's face (stave
    *  or text) and at its size. `onState` hears how its alignment goes. */
   mount: (
-    host: HTMLElement, version: string, face: 'sheet' | 'text', expanded: boolean,
+    host: HTMLElement, version: string, face: ScoreFace, expanded: boolean,
     onState: (s: AudioSyncState) => void, forced: boolean,
   ) => AudioSyncView;
 }
@@ -696,7 +697,7 @@ export interface AudioSyncView {
   /** Followed even when the alignment is judged too poor to be (the hidden
    *  gesture on the toggle). */
   setForced: (forced: boolean) => void;
-  setFace: (face: 'sheet' | 'text') => void;
+  setFace: (face: ScoreFace) => void;
   setExpanded: (expanded: boolean) => void;
   unmount: () => void;
 }
@@ -707,7 +708,7 @@ export interface AudioSyncView {
 export interface PlayAlongView {
   /** The version on screen now: its ABC, and its index in the file. */
   setVersion: (version: string, index: number) => void;
-  setFace: (face: 'sheet' | 'text') => void;
+  setFace: (face: ScoreFace) => void;
   setExpanded: (expanded: boolean) => void;
   /** A take recorded and neither kept nor discarded: asks first, and true
    *  when it did — `proceed` runs once it is answered. */
@@ -1028,8 +1029,9 @@ export function showPreviewModal(
     }
     // Where this score lands, from the user's preference — the stave unless
     // they said otherwise. Read once, at opening: the tabs below reassign it
-    // freely and never write it back.
-    let currentMode: 'sheet' | 'text' = abcOpenMode(appState.value);
+    // freely and never write it back. Never the "both" face: that one is a
+    // tab only, not a preference (the user, 2026-11-04).
+    let currentMode: ScoreFace = abcOpenMode(appState.value);
     // Set when a text-mode edit is saved while notation is hidden — abcjs's
     // resize handling can make the SVG visibly reflow back in even inside a
     // display:none container (see setAbcMode's comment below), so the
@@ -1064,7 +1066,9 @@ export function showPreviewModal(
     let transpose = 0;
 
     const container = document.createElement('div');
-    container.className = 'w-full space-y-3';
+    // `abc-viewer`: the container the "both" face asks how wide it is, to put
+    // its two faces side by side or one above the other (styles.css).
+    container.className = 'abc-viewer w-full space-y-3';
 
     // ── Top row: Sheet/ABC tabs + version nav + the tools that act on the score ──
     // One line, never wrapped (2026-11-01, the user): the toggles at the end
@@ -1084,14 +1088,29 @@ export function showPreviewModal(
       b.setAttribute('aria-label', label);
       return b;
     };
-    const abcGlyph = document.createElement('span');
-    abcGlyph.className = 'text-[9px] font-mono font-bold leading-none';
-    abcGlyph.textContent = 'ABC';
+    const mkAbcGlyph = (): HTMLSpanElement => {
+      const g = document.createElement('span');
+      g.className = 'text-[9px] font-mono font-bold leading-none';
+      g.textContent = 'ABC';
+      return g;
+    };
+    const abcGlyph = mkAbcGlyph();
+    // The two others side by side with a "+" between them (2026-11-04, the
+    // user): the stave and its text at once, to write ABC while reading what
+    // it says — what the tester switched to abcTools for.
+    const bothGlyph = document.createElement('span');
+    bothGlyph.className = 'flex items-center gap-0.5';
+    const plus = document.createElement('span');
+    plus.className = 'text-[10px] font-bold leading-none';
+    plus.textContent = '+';
+    bothGlyph.append(iconElement(MusicNoteIcon, 12), plus, mkAbcGlyph());
     const sheetTabBtn = mkAbcTab(t('fileViewer.abc.sheetTab'), iconElement(MusicNoteIcon, 14));
     const textTabBtn  = mkAbcTab(t('fileViewer.abc.textTab'), abcGlyph);
+    const bothTabBtn  = mkAbcTab(t('fileViewer.abc.bothTab'), bothGlyph);
     sheetTabBtn.onclick = () => chooseMode('sheet');
     textTabBtn.onclick  = () => chooseMode('text');
-    tabBar.append(sheetTabBtn, textTabBtn);
+    bothTabBtn.onclick  = () => chooseMode('both');
+    tabBar.append(sheetTabBtn, textTabBtn, bothTabBtn);
     tabBar.dataset.tour = 'abc-tabs';
 
     const versionNav = document.createElement('div');
@@ -1297,14 +1316,8 @@ export function showPreviewModal(
       if (on) {
         // One cursor at a time: the Play-along goes (below).
         if (playAlongView) setPlayAlong(false);
-        // The score's own sound stops, for good. `pauseIfPlaying` and not just
-        // `stopAudio`: abcjs's pause leaves `isStarted` set, and hiding the
-        // stave — or leaving its full page — redraws it, a redraw that resumes
-        // whatever `isStarted` says was playing (pendingRestore): the tune
-        // started again under the audio sync (2026-10-29, the user).
-        pauseIfPlaying();
-        stopAudio();
-        stopTextPlay();
+        // The score's own sound stops, for good.
+        stopPlay();
         if (fullscreen) exitFullscreen();
         hiddenByAudioSync = Array.from(container.children)
           .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== topRow)
@@ -1444,9 +1457,7 @@ export function showPreviewModal(
       if (on) {
         if (audioSyncView) setAudioSync(false);
         // As for the audio sync: the score's own sound stops for good.
-        pauseIfPlaying();
-        stopAudio();
-        stopTextPlay();
+        stopPlay();
         if (fullscreen) exitFullscreen();
         // The viewer stays where it is, laid out but unseen, and the
         // Play-along is laid over it: the dialog keeps the very size it had
@@ -1593,7 +1604,12 @@ export function showPreviewModal(
     }
     /** A tab pressed: the viewer's face, or the audio sync's, or the
      *  Play-along's. */
-    const chooseMode = (mode: 'sheet' | 'text'): void => {
+    const chooseMode = (mode: ScoreFace): void => {
+      // Wider for the two faces side by side, back to its own width after —
+      // at the press only: the face a score opens on is never "both".
+      if ((mode === 'both') !== (currentMode === 'both')) {
+        setModalMaxWidth(body, mode === 'both' ? BOTH_FACES_WIDTH : modalWidth(entry));
+      }
       const takenOver = audioSyncView ?? playAlongView;
       if (!takenOver) { setAbcMode(mode); return; }
       currentMode = mode;
@@ -1626,7 +1642,7 @@ export function showPreviewModal(
      *  placed in the text, if it could be: a placed warning is a link to it. */
     const showWarnings = (list: string[], at: (number | null)[] = []) => {
       warnRow.replaceChildren();
-      if (list.length === 0 || currentMode !== 'text' || !showAbcSyntaxCheck(appState.value)) {
+      if (list.length === 0 || !showsText(currentMode) || !showAbcSyntaxCheck(appState.value)) {
         warnRow.classList.add('hidden'); warnRow.classList.remove('flex'); return;
       }
       const head = document.createElement('button');
@@ -1685,44 +1701,30 @@ export function showPreviewModal(
     const uid = Date.now();
 
     // ── One transport row ────────────────────────────────────────────────────
-    // abcjs's own widget and our practice controls on the SAME line, since
-    // 2026-09-21. Dropping the progress bar — it said what the cursor on the
-    // staff already says — left the widget three buttons and a clock wide,
-    // which is exactly the room the transposition, the speed and the metronome
-    // needed. Two stacked bars for four controls was the earlier shape and it
-    // spent a centimetre of a phone screen on nothing.
+    // The play buttons and our practice controls on the SAME line, since
+    // 2026-09-21: two stacked bars for four controls was the earlier shape and
+    // it spent a centimetre of a phone screen on nothing.
+    //
+    // ONE set of play buttons for every face since 2026-11-04 (the user: "the
+    // controls at the bottom must be there whatever the view(s)"). They drive
+    // the viewer's one player (abcPlayer.ts) and each face only shows where it
+    // is. Until then the stave had abcjs's own widget, dressed in our glyphs,
+    // and the ABC face a copy of it driving a player of its own — two players,
+    // one shown at a time, the cursor copied across when the tab changed.
     const transportBar = document.createElement('div');
     transportBar.className = TRANSPORT_CLASS;
-    // Appended AFTER the score, further down — see the note there. Built here
-    // because `controls` inside it has to exist before abcjs is handed its id.
+    // Appended AFTER the score, further down — see the note there.
 
-    // abcjs writes its widget into this, and into nothing else: it is handed
-    // to `SynthController.load` by id and everything inside belongs to the
-    // library. Ours goes beside it, never in it.
-    const controls = document.createElement('div');
-    controls.id = `abc-controls-${uid}`;
-    controls.className = 'shrink-0';
-    // Capture phase: before abcjs's own handlers, still inside the tap — the
-    // only moment Safari lets its audio start (audioSession.ts).
-    controls.addEventListener('click', unlockAbcjsAudio, true);
-    controls.dataset.tour = 'abc-play';
-    transportBar.appendChild(controls);
-
-    // ── The source face's transport (2026-10-15) ──
-    // On the ABC face, the stave's own four buttons, copied: abcjs's widget
-    // only exists once a stave has been drawn — never, for a score opened on
-    // its source — and drives the stave's synth alone. Same classes, so the
-    // same look (styles.css, `.abc-transport .abcjs-inline-audio`), and the
-    // same row: the practice controls beside them are SHARED by both faces
-    // (the user, 2026-10-15), and so is the loop. What they play here is the
-    // text in the box — see `textTransport` where it is assigned.
-    const textControls = document.createElement('div');
-    textControls.className = 'abcjs-inline-audio shrink-0';
-    textControls.style.display = 'none';
+    // abcjs's classes, and so abcjs's look (styles.css, `.abc-transport
+    // .abcjs-inline-audio`): its stylesheet is what shows play, pause or the
+    // spinner on the one button.
+    const playControls = document.createElement('div');
+    playControls.className = 'abcjs-inline-audio shrink-0';
+    playControls.dataset.tour = 'abc-play';
     const withClass = (svg: string, cls: string) => svg.replace('<svg ', `<svg class="${cls}" `);
     // abcjs's own spinner (synth/images/loading.svg.js), which its CSS turns.
     const LOADING_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="abcjs-loading-svg"><circle cx="50" cy="50" fill="none" stroke-width="20" r="35" stroke-dasharray="160 55"></circle></svg>';
-    const mkTextBtn = (cls: string, html: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const mkPlayBtn = (cls: string, html: string, title: string, onClick: () => void): HTMLButtonElement => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `abcjs-btn ${cls}`;
@@ -1733,37 +1735,42 @@ export function showPreviewModal(
       b.onclick = () => { b.blur(); unlockAbcjsAudio(); onClick(); };
       return b;
     };
-    const textPlayBtn = mkTextBtn('abcjs-midi-start',
+    // Play, back, stop, repeat — the audio player's order, with the one
+    // control it has no counterpart for next to play. "Back" is back to the
+    // start of the passage without stopping (asked for 2026-09-25): the tune
+    // is left looping and practised against, and reaching for stop then play
+    // every time breaks the flow.
+    const playBtn = mkPlayBtn('abcjs-midi-start',
       withClass(playIcon(15), 'abcjs-play-svg') + withClass(pauseIcon(15), 'abcjs-pause-svg') + LOADING_SVG,
-      t('fileViewer.abc.listen.title'), () => textTransport.playPause());
-    const textRewindBtn = mkTextBtn('abc-midi-rewind', rewindIcon(15), t('fileViewer.abc.rewindStart'), () => textTransport.rewind());
-    const textStopBtn = mkTextBtn('abcjs-midi-reset', stopIcon(15), t('fileViewer.abc.listen.stop'), () => textTransport.stop());
-    const textLoopBtn = mkTextBtn('abcjs-midi-loop', repeatIcon(15), t('fileViewer.abc.listen.loop'), () => setLooping(!looping));
-    textControls.append(textPlayBtn, textRewindBtn, textStopBtn, textLoopBtn);
-    transportBar.appendChild(textControls);
-    type TextPlayState = 'idle' | 'loading' | 'playing' | 'paused';
-    /** How the text face's play button looks — abcjs's classes, abcjs's CSS. */
-    const paintTextPlay = (state: TextPlayState): void => {
-      textPlayBtn.classList.toggle('abcjs-pushed', state === 'playing');
-      textPlayBtn.classList.toggle('abcjs-loading', state === 'loading');
+      t('fileViewer.abc.listen.title'), () => transport.playPause());
+    const rewindBtn = mkPlayBtn('abc-midi-rewind', rewindIcon(15), t('fileViewer.abc.rewindStart'), () => transport.rewind());
+    const stopBtn = mkPlayBtn('abcjs-midi-reset', stopIcon(15), t('fileViewer.abc.listen.stop'), () => transport.stop());
+    const loopBtn = mkPlayBtn('abcjs-midi-loop', repeatIcon(15), t('fileViewer.abc.listen.loop'), () => setLooping(!looping));
+    playControls.append(playBtn, rewindBtn, stopBtn, loopBtn);
+    transportBar.appendChild(playControls);
+    /** How the play button looks — abcjs's classes, abcjs's CSS. */
+    const paintPlay = (state: PlayState): void => {
+      playBtn.classList.toggle('abcjs-pushed', state === 'playing');
+      playBtn.classList.toggle('abcjs-loading', state === 'loading');
     };
-    /** The loop, one for both faces. On by default, as the stave's always was:
-     *  a score is opened to be practised against. */
+    /** The loop. On by default: a score is opened to be practised against,
+     *  and reaching for the button on every pass is friction. */
     let looping = true;
     const setLooping = (on: boolean): void => {
       looping = on;
-      textLoopBtn.classList.toggle('abcjs-pushed', on);
+      loopBtn.classList.toggle('abcjs-pushed', on);
     };
     setLooping(true);
-    /** The text face's player — assigned once abcjs has loaded. */
-    let textTransport = {
+    /** What the buttons do — assigned once abcjs has loaded. */
+    let transport = {
       playPause: () => {}, rewind: () => {}, stop: () => {},
       /** A setting changed: picks up at the same note, rebuilt. */
       retime: () => {},
     };
-    /** Typing, another face, another version and the dialog going stop it. */
-    const stopTextPlay = (): void => textTransport.stop();
-    /** Re-marks where play would start — assigned once abcjs has loaded. */
+    /** Typing, another version, the audio sync, the Play-along and the
+     *  dialog going stop it. */
+    const stopPlay = (): void => transport.stop();
+    /** Re-marks the cursor in the text — assigned once abcjs has loaded. */
     let previewText: () => void = () => {};
 
     // ── The passage (2026-10-15) ──
@@ -1780,16 +1787,35 @@ export function showPreviewModal(
      *  syncBounds, which follows an edit made since. */
     let boundsBody = '';
     let boundsIndex = -1;
-    /** The note the cursor is on, as a position in the box's text, on either
-     *  face: what a bound is set at, and what the other face picks up. Null
-     *  is the start. */
+    // ── The cursor (2026-11-04, the user) ──
+    // ONE cursor, which each face only shows: "it is supposed to be literally
+    // the same", so moving it on one face moves it on the other at once — a
+    // note tapped on the stave puts the caret on it, a caret moved in the
+    // text puts the stave's cursor there. It was one variable already, but
+    // each face kept its own idea of it and handed it over when the tab
+    // changed, which two faces on screen together could not live with.
+    //
+    // While the music plays the cursor is the note sounding; paused, the note
+    // it stopped on; stopped, it goes back to where play started.
+    /** The note the cursor is on, as a position in the box's text: what play
+     *  starts from and what a bound is set at. Null is the start. */
     let cursorAt: number | null = null;
+    /** Which time round the repeats: a note tapped on the stave is on one of
+     *  them, a caret in the text on the first. */
+    let cursorPass = 0;
+    /** Bumped by every move the READER makes, on either face — not by the
+     *  music moving it. Paused, a cursor moved since says "play from there". */
+    let cursorGen = 0;
+    /** `cursorGen` when the music last took the cursor as its own. */
+    let runGen = 0;
+    /** Where play started, for the stop to put the cursor back. */
+    let playFrom: { at: number | null; pass: number } | null = null;
     /** Late-bound, once abcjs has loaded: what is "here" needs the notes. */
     let setBoundHere: (side: 'in' | 'out') => void = () => {};
     /** Flags and marks drawn again — late-bound for the same reason. */
     let redrawBounds: () => void = () => {};
-    /** The cursor carried onto the face being opened — late-bound too. */
-    let shareCursor: (mode: 'sheet' | 'text') => void = () => {};
+    /** The cursor drawn again on every face on screen — late-bound too. */
+    let showCursor: () => void = () => {};
 
     const boundsGroup = document.createElement('div');
     boundsGroup.className = 'flex items-center rounded-lg border border-border bg-bg shrink-0';
@@ -1807,27 +1833,19 @@ export function showPreviewModal(
     const boundOutBtn = mkBoundBtn(boundIcon('out'), 'abc-bound-btn-out', t('fileViewer.abc.bounds.setOut'), () => setBoundHere('out'));
     const boundClearBtn = mkBoundBtn('✕', 'text-muted hover:text-primary disabled:opacity-30 disabled:cursor-default disabled:hover:text-muted',
       t('fileViewer.abc.bounds.clear'), () => { bounds = { in: null, out: null }; boundsChanged(); });
-    // Nothing to clear yet. Not through paintBoundControls, which reads the
-    // stave's back button, declared further down.
-    boundClearBtn.disabled = true;
     boundsGroup.append(boundInBtn, boundOutBtn, boundClearBtn);
     boundsGroup.dataset.tour = 'abc-bounds';
     transportBar.appendChild(boundsGroup);
-    /** Just before the stave starts: from the start of the passage when the
-     *  cursor is outside it — late-bound, it needs the timer. */
-    let beforeScorePlay: () => void = () => {};
 
     /** What the controls say: whether there is anything to clear, and where
      *  "back" goes. */
     const paintBoundControls = (): void => {
       boundClearBtn.disabled = bounds.in === null && bounds.out === null;
       const title = t(bounds.in !== null ? 'fileViewer.abc.rewindIn' : 'fileViewer.abc.rewindStart');
-      for (const b of [rewindBtn, textRewindBtn]) {
-        if (!b) continue;
-        b.title = title;
-        b.setAttribute('aria-label', title);
-      }
+      rewindBtn.title = title;
+      rewindBtn.setAttribute('aria-label', title);
     };
+    paintBoundControls();
 
     /** After the bounds were set: they now refer to the text on screen. */
     const boundsChanged = (): void => {
@@ -1844,82 +1862,6 @@ export function showPreviewModal(
     practiceRow.className = 'flex items-center gap-1.5 flex-wrap';
     practiceRow.dataset.tour = 'abc-practice';
     transportBar.appendChild(practiceRow);
-
-    /** abcjs's own glyphs swapped for the app's, after its widget is built.
-     *
-     *  The images are module-level `require`s in create-synth-control.js, not
-     *  options, so there is no way to hand it ours — the DOM is edited after
-     *  the fact instead. What must survive is the CLASSES: abcjs shows and
-     *  hides play/pause/loading purely through `.abcjs-play-svg` and friends
-     *  (abcjs-audio.css), so each replacement carries the class of the glyph it
-     *  replaces and the toggling keeps working untouched. The loading spinner
-     *  is left exactly as it is — it has an animation of its own and the app
-     *  has nothing to put in its place. */
-    const dressTransport = () => {
-      const root = controls.querySelector('.abcjs-inline-audio');
-      if (!root) return;
-      const classed = (svg: string, cls: string) => svg.replace('<svg ', `<svg class="${cls}" `);
-      const start = root.querySelector('.abcjs-midi-start');
-      // Capturing: before abcjs's own handler starts the timer from where the
-      // cursor stands.
-      start?.addEventListener('click', () => beforeScorePlay(), true);
-      if (start) {
-        // Kept, not rebuilt: it is the one glyph here that is not ours.
-        const loading = start.querySelector('.abcjs-loading-svg')?.outerHTML ?? '';
-        start.innerHTML = classed(playIcon(15), 'abcjs-play-svg')
-          + classed(pauseIcon(15), 'abcjs-pause-svg')
-          + loading;
-      }
-      const reset = root.querySelector('.abcjs-midi-reset');
-      if (reset) {
-        reset.innerHTML = stopIcon(15);
-        // abcjs calls this "restart" and it means rewind: pressed mid-tune it
-        // jumps to the beginning and CARRIES ON PLAYING. The app's stop button
-        // means stop, everywhere else it appears, so this one is made to mean
-        // the same — pause first, then let abcjs rewind.
-        //
-        // Capturing, so the pause lands before abcjs's own handler runs, and
-        // the order is pause-then-rewind rather than the other way about.
-        reset.addEventListener('click', () => pauseIfPlaying(), true);
-      }
-      const loop = root.querySelector('.abcjs-midi-loop');
-      if (loop) loop.innerHTML = repeatIcon(15);
-      // Back without stopping — which is what abcjs's "restart" used to do
-      // before it was made a real stop (above), and what was asked for back
-      // (2026-09-25): the tune is left looping and practised against, and
-      // reaching for stop then play every time breaks the flow. Ours, in
-      // their row: abcjs only ever looks its buttons up by their own classes,
-      // so one more `.abcjs-btn` beside them is invisible to it.
-      const rewind = document.createElement('button');
-      rewind.type = 'button';
-      rewind.className = 'abcjs-btn abc-midi-rewind';
-      rewind.innerHTML = rewindIcon(15);
-      rewind.addEventListener('click', () => rewindScore());
-      rewindBtn = rewind;
-      paintBoundControls();
-      // Play, back, stop, repeat — the audio player's order, with the one
-      // control it has no counterpart for next to play. abcjs builds loop /
-      // restart / play, so everything moves.
-      root.prepend(rewind);
-      if (start) root.prepend(start);
-      if (reset) rewind.after(reset);
-      if (reset && loop) reset.after(loop);
-    };
-
-    /** Late-bound, because the things these act on live inside the abcjs
-     *  import: the tempo needs the synth, the rest need a re-draw. */
-    let applyWarp: (percent: number) => void = () => {};
-    /** Stops the sound if any is coming out, leaving the position alone — the
-     *  first half of what the stop button does, the rewind being abcjs's own.
-     *  Late-bound for the same reason: the controller lives inside the import. */
-    let pauseIfPlaying: () => void = () => {};
-    /** Another app took the sound (Android app). One function for the whole
-     *  dialog, so a release finds the claim it made. */
-    const pauseScoreForFocus = (): void => pauseIfPlaying();
-    /** Back to the start of the passage — see `rewindScore` where it is
-     *  assigned. Late-bound like the two above. */
-    let rewindScore: () => void = () => {};
-    let rewindBtn: HTMLButtonElement | null = null;
 
     /** A group of three: down, the value, up. The value itself is a button and
      *  resets — a stepper you can only walk back one press at a time is the
@@ -2014,13 +1956,15 @@ export function showPreviewModal(
         if (next === transpose) return;
         transpose = next;
         updateTranspose();
+        // The dots move, and the sound with them.
         redrawScore();
+        transport.retime();
       });
     };
 
     // ── Speed ──
-    // A percentage of the tune's written tempo. abcjs's own percent field is
-    // hidden (see `displayWarp` below) so there is one speed on screen, not two.
+    // A percentage of the tune's written tempo. A change is heard at once, at
+    // the same note: the player rebuilds the tune at the new speed.
     let tempoPercent = openingTempoPercent;
     const tempoStepper = mkStepper(
       { down: t('fileViewer.abc.slower'), up: t('fileViewer.abc.faster'), reset: t('fileViewer.abc.prefs.speed') },
@@ -2034,13 +1978,13 @@ export function showPreviewModal(
         if (next === tempoPercent) return;
         tempoPercent = next;
         updateTempo();
-        applyWarp(tempoPercent);
+        transport.retime();
       },
       () => {
         if (tempoPercent === DEFAULT_TEMPO_PERCENT) return;
         tempoPercent = DEFAULT_TEMPO_PERCENT;
         updateTempo();
-        applyWarp(tempoPercent);
+        transport.retime();
       },
     );
     function updateTempo(): void {
@@ -2059,9 +2003,8 @@ export function showPreviewModal(
     let metronome = false;
     const metronomeChip = mkToggleChip(iconElement(MetronomeIcon, 14), null, t('fileViewer.abc.metronome'), metronome, (on) => {
       metronome = on;
-      // The drum is baked into the audio buffer, so it takes a re-prime — which
-      // is what a re-draw does.
-      redrawScore();
+      // The drum is baked into the audio buffer, so it takes a rebuild.
+      transport.retime();
     });
 
     // abcjs does the work (its `addSwing`); all this chooses is the number.
@@ -2069,7 +2012,7 @@ export function showPreviewModal(
       swing = v;
       // Swing is applied when the note map is built, so it needs the buffer
       // rebuilt — same as the metronome.
-      redrawScore();
+      transport.retime();
     });
     /** Whether this tune's metre swings at all — see meterCanSwing. */
     const swingApplies = () => meterCanSwing(parseAbcBlock(shownBlock(currentIndex)).meter);
@@ -2091,12 +2034,21 @@ export function showPreviewModal(
     // scrolls, and an absolutely positioned child of a scrolling box scrolls
     // away with the music. The frame does not scroll, so they stay put.
     const scoreFrame = document.createElement('div');
-    scoreFrame.className = 'relative w-full';
+    scoreFrame.className = 'abc-score-frame relative w-full';
     scoreFrame.dataset.tour = 'abc-score';
-    container.appendChild(scoreFrame);
-    // The transport goes UNDER the score, which is why it is not appended where
-    // it was built (see TRANSPORT_CLASS) — nor here: under the ABC source as
-    // well, so after the box (2026-10-15). One of the two is always hidden.
+    // The stave and the ABC source in one box: one or the other on their own
+    // tabs, the two together on the "both" tab (2026-11-04) — side by side
+    // when the viewer is wide enough, the stave on the right, and under the
+    // text when it is not (the user: the text first).
+    // Decided in CSS, by a container query on the viewer (`.abc-faces-both`
+    // in styles.css), never by measuring here: a layout that measures itself
+    // can chase its own scrollbar.
+    const facesBox = document.createElement('div');
+    facesBox.appendChild(scoreFrame);
+    container.appendChild(facesBox);
+    // The transport goes UNDER the faces, which is why it is not appended
+    // where it was built (see TRANSPORT_CLASS) — nor here: after the ABC
+    // source's box, which goes into `facesBox` beside the stave.
 
     // The score's own scrolling viewport, capped well below the modal's
     // height: the score is the only thing that should move while the cursor
@@ -2168,9 +2120,11 @@ export function showPreviewModal(
     let fullscreen: HTMLElement | null = null;
     const capScore = () => {
       if (fullscreen) return; // full page sizes itself from its own flex column
-      scoreScroll.style.maxHeight = modalExpanded
-        ? `calc(${modalMaxH(1)} - 12rem)`
-        : modalMaxH(0.62);
+      const cap = modalExpanded ? `calc(${modalMaxH(1)} - 12rem)` : modalMaxH(0.62);
+      // With the text beside it or under it, the stylesheet has the last word:
+      // the full cap side by side, a share of it under the text.
+      facesBox.style.setProperty('--abc-score-cap', cap);
+      scoreScroll.style.maxHeight = currentMode === 'both' ? '' : cap;
     };
     capScore();
     onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); audioSyncView?.setExpanded(expanded); if (playAlongView) { holdPlayAlongHeight(); playAlongView.setExpanded(expanded); } };
@@ -2181,6 +2135,8 @@ export function showPreviewModal(
     let remeasure: () => void = () => {};
     /** Same, for a change to the drawing itself rather than to its size. */
     let redrawScore: () => void = () => {};
+    /** The stave redrawn once the typing pauses, on the "both" face. */
+    let redrawAfterTyping: () => void = () => { sheetNeedsRerender = true; };
     /** Re-reads the editor's text and refreshes the warning strip. */
     let checkWarnings: () => void = () => {};
     /** The width the score on screen was engraved for, so a resize that changes
@@ -2302,11 +2258,10 @@ export function showPreviewModal(
     // ── Raw ABC text of the SELECTED tune only — editable and saved back to
     // the attachment when the caller passed a save callback (card view);
     // read-only otherwise (study).
-    // ── The source face's player (2026-10-15, a TheSession user editing ABC
-    // by ear): the transport under the box plays the text in it — from the
-    // caret, or only the selection — and lights each note in the text as it
-    // sounds. Nothing is drawn; see abcTextPlayback.ts. On every viewer, the
-    // read-only one too: listening is not editing.
+    // ── The source face plays too (2026-10-15, a TheSession user editing ABC
+    // by ear): the transport plays the text in the box as it stands — from
+    // the cursor — and the note sounding is lit in the text as it is on the
+    // stave. On every viewer, the read-only one too: listening is not editing.
 
     // The box over a layer that marks its text, since a textarea cannot
     // colour part of its own (2026-10-15): where play will start — a bar in
@@ -2317,7 +2272,7 @@ export function showPreviewModal(
     // text in the same font, padding and wrapping, transparent; the box is
     // see-through over it, and the layer paints the background.
     const textBox = document.createElement('div');
-    textBox.className = 'relative';
+    textBox.className = 'abc-text-box relative';
     textBox.style.display = 'none';
     const textBackdrop = document.createElement('div');
     textBackdrop.setAttribute('aria-hidden', 'true');
@@ -2332,14 +2287,119 @@ export function showPreviewModal(
     textarea.readOnly = !onSave;
     textarea.value = tunes[0] ?? '';
     textBox.append(textBackdrop, textarea);
-    container.appendChild(textBox);
+    facesBox.appendChild(textBox);
+
+    // ── The line between the two, side by side (2026-11-04, the user) ──
+    // Dragged, it shares the width between the text and the stave; a double
+    // click puts them back half and half, and the arrow keys move it once it
+    // has the focus. Shown only where the two faces stand side by side — the
+    // stylesheet's call, as the layout is (`.abc-faces-split`).
+    let split = readSplit();
+    /** True while the line is held: the stave is engraved once, at the end,
+     *  not at every width it passes through. */
+    let splitting = false;
+    const applySplit = (): void => {
+      // Shares of 100 rather than of 1: flex factors adding up to less than
+      // one would leave part of the row empty.
+      facesBox.style.setProperty('--abc-text-fr', `${split * 100}fr`);
+      facesBox.style.setProperty('--abc-score-fr', `${(1 - split) * 100}fr`);
+    };
+    applySplit();
+    const splitter = document.createElement('div');
+    splitter.className = 'abc-faces-split';
+    splitter.tabIndex = 0;
+    splitter.title = t('fileViewer.abc.split');
+    splitter.setAttribute('role', 'separator');
+    splitter.setAttribute('aria-orientation', 'vertical');
+    splitter.setAttribute('aria-label', t('fileViewer.abc.split'));
+    const splitLine = document.createElement('div');
+    splitLine.className = 'abc-faces-split-line';
+    splitter.appendChild(splitLine);
+    facesBox.appendChild(splitter);
+    /** The share set: kept for next time, and the stave engraved for it. */
+    const settleSplit = (): void => {
+      writeSplit(split);
+      remeasure();
+    };
+    splitter.addEventListener('pointerdown', (e) => {
+      if (!e.isPrimary || e.button !== 0) return;
+      // No text selection starting under the drag.
+      e.preventDefault();
+      splitting = true;
+      splitter.setPointerCapture(e.pointerId);
+      splitter.classList.add('abc-faces-split-active');
+    });
+    splitter.addEventListener('pointermove', (e) => {
+      if (!splitting) return;
+      // Both in window pixels, whatever the app's zoom: a ratio of the two
+      // needs no conversion.
+      const box = facesBox.getBoundingClientRect();
+      if (box.width <= 0) return;
+      split = clampSplit((e.clientX - box.left) / box.width);
+      applySplit();
+    });
+    const endSplit = (): void => {
+      if (!splitting) return;
+      splitting = false;
+      splitter.classList.remove('abc-faces-split-active');
+      settleSplit();
+    };
+    splitter.addEventListener('pointerup', endSplit);
+    splitter.addEventListener('pointercancel', endSplit);
+    splitter.addEventListener('dblclick', () => {
+      split = SPLIT_DEFAULT;
+      applySplit();
+      settleSplit();
+    });
+    splitter.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      split = clampSplit(split + (e.key === 'ArrowLeft' ? -SPLIT_STEP : SPLIT_STEP));
+      applySplit();
+      settleSplit();
+    });
+
     const bottomRow = document.createElement('div');
     bottomRow.className = BOTTOM_ROW_CLASS;
     bottomRow.appendChild(transportBar);
     container.appendChild(bottomRow);
     // The positions marked are positions in the text as it was: a keystroke
-    // makes them wrong, so typing stops it.
-    textarea.addEventListener('input', () => stopTextPlay());
+    // makes them wrong, so typing stops it — on the "both" face too, where
+    // the music could have gone on round the loop with the change in it: the
+    // simpler rule, kept (the user, 2026-11-04).
+    textarea.addEventListener('input', () => stopPlay());
+
+    // ── The caret, as the cursor's face in the text ──
+    /** The note clicked, when the caret landed beside it: the caret goes to
+     *  the nearest gap between two characters, so a click on the right half
+     *  of a `d` puts it AFTER the `d`, before the next note. Kept for as long
+     *  as the caret stays where that click put it — see textCursorNote. */
+    let clickedAt: { caret: number; index: number } | null = null;
+    /** Where the caret is, as a key: what says the reader moved it. */
+    const caretKey = (): string =>
+      `${textarea.selectionStart},${textarea.selectionEnd},${clickedAt && clickedAt.caret === textarea.selectionStart ? clickedAt.index : ''}`;
+    /** The caret as the cursor last saw it: a caret anywhere else was moved by
+     *  the reader since, and takes the cursor along. */
+    let lastCaretKey = '';
+    /** The caret put on the cursor's note, and taken as seen — without the
+     *  focus, which would put a keyboard over half a phone screen for someone
+     *  who had not asked to type. */
+    const placeCaret = (): void => {
+      const at = Math.min(cursorAt ?? 0, textarea.value.length);
+      clickedAt = null;
+      textarea.setSelectionRange(at, at);
+      lastCaretKey = caretKey();
+    };
+    /** The box refilled — which sends a caret to the end of the text, a place
+     *  nobody put it: it goes onto the cursor instead. */
+    const fillBox = (value: string): void => {
+      // Not rewritten when it already holds it — what a save leaves — which
+      // would lose its scroll and its undo history for nothing.
+      if (textarea.value !== value) textarea.value = value;
+      // The cursor brought up to the text first: another version drops it.
+      syncBounds();
+      placeCaret();
+    };
     textarea.addEventListener('scroll', () => { textBackdrop.scrollTop = textarea.scrollTop; });
 
     /** The layer at the box's size, less its scrollbar: wrapped at another
@@ -2613,6 +2673,7 @@ export function showPreviewModal(
       if (boundsIndex !== currentIndex) {
         bounds = { in: null, out: null };
         cursorAt = null;
+        cursorPass = 0;
       } else {
         const shift = (x: number | null) => (x === null ? null : shiftPosition(x, boundsBody, body));
         bounds = { in: shift(bounds.in), out: shift(bounds.out) };
@@ -2655,7 +2716,7 @@ export function showPreviewModal(
           // redraws it straight away when it is on screen, or the dialog is
           // going away.
           sheetNeedsRerender = true;
-          if (currentMode === 'text') { textarea.value = currentBody(); checkWarnings(); }
+          if (showsText(currentMode)) { fillBox(currentBody()); checkWarnings(); }
         },
         proceed,
       });
@@ -2673,7 +2734,7 @@ export function showPreviewModal(
     };
 
     function goToVersion(index: number): void {
-      stopTextPlay();
+      stopPlay();
       currentIndex = Math.max(0, Math.min(versionCount - 1, index));
       prevBtn.disabled = currentIndex === 0;
       nextBtn.disabled = currentIndex === versionCount - 1;
@@ -2687,72 +2748,78 @@ export function showPreviewModal(
       updateStarBtn?.();
       versionChangedForAudioSync();
       versionChangedForPlayAlong();
-      if (currentMode === 'sheet') {
-        doRenderTune?.(currentIndex);
-      } else {
-        textarea.value = pendingBody() ?? currentBody();
+      // Each face on screen redrawn for it; one that is not, when it is next
+      // shown.
+      if (showsSheet(currentMode)) doRenderTune?.(currentIndex);
+      else sheetNeedsRerender = true;
+      if (showsText(currentMode)) {
+        fillBox(pendingBody() ?? currentBody());
         saveBtn.disabled = pendingBody() === null;
         saveStatus.textContent = '';
         checkWarnings();
+        previewText();
       }
     }
 
-    function paintTabs(mode: 'sheet' | 'text'): void {
+    function paintTabs(mode: ScoreFace): void {
       const active = 'bg-accent text-white';
       const inactive = 'text-muted hover:text-primary hover:bg-elevated';
       // `min-h-[2.25rem]`: 36 layout px, which the app's own zoom turns into 45
       // on a desktop and 32,4 on a phone — the floor `.tap-btn` sets everywhere
-      // else. These were 24 px tall until 2026-09-21. As wide, an icon each.
+      // else. These were 24 px tall until 2026-09-21. As wide, an icon each —
+      // the "both" tab two icons wide, with a little room either side.
       const tabBase = 'flex items-center justify-center min-w-[2.25rem] min-h-[2.25rem] rounded transition-colors cursor-pointer';
       sheetTabBtn.className = `${tabBase} ${mode === 'sheet' ? active : inactive}`;
       textTabBtn.className  = `${tabBase} ${mode === 'text'  ? active : inactive}`;
+      bothTabBtn.className  = `${tabBase} px-1.5 ${mode === 'both' ? active : inactive}`;
     }
 
-    function setAbcMode(mode: 'sheet' | 'text'): void {
+    /** Whether the ABC source is on screen — to refill the box only when it
+     *  comes on: refilled under the reader, it would lose its scroll and its
+     *  undo history going from the ABC face to both. */
+    let textShown = false;
+
+    function setAbcMode(mode: ScoreFace): void {
       currentMode = mode;
       paintTabs(mode);
-      // Sheet + synth toolbar fully hidden in text mode, not just visually behind
-      // it — inline style.display, not just the 'hidden' class: abcjs's own
-      // resize handling can otherwise leave the notation SVG visibly reflowing.
-      // Both faces have the transport now; each its own buttons, the practice
-      // row shared.
-      transportBar.style.display = 'flex';
-      controls.style.display = mode === 'sheet' ? '' : 'none';
-      textControls.style.display = mode === 'text' ? '' : 'none';
+      // Hidden by an inline style.display, not just the 'hidden' class:
+      // abcjs's own resize handling can otherwise leave the notation SVG
+      // visibly reflowing. The transport is the same on every face, and so
+      // is whatever it is doing: changing the face does not stop the music.
+      facesBox.classList.toggle('abc-faces-both', mode === 'both');
       // The frame, not the score inside it: the reading tools act on the
       // picture and would otherwise stay hanging over the ABC source.
-      scoreFrame.style.display = mode === 'sheet' ? '' : 'none';
+      scoreFrame.style.display = showsSheet(mode) ? '' : 'none';
       // Full page acts on a drawing nobody is looking at while the source is on
-      // screen. The link to abcTools is not one of them: it hands the TUNE
-      // over, whichever face you were reading.
+      // screen — and not on the two faces together either (the user,
+      // 2026-11-04). The link to abcTools is not one of them: it hands the
+      // TUNE over, whichever face you were reading.
       fullscreenBtn.style.display = mode === 'sheet' ? '' : 'none';
-      textBox.style.display = mode === 'text' ? '' : 'none';
+      textBox.style.display = showsText(mode) ? '' : 'none';
       // The warnings are the source face's alone (2026-10-19).
-      if (mode !== 'text') { stopTextPlay(); showWarnings([]); }
-      else previewText();
+      if (!showsText(mode)) showWarnings([]);
 
       if (onSave) {
-        versionEdit.style.display = mode === 'text' ? '' : 'none';
-        saveGroup.style.display = mode === 'text' ? '' : 'none';
+        versionEdit.style.display = showsText(mode) ? '' : 'none';
+        saveGroup.style.display = showsText(mode) ? '' : 'none';
       }
       layoutBottomRow();
-      // Before a redraw, which then places it once primed.
-      if (mode === 'sheet') shareCursor('sheet');
-      if (mode === 'sheet' && sheetNeedsRerender) {
+      capScore();
+      if (showsSheet(mode) && sheetNeedsRerender) {
         sheetNeedsRerender = false;
         doRenderTune?.(currentIndex);
       }
-      if (mode === 'text') {
-        textarea.value = pendingBody() ?? currentBody();
+      if (showsText(mode) && !textShown) {
+        fillBox(pendingBody() ?? currentBody());
         saveBtn.disabled = pendingBody() === null;
         saveStatus.textContent = '';
-        shareCursor('text');
-        // No focus, and no preview drawn: switching to the source face is
-        // often just a look, and stealing the caret put a keyboard over half a
-        // phone screen for someone who had not asked to type. Both are one tap
-        // away — the box, and the fold above it.
-        checkWarnings();
       }
+      textShown = showsText(mode);
+      // No focus: switching to the source face is often just a look, and
+      // stealing the caret put a keyboard over half a phone screen for someone
+      // who had not asked to type. The box is one tap away.
+      if (textShown) checkWarnings();
+      showCursor();
     }
 
     if (onSave) {
@@ -2792,10 +2859,8 @@ export function showPreviewModal(
           shownName = result;
           updateTopModal({ title: result });
         }
-        // Re-render lazily once Sheet is reopened — see setAbcMode. goToVersion
-        // draws it straight away when the stave is what is on screen.
-        if (currentMode === 'text') sheetNeedsRerender = true;
-        // Refreshes the nav, the label, the ★, the share link and the box.
+        // Refreshes the nav, the label, the ★, the share link and the box —
+        // and the stave, now when it is on screen, else once it is reopened.
         goToVersion(nextIndex);
         return true;
       }
@@ -2851,8 +2916,11 @@ export function showPreviewModal(
         markDraft();
         saveBtn.disabled = draft === null;
         saveStatus.textContent = '';
-        // The stave is drawn from the draft, so it is stale from now on.
-        sheetNeedsRerender = true;
+        // The stave is drawn from the draft, so it is stale from now on:
+        // redrawn as it is typed when it is on screen beside the text, else
+        // when it is next shown.
+        if (showsSheet(currentMode)) redrawAfterTyping();
+        else sheetNeedsRerender = true;
       });
 
       saveDraft = async () => {
@@ -2874,7 +2942,7 @@ export function showPreviewModal(
         nextTunes.push(newVersionBlock(nextTunes));
         // Straight onto the new one: it is empty, and there is nothing else to
         // do with it than write in it.
-        if (await persist(nextTunes, nextTunes.length - 1)) setAbcMode('text');
+        if (await persist(nextTunes, nextTunes.length - 1)) setAbcMode(currentMode === 'sheet' ? 'text' : currentMode);
       };
 
       deleteVersionBtn.onclick = () => {
@@ -2911,17 +2979,10 @@ export function showPreviewModal(
     setAbcMode(currentMode);
 
     import('abcjs').then((abcjs) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let synthControl: any = null;
-
-      // Cursor + note highlighting during playback — abcjs drives this via
-      // TimingCallbacks internally once a cursorControl is passed to
-      // SynthController.load(). Re-queries the SVG/cursor by ID each call
-      // rather than caching elements, since renderAbc replaces the SVG
-      // wholesale on every version switch.
-      // Keeps the played staff in the middle of what is visible of the score —
-      // a fused set runs to several systems, and reading it meant scrolling by
-      // hand while playing.
+      // ── The stave's face of the cursor ───────────────────────────────────
+      // Keeps the cursor's staff in the middle of what is visible of the
+      // score — a fused set runs to several systems, and reading it meant
+      // scrolling by hand while playing.
       //
       // Driven off `ev.top`, the staff line's own y, so this fires ONCE per
       // system rather than on every note: scrolling eight times a second would
@@ -2958,13 +3019,8 @@ export function showPreviewModal(
         });
       };
 
-      /** The cursor line, made if the score has not got one yet.
-       *
-       *  Called from `onStart` AND from `onEvent`, because an event can arrive
-       *  without playback ever having started: clicking a note seeks, and a
-       *  seek reports the event it landed on (abc_timing_callbacks' setProgress
-       *  fires the callback itself). Created only in `onStart`, the very first
-       *  click on a fresh score highlighted the note and drew no line at all. */
+      /** The cursor line, made if the drawing has not got one yet — renderAbc
+       *  replaces the SVG wholesale on every drawing. */
       const ensureCursor = (): Element | null => {
         const svg = notation.querySelector('svg');
         if (!svg) return null;
@@ -2980,9 +3036,9 @@ export function showPreviewModal(
 
       // ── The notes, for the passage and the cursor ─────────────────────────
       // The version on screen as abcjs reads it, parsed — never engraved —
-      // once per text. Both faces read it: the stave's source and the box's
-      // are the same text (abcTextPlayback's playableSource), so a position in
-      // one is a position in the other.
+      // once per text. Every face reads it, and so does the player: the
+      // stave's source and the box's are the same text (abcTextPlayback's
+      // playableSource), so a position in one is a position in the other.
       let readKey: string | null = null;
       let readCache: { ps: PlayableSource; notes: ParsedNote[] } | null = null;
       const readShown = (): { ps: PlayableSource; notes: ParsedNote[] } => {
@@ -3009,57 +3065,24 @@ export function showPreviewModal(
       const boxPosition = (srcChar: number | undefined): number | null =>
         (typeof srcChar === 'number' ? bodyIndex(readShown().ps, srcChar) : null);
 
-      /** Every time a note is played, as the controller's timer has it: one
-       *  event per pass round the repeats, in time order. The timer is the
-       *  time base a seek is measured in at the CURRENT speed, and knows where
-       *  the note sits on the page. Empty until a tune is primed. */
+      // ── The stave's notes in time ─────────────────────────────────────────
+      /** Every time a note is played, as abcjs times the DRAWING on screen:
+       *  one event per pass round the repeats, in time order, each with where
+       *  it sits on the page — read for the cursor, the flags and a tap. Never
+       *  started: the player keeps time on its own engraving of the same text,
+       *  matched to this one note for note (sheetEventOf). Empty until the
+       *  stave is drawn. */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const passesOf = (startChar: number): any[] => {
-        const timings = synthControl?.timer?.noteTimings;
-        if (!Array.isArray(timings)) return [];
+      let sheetTimings: any[] = [];
+      /** The drawing's tune, for the length of a note tapped. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let sheetVisual: any = null;
+      /** The events of the note at `startChar` on the drawing, one per pass. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const passesOf = (startChar: number): any[] =>
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return timings.filter((ev: any) => ev.type === 'event' && ev.left != null
+        sheetTimings.filter((ev: any) => ev.type === 'event' && ev.left != null
           && Array.isArray(ev.startCharArray) && ev.startCharArray.includes(startChar));
-      };
-
-      // ── The passage on the stave ──────────────────────────────────────────
-      /** The furthest character played inside the passage — see resumeInside,
-       *  the same rule as the source face's. */
-      let scorePlayedTo = -1;
-      const scoreTimings = (): TimingEvent[] => {
-        const timings = synthControl?.timer?.noteTimings;
-        return Array.isArray(timings) ? timings as TimingEvent[] : [];
-      };
-      /** The first note of the passage in time, or null for an empty one. */
-      const scoreRegionStart = (region: { from: number; to: number }): TimingEvent | null =>
-        playPlan(scoreTimings(), region.from, region.to)?.start ?? null;
-      /** To a note — a hair before it, an exact seek landing on the next. */
-      const seekScoreTo = (ev: TimingEvent) => {
-        try { synthControl.seek(Math.max(0, ev.milliseconds - SEEK_BACKOFF_MS) / 1000, 'seconds'); }
-        catch { /* not primed yet */ }
-      };
-
-      /** Keeps a playing stave inside the passage. Called on every note, before
-       *  it is shown: true when the note was outside and the music was sent
-       *  elsewhere — on to the passage, back to its start, or to a stop there
-       *  without the loop. The timer allows a seek from inside its callback
-       *  (abc_timing_callbacks' doTiming re-reads its clock after one). */
-      const keepInRegion = (ev: TimingEvent): boolean => {
-        if (!synthControl?.isStarted || !isNote(ev)) return false;
-        const region = shownRegion();
-        if (!region) return false;
-        if (touches(ev, region.from, region.to)) {
-          scorePlayedTo = Math.max(scorePlayedTo, ...ev.startCharArray);
-          return false;
-        }
-        const next = resumeInside(scoreTimings(), ev.milliseconds, scorePlayedTo, region.from, region.to);
-        if (next) { seekScoreTo(next); return true; }
-        const start = scoreRegionStart(region);
-        scorePlayedTo = -1;
-        if (!looping) pauseIfPlaying();
-        if (start) seekScoreTo(start);
-        return true;
-      };
 
       /** One bound's flag: a dashed pole down the staff and a pennant at its
        *  top, kept INSIDE the staff's extent — the score's viewBox is cropped
@@ -3120,91 +3143,182 @@ export function showPreviewModal(
         if (region.last) { const ev = passesOf(region.last.start)[0]; if (ev) svg.appendChild(boundFlag(ev, 'out')); }
       };
 
-      /** Back to the start of the passage — the tune's, without one — playing
-       *  or not, and without stopping. */
-      rewindScore = () => {
-        if (!synthControl?.timer) return; // nothing primed: already at the start
-        const region = shownRegion();
-        const start = region ? scoreRegionStart(region) : null;
-        scorePlayedTo = -1;
-        if (start) seekScoreTo(start);
-        else try { synthControl.seek(0, 'seconds'); } catch { /* not primed yet */ }
+      // ── The player ───────────────────────────────────────────────────────
+      /** Opens the audio output before the first note needs it.
+       *
+       *  The cursor running ahead of the music on the FIRST play is the output
+       *  itself arriving late: a browser opens the device's stream lazily, and
+       *  the first sound of a page pays for it while the timer, counting in
+       *  software, does not. Every play after that is already open, which is
+       *  exactly the shape of what was reported.
+       *
+       *  One inaudible sample, once, just before the first tune is prepared —
+       *  the preparation then gives the device the time to open. Silent, so it
+       *  cannot be heard; a single frame, so it cannot be felt; and guarded on
+       *  `running`, because a context still suspended has had no user gesture
+       *  and would refuse anyway.
+       *
+       *  NOT MEASURED. Headless Chromium has no audio device at all — it
+       *  reports `outputLatency: 0` — so the very thing this addresses is
+       *  absent from the only environment I can test in. It is the known cause
+       *  of the known symptom, not a verified fix. */
+      let warmed = false;
+      const warmAudioOutput = () => {
+        if (warmed) return;
+        try {
+          const ac = abcjs.synth.activeAudioContext();
+          if (!ac || ac.state !== 'running') return;
+          const source = ac.createBufferSource();
+          source.buffer = ac.createBuffer(1, 1, ac.sampleRate);
+          source.connect(ac.destination);
+          source.start(0);
+          warmed = true;
+        } catch { /* no context yet, or a browser that will not hand it over */ }
       };
 
-      /** The note the stave's cursor last stood on, null at the start. */
-      let scoreAt: TimingEvent | null = null;
-      // Played from where the cursor is when it is inside the passage, else
-      // from its start — sought BEFORE the music starts: left to keepInRegion,
-      // the first note outside it would sound for a moment first.
-      beforeScorePlay = () => {
-        if (!synthControl?.timer || synthControl.isStarted) return;
-        const region = shownRegion();
-        if (!region) return;
-        if (scoreAt && isNote(scoreAt) && touches(scoreAt, region.from, region.to)) return;
-        const start = scoreRegionStart(region);
-        scorePlayedTo = -1;
-        if (start) seekScoreTo(start);
+      const player: AbcPlayer = createAbcPlayer(abcjs, {
+        // The version on screen as it reads now — its edit, if any.
+        source: () => readShown().ps,
+        settings: () => ({ program: selectedProgram, transpose, metronome, swing, tempoPercent }),
+        region: () => shownRegion(),
+        looping: () => looping,
+        beforeBuild: () => { stopTap(); warmAudioOutput(); },
+        onState: (state) => {
+          paintPlay(state);
+          if (state === 'playing') claimAudioFocus(pauseForFocus);
+          else if (state === 'idle') {
+            releaseAudioFocus(pauseForFocus);
+            // Stopped — the button, the end of the tune without the loop,
+            // a keystroke: the cursor goes back to where play started, unless
+            // the reader has put it somewhere since.
+            if (playFrom && runGen === cursorGen) { cursorAt = playFrom.at; cursorPass = playFrom.pass; }
+            playFrom = null;
+          }
+          showCursor();
+        },
+        onNote: (ev, run) => {
+          // The cursor is the note sounding — the music moving it, not the
+          // reader: `cursorGen` stays.
+          const char = ev.startCharArray?.[0];
+          const at = typeof char === 'number' ? bodyIndex(run.ps, char) : null;
+          if (at !== null) { cursorAt = at; cursorPass = passOf(run.timings, ev); }
+          paintSheetCursor();
+          if (showsText(currentMode)) lightText(noteRanges(run.ps, ev));
+        },
+      });
+      /** Another app took the sound (Android app): as the pause button does. */
+      const pauseForFocus = (): void => player.pause();
+
+      /** Whether the music holds the cursor: playing, or paused and left where
+       *  it stopped. */
+      const musicHoldsCursor = (): boolean => {
+        const state = player.state();
+        return !!player.run()?.last && (state === 'playing' || (state === 'paused' && runGen === cursorGen));
       };
 
-      /** The shared cursor put on the stave, coming from the source face — not
-       *  while it plays, which has a place of its own. Waits for the tune to
-       *  be primed when it is not yet. */
-      let cursorPending = false;
-      /** True for the length of a `setTune` call. abcjs starts it by rewinding
-       *  the OLD timer (`restart()` → `timer.setProgress(0)`), which reports
-       *  the first note to `onEvent` synchronously — and `onEvent` would take
-       *  that for the reader's place, overwriting `cursorAt` just before
-       *  `onReady` puts the cursor back from it. Reported 2026-10-23: type in
-       *  the ABC, go back to the score, and the cursor was on the first note. */
-      let rebinding = false;
-      const placeScoreCursor = () => {
-        cursorPending = false;
-        if (cursorAt === null || synthControl?.isStarted) return;
+      /** The cursor as a note to play from, null for the start. */
+      const cursorPlace = (): Place | null => {
+        syncBounds();
+        if (cursorAt === null) return null;
         const { ps, notes } = readShown();
         const note = boundNote(notes, sourceIndex(ps, cursorAt), 'in');
-        const ev = note ? passesOf(note.start)[0] : null;
-        if (!ev) { cursorPending = !synthControl?.timer; return; }
-        scorePlayedTo = -1;
-        seekScoreTo(ev);
+        return note ? { char: note.start, pass: cursorPass } : null;
       };
 
-      /** Move the cursor to this note.
-       *
-       *  When the note is played is read off the controller's timer: one event
-       *  per time round, in the time base both the cursor and the audio are
-       *  sought in. NOT the stamp the MIDI flattener leaves on the element
-       *  (`currentTrackMilliseconds`), which this used to read: that stamp is
-       *  always at the WRITTEN tempo — the speed stepper warps the timer and
-       *  the audio, never the flattener — so away from 100 % a click landed
-       *  that much too far (measured 2026-09-29: the fifth note of a reel at
-       *  150 % is at 800 ms, its stamp says 1200).
-       *
-       *  A note inside a `:|` repeat has one event per pass, and taking the
-       *  first sent every click on a repeated bar back to the first time round
-       *  (reported 2026-09-21). The pass nearest where the tune is NOW is the
-       *  one meant: clicking a bar during the second time through means that
-       *  bar, this time round. Stopped at the start, that is the first pass.
-       *
-       *  The cursor only: the passage changes through its own buttons alone
-       *  (the user, 2026-10-15) — this used to set a bookmark too. */
-      const seekToNote = (startChar: number) => {
-        if (!synthControl) return;
-        const passes = passesOf(startChar);
-        if (passes.length === 0) return; // not primed yet: nothing to seek in
-        // `percent` and the timer's own length, both warped alike — the
-        // position as a fraction is the one reading that does not care what
-        // speed it was taken at.
-        const nowMs = (synthControl.percent ?? 0) * (synthControl.timer?.lastMoment ?? 0);
-        const pass = passes.reduce((best: number, cur: { milliseconds: number }, i: number) =>
-          (Math.abs(cur.milliseconds - nowMs) < Math.abs(passes[best]!.milliseconds - nowMs) ? i : best), 0);
-        scorePlayedTo = -1;
-        // Land just BEFORE the note, never exactly on it. abcjs picks the
-        // current event with a strict `milliseconds < currentTime`, and a seek
-        // goes out in seconds and comes back in milliseconds — when the round
-        // trip leaves it a hair higher, an exact seek steps past the note and
-        // selects the next one. A few milliseconds is far below the shortest
-        // note in this music (a sixteenth in a fast reel is about 80 ms).
-        seekScoreTo(passes[pass]!);
+      /** The reader moved the cursor, on either face. While the music runs it
+       *  goes there too — it is the same cursor — when that note is inside
+       *  the passage. */
+      const moveCursor = (at: number | null, pass: number): void => {
+        cursorAt = at;
+        cursorPass = pass;
+        cursorGen++;
+        const state = player.state();
+        if (state !== 'playing' && state !== 'paused') return;
+        const place = cursorPlace();
+        if (!place || !player.jump(place)) return;
+        runGen = cursorGen;
+        playFrom = { at, pass };
+      };
+
+      /** Play from the cursor: from its note when it is inside the passage,
+       *  from the passage's start when it is not. */
+      const startFromCursor = (): void => {
+        syncBounds();
+        playFrom = { at: cursorAt, pass: cursorPass };
+        runGen = cursorGen;
+        player.start(cursorPlace());
+      };
+
+      // ── The stave's face of the cursor, drawn ──
+      /** The run's note on the stave's drawing: the same event, found at the
+       *  same place in the list — the two timings are of the same text — and
+       *  checked by its note; else looked up by its note and time round. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sheetEventOf = (ev: TimingEvent, run: PlayerRun): any | null => {
+        const char = ev.startCharArray?.[0];
+        const i = run.timings.indexOf(ev);
+        const same = i >= 0 ? sheetTimings[i] : undefined;
+        if (same && same.startCharArray?.[0] === char) return same;
+        return typeof char === 'number' ? eventAt(sheetTimings as TimingEvent[], char, passOf(run.timings, ev)) : null;
+      };
+      /** What the stave's cursor stands on: the note sounding, while the music
+       *  holds the cursor; else the cursor's own note, on its time round. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sheetCursorEvent = (): any | null => {
+        const run = player.run();
+        if (run?.last && musicHoldsCursor()) return sheetEventOf(run.last, run);
+        syncBounds();
+        if (cursorAt === null) return null;
+        const { ps, notes } = readShown();
+        const note = boundNote(notes, sourceIndex(ps, cursorAt), 'in');
+        if (!note) return null;
+        const passes = passesOf(note.start);
+        return passes[Math.min(cursorPass, passes.length - 1)] ?? null;
+      };
+      /** The cursor line before its note, the note lit, its system brought
+       *  into view — or nothing, at the start. */
+      const paintSheetCursor = (): void => {
+        if (!showsSheet(currentMode) || sheetNeedsRerender || !notation.querySelector('svg')) return;
+        const ev = sheetCursorEvent();
+        // The second half of a tie across a bar line: no place of its own on
+        // the page, the cursor stays where it was.
+        if (ev && ev.left == null) return;
+        notation.querySelectorAll('.abcjs-highlight').forEach(el => el.classList.remove('abcjs-highlight'));
+        const cursor = ensureCursor();
+        if (!cursor) return;
+        if (!ev) {
+          cursor.setAttribute('x1', '0'); cursor.setAttribute('x2', '0');
+          cursor.setAttribute('y1', '0'); cursor.setAttribute('y2', '0');
+          lastCursorTop = null;
+          return;
+        }
+        for (const note of ev.elements ?? []) {
+          for (const el of note) el.classList.add('abcjs-highlight');
+        }
+        cursor.setAttribute('x1', String(ev.left - 2));
+        cursor.setAttribute('x2', String(ev.left - 2));
+        cursor.setAttribute('y1', String(ev.top));
+        cursor.setAttribute('y2', String(ev.top + ev.height));
+        followCursor(ev);
+      };
+
+      // ── A note tapped on the stave ──
+      /** Which time round a note tapped means: the one nearest where the music
+       *  is now — a bar tapped during the second time through means that bar,
+       *  this time round (reported 2026-09-21: every tap went back to the
+       *  first). Stopped, the first. */
+      const passNear = (char: number): number => {
+        const run = player.run();
+        if (!run?.last) return 0;
+        const now = run.last.milliseconds;
+        let best = 0, bestD = Infinity, pass = 0;
+        for (const ev of run.timings) {
+          if (!isNote(ev) || ev.startCharArray[0] !== char) continue;
+          const d = Math.abs(ev.milliseconds - now);
+          if (d < bestD) { bestD = d; best = pass; }
+          pass++;
+        }
+        return best;
       };
 
       /** The note a tap at this point means, as its `startChar` — or null for
@@ -3227,13 +3341,11 @@ export function showPreviewModal(
        *  it, the note nearest across wins, if it is close enough to mean it —
        *  a tap in empty space must not jump the playhead. */
       const noteAt = (x: number, y: number): number | null => {
-        const timings = synthControl?.timer?.noteTimings;
-        if (!Array.isArray(timings)) return null;
         // One box per note (the passes of a repeat share one), grouped by
         // the system it is drawn on.
         const seen = new Set<number>();
         const notes: { startChar: number; line: number; box: DOMRect }[] = [];
-        for (const ev of timings) {
+        for (const ev of sheetTimings) {
           // "A sounding note", as the library's own example has it: no MIDI
           // pitches, nothing to play from — rests, and ties' second halves.
           if (ev.type !== 'event' || ev.left == null || !ev.midiPitches?.length) continue;
@@ -3278,122 +3390,30 @@ export function showPreviewModal(
         if ((e.target as Element | null)?.closest?.('.abc-bound')) return;
         const startChar = noteAt(e.clientX, e.clientY);
         if (startChar === null) return;
-        // Read before the seek, which does not start anything but is the
-        // last word on where the tune stands.
-        const playing = !!synthControl?.isStarted;
-        seekToNote(startChar);
+        const at = boxPosition(startChar);
+        if (at === null) return;
+        // Read before the move, which may send the music there.
+        const playing = player.state() === 'playing';
+        // The cursor only: the passage changes through its own buttons alone
+        // (the user, 2026-10-15) — this used to set a bookmark too.
+        moveCursor(at, passNear(startChar));
+        // The same cursor in the text: the caret onto the note.
+        placeCaret();
+        showCursor();
         // Heard only while the music is stopped: playing, the tap already
         // means "from here", and the tune goes on from that very note.
         if (!playing && tapPlaysNote(appState.value)) {
           const ev = passesOf(startChar)[0];
-          const visual = synthControl?.visualObj;
-          if (!ev?.midiPitches?.length || !visual) return;
+          if (!ev?.midiPitches?.length || !sheetVisual) return;
           // One event holds every voice sounding at that moment; the note
           // tapped is the one written at this place.
           const pitches = (ev.midiPitches as (MidiPitch & { startChar?: number })[])
             .filter(p => p.startChar === undefined || p.startChar === startChar);
           unlockAbcjsAudio();
-          playTap(abcjs, tapTracks(pitches, ev.midiGraceNotePitches, secondsPerWhole(visual, tempoPercent), selectedProgram));
+          playTap(abcjs, tapTracks(pitches, ev.midiGraceNotePitches, secondsPerWhole(sheetVisual, tempoPercent), selectedProgram));
         }
       };
       notation.addEventListener('pointerup', onScoreTap);
-
-      const cursorControl = {
-        beatSubdivisions: 2,
-        // After every priming — a new tune, and each speed change, which
-        // rebuilds the timer the flags are read from.
-        onReady: () => {
-          drawBoundFlags();
-          if (cursorPending) placeScoreCursor();
-        },
-        onStart: () => {
-          lastCursorTop = null;
-          ensureCursor();
-          claimAudioFocus(pauseScoreForFocus);
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onEvent: (ev: any) => {
-          // The old timer being rewound by setTune, not the music moving.
-          if (rebinding) return;
-          if (ev.measureStart && ev.left === null) return; // 2nd half of a tie across a measure line
-          // Sent elsewhere: the note it was sent to comes through here too.
-          if (keepInRegion(ev as TimingEvent)) return;
-          scoreAt = ev as TimingEvent;
-          const at = boxPosition(ev.startCharArray?.[0]);
-          if (at !== null) cursorAt = at;
-          notation.querySelectorAll('.abcjs-highlight').forEach(el => el.classList.remove('abcjs-highlight'));
-          for (const note of ev.elements ?? []) {
-            for (const el of note) el.classList.add('abcjs-highlight');
-          }
-          const cursor = ensureCursor();
-          if (cursor && ev.left != null) {
-            cursor.setAttribute('x1', String(ev.left - 2));
-            cursor.setAttribute('x2', String(ev.left - 2));
-            cursor.setAttribute('y1', String(ev.top));
-            cursor.setAttribute('y2', String(ev.top + ev.height));
-          }
-          followCursor(ev);
-        },
-        onFinished: () => {
-          lastCursorTop = null;
-          // Back at the start, which is where the cursor now is.
-          cursorAt = null;
-          scoreAt = null;
-          scorePlayedTo = -1;
-          notation.querySelectorAll('.abcjs-highlight').forEach(el => el.classList.remove('abcjs-highlight'));
-          const cursor = notation.querySelector('.abcjs-cursor');
-          cursor?.setAttribute('x1', '0'); cursor?.setAttribute('x2', '0');
-          cursor?.setAttribute('y1', '0'); cursor?.setAttribute('y2', '0');
-        },
-      };
-
-      /** Every rebuild of the synth — a new tune, a new speed — one after the
-       *  other. Each is a teardown and a rebuild of the same controller, and
-       *  two interleaved leave it holding the pieces of both (see applyWarp).
-       *  A failed step does not block the ones behind it. */
-      let synthQueue: Promise<unknown> = Promise.resolve();
-      const enqueueSynth = (step: () => Promise<unknown> | undefined): Promise<unknown> => {
-        synthQueue = synthQueue.then(step).catch(() => {});
-        return synthQueue;
-      };
-
-      /** Where the stave was, and whether it was playing, before a run of
-       *  redraws that has not yet put it back — see redrawPreservingPlayback.
-       *  A stop asked for in the meantime is a stop: it clears `wasPlaying`. */
-      let pendingRestore: { wasPlaying: boolean; at: number } | null = null;
-
-      /** Opens the audio output before the first note needs it.
-       *
-       *  abcjs starts the sound and the cursor in the right order — the buffer
-       *  first, the timer after (synth-controller.js:163) — so the cursor
-       *  running ahead of the music on the FIRST play is the output itself
-       *  arriving late: a browser opens the device's stream lazily, and the
-       *  first sound of a page pays for it while the timer, counting in
-       *  software, does not. Every play after that is already open, which is
-       *  exactly the shape of what was reported.
-       *
-       *  One inaudible sample, once, as soon as a tune is primed. Silent, so it
-       *  cannot be heard; a single frame, so it cannot be felt; and guarded on
-       *  `running`, because a context still suspended has had no user gesture
-       *  and would refuse anyway.
-       *
-       *  NOT MEASURED. Headless Chromium has no audio device at all — it
-       *  reports `outputLatency: 0` — so the very thing this addresses is
-       *  absent from the only environment I can test in. It is the known cause
-       *  of the known symptom, not a verified fix. */
-      let warmed = false;
-      const warmAudioOutput = () => {
-        if (warmed) return;
-        try {
-          const ac = abcjs.synth.activeAudioContext();
-          if (!ac || ac.state !== 'running') return;
-          const source = ac.createBufferSource();
-          source.buffer = ac.createBuffer(1, 1, ac.sampleRate);
-          source.connect(ac.destination);
-          source.start(0);
-          warmed = true;
-        } catch { /* no context yet, or a browser that will not hand it over */ }
-      };
 
       const engraveWidth = (): number => engraveWidthOf(scoreScroll);
 
@@ -3402,6 +3422,9 @@ export function showPreviewModal(
         const ink = ABC_PAPERS[paper].ink;
         const source = injectDefaultTempo(stripForRender(shownBlock(index)));
         lastEngravedWidth = engraveWidth();
+        // The drawing is replaced wholesale — on the "both" face at every
+        // pause in the typing: the reader's place in it is kept.
+        const scrollTop = scoreScroll.scrollTop;
         const visualObj = engraveScore(abcjs, notation.id, source, {
           ...engraveOptions({ width: lastEngravedWidth, ink, transpose }),
           // abcjs listens for clicks on every score it draws, whatever it is
@@ -3421,261 +3444,35 @@ export function showPreviewModal(
         // After the drawing, before anything reads its height: pulls the music
         // up to where its own ink starts. See cropToInk.
         cropToInk(notation);
+        scoreScroll.scrollTop = scrollTop;
         // The metre can change from one version of a file to the next, and it
         // is the metre that decides whether the swing does anything at all.
         updateSwing();
 
-        if (visualObj && visualObj.length > 0) {
-          if (!synthControl) {
-            synthControl = new abcjs.synth.SynthController();
-            // `go()` prepares the sound, and the tune is handed over with
-            // userAction=true, so it runs as soon as the score is drawn — out
-            // of any tap, where Safari refuses to start audio. abcjs then left
-            // `isLoading` set for good, and its play button waited on it
-            // forever (runWhenReady sleeps while it is set). Cleared on
-            // failure, the next press prepares it again, from inside the tap.
-            // abcjs calls `self.go()`, so replacing the property is enough.
-            const go = synthControl.go.bind(synthControl);
-            synthControl.go = () => go().catch((err: unknown) => { synthControl.isLoading = false; throw err; });
-            stopAudio = () => {
-              if (pendingRestore) pendingRestore.wasPlaying = false;
-              try { synthControl.pause(); } catch { /* ignore */ }
-              releaseAudioFocus(pauseScoreForFocus);
-            };
-            synthControl.load(`#${controls.id}`, cursorControl, {
-              displayLoop: true,
-              displayRestart: true,
-              displayPlay: true,
-              // OFF since 2026-09-21: the progress bar said the same thing as
-              // the cursor running along the staff, and said it worse. The
-              // position is read off the music, and a click on a note is how
-              // you move it. `setProgress` guards for the missing elements
-              // (create-synth-control.js:87), and the clock is built from a
-              // flag of its own, so it stays.
-              displayProgress: false,
-              // ON, although the field is hidden in CSS (`.abc-transport
-              // .abcjs-tempo-wrapper`). It has to exist: `setWarp` on abcjs's
-              // control does `el.value = …` on the result of a querySelector
-              // with NO null check (create-synth-control.js:47 — its
-              // neighbour `setTempo` two lines down does guard, which is how
-              // easy it is to miss), so turning the widget off made every
-              // speed change throw "Cannot set properties of null". The speed
-              // the user sees is the BPM stepper in this row; this is the
-              // element abcjs needs to write its percentage into.
-              displayWarp: true,
+        lastCursorTop = null;
+        sheetVisual = visualObj?.[0] ?? null;
+        sheetTimings = [];
+        if (sheetVisual) {
+          // The notes' pitches first, which the timeline's events then carry
+          // (`midiPitches`) for a tap to be heard — in the key drawn, on the
+          // instrument chosen. `midiTranspose` as the player passes it: the
+          // drawing's `visualTranspose` alone is subtracted back out of the
+          // sound. Nothing is played: it only builds the note sequence.
+          try {
+            sheetVisual.setUpAudio({
+              ...(selectedProgram !== undefined ? { program: selectedProgram } : {}),
+              ...(transpose !== 0 ? { midiTranspose: transpose } : {}),
             });
-            dressTransport();
-            // The stave's loop button sets the shared loop: abcjs has toggled
-            // its own by the time this runs (its listener came first).
-            controls.querySelector('.abcjs-midi-loop')?.addEventListener('click', () => setLooping(!!synthControl?.isLooping));
-          } else {
-            // Switching tunes on an already-used controller: if playback ever
-            // started, abcjs can keep the previous tune's primed audio bound
-            // and silently ignore setTune() — stop it first so the rebind
-            // below actually takes.
-            try { synthControl.pause(); } catch { /* ignore */ }
-          }
-          // The tune's own written tempo, for the BPM read-out — read from the
-          // object abcjs just built rather than from the `Q:` line, so an
-          // injected default and a hand-written one give the same answer.
-          pauseIfPlaying = () => {
-            if (pendingRestore) pendingRestore.wasPlaying = false;
-            try {
-              if (!synthControl?.isStarted) return;
-              synthControl.pause();
-              // `pause()` stops the timer and the buffer but leaves `isStarted`
-              // TRUE — abcjs only ever flips that flag inside `_play`, which
-              // toggles it. So a stop from outside left the controller thinking
-              // it was still playing, and the next press of play toggled it to
-              // false and paused again: the tune only restarted on the SECOND
-              // press. Reported, and it is this line that fixes it.
-              synthControl.isStarted = false;
-            } catch { /* not primed */ }
-          };
-
-          // userAction: true on every call (not just the first) — abcjs needs
-          // this to actually re-prime the AudioContext-backed buffer for the
-          // new tune instead of silently keeping the old one queued.
-          const audioParams: Record<string, unknown> = {};
-          // No `qpm` here: the tempo travels in the notation, as a `Q:`, which
-          // is the only thing the note stamps are built from — see
-          // injectDefaultTempo for what happened when it did not.
-          if (selectedProgram !== undefined) audioParams.program = selectedProgram;
-          // The app's volume, read at every preparation (playbackVolume.ts).
-          audioParams.soundFontVolumeMultiplier = abcjsVolumeMultiplier();
-          if (transpose !== 0) {
-            // `visualTranspose` alone moves the DOTS and leaves the sound where
-            // it was: abc_midi_sequencer subtracts it back out again on the way
-            // to MIDI ("if (abctune.visualTranspose) transpose -= ...", read in
-            // the source before relying on it). That is right for a transposing
-            // instrument and wrong here — someone shifting a tune to play it in
-            // another key wants to hear the key they are reading. Passing the
-            // same number as `midiTranspose` cancels the subtraction, so what
-            // is written and what is heard agree.
-            audioParams.midiTranspose = transpose;
-          }
-          if (metronome) {
-            const meter = parseAbcBlock(shownBlock(index)).meter;
-            audioParams.drum = drumPattern(beatsPerBar(meter));
-            audioParams.drumBars = 1;
-          }
-          // Flat, like everything above it — and this took two goes to get
-          // right, so the chain is written down. SynthController.setTune keeps
-          // audioParams as `self.options` and hands CreateSynth
-          // `{ visualObj, options: self.options, … }` (synth-controller.js:78);
-          // CreateSynth then does `self.options = options.options`
-          // (create-synth.js:37), which unwraps it back to this same object.
-          // So `swing` belongs beside `drum`, at the top level. Nesting it
-          // under an `options` key of our own buried it one level too deep and
-          // abcjs ignored it in silence.
-          // abcjs's `swing` in a reel, our own note-map pass in a jig — see
-          // swingAudioParams. Both read the metre and the pickup from abcjs's
-          // own parse, the one the notes are timed from.
-          if (swing !== NO_SWING && swingApplies()) {
-            Object.assign(audioParams, swingAudioParams(swing, visualObj[0]!.getMeterFraction(), visualObj[0]!.getPickupLength()));
-          }
-          // The rewind that reports the first note runs inside the call itself,
-          // before `go()` — so the flag only has to cover the call, not the
-          // promise it returns. See `rebinding`.
-          const rebind = (): Promise<unknown> => {
-            rebinding = true;
-            try { return synthControl.setTune(visualObj[0]!, true, audioParams); }
-            finally { rebinding = false; }
-          };
-          void enqueueSynth(() => rebind().then(() => {
-            // After setTune, never before: warping rebuilds the audio buffer,
-            // so it needs a tune to rebuild from. Skipped when the controller
-            // is already at that speed — it keeps its warp from one tune to
-            // the next, and `setTune` builds at it — since it would throw away
-            // and re-render the buffer to arrive where it already is.
-            //
-            // AWAITED, which it was not: the step ended while the rebuild was
-            // still running, and the step behind it (a redraw putting the tune
-            // back where it was) raced it.
-            if (synthControl.warp !== tempoPercent) return synthControl.setWarp(tempoPercent);
-            return undefined;
-          }).catch(() => {
-            // Preparing the sound was refused: Safari, outside a tap (see the
-            // `go` wrapper above). It is prepared again at the first press,
-            // at whatever speed `warp` says then, so the speed is set here by
-            // hand, and the loop below still goes on.
-            synthControl.warp = tempoPercent;
-          }).then(() => {
-            // Looping on by default — a score is opened to be practised
-            // against, and reaching for the button on every pass is friction.
-            // `setTune` resets isLooping to false, so this belongs here, after
-            // every re-prime, and the check keeps it idempotent.
-            if (synthControl.isLooping !== looping) {
-              try { synthControl.toggleLoop(); } catch { /* ignore */ }
-            }
-            warmAudioOutput();
-          }).catch(() => {}));
+          } catch { /* no pitches: a tapped note is silent */ }
+          try { sheetTimings = new abcjs.TimingCallbacks(sheetVisual, {}).noteTimings; } catch { /* nothing to time */ }
         }
+        drawBoundFlags();
+        paintSheetCursor();
       };
 
       doRenderTune = renderTune;
 
-      // ── The source face's player ──────────────────────────────────────────
-      // A synth and a timer of its own, built the way SynthController.go()
-      // builds the stave's (synth-controller.js), with the shared settings —
-      // speed, click, swing, key, instrument, volume — but from the box's text,
-      // engraved off screen (renderAbc's "*" target: a hidden div, drawn and
-      // removed), since the timing of each note is only known once abcjs has
-      // laid the tune out. Built at each start: the text may have changed.
-      interface TextRun {
-        id: number;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        synth: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        timer: any;
-        ps: PlayableSource;
-        timings: TimingEvent[];
-        /** The furthest character played inside the passage — see
-         *  resumeInside. */
-        playedTo: number;
-        /** The note sounding, for picking up there after a rebuild. */
-        last: TimingEvent | null;
-        /** The cursor it was started from — see caretMoved. */
-        caret: string;
-      }
-      let textRun: TextRun | null = null;
-      /** Bumped by every start and every stop, so a preparation that comes
-       *  back after either is dropped rather than started. */
-      let textRunId = 0;
-      let textState: TextPlayState = 'idle';
-      /** Another app took the sound (Android app): as the pause button does. */
-      const pauseTextForFocus = (): void => { if (textState === 'playing') textTransport.playPause(); };
-      const setTextState = (state: TextPlayState) => {
-        textState = state;
-        paintTextPlay(state);
-        if (state === 'playing') claimAudioFocus(pauseTextForFocus);
-        else if (state === 'idle') releaseAudioFocus(pauseTextForFocus);
-      };
-
-      /** The run moved to a note — a hair before it: an exact seek lands on
-       *  the one after (see SEEK_BACKOFF_MS). `rearm` restarts the timer's own
-       *  loop, which has ended once the tune is played out. */
-      const seekText = (run: TextRun, ev: TimingEvent, rearm = false) => {
-        const at = Math.max(0, ev.milliseconds - SEEK_BACKOFF_MS) / 1000;
-        if (textState === 'paused') {
-          run.synth.seek(at, 'seconds');
-          run.timer.setProgress(at, 'seconds');
-          return;
-        }
-        // Stopped, sought, started: abcjs's own seek restarts the sound only
-        // while it thinks it is running, which it may no longer think at the
-        // end of the buffer.
-        try { run.synth.stop(); } catch { /* not started */ }
-        run.synth.seek(at, 'seconds');
-        run.synth.start();
-        if (rearm) { run.timer.reset(); run.timer.start(at, 'seconds'); } else run.timer.setProgress(at, 'seconds');
-      };
-
-      /** The passage, read again at each use — the bounds may move while it
-       *  plays — or the whole tune without one. */
-      const textRegion = (): { from: number; to: number } => shownRegion() ?? { from: 0, to: Infinity };
-      /** The first note of the passage in time. */
-      const textRegionStart = (run: TextRun): TimingEvent | null => {
-        const region = textRegion();
-        return playPlan(run.timings, region.from, region.to)?.start ?? null;
-      };
-
-      /** The end of the passage: round again with the loop, else stop. */
-      const endTextRun = (run: TextRun, rearm: boolean) => {
-        if (!looping) { stopTextPlay(); return; }
-        run.playedTo = -1;
-        const start = textRegionStart(run);
-        if (start) seekText(run, start, rearm);
-        else stopTextPlay();
-      };
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const onTextEvent = (run: TextRun, ev: any): 'continue' | undefined => {
-        if (run.id !== textRunId) return undefined;
-        if (!ev) {
-          // Played out. "continue" keeps the timer from stopping itself over
-          // the restart (abc_timing_callbacks' shouldStop).
-          endTextRun(run, true);
-          return looping ? 'continue' : undefined;
-        }
-        const tev = ev as TimingEvent;
-        const region = textRegion();
-        if (isNote(tev) && !touches(tev, region.from, region.to)) {
-          const next = resumeInside(run.timings, tev.milliseconds, run.playedTo, region.from, region.to);
-          if (next) seekText(run, next);
-          else endTextRun(run, false);
-          return undefined;
-        }
-        const chars = tev.startCharArray ?? [];
-        run.playedTo = Math.max(run.playedTo, ...chars);
-        run.last = tev;
-        const at = boxPosition(chars[0]);
-        if (at !== null) cursorAt = at;
-        lightText(noteRanges(run.ps, tev));
-        return undefined;
-      };
-
-      // ── The cursor, on this face ──
+      // ── The text's face of the cursor ─────────────────────────────────────
       // The note the caret is on — or the one clicked: the caret lands on the
       // nearest gap between two characters, so a click on the right half of
       // a `d` puts it AFTER the `d`, before the next note. The note meant is
@@ -3683,7 +3480,6 @@ export function showPreviewModal(
       // whose box holds the click, measured on the layer behind the box,
       // which lays out the very same text. Remembered for as long as the
       // caret stays where that click put it.
-      let clickedAt: { caret: number; index: number } | null = null;
       textarea.addEventListener('input', () => { clickedAt = null; });
       const textCursorNote = (): ParsedNote | null => {
         const { ps, notes } = readShown();
@@ -3695,99 +3491,19 @@ export function showPreviewModal(
         }
         return startNoteAt(notes, sourceIndex(ps, a), b > a ? sourceIndex(ps, b) : null);
       };
-      /** What says the cursor moved since a run began. */
-      const caretKey = (): string =>
-        `${textarea.selectionStart},${textarea.selectionEnd},${clickedAt && clickedAt.caret === textarea.selectionStart ? clickedAt.index : ''}`;
-      const caretMoved = (run: TextRun): boolean => caretKey() !== run.caret;
-
-      interface TextResume { char: number; pass: number; playedTo: number; paused: boolean; caret: string }
-      /** The place the run being prepared was asked to start from. A setting
-       *  changed again before it is ready restarts the preparation from that
-       *  same place, not from the cursor (the key changed press after press,
-       *  2026-10-20: each press while loading sent it back to the caret). */
-      let loadingResume: TextResume | null = null;
-
-      /** Builds and starts a run on the box's text: from the cursor when it is
-       *  inside the passage, from the passage's start when it is not — or,
-       *  after a setting changed, at `resume`. */
-      const startTextRun = (resume: TextResume | null) => {
-        // One tune at a time: the stave's, hidden behind this face, stops.
-        pauseIfPlaying();
-        stopTap();
-        const id = ++textRunId;
-        loadingResume = resume;
-        const caret = resume?.caret ?? caretKey();
-        const ps = playableSource(splitXLine(tunes[currentIndex] ?? '').xLine, textarea.value);
-        const cursorNote = resume ? null : textCursorNote();
-        setTextState('loading');
-        void (async () => {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const visualObj: any = abcjs.renderAbc('*', ps.source, {})[0];
-            if (!visualObj) throw new Error('no tune');
-            const audioParams: Record<string, unknown> = { soundFontVolumeMultiplier: abcjsVolumeMultiplier() };
-            if (selectedProgram !== undefined) audioParams.program = selectedProgram;
-            // The sound of the key the stave is transposed to, the dots being
-            // the text's own here — see the stave's `midiTranspose`.
-            if (transpose !== 0) audioParams.midiTranspose = transpose;
-            const meter = parseAbcBlock(ps.source).meter;
-            if (metronome) { audioParams.drum = drumPattern(beatsPerBar(meter)); audioParams.drumBars = 1; }
-            if (swing !== NO_SWING && meterCanSwing(meter)) {
-              Object.assign(audioParams, swingAudioParams(swing, visualObj.getMeterFraction(), visualObj.getPickupLength()));
-            }
-            // As SynthController.go() does it, at the shared speed.
-            const millisecondsPerMeasure = visualObj.millisecondsPerMeasure() * 100 / tempoPercent;
-            const qpm = Math.round(visualObj.getBeatsPerMeasure() / millisecondsPerMeasure * 60000);
-            const synth = new abcjs.synth.CreateSynth();
-            await synth.init({ visualObj, options: audioParams, millisecondsPerMeasure });
-            await synth.prime();
-            if (id !== textRunId) return;
-            // eslint-disable-next-line prefer-const
-            let run: TextRun;
-            const timer = new abcjs.TimingCallbacks(visualObj, {
-              qpm,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              eventCallback: (ev: any) => onTextEvent(run, ev),
-            });
-            const timings = timer.noteTimings as TimingEvent[];
-            const region = textRegion();
-            const regionStart = playPlan(timings, region.from, region.to)?.start;
-            if (!regionStart) { stopTextPlay(); return; }
-            let at = regionStart;
-            if (resume) at = eventAt(timings, resume.char, resume.pass) ?? regionStart;
-            else if (cursorNote) {
-              // The cursor's note, its first time round.
-              const here = playPlan(timings, cursorNote.start, null)?.start;
-              if (here && touches(here, region.from, region.to)) at = here;
-            }
-            run = {
-              id, synth, timer, ps, timings,
-              playedTo: resume ? resume.playedTo : -1, last: null, caret,
-            };
-            textRun = run;
-            // The cursor onto the note it starts on, before the first one
-            // sounds; from there it follows the music (see paintText).
-            textCurrent = noteRanges(ps, at);
-            setTextHints({ start: null });
-            const seekTo = Math.max(0, at.milliseconds - SEEK_BACKOFF_MS) / 1000;
-            synth.seek(seekTo, 'seconds');
-            if (resume?.paused) {
-              setTextState('paused');
-              timer.setProgress(seekTo, 'seconds');
-              return;
-            }
-            setTextState('playing');
-            synth.start();
-            timer.start(seekTo, 'seconds');
-          } catch (err) {
-            if (id !== textRunId) return;
-            console.warn('[abc] could not play the text', err);
-            stopTextPlay();
-          }
-        })();
+      /** The caret moved by the reader since it was last seen: the cursor goes
+       *  onto its note — a selection's first — on the first time round. True
+       *  when it moved. */
+      const readCaret = (): boolean => {
+        const key = caretKey();
+        if (key === lastCaretKey) return false;
+        lastCaretKey = key;
+        const { ps } = readShown();
+        const note = textCursorNote();
+        moveCursor(note ? bodyIndex(ps, note.start) : null, 0);
+        return true;
       };
 
-      // ── Before play: where it will start, from the cursor ──
       /** The passage's marks in the text, from the bounds as they now stand. */
       const markTextBounds = () => {
         const region = shownRegion();
@@ -3797,25 +3513,33 @@ export function showPreviewModal(
           out: region?.last ? boxRange(ps, region.last.start, region.last.end) : null,
         };
       };
+      /** The cursor's note in the text — none at the start, as on the stave
+       *  (the user, 2026-11-04: the stave was right). The text used to mark
+       *  the note play would begin on, which put a bar on every score opened
+       *  and never played, and on one face only. */
+      const cursorRange = (): [number, number] | null => {
+        syncBounds();
+        if (cursorAt === null) return null;
+        const { ps, notes } = readShown();
+        const note = boundNote(notes, sourceIndex(ps, cursorAt), 'in');
+        return note ? boxRange(ps, note.start, note.end) : null;
+      };
+      /** The bar on the note sounding while the music holds the cursor, else
+       *  on the cursor's note; and the passage's marks. */
       const refreshTextPreview = () => {
-        if (currentMode !== 'text') return;
+        if (!showsText(currentMode)) return;
+        // The caret first: moved, it moves the cursor — on the stave too.
+        if (readCaret()) paintSheetCursor();
         markTextBounds();
-        if (textState === 'loading' || textState === 'playing') { paintText(); return; }
-        // Paused: the cursor on the note it stopped at while the caret is
-        // where the run began — play resumes there — and on the caret's once
-        // it has moved, since play then starts there (see playPause).
-        if (textState === 'paused' && textRun) {
-          if (!caretMoved(textRun)) {
-            textCurrent = textRun.last ? noteRanges(textRun.ps, textRun.last) : [];
-            paintText();
-            return;
-          }
-          textCurrent = [];
+        const run = player.run();
+        if (player.state() === 'loading') { paintText(); return; }
+        if (run?.last && musicHoldsCursor()) {
+          textCurrent = noteRanges(run.ps, run.last);
+          setTextHints({ start: null });
+          return;
         }
-        const { ps } = readShown();
-        const note = textCursorNote();
-        cursorAt = note ? bodyIndex(ps, note.start) : null;
-        setTextHints({ start: note ? boxRange(ps, note.start, note.end) : null });
+        textCurrent = [];
+        setTextHints({ start: cursorRange() });
       };
       // At most once a frame — a drag-select fires this at every pixel.
       let previewRaf = 0;
@@ -3828,29 +3552,24 @@ export function showPreviewModal(
       for (const type of ['select', 'keyup', 'mouseup', 'input', 'focus']) textarea.addEventListener(type, schedulePreview);
       previewText = schedulePreview;
 
-      // ── The passage: set here, drawn on both faces ──
-      /** Where "here" is on this face, for one bound: the note sounding while
-       *  it plays (or paused where it was), else the cursor's; a selection
-       *  gives the start its first note and the end its last. */
-      const textBoundAt = (side: 'in' | 'out'): number | null => {
-        const { ps, notes } = readShown();
-        const run = textRun;
-        if (run && (textState === 'playing' || (textState === 'paused' && !caretMoved(run)))) {
-          return boxPosition(run.last?.startCharArray?.[0]);
-        }
-        const a = textarea.selectionStart, b = textarea.selectionEnd;
-        if (b > a) {
-          const across = notesAcross(notes, sourceIndex(ps, a), sourceIndex(ps, b));
-          return across ? bodyIndex(ps, (side === 'in' ? across.first : across.last).start) : null;
-        }
-        const note = textCursorNote();
-        return note ? bodyIndex(ps, note.start) : null;
+      showCursor = () => {
+        paintSheetCursor();
+        schedulePreview();
       };
+
+      // ── The passage: set here, drawn on both faces ──
       setBoundHere = (side) => {
         syncBounds();
-        // On the stave, the note sounding or the one tapped — nothing yet is
-        // the start of the tune.
-        const at = currentMode === 'text' ? textBoundAt(side) : cursorAt;
+        // Where "here" is: the note sounding while the music holds the
+        // cursor, else the cursor's note — or, on a face showing the text, a
+        // selection: its first note for the start, its last for the end.
+        let at = cursorAt;
+        const a = textarea.selectionStart, b = textarea.selectionEnd;
+        if (!musicHoldsCursor() && showsText(currentMode) && b > a) {
+          const { ps, notes } = readShown();
+          const across = notesAcross(notes, sourceIndex(ps, a), sourceIndex(ps, b));
+          at = across ? bodyIndex(ps, (side === 'in' ? across.first : across.last).start) : null;
+        }
         // An end at the start of the tune would hold nothing.
         if (at === null && side === 'out') return;
         bounds = setBound(bounds, side, at);
@@ -3858,10 +3577,10 @@ export function showPreviewModal(
       };
       redrawBounds = () => {
         drawBoundFlags();
-        if (currentMode === 'text') refreshTextPreview();
+        refreshTextPreview();
       };
 
-      // ── A tapped note, heard ──
+      // ── A note clicked in the text, heard ──
       const charBox = (index: number): DOMRect | null => {
         const walker = document.createTreeWalker(textBackdrop, NodeFilter.SHOW_TEXT);
         let offset = 0;
@@ -3882,22 +3601,6 @@ export function showPreviewModal(
       let tapKey: string | null = null;
       let tapTune: unknown = null;
       let tapPs: PlayableSource | null = null;
-      /** A click while the run plays sends it to the note clicked, the way a
-       *  tap on the stave does (asked 2026-10-24: the click moved only the
-       *  caret, and the music went on where it was). Same rule as a start from
-       *  the cursor: that note's first time round, and only inside the
-       *  passage. The run takes the new caret as its own, or a pause then play
-       *  would read "the cursor moved" and start over from it. */
-      const jumpTextRun = (run: TextRun) => {
-        const note = textCursorNote();
-        if (!note) return;
-        const here = playPlan(run.timings, note.start, null)?.start;
-        const region = textRegion();
-        if (!here || !touches(here, region.from, region.to)) return;
-        run.playedTo = -1;
-        run.caret = caretKey();
-        seekText(run, here);
-      };
       textarea.addEventListener('click', (e) => {
         clickedAt = null;
         const caret = textarea.selectionStart;
@@ -3911,12 +3614,13 @@ export function showPreviewModal(
         // The cursor is on the note clicked, whichever side of it the caret
         // went — see textCursorNote.
         if (index !== undefined) clickedAt = { caret, index };
-        // Before the bail-out below: a click between two notes moves the
-        // music too, to the next one, as it would start from there.
-        if (currentMode === 'text' && textState === 'playing' && textRun) { jumpTextRun(textRun); return; }
+        // At once rather than at the next frame: a click while the music
+        // plays sends it to the note clicked (asked 2026-10-24) — between two
+        // notes, to the next one, as it would start from there.
+        refreshTextPreview();
         if (index === undefined) return;
-        schedulePreview();
-        if (currentMode !== 'text' || (textState !== 'idle' && textState !== 'paused')) return;
+        const state = player.state();
+        if (!showsText(currentMode) || state === 'playing' || state === 'loading') return;
         if (!tapPlaysNote(appState.value)) return;
         const xLine = splitXLine(tunes[currentIndex] ?? '').xLine;
         const key = `${transpose}|${selectedProgram ?? ''}|${xLine}\n${text}`;
@@ -3926,7 +3630,7 @@ export function showPreviewModal(
           tapTune = null;
           try {
             const tune = abcjs.parseOnly(tapPs.source)[0];
-            // As the run builds it, so that the pitch is the one play gives.
+            // As the player builds it, so that the pitch is the one play gives.
             tune?.setUpAudio({ ...(selectedProgram !== undefined ? { program: selectedProgram } : {}), ...(transpose !== 0 ? { midiTranspose: transpose } : {}) });
             tapTune = tune ?? null;
           } catch { /* text abcjs cannot read: nothing to play */ }
@@ -3939,83 +3643,31 @@ export function showPreviewModal(
         playTap(abcjs, tapTracks(note.pitches, note.graces, secondsPerWhole(tapTune as any, tempoPercent), selectedProgram));
       });
 
-      // ── One cursor for both faces ──
-      // Leaving one face for the other, the cursor goes along: onto the caret
-      // in the box — without focusing it, which would put a keyboard over
-      // half a phone screen for someone who had not asked to type — or onto
-      // the stave, once it is primed.
-      shareCursor = (mode) => {
-        syncBounds();
-        if (cursorAt === null) return;
-        if (mode === 'text') {
-          if (cursorAt > textarea.value.length) return;
-          clickedAt = null;
-          textarea.setSelectionRange(cursorAt, cursorAt);
-          return;
-        }
-        if (synthControl?.timer && !sheetNeedsRerender) placeScoreCursor();
-        else cursorPending = true;
-      };
-
-      textTransport = {
+      // ── The transport ──
+      transport = {
         playPause: () => {
-          if (textState === 'idle') { startTextRun(null); return; }
-          if (textState === 'loading') { stopTextPlay(); return; }
-          const run = textRun;
-          if (!run) return;
-          if (textState === 'playing') {
-            try { run.synth.pause(); run.timer.pause(); } catch { /* ended */ }
-            setTextState('paused');
-          } else if (caretMoved(run)) {
-            // Paused, then the cursor moved: play means from THERE (reported
-            // 2026-10-15 — it resumed where it was). Left where it began, it
-            // resumes.
-            stopTextPlay();
-            startTextRun(null);
-          } else {
-            run.synth.start();
-            run.timer.start();
-            setTextState('playing');
-          }
+          const state = player.state();
+          if (state === 'idle') startFromCursor();
+          else if (state === 'loading') player.stop();
+          else if (state === 'playing') player.pause();
+          // Paused, then the cursor moved: play means from THERE (reported
+          // 2026-10-15 — it resumed where it was). Left where it stopped, it
+          // resumes.
+          else if (runGen !== cursorGen) startFromCursor();
+          else player.resume();
         },
-        // Back to the start of the passage, playing or not, without stopping.
+        // Back to the start of the passage, playing or not, without stopping —
+        // stopped, the cursor goes there, as it would have gone playing.
         rewind: () => {
-          const run = textRun;
-          if (!run || textState === 'loading') return;
-          run.playedTo = -1;
-          const start = textRegionStart(run);
-          if (start) seekText(run, start);
+          if (player.state() !== 'idle') { player.rewind(); return; }
+          const first = shownRegion()?.first;
+          moveCursor(first ? boxPosition(first.start) : null, 0);
+          placeCaret();
+          showCursor();
         },
-        stop: () => {
-          textRunId++;
-          const run = textRun;
-          textRun = null;
-          if (run) {
-            try { run.timer.stop(); } catch { /* already stopped */ }
-            try { run.synth.stop(); } catch { /* never started */ }
-          }
-          if (textState !== 'idle') setTextState('idle');
-          textCurrent = [];
-          refreshTextPreview();
-        },
+        stop: () => player.stop(),
         // The same note, the same time round — rebuilt.
-        retime: () => {
-          if (textState === 'idle') return;
-          const run = textRun;
-          if (textState === 'loading' || !run) { startTextRun(loadingResume); return; }
-          const at = run.last ?? textRegionStart(run);
-          const resume: TextResume = {
-            char: at?.startCharArray?.[0] ?? 0,
-            pass: at ? passOf(run.timings, at) : 0,
-            playedTo: run.playedTo,
-            paused: textState === 'paused',
-            caret: run.caret,
-          };
-          const old = run;
-          textRun = null;
-          try { old.timer.stop(); old.synth.stop(); } catch { /* ended */ }
-          startTextRun(resume);
-        },
+        retime: () => player.retime(),
       };
       // Space toggles playback, the way it does in every player.
       //
@@ -4032,62 +3684,11 @@ export function showPreviewModal(
         const tag = active?.tagName.toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || active?.isContentEditable) return;
         e.preventDefault(); // or the page scrolls under the modal
-        if (currentMode === 'text') { unlockAbcjsAudio(); textTransport.playPause(); return; }
         unlockAbcjsAudio();
-        beforeScorePlay();
-        void synthControl?.play();
+        transport.playPause();
       };
       document.addEventListener('keydown', onKeyDown);
       releaseKeys = () => document.removeEventListener('keydown', onKeyDown);
-
-      /** Re-draws the score without losing your place in it. Nothing the
-       *  viewer can change about a score is changeable in place: abcjs
-       *  pre-renders the whole performance into one buffer from the chosen
-       *  soundfont, and the notation's layout belongs to the render options, so
-       *  a new instrument or a new size both mean a new drawing and a new
-       *  buffer. What CAN be preserved is the position and whether it was
-       *  playing — exactly the dance abcjs itself does in setWarp.
-       *
-       *  `setTune` resets `isStarted` to false and the position to zero, so
-       *  both are read BEFORE the re-draw and put back after. Expect a short
-       *  silence while the buffer is rebuilt; there is no way around that one.
-       *
-       *  Several redraws closer together than a rebuild — the key changed
-       *  press after press while it played (reported 2026-10-20: the cursor
-       *  went haywire, the sound stopped while the cursor ran on, once a
-       *  cacophony) — are ONE: the place is read at the first, put back after
-       *  the last. Two things went wrong before. The second press read the
-       *  controller mid-rebuild, "stopped, at the start", which the first
-       *  setTune had just set, and gave up the playback. And the first press's
-       *  `play()`, outside the queue, landed in the middle of the second
-       *  setTune: it started the buffer being re-initialised and the OLD
-       *  timer, which `go()` then orphaned by building a new one over it —
-       *  never stopped, still driving the cursor from a drawing that was gone.
-       *  So the putting back is a step of the queue too, behind its own
-       *  setTune, and awaited, so the next rebuild waits for it. */
-      let redrawGen = 0;
-      const redrawPreservingPlayback = (draw: () => void) => {
-        if (!pendingRestore) pendingRestore = { wasPlaying: !!synthControl?.isStarted, at: synthControl?.percent ?? 0 };
-        const gen = ++redrawGen;
-        draw();
-        void enqueueSynth(() => {
-          // A later redraw is queued behind this one: it puts the place back.
-          if (gen !== redrawGen || !pendingRestore) return undefined;
-          const { wasPlaying, at } = pendingRestore;
-          // Cleared once it is done, not before: a press made while `play()`
-          // is on its way would otherwise read the controller half restored.
-          const done = () => { if (gen === redrawGen) pendingRestore = null; };
-          // Stopped at the very beginning is "nothing to put back", and saying
-          // so matters: seeking runs the cursor callback, which paints the note
-          // it lands on. Restoring a position nobody had left would mark the
-          // first note of a score that has never been played.
-          if (!synthControl || (!wasPlaying && at === 0)) { done(); return undefined; }
-          try {
-            if (!wasPlaying || synthControl.isStarted) { synthControl.seek(at); done(); return undefined; }
-            return Promise.resolve(synthControl.play()).then(() => synthControl.seek(at)).finally(done);
-          } catch { done(); return undefined; /* nothing primed to resume */ }
-        });
-      };
 
       // ── The score follows its box ────────────────────────────────────────
       // Engraving to the box's width means the engraving is only right for the
@@ -4100,37 +3701,26 @@ export function showPreviewModal(
       // the next frame rather than done inside the callback, and a change too
       // small to matter is ignored — re-engraving changes the score's HEIGHT,
       // which can make a scrollbar appear, which changes the width again.
-      redrawScore = () => redrawPreservingPlayback(() => renderTune(currentIndex));
-      // abcjs's own setWarp already does the keep-your-place dance internally
-      // (it is where redrawPreservingPlayback above was copied from), so this
-      // is the one change that does not need wrapping — but it does need
-      // QUEUEING, and collapsing. Each press of the speed stepper used to call
-      // setWarp at once, and setWarp is a whole rebuild: tear down, re-render
-      // the audio, new timer, then put the position back. Two presses closer
-      // together than a rebuild ran two at once (reported 2026-09-29, "the
-      // loop goes haywire"): the first's timer was left running with nobody
-      // holding it, still firing end-of-tune into the controller, and the
-      // second read "not playing, at the start" — which the first had just
-      // set on its way down — and put the tune back there.
       //
-      // So one rebuild at a time, through the same queue as a new tune, and
-      // presses made while one is running fold into a single next one, which
-      // goes straight to the speed the stepper shows by then.
-      let warpPending = false;
-      applyWarp = () => {
-        if (warpPending) return;
-        warpPending = true;
-        void enqueueSynth(() => {
-          warpPending = false;
-          if (!synthControl || synthControl.warp === tempoPercent) return undefined;
-          return Promise.resolve(synthControl.setWarp(tempoPercent)).then(() => {
-            // setWarp's teardown clears the "on" look off EVERY button
-            // (destroy → control.resetAll), the loop's included, while the
-            // loop itself stays on. It looked off; pressing it to put it back
-            // turned it off for real — "I lose the repeat".
-            try { synthControl.control?.pushLoop(synthControl.isLooping); } catch { /* no widget */ }
-          });
-        });
+      // Only the drawing: the music has a player of its own, which a redraw
+      // leaves playing where it was.
+      redrawScore = () => {
+        if (!showsSheet(currentMode)) { sheetNeedsRerender = true; return; }
+        renderTune(currentIndex);
+      };
+      // On the "both" face, the stave follows the typing once it pauses —
+      // engraving a set at every keystroke would make the caret stutter.
+      // Stale meanwhile, and marked so: the cursor waits for the new drawing
+      // rather than being put on the old one's notes.
+      let typingTimer = 0;
+      redrawAfterTyping = () => {
+        sheetNeedsRerender = true;
+        window.clearTimeout(typingTimer);
+        typingTimer = window.setTimeout(() => {
+          if (!showsSheet(currentMode) || !sheetNeedsRerender) return;
+          sheetNeedsRerender = false;
+          renderTune(currentIndex);
+        }, TYPING_REDRAW_MS);
       };
 
       // What abcjs makes of the text as it is typed — the warnings, and nothing
@@ -4139,7 +3729,7 @@ export function showPreviewModal(
       checkWarnings = () => {
         const marked = textWarnMarks.length > 0;
         textWarnMarks = [];
-        if (currentMode !== 'text' || !showAbcSyntaxCheck(appState.value)) {
+        if (!showsText(currentMode) || !showAbcSyntaxCheck(appState.value)) {
           showWarnings([]);
           if (marked) paintText();
           return;
@@ -4190,9 +3780,10 @@ export function showPreviewModal(
         warnTimer = window.setTimeout(checkWarnings, 250);
       });
       const stopWarnTimer = releaseKeys;
-      releaseKeys = () => { stopWarnTimer(); window.clearTimeout(warnTimer); };
+      releaseKeys = () => { stopWarnTimer(); window.clearTimeout(warnTimer); window.clearTimeout(typingTimer); };
       remeasure = () => {
-        if (currentMode !== 'sheet' || !notation.querySelector('svg')) return;
+        // The line between the faces held: engraved once it is let go.
+        if (splitting || !showsSheet(currentMode) || !notation.querySelector('svg')) return;
         if (Math.abs(engraveWidth() - lastEngravedWidth) < ENGRAVE_HYSTERESIS) return;
         redrawScore();
       };
@@ -4208,21 +3799,20 @@ export function showPreviewModal(
       // a whole score alive with it.
       const stopKeys = releaseKeys;
       releaseKeys = () => { stopKeys(); releaseResize(); };
-      // The source face's player goes with the dialog too.
-      const stopWithText = releaseKeys;
+      // The player goes with the dialog too.
+      const stopWithPlayer = releaseKeys;
       releaseKeys = () => {
-        stopWithText();
-        stopTextPlay();
+        stopWithPlayer();
+        player.stop();
         document.removeEventListener('selectionchange', onSelectionChange);
         cancelAnimationFrame(previewRaf);
       };
 
-      // Changing instrument without losing your place.
-      reapplyAbcPrefs = () => redrawPreservingPlayback(() => {
+      // Changing instrument without losing your place: the stave redrawn —
+      // the paper is set in that dialog too — and the music rebuilt at the
+      // same note.
+      reapplyAbcPrefs = () => {
         selectedProgram = appState.value.abcInstrument;
-        // The paper is set in that dialog too, and belongs to the ENGRAVING:
-        // re-read here so one apply hook covers everything the preferences can
-        // change about a score.
         paper = abcPaper(appState.value);
         applyPaper();
         // A derived score may have just been rebuilt differently under us.
@@ -4236,30 +3826,17 @@ export function showPreviewModal(
           // link, and re-renders — everything that has to follow a rebuild.
           goToVersion(currentIndex);
         } else {
-          renderTune(currentIndex);
+          redrawScore();
+          transport.retime();
         }
-      });
-      // Only if the stave is the face we opened on. Drawing into a
-      // display:none container is exactly what `sheetNeedsRerender` exists to
-      // avoid (abcjs's resize handling makes the SVG reflow visibly when it
-      // reappears), and someone who opens on the source may never look at the
-      // notation at all.
-      if (currentMode === 'sheet') renderTune(currentIndex);
-      else sheetNeedsRerender = true;
-
-      // The practice row is shared by both faces (2026-10-15). On the source
-      // face a change reaches the text's player, and the stave — hidden — is
-      // only marked to be redrawn when it is next shown, which is what
-      // `sheetNeedsRerender` is for.
-      const redrawSheet = redrawScore;
-      redrawScore = () => {
-        if (currentMode === 'text') { sheetNeedsRerender = true; textTransport.retime(); return; }
-        redrawSheet();
       };
-      const warpSheet = applyWarp;
-      applyWarp = (percent) => { warpSheet(percent); textTransport.retime(); };
-      const prefsSheet = reapplyAbcPrefs;
-      reapplyAbcPrefs = () => { prefsSheet?.(); textTransport.retime(); };
+      // Only if the stave is on screen. Drawing into a display:none container
+      // is exactly what `sheetNeedsRerender` exists to avoid (abcjs's resize
+      // handling makes the SVG reflow visibly when it reappears), and someone
+      // who opens on the source may never look at the notation at all.
+      if (showsSheet(currentMode)) renderTune(currentIndex);
+      else sheetNeedsRerender = true;
+      showCursor();
     }).catch(() => {
       const err = document.createElement('p');
       err.className = 'text-sm text-dim italic';

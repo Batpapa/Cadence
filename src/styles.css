@@ -414,17 +414,11 @@
    Inside a dark, rounded, accent-purple app it read as a foreign object, and
    it was the first thing anyone saw on opening a score.
 
-   Restyled rather than rebuilt. The widget is abcjs's own DOM, driven by its
-   SynthController, and this file has been caught more than once by that
-   library not doing what its surface suggests — so what changes here is the
-   paint, never the plumbing. Scoped under `.abc-transport` so anything else
-   that ever mounts an abcjs player keeps the library's own look.
-
-   The tempo field is gone from it entirely (`displayWarp: false`): speed is a
-   BPM stepper in the practice row now. The rule below is kept for any player
-   still built with the percent field on. */
-.abcjs-inline-audio .abcjs-midi-tempo { color: #000; }
-
+   The buttons are ours since 2026-11-04 — the viewer's one player
+   (abcPlayer.ts), abcjs's SynthController and its widget gone — but they keep
+   abcjs's classes, and its stylesheet: that is what shows play, pause or the
+   spinner on the one button (`.abcjs-pushed`, `.abcjs-loading`). Restyled
+   here, scoped under `.abc-transport`. */
 .abc-transport .abcjs-inline-audio {
   height: auto;
   min-height: 2.75rem;
@@ -487,48 +481,97 @@
    saying so. Accent border and accent glyph, which is what the audio player's
    repeat button does when it is on. */
 .abc-transport .abcjs-inline-audio .abcjs-midi-loop.abcjs-pushed,
-.abc-transport .abcjs-inline-audio .abcjs-midi-reset.abcjs-pushed,
-.abc-transport .abcjs-inline-audio .abcjs-midi-start.abcjs-pushed,
-.abc-transport .abcjs-inline-audio .abcjs-midi-selection.abcjs-pushed {
+.abc-transport .abcjs-inline-audio .abcjs-midi-start.abcjs-pushed {
   border-color: rgb(var(--color-accent-ch));
   color: rgb(var(--color-accent-ch));
   background-color: transparent;
 }
 
-.abc-transport .abcjs-inline-audio .abcjs-midi-progress-background {
-  height: 4px;
-  border: none;
-  border-radius: 2px;
-  margin: 0 0.75rem;
+/* ── The stave and its ABC together (the "both" face, 2026-11-04) ──────────
+   The text first and the stave after it (the user, 2026-11-04): side by side
+   when the viewer is wide enough, the text on the left; the stave under the
+   text when it is not — decided by a container query on the viewer, never measured in
+   script: a layout that measures itself can chase its own scrollbar. Where
+   container queries are missing (iOS before 16), the two stay one above the
+   other, which is the narrow layout anyway.
+
+   `--abc-score-cap` is the stave's height cap alone (fileViewer.ts's
+   capScore). Under the text it gets a share of it, so both are on screen;
+   beside the text it gets all of it, and the text the row's height — at
+   least a box's worth, for a short tune.
+
+   The order is the grid's, not the DOM's: the viewer keeps the stave first,
+   where its full page and the audio sync look for it. */
+.abc-viewer { container: abc-viewer / inline-size; }
+.abc-faces-both {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.abc-faces-both > .abc-text-box { order: -1; }
+/* The line between the two, which shares the width when they stand side by
+   side (fileViewer.ts, 2026-11-04): faint at rest so it can be found, the
+   accent once it is pointed at or held — the sidebar's handle's colours. */
+.abc-faces-split { display: none; }
+.abc-faces-split-line {
+  width: 1px;
+  height: 100%;
   background-color: rgb(var(--color-border-ch));
+  transition: background-color .15s, width .15s;
 }
-.abc-transport .abcjs-inline-audio .abcjs-midi-progress-indicator {
-  width: 12px;
-  margin-left: -6px;
-  height: 12px;
-  top: -4px;
-  border-radius: 6px;
-  background-color: rgb(var(--color-primary-ch));
+.abc-faces-split:hover .abc-faces-split-line,
+.abc-faces-split:focus-visible .abc-faces-split-line,
+.abc-faces-split-active .abc-faces-split-line {
+  width: 2px;
+  background-color: rgb(var(--color-accent-ch) / 0.6);
 }
-.abc-transport .abcjs-inline-audio .abcjs-midi-clock {
-  margin: 0 0.25rem;
-  font-family: inherit;
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  color: rgb(var(--color-muted-ch));
+.abc-faces-split:focus-visible { outline: none; }
+.abc-faces-both > .abc-score-frame .abc-score-paper {
+  max-height: calc(var(--abc-score-cap) * 0.55);
 }
-
-/* abcjs's percent field, kept in the DOM and taken off the screen.
-   It cannot simply be switched off (`displayWarp: false`): the library's own
-   `setWarp` writes into this input with no null check, so turning it off made
-   every speed change throw. The speed the user sees and sets is the BPM
-   stepper beside the transport; this is abcjs's scratch pad. */
-.abc-transport .abcjs-inline-audio .abcjs-tempo-wrapper { display: none; }
-
-/* The CSS-missing banner abcjs appends unconditionally. Its own stylesheet is
-   loaded (main.ts), so this is always a false alarm — and it is 300 px of red
-   border if anything ever hides it. */
-.abc-transport .abcjs-css-warning { display: none; }
+/* The audio sync's and the Play-along's text (syncedScore.tsx), read-only:
+   a fixed height under the stave, whose own height those views measure and
+   set — the text's must not depend on it. */
+.abc-faces-both > .abc-text-box > .score-follow-text { max-height: 12rem; }
+@container abc-viewer (min-width: 56rem) {
+  /* Text, line, stave — placed by column, not by order: the audio sync's and
+     the Play-along's (syncedScore.tsx) have no line, and keep its column
+     as the gap. The shares are the line's (`--abc-text-fr`), half and half
+     where it is not. */
+  .abc-faces-both {
+    grid-template-columns: minmax(0, var(--abc-text-fr, 1fr)) 0.75rem minmax(0, var(--abc-score-fr, 1fr));
+    grid-auto-rows: minmax(18rem, auto);
+    column-gap: 0;
+  }
+  .abc-faces-both > .abc-text-box { grid-column: 1; grid-row: 1; }
+  .abc-faces-both > .abc-faces-split {
+    display: flex;
+    justify-content: center;
+    grid-column: 2;
+    grid-row: 1;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .abc-faces-both > .abc-score-frame { grid-column: 3; grid-row: 1; }
+  .abc-faces-both > .abc-score-frame .abc-score-paper {
+    height: 100%;
+    max-height: var(--abc-score-cap);
+  }
+  /* `!important` against the height the box's own handle writes on it, one
+     above the other (an inline style): taken there, it held the box at that
+     height side by side as well (2026-11-04, the user). Kept, it is the
+     height the box has again under the stave. */
+  .abc-faces-both > .abc-text-box textarea {
+    height: 100% !important;
+    resize: none;
+  }
+  /* Beside the stave, the row's height — never more: the text scrolls. */
+  .abc-faces-both > .abc-text-box > .score-follow-text {
+    position: absolute;
+    inset: 0;
+    max-height: none;
+  }
+}
 
 /* ── A parser warning ──────────────────────────────────────────────────────
    abcjs marks the offending character in its warnings with markup of its own,

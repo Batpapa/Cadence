@@ -7,6 +7,7 @@ import { ENGRAVE_HYSTERESIS, engraveOptions, engraveWidthOf, cropToInk } from '.
 import { getZoom } from '../services/zoomService';
 import { appState } from '../store';
 import { WakeLockManager } from '../session/audio/capture';
+import type { ScoreFace } from '../types';
 
 // ── A score that follows a recording ─────────────────────────────────────────
 // Drawn above the audio player's waveform when the player is given a score
@@ -205,8 +206,9 @@ export interface SyncedScoreProps {
    *  height, as the viewer's full page fills the screen with paper. */
   minHeight?: string;
   /** The stave, or the ABC text it is drawn from, read-only, the note heard
-   *  lit in it (the user, 2026-10-28) — the score viewer's two faces. */
-  face?: 'sheet' | 'text';
+   *  lit in it (the user, 2026-10-28) — or the two together (2026-11-04):
+   *  the score viewer's faces. */
+  face?: ScoreFace;
   /** Buttons over the paper's top right corner, as the score viewer has its
    *  full page there; the paper leaves them their room. */
   tools?: preact.ComponentChildren;
@@ -447,7 +449,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
           textBounds.current = { in: null, out: null };
           textDrawn.current = '';
         }
-        if (faceRef.current === 'text') markText(at?.ev ?? null);
+        if (faceRef.current !== 'sheet') markText(at?.ev ?? null);
         drawCursor(svg, paper, at);
         dirty.current = false;
         return;
@@ -460,7 +462,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         lit.current = [];
         paper.querySelectorAll('.abcjs-cursor, [class^="score-follow-bound"]').forEach(el => el.setAttribute('visibility', 'hidden'));
         textBounds.current = { in: null, out: null };
-        if (faceRef.current === 'text') markText(null);
+        if (faceRef.current !== 'sheet') markText(null);
         return;
       }
       if (!eng || !f || !tl || !paper) return;
@@ -478,7 +480,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         textBounds.current = r ? { in: bound(r.start + 0.001), out: bound(r.end - 0.001) } : { in: null, out: null };
         textDrawn.current = '';
       }
-      if (faceRef.current === 'text') markText(at?.ev ?? null);
+      if (faceRef.current !== 'sheet') markText(at?.ev ?? null);
       drawCursor(svg, paper, at);
       // The region's bounds, where they fall in the score — each with the
       // number of the pass it is in, the waveform's numbers: one score drawn
@@ -551,15 +553,29 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
     };
   }, []);
 
+  // The two together (2026-11-04): the stave and the text each on a paper of
+  // its own, side by side or one above the other as the score viewer lays
+  // its own faces out (styles.css, `.abc-faces-both`).
+  const both = face === 'both';
+  const paperStyle = { background: colours.paper };
+  /** Over the paper, in its ink — the score viewer's own corner, to the pixel
+   *  (its scoreTools, `top-1 right-1`): `right-3` here put the button 8 px off
+   *  the viewer's (2026-11-01, the user). */
+  const toolsBox = tools && (
+    <div class="absolute top-1 right-1 z-20 flex items-center" style={{ '--abc-ink': colours.ink }}>{tools}</div>
+  );
   return (
-    <div class="relative rounded overflow-hidden" style={{ background: colours.paper }}>
+    <div class={both ? 'abc-faces-both' : 'relative rounded overflow-hidden'} style={both ? undefined : paperStyle}>
       {/* Behind the text face the stave is still drawn, at the box's width:
           its timeline is what the text's cursor reads. Out of sight in a box
           of no height that clips it all — not display:none, a box of no width
           is never drawn; and not visibility:hidden on the paper, which its
           cursor and bounds override (`visibility="visible"`): they were seen
           floating over the text (2026-10-29). */}
-      <div style={face === 'text' ? { position: 'absolute', left: 0, right: 0, top: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' } : undefined}>
+      <div
+        class={both ? 'abc-score-frame relative rounded overflow-hidden' : undefined}
+        style={face === 'text' ? { position: 'absolute', left: 0, right: 0, top: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' } : both ? paperStyle : undefined}
+      >
         <div
           ref={paperRef}
           onClick={onPaperClick}
@@ -568,21 +584,22 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         >
           <div ref={drawingRef} />
         </div>
+        {both && toolsBox}
       </div>
-      {face === 'text' && (
+      {face !== 'sheet' && (
         // Read-only: what is followed is the version as drawn, aligned as such.
-        <pre
-          ref={textRef}
-          class={`score-follow-text relative m-0 overflow-y-auto p-3 font-mono text-xs whitespace-pre-wrap break-words ${tools ? 'pt-8' : ''}`}
-          style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, maxHeight, minHeight }}
-        />
+        // Beside or under the stave, its height is the stylesheet's, never the
+        // one measured for the stave: the views that measure it (fit) would
+        // otherwise be measuring a box whose height they set.
+        <div class={both ? 'abc-text-box relative rounded overflow-hidden' : 'contents'} style={both ? paperStyle : undefined}>
+          <pre
+            ref={textRef}
+            class={`score-follow-text relative m-0 overflow-y-auto p-3 font-mono text-xs whitespace-pre-wrap break-words ${tools && !both ? 'pt-8' : ''}`}
+            style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, ...(both ? {} : { maxHeight, minHeight }) }}
+          />
+        </div>
       )}
-      {/* Over the paper, in its ink — the score viewer's own corner, to the
-          pixel (its scoreTools, `top-1 right-1`): `right-3` here put the
-          button 8 px off the viewer's (2026-11-01, the user). */}
-      {tools && (
-        <div class="absolute top-1 right-1 z-20 flex items-center" style={{ '--abc-ink': colours.ink }}>{tools}</div>
-      )}
+      {!both && toolsBox}
     </div>
   );
 }

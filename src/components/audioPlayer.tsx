@@ -1,6 +1,6 @@
 import { render, type ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { AudioPreset, FileEntry } from '../types';
+import type { AudioPreset, FileEntry, ScoreFace } from '../types';
 import { generateId } from '../utils';
 import { t } from '../services/i18nService';
 import { playIcon, pauseIcon, stopIcon, repeatIcon, boundIcon } from './playbackIcons';
@@ -393,7 +393,7 @@ export interface PlayerScore {
   /** Its floor (SyncedScoreProps.minHeight). */
   minHeight?: string;
   /** The stave, or its ABC text (SyncedScoreProps.face). */
-  face?: 'sheet' | 'text';
+  face?: ScoreFace;
   /** Buttons over the score's corner (SyncedScoreProps.tools). */
   tools?: ComponentChildren;
   /** With no alignment to follow, how well it went (0–1, the share of notes
