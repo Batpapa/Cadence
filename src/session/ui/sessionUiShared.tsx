@@ -253,7 +253,11 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
  *  and an import in progress (both can be genuinely dateless, and an import's
  *  date is only ever a guess from its file: no trustworthy t=0 for a file —
  *  which is what this row is for). A live recording always has one and shows it read-only
- *  instead — editing it mid-recording isn't offered here. */
+ *  instead — editing it mid-recording isn't offered here.
+ *
+ *  The field alone since 2026-11-05 (the user's call): the "clear" / "now"
+ *  link beside it repeated the calendar's own buttons. Emptied — typed away,
+ *  or the calendar's Clear — the date is removed. */
 export function DateRow({ getDate, setDate, onChange }: {
   getDate: () => string | null;
   setDate: (date: string | null) => void;
@@ -278,11 +282,6 @@ export function DateRow({ getDate, setDate, onChange }: {
           return true;
         }}
       />
-      {date ? (
-        <button class="text-xs text-dim hover:text-danger cursor-pointer shrink-0" onClick={() => apply(null)}>{t('sessions.dateClear')}</button>
-      ) : (
-        <button class="text-xs text-dim hover:text-accent cursor-pointer shrink-0" onClick={() => apply(new Date().toISOString())}>{t('sessions.dateNow')}</button>
-      )}
     </div>
   );
 }
