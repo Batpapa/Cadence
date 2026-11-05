@@ -34,9 +34,9 @@ export const STRATEGY_ICONS: Record<StudyStrategy, { Icon: ComponentType<{ size?
 // study only), and a list whose LAST item comes and goes is far less jarring
 // than one whose first does.
 const STRATEGIES: Array<{ id: StudyStrategy; labelKey: string; subKey: string }> = [
-  { id: 'random',     labelKey: 'deck.strategy.random',     subKey: 'deck.strategy.random.sub' },
   { id: 'optimal',    labelKey: 'deck.strategy.optimal',    subKey: 'deck.strategy.optimal.sub' },
   { id: 'stochastic', labelKey: 'deck.strategy.stochastic', subKey: 'deck.strategy.stochastic.sub' },
+  { id: 'random',     labelKey: 'deck.strategy.random',     subKey: 'deck.strategy.random.sub' },
   { id: 'sequential', labelKey: 'deck.strategy.sequential', subKey: 'deck.strategy.sequential.sub' },
 ];
 
