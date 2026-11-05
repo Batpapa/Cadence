@@ -177,14 +177,19 @@ function AppRoot() {
             <Sidebar ctx={ctx} />
           </div>
         </div>
+        {/* Wide layout: the handle stays in the flex flow (so it follows the
+            sidebar's width while dragging, which writes the width straight to
+            the DOM) but its negative margins cancel its 8px: it straddles the
+            sidebar's edge instead of opening a strip of empty background
+            between the sidebar and the content. */}
         {!sidebarCollapsed && (
           <div
-            class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-2 z-30' : 'shrink-0 w-2'}`}
+            class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-2 z-30' : 'relative z-10 shrink-0 w-2 -mx-1'}`}
             style={isNarrow ? { left: sidebarWidth + 'px' } : undefined}
             onMouseDown={onResizeStart}
             onTouchStart={onResizeTouch}
           >
-            <div ref={resizeLineRef} class="w-px h-full bg-transparent group-hover:bg-accent/40 transition-colors" />
+            <div ref={resizeLineRef} class={`w-px h-full bg-transparent group-hover:bg-accent/40 transition-colors ${isNarrow ? '' : 'mx-auto'}`} />
           </div>
         )}
         <main class="flex-1 overflow-hidden bg-bg">
