@@ -77,9 +77,15 @@ interface SessionLibraryProps {
   initialTags?: [string, FilterState][];
   initialTagsOr?: boolean;
   initialModes?: [string, FilterState][];
+  initialDetectedFrom?: string;
+  initialDetectedTo?: string;
+  initialDecks?: [string, FilterState][];
+  initialDecksOr?: boolean;
+  initialCardTags?: [string, FilterState][];
+  initialCardTagsOr?: boolean;
 }
 
-export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes, initialKinds, initialTags, initialTagsOr }: SessionLibraryProps) {
+export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes, initialKinds, initialTags, initialTagsOr, initialDetectedFrom, initialDetectedTo, initialDecks, initialDecksOr, initialCardTags, initialCardTagsOr }: SessionLibraryProps) {
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
   /** Whether `allSessions` has been read at least once. The tunes tab waits for
    *  it: its chips ignore any analysis they cannot find, and before the first
@@ -108,6 +114,12 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
     tags: new Map(initialTags ?? [...(initialDances ?? []), ...(initialModes ?? [])]),
     tagsOr: initialTagsOr ?? false,
     kinds: new Map(initialKinds ?? []),
+    detectedFrom: initialDetectedFrom ?? '',
+    detectedTo: initialDetectedTo ?? '',
+    decks: new Map(initialDecks ?? []),
+    decksOr: initialDecksOr ?? false,
+    cardTags: new Map(initialCardTags ?? []),
+    cardTagsOr: initialCardTagsOr ?? false,
   }));
   /** The tune list's funnel, beside the search box both tabs share — shown on
    *  the tunes tab only, the analyses having no filter sections. Held here with
@@ -117,6 +129,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
   const tuneFilters = tuneFilterCount(tuneView, allSessions, ctx.user);
   const filters = useFiltersPanel(tuneFilters, () => setTuneView(v => ({
     ...v, analyses: new Map(), tags: new Map(), others: new Map(), kinds: new Map(),
+    detectedFrom: '', detectedTo: '', decks: new Map(), cardTags: new Map(),
   })));
   const [source, setSource] = useState<LiveSourceKind>('mic');
   // Where an import comes from, chosen the same way and kept the same way:
@@ -192,6 +205,12 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
       tags: tuneView.tags.size > 0 ? [...tuneView.tags] : undefined,
       tagsOr: tuneView.tagsOr || undefined,
       kinds: tuneView.kinds.size > 0 ? [...tuneView.kinds] : undefined,
+      detectedFrom: tuneView.detectedFrom || undefined,
+      detectedTo: tuneView.detectedTo || undefined,
+      decks: tuneView.decks.size > 0 ? [...tuneView.decks] : undefined,
+      decksOr: tuneView.decksOr || undefined,
+      cardTags: tuneView.cardTags.size > 0 ? [...tuneView.cardTags] : undefined,
+      cardTagsOr: tuneView.cardTagsOr || undefined,
     });
   }, [query, tab, folderId, tuneView]);
 
