@@ -16,25 +16,46 @@
 </head>
 <body>
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: October 2026</p>
+  <p class="updated">Last updated: November 2026</p>
 
   <p>Cadence is a personal flashcard application. This policy explains what happens to your data — and, just as
   important, what doesn't. The short version: <strong>no server stores your data.</strong> Some features do talk to a
   server, but only ever in passing, never to keep a copy.</p>
 
   <h2>Data Storage</h2>
-  <p>All your flashcard data (decks, cards, study history) and any recorded session audio are stored locally in your
-  browser's IndexedDB. Nothing is uploaded there by default, and Cadence doesn't require an account.</p>
+  <p>All your flashcard data (decks, cards, study history), your tune analyses and any recorded audio are stored
+  locally in your browser's IndexedDB. A few settings that belong to the device rather than to you (theme, zoom,
+  whether to keep recordings, the play-along latency…) are kept in the browser's local storage. Nothing is uploaded
+  by default, and Cadence doesn't require an account.</p>
 
-  <h2>Microphone &amp; Session Recording</h2>
-  <p>If you use the session-recording feature, Cadence asks for microphone access to capture the audio. Tune
-  recognition runs entirely on-device (via <a href="https://github.com/TomWyllie/folkfriend" target="_blank" rel="noopener">FolkFriend</a>,
-  compiled to WebAssembly) — the audio itself is never sent anywhere for that. The recording is saved to your
-  browser's IndexedDB like any other attachment, and it only leaves your device if you explicitly choose to share
-  that session (see below).</p>
+  <h2>Microphone, Recording &amp; Listening</h2>
+  <p>Cadence asks for microphone access only when you start something that listens:</p>
+  <ul>
+    <li><strong>Tune analyser</strong> — a session you record live. Tune recognition and tempo detection run entirely
+    on-device (via <a href="https://github.com/TomWyllie/folkfriend" target="_blank" rel="noopener">FolkFriend</a>,
+    compiled to WebAssembly); the audio itself is never sent anywhere for that. Instead of the microphone, you can
+    choose to analyse the sound the device is playing: on a computer, the browser asks you every time which tab,
+    window or screen to share, and Cadence only takes its sound; on Android, see "Android App" below.</li>
+    <li><strong>Recording onto a card</strong> — a recording you make as a card's attachment.</li>
+    <li><strong>Play-along</strong> — the score follows what you play. The sound is analysed as it comes in and
+    is not recorded or stored.</li>
+  </ul>
+  <p>Analysing a recording you import, and <strong>audio sync</strong> (a score following a recording attached to a
+  card), also run entirely on your device.</p>
+  <p>A recording is saved on your device like any other attachment. If you untick "Keep recordings" (a setting of
+  each device), an analysis keeps only its list of tunes: the audio of a live recording is held while it runs (to
+  place each tune's boundaries) and deleted when it ends, and nothing of an imported file is stored. A recording only leaves your device if you back it up to your own Google Drive, or
+  explicitly share that analysis with its audio (see below).</p>
+
+  <h2>Trying Without an Account</h2>
+  <p>The standalone pages of the tune analyser (<code>/TuneAnalyser/</code>) and of Trending
+  (<code>/Trending/</code>) keep nothing: an analysis made there is not kept once you leave the page (what remains on
+  the device is erased the next time the page opens), unless you choose to carry it into Cadence, in which case it is
+  moved into the app's storage on the same device.
+  Nothing is sent to a server for that.</p>
 
   <h2>Sharing by Key (Ephemeral Relay)</h2>
-  <p>Cadence lets you share a card pack or a recorded session (optionally including its audio) with someone else via
+  <p>Cadence lets you share a card pack or a tune analysis (optionally including its audio) with someone else via
   a short one-time key, instead of sending a file. This goes through a small relay server the author operates. It
   works more like a self-destructing drop-off than a server "storing" anything:</p>
   <ul>
@@ -45,37 +66,66 @@
     <li>Uploads are capped at 100 MB.</li>
     <li>The content itself is never logged by the application. (The hosting infrastructure does log ordinary request
     metadata — timestamp, IP, path — the way any web server does; see "Hosting &amp; Network" below.)</li>
-    <li>If a shared session includes its audio, that audio travels through this same relay, under the same rules,
+    <li>If a shared analysis includes its audio, that audio travels through this same relay, under the same rules,
     for the same 10 minutes.</li>
   </ul>
   <p>If the server restarts for any reason (deploys, crashes), anything still held in memory at that moment is lost
   — which, again, is the point: nothing here is meant to persist.</p>
 
-  <h2>TheSession.org Import</h2>
-  <p>Searching for or importing a tune from <a href="https://thesession.org" target="_blank" rel="noopener">TheSession.org</a>
-  sends that request straight from your browser to their servers — Cadence doesn't proxy it. This means your search
-  terms (and by extension, something about what you're learning) are visible to TheSession.org the same way they
-  would be if you searched their site directly. See their own privacy policy for how they handle that.</p>
+  <h2>TheSession.org</h2>
+  <p>Searching for a tune or a set on <a href="https://thesession.org" target="_blank" rel="noopener">TheSession.org</a>,
+  importing it, refreshing a card from it, or building the sample library offered when you start, sends that request
+  straight from your browser to their servers — Cadence doesn't proxy it. This means your search terms (and by
+  extension, something about what you're learning) are visible to TheSession.org the same way they would be if you
+  searched their site directly. See their own privacy policy for how they handle that.</p>
 
-  <h2>IrishTuneInfo Import</h2>
-  <p>Importing a tune from IrishTuneInfo.com goes through the same relay server mentioned above (it also runs a small
-  scraper for this site, since IrishTuneInfo.com has no public API). Your search/import request passes through it;
-  nothing about it is stored beyond normal request handling — see "Hosting &amp; Network" below.</p>
+  <h2>irishtune.info (Optional)</h2>
+  <p>irishtune.info is an optional source, off unless you turn it on in Settings → Extensions. Searching, importing a
+  tune, reading a playlist by its username, or playing one of its recordings goes through the same relay server
+  mentioned above (it also runs a small scraper for this site, since irishtune.info has no public API). Your request
+  passes through it; nothing about it is stored beyond normal request handling — see "Hosting &amp; Network" below.</p>
 
-  <h2>Trending Data Sync</h2>
-  <p>To show tune popularity trends, Cadence fetches public data directly from GitHub (<code>api.github.com</code>
-  and <code>raw.githubusercontent.com</code>, reading the open <code>adactio/TheSession-data</code> repository). These
-  are read-only requests — no data about you or your library is sent, only the standard request metadata any GitHub
-  request carries (IP, etc.).</p>
+  <h2>Public Data Downloads</h2>
+  <p>Some features need public data, which Cadence downloads without sending anything about you or your library —
+  only the standard request metadata any request carries (IP address, etc.):</p>
+  <ul>
+    <li><strong>Trending</strong> — tune popularity, first from a precomputed file on the site itself
+    (<code>batpapa.github.io</code>), then updated from GitHub (<code>api.github.com</code> and
+    <code>raw.githubusercontent.com</code>, reading the open <code>adactio/TheSession-data</code> repository).</li>
+    <li><strong>Tune name search</strong> — the list of TheSession tune names, from the same GitHub repository.</li>
+    <li><strong>Tune recognition</strong> — FolkFriend's tune index, from GitHub
+    (<code>raw.githubusercontent.com</code>, the <code>TomWyllie/folkfriend-app-data</code> repository).</li>
+  </ul>
+
+  <h2>Links, Embedded Players &amp; Outside Tools</h2>
+  <p>Some of what you put on a card belongs to other services, and opening it contacts them:</p>
+  <ul>
+    <li><strong>Embedded players</strong> — a YouTube, Spotify, Deezer or SoundCloud link shown in the app's
+    built-in player loads that service's own player, under its own privacy policy (it may set cookies or know you if
+    you are signed in to it). Nothing is loaded from it until you open the link. When you add such a link, Cadence
+    asks that service for the title and the player's address (its public oEmbed endpoint), sending it the link.</li>
+    <li><strong>Links to files</strong> — when a link to an audio, video or PDF file opens in the app, Cadence
+    downloads the file from the server you gave, which sees the request like any download. Nothing is kept: the file
+    is read again from there next time.</li>
+    <li><strong>Opening a score elsewhere</strong> — "Open in ABC Transcription Tools" opens the tune on Michael
+    Eskin's site, with the ABC text in the link.</li>
+    <li><strong>Smart edit</strong> — Cadence never sends your data to an AI service. Smart edit gives you a
+    description of your library to copy or download; where it goes from there is your choice.</li>
+  </ul>
 
   <h2>Google Drive Integration (Optional)</h2>
   <p>Cadence offers an optional Google Drive sync feature. If you choose to enable it:</p>
   <ul>
     <li>Cadence uses the <code>drive.file</code> scope, which only gives it access to the files it creates itself in your Google Drive: a data file (<code>cadence-data.json</code>) and a folder next to it (<code>cadence-data-ext</code>).</li>
-    <li>The data file contains your Cadence data (decks, cards, study history, sessions). The folder holds your larger files: session recordings, attachments, and the periodic backup of a recording still in progress.</li>
+    <li>The data file contains your Cadence data (decks, cards, study history, analyses). The folder holds your larger files: recordings, attachments, and the periodic backup of a live recording still in progress (every 10 minutes, if that option is on).</li>
+    <li>Cadence reads the email address and the account identifier of the Google account you connect (through
+    Drive's own account information, which this scope allows), to recognise that account later — so it doesn't sync
+    one person's data into another's Drive, and can find your data again on a new device. They are kept on your
+    device only.</li>
     <li>Cadence does not access any other files in your Drive.</li>
-    <li>Your data is never sent to any third-party server — it travels directly between your browser and Google Drive.</li>
-    <li>The Google sign-in script itself is only loaded once you turn this feature on — not on every visit.</li>
+    <li>Your data is never sent to any third-party server — it travels directly between your device and Google Drive.</li>
+    <li>The Google sign-in script itself is only loaded once you turn this feature on (or ask to find your data on
+    Drive from the welcome screen) — not on every visit.</li>
     <li>You can revoke access at any time from your <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account settings</a>.</li>
   </ul>
 
@@ -90,13 +140,17 @@
   <ul>
     <li><strong>Where your data lives.</strong> Instead of a browser's storage, your data is kept in the app's private
     storage on your device, which other apps cannot read. Uninstalling the app, or clearing its data in Android's
-    settings, deletes it — use Google Drive sync or an export if you want to keep a copy. If Android's own device
-    backup is turned on, it may include the app's local data, as it does for any app; that backup is handled by Google
-    under your Google account, and the author has no access to it.</li>
+    settings, deletes it — use Google Drive sync or an export if you want to keep a copy. The app's data is excluded
+    from Android's own device backup and device-to-device transfer.</li>
     <li><strong>Permissions.</strong>
       <ul>
         <li><em>Microphone</em> (<code>RECORD_AUDIO</code>, plus <code>MODIFY_AUDIO_SETTINGS</code>, which the app's
-        built-in web view needs to open it) — used only during a session recording you start yourself.</li>
+        built-in web view needs to open it) — used only for the recording and listening you start yourself (see
+        "Microphone, Recording &amp; Listening").</li>
+        <li><em>Capturing what the phone plays</em> (foreground service of type <em>media projection</em>) — only
+        when you choose to analyse the sound of another app (a video, a stream) instead of the microphone. Android
+        asks for your consent every time and shows that the screen is being shared; Cadence only takes the sound,
+        never the picture, and leaves out its own sounds.</li>
         <li><em>Foreground service of type microphone</em> and <em>wake lock</em> — let a recording carry on with the
         screen off or another app in front. While it runs, Android shows a persistent notification; the app never
         listens in the background without it.</li>
@@ -131,11 +185,12 @@
   stays where you put it, for as long as you keep it there:</p>
   <ul>
     <li><strong>On your device</strong> — until you remove it: deleting a user in Cadence's settings removes that
-    user's data from the device; clearing the site's data in your browser, or uninstalling the Android app (or clearing
-    its data in Android's settings), removes everything.</li>
-    <li><strong>In your Google Drive</strong> — until you delete <code>cadence-data.json</code> and the
-    <code>cadence-data-ext</code> folder yourself, from Google Drive. Disconnecting Drive in Cadence, or revoking its
-    access, stops any further sync but leaves those files in your Drive.</li>
+    user's data from the device; deleting an analysis's audio removes it from the device; clearing the site's data in
+    your browser, or uninstalling the Android app (or clearing its data in Android's settings), removes everything.</li>
+    <li><strong>In your Google Drive</strong> — until you delete it: an analysis's audio can be deleted from Drive in
+    Cadence; everything else, by deleting <code>cadence-data.json</code> and the <code>cadence-data-ext</code> folder
+    yourself, from Google Drive. Disconnecting Drive in Cadence, or revoking its access, stops any further sync but
+    leaves those files in your Drive.</li>
     <li><strong>Shared by key</strong> — deleted automatically after 10 minutes (see above).</li>
   </ul>
 
@@ -147,10 +202,15 @@
   <ul>
     <li><strong>Google Drive</strong> — optional, opt-in, only when you enable sync.</li>
     <li><strong>Google Identity</strong> (sign-in) — only loaded once you enable Drive sync.</li>
-    <li><strong>thesession.org</strong> — when you search or import from TheSession.</li>
-    <li><strong>The author's relay/scraper</strong> (Render) — when you share by key, or import from IrishTuneInfo.</li>
-    <li><strong>GitHub</strong> (<code>api.github.com</code>, <code>raw.githubusercontent.com</code>) — read-only, for trending data.</li>
-    <li><strong>GitHub Pages</strong> (<code>batpapa.github.io</code>) — Android app only, to check for and download its own updates.</li>
+    <li><strong>thesession.org</strong> — when you search, import or refresh from TheSession, or build the sample library.</li>
+    <li><strong>The author's relay/scraper</strong> (Render) — when you share by key, or use irishtune.info.</li>
+    <li><strong>GitHub</strong> (<code>api.github.com</code>, <code>raw.githubusercontent.com</code>) — read-only, for
+    trending data, tune name search and the recognition index.</li>
+    <li><strong>GitHub Pages</strong> (<code>batpapa.github.io</code>) — the site itself; the Android app also checks
+    it for its own updates.</li>
+    <li><strong>YouTube, Spotify, Deezer, SoundCloud</strong> — when you add such a link, and when you open it in the built-in player.</li>
+    <li><strong>The server behind a file link</strong> — only when you open that link in the app.</li>
+    <li><strong>Michael Eskin's ABC Tools</strong> — only when you open a score there.</li>
     <li><strong>Google Play services</strong> — Android app only, for Google sign-in when you enable Drive sync.</li>
   </ul>
   <p>When Google Drive sync is enabled, your data is subject to <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</p>
