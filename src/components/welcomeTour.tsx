@@ -1,12 +1,13 @@
 import type { ComponentChildren } from 'preact';
 import { t } from '../services/i18nService';
-import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIcon, ArrowRightIcon } from './icons';
+import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIcon, ArrowRightIcon, ScoreFollowIcon, MicIcon } from './icons';
 
 // ── What Cadence does, on the welcome screen (2026-10-26) ────────────────────
 // Two sections under the user list, as tiles of uneven sizes ("bento", picked
 // from mockups): the core first — organising, reviewing, sharing — since
 // Cadence is for anything worth remembering; then Irish trad, the TheSession
-// connection and the two modules that open without an account (their
+// connection, the score that follows the music (audio sync and play-along,
+// 2026-11-05) and the two modules that open without an account (their
 // standalone pages, TuneAnalyser/ and Trending/). Those two are the only links
 // and the only tinted tiles, so that what can be clicked shows at a glance.
 //
@@ -21,16 +22,23 @@ import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIc
 const ANALYSER_URL = 'TuneAnalyser/';
 const TRENDING_URL = 'Trending/';
 
-/** A waveform's bars as one path: a drawing, the same every time. */
-function wavePath(bars: number, step: number, mid: number, amp: number): string {
-  let d = '';
+/** A waveform's bars, one path each: a drawing, the same every time. */
+function waveBars(bars: number, step: number, mid: number, amp: number): string[] {
+  const out: string[] = [];
   for (let i = 0; i < bars; i++) {
     const h = 3 + Math.round(Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.43)) * amp) + (i % 4);
-    d += `M${3 + i * step} ${mid - h / 2}V${mid + h / 2}`;
+    out.push(`M${3 + i * step} ${mid - h / 2}V${mid + h / 2}`);
   }
-  return d;
+  return out;
 }
-const MODULE_WAVE = wavePath(34, 4, 15, 18);
+const MODULE_WAVE = waveBars(34, 4, 15, 18).join('');
+
+/** The "follows" tile's sound under its score: the bars left of the cursor
+ *  (x = 62, the fourth note) are the part already heard. */
+const FOLLOW_BARS = waveBars(28, 4, 50, 8);
+const FOLLOW_CURSOR_X = 62;
+const FOLLOW_HEARD = FOLLOW_BARS.filter((_, i) => 3 + i * 4 < FOLLOW_CURSOR_X).join('');
+const FOLLOW_AHEAD = FOLLOW_BARS.filter((_, i) => 3 + i * 4 >= FOLLOW_CURSOR_X).join('');
 
 /** Notes of a reel, two beamed groups, the third note the one playing. */
 const NOTES: ReadonlyArray<[number, number]> = [[20, 23], [34, 20], [48, 17], [62, 20], [80, 14], [94, 17], [108, 23]];
@@ -151,6 +159,39 @@ function ImportedTune() {
   );
 }
 
+/** A score following sound: the same reel as ImportedTune, the sound under it,
+ *  and the cursor joining the two where the music is. */
+function FollowingScore() {
+  return (
+    <svg viewBox="0 0 118 60" class="w-[118px] h-[60px] shrink-0 self-center" aria-hidden="true">
+      <path d="M0 8H118M0 14H118M0 20H118M0 26H118M0 32H118" class="stroke-border" stroke-width="0.8" />
+      {NOTES.map(([x, y]) => (
+        <ellipse key={x} cx={x} cy={y} rx="3.2" ry="2.3" transform={`rotate(-20 ${x} ${y})`}
+          class={x <= FOLLOW_CURSOR_X ? 'fill-[color:var(--tour-brand)]' : 'fill-muted'} />
+      ))}
+      <path d="M23 22V4M37 19V4M51 16V4M65 19V4M83 13V2M97 16V2M111 22V2" class="stroke-muted" stroke-width="0.9" />
+      <path d="M23 4.5H65M83 2.5H111" class="stroke-muted" stroke-width="2.2" />
+      <path d={FOLLOW_HEARD} class="stroke-[color:var(--tour-brand)]" stroke-width="2" stroke-linecap="round" />
+      <path d={FOLLOW_AHEAD} class="stroke-muted" stroke-opacity="0.6" stroke-width="2" stroke-linecap="round" />
+      <path d={`M${FOLLOW_CURSOR_X} 0V60`} class="stroke-[color:var(--tour-brand)]" stroke-width="1.2" stroke-dasharray="2 2" />
+    </svg>
+  );
+}
+
+/** One line of the "follows" tile: the toggle's icon and name as the score
+ *  viewer shows them, so that they are recognised there. */
+function FollowWay({ icon, name, text }: { icon: ComponentChildren; name: string; text: string }) {
+  return (
+    <span class="flex items-start gap-2">
+      <span class="mt-[3px] flex text-[color:var(--tour-brand)]">{icon}</span>
+      <span class="min-w-0">
+        <span class="block text-xs font-medium text-primary">{name}</span>
+        <TileText>{text}</TileText>
+      </span>
+    </span>
+  );
+}
+
 /** One of the modules that open here without an account: the whole tile is
  *  the link, to the module's standalone page. */
 function ModuleTile({ href, icon, name, text, picture }: {
@@ -208,7 +249,7 @@ export function WelcomeTour() {
         <Tile class="flex flex-col gap-2">
           <span class="text-sm font-medium leading-snug text-primary">{t('welcome.tour.strategies.title')}</span>
           <span class="mt-0.5 flex flex-col gap-1.5">
-            {(['optimal', 'stochastic', 'sequential', 'random'] as const).map((s, i) => (
+            {(['optimal', 'stochastic', 'random', 'sequential'] as const).map((s, i) => (
               <span key={s} class={`text-[11px] px-2 py-1 rounded-lg border ${i === 0 ? 'bg-accent-dim border-accent/40 text-accent' : 'border-border text-muted'}`}>
                 {t(`deck.strategy.${s}`)}
               </span>
@@ -230,6 +271,15 @@ export function WelcomeTour() {
             <TileText>{t('welcome.tour.thesession.text')}</TileText>
           </div>
           <ImportedTune />
+        </Tile>
+
+        <Tile wide class="flex gap-3">
+          <div class="flex-1 min-w-0 flex flex-col gap-2">
+            <TileTitle>{t('welcome.tour.follow.title')}</TileTitle>
+            <FollowWay icon={<ScoreFollowIcon size={13} />} name={t('fileViewer.abc.audioSync')} text={t('welcome.tour.follow.audioSync')} />
+            <FollowWay icon={<MicIcon size={13} />} name={t('fileViewer.abc.playAlong')} text={t('welcome.tour.follow.playAlong')} />
+          </div>
+          <FollowingScore />
         </Tile>
 
         {/* The ⊞ the modules sit under in the app, shown here so that it is

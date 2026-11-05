@@ -20,7 +20,7 @@ installable as a web app (PWA), works offline · English and French
   sheet music, links (YouTube, Spotify, Deezer, SoundCloud, or any file on the web, played in the app).
 - **Review at the right time** — rate each card after review (Again / Hard / Good / Easy); FSRS spaces it out
   accordingly. Per-card and per-deck knowledge, weighted by how much each card matters in its deck.
-- **Study strategies** — optimal, optimal stochastic, sequential or random; study a deck, a folder or the whole
+- **Study strategies** — optimal, optimal stochastic, random or sequential; study a deck, a folder or the whole
   library.
 - **Share** — a six-character one-time key, or a file: card packs (`.cdc`), full backups (`.cdb`), decks as CSV.
 - **Smart edit** — Cadence describes your library as JSON with written instructions; a script, an AI assistant of
