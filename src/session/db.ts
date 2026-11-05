@@ -1215,12 +1215,27 @@ export async function probeSyncedAudio(sessionId: string, interactive = false): 
 /** The Drive copy's bytes for one use — sending it along with a shared
  *  analysis — and deliberately NOT kept: the user freed this space, and
  *  sharing is no reason to take it back. */
-export async function downloadSyncedAudioOnce(sessionId: string): Promise<Blob | null> {
+export async function downloadSyncedAudioOnce(
+  sessionId: string, onProgress?: (fraction: number) => void, signal?: AbortSignal,
+): Promise<Blob | null> {
   const entry = await syncedAudioOf(sessionId);
   if (!entry) return null;
-  const blob = await (await driveModule()).downloadCompanionFile(entry.fileId, true);
+  const blob = await (await driveModule()).downloadCompanionFile(entry.fileId, true, onProgress && ((loaded, total) => {
+    const of = total ?? entry.bytes;
+    if (of > 0) onProgress(Math.min(1, loaded / of));
+  }), signal);
   if (!blob) return null;
   return blob.type ? blob : new Blob([blob], { type: entry.mimeType });
+}
+
+/** Keeps on this device a recording already brought down for one visit
+ *  (downloadSyncedAudioOnce), without fetching it again — what runDownload does
+ *  once it has the bytes. */
+export async function keepSyncedAudioHere(sessionId: string, blob: Blob): Promise<void> {
+  await (await localDb()).put(AUDIO_STORE, blob, sessionId);
+  audioFreed.set(sessionId, false);
+  audioArrivals.value = new Set([...audioArrivals.value, sessionId]);
+  void (await import('../services/storageService')).refreshStorageEstimate();
 }
 
 /** Downloads a recording this device does not have, and caches it locally so the

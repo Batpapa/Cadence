@@ -1396,15 +1396,24 @@ async function uploadIntoFolder(parent: string, name: string, blob: Blob, intera
 export async function downloadCompanionFile(
   fileId: string, interactive = false,
   onProgress?: (loaded: number, total: number | null) => void,
+  /** Stops the download (2026-11-05: a re-analysis from Drive can be
+   *  cancelled while its recording comes). Heeded once the answer has started —
+   *  the bytes are where the time goes; driveRequest keeps its own budget on
+   *  the wait before it. Rejects with an AbortError. */
+  signal?: AbortSignal,
 ): Promise<Blob | null> {
   if (!_state.fileId) throw new Error(DRIVE_NOT_CONNECTED);
   const resp = await driveRequest(
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {}, interactive,
   );
+  if (signal?.aborted) {
+    void resp.body?.cancel();
+    throw new DOMException('Aborted', 'AbortError');
+  }
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`companion_download_failed: ${resp.status}`);
-  if (!onProgress || !resp.body) return resp.blob();
-  return readWithProgress(resp, onProgress);
+  if ((!onProgress && !signal) || !resp.body) return resp.blob();
+  return readWithProgress(resp, onProgress ?? (() => {}), signal);
 }
 
 /** Thrown by readCompanionRange when the file is no longer on Drive. */
@@ -1437,7 +1446,7 @@ export async function readCompanionRange(fileId: string, start: number, end: num
  *  and the browser may keep a large one on disk, so this never holds more than
  *  one fold's worth in JavaScript memory. Joining at the end would hold the
  *  whole recording twice, on a phone. */
-async function readWithProgress(resp: Response, onProgress: (loaded: number, total: number | null) => void): Promise<Blob> {
+async function readWithProgress(resp: Response, onProgress: (loaded: number, total: number | null) => void, signal?: AbortSignal): Promise<Blob> {
   const FOLD_BYTES = 8 * 1024 * 1024;
   const type = resp.headers.get('content-type') ?? '';
   const total = Number(resp.headers.get('content-length')) || null;
@@ -1448,6 +1457,10 @@ async function readWithProgress(resp: Response, onProgress: (loaded: number, tot
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    if (signal?.aborted) {
+      void reader.cancel();
+      throw new DOMException('Aborted', 'AbortError');
+    }
     pending.push(value);
     pendingBytes += value.byteLength;
     loaded += value.byteLength;

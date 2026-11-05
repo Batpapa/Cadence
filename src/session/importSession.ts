@@ -3,6 +3,7 @@ import { createFileSource } from './audio/sources';
 import type { PcmSource } from './audio/sources';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio } from './db';
+import { keepRecordings } from './keepRecordings';
 import { ANALYSIS_SAMPLE_RATE, FF_PCM_WINDOW, HOP_S_IMPORT, IMPORT_MIN_S } from './sessionConfig';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate, TunesetRecord } from './model';
 import { withSets } from './tunesets';
@@ -153,6 +154,10 @@ export class ImportSession {
    *  reaching for a control, and a change midway would analyse the file at two
    *  pitches. See TuneAnalyserModuleData.pitchShift. */
   pitchShift = 0;
+  /** Whether save() stores the file: "Keep the recordings" when the import
+   *  began (keepRecordings.ts). A re-analysis sets it back on — it re-runs a
+   *  recording already kept, and is no new one. */
+  keepAudio = keepRecordings.peek();
 
   constructor(file: File, callbacks: ImportSessionCallbacks = {}, sessionId?: string) {
     this.file = file;
@@ -547,7 +552,7 @@ export class ImportSession {
     // extractAudioOnly for what is and is not allowed to happen to the file.
     // Everything else is stored untouched: no webm duration bug, native
     // seeking, and the exact bytes that were analysed.
-    await saveSessionAudio(session.id, this.playbackFile);
+    if (this.keepAudio) await saveSessionAudio(session.id, this.playbackFile);
     await saveSessionMeta(session);
     this.setPhase('done');
     return session;

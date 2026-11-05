@@ -2,6 +2,7 @@ import { WakeLockManager } from './audio/capture';
 import { startLiveForeground, refreshLiveForeground, stopLiveForeground } from '../native/liveForeground';
 import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './audio/sources';
 import { SessionFileRecorder } from './audio/recorder';
+import { keepRecordings } from './keepRecordings';
 import { RecognitionClient } from './recognitionClient';
 import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession, collectChunks } from './db';
 import { holdAnalysisLock } from './recovery';
@@ -108,6 +109,11 @@ export class LiveSession {
    *  opposite of what a musician says, flipped for display in
    *  PitchShiftControl.tsx. In-memory only, resets to 0 next recording. */
   pitchShift = 0;
+  /** "Keep the recordings" as it was when this one began (keepRecordings.ts):
+   *  off, the chunks are still written while it runs, then dropped at the stop
+   *  — and no Drive backup is sent of it. Read once, so a recording is kept or
+   *  not as a whole, whatever the switch does meanwhile. */
+  readonly keepAudio = keepRecordings.peek();
 
   /** Every tempo reading since the start, about one a second — always
    *  followed, shown or not (the "BPM" switch, analysisView.ts). In memory
@@ -163,8 +169,7 @@ export class LiveSession {
   }
 
   /** The MediaRecorder mime type once recording has actually started, '' before
-   *  then — used to assemble a playable Blob from collectChunks() mid-recording
-   *  (clip extraction on an already-finalized detection, sessionModule.ts). */
+   *  then — the type of the parts liveBackup.ts sends to Drive mid-recording. */
   get mimeType(): string {
     return this.recorder?.mimeType ?? '';
   }
@@ -218,6 +223,7 @@ export class LiveSession {
       // the user's word, applied again to the replayed detections.
       confirmations: this.tracker.snapshot(),
       ...(this.pauses.length ? { pauses: [...this.pauses] } : {}),
+      ...(this.keepAudio ? {} : { discardAudio: true as const }),
     };
     void saveSessionMeta(session).catch(() => { /* best-effort — stop() still writes the final copy */ });
   }
@@ -541,7 +547,9 @@ export class LiveSession {
         ...withSets(this.tracker.finalSets(() => crypto.randomUUID())),
         ...(this.pauses.length ? { pauses: [...this.pauses] } : {}),
       };
-      await saveSessionAudio(session.id, fileResult.blob);
+      // Not kept: the chunks went with the recorder, and the file goes with
+      // this function — the bounds above were put on the passes from it.
+      if (this.keepAudio) await saveSessionAudio(session.id, fileResult.blob);
       // Another device may have written to Drive during the recording — the
       // computer, while the phone recorded. Taken in first, it is applied
       // silently and the session lands on top of it; saved first, the two

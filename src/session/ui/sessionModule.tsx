@@ -31,6 +31,7 @@ import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type TuneAnalyserModuleData } 
 import { detectionsOnCards, setDetectionOn, pitchShiftSetting } from '../detections';
 import { appState, mutate, getContext } from '../../store';
 import { listLiveBackups, restoreLiveBackup, discardLiveBackup, type LiveBackupEntry } from '../liveBackup';
+import { keepRecordings, setKeepRecordings } from '../keepRecordings';
 import { showRecoveryFailures } from './RecoveryFailureModal';
 import {
   fmtSessionDateTime, nameTemplateSetting, parseNameTemplate, launchNameTemplate, usesFolder, defaultNameTemplate,
@@ -87,7 +88,7 @@ function ShareChoiceCard({ icon, label, desc, accentColor, onClick }: {
 }
 
 /** Same look as theSessionImport.ts's mkInputRow, without the unused info span. */
-function KeyEntryStep({ onImported }: { onImported: (session: Analysis) => void }) {
+function KeyEntryStep({ withAudio, onImported }: { withAudio: boolean; onImported: (session: Analysis) => void }) {
   const [key, setKey] = useState('');
   const [status, setStatus] = useState('');
   const [importing, setImporting] = useState(false);
@@ -98,7 +99,7 @@ function KeyEntryStep({ onImported }: { onImported: (session: Analysis) => void 
   const doImport = () => {
     setImporting(true);
     setStatus(t('newCard.import.importing'));
-    void importSharedSession(key.trim()).then(session => {
+    void importSharedSession(key.trim(), withAudio).then(session => {
       closeModal();
       onImported(session);
     }).catch(e => {
@@ -133,13 +134,35 @@ function KeyEntryStep({ onImported }: { onImported: (session: Analysis) => void 
 
 function ImportSessionBody({ ctx }: { ctx: AppContext }) {
   const [step, setStep] = useState<'choice' | 'key'>('choice');
+  // Whether the audio a package may carry comes in too (2026-11-04). Not known
+  // to be there until the package is read, so asked for both ways in, and
+  // ticked as "Keep the recordings" is on this device (keepRecordings.ts).
+  const [withAudio, setWithAudio] = useState(() => keepRecordings.peek());
+  const audioBox = (
+    <label class="flex items-center gap-2 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        class="card-checkbox"
+        checked={withAudio}
+        onChange={(e) => setWithAudio((e.target as HTMLInputElement).checked)}
+      />
+      <span class="text-xs text-muted">{t('sessions.share.importAudio')}</span>
+    </label>
+  );
 
   if (step === 'key') {
-    return <KeyEntryStep onImported={(session) => ctx.navigate({ view: 'sessions', sessionId: session.id })} />;
+    return (
+      <div class="space-y-2">
+        {audioBox}
+        <KeyEntryStep withAudio={withAudio} onImported={(session) => ctx.navigate({ view: 'sessions', sessionId: session.id })} />
+      </div>
+    );
   }
 
+  // The box above the choices, as in the export window (ShareSessionModal).
   return (
     <div class="space-y-2">
+      {audioBox}
       <ShareChoiceCard
         icon={SHARE_ICON_FILE_DOWN}
         label={t('library.export.file')}
@@ -154,7 +177,7 @@ function ImportSessionBody({ ctx }: { ctx: AppContext }) {
           inp.onchange = () => {
             const file = inp.files?.[0];
             if (!file) return;
-            void importSessionFile(file).then(session => {
+            void importSessionFile(file, withAudio).then(session => {
               ctx.navigate({ view: 'sessions', sessionId: session.id });
             }).catch(e => alertModal(t('sessions.share.importTitle'), e instanceof Error ? e.message : String(e)));
           };
@@ -456,11 +479,14 @@ async function finishImportRun(
  *  tied to it stay put and existing card attachments, which are independent
  *  extracted files, are unaffected). Never available without stored audio
  *  (caller gates the triggering button on that; this is just a safety net). */
-export async function startReanalyze(ctx: AppContext, session: Analysis): Promise<void> {
+/** `audio`: the recording brought down from Drive for this re-analysis only
+ *  (2026-11-05) — run on, and NOT stored here: the user did not ask to keep it
+ *  on this device. Absent, the one stored here. */
+export async function startReanalyze(ctx: AppContext, session: Analysis, audio?: Blob): Promise<void> {
   if (recognitionBusy()) { alertModal(t('sessions.import'), t('sessions.alreadyRunning')); return; }
   importStarting.value = true;
   try {
-    const blob = await loadSessionAudio(session.id);
+    const blob = audio ?? await loadSessionAudio(session.id);
     if (!blob) return;
     const file = new File([blob], session.name || 'session', { type: blob.type || session.mimeType });
     const imp = new ImportSession(file, {}, session.id);
@@ -470,6 +496,10 @@ export async function startReanalyze(ctx: AppContext, session: Analysis): Promis
     imp.notes = session.notes;
     // Still where the live recording was paused: the file is the same.
     imp.pauses = session.pauses ? [...session.pauses] : [];
+    // The recording re-run is one already kept: "Keep the recordings" is about
+    // new ones, and turned off it must not drop this one. One brought down
+    // from Drive for the occasion stays off this device, as it came.
+    imp.keepAudio = !audio;
     // The setting as it is NOW, not as it was for the first analysis: this
     // re-runs the recording with what the user currently says about it.
     imp.pitchShift = pitchShiftSetting(appState.value);
@@ -1213,6 +1243,14 @@ function SessionSettingsBody() {
         }}
       />
 
+      {/* On by default; this device's own (keepRecordings.ts). */}
+      <SettingRow
+        checked={keepRecordings.value}
+        label={t('sessions.keepRecordings')}
+        hint={t('sessions.keepRecordings.hint')}
+        onToggle={setKeepRecordings}
+      />
+
       {/* Absent entirely without Drive rather than shown disabled: there is no
           Drive to copy to, so the setting has nothing to mean. */}
       {/* One block per subject, a rule between blocks and never inside one: a
@@ -1223,12 +1261,16 @@ function SessionSettingsBody() {
 
       {driveOn && (
         <div class="space-y-2">
-          <SettingRow
-            checked={mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT}
-            label={t('sessions.autoLiveBackup')}
-            hint={t('sessions.autoLiveBackup.hint')}
-            onToggle={(next) => { void setAutoLiveBackup(next); }}
-          />
+          {/* Nothing to back up of a recording that will not be kept; the
+              backups already on Drive stay listed below. */}
+          {keepRecordings.value && (
+            <SettingRow
+              checked={mod?.autoLiveBackup ?? AUTO_LIVE_BACKUP_BY_DEFAULT}
+              label={t('sessions.autoLiveBackup')}
+              hint={t('sessions.autoLiveBackup.hint')}
+              onToggle={(next) => { void setAutoLiveBackup(next); }}
+            />
+          )}
           <DriveBackupsRow />
         </div>
       )}

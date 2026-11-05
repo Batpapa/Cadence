@@ -2,6 +2,7 @@ import type { Analysis } from '../session/model';
 import { arrayBufferToBase64, base64ToBlob, generateId, downloadCadenceFile } from '../utils';
 import { uploadShare, downloadShare, type ShareUploadResult } from './shareService';
 import { saveSessionMeta, saveSessionAudio } from '../session/db';
+import { keepRecordings } from '../session/keepRecordings';
 
 // ── Session sharing ────────────────────────────────────────────────────────────
 // Two ways in, two ways out — same choice the card package (.cdc) flow already
@@ -42,20 +43,26 @@ function parsePackageText(text: string): SessionPackage {
 }
 
 /** Saves the package as a new session — a fresh id is always generated (the
- *  original's id has no meaning on this device). */
-async function applyPackage(pkg: SessionPackage): Promise<Analysis> {
-  const audio = pkg.audioBase64 ? base64ToBlob(pkg.audioBase64, pkg.audioMimeType ?? pkg.session.mimeType) : null;
-  return importAnalysis(pkg.session, audio);
+ *  original's id has no meaning on this device). `withAudio`: the import
+ *  window's box (2026-11-04); unticked, the audio it carries is not even
+ *  decoded. */
+async function applyPackage(pkg: SessionPackage, withAudio: boolean): Promise<Analysis> {
+  const audio = withAudio && pkg.audioBase64 ? base64ToBlob(pkg.audioBase64, pkg.audioMimeType ?? pkg.session.mimeType) : null;
+  return importAnalysis(pkg.session, audio, withAudio);
 }
 
 /** An analysis from elsewhere — a package, the standalone analyser
  *  (standaloneHandoff.ts) — saved into the open user's analyser as a new one,
- *  at the root of its list. */
-export async function importAnalysis(from: Omit<Analysis, 'id'>, audio: Blob | null): Promise<Analysis> {
+ *  at the root of its list. `keepAudio` defaults to "Keep the recordings" on
+ *  this device (keepRecordings.ts): off, the detections come in, the sound
+ *  does not. */
+export async function importAnalysis(
+  from: Omit<Analysis, 'id'>, audio: Blob | null, keepAudio = keepRecordings.peek(),
+): Promise<Analysis> {
   const { id: _id, ...rest } = from as Analysis;
   const session: Analysis = { ...rest, id: generateId() };
   await saveSessionMeta(session);
-  if (audio) await saveSessionAudio(session.id, audio);
+  if (audio && keepAudio) await saveSessionAudio(session.id, audio);
   return session;
 }
 
@@ -74,11 +81,11 @@ export async function exportSessionFile(session: Analysis, audioBlob: Blob | nul
 
 // ── In ────────────────────────────────────────────────────────────────────────
 
-export async function importSharedSession(key: string): Promise<Analysis> {
-  return applyPackage(parsePackageText(await downloadShare(key)));
+export async function importSharedSession(key: string, withAudio: boolean): Promise<Analysis> {
+  return applyPackage(parsePackageText(await downloadShare(key)), withAudio);
 }
 
-export async function importSessionFile(file: File): Promise<Analysis> {
+export async function importSessionFile(file: File, withAudio: boolean): Promise<Analysis> {
   if (!file.name.endsWith('.cds')) throw new Error('Expected a .cds file');
-  return applyPackage(parsePackageText(await file.text()));
+  return applyPackage(parsePackageText(await file.text()), withAudio);
 }

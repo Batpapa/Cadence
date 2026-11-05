@@ -4,6 +4,7 @@ import { t } from '../../services/i18nService';
 import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
+import { useContextMenu, type ContextMenuEntry } from '../../components/contextMenu';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
@@ -145,22 +146,19 @@ export function fmtEta(etaS: number): string {
   return `${Math.round(etaS)} s`;
 }
 
-// Same glyph, small size — exact match of library.tsx's icon-only export trigger.
-const SHARE_ICON_TRIGGER = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
-
 /** Card.tsx-style header shared by the three "one particular session/recording"
  *  screens (a finished session, a live recording, an import in progress): plain
  *  heading that turns into an input on click, plus a delete button — no back
  *  arrow. `getName`/`getDefaultName` abstract over Analysis/LiveSession/
  *  ImportSession, which don't share a base type. */
-export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare, onNotes, hasNotes }: {
+export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, onNotes, hasNotes }: {
   getName: () => string;
   getDefaultName: () => string;
   onRename: (name: string) => void;
   onDelete: () => void;
-  /** Only the finished-session summary offers sharing — shows a button left
-   *  of delete when set. */
-  onShare?: () => void;
+  /** Only the finished-session summary has one — its export and what can be
+   *  done with its recording (2026-11-05), behind a ⋯ left of delete. */
+  menu?: ContextMenuEntry[];
   /** The analysis's notes — a button left of share, same reason: only a saved
    *  analysis has somewhere to keep them. */
   onNotes?: () => void;
@@ -174,6 +172,9 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare,
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  // The library's ⋯ is this same hook on a left click: same anchoring,
+  // dismissal and zoom handling.
+  const openMenu = useContextMenu(menu ?? []);
 
   useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
@@ -216,14 +217,21 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, onShare,
         </button>
       )}
 
-      {onShare && (
+      {menu && (
         <button
           class="btn-ghost px-2 shrink-0 inline-flex items-center justify-center"
-          title={t('sessions.export.title')}
-          dangerouslySetInnerHTML={{ __html: SHARE_ICON_TRIGGER }}
-          onClick={onShare}
-        />
+          title={t('sessions.menu.title')}
+          aria-label={t('sessions.menu.title')}
+          // Only the summary has this menu; the tour's step on what can be
+          // done with the recording points here.
+          data-tour="summary-audio"
+          onClick={(e) => openMenu.open(e.clientX, e.clientY)}
+        >
+          {/* The library's own ⋯ glyph. */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        </button>
       )}
+      {openMenu.menu}
 
       <button
         class="btn-danger px-2 shrink-0"
