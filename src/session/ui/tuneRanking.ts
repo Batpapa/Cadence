@@ -1,6 +1,7 @@
 import type { TuneSort, FilterState } from '../../types';
 import type { Analysis, Detection } from '../model';
 import { chainsOf } from './timelineModel';
+import { localDayRange } from '../../services/reviewRange';
 
 // ── What this scene actually plays ───────────────────────────────────────────
 // Asked for from the field (2026-09-11), and it is the interesting half of the
@@ -278,6 +279,42 @@ export function passesChips(values: readonly string[], chips: ReadonlyMap<string
   return !anyInclude || included;
 }
 
+/** Whether a row whose values are ALL these gets through a section of chips,
+ *  "all of" included: the card library's grammar (excludes a hard AND, the
+ *  includes any or all of them). For what a row carries as a whole — a card's
+ *  decks, a card's tags, a set's tunes between them. */
+export function passesChipsAll(values: readonly string[], chips: ReadonlyMap<string, FilterState>, or: boolean): boolean {
+  if (!passesChips(values, chips)) return false;
+  if (or) return true;
+  return [...chips].every(([k, st]) => st !== 'include' || values.includes(k));
+}
+
+/** The one chip of the date facet below — never shown, never in a route. */
+const IN_RANGE = 'in';
+
+/** "Detected between" (2026-11-05): a section with one implicit chip, so it
+ *  filters PASSES like the analyses do — the counts, the last-heard date and
+ *  the heart are then those of the period, and the other sections grey out
+ *  what it has removed (availOf) with no code of their own. null when no day
+ *  is set, so an empty range costs nothing.
+ *
+ *  A pass is dated when it was PLAYED, offset included (heardAt), as the
+ *  "last heard" sort reads it. A pass of an undated analysis has no date and so
+ *  falls outside as soon as either end is set — said in the help. A set is in
+ *  the period when one of its tunes is (rankDetectedSets asks its tunes). */
+export function detectedRangeFacet(from: string, to: string): PassFacet | null {
+  const { fromTs, toTs } = localDayRange(from, to);
+  if (fromTs === null && toTs === null) return null;
+  return {
+    chips: new Map([[IN_RANGE, 'include']]),
+    or: true,
+    valuesOf: (d, s) => {
+      const at = heardAt(sessionTime(s), d.start);
+      return at !== null && (fromTs === null || at >= fromTs) && (toTs === null || at <= toTs) ? [IN_RANGE] : [];
+    },
+  };
+}
+
 // ── Sets, beside the tunes (2026-10-19) ──────────────────────────────────────
 // A set heard is a chain (timelineModel.ts's withChains): tunes played with no
 // silence between them. Two chains are the SAME set when they hold the same
@@ -289,9 +326,7 @@ export function passesChips(values: readonly string[], chips: ReadonlyMap<string
  *  together, as a tune's passes are (filterByFacets) — "all of" asks the set
  *  to carry every value included, between its tunes. */
 function chainPasses(values: readonly string[], facet: PassFacet): boolean {
-  if (!passesChips(values, facet.chips)) return false;
-  if (facet.or) return true;
-  return [...facet.chips].every(([k, st]) => st !== 'include' || values.includes(k));
+  return passesChipsAll(values, facet.chips, facet.or);
 }
 
 /** A set row's key: never a TheSession id, so nothing mistakes one for a tune. */

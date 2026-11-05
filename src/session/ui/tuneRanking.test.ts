@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankDetectedTunes, occurrencesOf, sortTuneRows, TUNE_SORT_DEFAULT_ASC, filterByFacets, passesChips, heardFacts, type PassFacet } from './tuneRanking';
+import { rankDetectedTunes, occurrencesOf, sortTuneRows, TUNE_SORT_DEFAULT_ASC, filterByFacets, passesChips, passesChipsAll, detectedRangeFacet, heardFacts, type PassFacet } from './tuneRanking';
 import type { FilterState } from '../../types';
 import type { Analysis, Detection } from '../model';
 
@@ -445,5 +445,56 @@ describe('heardFacts (what an export says about a row)', () => {
     ], keyOf);
     expect(f.confirmed).toBe(1);
     expect(f.dances).toEqual(['reel', 'jig']);
+  });
+});
+
+describe('passesChipsAll (a row and its values as a whole)', () => {
+  const chips = (...e: [string, FilterState][]) => new Map<string, FilterState>(e);
+  it('accepts everything with no chip', () => {
+    expect(passesChipsAll([], chips(), false)).toBe(true);
+  });
+  it('"all of" wants every included value, "any of" one', () => {
+    const c = chips(['a', 'include'], ['b', 'include']);
+    expect(passesChipsAll(['a'], c, false)).toBe(false);
+    expect(passesChipsAll(['a', 'b'], c, false)).toBe(true);
+    expect(passesChipsAll(['a'], c, true)).toBe(true);
+    expect(passesChipsAll([], c, true)).toBe(false);
+  });
+  it('an exclusion wins whatever the reading', () => {
+    const c = chips(['a', 'include'], ['x', 'exclude']);
+    expect(passesChipsAll(['a', 'x'], c, true)).toBe(false);
+    expect(passesChipsAll(['a', 'x'], c, false)).toBe(false);
+    expect(passesChipsAll([], chips(['x', 'exclude']), false)).toBe(true);
+  });
+});
+
+describe('detectedRangeFacet ("detected between")', () => {
+  // Local times without a zone, so the test holds wherever it runs.
+  const late = session('late', '2026-11-03T23:50:00', [
+    det({ tuneId: '1', start: 0 }),      // 23:50 on the 3rd
+    det({ tuneId: '2', start: 1200 }),   // 00:10 on the 4th
+  ]);
+  const undated = session('undated', null, [det({ tuneId: '3', start: 0 })]);
+  const kept = (from: string, to: string) => {
+    const f = detectedRangeFacet(from, to);
+    return f ? filterByFacets([late, undated], [f]).flatMap(s => s.annotations.map(d => d.tuneId)) : null;
+  };
+
+  it('is no filter at all with no day set', () => {
+    expect(detectedRangeFacet('', '')).toBeNull();
+  });
+  it('dates a pass when it was played, offset included', () => {
+    expect(kept('2026-11-03', '2026-11-03')).toEqual(['1']);
+    expect(kept('2026-11-04', '2026-11-04')).toEqual(['2']);
+  });
+  it('takes either end alone, both days inclusive', () => {
+    expect(kept('2026-11-03', '')).toEqual(['1', '2']);
+    expect(kept('', '2026-11-03')).toEqual(['1']);
+  });
+  it('leaves an undated analysis out as soon as one end is set', () => {
+    expect(kept('2000-01-01', '')).toEqual(['1', '2']);
+  });
+  it('a garbled day is no bound, never an empty list', () => {
+    expect(detectedRangeFacet('not-a-day', '')).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
 import { ChevronDownIcon, FilterClearIcon, FilterIcon, FolderIcon, PencilIcon, VennAndIcon, VennOrIcon } from './icons';
@@ -164,6 +165,34 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
   );
 }
 
+/** Several sections under one heading, folded like a section (2026-11-05: the
+ *  analyser's "Cards", holding its decks and card tags). Folding hides them,
+ *  it never switches them off — as with a section's own chips — so the label
+ *  turns accent while one of them filters, the one sign of it left in sight.
+ *  Opens on arrival when it holds a filter, like the sections inside it. */
+export function FilterGroup({ labelKey, active, children }: {
+  labelKey: string;
+  active: boolean;
+  children: ComponentChildren;
+}) {
+  const [open, setOpen] = useState(active);
+  return (
+    <div>
+      <button
+        class="flex items-center gap-1.5 text-xs text-dim hover:text-primary transition-colors py-0.5"
+        onClick={() => setOpen(o => !o)}
+      >
+        <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
+          <ChevronDownIcon size={10} />
+        </span>
+        <span class={active ? 'text-accent' : ''}>{t(labelKey)}</span>
+      </button>
+      {/* Set in under a rule from the chevron, so the sections read as its. */}
+      {open && <div class="ml-[4px] pl-3 border-l border-border space-y-1 pt-0.5">{children}</div>}
+    </div>
+  );
+}
+
 /** Whether a list's filter sections show, behind the funnel button beside its
  *  search box — hidden by default, to lighten the screen (user's call,
  *  2026-11-01).
@@ -235,11 +264,16 @@ export function FiltersButton({ shown, count, onPress, tour }: {
  *
  *  Empty ends are open ends, so "everything since 1 September" needs one date,
  *  not a made-up upper bound. Both empty = no filter at all, which is why the
- *  caller can leave the whole thing collapsed and lose nothing. */
-export function ReviewedRangeSection({ from, to, onChange }: {
+ *  caller can leave the whole thing collapsed and lose nothing.
+ *
+ *  Also the analyser's "detected between" (2026-11-05), which bounds when a
+ *  tune was PLAYED rather than reviewed — the same two dates, under its own
+ *  label. */
+export function ReviewedRangeSection({ from, to, onChange, labelKey = 'library.filterReviewed' }: {
   from: string;
   to: string;
   onChange: (from: string, to: string) => void;
+  labelKey?: string;
 }) {
   const [open, setOpen] = useState(() => from !== '' || to !== '');
   const active = from !== '' || to !== '';
@@ -253,7 +287,7 @@ export function ReviewedRangeSection({ from, to, onChange }: {
           <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
             <ChevronDownIcon size={10} />
           </span>
-          <span class={active ? 'text-accent' : ''}>{t('library.filterReviewed')}</span>
+          <span class={active ? 'text-accent' : ''}>{t(labelKey)}</span>
         </button>
       </div>
       {open && (

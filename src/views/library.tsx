@@ -24,8 +24,9 @@ import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
-import { decksContainingCard, deckPath, folderPath, findParentFolder, folderChainIds } from '../services/deckService';
-import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels, renameChip } from '../components/filterChips';
+import { decksContainingCard } from '../services/deckService';
+import { knownChips, renameChip } from '../components/filterChips';
+import { deckChipKnown, deckChipSection } from '../components/deckChips';
 import { showRenameTagEverywhereModal } from '../components/tagModal';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -224,10 +225,9 @@ function showExportModal(cards: Card[], user: AppState): void {
   renderRoot();
 }
 
-const NO_DECK = '__no_deck__';
 /** The "no type" chip. A sentinel rather than the empty string so it can never
  *  be confused with a real, if unlikely, type value — same reasoning as
- *  NO_DECK, and the same shape so the two read alike. */
+ *  NO_DECK (deckChips.ts), and the same shape so the two read alike. */
 const NO_TYPE = '__no_type__';
 const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance', 'recall', 'difficulty'];
 const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
@@ -355,51 +355,18 @@ export function LibraryView() {
   // library, cause unseen). Read through these, never written back: the stored
   // maps keep whatever the route carried. A pinned chip that does name
   // something is always offered, even with nothing in the pool behind it.
-  const deckKnown = (key: string) => {
-    if (key === NO_DECK) return true;
-    const folderId = folderIdOfChip(key);
-    return folderId === null ? !!user.decks[key] : !!user.folders[folderId];
-  };
+  const deckKnown = (key: string) => deckChipKnown(user, key);
   const tagKnown  = (tag: string) => allCards.some(c => (c.tags ?? []).includes(tag));
   const typeKnown = (type: string) => typeItems.includes(type);
-  const liveDecks = knownChips(activeDecks, deckKnown);
   const liveTags  = knownChips(activeTags, tagKnown);
   const liveTypes = knownChips(activeTypes, typeKnown);
 
   const allTags    = [...new Set([...pool.flatMap(filterTagsOf), ...liveTags.keys()])].sort();
   const hasOrphans = pool.some(c => decksContainingCard(c.id, user).length === 0);
-  const deckItems  = [
-    ...(hasOrphans || liveDecks.has(NO_DECK) ? [NO_DECK] : []),
-    ...Object.values(user.decks)
-      .filter(d => d.entries.some(e => inPool(e.cardId)) || liveDecks.has(d.id))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(d => d.id),
-  ];
-
-  // ── Deck folders, as chips in the decks section ──
-  // A folder chip stands for every deck below it, however deep: a card is "in"
-  // the folder when it is in one of those decks. Same section as the decks, so
-  // "this folder OR that deck" can be asked (decided with the user, 2026-09-15).
-  /** The folder chips above each deck. Built once per render, not per card. */
-  const foldersAboveDeck = new Map(Object.keys(user.decks).map(id =>
-    [id, folderChainIds(findParentFolder(id, 'deck', user), user).map(folderChipKey)]));
-  const offeredFolders = new Set<string>();
-  for (const id of deckItems) for (const k of foldersAboveDeck.get(id) ?? []) offeredFolders.add(folderIdOfChip(k)!);
-  for (const k of liveDecks.keys()) { const id = folderIdOfChip(k); if (id !== null) offeredFolders.add(id); }
-  // By path, so a sub-folder follows its parent.
-  const deckFolderIds    = [...offeredFolders].sort((a, b) => folderPath(a, user).localeCompare(folderPath(b, user)));
-  const deckFolderLabels = folderChipLabels(deckFolderIds, id => user.folders[id]?.name ?? id, id => folderPath(id, user));
-  const deckFolderItems  = deckFolderIds.map(folderChipKey);
-  const coveredDecks = coveredByFolders(
-    [...deckItems, ...deckFolderItems],
-    key => {
-      const folderId = folderIdOfChip(key);
-      return folderId === null
-        ? foldersAboveDeck.get(key) ?? []
-        : folderChainIds(folderId, user).slice(0, -1).map(folderChipKey);
-    },
-    liveDecks,
-  );
+  // The decks and their folders, as chips (deckChips.ts, shared with the
+  // analyser's tunes tab).
+  const deckSection = deckChipSection(user, activeDecks, inPool, hasOrphans);
+  const liveDecks   = deckSection.live;
 
   // ── Which sections are worth a line ───────────────────────────────────────────
   // A section earns its place only if clicking in it could actually split the
@@ -418,7 +385,7 @@ export function LibraryView() {
   // library looks like: a route can arrive carrying one (a back navigation, a
   // shared link), and a filter narrowing the list from a section nobody can see
   // would be unexplainable.
-  const hasDeckMix = deckItems.length > 1 || liveDecks.size > 0;
+  const hasDeckMix = deckSection.hasMix;
   const hasTagMix  = liveTags.size > 0 || allTags.length > 1
     || (allTags.length === 1 && pool.some(c => !filterTagsOf(c).includes(allTags[0]!)));
   const hasTypeMix = liveTypes.size > 0
@@ -460,7 +427,7 @@ export function LibraryView() {
     const nameMatch  = q ? scoreWithAliases(c.name, c.aliases, q) : null;
     if (nameMatch) textMatch.set(c.id, nameMatch);
     const matchText = !nameMatch || nameMatch.score < NO_SCORE_MATCH || matchExternalId;
-    const cardDecks = decksContainingCard(c.id, user);
+    const deckValues = deckSection.valuesOf(c.id);
 
     const tagEntries  = [...liveTags];
     const inclTags    = tagEntries.filter(([, fs]) => fs === 'include').map(([t]) => t);
@@ -473,13 +440,10 @@ export function LibraryView() {
     const deckEntries = [...liveDecks];
     const inclDecks   = deckEntries.filter(([, fs]) => fs === 'include').map(([id]) => id);
     const exclDecks   = deckEntries.filter(([, fs]) => fs === 'exclude').map(([id]) => id);
-    // A folder chip: in any deck below that folder. Excluding it therefore
-    // removes a card that is in one of those decks, whatever else holds it —
-    // the excludes are a hard AND, as everywhere.
-    const hasDeck     = (id: string) =>
-      id === NO_DECK ? cardDecks.length === 0
-      : folderIdOfChip(id) === null ? cardDecks.includes(id)
-      : cardDecks.some(d => foldersAboveDeck.get(d)?.includes(id));
+    // A folder chip: in any deck below that folder (valuesOf lists those
+    // folders). Excluding it therefore removes a card that is in one of those
+    // decks, whatever else holds it — the excludes are a hard AND, as everywhere.
+    const hasDeck     = (id: string) => deckValues.includes(id);
     const matchDecks  = liveDecks.size === 0 || (
       (inclDecks.length === 0 || (deckFilterOr ? inclDecks.some(hasDeck) : inclDecks.every(hasDeck))) &&
       exclDecks.every(id => !hasDeck(id))
@@ -542,15 +506,7 @@ export function LibraryView() {
 
   // ── Available chips (derived from filtered) ───────────────────────────────────
   const availTags  = new Set(filtered.flatMap(filterTagsOf));
-  const availDecks = new Set<string>();
-  for (const c of filtered) {
-    const decks = decksContainingCard(c.id, user);
-    if (decks.length === 0) availDecks.add(NO_DECK);
-    for (const d of decks) {
-      availDecks.add(d);
-      for (const k of foldersAboveDeck.get(d) ?? []) availDecks.add(k);
-    }
-  }
+  const availDecks = new Set(filtered.flatMap(c => deckSection.valuesOf(c.id)));
   const availTypes = new Set(filtered.map(c => knownCardType(c) ?? NO_TYPE));
 
   // ── Toggle handlers ───────────────────────────────────────────────────────────
@@ -910,20 +866,12 @@ export function LibraryView() {
         {hasDeckMix && (
           <FilterSection
             labelKey="library.filterDecks"
-            items={deckItems}
-            folderItems={deckFolderItems}
-            covered={coveredDecks}
+            items={deckSection.items}
+            folderItems={deckSection.folderItems}
+            covered={deckSection.covered}
             activeMap={liveDecks}
-            labelOf={id => {
-              if (id === NO_DECK) return t('library.filterNoDecks');
-              const folderId = folderIdOfChip(id);
-              return folderId !== null ? deckFolderLabels.get(folderId) ?? folderId : (user.decks[id]?.name ?? id);
-            }}
-            titleOf={id => {
-              if (id === NO_DECK) return '';
-              const folderId = folderIdOfChip(id);
-              return folderId !== null ? folderPath(folderId, user) : deckPath(id, user);
-            }}
+            labelOf={deckSection.labelOf}
+            titleOf={deckSection.titleOf}
             available={availDecks}
             onToggle={toggleDeck}
             highlight={q}

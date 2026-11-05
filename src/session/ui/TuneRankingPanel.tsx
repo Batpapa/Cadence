@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { t } from '../../services/i18nService';
 import { HeartIcon, ChevronDownIcon, CheckIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon, LibraryIcon, TuneSetIcon } from '../../components/icons';
-import { FilterSection, cycleFilter, type FilterMap } from '../../components/filterSection';
+import { FilterSection, FilterGroup, ReviewedRangeSection, cycleFilter, type FilterMap } from '../../components/filterSection';
+import { deckChipKnown, deckChipSection } from '../../components/deckChips';
+import { decksContainingCard } from '../../services/deckService';
+import { tagsWithTunes, setsMatchTuneTags } from '../../services/cardRefService';
 import { createLongPressHandlers } from '../../components/longPress';
 import { useContextMenu } from '../../components/contextMenu';
 import { navigate, getContext } from '../../store';
@@ -17,7 +20,7 @@ import { tuneName, TuneDeckButton, attachClip, isClipAttached } from './sessionU
 import { showBatchProgress, type BatchStep, type StepOutcome } from './batchRunner';
 import { deckGain } from './tuneBatch';
 import { PassRow, useSlicePlayer } from './PassRow';
-import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesChips, rankDetectedSets, tuneIdsOfSetKey, heardFacts, type PassFacet } from './tuneRanking';
+import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesChips, passesChipsAll, detectedRangeFacet, rankDetectedSets, tuneIdsOfSetKey, heardFacts, type PassFacet } from './tuneRanking';
 import { showExportDetectionsModal } from './ExportDetectionsModal';
 import type { DetectedTuneLine } from '../../services/analysisExport';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey } from '../../services/cardTypeService';
@@ -98,6 +101,22 @@ export interface TuneViewState {
    *  with the same keys and in the same place (second): a set heard is what a
    *  set card is made from. Only with set detection on. */
   kinds: FilterMap;
+  /** "Detected between" (2026-11-05), YYYY-MM-DD, '' for an open end — the
+   *  library's "reviewed between", read off when each pass was played. */
+  detectedFrom: string;
+  detectedTo: string;
+  /** The two card sections (2026-11-05) read the CARD of each row, not what
+   *  was heard, and so sit together in a "Cards" section of their own (the
+   *  user's call, over a box that switched them on).
+   *
+   *  The decks (and deck folders) of each row's card — the library's section,
+   *  same chips (deckChips.ts). A row without a card is in no deck. */
+  decks: FilterMap;
+  decksOr: boolean;
+  /** The card's own tags, a set's also those of its tunes (tagsWithTunes) —
+   *  a section apart from "Tags", which reads each pass. */
+  cardTags: FilterMap;
+  cardTagsOr: boolean;
 }
 
 /** Chip keys for the "other" section. Strings rather than an enum because
@@ -124,7 +143,30 @@ function knownAnalysisChips(chips: FilterMap, sessionIds: ReadonlySet<string>, t
  *  rule for a dead analysis chip is written once. */
 export function tuneFilterCount(view: TuneViewState, sessions: readonly Analysis[], user: AppState): number {
   const known = knownAnalysisChips(view.analyses, new Set(sessions.map(s => s.id)), sessionTreeOf(user));
-  return known.size + view.tags.size + view.others.size + view.kinds.size;
+  const card = liveCardChips(view, user);
+  return known.size + view.tags.size + view.others.size + view.kinds.size
+    + (view.detectedFrom !== '' || view.detectedTo !== '' ? 1 : 0)
+    + card.decks.size + card.cardTags.size;
+}
+
+const NO_CHIPS: FilterMap = new Map();
+
+/** Whether a tag is still carried by some card — a chip of a tag renamed or
+ *  dropped since is ignored, as the library ignores its own. */
+function cardTagKnown(user: AppState, tag: string): boolean {
+  return Object.values(user.cards).some(c => (c.tags ?? []).includes(tag));
+}
+
+/** The card chips that do filter the list: none where there is no library
+ *  (pageMode.ts), which never shows their section — a chip filtering from a
+ *  section nobody can see would be a list emptied for no visible reason — and
+ *  elsewhere those still naming something. */
+function liveCardChips(view: TuneViewState, user: AppState): { decks: FilterMap; cardTags: FilterMap } {
+  if (!hasLibrary()) return { decks: NO_CHIPS, cardTags: NO_CHIPS };
+  return {
+    decks: knownChips(view.decks, key => deckChipKnown(user, key)),
+    cardTags: knownChips(view.cardTags, tag => cardTagKnown(user, tag)),
+  };
 }
 
 export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }: {
@@ -136,7 +178,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   filtersShown: boolean;
 }) {
   const ctx = getContext();
-  const { sort: sortMode, sortAsc, analyses: pinnedAnalyses, analysesOr, others, othersOr, tags, tagsOr, kinds } = view;
+  const { sort: sortMode, sortAsc, analyses: pinnedAnalyses, analysesOr, others, othersOr, tags, tagsOr, kinds, detectedFrom, detectedTo, decksOr, cardTagsOr } = view;
   /** Set detection (an option of the module, on by default): off, this panel
    *  lists tunes only, exactly as before sets existed. */
   const setsOn = setDetectionOn(ctx.user);
@@ -224,7 +266,10 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
    *  in, its tune type, its key — and so filter passes rather than tunes. */
   const facetAnalyses: PassFacet = { chips: activeAnalyses, or: analysesOr, valuesOf: (_d, s) => [s.id, ...(foldersAboveSession.get(s.id) ?? [])] };
   const facetTags: PassFacet = { chips: tags, or: tagsOr, valuesOf: d => { const m = modeOf(d); return [d.dance, m].filter((v): v is string => !!v); } };
-  const facets = [facetAnalyses, facetTags];
+  // "Detected between" is one more of them — it keeps the passes of the period
+  // — and only there when a day is set.
+  const facetDetected = detectedRangeFacet(detectedFrom, detectedTo);
+  const facets = facetDetected ? [facetAnalyses, facetTags, facetDetected] : [facetAnalyses, facetTags];
   /** What the list is built from: only the passes those chips let through, so
    *  every count, date and heart below is one of THOSE. */
   const heard = filterByFacets(sessions, facets);
@@ -267,6 +312,61 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   // how the empty screen tells "nothing detected yet" from "nothing matches".
   const allSets = setsOn ? rankDetectedSets(sessions, [], likedOf) : noSets;
   const all = [...rankDetectedTunes(sessions), ...allSets.rows];
+  /** The card a row stands for: the tune's, or the set's. */
+  const cardIdOfRow = (key: string) => (tuneIdsOfSetKey(key) ? setCardOfKey(key)?.id : cards.get(key));
+
+  // ── The card filters (2026-11-05) ── Decks and card tags, read off the CARD
+  // of each row, so they filter rows as "Other" does, never passes: the counts
+  // stay those of what was heard. Offered from every row whatever the chips
+  // say — the library's rule, or a section would vanish as it did its job.
+  const user = ctx.user;
+  const liveCard = liveCardChips(view, user);
+  const allCardIds = all.map(r => cardIdOfRow(r.tuneId));
+  const linkedCards = new Set(allCardIds.filter((id): id is string => !!id));
+  const decksOfCard = new Map<string, string[]>();
+  const decksOf = (cardId: string | undefined): string[] => {
+    if (!cardId) return [];
+    let out = decksOfCard.get(cardId);
+    if (!out) { out = decksContainingCard(cardId, user); decksOfCard.set(cardId, out); }
+    return out;
+  };
+  const deckSection = deckChipSection(user, liveCard.decks, id => linkedCards.has(id), allCardIds.some(id => decksOf(id).length === 0));
+  const deckValuesOf = new Map<string, string[]>();
+  const deckValues = (cardId: string | undefined): string[] => {
+    const key = cardId ?? '';
+    let out = deckValuesOf.get(key);
+    if (!out) { out = deckSection.valuesOf(cardId); deckValuesOf.set(key, out); }
+    return out;
+  };
+  // A set answers to its tunes' tags too, unless that is switched off in Misc.
+  // — the library's own reading (tagsWithTunes), so both screens agree.
+  const tuneTagsOn = setsMatchTuneTags(user);
+  const tagsOfCardId = new Map<string, string[]>();
+  const cardTagValues = (cardId: string | undefined): string[] => {
+    const card = cardId ? user.cards[cardId] : undefined;
+    if (!card) return [];
+    let out = tagsOfCardId.get(card.id);
+    if (!out) { out = tuneTagsOn ? tagsWithTunes(card, user.cards) : card.tags ?? []; tagsOfCardId.set(card.id, out); }
+    return out;
+  };
+  const liveCardTags = liveCard.cardTags;
+  const cardTagItems = [...new Set([...[...linkedCards].flatMap(cardTagValues), ...liveCardTags.keys()])].sort();
+  // Not a partition, as in the library: a lone tag still splits the list,
+  // unless every row carries it.
+  const hasCardTagMix = liveCardTags.size > 0 || cardTagItems.length > 1
+    || (cardTagItems.length === 1 && allCardIds.some(id => !cardTagValues(id).includes(cardTagItems[0]!)));
+  /** Each section where it could split the list (or holds a chip); the
+   *  "Cards" section around them where one of them shows — so only once some
+   *  row has a card. Never without a library. */
+  const showDecks = hasLibrary() && deckSection.hasMix;
+  const showCardTags = hasLibrary() && hasCardTagMix;
+  const cardChipCount = deckSection.live.size + liveCardTags.size;
+
+  /** A row through the two card sections. `skip` leaves one out — what that
+   *  section could still add is asked of the list without it (see below). */
+  const passesCards = (cardId: string | undefined, skip?: 'decks' | 'cardTags'): boolean =>
+    (skip === 'decks' || deckSection.live.size === 0 || passesChipsAll(deckValues(cardId), deckSection.live, decksOr))
+    && (skip === 'cardTags' || liveCardTags.size === 0 || passesChipsAll(cardTagValues(cardId), liveCardTags, cardTagsOr));
 
   /** The "other" chips, read against a tune's two facts.
    *
@@ -288,7 +388,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   /** The tunes a set of passes gives, past the tune-level chips and the search,
    *  not yet sorted. A function because the pass sections need it again to say
    *  what they could still add (see availOf). */
-  const listFrom = (from: Analysis[], facetsUsed: readonly PassFacet[]) => {
+  const listFrom = (from: Analysis[], facetsUsed: readonly PassFacet[], skipCards?: 'decks' | 'cardTags') => {
     // The name is resolved before filtering, not just for display: someone
     // typing "Cooley" is typing the name they see, which may be their own card's.
     const tunes = kindOk(false)
@@ -309,6 +409,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
       : [];
     return [...tunes, ...sets]
       .filter(r => passesOthers(r.row.liked, !!r.cardId))
+      .filter(r => passesCards(r.cardId, skipCards))
       .filter(r => !query || matchesSearch(r.name, query) || r.row.tuneId === query);
   };
 
@@ -349,6 +450,12 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   };
   const availAnalyses = availOf(facetAnalyses);
   const availTags = availOf(facetTags);
+  /** The same question for a card section, asked of rows: with "any of", the
+   *  list without this section; with "all of", the list on screen. */
+  const availCards = (section: 'decks' | 'cardTags', or: boolean, valuesOf: (cardId: string | undefined) => string[]): Set<string> =>
+    new Set((or ? listFrom(heard, facets, section) : shown).flatMap(r => valuesOf(r.cardId)));
+  const availDecks = showDecks ? availCards('decks', decksOr, deckValues) : new Set<string>();
+  const availCardTags = showCardTags ? availCards('cardTags', cardTagsOr, cardTagValues) : new Set<string>();
 
   /** The chips a section offers: every value any pass carries, plus whatever
    *  is pinned — a chip restored from the route before the index has loaded
@@ -412,8 +519,6 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   const selectedRows = all
     .filter(row => selected.has(row.tuneId))
     .map(row => ({ row, name: tuneIdsOfSetKey(row.tuneId) ? setNameOf(row.tuneId) : tuneName(row).text }));
-  /** The card a row stands for: the tune's, or the set's. */
-  const cardIdOfRow = (key: string) => (tuneIdsOfSetKey(key) ? setCardOfKey(key)?.id : cards.get(key));
   /** The cards behind the selection — a tune with no card has nothing to show
    *  in the library, so it simply does not travel. */
   const selectedCardIds = selectedRows
@@ -676,6 +781,51 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
           orMode={othersOr}
           onToggleOr={() => onView({ othersOr: !othersOr })}
         />
+        {/* Not a library filter: the standalone page has it too. */}
+        <ReviewedRangeSection
+          labelKey="sessions.ranking.filterDetected"
+          from={detectedFrom}
+          to={detectedTo}
+          onChange={(from, to) => onView({ detectedFrom: from, detectedTo: to })}
+        />
+        {/* What the rows' CARDS say, apart from what was heard: one section
+            holding the library's own two, under their library names.
+            Cycled from the live chips, as the library does, so the first click
+            after a deletion also drops the dead key from the route. */}
+        {(showDecks || showCardTags) && (
+        <FilterGroup labelKey="sessions.ranking.filterCards" active={cardChipCount > 0}>
+        {showDecks && (
+          <FilterSection
+            labelKey="library.filterDecks"
+            items={deckSection.items}
+            folderItems={deckSection.folderItems}
+            covered={deckSection.covered}
+            activeMap={deckSection.live}
+            labelOf={deckSection.labelOf}
+            titleOf={deckSection.titleOf}
+            available={availDecks}
+            onToggle={(id, back) => onView({ decks: cycleFilter(deckSection.live, id, back) })}
+            highlight={query}
+            orMode={decksOr}
+            onToggleOr={() => onView({ decksOr: !decksOr })}
+          />
+        )}
+        {showCardTags && (
+          <FilterSection
+            labelKey="library.filterTags"
+            items={cardTagItems}
+            activeMap={liveCardTags}
+            labelOf={tag => tag}
+            titleOf={tag => tag}
+            available={availCardTags}
+            onToggle={(tag, back) => onView({ cardTags: cycleFilter(liveCardTags, tag, back) })}
+            highlight={query}
+            orMode={cardTagsOr}
+            onToggleOr={() => onView({ cardTagsOr: !cardTagsOr })}
+          />
+        )}
+        </FilterGroup>
+        )}
       </div>
       )}
 

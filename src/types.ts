@@ -532,6 +532,12 @@ export type Route =
       tags?: [string, FilterState][]; tagsOr?: boolean;
       /** Tunes, sets, or both, in the detections tab (2026-10-19). */
       kinds?: [string, FilterState][];
+      /** "Detected between", YYYY-MM-DD local days, either end alone (2026-11-05). */
+      detectedFrom?: string; detectedTo?: string;
+      /** The detections tab's "Cards" section (2026-11-05): decks (folders as
+       *  `folder:<id>`, as in the library's `decks`) and the cards' own tags. */
+      decks?: [string, FilterState][]; decksOr?: boolean;
+      cardTags?: [string, FilterState][]; cardTagsOr?: boolean;
     }
   // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.
