@@ -296,8 +296,9 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
             Resumed by the button above, or on its own. */}
         {paused && autoPaused && <p class="text-xs text-danger mt-2">{t('sessions.autoPaused')}</p>}
         {/* Only once something is being recorded: before that there is nothing
-            to send, and no session to name in meta.json. */}
-        {(phase === 'recording' || phase === 'paused') && <LiveBackupIndicator live={live} />}
+            to send, and no session to name in meta.json. Nor for a recording
+            that will not be kept (keepRecordings.ts). */}
+        {(phase === 'recording' || phase === 'paused') && live.keepAudio && <LiveBackupIndicator live={live} />}
       </div>
 
       <p class="text-xs text-dim text-center">{initStatus}</p>

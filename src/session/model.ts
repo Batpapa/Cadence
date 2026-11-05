@@ -212,6 +212,11 @@ export interface Analysis {
    *  recovery applies again to the detections it replays (recovery.ts). Never
    *  on a saved analysis — its detections already carry them. */
   confirmations?: DetectionConfirmation[];
+  /** A live recording's DRAFT only: started with "Keep the recordings" off
+   *  (keepRecordings.ts), so a crash recovery drops its chunks instead of
+   *  saving them — the choice made when it started, not the setting at the
+   *  next visit. Never on a saved analysis. */
+  discardAudio?: true;
   /** Where a live recording was paused and resumed, in seconds of the
    *  recording, in order (2026-11-01). A pause leaves no gap in the file:
    *  what came before and after are joined end to end, and the music on

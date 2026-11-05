@@ -246,7 +246,8 @@ function autoBackupOn(): boolean {
  *  to call twice. The setting is read at every tick rather than here, so turning
  *  it off mid-recording takes effect immediately. */
 export function startAutoBackup(live: LiveSession): void {
-  if (_schedules.has(live.sessionId)) return;
+  // A recording that will not be kept (keepRecordings.ts) is not sent either.
+  if (!live.keepAudio || _schedules.has(live.sessionId)) return;
   registerWorkOnce();
   const schedule: Schedule = {
     live,

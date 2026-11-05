@@ -3,13 +3,15 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { formatBytes, downloadBlob } from '../../utils';
-import { TrashIcon, ResetIcon, CloudUpIcon, PlusIcon } from '../../components/icons';
+import { PlusIcon, CloudIcon, CloudUpIcon, TrashIcon, ResetIcon, UploadIcon } from '../../components/icons';
 import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
-import { confirmModal, alertModal } from '../../components/modal';
+import type { ContextMenuEntry } from '../../components/contextMenu';
+import { confirmModal, alertModal, showModal, closeModalOf, renderModalBody } from '../../components/modal';
+import { signal, type Signal } from '@preact/signals';
 import {
   deleteSession, loadSessionAudio, saveSessionMeta, forgetSessionAudio,
   uploadSessionAudio, unsyncSessionAudio, fetchSyncedAudio, autoUploadState,
-  audioDownloadProgress, audioArrivals,
+  audioDownloadProgress, audioArrivals, downloadSyncedAudioOnce, keepSyncedAudioHere,
 } from '../db';
 import { isDriveConnected } from '../../services/driveService';
 import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
@@ -94,14 +96,27 @@ const HATCH = [hatch(-45), hatch(45)];   // rising, then falling
  *  the second click — it never decides anything on its own. */
 const DOUBLE_CLICK_MS = 400;
 
-/** Where this recording's Drive copy stands. Same four readings as the header's
- *  own sync indicator, because it is the same question about a smaller thing. */
+/** The window a re-analysis waits behind while its recording comes from Drive. */
+function DriveFetchBody({ progress, bytes }: { progress: Signal<number>; bytes: number }) {
+  const pct = Math.round(progress.value * 100);
+  return (
+    <div class="space-y-3">
+      <p class="text-sm text-muted leading-relaxed">{t('sessions.reanalyze.fetch.message', { size: formatBytes(bytes) })}</p>
+      <div class="h-2 rounded bg-elevated overflow-hidden">
+        <div class="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+      <p class="text-xs text-dim font-mono tabular-nums text-right">{pct} %</p>
+    </div>
+  );
+}
+
+/** Where this recording's Drive copy stands. Same readings as the header's own
+ *  sync indicator, because it is the same question about a smaller thing. */
 type DriveAudioState = 'off' | 'uploading' | 'on' | 'error' | 'waiting' | 'wifi';
 
-const DRIVE_AUDIO_TITLE: Record<DriveAudioState, string> = {
+const NOT_ON_DRIVE_TITLE: Record<Exclude<DriveAudioState, 'on'>, string> = {
   off:       'sessions.syncAudio.off',
   uploading: 'sessions.syncAudio.uploading',
-  on:        'sessions.syncAudio.on',
   error:     'sessions.syncAudio.retry',
   // The automatic copy failed and will be tried again on its own (db.ts).
   waiting:   'sessions.syncAudio.retryPending',
@@ -109,41 +124,52 @@ const DRIVE_AUDIO_TITLE: Record<DriveAudioState, string> = {
   wifi:      'sessions.syncAudio.waitingWifi',
 };
 
-/** Deliberately header.tsx's SyncBtn, one size down: same glyph, same colour
- *  code — yellow-free here since a copy is either made or not — so "is this on
- *  Drive" is read the same way in both places. A second visual language for the
- *  same idea is how two indicators come to disagree. */
-function DriveAudioBtn({ state, onClick }: { state: DriveAudioState; onClick: () => void }) {
-  // Hover never changes the HUE, only its lightness, and only where there is
-  // no state colour to confuse: the accent is already what "copying" looks
-  // like, so an accent-on-hover idle button read as an upload that had started
-  // and stuck — removing a copy left the cursor on the button and the icon
-  // apparently went blue for good (2026-09-08). Colour means state here, the
-  // way it does in the header's own indicator, and nothing else.
-  const cls =
-    state === 'uploading' ? 'text-accent animate-pulse cursor-default' :
-    state === 'on'        ? 'text-green-500 cursor-pointer' :
+/** The one state of a recording's whereabouts nothing else on the screen says
+ *  (2026-11-05, the user's design): here but NOT on Drive. Here and on Drive is
+ *  the ordinary case and shows nothing; on Drive only shows in the player's ▶;
+ *  nowhere is the line under the views. So this is a cloud struck through, or
+ *  on its way up, or failing — never a green one: a copy that is there is no
+ *  news, and the green cloud that REMOVED the copy when touched is what this
+ *  replaces. Touched, it offers the copy, confirmed.
+ *
+ *  Hover never changes the HUE, only its lightness: colour is state here, as on
+ *  the header's indicator, and an accent-on-hover idle icon read as an upload
+ *  started and stuck (2026-09-08). */
+function NotOnDriveBtn({ state, onClick }: { state: Exclude<DriveAudioState, 'on'>; onClick: () => void }) {
+  const uploading = state === 'uploading';
+  const tone =
+    uploading ? 'text-accent animate-pulse cursor-default' :
     state === 'error' || state === 'waiting' ? 'text-danger cursor-pointer' :
     // Not a failure: nothing went wrong, it is waiting as asked.
-    state === 'wifi'      ? 'text-warn cursor-pointer' :
-                            'text-dim hover:text-muted cursor-pointer';
+    state === 'wifi' ? 'text-warn cursor-pointer' :
+    'text-dim hover:text-muted cursor-pointer';
+  const title = t(NOT_ON_DRIVE_TITLE[state] as Parameters<typeof t>[0]);
   return (
     <button
-      class={`flex items-center shrink-0 transition-colors ${cls}`}
-      title={t(DRIVE_AUDIO_TITLE[state] as Parameters<typeof t>[0])}
-      aria-pressed={state === 'on'}
-      disabled={state === 'uploading'}
-      onClick={state === 'uploading' ? undefined : onClick}
+      class={`relative w-7 h-7 flex items-center justify-center shrink-0 transition-colors ${tone}`}
+      title={title}
+      aria-label={title}
+      disabled={uploading}
+      onClick={uploading ? undefined : onClick}
     >
-      <CloudUpIcon size={12} />
+      {uploading ? <CloudUpIcon size={15} /> : (
+        <>
+          <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+          </svg>
+          <span aria-hidden="true" class="absolute left-1/2 top-1/2 w-[19px] h-[1.5px] rounded bg-current -translate-x-1/2 -translate-y-1/2 -rotate-45" />
+        </>
+      )}
     </button>
   );
 }
+
 interface SessionSummaryProps {
   session: Analysis;
   ctx: AppContext;
   onOpenCard: (cardId: string) => void;
-  onReanalyze: () => void;
+  /** `audio`: a recording brought down from Drive for it, not to be stored. */
+  onReanalyze: (audio?: Blob) => void;
   /** One detection to arrive on, from a card's "detected in" link. Marks and
    *  scrolls to it; see `targetId` for why that is not the same as selecting. */
   annotationId?: string;
@@ -175,6 +201,25 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // then hands over. Paused, it stands for good, which is right: paused at the
   // start of a tune IS being at that tune.
   const seekFloorRef = useRef<number | null>(null);
+  /** Where the head was last put — what a recording brought down from Drive
+   *  starts playing from, the element having had nothing to seek in until then. */
+  const headTimeRef = useRef(0);
+  /** A play asked for before the recording was loaded: where it starts. */
+  const pendingPlayRef = useRef<number | null>(null);
+  /** Whether the player's bar is pinned at the top, the list scrolling under
+   *  it: read off a mark where the bar stands at rest, which leaves the
+   *  scrollport exactly when the bar starts to stick. An observer, not a scroll
+   *  handler: the scrolling element is the app's, not this screen's, and the
+   *  observer sees clipping by any of them. */
+  const pinMarkRef = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => {
+    const mark = pinMarkRef.current;
+    if (!mark || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([entry]) => setPinned(!!entry && !entry.isIntersecting));
+    io.observe(mark);
+    return () => io.disconnect();
+  }, []);
   const dragRef = useRef<{ moved: boolean; annId: string | null } | null>(null);
   // When the previous click landed, so the second of a double can stand down
   // and leave the work to the dblclick handler.
@@ -210,6 +255,20 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const [syncFailed, setSyncFailed] = useState(false);
   /** True while the recording is being read out of the local database. */
   const [downloading, setDownloading] = useState(false);
+  /** The recording brought down from Drive for THIS visit only (2026-11-05,
+   *  the user's design): with it only on Drive, the player's ▶ downloads it
+   *  whole and plays it, without storing it — keeping it here is a decision of
+   *  its own, in the title's menu. Gone with the screen. */
+  const [temp, setTemp] = useState<{ blob: Blob; url: string } | null>(null);
+  /** That download's progress, 0–1, while it runs. */
+  const [tempProgress, setTempProgress] = useState<number | null>(null);
+  /** What the player reads: the recording stored here, else the one brought
+   *  down for this visit. Only playback reads this — everything that works on
+   *  the stored file (bounds, tempo, clips, re-analysis) still asks `audioUrl`. */
+  //
+  // The visit's copy first when there is one: kept here meanwhile, the player
+  // goes on reading the same file instead of being cut mid-tune by a new source.
+  const playUrl = temp?.url ?? audioUrl;
   // Read once per render, not stored: connecting or disconnecting Drive
   // re-renders this screen through the state it changes.
   const driveOn = isDriveConnected();
@@ -259,6 +318,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  the audio forgotten there is no player to ask, and the strip still works
    *  as a map. */
   const applyHead = (tSec: number, follow = true) => {
+    headTimeRef.current = tSec;
     if (headRef.current) headRef.current.style.left = `${Math.min(100, (tSec / (session.duration || 1)) * 100)}%`;
     const pos = headPosition(session.annotations, tSec, session.duration);
     const key = `${pos.ids.join('|')}#${pos.gapFrom ?? ''}`;
@@ -351,28 +411,45 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // eslint-disable-next-line
   }, []);
 
-  /** Copies this recording to Drive, or removes the copy. Uploading is confirmed
-   *  first because it spends the user's bandwidth and their Drive space; removing
-   *  the copy is not, because the recording stays on this device either way. */
-  const toggleSync = () => {
-    if (busySync) return;
+  const failedTransfer = (e: unknown) => alertModal(
+    t('sessions.syncAudio.failed.title'),
+    t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
+  );
+
+  /** Removes the Drive copy. Confirmed, because it destroys something: the copy
+   *  on Drive is what the user's other devices play from — and, with nothing
+   *  here (2026-11-05: the title's menu is the first place that can do it
+   *  then), the last copy there is. The recording on THIS device is not
+   *  touched — see forgetSessionAudio for the other half of that split. */
+  const removeFromDrive = () => {
+    if (busySync || !synced) return;
     setSyncFailed(false);
-    // Confirmed, because it destroys something: the copy on Drive is what the
-    // user's other devices play from, and this is the only control that removes
-    // it. The recording on THIS device is not touched — see forgetSessionAudio
-    // for the other half of that split.
-    if (synced) {
-      confirmModal(
-        t('sessions.syncAudio.remove.title'),
-        t('sessions.syncAudio.remove.message', { size: formatBytes(synced.bytes) }),
-        t('sessions.syncAudio.remove.ok'),
-        () => {
-          setBusySync(true);
-          void unsyncSessionAudio(session.id).finally(() => setBusySync(false));
-        },
-      );
-      return;
-    }
+    confirmModal(
+      t('sessions.syncAudio.remove.title'),
+      t(audioUrl ? 'sessions.syncAudio.remove.message' : 'sessions.syncAudio.remove.messageOnly', { size: formatBytes(synced.bytes) }),
+      t('sessions.syncAudio.remove.ok'),
+      () => {
+        setBusySync(true);
+        void unsyncSessionAudio(session.id).catch(failedTransfer).finally(() => setBusySync(false));
+      },
+    );
+  };
+
+  /** This device's copy, freed. Two messages, because the act has two different
+   *  consequences: with a copy on Drive this frees space and is undone by a
+   *  download; without one it is the end of the recording. */
+  const forgetHere = () => confirmModal(
+    t('sessions.forgetAudio.title'),
+    t(synced ? 'sessions.forgetAudio.messageSynced' : 'sessions.forgetAudio.message'),
+    t('sessions.forgetAudio'),
+    () => { void forgetSessionAudio(session.id).then(() => setAudioUrl(null)); },
+  );
+
+  /** Copies this recording to Drive. Confirmed first because it spends the
+   *  user's bandwidth and their Drive space. */
+  const uploadToDrive = () => {
+    if (busySync || synced) return;
+    setSyncFailed(false);
     confirmModal(
       t('sessions.syncAudio.confirm.title'),
       t('sessions.syncAudio.confirm.message', { size: formatBytes(audioBytes) }),
@@ -380,13 +457,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       () => {
         setBusySync(true);
         void uploadSessionAudio(session.id)
-          .catch((e: unknown) => {
-            setSyncFailed(true);
-            alertModal(
-              t('sessions.syncAudio.failed.title'),
-              t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
-            );
-          })
+          .catch((e: unknown) => { setSyncFailed(true); failedTransfer(e); })
           .finally(() => setBusySync(false));
       },
     );
@@ -408,12 +479,23 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // eslint-disable-next-line
   }, [arrived]);
 
-  /** Brings a recording made on another device onto this one. Never on its own
+  /** Keeps a recording made on another device on this one. Never on its own
    *  from here: opening a session summary must not spend tens of megabytes of
    *  someone's mobile data without being asked — that is the automatic mode's
-   *  decision to make, where the user made it. */
-  const downloadSynced = () => {
+   *  decision to make, where the user made it. Already brought down for this
+   *  visit, it is stored from there rather than fetched twice. */
+  const keepHere = () => {
     if (busySync) return;
+    if (temp) {
+      const { blob } = temp;
+      void keepSyncedAudioHere(session.id, blob).then(() => {
+        setAudioBytes(blob.size);
+        // A URL of its own: the visit's goes with `temp`, which the player
+        // goes on reading — switching its source mid-tune would cut it.
+        setAudioUrl(URL.createObjectURL(blob));
+      }).catch(failedTransfer);
+      return;
+    }
     setBusySync(true);
     void fetchSyncedAudio(session.id)
       .then(blob => {
@@ -426,16 +508,53 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         setAudioBytes(blob.size);
         setAudioUrl(URL.createObjectURL(blob));
       })
-      .catch((e: unknown) => alertModal(
-        t('sessions.syncAudio.failed.title'),
-        t('sessions.syncAudio.failed.message', { error: e instanceof Error ? e.message : String(e) }),
-      ))
+      .catch(failedTransfer)
       .finally(() => setBusySync(false));
   };
   useEffect(() => {
     if (!audioUrl) return;
     return () => URL.revokeObjectURL(audioUrl);
   }, [audioUrl]);
+  useEffect(() => {
+    if (!temp) return;
+    return () => URL.revokeObjectURL(temp.url);
+  }, [temp]);
+  // With nothing loaded, the time label still says how long the recording is:
+  // the cloud player's ▶ has a whole session behind it.
+  useEffect(() => {
+    if (!playUrl && timeLblRef.current) timeLblRef.current.textContent = `0:00 / ${fmtLongTime(session.duration)}`;
+  });
+
+  /** The recording for this visit, from Drive: the one already brought down,
+   *  else a download whose progress the ▶ shows. Null when it could not be had
+   *  — the user told why — or while one is already coming. Asked from a click
+   *  only: Drive's token cannot be renewed outside one. */
+  const fetchTemp = (): Promise<Blob | null> => {
+    if (temp) return Promise.resolve(temp.blob);
+    if (tempProgress !== null || busySync || !synced) return Promise.resolve(null);
+    setTempProgress(0);
+    return downloadSyncedAudioOnce(session.id, setTempProgress)
+      .then(blob => {
+        if (!blob) {
+          alertModal(t('sessions.syncAudio.gone.title'), t('sessions.syncAudio.gone.message'));
+          return null;
+        }
+        setTemp({ blob, url: URL.createObjectURL(blob) });
+        return blob;
+      })
+      .catch((e: unknown) => { failedTransfer(e); return null; })
+      .finally(() => setTempProgress(null));
+  };
+
+  /** The player's ▶ with the recording only on Drive: brings it down, then
+   *  plays it from where the head stands once the element knows the file (see
+   *  the 'loadedmetadata' handler). A browser that refuses to start playing so
+   *  long after the tap (iOS may) leaves it ready: the next ▶ plays. */
+  const playFromDrive = () => {
+    void fetchTemp().then(blob => {
+      if (blob) pendingPlayRef.current = headTimeRef.current;
+    });
+  };
 
   // Play/pause icon toggle.
   useEffect(() => {
@@ -497,8 +616,21 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       if (timeLblRef.current) timeLblRef.current.textContent = `${fmtLongTime(t)} / ${fmtLongTime(a.duration || 0)}`;
       applyHead(t, follow);
     };
-    // The first reading, not a movement: see `lit`.
-    const onLoadedMeta = () => updateTime(false);
+    // The first reading, not a movement: see `lit`. Or the start of a play the
+    // ▶ asked for before the recording was here (playFromDrive): from where
+    // the head stood when it was asked.
+    const onLoadedMeta = () => {
+      const start = pendingPlayRef.current;
+      if (start !== null) {
+        pendingPlayRef.current = null;
+        a.currentTime = start;
+        seekFloorRef.current = start;
+        // stop() only reads refs, so the first render's player is good here.
+        drivePlayer.stop();
+        void a.play().catch(() => {});
+      }
+      updateTime(false);
+    };
     const onTimeUpdate = () => {
       updateTime();
       if (playingIdRef.current !== null && a.currentTime >= sliceEndRef.current) a.pause();
@@ -803,12 +935,14 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     details,
     study,
     // No ▶ at all when the recording is neither here nor on Drive.
-    onPlay: audioUrl ? playSlice : synced ? (a) => { void drivePlayer.play(session.id, a); } : undefined,
+    // From the recording the player has — stored here or brought down for
+    // this visit — else straight from Drive, the passage alone.
+    onPlay: playUrl ? playSlice : synced ? (a) => { void drivePlayer.play(session.id, a); } : undefined,
     // A passage from Drive goes on playing when the recording arrives under it:
     // its ▶ still says ■ until it is stopped.
-    playingId: audioUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
-    playFromDrive: !audioUrl && !!synced,
-    playLoadingId: audioUrl ? null : drivePlayer.loadingId,
+    playingId: playUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
+    playFromDrive: !playUrl && !!synced,
+    playLoadingId: playUrl ? null : drivePlayer.loadingId,
     sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
     sessionId: session.id,
     onOpenCard,
@@ -1121,10 +1255,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       onOpenCard,
       getPinnedDeckIds: () => pinnedDeckIdsRef.current,
       onChanged: bump,
-      onPlay: audioUrl ? (c) => playSlice(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
-      playingId: audioUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
-      playFromDrive: !audioUrl && !!synced,
-      playLoadingId: audioUrl ? null : drivePlayer.loadingId,
+      onPlay: playUrl ? (c) => playSlice(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
+      playingId: playUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
+      playFromDrive: !playUrl && !!synced,
+      playLoadingId: playUrl ? null : drivePlayer.loadingId,
       sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
       onToggleLike: (r) => {
         const target = session.tunesets?.find(x => x.id === r.id);
@@ -1154,18 +1288,156 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  nothing about (an import the browser could not type) is identified from its
    *  content. It used to be the type's subtype verbatim, which named an MP3
    *  `.mpeg` and an untyped import `.octet-stream`. */
+  const saveFile = async (blob: Blob) => {
+    let ext = audioExtension(blob.type || session.mimeType);
+    if (ext === 'bin') ext = (await detectAudioFile(blob))?.extension ?? ext;
+    downloadBlob(blob, `${fileBase}.${ext}`);
+  };
+  /** The file, from wherever it is: stored here, or from Drive — the copy
+   *  brought down for this visit, or one brought down now (its progress on the
+   *  player's ▶), and kept for the rest of the visit, not stored. */
   const downloadAudio = () => {
     if (downloading) return;
     setDownloading(true);
-    void loadSessionAudio(session.id)
-      .then(async blob => {
-        if (!blob) return;
-        let ext = audioExtension(blob.type || session.mimeType);
-        if (ext === 'bin') ext = (await detectAudioFile(blob))?.extension ?? ext;
-        downloadBlob(blob, `${fileBase}.${ext}`);
-      })
+    void (audioUrl ? loadSessionAudio(session.id) : fetchTemp())
+      .then(blob => (blob ? saveFile(blob) : undefined))
       .finally(() => setDownloading(false));
   };
+
+  // A recording on a Drive this device is connected to — the only kind it can
+  // reach without having it.
+  const reachable = !!synced && driveOn;
+
+  /** Re-analysing, confirmed: it replaces the list. On the recording stored
+   *  here; else on the one brought down for this visit; else on one brought
+   *  down for it now, behind a window that can be cancelled — and in neither
+   *  case stored here (2026-11-05, the user's call). */
+  const reanalyze = () => confirmModal(
+    t('sessions.reanalyze.title'), t('sessions.reanalyze.message'), t('sessions.reanalyze.confirm'),
+    () => {
+      if (audioUrl) onReanalyze();
+      else if (temp) onReanalyze(temp.blob);
+      else fetchForReanalysis();
+    },
+  );
+
+  const fetchForReanalysis = () => {
+    const progress = signal(0);
+    const abort = new AbortController();
+    const { el, cleanup } = renderModalBody(<DriveFetchBody progress={progress} bytes={synced?.bytes ?? 0} />);
+    const close = () => { closeModalOf(el); cleanup(); };
+    showModal(t('sessions.reanalyze.fetch.title'), el, [
+      { label: t('common.cancel'), onClick: () => { abort.abort(); close(); } },
+    ], { onDismiss: () => { abort.abort(); cleanup(); } });
+    void downloadSyncedAudioOnce(session.id, (f) => { progress.value = f; }, abort.signal)
+      .then(blob => {
+        if (abort.signal.aborted) return;
+        close();
+        if (!blob) { alertModal(t('sessions.syncAudio.gone.title'), t('sessions.syncAudio.gone.message')); return; }
+        onReanalyze(blob);
+      })
+      .catch((e: unknown) => {
+        if (abort.signal.aborted) return;
+        close();
+        failedTransfer(e);
+      });
+  };
+  /** Nothing is offered that would start a second transfer over one in
+   *  flight: this screen's own, the automatic copy, or a download. */
+  const transferring = busySync || driveAudioState === 'uploading' || tempProgress !== null || downloadProgress !== undefined;
+
+  /** The analysis's ⋯ menu (2026-11-05, the user's design): its export, then
+   *  what can be done with its recording, under a heading — the library's ⋯
+   *  groups its entries the same way. In words, each one: the four unlabelled
+   *  icons it replaces were passed by a tester looking for exactly these.
+   *  Only what applies NOW is listed. Re-analysing is red with the deletions:
+   *  it replaces the list, confirmed, with no undo. */
+  const titleMenu: ContextMenuEntry[] = [
+    { label: t('sessions.menu.export'), icon: <UploadIcon size={14} />, onClick: () => showShareSessionModal(session) },
+    // Out of the audio block (the user's call): it acts on the analysis, the
+    // recording is only what it reads.
+    ...(audioUrl || temp || (reachable && !transferring) ? [{
+      label: t('sessions.menu.reanalyze'), icon: <ResetIcon size={14} />, danger: true, onClick: reanalyze,
+    }] : []),
+    ...(audioUrl || reachable ? [{ heading: t('sessions.menu.audio') }] : []),
+    ...((audioUrl || reachable) && !downloading && (audioUrl || !transferring) ? [{
+      label: t('sessions.menu.download'),
+      icon: <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />,
+      onClick: downloadAudio,
+    }] : []),
+    ...(!audioUrl && reachable && !transferring ? [{
+      label: t('sessions.menu.keepHere', { size: formatBytes(synced!.bytes) }),
+      icon: <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />,
+      onClick: keepHere,
+    }] : []),
+    ...(audioUrl && driveOn && !synced && !transferring ? [{
+      label: t('sessions.menu.upload'), icon: <CloudUpIcon size={14} />, onClick: uploadToDrive,
+    }] : []),
+    ...(audioUrl ? [{
+      label: t('sessions.menu.forgetHere'), icon: <TrashIcon size={14} />, danger: true, onClick: forgetHere,
+    }] : []),
+    ...(reachable && !transferring ? [{
+      label: t('sessions.menu.removeDrive'), icon: <TrashIcon size={14} />, danger: true, onClick: removeFromDrive,
+    }] : []),
+  ];
+
+  /** The timeline — the strip of detections, which IS the seek bar. A function
+   *  returning elements rather than a component: one defined in this render
+   *  would be a new type at each one, and remount (the dead-button trap). It
+   *  sits on the player's line, or on a line of its own without a player.
+   *  Remounted when it moves from one to the other, its head is drawn where
+   *  it last stood rather than back at the start: the playback events move it
+   *  straight in the DOM (applyHead), and that position is what a render
+   *  writes too, so the two never disagree. */
+  const timeline = (placement: string) => (
+    <div
+      ref={barRef}
+      class={`relative h-5 rounded bg-elevated overflow-hidden cursor-pointer touch-none select-none ${placement}`}
+      onPointerDown={onBarDown}
+      onPointerMove={onBarMove}
+      onPointerUp={onBarUp}
+      onPointerCancel={onBarUp}
+      onDblClick={onBarDoubleClick}
+    >
+      {session.annotations.map((ann, i) => {
+        const end = ann.end ?? session.duration;
+        const isCurrent = lit.ids.includes(ann.id);
+        return (
+          <div
+            key={ann.id}
+            data-seg={ann.id}
+            class={`absolute top-0 bottom-0 transition-[filter,box-shadow] ${isCurrent ? 'brightness-150 z-[1]' : 'hover:brightness-125'}`}
+            style={{
+              left: `${(ann.start / session.duration) * 100}%`,
+              // Exact width, with a floor in PIXELS rather than in percent:
+              // a percentage floor widened short tunes into a lie, and a lie
+              // the play head is about to walk across and contradict. Two
+              // pixels keep a very short detection clickable without moving
+              // where it starts.
+              width: `${((end - ann.start) / session.duration) * 100}%`,
+              minWidth: '2px',
+              backgroundColor: BUCKET_SEGMENT[ann.bucket],
+              backgroundImage: HATCH[i % 2],
+              ...(isCurrent ? { boxShadow: 'inset 0 0 0 1.5px var(--color-primary)' } : {}),
+            }}
+            title={ann.displayName}
+          />
+        );
+      })}
+      {/* Above the segments, and deaf to pointers so a click lands on the
+          segment underneath rather than on the head itself. */}
+      <div
+        ref={headRef}
+        class="absolute top-0 bottom-0 w-0.5 bg-primary pointer-events-none z-[2]"
+        style={{ left: `${Math.min(100, (headTimeRef.current / (session.duration || 1)) * 100)}%` }}
+      />
+    </div>
+  );
+
+  /** The player's ▶ badge with the recording only on Drive: a cloud, then the
+   *  download's percentage — this visit's, or the background one that got
+   *  there first (audioDownloads.ts). */
+  const comingFromDrive = !playUrl ? (tempProgress ?? downloadProgress ?? null) : null;
 
   return (
     <>
@@ -1174,7 +1446,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         getDefaultName={() => session.name}
         onRename={(val) => { session.name = val; persist(); }}
         onDelete={() => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); }}
-        onShare={() => showShareSessionModal(session)}
+        menu={titleMenu}
         hasNotes={!!session.notes?.trim()}
         onNotes={() => showAnalysisNotesModal(session.notes ?? '', (notes) => {
           if (notes.trim()) session.notes = notes; else delete session.notes;
@@ -1213,159 +1485,110 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         onChange={bump}
       />
 
-      <audio ref={audioRef} class="hidden" src={audioUrl ?? undefined} />
+      <audio ref={audioRef} class="hidden" src={playUrl ?? undefined} />
       {drivePlayer.audio}
 
       {/* Transport and timeline travel together, pinned to the top: the strip
           is the reference you navigate BY, and scrolling the list used to take
           it off the screen at the exact moment you had just clicked it. */}
-      {/* Two layers on one line. The sticky one carries what you navigate BY
-          and stays put; these three act on the RECORDING — downloading it,
-          re-analysing it, forgetting it — and belong to the page, not to the
-          bar. Absolutely positioned rather than sitting in the row, so they
-          keep the place they have always had while scrolling away with
-          everything else: a destructive action has no business riding along
-          under the cursor for the whole visit. Above the bar in z-order, or
-          its backdrop would hide them while the two are at rest. */}
+      {/* What is done WITH the recording — download, copy, re-analyse,
+          delete — is in the title's ⋯ menu; the bar only plays it. */}
       {/* Spans everything below, not just the bar: a sticky element can only
           travel within its own parent, so a wrapper cut to the bar's height
           would let it scroll away immediately — which is exactly what it did. */}
       <div class="relative">
-        {audioUrl && (
-          // On the transport's line, under the row of views: the bar's `pt-3`,
-          // that row's 32 px (`p-1` around 24 px tabs), the transport's `mt-3`
-          // — 56 px, `top-14`. Change one and change this.
-          <div class="absolute top-14 right-0 z-20 h-7 flex items-center gap-3" data-tour="summary-audio">
-            {/* A button, not a link to the stored blob: the file is only read
-                out of the local database on demand, which is also where its
-                extension gets settled (see downloadAudio). */}
-            <button
-              class={`text-dim hover:text-accent transition-colors shrink-0 flex items-center ${downloading ? '' : 'cursor-pointer'}`}
-              title={t('sessions.downloadAudio')}
-              disabled={downloading}
-              onClick={downloadAudio}
-            >
-              <span class="flex items-center" dangerouslySetInnerHTML={{ __html: downloadIcon(14) }} />
-            </button>
-            {driveOn && <DriveAudioBtn state={driveAudioState} onClick={toggleSync} />}
-            <button
-              class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0"
-              title={t('sessions.reanalyze.hint')}
-              onClick={() => confirmModal(t('sessions.reanalyze.title'), t('sessions.reanalyze.message'), t('sessions.reanalyze.confirm'), onReanalyze)}
-            >
-              <ResetIcon size={14} />
-            </button>
-            <button
-              class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
-              title={t('sessions.forgetAudio.hint')}
-              // Two messages, because the act has two different consequences:
-              // with a copy on Drive this frees space and is undone by a
-              // download; without one it is the end of the recording.
-              onClick={() => confirmModal(t('sessions.forgetAudio.title'), t(synced ? 'sessions.forgetAudio.messageSynced' : 'sessions.forgetAudio.message'), t('sessions.forgetAudio'), () => {
-                void forgetSessionAudio(session.id).then(() => setAudioUrl(null));
-              })}
-            >
-              <TrashIcon size={14} />
-            </button>
-          </div>
-        )}
         {/* `top-0` rather than a negative offset that cancels the page's own
             padding: the bar then pins at the scrollport edge and its `pt-3`
             shows in both states, so the room above the controls is the same
             number pinned and at rest — it cannot drift apart. And `pt-3`
-            matches the timeline's `mt-3` just below, so the bar sits in equal
-            air top and bottom. Change one of the three and change all three. */}
-        <div class="sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3" data-tour="summary-player">
-          {/* How much of each tune is shown, as tabs above the transport and
-              pinned with it (the user's design): the view is changed while
-              reading the list, wherever it is scrolled. 32 px tall — see
-              `top-14` above. */}
-          <AnalysisViewBar />
-          {audioUrl && (
-            <div class="flex items-center gap-2 flex-wrap mt-3">
-              <button
-                class="w-7 h-7 p-0 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
-                onClick={() => { const a = audioRef.current; if (!a) return; if (a.paused) { stopDrivePassage(); void a.play(); } else a.pause(); }}
-                dangerouslySetInnerHTML={{ __html: playing ? pauseIcon(12) : playIcon(12) }}
-              />
+            matches the `mt-3` between the player and the views, and the `pb-3`
+            under them, so the bar sits in equal air throughout. Change one and
+            change them all. */}
+        {/* Where the bar stands at rest: once this has scrolled out of sight,
+            the bar is pinned — see `pinned`. One pixel tall, given back below,
+            so that it is something to intersect without moving anything. */}
+        <div ref={pinMarkRef} aria-hidden="true" class="h-px -mb-px" />
+        <div
+          // A line under it once pinned (2026-11-05, the user's call): the list
+          // then runs under the bar, and the two need telling apart. Always a
+          // border, transparent at rest, so that it showing moves nothing.
+          class={`sticky top-0 z-10 bg-bg -mx-6 px-6 pt-3 pb-3 border-b transition-colors ${pinned ? 'border-border' : 'border-transparent'}`}
+          data-tour="summary-player"
+        >
+          {/* One line since 2026-11-05 (the user's call, for the room): ▶ ■,
+              the timeline between them and the time. Without a player the
+              timeline keeps a line of its own, still a map of the analysis. */}
+          {(playUrl || reachable) ? (
+            <div class="flex items-center gap-2">
+              {/* With the recording only on Drive (2026-11-05, the user's
+                  design): the same ▶, a cloud on it; pressed, the recording is
+                  brought down for this visit — the cloud turning into its
+                  percentage — and plays from where the head stands. */}
+              <span class="relative shrink-0">
+                <button
+                  class="w-7 h-7 p-0 rounded-full flex items-center justify-center bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:cursor-default"
+                  title={playUrl ? undefined : t('sessions.playFromDrive.whole', { size: formatBytes(synced?.bytes ?? 0) })}
+                  aria-label={playUrl ? undefined : t('sessions.playFromDrive.whole', { size: formatBytes(synced?.bytes ?? 0) })}
+                  disabled={!playUrl && (comingFromDrive !== null || busySync)}
+                  onClick={() => {
+                    const a = audioRef.current;
+                    if (!a) return;
+                    if (!playUrl) { playFromDrive(); return; }
+                    if (a.paused) { stopDrivePassage(); void a.play(); } else a.pause();
+                  }}
+                  dangerouslySetInnerHTML={{ __html: playing ? pauseIcon(12) : playIcon(12) }}
+                />
+                {!playUrl && (comingFromDrive !== null ? (
+                  <span class="absolute -right-2.5 -bottom-1.5 px-1 rounded bg-elevated border border-border text-[9px] leading-[13px] font-mono tabular-nums text-accent pointer-events-none">
+                    {Math.round(comingFromDrive * 100)}%
+                  </span>
+                ) : (
+                  <span class="absolute -right-1 -bottom-0.5 text-accent pointer-events-none drop-shadow-sm"><CloudIcon size={11} /></span>
+                ))}
+              </span>
               <button
                 class="w-7 h-7 p-0 rounded-full flex items-center justify-center shrink-0 text-dim hover:text-primary transition-colors"
                 onClick={() => { const a = audioRef.current; if (!a) return; a.pause(); a.currentTime = 0; }}
                 dangerouslySetInnerHTML={{ __html: stopIcon(12) }}
               />
-              <span ref={timeLblRef} class="text-[11px] font-mono text-dim tabular-nums">0:00 / 0:00</span>
+              {timeline('flex-1 min-w-0')}
+              {/* Static text: the player writes it straight into the node (see
+                  updateTime), and so does the effect giving the length before
+                  anything is loaded. */}
+              <span ref={timeLblRef} class="shrink-0 text-[11px] font-mono text-dim tabular-nums">0:00 / 0:00</span>
+              {/* At the end of the line since the timeline came onto it: it used
+                  to sit over that end, out of the bar, to scroll away with the
+                  page — the time is there now. Pinned with the bar, then: it
+                  only offers a copy, confirmed, nothing destructive. */}
+              {audioUrl && driveOn && driveAudioState !== 'on' && (
+                <NotOnDriveBtn state={driveAudioState} onClick={uploadToDrive} />
+              )}
             </div>
-          )}
-          {/* Says why there is no player, instead of just not drawing one. A
-              session opened on another device carries its annotations but not
-              its recording, and the controls silently vanishing reads as a bug —
-              which is exactly how it was reported.
+          ) : (
+            <>
+              {/* Says why there is no player, instead of just not drawing one.
+                  A session opened on another device carries its annotations
+                  but not its recording, and the controls silently vanishing
+                  reads as a bug — which is exactly how it was reported.
 
-              When there IS a copy on Drive, this is where it is offered. The
-              size is on the button because the answer to "should I tap this"
-              depends on it and on nothing else. */}
-          {!audioUrl && (
-            synced && driveOn ? (
-              <button
-                class="mt-3 text-xs text-accent hover:brightness-110 transition-[filter] cursor-pointer disabled:opacity-40 disabled:cursor-default"
-                disabled={busySync || downloadProgress !== undefined}
-                onClick={downloadSynced}
-              >
-                {/* The figure whichever download it is — this button's, or the
-                    background one (audioDownloads.ts) that got here first. */}
-                {downloadProgress !== undefined
-                  ? `${t('sessions.syncAudio.downloading')} ${Math.round(downloadProgress * 100)} %`
-                  : busySync
-                    ? t('sessions.syncAudio.downloading')
-                    : t('sessions.syncAudio.download', { size: formatBytes(synced.bytes) })}
-              </button>
-            ) : (
-              <p class="mt-3 text-xs text-muted">{t('sessions.audioElsewhere')}</p>
-            )
-          )}
+                  A copy on Drive this device can reach gets the player above,
+                  its ▶ bringing it down (2026-11-05; it was a "Download the
+                  audio" line here). Keeping it on the device is in the title's
+                  ⋯ menu.
 
-          <div
-            ref={barRef}
-            class="relative h-5 rounded bg-elevated mt-3 overflow-hidden cursor-pointer touch-none select-none"
-            onPointerDown={onBarDown}
-            onPointerMove={onBarMove}
-            onPointerUp={onBarUp}
-            onPointerCancel={onBarUp}
-            onDblClick={onBarDoubleClick}
-          >
-            {session.annotations.map((ann, i) => {
-            const end = ann.end ?? session.duration;
-            const isCurrent = lit.ids.includes(ann.id);
-            return (
-              <div
-                key={ann.id}
-                data-seg={ann.id}
-                class={`absolute top-0 bottom-0 transition-[filter,box-shadow] ${isCurrent ? 'brightness-150 z-[1]' : 'hover:brightness-125'}`}
-                style={{
-                  left: `${(ann.start / session.duration) * 100}%`,
-                  // Exact width, with a floor in PIXELS rather than in percent:
-                  // a percentage floor widened short tunes into a lie, and a lie
-                  // the play head is about to walk across and contradict. Two
-                  // pixels keep a very short detection clickable without moving
-                  // where it starts.
-                  width: `${((end - ann.start) / session.duration) * 100}%`,
-                  minWidth: '2px',
-                  backgroundColor: BUCKET_SEGMENT[ann.bucket],
-                  backgroundImage: HATCH[i % 2],
-                  ...(isCurrent ? { boxShadow: 'inset 0 0 0 1.5px var(--color-primary)' } : {}),
-                }}
-                title={ann.displayName}
-              />
-            );
-          })}
-          {/* Above the segments, and deaf to pointers so a click lands on the
-              segment underneath rather than on the head itself. */}
-          <div
-            ref={headRef}
-            class="absolute top-0 bottom-0 w-0.5 bg-primary pointer-events-none z-[2]"
-            style={{ left: '0%' }}
-          />
-          </div>
+                  Nowhere to be had: a plain "no audio" (2026-11-04). It used to
+                  say the recording "stays where it was recorded", which was
+                  false for one forgotten here without a Drive copy — gone for
+                  good — and hid a copy on Drive behind a disconnected Drive. */}
+              <p class="text-xs text-muted">{t(synced ? 'sessions.audioOnDriveNeedsConnection' : 'sessions.noAudio')}</p>
+              {timeline('mt-3')}
+            </>
+          )}
+          {/* How much of each tune is shown, as tabs pinned with the player
+              (the user's design): the view is changed while reading the list,
+              wherever it is scrolled. Under the player since 2026-11-05, the
+              timeline having come onto the player's line (the user's call). */}
+          <div class="mt-3"><AnalysisViewBar /></div>
         </div>
 
         <div class="flex items-center gap-2 mt-3">

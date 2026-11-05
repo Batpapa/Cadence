@@ -61,7 +61,7 @@ function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; 
       ctx={ctx}
       annotationId={annotationId}
       onOpenCard={(cardId) => ctx.navigate({ view: 'card', cardId })}
-      onReanalyze={() => { void startReanalyze(ctx, session); }}
+      onReanalyze={(audio) => { void startReanalyze(ctx, session, audio); }}
     />
   );
 }

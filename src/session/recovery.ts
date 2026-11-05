@@ -79,7 +79,10 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
   // empty file to Drive. A MISSING recording, by contrast, is a case the whole
   // app already handles — it is what a recording freed or recorded elsewhere
   // looks like. So leave it missing.
-  if (chunks.length > 0) {
+  //
+  // Missing too when it was started not to be kept (keepRecordings.ts): the
+  // chunks go below with the rest of the draft.
+  if (chunks.length > 0 && !session.discardAudio) {
     let blob = new Blob(chunks, { type: mimeType });
     if (mimeType.includes('webm')) {
       try {
@@ -98,7 +101,7 @@ async function finalizeOrphan(session: Analysis): Promise<void> {
     // like it's still live.
     : session.annotations.map(a => ({ ...a, finalized: true }));
 
-  const { confirmations: _draftOnly, ...saved } = session;
+  const { confirmations: _draftOnly, discardAudio: _draftOnlyToo, ...saved } = session;
   await saveSessionMeta({
     ...saved,
     duration: Math.max(session.duration, durationMs / 1000),
