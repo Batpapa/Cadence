@@ -1,0 +1,19 @@
+Fixture,Audio,Type,Date,Lieu,Source,Prise de son,Formation,Instruments,Accompagnement,Bruit ambiant,Chant,Qualité son (1-5),Qualité jeu (1-5),Annotation,Commentaires
+1Hour_Trad_Irish_Music_Session_in_Korea,Audio A,session,,Corée,YouTube,,,,,,,,,groupe WhatsApp,
+One_of_the_Best_Traditional_Irish_Music_Sessions_Longer_Video,Audio B,session,,,YouTube,,,,,,,,,groupe WhatsApp,
+20260523_5_auberge_fleurie,Audio C,session,2026-05-23,Auberge fleurie,,,,,,,,,,groupe WhatsApp,
+20260523_2_aprem_tabac,Audio D,session,2026-05-23,Tabac,,,,,,,,,,groupe WhatsApp,
+20260523_1_matin_Anglade,Audio E,session,2026-05-23,Anglade,,,,,,,,,,groupe WhatsApp,
+20240721_tocane_2_chapiteau,Audio F,session,2024-07-21,Tocane (chapiteau),,,,,,,,,,groupe WhatsApp,
+13th_Moon_Gravity_Well_-_Irish_Trad_Session_2024_01_24,Audio G,session,2024-01-24,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,groupe WhatsApp,
+732984_11910076-lq,Noise,bruit,,bar,,,,,,,aucun,,,aucune (aucune musique),référence de faux positifs : rien ne doit être détecté
+13th_Moon_2025_07_02,13th_Moon_2025_07_02.mp3,session,2025-07-02,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,annotation publique (vérifiée à l'écoute),même salle et même groupe que son jeu de test
+13th_Moon_2025_08_13,13th_Moon_2025_08_13.mp3,session,2025-08-13,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,annotation publique (vérifiée à l'écoute),même salle et même groupe que son jeu de test
+13th_Moon_2025_08_27,13th_Moon_2025_08_27.mp3,session,2025-08-27,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,annotation publique (vérifiée à l'écoute),même salle et même groupe que son jeu de test
+13th_Moon_2025_10_22,13th_Moon_2025_10_22.mp3,session,2025-10-22,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,annotation publique (vérifiée à l'écoute),même salle et même groupe que son jeu de test
+13th_Moon_2025_12_10,13th_Moon_2025_12_10.mp3,session,2025-12-10,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,annotation publique (vérifiée à l'écoute),même salle et même groupe que son jeu de test
+13th_Moon_2026_01_14,13th_Moon_2026_01_14.mp3,session,2026-01-14,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,bavardages,,,,analyse Cadence corrigée à l’oreille (2026-11-07),à partir de Drowsy Maggie (21:54) les gens parlent plus fort dont une voix de femme au timbre et au volume très présents
+13th_Moon_2026_02_25,13th_Moon_2026_02_25.mp3,session,2026-02-25,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,annotation publique (vérifiée à l'écoute),même salle et même groupe que son jeu de test
+13th_Moon_2026_04_08,13th_Moon_2026_04_08.mp3,session,2026-04-08,13th Moon Gravity Well (Portland),YouTube (Portland Irish Music),vidéo en ligne,session,,,,,,,annotation publique (vérifiée à l'écoute),même salle et même groupe que son jeu de test (18 morceaux non vérifiés)
+20240723_tocane_soir_1,20240723 Tocane soir 1.m4a,session,2024-07-23,Tocane,groupe WhatsApp,téléphone dans la salle,session,,banjo (par moments),,quelques chansons,,,groupe WhatsApp,chant après 01:10:43 (non annoté) ; débuts de suites parfois pas clairs ; téléphone emporté en route vers 01:25 sans gêne pour Cadence
+20260227_3_marcellin_fond,20260227 3 Marcellin fond.m4a,session,2026-02-27,Marcellin (fond de salle),groupe WhatsApp,téléphone dans la salle,session,whistle; uilleann pipes (Elena),banjo (par moments),bar bruyant; autre session audible,quelques chansons,,,groupe WhatsApp,"whistle fou ; passages inaudibles ; téléphone manipulé vers 27:00 ; la session d'à côté s'entend (vers 1:11 et 1:22) ; ""lalala"" final"

@@ -55,6 +55,15 @@ const FIXTURES = [
   // Added 2026-09-06 by the user. Timestamped, one tune per line — the same
   // annotation format as One_of_the_Best, which is the one that measures best.
   { name: '1Hour_Trad_Irish_Music_Session_in_Korea', audio: '1Hour Trad Irish Music Session in Korea.mp3' },
+  // Added 2026-11-06: Portland Irish Music's YouTube recordings of the 13th Moon
+  // Gravity Well session, timings from a public annotation. Same room and band
+  // every week, so it weighs as one kind of recording, not eight.
+  ...['2025_07_02', '2025_08_13', '2025_08_27', '2025_10_22', '2025_12_10', '2026_01_14', '2026_02_25', '2026_04_08']
+    .map(d => ({ name: `13th_Moon_${d}`, audio: `13th_Moon_${d}.mp3` })),
+  // Added 2026-11-07, annotated by the group (relevés converted by
+  // experiments/session-bench/import-releve.cjs).
+  { name: '20240723_tocane_soir_1', audio: '20240723_tocane_soir_1.m4a' },
+  { name: '20260227_3_marcellin_fond', audio: '20260227_3_marcellin_fond.m4a' },
 ];
 
 function windowize(pcm) {

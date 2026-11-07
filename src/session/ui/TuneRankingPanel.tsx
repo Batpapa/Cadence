@@ -16,8 +16,8 @@ import { matchesSearch } from '../../utils';
 import type { Analysis, Detection } from '../model';
 import { getSettingAbcMeta, getSettingAbcMetaSync, onTuneIndexCached } from '../recognition/indexStore';
 import { loadSessionAudio } from '../db';
-import { tuneName, TuneDeckButton, attachClip, isClipAttached } from './sessionUiShared';
-import { showBatchProgress, type BatchStep, type StepOutcome } from './batchRunner';
+import { tuneName, TuneDeckButton, prepareClip, fileClip, isClipAttached, type PreparedClip } from './sessionUiShared';
+import { showBatchProgress, type BatchStep, type BatchCommit, type StepOutcome } from './batchRunner';
 import { deckGain } from './tuneBatch';
 import { PassRow, useSlicePlayer } from './PassRow';
 import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesChips, passesChipsAll, detectedRangeFacet, rankDetectedSets, tuneIdsOfSetKey, heardFacts, type PassFacet } from './tuneRanking';
@@ -29,13 +29,13 @@ import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
 import { recordOf, setCardFor, cardsByTuneId, chainSpan } from '../tunesets';
 import { buildTunesetCard } from '../../services/tunesetCard';
-import { TunesetDeckButton, attachSetClip, isSetClipAttached } from './tunesetShared';
+import { TunesetDeckButton, prepareSetClip, fileSetClip, isSetClipAttached } from './tunesetShared';
 import { SetHearingRow } from './DetectedIn';
 import { generateId } from '../../utils';
 import type { AppState, Card } from '../../types';
 import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../../components/filterChips';
 import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf, type SessionTree } from '../sessionTree';
-import { mutateWithRule } from '../../services/attachmentStore';
+import { mutateWithRule, uploadAttachmentSoon } from '../../services/attachmentStore';
 import { hasLibrary } from '../../services/pageMode';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
@@ -533,7 +533,14 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
    *  the selection behind. The card is fetched from TheSession first and the
    *  externalId re-checked inside the write, exactly as the single-tune button
    *  does (TuneDeckButton's commitAdd) — the same tune can arrive by another
-   *  route while a dozen fetches are in flight. */
+   *  route while a dozen fetches are in flight.
+   *
+   *  The steps only FETCH; everything is written once, at the end (BatchCommit),
+   *  as the TheSession bulk import does. One write per tune cost a copy of the
+   *  whole library each, analyses included, and two hundred of them ran a
+   *  tester's tab out of memory (2026-11-06). The tunes are written before the
+   *  sets, so a set whose tunes get their cards in this same batch is filed
+   *  too, whatever order the list showed them in. */
   const addToDecks = () => {
     const user = getContext().user;
     const ids = selectedRows.map(r => r.row.tuneId);
@@ -546,54 +553,71 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     // Opened even with no eligible deck (it used to return in silence): its
     // "+ new deck" makes one, which starts empty and so gains every row.
     showDeckPickerModal('sessions.ranking.batch.decks.title', 'sessions.ranking.batch.decks.confirm', eligible, (deckIds) => {
-      const steps: BatchStep[] = selectedRows.map(({ row, name }) => ({
-        label: name,
-        run: async (): Promise<StepOutcome> => {
-          // A set is filed as its set card — created on the way when every
-          // one of its tunes has a card, as its + does in an analysis.
-          const setIds = tuneIdsOfSetKey(row.tuneId);
-          if (setIds) {
-            let outcome: StepOutcome = { status: 'skipped', reason: t('sessions.batch.skip.alreadyInDecks') };
-            await mutateWithRule(s => {
+      const keys = selectedRows.map(r => r.row.tuneId);
+      /** The cards fetched for tunes that had none, by tune id. */
+      const fetched = new Map<string, Card>();
+      const steps: BatchStep[] = selectedRows.map(({ row, name }) => {
+        const key = row.tuneId;
+        return {
+          label: name,
+          run: async (): Promise<StepOutcome> => {
+            // A set, or a tune that already has its card: nothing to fetch.
+            if (tuneIdsOfSetKey(key) || findByExternalId(`thesession:${key}`, getContext().user.cards)) return { status: 'done' };
+            fetched.set(key, tuneResultToCard(await fetchTuneById(Number(key))));
+            return { status: 'done' };
+          },
+        };
+      });
+      const alreadyThere: StepOutcome = { status: 'skipped', reason: t('sessions.batch.skip.alreadyInDecks') };
+      const fileInto = (s: AppState, cardId: string): boolean => {
+        let changed = false;
+        for (const deckId of deckIds) {
+          const deck = s.decks[deckId];
+          if (deck && !deck.entries.some(e => e.cardId === cardId)) { deck.entries.push({ cardId }); changed = true; }
+        }
+        return changed;
+      };
+      const commit: BatchCommit = { write: async (ran) => {
+        const outcomes = new Map<number, StepOutcome>();
+        await mutateWithRule(s => {
+          outcomes.clear();
+          const tunesFirst = [...ran.filter(i => !tuneIdsOfSetKey(keys[i]!)), ...ran.filter(i => !!tuneIdsOfSetKey(keys[i]!))];
+          for (const i of tunesFirst) {
+            const key = keys[i]!;
+            // A set is filed as its set card — created on the way when every
+            // one of its tunes has a card, as its + does in an analysis.
+            const setIds = tuneIdsOfSetKey(key);
+            if (setIds) {
               let card = setCardFor(setIds, s.cards);
+              let created = false;
               if (!card) {
                 const map = cardsByTuneId(s.cards);
                 const tunes = setIds.map(x => map.get(x)).filter((c): c is Card => !!c);
-                if (tunes.length !== setIds.length) { outcome = { status: 'skipped', reason: t('sessions.batch.skip.noTuneCards') }; return; }
+                if (tunes.length !== setIds.length) { outcomes.set(i, { status: 'skipped', reason: t('sessions.batch.skip.noTuneCards') }); continue; }
                 card = buildTunesetCard(tunes, {
                   defaultRepeat: defaultTuneRepeat(s),
                   attachments: addTunesetAbcOnConvert(s) ? [tunesetAbcPlaceholder()] : [],
                   newId: generateId,
                 });
                 s.cards[card.id] = card;
-                outcome = { status: 'done' };
+                created = true;
               }
-              for (const deckId of deckIds) {
-                const deck = s.decks[deckId];
-                if (deck && !deck.entries.some(e => e.cardId === card.id)) { deck.entries.push({ cardId: card.id }); outcome = { status: 'done' }; }
-              }
-            });
-            return outcome;
-          }
-          const known = findByExternalId(`thesession:${row.tuneId}`, getContext().user.cards);
-          // Fetched BEFORE the write, so a lookup that fails writes nothing at
-          // all rather than half of it.
-          const fresh = known ? null : tuneResultToCard(await fetchTuneById(Number(row.tuneId)));
-          let changed = false;
-          await mutateWithRule(s => {
-            const existing = findByExternalId(`thesession:${row.tuneId}`, s.cards);
-            let cardId = existing?.id;
-            if (!existing && fresh) { s.cards[fresh.id] = fresh; cardId = fresh.id; changed = true; }
-            if (!cardId) return;
-            for (const deckId of deckIds) {
-              const deck = s.decks[deckId];
-              if (deck && !deck.entries.some(e => e.cardId === cardId)) { deck.entries.push({ cardId }); changed = true; }
+              if (!fileInto(s, card.id) && !created) outcomes.set(i, alreadyThere);
+              continue;
             }
-          });
-          return changed ? { status: 'done' } : { status: 'skipped', reason: t('sessions.batch.skip.alreadyInDecks') };
-        },
-      }));
-      showBatchProgress(t('sessions.ranking.batch.decks.title'), steps, refresh);
+            // Re-checked here: the tune may have arrived by another route
+            // while the fetches were in flight.
+            const existing = findByExternalId(`thesession:${key}`, s.cards);
+            const fresh = fetched.get(key);
+            let cardId = existing?.id;
+            if (!existing && fresh) { s.cards[fresh.id] = fresh; cardId = fresh.id; }
+            if (!cardId) { outcomes.set(i, { status: 'skipped', reason: t('sessions.batch.skip.noCard') }); continue; }
+            if (!fileInto(s, cardId) && existing) outcomes.set(i, alreadyThere);
+          }
+        });
+        return outcomes;
+      } };
+      showBatchProgress(t('sessions.ranking.batch.decks.title'), steps, refresh, commit);
     }, t('library.deckInfo.add', { n: ids.length }));
   };
 
@@ -611,9 +635,22 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
    *  ending the tune, so one forgotten analysis costs only its own clips.
    *
    *  Requires a card: unlike the action above, this one does not create it —
-   *  an attachment on a card nobody asked for is not a favour. */
+   *  an attachment on a card nobody asked for is not a favour.
+   *
+   *  The steps only CUT; every clip is filed in one write at the end, and
+   *  closing the dialog part-way files none (BatchCommit). One write per clip
+   *  used to cost a copy of the whole library each — see addToDecks. */
   const attachClips = () => {
-    const steps: BatchStep[] = selectedRows.map(({ row, name }) => ({
+    /** The clips cut so far, by the step that cut them. */
+    const pending: { step: number; tuneId?: string; setCardId?: string; prepared: PreparedClip }[] = [];
+    /** Each recording read once, however many of the selected passages it holds. */
+    const recordings = new Map<string, Promise<Blob | undefined>>();
+    const recording = (sessionId: string): Promise<Blob | undefined> => {
+      let p = recordings.get(sessionId);
+      if (!p) { p = loadSessionAudio(sessionId); recordings.set(sessionId, p); }
+      return p;
+    };
+    const steps: BatchStep[] = selectedRows.map(({ row, name }, step) => ({
       label: name,
       run: async (onProgress): Promise<StepOutcome> => {
         const setIds = tuneIdsOfSetKey(row.tuneId);
@@ -628,9 +665,10 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
             const { session, chain } = passages[i]!;
             const span = chainSpan(chain, session.duration);
             if (isSetClipAttached(session, getContext().user.cards[setCard.id], span)) { already++; continue; }
-            const audio = await loadSessionAudio(session.id);
+            const audio = await recording(session.id);
             if (!audio) continue;
-            await attachSetClip(ctx, session, setCard.id, span, audio, r => onProgress?.((i + r) / passages.length));
+            const prepared = await prepareSetClip(session, setCard, span, audio, r => onProgress?.((i + r) / passages.length));
+            pending.push({ step, setCardId: setCard.id, prepared });
             added++;
           }
           if (added > 0) return { status: 'done' };
@@ -645,11 +683,12 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
         for (let i = 0; i < passages.length; i++) {
           const { session, detection } = passages[i]!;
           if (isClipAttached(session, detection)) { already++; continue; }
-          const audio = await loadSessionAudio(session.id);
+          const audio = await recording(session.id);
           if (!audio) continue; // that analysis lost its recording — the others still stand
           // The bar moves inside a tune too: a tune with four passages is four
           // MP3s, and a step that sat still for all of them would look stuck.
-          await attachClip(ctx, session, detection, audio, r => onProgress?.((i + r) / passages.length));
+          const prepared = await prepareClip(session, detection, audio, r => onProgress?.((i + r) / passages.length));
+          pending.push({ step, tuneId: row.tuneId, prepared });
           added++;
         }
         if (added > 0) return { status: 'done' };
@@ -657,7 +696,33 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
         return { status: 'skipped', reason: t('sessions.batch.skip.noAudio') };
       },
     }));
-    showBatchProgress(t('sessions.ranking.batch.attach.title'), steps, refresh);
+    const commit: BatchCommit = {
+      write: async (ran) => {
+        recordings.clear();
+        const wanted = new Set(ran);
+        const filed: PreparedClip[] = [];
+        const landed = new Set<number>();
+        await getContext().mutate(s => {
+          filed.length = 0;
+          landed.clear();
+          for (const p of pending) {
+            // A step that failed half-way is reported as failed: none of its
+            // clips are filed, the ones it had cut included.
+            if (!wanted.has(p.step)) continue;
+            const ok = p.setCardId ? fileSetClip(s, p.setCardId, p.prepared) : fileClip(s, p.tuneId!, p.prepared);
+            if (ok) { filed.push(p.prepared); landed.add(p.step); }
+          }
+        });
+        pending.length = 0;
+        for (const p of filed) uploadAttachmentSoon(p.att);
+        // Filed by another route while the batch was cutting.
+        return new Map(ran.filter(i => !landed.has(i)).map(i => [i, { status: 'skipped', reason: t('sessions.batch.skip.already') } as StepOutcome]));
+      },
+      // Nothing to undo: a clip's local file that no card names is the local
+      // sweep's to collect (attachmentStore.ts). Only the memory is let go.
+      discard: () => { pending.length = 0; recordings.clear(); },
+    };
+    showBatchProgress(t('sessions.ranking.batch.attach.title'), steps, refresh, commit);
   };
 
   /** While a selection is under way, nothing on this screen navigates.
@@ -714,7 +779,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
 
   return (
     <div>
-      {player.audio}
+      <audio {...player.audioProps} />
 
       {filtersShown && (
       <div class="space-y-1">

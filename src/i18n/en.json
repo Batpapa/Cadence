@@ -2105,6 +2105,7 @@
   "sessions.ranking.batch.attach": "Add the audio clip",
   "sessions.ranking.batch.attach.title": "Adding audio clips",
   "sessions.batch.progress": "{done} / {total}",
+  "sessions.batch.saving": "Saving…",
   "sessions.batch.done": "{n} tune handled",
   "sessions.batch.donePlural": "{n} tunes handled",
   "sessions.batch.issues": "{n} tune left aside",

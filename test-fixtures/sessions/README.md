@@ -23,6 +23,42 @@ The `Audio X` names are what the annotating group uses, so anything arriving
 from them (CSV ground truth in particular) is labelled that way and has to be
 translated through this table before it means anything here.
 
+The eight `13th_Moon_YYYY_MM_DD` fixtures (added 2026-11-06) need no translation: their audio is
+`13th_Moon_YYYY_MM_DD.mp3`, Portland Irish Music's YouTube recordings of the weekly 13th Moon
+Gravity Well session, and their timings come from a public annotation.
+Only tunes its annotator checked by ear keep an id; the rest are `0`. One room and one band, so they weigh as one kind of recording, not eight.
+
+## Describing each recording — `recordings.csv`
+
+The corpus is anything but uniform: a session recorded on a phone in a loud bar and a clean
+YouTube mix do not test the same thing, and a global recall hides which one a gap comes from.
+`recordings.csv` has one row per fixture so results can be read against what was recorded.
+
+Every column is free text. The values below are suggestions, so the same thing gets written the
+same way; anything else is fine, and an empty cell means "not filled in yet". Where a cell holds
+several values, separate them with `;` (a comma would split the column).
+
+| Column | Suggested values |
+|---|---|
+| Fixture | the fixture's name, as in the file names here |
+| Audio | the source file, or the `Audio X` name the annotating group uses |
+| Type | session, concert, album, rehearsal, lesson, solo practice, bruit |
+| Date, Lieu | when and where it was played |
+| Source | who recorded or published it (YouTube channel, group member…) |
+| Prise de son | téléphone dans la salle, enregistreur, micro proche, table de mixage, studio, vidéo en ligne |
+| Formation | solo, duo, petit groupe (3-5), session (6+), groupe de scène |
+| Instruments | the melody instruments heard, e.g. `fiddle; flûte; accordéon` |
+| Accompagnement | aucun, guitare, bouzouki, piano, bodhrán, contrebasse |
+| Bruit ambiant | calme, bavardages, bar bruyant, public, extérieur |
+| Chant | aucun, quelques chansons, beaucoup |
+| Qualité son (1-5) | 1 = barely audible … 5 = studio-clean |
+| Qualité jeu (1-5) | how cleanly and steadily the tunes are played, apart from the sound |
+| Annotation | who wrote the timings and how (groupe WhatsApp, annotation publique, export de Cadence corrigé, …) |
+| Commentaires | anything else |
+
+Measurements the windows already give (share of windows transcribed, median top-1 score and
+margin, flat windows, tempo spread) are computed by the harness, not typed in here.
+
 ## Files
 
 Two files per session:

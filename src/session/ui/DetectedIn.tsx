@@ -64,7 +64,7 @@ function TuneDetectedIn({ cardId }: { cardId: string }) {
   const ctx = getContext();
   return (
     <div class="space-y-2">
-      {player.audio}
+      <audio {...player.audioProps} />
       <span class="section-title">{t('card.section.detectedIn')}</span>
       <div class="space-y-1.5">
         {groups.flatMap(({ session, detections }) => detections.map(detection => (
@@ -103,7 +103,7 @@ function SetDetectedIn({ cardId }: { cardId: string }) {
 
   return (
     <div class="space-y-2">
-      {player.audio}
+      <audio {...player.audioProps} />
       <span class="section-title">{t('card.section.detectedIn')}</span>
       <div class="space-y-1.5">
         {hearings.map(({ session, chain }) => (

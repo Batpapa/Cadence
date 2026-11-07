@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import type { AppContext, Card } from '../../types';
+import type { AppContext, AppState, Card } from '../../types';
 import { t } from '../../services/i18nService';
 import { PlusIcon, AddClipIcon, ClipAttachedIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
@@ -13,7 +13,7 @@ import { getContext } from '../../store';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { cardsByTuneId, setCardFor } from '../tunesets';
 import { buildTunesetCard } from '../../services/tunesetCard';
-import { fmtTime, type ClipSessionRef } from './sessionUiShared';
+import { fmtTime, type ClipSessionRef, type PreparedClip } from './sessionUiShared';
 import { hasLibrary } from '../../services/pageMode';
 
 // ── What a set heard in an analysis can be put through (2026-10-19) ──────────
@@ -52,14 +52,32 @@ export async function attachSetClip(
 ): Promise<void> {
   const setCard = getContext().user.cards[setCardId];
   if (!setCard || isSetClipAttached(session, setCard, span)) return;
+  const prepared = await prepareSetClip(session, setCard, span, audio, onProgress);
+  let filed = false;
+  await ctx.mutate(s => { filed = fileSetClip(s, setCardId, prepared); });
+  if (filed) uploadAttachmentSoon(prepared.att);
+}
+
+/** attachSetClip's first half — the set's twin of prepareClip
+ *  (sessionUiShared.tsx), for a batch that files every clip in one write. */
+export async function prepareSetClip(
+  session: ClipSessionRef,
+  setCard: Card,
+  span: Span,
+  audio: Blob,
+  onProgress?: (ratio: number) => void,
+): Promise<PreparedClip> {
   const clip = await extractClip(audio, span.start, span.end, onProgress);
   const entry = await fileToEntry(new File([clip.blob], setClipFileName(session, setCard.name, span, clip.extension), { type: clip.blob.type }));
-  const att = await attachmentFor(entry, getContext().user);
-  await ctx.mutate(s => {
-    const card = s.cards[setCardId];
-    if (card) card.content.attachments.push({ ...att, clipOf: setClipKey(session, span) });
-  });
-  uploadAttachmentSoon(att);
+  return { att: await attachmentFor(entry, getContext().user), clipOf: setClipKey(session, span) };
+}
+
+/** attachSetClip's second half, inside a recipe. Whether it filed the clip. */
+export function fileSetClip(s: AppState, setCardId: string, prepared: PreparedClip): boolean {
+  const card = s.cards[setCardId];
+  if (!card || card.content.attachments.some(a => a.type === 'file' && a.clipOf === prepared.clipOf)) return false;
+  card.content.attachments.push({ ...prepared.att, clipOf: prepared.clipOf });
+  return true;
 }
 
 /** Re-cuts the set's clip after a bound of one of its tunes moved the set's

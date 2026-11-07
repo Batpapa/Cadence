@@ -36,7 +36,11 @@ interface Draft { noop: Signal<boolean> }
 function open(title: string, node: ComponentChild, confirmLabel: string, draft: Draft, onConfirm: () => void): void {
   const { el, cleanup } = renderModalBody(node);
   showModal(title, el, [
-    { label: confirmLabel, primary: true, disabled: draft.noop, onClick: () => { onConfirm(); closeModal(); } },
+    // Closed BEFORE acting, not after: an action that opens a dialog of its
+    // own (a batch's progress) would otherwise see it taken by closeModal in
+    // its place — its work going on unseen, and this one left open with its
+    // confirm still live for a second run (found 2026-11-06).
+    { label: confirmLabel, primary: true, disabled: draft.noop, onClick: () => { closeModal(); onConfirm(); } },
   ], { maxWidth: '28rem', onDismiss: cleanup });
 }
 
@@ -562,6 +566,7 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
   // Held back rather than failed. Counted, so the tally of updated cards stays
   // honest, but not listed: `onSetAside` opens on top of this and names them.
   const [asideCount, setAsideCount] = useState(0);
+  const [saving, setSaving] = useState(false);
   const [finished, setFinished] = useState(false);
   const total = spec.cardIds.length;
 
@@ -570,6 +575,11 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
       let ok = 0;
       const ko: string[] = [];
       const held: Card[] = [];
+      // Everything fetched, written ONCE at the end (2026-11-06): one write per
+      // card copied the whole library each time, analyses included — the
+      // batch that ran a tester's tab out of memory did exactly that. And all
+      // or nothing: closing the dialog part-way writes none of it.
+      const results: { cardId: string; name: string; fetched: T }[] = [];
       for (const cardId of spec.cardIds) {
         // Closing the modal unmounts this and flips the flag: stop hammering a
         // public API for a result nobody is waiting for any more.
@@ -582,17 +592,39 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
           // Asked before the fetch, so a card that must not be touched costs no
           // round trip either.
           if (await spec.setAside?.(card)) { held.push(card); setAsideCount(held.length); tally(); continue; }
-          // One fetch, every ticked field written from it. Read from live state
-          // each round rather than from a snapshot: a set that pulls in a
-          // missing tune must be visible to the next set that also plays it.
-          const fetched = await spec.fetch(card);
-          await mutateWithRule(s => {
-            const c = s.cards[cardId];
-            if (c) for (const f of fields) f.apply(c, fetched, s);
-          });
+          // One fetch, every ticked field written from it.
+          results.push({ cardId, name: card.name, fetched: await spec.fetch(card) });
           ok++;
         } catch { fail(); }
         tally();
+      }
+      if (cancelled.now) return;
+      if (results.length > 0) {
+        setSaving(true);
+        const failed: string[] = [];
+        try {
+          await mutateWithRule(s => {
+            failed.length = 0;
+            // In the order fetched: a set that brought in a tune comes before
+            // the later sets that play it too.
+            for (const { cardId, name, fetched } of results) {
+              const c = s.cards[cardId];
+              if (!c) { failed.push(name); continue; }
+              // On a copy, so a field that throws leaves this card as it was
+              // rather than half rewritten — what its own write used to give.
+              const draft = structuredClone(c);
+              try {
+                for (const f of fields) f.apply(draft, fetched, s);
+                s.cards[cardId] = draft;
+              } catch { failed.push(name); }
+            }
+          });
+        } catch {
+          // The one write failed: none of the cards were updated.
+          failed.splice(0, failed.length, ...results.map(r => r.name));
+        }
+        if (failed.length > 0) { ok -= failed.length; ko.push(...failed); setSkipped([...ko]); }
+        setSaving(false);
       }
       setFinished(true);
       // After the tally is on screen, and only if the reader is still there to
@@ -621,6 +653,7 @@ function RefreshProgress<T>({ spec, fields, cancelled }: {
           ? t(ok === 1 ? 'library.batch.refresh.done' : 'library.batch.refresh.donePlural', { n: ok })
           : t('library.batch.refresh.progress', { loaded: done, total })}
       </p>
+      {saving && <p class="text-xs text-dim">{t('sessions.batch.saving')}</p>}
       {allFailed && <p class="text-xs text-danger">{t('library.batch.refresh.allFailed')}</p>}
       {finished && !allFailed && skipped.length > 0 && (
         <div class="space-y-1">

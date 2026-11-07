@@ -1486,7 +1486,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       />
 
       <audio ref={audioRef} class="hidden" src={playUrl ?? undefined} />
-      {drivePlayer.audio}
+      <audio {...drivePlayer.audioProps} />
 
       {/* Transport and timeline travel together, pinned to the top: the strip
           is the reference you navigate BY, and scrolling the list used to take

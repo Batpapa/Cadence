@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AppContext, Card } from '../../types';
+import type { AppContext, AppState, Card, FileAttachment } from '../../types';
 import { t } from '../../services/i18nService';
 import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
@@ -330,6 +330,37 @@ export function isClipAttached(session: ClipSessionRef, ann: Detection): boolean
   return card.content.attachments.some(a => a.type === 'file' && (a.clipOf === key || legacyClipTag(a.name)?.key === key));
 }
 
+/** A clip cut and stored, not yet on its card. */
+export interface PreparedClip { att: FileAttachment; clipOf: string }
+
+/** attachClip's first half: cuts the detection's passage and builds its
+ *  attachment, without touching the state — so a batch can cut a hundred and
+ *  file them in ONE write (TuneRankingPanel's attachClips). An external file
+ *  is already stored locally by then; one that never gets filed is left to
+ *  the local sweep, as an import's skipped duplicate is (attachmentStore.ts). */
+export async function prepareClip(
+  session: ClipSessionRef,
+  ann: Detection,
+  audio: Blob,
+  onProgress?: (ratio: number) => void,
+): Promise<PreparedClip> {
+  const clip = await extractClip(audio, ann.start, ann.end ?? session.duration, onProgress);
+  const entry = await fileToEntry(new File([clip.blob], clipFileName(session, ann, clip.extension), { type: clip.blob.type }));
+  // A clip is the biggest thing this app attaches by itself — the ten that
+  // dominated one real library were nearly all clips — so it goes through the
+  // same rule as a hand-picked file (services/attachmentStore.ts).
+  return { att: await attachmentFor(entry, getContext().user), clipOf: clipKey(session, ann) };
+}
+
+/** attachClip's second half, inside a recipe: puts the clip on its tune's
+ *  card unless that card is gone or already holds it. Whether it did. */
+export function fileClip(s: AppState, tuneId: string, prepared: PreparedClip): boolean {
+  const card = findByExternalId(`thesession:${tuneId}`, s.cards);
+  if (!card || card.content.attachments.some(a => a.type === 'file' && a.clipOf === prepared.clipOf)) return false;
+  card.content.attachments.push({ ...prepared.att, clipOf: prepared.clipOf });
+  return true;
+}
+
 /** Extracts the detection's audio slice as a standalone file, in the
  *  recording's own format, and attaches it to the card — independent from the
  *  session file. `audio` is already
@@ -348,17 +379,10 @@ export async function attachClip(
   if (!findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards)) return false;
   if (isClipAttached(session, ann)) return true;
 
-  const clip = await extractClip(audio, ann.start, ann.end ?? session.duration, onProgress);
-  const entry = await fileToEntry(new File([clip.blob], clipFileName(session, ann, clip.extension), { type: clip.blob.type }));
-  // A clip is the biggest thing this app attaches by itself — the ten that
-  // dominated one real library were nearly all clips — so it goes through the
-  // same rule as a hand-picked file (services/attachmentStore.ts).
-  const att = await attachmentFor(entry, getContext().user);
-  await ctx.mutate(s => {
-    const card = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
-    if (card) card.content.attachments.push({ ...att, clipOf: clipKey(session, ann) });
-  });
-  uploadAttachmentSoon(att);
+  const prepared = await prepareClip(session, ann, audio, onProgress);
+  let filed = false;
+  await ctx.mutate(s => { filed = fileClip(s, ann.tuneId, prepared); });
+  if (filed) uploadAttachmentSoon(prepared.att);
   return true;
 }
 

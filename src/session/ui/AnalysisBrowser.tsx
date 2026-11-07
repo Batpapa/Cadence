@@ -9,8 +9,8 @@ import { MicIcon, FileAudioIcon, DeviceAudioIcon, PencilIcon, TrashIcon } from '
 import { fmtLongTime } from './sessionUiShared';
 import { fmtSessionDateTime } from '../sessionNaming';
 import type { Analysis } from '../model';
-import { deleteSession } from '../db';
-import { showBatchProgress, type BatchStep } from './batchRunner';
+import { deleteSessions } from '../db';
+import { showBlockingProgress } from './batchRunner';
 import {
   childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
   editSessionTree, folderChain, folderOrder, isFolderDescendant, levelItems, moveFolder, parentFolderOf,
@@ -271,7 +271,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
   const sessionAccepts = () => false;
 
   /** Deletes the folder you are standing in, and everything under it. The
-   *  recordings go first — `deleteSession` also drops their audio, locally and
+   *  recordings go first — `deleteSessions` also drops their audio, locally and
    *  on Drive — then the now-empty folders leave the tree, and the screen
    *  climbs to the parent, which is the only place left to be. */
   const removeFolder = () => {
@@ -281,21 +281,24 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
       t('sessions.folder.delete.title'),
       t('sessions.folder.delete.message', { name: current.name }),
       t('common.delete'),
-      () => {
-        const finish = () => {
-          edit(tr => deleteFolderTree(tr, current.id));
-          onOpenFolder(parentId);
-          onSessionsChanged();
-        };
-        if (doomed.length === 0) { finish(); return; }
-        // A folder holding thirty evenings is thirty Drive round trips; a
-        // dialog that says where it is beats one that looks frozen.
-        const steps: BatchStep[] = doomed.map(id => ({
-          label: byId.get(id)?.name ?? id,
-          run: async () => { await deleteSession(id); return { status: 'done' as const }; },
-        }));
-        showBatchProgress(t('sessions.folder.delete.title'), steps, finish);
-      },
+      () => { void (async () => {
+        const names = new Map(doomed.map(id => [id, byId.get(id)?.name ?? id]));
+        // All of them in one write, at once (deleteSessions): no folder is
+        // ever left half emptied.
+        const leftovers = doomed.length > 0 ? await deleteSessions(doomed) : [];
+        edit(tr => deleteFolderTree(tr, current.id));
+        onOpenFolder(parentId);
+        onSessionsChanged();
+        // Then their recordings, here and on Drive — in view, behind a dialog
+        // that stays until it is done: a folder of thirty evenings is thirty
+        // Drive round trips, and the tab is not safe to close before.
+        if (leftovers.length > 0) {
+          await showBlockingProgress(t('sessions.folder.delete.title'), leftovers.map(l => ({
+            label: names.get(l.sessionId) ?? l.sessionId,
+            run: async () => { await l.clear(); return { status: 'done' as const }; },
+          })));
+        }
+      })(); },
     );
   };
 
