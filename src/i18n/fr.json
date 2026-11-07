@@ -2105,6 +2105,7 @@
   "sessions.ranking.batch.attach": "Ajouter l'extrait audio",
   "sessions.ranking.batch.attach.title": "Ajout des extraits audio",
   "sessions.batch.progress": "{done} / {total}",
+  "sessions.batch.saving": "Enregistrement…",
   "sessions.batch.done": "{n} morceau traité",
   "sessions.batch.donePlural": "{n} morceaux traités",
   "sessions.batch.issues": "{n} morceau laissé de côté",

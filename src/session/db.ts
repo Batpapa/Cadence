@@ -509,35 +509,75 @@ export async function loadSessionMeta(sessionId: string): Promise<Analysis | und
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  // Its Drive copy first, while the record pointing at it still exists — the
-  // reverse order loses the file id and leaves the file orphaned in the user's
-  // Drive with nothing left to trace it back. Best-effort by design: a delete
-  // that cannot reach Drive right now must not stop the session from going.
-  await dropSyncedAudio(sessionId);
+  for (const leftover of await deleteSessions([sessionId])) await leftover.clear();
+}
+
+/** What a deleted analysis leaves behind once the library no longer names it:
+ *  its recording on this device, its Drive copy. */
+export interface SessionLeftover { sessionId: string; clear: () => Promise<void> }
+
+/** Deletes several analyses in ONE write of the library — a folder of thirty
+ *  evenings used to be thirty writes, each copying every other analysis.
+ *
+ *  Resolves once they are gone from the library, which is all at once: there
+ *  is no moment where half of them are. What each leaves behind is handed
+ *  back, to be cleared by the caller IN VIEW — under a progress dialog that
+ *  stays until it is done (AnalysisBrowser's removeFolder). Cleared out of
+ *  sight, it let the user believe the tab could be closed while Drive round
+ *  trips were still under way (user's call, 2026-11-07).
+ *
+ *  The Drive file ids are read BEFORE the write and kept in hand, so the
+ *  record pointing at a file can go in the same write. (Until 2026-11-06 the
+ *  Drive copy was trashed first, one round trip per analysis, before anything
+ *  else could happen.) A tab closed anyway before the clearing is done leaves
+ *  the file in Drive with no record, which is exactly what the companion-file
+ *  sweep is for (services/driveOrphans.ts) — and its name still says which
+ *  analysis it was (companionName). Best-effort by design: a delete that
+ *  cannot reach Drive right now must not stop the analyses from going. */
+export async function deleteSessions(sessionIds: string[]): Promise<SessionLeftover[]> {
+  const doomed = new Set(sessionIds);
+  const synced = (await moduleData()).syncedAudio ?? {};
+  const driveFiles = new Map(sessionIds.flatMap(id => synced[id] ? [[id, synced[id]!.fileId] as const] : []));
   const { mutate } = await storeModule();
   await mutate(user => {
     const mod = user.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined;
-    if (mod) delete mod.sessions[sessionId];
-    // Its ratings STAY — those tunes were played, and deleting the recording
+    if (mod) {
+      for (const id of sessionIds) delete mod.sessions[id];
+      if (mod.syncedAudio) {
+        for (const id of sessionIds) delete mod.syncedAudio[id];
+        if (Object.keys(mod.syncedAudio).length === 0) delete mod.syncedAudio;
+      }
+    }
+    // Their ratings STAY — those tunes were played, and deleting the recording
     // of an evening does not unplay them (user's rule, 2026-09-23). What goes
     // is the origin they point at: from here on they are what a rating typed
     // on the card page has always been. Deleting a single DETECTION is the
     // opposite case, and takes its rating with it.
     for (const work of Object.values(user.cardWorks ?? {})) {
-      const history = work && strippedReviewIds(work.history, id => isAnalysisReviewId(id, sessionId));
+      const history = work && strippedReviewIds(work.history, rid => sessionIds.some(id => isAnalysisReviewId(rid, id)));
       if (history) work.history = history;
     }
     // Tidiness only — every read of the tree already filters against the real
     // list of analyses (sessionTree.ts), so a stale id breaks nothing. It is
     // dropped here simply so the synced blob does not collect them.
-    editSessionTree(user, tree => forgetSession(tree, sessionId));
+    editSessionTree(user, tree => { for (const id of doomed) forgetSession(tree, id); });
   });
-  const d = await localDb();
-  await d.delete(DRAFT_STORE, sessionId);
-  await d.delete(AUDIO_STORE, sessionId);
-  await deleteSessionWindows(sessionId);
-  markUploadWanted(sessionId, false);
-  audioFreed.set(sessionId, false);
+  return sessionIds.map(sessionId => ({
+    sessionId,
+    clear: async () => {
+      const d = await localDb();
+      await d.delete(DRAFT_STORE, sessionId);
+      await d.delete(AUDIO_STORE, sessionId);
+      await deleteSessionWindows(sessionId);
+      markUploadWanted(sessionId, false);
+      audioFreed.set(sessionId, false);
+      // To the trash, not deleted: a snapshot, here or on another device, may
+      // still hold the analysis, and for thirty days its recording stays
+      // within reach of it (see dropSyncedAudio).
+      const fileId = driveFiles.get(sessionId);
+      if (fileId) await (await driveModule()).trashCompanionFile(fileId);
+    },
+  }));
 }
 
 /** Finalized sessions only (what the library shows) — see saveSessionMeta's

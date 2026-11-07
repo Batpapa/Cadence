@@ -705,25 +705,41 @@ export function LibraryView() {
     // brings with it: the same count line, the same overwrite warning, the same
     // progress bar and the same named list of what got skipped.
     ...(setIds.length > 0 ? [
-      { label: t('library.batch.family.sets'), onClick: () => showRefreshModal({
-        cardIds: setIds,
-        title: t('library.batch.refreshSet.title', { n: setIds.length }),
-        confirmKey: 'library.batch.refreshSet.confirm',
-        fetch: async (card) => {
-          const parsed = parseSetExternalId(card.externalId);
-          if (!parsed) throw new Error(`not a set id: ${card.externalId ?? ''}`);
-          const set = await fetchSet(parsed.memberId, parsed.setId);
-          // Resolved against live state, so a tune pulled in for an earlier set
-          // in the same run is reused rather than created a second time.
-          return buildSetCards(set, appState.value.cards, defaultTuneRepeat(appState.value));
-        },
-        fields: [
-          { key: 'tunes', labelKey: 'card.contextMenu.refreshSetTunes', apply: (card, { setCard, newTunes }, s) => {
-            for (const tune of newTunes) s.cards[tune.id] = tune;
-            card.tunes = setCard.tunes;
-          } },
-        ],
-      }) },
+      { label: t('library.batch.family.sets'), onClick: () => {
+        // The run writes once, at the end (showRefreshModal), so the tunes an
+        // earlier set brings in are not in the state yet when the next set is
+        // resolved: they are kept here, so a tune two sets play is created once.
+        const createdInRun: Record<string, Card> = {};
+        // A tune that reached the library by another route while the run was
+        // fetching: its existing card is used, here and in every later set.
+        const replacedInRun = new Map<string, Card>();
+        showRefreshModal({
+          cardIds: setIds,
+          title: t('library.batch.refreshSet.title', { n: setIds.length }),
+          confirmKey: 'library.batch.refreshSet.confirm',
+          fetch: async (card) => {
+            const parsed = parseSetExternalId(card.externalId);
+            if (!parsed) throw new Error(`not a set id: ${card.externalId ?? ''}`);
+            const set = await fetchSet(parsed.memberId, parsed.setId);
+            const built = await buildSetCards(set, { ...appState.value.cards, ...createdInRun }, defaultTuneRepeat(appState.value));
+            for (const tune of built.newTunes) createdInRun[tune.id] = tune;
+            return built;
+          },
+          fields: [
+            { key: 'tunes', labelKey: 'card.contextMenu.refreshSetTunes', apply: (card, { setCard, newTunes }, s) => {
+              for (const tune of newTunes) {
+                const twin = tune.externalId ? findByExternalId(tune.externalId, s.cards) : undefined;
+                if (twin && twin.id !== tune.id) replacedInRun.set(tune.id, twin);
+                else s.cards[tune.id] = tune;
+              }
+              card.tunes = (setCard.tunes ?? []).map(ref => {
+                const twin = replacedInRun.get(ref.id);
+                return twin ? { ...ref, id: twin.id, guid: twin.guid } : ref;
+              });
+            } },
+          ],
+        });
+      } },
     ] : []),
     ...(itiIds.length > 0 ? [
       { heading: t('library.batch.source.irishtuneinfo') },
@@ -737,6 +753,8 @@ export function LibraryView() {
           mapping ??= ensureItiMapping();
           return (await mapping).byItiId[sourceIdOf(card, 'irishtuneinfo:')];
         };
+        /** TheSession tunes an earlier card of this run is migrating to. */
+        const claimedInRun = new Set<number>();
         showRefreshModal({
           cardIds: itiIds,
           title: t('library.batch.migrate.title', { n: itiIds.length }),
@@ -756,7 +774,9 @@ export function LibraryView() {
             // holding it back here would file it under the wrong heading.
             if (!entry) return false;
             const twin = findByExternalId(`thesession:${entry.sessionId}`, appState.value.cards);
-            return !!twin && twin.id !== card.id;
+            // Or an earlier card of THIS run migrates to it: the run writes
+            // once at the end, so that one is not in the state yet.
+            return (!!twin && twin.id !== card.id) || claimedInRun.has(entry.sessionId);
           },
           onSetAside: (cards) => showDuplicateCardsModal(cards, {
             // Reached from the library, so going to look at one is a real way
@@ -767,7 +787,9 @@ export function LibraryView() {
           fetch: async (card) => {
             const entry = await equivalentOf(card);
             if (!entry) throw new Error(`no TheSession equivalent for ${card.externalId ?? ''}`);
-            return fetchTuneById(entry.sessionId);
+            const tune = await fetchTuneById(entry.sessionId);
+            claimedInRun.add(entry.sessionId);
+            return tune;
           },
           fields: [
             { key: 'migrate', labelKey: 'card.contextMenu.migrate', apply: applyTheSessionMigration,

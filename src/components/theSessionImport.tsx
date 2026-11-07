@@ -968,6 +968,10 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useLatestOnly();
   const [, bump] = useState(0);
+  /** False once the dialog is closed: an import under way stops, and writes
+   *  nothing (importSets). */
+  const aliveRef = useRef(true);
+  useEffect(() => () => { aliveRef.current = false; }, []);
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
 
@@ -1023,18 +1027,29 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       setBusy(false);
       return;
     }
-    // Unlike the other batches, the import below writes AS IT GOES — each set
-    // is committed before the next is fetched, deliberately, so a long import
-    // is never all-or-nothing. The deck answer is therefore taken here, once
-    // the listing has proved there is something to file.
+    // The deck answer is taken here, once the listing has proved there is
+    // something to file, and before the sets themselves are fetched — the
+    // part that takes long.
     withDeckChoice(() => { void importSets(sets!); }, () => { setStatus(''); setProgress(null); setBusy(false); });
   };
 
+  /** All or nothing (2026-11-06): every set is fetched first, then ONE write
+   *  files them all — as the tunebook import above does. It used to write set
+   *  by set, which copied the whole library per set and left half an import
+   *  behind when it stopped. Closing the dialog part-way now writes nothing,
+   *  and so does a failure: the error is said, the library is untouched. */
   const importSets = async (sets: Awaited<ReturnType<typeof fetchMemberSets>>) => {
     let created = 0, imported = 0, skipped = 0;
     try {
+      /** Sets already in the library, to be filed into the chosen decks only. */
+      const alreadyIds: string[] = [];
+      const built: { setCard: Card; newTunes: Card[] }[] = [];
+      /** Tunes this run is creating, so a tune two sets play is created once:
+       *  nothing is in the state until the end. */
+      const createdInRun: Record<string, Card> = {};
       // Phase two: one set at a time.
       for (let i = 0; i < sets.length; i++) {
+        if (!aliveRef.current) return;
         const set = sets[i]!;
         setProgress(50 + Math.round((i / sets.length) * 50));
 
@@ -1044,36 +1059,35 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         // a separate, deliberate act — "Refresh tunes" on its source pin. The
         // check comes before any fetch, so a skipped set costs no network.
         const already = findByExternalId(setExternalId(set.memberId, set.id), appState.value.cards);
-        if (already) {
-          skipped++;
-          await mutate(s => {
-            for (const deckId of (getTargetDeckIds?.() ?? [])) {
-              const deck = s.decks[deckId]; if (!deck) continue;
-              if (!deck.entries.some(e => e.cardId === already.id)) deck.entries.push({ cardId: already.id });
-            }
-          });
-          continue;
-        }
+        if (already) { skipped++; alreadyIds.push(already.id); continue; }
 
         setStatus(t('theSession.sets.importing', { name: set.name, n: i + 1, total: sets.length }));
-        // The live cards map is re-read each time so a tune created for an
-        // earlier set in this same batch is reused, not fetched twice.
-        const { setCard, newTunes } = await buildSetCards(set, appState.value.cards, defaultTuneRepeat(appState.value));
-        created += newTunes.length;
+        const one = await buildSetCards(set, { ...appState.value.cards, ...createdInRun }, defaultTuneRepeat(appState.value));
+        for (const tune of one.newTunes) createdInRun[tune.id] = tune;
+        built.push(one);
+        created += one.newTunes.length;
         imported++;
-        await mutateWithRule(s => {
+      }
+      if (!aliveRef.current) return;
+      setStatus(t('sessions.batch.saving'));
+      await mutateWithRule(s => {
+        const file = (cardId: string) => {
+          for (const deckId of (getTargetDeckIds?.() ?? [])) {
+            const deck = s.decks[deckId]; if (!deck) continue;
+            if (!deck.entries.some(e => e.cardId === cardId)) deck.entries.push({ cardId });
+          }
+        };
+        for (const id of alreadyIds) file(id);
+        for (const { setCard, newTunes } of built) {
           for (const tune of newTunes) s.cards[tune.id] = tune;
           s.cards[setCard.id] = setCard;
           // The deck choice applies to the SET — that is what was imported.
           // Tunes created along the way land in the library with no deck; they
           // are reachable from the set, and each shows it under "played in
           // these sets". Filing them is the user's call, later or never.
-          for (const deckId of (getTargetDeckIds?.() ?? [])) {
-            const deck = s.decks[deckId]; if (!deck) continue;
-            if (!deck.entries.some(e => e.cardId === setCard.id)) deck.entries.push({ cardId: setCard.id });
-          }
-        });
-      }
+          file(setCard.id);
+        }
+      });
       setProgress(100);
       setStatus(
         t('theSession.sets.done', { sets: imported, tunes: created })

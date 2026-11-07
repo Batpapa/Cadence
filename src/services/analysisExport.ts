@@ -143,8 +143,12 @@ export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBrea
   // The tempo (2026-11-01, the user): in the beat of the tune's dance, as the
   // cards show it, and in quavers — the one count that compares a reel with a
   // jig. Empty where none was saved (Detection.quaverRate).
+  // TheSession (2026-11-07, the user): the tune's link, as the Detections tab's
+  // export gives it — a name alone does not say which of two same-named tunes
+  // was heard, and a file meant to be checked against others needs the id.
+  // Setting: which of the tune's settings matched, as the bare number.
   const rows: string[][] = [
-    ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked', 'Tempo', 'Beat', 'Quavers/min'],
+    ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked', 'Tempo', 'Beat', 'Quavers/min', 'TheSession', 'Setting'],
   ];
 
   const dets = ordered(session);
@@ -164,6 +168,8 @@ export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBrea
       tempo ? String(Math.round(tempo.value)) : '',
       tempo ? BEAT_NAME[tempo.unit] : '',
       tempo ? String(Math.round(tempo.quaversPerMinute)) : '',
+      theSessionUrl(d.tuneId),
+      d.settingId ?? '',
     ]);
   });
 

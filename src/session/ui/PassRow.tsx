@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { VNode } from 'preact';
+import type { JSX, RefObject } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, CloudIcon } from '../../components/icons';
@@ -34,8 +34,22 @@ import { useMediaVolume } from '../../components/useMediaVolume';
 
 /** Passages from several evenings, played through ONE audio element. */
 export interface SlicePlayer {
-  /** Render it once, anywhere in the list: it is hidden. */
-  audio: VNode;
+  /** Spread once on an `<audio>` anywhere in the list: it is hidden.
+   *
+   *  Props, NOT a ready-made `<audio>` element (2026-11-06). An element, once
+   *  rendered, carries a pointer to its parent and so to the whole tree of the
+   *  render that made it; held in the hook's result, it is held by every
+   *  closure of that render — and a long-lived one (an index listener, a batch
+   *  under way) kept each old tree, every row it had replaced, and through
+   *  their handlers a full copy of the library per render. Measured at one
+   *  copy per tune added in a batch, which is what ran a tab out of memory. */
+  audioProps: {
+    ref: RefObject<HTMLAudioElement>;
+    class: string;
+    onPause: () => void;
+    onEnded: () => void;
+    onTimeUpdate: (e: JSX.TargetedEvent<HTMLAudioElement>) => void;
+  };
   playingId: string | null;
   /** The detection whose passage is on its way from Drive. */
   loadingId: string | null;
@@ -246,18 +260,17 @@ export function useSlicePlayer(): SlicePlayer {
     setPlayingId(detection.id);
   };
 
-  const audio = (
-    <audio
-      ref={audioRef}
-      class="hidden"
-      onPause={() => setPlayingId(null)}
-      onEnded={() => setPlayingId(null)}
-      onTimeUpdate={(e) => {
-        const a = e.currentTarget;
-        if (a.currentTime >= sliceEndRef.current) a.pause();
-      }}
-    />
-  );
+  // Made once: everything it reads is a ref or a state setter, both stable.
+  const [audioProps] = useState<SlicePlayer['audioProps']>(() => ({
+    ref: audioRef,
+    class: 'hidden',
+    onPause: () => setPlayingId(null),
+    onEnded: () => setPlayingId(null),
+    onTimeUpdate: (e) => {
+      const a = e.currentTarget;
+      if (a.currentTime >= sliceEndRef.current) a.pause();
+    },
+  }));
 
   const isHere = (sessionId: string) => !!hasAudio[sessionId] || audioArrivals.value.has(sessionId);
 
@@ -267,7 +280,7 @@ export function useSlicePlayer(): SlicePlayer {
     audioRef.current?.pause();
   };
 
-  return { audio, playingId, loadingId, isHere, probe, play, stop };
+  return { audioProps, playingId, loadingId, isHere, probe, play, stop };
 }
 
 /** The play button of a passage, wherever one is shown — the lists of passes

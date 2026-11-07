@@ -12,7 +12,7 @@ import { emptyState } from '../utils';
 import { openEphemeralUser, routeSignal, canGoBack, goBack, navigate, appState } from '../store';
 import { sessionsOf } from '../session/detections';
 import { runWithoutLibrary } from '../services/pageMode';
-import { initSessionDbStandalone, deleteLocalSessionData, listSessions, loadSessionAudio, deleteSession } from '../session/db';
+import { initSessionDbStandalone, deleteLocalSessionData, listSessions, loadSessionAudio, deleteSessions } from '../session/db';
 import { initAttachmentDbForUser, deleteLocalAttachmentData } from '../services/attachmentDb';
 import { stageAnalyses } from '../services/standaloneHandoff';
 import { sessionRecordingSignal } from '../session/ui/sessionStore';
@@ -98,7 +98,7 @@ async function handOver(lang: Lang, setHanding: (v: boolean) => void): Promise<v
         session,
         audio: (await loadSessionAudio(session.id)) ?? null,
       }))));
-      for (const s of sessions) await deleteSession(s.id);
+      for (const leftover of await deleteSessions(sessions.map(s => s.id))) await leftover.clear();
     }
     location.href = APP_URL;
   } catch (e) {
