@@ -12,7 +12,7 @@ import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
 import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon } from './components/icons';
 import { WelcomeTour } from './components/welcomeTour';
-import { webAppInstallState, playInstallState, type InstallState } from './components/installOffer';
+import { webAppButtonAction, openPlayStore } from './components/installOffer';
 import { t } from './services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from './services/updateService';
 import { initDriveClient } from './services/driveService';
@@ -283,10 +283,9 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   const [, redraw] = useState(0);
   // Both ways in, side by side under the sign-in (2026-11-08) — it used to be
   // one discreet link in the top corner, which a visitor who had just scanned
-  // a neighbour's QR at a session never saw. Null for what is not on offer
-  // from here (installOffer.tsx): nothing at all inside the Android app.
-  const webApp = webAppInstallState();
-  const play = playInstallState();
+  // a neighbour's QR at a session never saw. No "Web app" where it cannot
+  // apply: inside the Android app, or inside the web app itself.
+  const installWebApp = webAppButtonAction();
 
   const select = async (id: string) => {
     setLoading(id);
@@ -453,17 +452,15 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             </p>
           )}
 
-          {(webApp || play) && (
-            <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
-              <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
-                {t('settings.install')}
-              </div>
-              <div class="flex gap-2">
-                {webApp && <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} state={webApp} />}
-                {play && <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} state={play} />}
-              </div>
+          <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
+            <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
+              {t('settings.install')}
             </div>
-          )}
+            <div class="flex gap-2">
+              {installWebApp && <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} onClick={installWebApp} />}
+              <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} onClick={openPlayStore} />
+            </div>
+          </div>
 
           {/* Under the sign-in when the tour is beside it; at the very end
               of the page when the tour is below. */}
@@ -498,42 +495,23 @@ export function mountUserSelector(
   render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} onRecover={onRecover} />, root);
 }
 
-/** One of the welcome screen's installs. Logo and name inside, nothing else
- *  (the author, 2026-11-08); what pressing it does — open, install, or not
- *  available — is a small tag sitting on the bottom border at the right, like
- *  a fieldset's legend, so every tile keeps the same size and the tag can never
- *  run into the name however narrow the screen. An installed one is tinted. */
-function InstallTile({ icon, label, state }: {
+/** One of the welcome screen's two install buttons: logo and name, nothing
+ *  else — no state, no detection (the author, 2026-11-08). */
+function InstallTile({ icon, label, onClick }: {
   icon: ComponentChildren;
   label: string;
-  state: InstallState;
+  onClick: () => void;
 }) {
-  const { run } = state;
-  const tone =
-    state.kind === 'open' ? 'border-success/50 bg-success/10 hover:border-success'
-    : state.kind === 'unavailable' ? `border-dashed border-border ${run ? 'hover:border-muted' : ''}`
-    : 'border-border bg-elevated hover:border-muted hover:bg-surface';
-  const tag =
-    state.kind === 'open' ? { key: 'welcome.install.open', color: 'text-success' }
-    : state.kind === 'install' ? { key: 'welcome.install.install', color: 'text-accent' }
-    : { key: 'welcome.install.unavailable', color: 'text-dim' };
-  const cls = `relative flex-1 min-w-0 flex items-center justify-center px-3 py-[11px] rounded-xl border text-[13.5px] transition-colors ${tone} ${
-    run ? 'cursor-pointer' : ''}`;
-  const body = (
-    <>
-      <span class={`flex items-center gap-2 min-w-0 text-primary ${state.kind === 'unavailable' ? 'opacity-60' : ''}`}>
-        <span class="shrink-0 flex">{icon}</span>
-        <span class="truncate">{label}</span>
-      </span>
-      {/* bg-bg masks the border line behind the tag. */}
-      <span class={`absolute right-2.5 bottom-0 translate-y-1/2 px-1 bg-bg text-[10px] leading-none whitespace-nowrap ${tag.color}`}>
-        {t(tag.key)}
-      </span>
-    </>
+  return (
+    <button
+      type="button"
+      class="flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border border-border bg-elevated hover:border-muted hover:bg-surface transition-colors cursor-pointer text-[13.5px] text-primary"
+      onClick={onClick}
+    >
+      <span class="shrink-0 flex">{icon}</span>
+      <span class="truncate">{label}</span>
+    </button>
   );
-  return run
-    ? <button type="button" class={cls} onClick={run}>{body}</button>
-    : <div class={cls}>{body}</div>;
 }
 
 const preloadDrive = () => { void initDriveClient().catch(() => { /* retried by the click itself */ }); };
