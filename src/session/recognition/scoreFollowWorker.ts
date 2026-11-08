@@ -1,5 +1,5 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
-import { followScore, contourToMidi, FEATURE_PITCHES, MATCH_USABLE, type FollowResult } from '../scoreFollow';
+import { followScore, contourToMidi, FEATURE_PITCHES, type FollowResult } from '../scoreFollow';
 import { openAudioInput } from '../audio/clipExtract';
 import { getSettingContour } from './indexStore';
 import { FF_PCM_WINDOW } from '../sessionConfig';
@@ -72,7 +72,9 @@ const ctx = self as unknown as WorkerScope;
 const FF_RATE_MAX = 66_974;
 
 let ff: FolkFriendWASM | null = null;
+let ffClean: FolkFriendWASM | null = null;
 let ptr = 0;
+let ptrClean = 0;
 
 async function engine(): Promise<FolkFriendWASM> {
   if (ff) return ff;
@@ -80,6 +82,39 @@ async function engine(): Promise<FolkFriendWASM> {
   ff = new FolkFriendWASM();
   ptr = ff.alloc_single_pcm_window();
   return ff;
+}
+
+// ── Cleaned features (2026-11-07) ─────────────────────────────────────────────
+// Alignment and locate read the pitch-class engine's cleaning of each frame —
+// its harmonic part (strums, bodhrán and attacks taken out), each note minus
+// its median over 10 s (drones, held chords), the 3 strongest notes kept —
+// rather than take_features'. Measured on the annotated sessions
+// (experiments/score-follow, real.js and locate.js): 17 tunes followed over
+// less than 80 % of their span instead of 20, ends nearer the annotations
+// (90th percentile 5.0 / 3.6 s instead of 5.5 / 4.6), passes more regular,
+// a wrong score claiming 12 % of a span at the 90th percentile instead of 89 %;
+// in an 85-minute recording 22 of 26 tunes found where they were played
+// instead of 20, and 7 of 24 tunes never played « found » instead of 15.
+// The tempo ('tempo' below) keeps the default instance: no gain measured there.
+async function cleanEngine(): Promise<FolkFriendWASM> {
+  if (ffClean) return ffClean;
+  await engine(); // the module's init
+  ffClean = new FolkFriendWASM();
+  ffClean.enable_clean_features();
+  ptrClean = ffClean.alloc_single_pcm_window();
+  return ffClean;
+}
+
+/** A new rate makes a new feature extractor, which starts in the default mode:
+ *  the cleaned one is switched back on with it. */
+function setCleanRate(f: FolkFriendWASM, rate: number): void {
+  f.set_sample_rate(rate);
+  f.enable_clean_features();
+}
+
+/** The cleaned features fed since the last take, at `fps` frames a second. */
+function takeClean(f: FolkFriendWASM, fps: number): Float32Array {
+  return f.take_clean_features(Math.round(10 * fps), false, Math.max(1, Math.round(fps)), 3);
 }
 
 /** Mono samples of [from, to) of a recording at its own rate — only that
@@ -172,6 +207,9 @@ const SCAN_TAKE_EVERY = 2048;
  *  Brought within the engine's rates as decodeSpan does (pairs averaged).
  *  Null when the recording cannot be decoded here. */
 async function scanFeatures(audio: Blob, f: FolkFriendWASM, onRatio: (r: number) => void): Promise<{ features: Float32Array; fps: number } | null> {
+  // Taken every 5 minutes of audio: each take starts the cleaning afresh (its
+  // 10-second drone median, the harmonic filter's edges), as in the bench.
+  let takeEvery = SCAN_TAKE_EVERY;
   const { mb, input } = await openAudioInput(audio);
   try {
     const track = await input.getPrimaryAudioTrack();
@@ -184,15 +222,16 @@ async function scanFeatures(audio: Blob, f: FolkFriendWASM, onRatio: (r: number)
     const parts: Float32Array[] = [];
     let rate = 0, factor = 0, fill = 0, acc = 0, accN = 0, fed = 0;
     let plane = new Float32Array(0), mono = new Float32Array(0);
-    const take = () => { const p = f.take_features(); if (p.length) parts.push(p); };
+    const take = () => { const p = takeClean(f, rate / FF_PCM_WINDOW); if (p.length) parts.push(p); };
     for await (const sample of sink.samples()) {
       try {
         if (!factor) {
           rate = sample.sampleRate;
           factor = 1;
           while (rate > FF_RATE_MAX) { rate /= 2; factor *= 2; }
-          f.set_sample_rate(rate);
+          setCleanRate(f, rate);
           f.flush_pcm_buffer();
+          takeEvery = Math.round((300 * rate) / FF_PCM_WINDOW);
         }
         const frames = sample.numberOfFrames;
         const channels = sample.numberOfChannels;
@@ -211,10 +250,10 @@ async function scanFeatures(audio: Blob, f: FolkFriendWASM, onRatio: (r: number)
           acc = 0;
           accN = 0;
           if (fill < FF_PCM_WINDOW) continue;
-          f.get_allocated_pcm_window(ptr).set(window);
-          f.feed_single_pcm_window(ptr);
+          f.get_allocated_pcm_window(ptrClean).set(window);
+          f.feed_single_pcm_window(ptrClean);
           fill = 0;
-          if (++fed % SCAN_TAKE_EVERY === 0) take();
+          if (++fed % takeEvery === 0) take();
         }
         if (duration > 0) onRatio(sample.timestamp / duration);
       } finally {
@@ -232,10 +271,18 @@ async function scanFeatures(audio: Blob, f: FolkFriendWASM, onRatio: (r: number)
   }
 }
 
+/** What a wrong score puts on the score, as a share of the notes, for locate's
+ *  worth below: 0.5, the old MATCH_USABLE — kept there on the cleaned features
+ *  (2026-11-07) because the zones it picks were measured best there: with the
+ *  translated 0.66, 20 of 26 tunes found where they were played in the
+ *  85-minute bench instead of 22. Only the verdict on the zone found moved to
+ *  MATCH_USABLE. */
+const LOCATE_WRONG_SHARE = 0.5;
+
 /** Where in a long recording `score` is played, in its seconds: the best of
  *  its windows, joined by those the playing goes on into. A window is worth
  *  the notes it puts on the score beyond what a wrong score would
- *  (MATCH_USABLE of them): longer and truer both count, a wrong tune is
+ *  (LOCATE_WRONG_SHARE of them): longer and truer both count, a wrong tune is
  *  worth less than nothing. Null when no window holds the tune. */
 function locate(features: Float32Array, fps: number, score: number[], onRatio: (r: number) => void): { from: number; to: number } | null {
   const frames = Math.floor(features.length / FEATURE_PITCHES);
@@ -251,7 +298,7 @@ function locate(features: Float32Array, fps: number, score: number[], onRatio: (
     if (!r) continue;
     let hits = 0, counted = 0;
     for (let q = 0; q < r.hits.length; q++) { hits += r.hits[q]!; counted += r.counted[q]!; }
-    const worth = hits - MATCH_USABLE * counted;
+    const worth = hits - LOCATE_WRONG_SHARE * counted;
     if (worth > 0) finds.push({ worth, start: a / fps + r.times[0]!, end: a / fps + r.end });
   }
   onRatio(1);
@@ -330,7 +377,7 @@ ctx.onmessage = (e) => {
         if (duration > LONG_S) {
           if (msg.score.length < 2) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
           progress('scan', 0);
-          const scan = await scanFeatures(msg.audio, await engine(), r => progress('scan', r));
+          const scan = await scanFeatures(msg.audio, await cleanEngine(), r => progress('scan', r));
           if (!scan) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
           const zone = locate(scan.features, scan.fps, msg.score, r => progress('locate', r));
           if (!zone) { ctx.postMessage({ type: 'failed', reason: 'no_alignment' }); return; }
@@ -353,22 +400,22 @@ ctx.onmessage = (e) => {
       });
       if (msg.score.length < 2 && !msg.settingId) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
       const [decoded, f, contour] = await Promise.all([
-        decoding, engine(),
+        decoding, cleanEngine(),
         msg.settingId ? getSettingContour(msg.settingId).catch(() => null) : Promise.resolve(null),
       ]);
       if (msg.score.length < 2 && !contour) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
       if (!decoded) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
 
-      f.set_sample_rate(decoded.rate);
+      setCleanRate(f, decoded.rate);
       f.flush_pcm_buffer();
       const { pcm } = decoded;
       const n = Math.floor(pcm.length / FF_PCM_WINDOW);
       for (let i = 0; i < n; i++) {
-        f.get_allocated_pcm_window(ptr).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
-        f.feed_single_pcm_window(ptr);
+        f.get_allocated_pcm_window(ptrClean).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
+        f.feed_single_pcm_window(ptrClean);
         if ((i & 127) === 0) progress('listen', i / n);
       }
-      const features = f.take_features();
+      const features = takeClean(f, decoded.rate / FF_PCM_WINDOW);
       progress('listen', 1);
       const scores = [...(msg.score.length >= 2 ? [msg.score] : []), ...(contour ? [contourToMidi(contour)] : [])];
       // The alignments one after the other, their progress one forward run

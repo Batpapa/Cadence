@@ -9,10 +9,12 @@ About screen.
 
 **Source: [github.com/Batpapa/folkfriend](https://github.com/Batpapa/folkfriend)**,
 a fork of upstream carrying Cadence's changes. The files here are built from its
-commit **`1b37f01`** and that build reproduces them byte for byte
-(`folkfriend_bg.wasm` MD5 `1f3d9b1cf282bec2bec48eb5c46d9711`,
-`folkfriend_bg_simd.wasm` MD5 `22892f631ec9c8a974317c1de34669a7`). The module
-shipped from 2026-09-13 to 2026-10-29 is commit `b0d0a58`. **Whenever these files
+commit **`6b53e2c`** (2026-11-08: the pitch-class mode, "any pitch", the cleaned
+features and the query speed-ups — see the sections below) and that build reproduces
+them byte for byte (`folkfriend_bg.wasm` MD5 `bd96c7b53ccc50ee7317e6be1fffbda9`,
+`folkfriend_bg_simd.wasm` MD5 `04160e3bcd7e807f833971685c73caac`). The module
+shipped from 2026-10-29 to 2026-11-07 is commit `1b37f01`; from 2026-09-13 to
+2026-10-29, commit `b0d0a58`. **Whenever these files
 change, commit to the fork first and update the commit named here.**
 
 ## Contents
@@ -173,6 +175,106 @@ scalar module and the glue, `pkg-simd/` → `folkfriend_bg_simd.wasm`; the glue 
 builds is identical once sorted (checked), so one `folkfriend.js` still serves both.
 The offline harness build (`--target nodejs`) is copied to
 `experiments/noise-study/wasm-node/`, whose client reads the same sessionConfig constants.
+
+## Pitch-class recognition (2026-11-07)
+
+One new export, `set_pitch_class_mode()`, one-way and per instance. Without the call
+nothing changes: the default path is untouched code. With it, the instance transcribes
+and compares **pitch classes** (octave forgotten), `rust/src/feature/pitch_class.rs`:
+
+1. frames are kept as magnitude spectra and processed per window: harmonic/percussive
+   separation (median filters 9 frames x 9 bins, soft mask H^2/(H^2+P^2)) — strums,
+   banjo attacks and bodhran hits are vertical lines in a spectrogram, sustained notes
+   horizontal ones;
+2. the same modified autocorrelation as the default path, onto 48 notes, without its
+   per-frame octave fix and top-5;
+3. drone removal: each note loses its median energy over the window (what does not
+   move over 10 s: pipes' drones, held chords, hum);
+4. octaves summed into 12 classes, 5 kept per frame, melody followed over 12 states
+   with an interval model taken modulo the octave (`beam_search::decode_pitch_classes`);
+5. the index is folded the same way when loaded (or at the call, if already loaded),
+   and the contour's symbols are the first twelve: 'a' = C ... 'l' = B.
+
+Cadence enables it on the recognition instance only (`ffWorker.ts`), with any pitch
+(below) — the only engine it runs since 2026-11-07; the tempo tracker and score following
+keep default instances, whose `take_features` is unchanged. Two instruments playing the
+tune in different registers add up instead of competing for the note, and octave errors
+cannot happen, which retires the octave fallback.
+
+Measured on the 17 annotated sessions (live replay, the detector's floor chosen on one
+half and scored on the other): **675 / 698 tunes found for 16 false positives**, against
+645 / 698 for 27 with the default path; on the sessions held out of every choice,
+227/236 + 249/250 against 222/236 + 247/250. Noise still yields nothing.
+
+Speed (Node, Tabac, 150 windows): SIMD build **65 ms per window against 76**, scalar 132
+against 138 — the transcription now costs what it did (10 ms on SIMD: the medians run four
+at a time with `f32x4.pmin/pmax`, which are exactly the scalar compare-and-select), and
+one folded query replaces the default path's two in 41 % of windows. Every optimisation
+was checked to leave the output bit-identical: the regenerated fixtures equal the
+research harness's windows contour for contour and score for score (18 723 windows; one
+noise window differs from the NATIVE harness by one note, native and wasm cube roots
+differing in the last bit).
+
+Built 2026-11-07/08 from what became the fork's commit `6b53e2c`, same toolchain and flags: `pkg/` → the
+scalar module and the glue, `pkg-simd/` → `folkfriend_bg_simd.wasm` (glue identical,
+checked). The offline harness build (`--target nodejs`, SIMD) is in
+`experiments/noise-study/wasm-node/`, whose client makes the same calls as `ffWorker.ts`.
+
+## Any pitch (2026-11-07)
+
+`set_any_pitch(on)`, per instance, pitch-class mode only, off by default. On: each window's
+tuning is estimated (`pitch_class::window_tuning`: the circular mean of where the energy falls
+between two equal-tempered notes) and the notes are read that far off the grid, and the query
+looks in all twelve keys — the written key's QUERY_REPASS_SIZE shortlist untouched, plus the
+best PC_ANY_KEY_EXTRA = 1000 (setting, transposition) pairs of the other keys, found in ONE pass
+over the index by rotating the query's 4-grams (`heuristic::run_transcription_query_any_key`),
+each aligned against the query moved down to its key. Always on in Cadence since 2026-11-07
+(it replaced the manual "instruments' pitch" setting).
+
+Measured (4 sessions, 96 tunes, recordings resampled off pitch): a quarter-tone sharp 91-92/96
+instead of 8/96; +25 / -30 cents 92/96 (the default path already holds 91-92 there). At written
+pitch on the 18 files: the same tunes, 2 false positives fewer, a few more wrong names shown for
+a moment (39 against 30 in ~13 h). Cost (Node, SIMD) when first built: 112 ms per window instead
+of 64 — before the speed-ups below. Off, the
+module reproduces the default pitch-class windows bit for bit; on, the research harness's.
+
+Each result of a transcription query also says the key it was found in (`transpose`, 0-11:
+the recording plays the setting that many semitones above its written key, modulo the octave;
+always 0 outside this mode). Cadence stores it per window candidate and shows each detection in
+the key it was played in. No score changes with it.
+
+## Speed-ups (2026-11-08), every result unchanged
+
+Measured by querying the same 200 real contours through the old and new Node SIMD builds side by
+side in one process (alternating, so the machine's clock changes hit both): **any pitch -42 %,
+written key -23 %**, every result byte for byte the same; the shipped modules still reproduce the
+research windows 120/120.
+- `nw_simd::needleman_wunsch_x8`: the alignment eight at a time on 16-bit lanes (cells stay
+  within [-n, 2n], n the query's length; queries of 10 000 symbols or more take the 32-bit
+  kernel). Batches of 8, then 4, then one; scores written back at their original index.
+- `heuristic::run_transcription_query_any_key`: grams packed four bits a pitch class, rolled with
+  shift / or / mask (a base-12 rolling index cost more than the whole written-key pass), an 8 KB
+  presence bitset in front of a direct table instead of a Bloom filter and a hashed lookup, and
+  the best `PC_ANY_KEY_EXTRA` pairs taken from a histogram of their scores (all above the cut,
+  ties at it by id then key) instead of a bounded heap — the same set, in the same order.
+- `index::PitchClassGrams`: every setting's 4-symbol gram codes computed once, when the index is
+  folded, in one block (`build_pitch_class_grams`), so the any-key pass reads a code and tests a
+  bit per symbol instead of rolling it from the contour: a further **-14 to -15 %** on the any-key
+  query (two sessions, A/B, results identical), for 24 MB more (54 -> 78 MB of engine memory
+  with the index) and 23 ms more to load the index (120 -> 143 ms).
+Tried and left out: the contours alone copied into one contiguous block (-4 %, for 12.5 MB more).
+
+## Cleaned features (2026-11-07)
+
+`enable_clean_features()` then `take_clean_features(drone_frames, causal, stride, top_k)`
+(`rust/src/feature/clean.rs`): the 48 note energies of each frame as the pitch-class engine
+reads them (harmonic part, no octave fix), each note minus its median over `drone_frames`
+(sliding, taken every `stride` frames), the `top_k` strongest kept. Streamed in chunks of 512
+frames overlapping by the harmonic filter's half-width, so a long recording never holds its
+spectra (a Rust test checks the chunks give exactly one pass's result). Cadence's score
+following (alignment, locate in a long recording) reads them with 10 s, 1 s, 3; its tempo and
+the Play-along keep `take_features` (no gain measured there; the harmonic filter's 4 frames of
+look-ahead break the live follower).
 
 ## Tune index
 

@@ -166,8 +166,7 @@ button:focus-visible {
 }
 
 /* The heights add up to The Session's 5.75rem frame: the tabs (~1.1rem), the
-   strip's padding (0.5) and two 1.5rem lines of headline — or, for the pitch,
-   one line of stepper and two of words. Text wraps rather than being cut
+   strip's padding (0.5) and two 1.5rem lines of headline. Text wraps rather than being cut
    (Jeremy, on a phone, 2026-10-25: too much was truncated), and there is
    only ever that much of it. */
 
@@ -216,82 +215,7 @@ button:focus-visible {
 }
 .source:disabled:not([aria-selected="true"]) { opacity: 0.4; cursor: default; }
 
-/* The pitch's tuning fork, last on the tabs' line: smaller than a line's own
-   buttons, the line is short; widened by its value once one is set. */
-.top .pitch-toggle {
-  inline-size: auto;
-  min-inline-size: 1.5rem;
-  block-size: 1.5rem;
-  gap: 0.2em;
-  padding-inline: 0.2rem;
-  border-radius: 0.75rem;
-  align-self: center;
-}
 .top .menu { align-self: center; }
-.pitch-value {
-  color: var(--heading);
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: calc(var(--wght) + 150);
-}
-
-/* Its panel (Menu's content entry): a heading as the panel's rows have, the
-   stepper, and the sentence that says which way. On The Session's gold: their
-   panel's own dark ink and red links. */
-/* One width whatever the sentence says: the sentence wraps inside it rather
-   than widening the panel, so the stepper never moves under the finger. */
-.pitch-panel {
-  inline-size: 15rem;
-  max-inline-size: calc(100vw - 3rem);
-}
-.pitch-head {
-  padding-block: 0.4em 0.2em;
-  font-size: 0.875rem;
-  font-variant: small-caps;
-  text-transform: lowercase;
-}
-.pitch {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.8rem;
-  padding-block: 0.2em;
-}
-.pitch .step {
-  inline-size: 1.9rem;
-  block-size: 1.9rem;
-  margin: 0;
-  padding: 0;
-  border: 0.0625rem solid rgba(0, 0, 0, 0.35);
-  border-radius: 50%;
-  background: none;
-  color: #ba0000;
-  font: inherit;
-  font-size: 1.125rem;
-  line-height: 1;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.pitch .step:hover:not(:disabled) { border-color: #ba0000; }
-.pitch .step:disabled { opacity: 0.35; cursor: default; }
-.pitch .value {
-  /* A fixed width, the widest value's ("−12"): the buttons either side must
-     not move as it changes. */
-  flex: 0 0 3.2ch;
-  inline-size: 3.2ch;
-  text-align: center;
-  font-size: 1.25rem;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.6;
-}
-/* Not `.set`: that is a set of tunes in the list, and its rule would apply. */
-.pitch .value.shifted { opacity: 1; }
-.pitch-words {
-  margin: 0.3em 0 0.5em;
-  text-align: center;
-  font-size: 0.875rem;
-  line-height: 1.35;
-}
 
 /* At the end of the tabs' line, always in sight. */
 .credit {
@@ -931,12 +855,6 @@ button.link:hover {
     padding-inline: 0.4rem;
   }
   .top { align-items: center; }
-  .top .pitch-toggle {
-    min-inline-size: 2.75rem;
-    block-size: 2.75rem;
-    border-radius: 1.375rem;
-  }
-  .top .pitch-toggle svg { inline-size: 1.25rem; block-size: 1.25rem; }
   .credit {
     min-block-size: 2.75rem;
     padding-inline: 0.25rem;
@@ -960,8 +878,4 @@ button.link:hover {
 
   .pick { padding-block: 0.75em; }
   .option .open { padding: 0.75em 0.6em; }
-  .pitch .step {
-    inline-size: 2.75rem;
-    block-size: 2.75rem;
-  }
 }

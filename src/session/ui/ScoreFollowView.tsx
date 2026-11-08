@@ -7,6 +7,8 @@ import {
 import { AudioPlayer, stopCurrentAudio, type AudioPlayerHooks, type Region } from '../../components/audioPlayer';
 import { scoreContour, bareScore, meterOf } from '../../components/syncedScore';
 import { MATCH_GOOD, MATCH_USABLE, withPickup } from '../scoreFollow';
+import { signedKeyOffset } from '../model';
+import { keyGapText } from '../keyName';
 import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
 import { formatBytes } from '../../utils';
@@ -127,27 +129,30 @@ function usable(phase: Phase, target: FollowTarget, forced: boolean): SessionFol
 /** What the viewer's Audio sync toggle shows of the alignment (AudioSyncState):
  *  its colour, the words and figures in its tooltip — which, followed by
  *  force, says so: the colour stays the verdict. */
-function stateOf(phase: Phase, target: FollowTarget, forced: boolean): AudioSyncState {
-  const s = verdictOf(phase, target);
+function stateOf(phase: Phase, target: FollowTarget, forced: boolean, shown: number): AudioSyncState {
+  const s = verdictOf(phase, target, shown);
   return forced && s.kind === 'none' && phase.kind === 'ready'
     ? { ...s, title: `${t('fileViewer.abc.audioSync.forced')} · ${s.title}` }
     : s;
 }
 
-function verdictOf(phase: Phase, target: FollowTarget): AudioSyncState {
+function verdictOf(phase: Phase, target: FollowTarget, shown = 0): AudioSyncState {
   if (phase.kind === 'aligning') {
     const ratio = phase.status?.ratio ?? 0;
     const title = sizeUnknown(phase.status) ? stageText(phase.status) : `${stageText(phase.status)} · ${Math.round(ratio * 100)} %`;
     return { kind: 'aligning', ratio, title };
   }
   if (phase.kind === 'failed') return { kind: 'none', title: failureText(phase.reason) };
-  return alignedVerdict(phase.follow, target);
+  return alignedVerdict(phase.follow, target, shown);
 }
 
 /** The verdict on an alignment made: the toggle's, and each recording's in a
  *  card's chooser (RecordingChooser). */
-export function alignedVerdict(f: SessionFollow, target: FollowTarget): AudioSyncState {
-  const stats = t('sessions.follow.stats', { match: Math.round(f.match * 100), bpm: f.bpm });
+export function alignedVerdict(f: SessionFollow, target: FollowTarget, shown = 0): AudioSyncState {
+  // The key the recording plays the score in, against the key it is drawn in.
+  const keyGap = signedKeyOffset(f.transpose - shown);
+  const stats = t('sessions.follow.stats', { match: Math.round(f.match * 100), bpm: f.bpm })
+    + (keyGap !== 0 ? ` · ${t('sessions.follow.keyGap', { shift: keyGapText(keyGap) })}` : '');
   const cover = coverOf(f, target);
   // No figure for a part aligned by chance: its share of notes says nothing.
   if (cover < USABLE_COVER) {
@@ -158,9 +163,9 @@ export function alignedVerdict(f: SessionFollow, target: FollowTarget): AudioSyn
     };
   }
   const percent = Math.round(f.match * 100);
-  if (f.match < MATCH_USABLE) return { kind: 'none', title: `${t('sessions.follow.quality.poor')} · ${stats}`, percent };
+  if (f.match < MATCH_USABLE) return { kind: 'none', title: `${t('sessions.follow.quality.poor')} · ${stats}`, percent, keyGap };
   const word = f.match >= MATCH_GOOD ? t('sessions.follow.quality.good') : t('sessions.follow.quality.fair');
-  return { kind: 'aligned', title: `${word} · ${stats}`, percent };
+  return { kind: 'aligned', title: `${word} · ${stats}`, percent, keyGap };
 }
 
 /** The score box's floor, as SyncedScore sets it (8rem). */
@@ -191,7 +196,7 @@ const WHOLE: Region = { start: 0, end: Number.POSITIVE_INFINITY };
  *  closed meanwhile. */
 type GetAudio = (onStatus: (s: FollowStatus) => void, signal: AbortSignal) => Promise<FollowAudio | undefined>;
 
-function ScoreFollowView({ target, version, getAudio, expanded, face, onState, forced }: {
+function ScoreFollowView({ target, version, getAudio, expanded, face, onState, forced, transpose }: {
   target: FollowTarget;
   /** The version on the viewer's screen: its ABC. */
   version: Signal<string>;
@@ -201,8 +206,12 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   onState: (s: AudioSyncState) => void;
   /** Followed whatever the verdict (the viewer's hidden gesture). */
   forced: Signal<boolean>;
+  /** The viewer's transposition: the score is drawn in that key, and the gap
+   *  to the recording's key (FollowResult.transpose) told from it. */
+  transpose: Signal<number>;
 }) {
   const shown = version.value;
+  const shift = transpose.value;
   const isForced = forced.value;
   const [phase, setPhase] = useState<Phase>({ kind: 'aligning', status: null });
   const [score, setScore] = useState<{ abc: string; meter: string } | null>(null);
@@ -289,11 +298,11 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   // with a version, which keeps the player.
   useEffect(() => () => stopCurrentAudio(), []);
 
-  useEffect(() => { onState(stateOf(phase, target, isForced)); }, [phase, isForced]);
+  useEffect(() => { onState(stateOf(phase, target, isForced, shift)); }, [phase, isForced, shift]);
   // No alignment followed: the whole waveform in its verdict's colour — the
   // share of notes when there is a fair one, red for a part aligned by
   // chance or none at all.
-  const verdict = verdictOf(phase, target);
+  const verdict = verdictOf(phase, target, shift);
   const tint = follow || phase.kind === 'aligning' ? undefined
     : verdict.kind !== 'aligning' && verdict.percent !== undefined ? verdict.percent / 100 : 0;
 
@@ -401,7 +410,7 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
     <div ref={rootRef} class={page ? '' : '-mx-4 -mt-1'}>
       <AudioPlayer
         hooks={{ ...hooks, region }}
-        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight, minHeight: page ? maxHeight : undefined, face: face.value, tools, tint } : undefined}
+        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight, minHeight: page ? maxHeight : undefined, face: face.value, tools, tint, keyShift: shift } : undefined}
       />
     </div>
   );
@@ -419,15 +428,18 @@ export function mountScoreFollow(host: HTMLElement, opts: {
   expanded: boolean;
   onState: (s: AudioSyncState) => void;
   forced: boolean;
+  /** The viewer's transposition (ScoreFollowView's `transpose`). */
+  transpose: number;
 }): AudioSyncView {
   const version = signal(opts.version);
   const face = signal(opts.face);
   const expanded = signal(opts.expanded);
   const forced = signal(opts.forced);
+  const transpose = signal(opts.transpose);
   render(
     <ScoreFollowView
       target={opts.target} version={version} getAudio={opts.getAudio} expanded={expanded} face={face}
-      onState={opts.onState} forced={forced}
+      onState={opts.onState} forced={forced} transpose={transpose}
     />,
     host,
   );
@@ -436,6 +448,7 @@ export function mountScoreFollow(host: HTMLElement, opts: {
     setForced: (v) => { forced.value = v; },
     setFace: (f) => { face.value = f; },
     setExpanded: (v) => { expanded.value = v; },
+    setTranspose: (v) => { transpose.value = v; },
     unmount: () => render(null, host),
   };
 }

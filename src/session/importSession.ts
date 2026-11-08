@@ -145,15 +145,6 @@ export class ImportSession {
    *  in-memory and never persisted: picking a destination is a decision about
    *  right now, not a preference (see components/deckSelector.tsx). */
   pinnedDeckIds: Set<string> = new Set();
-  /** Manual transposition (semitones, -12..12) applied to the ongoing analysis.
-   *  ENGINE sign: positive raises the transcribed contour to meet an index held
-   *  at written pitch, so a recording a tone DOWN is +2 here — the opposite of
-   *  what a musician says, flipped for display in PitchShiftControl.tsx.
-   *  Set once, before start(), from the module's setting (sessionModule.tsx) —
-   *  never changed while running since 2026-09-13: an import outruns anyone
-   *  reaching for a control, and a change midway would analyse the file at two
-   *  pitches. See TuneAnalyserModuleData.pitchShift. */
-  pitchShift = 0;
   /** Whether save() stores the file: "Keep the recordings" when the import
    *  began (keepRecordings.ts). A re-analysis sets it back on — it re-runs a
    *  recording already kept, and is no new one. */
@@ -214,7 +205,6 @@ export class ImportSession {
         onError: message => this.cb.onError?.(message),
         onTempo: (reading, novelty, at) => { this.tempo.push(reading); this.novelty.write(at, novelty); },
       }, { hopS: HOP_S_IMPORT, tempo: true });
-      if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       const version = await this.recognition.ready;
       console.debug(`[import] engine ready (FolkFriend ${version})`);
 

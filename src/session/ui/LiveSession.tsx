@@ -15,7 +15,6 @@ import { AnalysisViewBar } from './AnalysisViewBar';
 import { analysisView, analysisStudy, showsDetails, showsEditing, showsFocus } from './analysisView';
 import { FocusView, useFeedFocus } from './FocusView';
 import { recordOf } from '../tunesets';
-import { PitchShiftControl } from './PitchShiftControl';
 import { useAutoFollowScroll } from './domInterop';
 import { fmtLongTime, indexProgressText, TitleRow } from './sessionUiShared';
 import { AnalysisFolderPicker } from './AnalysisFolderPicker';
@@ -23,12 +22,11 @@ import { LiveBackupIndicator } from './LiveBackupIndicator';
 import { showDetectionTempo } from './LiveTempo';
 import { generatedSessionName } from '../sessionNaming';
 import { setActiveLive, lastLiveDump } from './sessionStore';
-import { setPitchShiftSetting } from './sessionModule';
 import { fmtDateTime } from '../../services/dateFormat';
 
 // ── Screen: live recording ───────────────────────────────────────────────────
-// Uses <DetectionCard>/<PitchShiftControl> directly as JSX, never the
-// detectionCard()/pitchShiftControl() bridges — see ImportAnalysis.tsx's
+// Uses <DetectionCard> directly as JSX, never the detectionCard()
+// bridge — see ImportAnalysis.tsx's
 // header doc for why (reentrant render() during this component's own render
 // pass corrupts Preact's hooks bookkeeping).
 //
@@ -281,10 +279,6 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
             onClick={onPauseClick}
             dangerouslySetInnerHTML={{ __html: paused ? playIcon(12) : pauseIcon(12) }}
           />
-          {/* The same fork as on the module's screen, and the same value: it
-              starts from the setting, and changing it mid-recording — from the
-              next window on — is also the setting from now on. */}
-          <PitchShiftControl value={live.pitchShift} onChange={(s) => { live.setPitchShift(s); setPitchShiftSetting(s); }} />
           <button class="btn-danger px-3 shrink-0" disabled={stopping} onClick={() => { void onStopClick(); }}>
             {t('sessions.stop')}
           </button>

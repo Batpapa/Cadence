@@ -1,26 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { shiftContour } from './contourShift';
+import { pitchClassesForDisplay } from './contourShift';
 
-describe('shiftContour', () => {
-  it('shifts one octave up within range', () => {
-    expect(shiftContour('abc', 12)).toBe('mno');
+describe('pitchClassesForDisplay', () => {
+  it('places the classes from D4 up to C#5', () => {
+    // D (c) -> MIDI 62 = 'o', C# (b) -> MIDI 73 = 'z', C (a) -> MIDI 72 = 'y'
+    expect(pitchClassesForDisplay('cba')).toBe('ozy');
   });
 
-  it('crosses the lowercase/uppercase boundary', () => {
-    // u=20 → 32='G', z=25 → 37='L'
-    expect(shiftContour('uz', 12)).toBe('GL');
-  });
-
-  it('drops notes that leave the range instead of clamping', () => {
-    expect(shiftContour('aV', 12)).toBe('m'); // V is the top of the range
-    expect(shiftContour('a', -12)).toBe('');
-  });
-
-  it('drops unexpected characters', () => {
-    expect(shiftContour('a?b', 12)).toBe('mn');
-  });
-
-  it('keeps an empty contour empty', () => {
-    expect(shiftContour('', 12)).toBe('');
+  it('keeps the melody, one symbol per class', () => {
+    expect(pitchClassesForDisplay('cegc').length).toBe(4);
   });
 });

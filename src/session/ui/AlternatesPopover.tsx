@@ -174,7 +174,7 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rate
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isSelected || canUntick) onSelect(isSelected ? null : opt); } }}
             >
               <span class="w-4 shrink-0 text-accent text-sm leading-none">{isSelected ? '✓' : ''}</span>
-              <AbcPreview settingId={opt.settingId} displayName={opt.displayName} size={11} />
+              <AbcPreview settingId={opt.settingId} displayName={opt.displayName} size={11} keyOffset={opt.transpose} />
 
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
@@ -185,7 +185,7 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rate
                     </span>
                   )}
                 </div>
-                <div class="text-xs text-dim truncate"><TuneFacts dance={opt.dance} meter={opt.meter} settingId={isManual(opt) ? undefined : opt.settingId} /></div>
+                <div class="text-xs text-dim truncate"><TuneFacts dance={opt.dance} meter={opt.meter} settingId={isManual(opt) ? undefined : opt.settingId} keyOffset={opt.transpose} /></div>
               </div>
 
               {/* A hand-picked tune was never scored: the percentage beside it

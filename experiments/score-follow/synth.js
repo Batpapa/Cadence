@@ -9,7 +9,7 @@
 // tune (same length only): the musicians rarely play the index's exact version.
 const fs = require('node:fs');
 const path = require('node:path');
-const { featuresOf, RATE } = require('./lib/engine');
+const { alignFeaturesOf: featuresOf, RATE } = require('./lib/engine');
 const { align, FPS, MIDI_LOW } = require('./lib/align');
 
 const INDEX = path.resolve(__dirname, '../noise-study/.cache/tune-index.json');

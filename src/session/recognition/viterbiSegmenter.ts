@@ -1,5 +1,5 @@
 import type { WindowResult, Detection, DetectionAlternate, DetectionEvidence, DetectionEvent } from '../model';
-import { StreamingViterbiDecoder, filterShortSegments, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
+import { StreamingViterbiDecoder, filterShortSegments, hideUnclearTail, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
 import { IncrementalTimelineBuilder, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
@@ -118,9 +118,29 @@ function computeAlternates(
     }
   }
   return [...stats.entries()]
-    .map(([id, s]) => ({ tuneId: id, settingId: s.settingId, displayName: s.displayName, dance: s.dance, meter: s.meter, meanScore: s.sum / totalWindows }))
+    .map(([id, s]) => withKey(
+      { tuneId: id, settingId: s.settingId, displayName: s.displayName, dance: s.dance, meter: s.meter, meanScore: s.sum / totalWindows },
+      windows, firstWindowIndex, windowCount,
+    ))
     .sort((a, b) => b.meanScore - a.meanScore)
     .slice(0, cfg.maxAlternates);
+}
+
+/** The key a tune was heard in over a span (DetectionAlternate.transpose): the
+ *  transposition its windows found it in for THAT setting — another setting of
+ *  the same tune may be written in another key — each window weighing its
+ *  score. A tie keeps the written key, then the smaller shift. */
+function withKey(alt: DetectionAlternate, windows: WindowResult[], first: number, count: number): DetectionAlternate {
+  const weight = new Map<number, number>();
+  for (let i = first; i < first + count; i++) {
+    const c = windows[i]?.candidates.find(x => x.tuneId === alt.tuneId && x.settingId === alt.settingId);
+    if (c) weight.set(c.transpose ?? 0, (weight.get(c.transpose ?? 0) ?? 0) + c.score);
+  }
+  let best = 0, bestW = weight.get(0) ?? 0;
+  for (const [k, w] of weight) {
+    if (w > bestW || (w === bestW && k !== 0 && best !== 0 && Math.abs(k) < Math.abs(best))) { best = k; bestW = w; }
+  }
+  return best === 0 ? alt : { ...alt, transpose: best };
 }
 
 /** Exported for AlternatesPopover.tsx — reused to color a raw meanScore
@@ -216,10 +236,10 @@ export class IncrementalViterbiSegmenter {
       meanScore: seg.averageProbability,
       evidence,
       alternates,
-      viterbiPick: {
+      viterbiPick: withKey({
         tuneId: seg.tuneId, settingId: seg.settingId, displayName: seg.displayName,
         dance: seg.dance, meter: seg.meter, meanScore: seg.averageProbability,
-      },
+      }, this.windows, seg.firstWindowIndex, seg.windowCount),
       // Always false straight out of the segmenter — it never decides an
       // identity override itself, only the orchestrators' applyEvents()
       // (liveSession.ts/importSession.ts) do, by preserving a prior true
@@ -254,7 +274,10 @@ export class IncrementalViterbiSegmenter {
     // their tune, one window after it appeared, and the final pass then took
     // it away — 4 times out of 5 on three real sessions stopped right after a
     // tune showed. What is on screen when Stop is pressed stays.
-    const filteredSegments = filterShortSegments(result.segments, timeline, this.cfg.minSegmentWindows, true);
+    // ...but it must first have named its tune clearly once (tailClearLead,
+    // 2026-11-07): until then the screen names nothing rather than a guess.
+    const tailChecked = hideUnclearTail(result.segments, this.windows, this.cfg.tailClearLead, this.cfg.tailClearLeadOverThird);
+    const filteredSegments = filterShortSegments(tailChecked, timeline, this.cfg.minSegmentWindows, true);
     // Bridges a brief UNKNOWN drop between two occurrences of the same tune
     // (e.g. a couple of quiet/noisy windows mid-performance) into one
     // continuous segment, instead of reporting two separate detections.

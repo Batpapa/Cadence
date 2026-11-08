@@ -130,6 +130,28 @@ export interface DetectionTemporalConfig {
    *  also survives finalize() since 2026-10-26: people press Stop the moment
    *  their tune appears, and the final pass used to take it away. */
   minSegmentWindows: number;
+  /** The live tail's "clear window" rule (2026-11-07). The most recent segment
+   *  is exempt from minSegmentWindows (see above) — it is what the screen names
+   *  as playing now. With these set, it is shown only once ONE of its windows
+   *  named it clearly: at the top of that window's candidates (ties within
+   *  0.005 allowed) and ahead of the best other candidate by at least
+   *  `tailClearLead`, or ahead of the THIRD candidate by at least
+   *  `tailClearLeadOverThird` (two index entries of one air — The Scholar /
+   *  The South Shore — tie in every window, and neither would ever lead the
+   *  other). Until then the screen names nothing rather than a guess; the
+   *  decode itself is untouched.
+   *
+   *  Why: the windows that put a WRONG name on screen for a few seconds
+   *  mid-tune had a lead over #2 of 0.048 (median; q25 0.030), those that put
+   *  the RIGHT name up 0.180 (q25 0.117). Those wrong names exist only at the
+   *  live edge — the decoder revises them away one window later, so no
+   *  transition cost (rapidChangePenalty included) can see them.
+   *  Measured with the translated penalties below, two-fold cross-validated
+   *  (experiments kept outside the repo): same tunes found, wrong name on
+   *  screen 6.9 % of tune time instead of 11.9 %, right name 1.5-2 s sooner.
+   *  Undefined = no rule (the previous engine). */
+  tailClearLead?: number;
+  tailClearLeadOverThird?: number;
 
   /** Post-process (2026-08-15), applied AFTER filterShortSegments — see
    *  `mergeNearbySameTune` in viterbiDetector.ts. Two confirmed "tune
@@ -212,37 +234,72 @@ export interface DetectionTemporalConfig {
    *  ~0.15 the known-attractor count plateaus at 2 (a hard residual this
    *  signal alone doesn't reach) while general recall loss accelerates
    *  sharply (7 lost by 0.18, 15 by 0.20, 64 by 0.30) — never raise past 0.12
-   *  without re-running that sweep and confirming the plateau has moved. */
+   *  without re-running that sweep and confirming the plateau has moved.
+   *
+   *  OFF since 2026-11-08 (0: no window has a negative spread). That sweep was
+   *  the previous engine's; on the pitch-class engine the filter no longer
+   *  earns its keep — on the 18 annotated files, 0.12 against 0: 675/698 tunes
+   *  for 14 false positives against 678 for 16, noise 0 either way — and it
+   *  emptied the windows of a tenor banjo playing an octave down: a plucked
+   *  instrument's pitch-class transcription often fits every tempo about as
+   *  well, and a tune top of 17 windows out of 21 was never shown (reported by
+   *  the user). The filter stays in temporalObservationBuilder.ts for the
+   *  experiments that measure it. */
   tempoSpreadThreshold: number;
 }
 
+/** The thresholds of the engine the app runs: pitch classes, whatever the key
+ *  (see ffWorker.ts). */
 export const DETECTION_TEMPORAL_CONFIG: DetectionTemporalConfig = {
   stepSeconds: 5,
   windowSeconds: 10,
 
-  minCandidateProbability: 0.20,
+  // 2026-11-07, pitch-class recognition (see ffWorker.ts):
+  // its scores run higher, noise included, so every absolute score threshold
+  // below moved to the value equally RARE on the new scale (quantile matching of
+  // all top-10 scores of the 17 annotated sessions, no annotation used):
+  // 0.20 -> 0.35, 0.30 -> 0.42, 0.50 -> 0.61. The floor was ALSO chosen
+  // independently by two-fold cross-validation (one half picks, the other is
+  // scored): 0.35 and 0.40, flat between 0.30 and 0.40 — the translated 0.344
+  // lands on it. Previous engine: 0.20 / 0.20 / 0.50 / 0.30.
+  minCandidateProbability: 0.35,
   epsilon: 0.000001,
-  unknownObservationProbability: 0.20,
+  unknownObservationProbability: 0.35,
   absentObservationRatio: 0.8,   // optimum 2026-09-13 — see the field's doc (threshold law: < e^−0.2)
 
+  // Transition costs, 2026-11-07: the previous engine's (1.0 / 0.2 / 0.5 / 0.5)
+  // x 0.65. They are in the same unit as the evidence a window brings,
+  // log(score / floor), and that evidence shrank on the pitch-class scale
+  // (median 0.98 -> 0.71 over every top-1 above the floor; 1.20 -> 0.93 against
+  // the absence floor): left as they were, changing tune needed ~30 % more
+  // evidence than before, and inside a set the new tune was named within 10 s
+  // half as often as with the previous engine (19 % vs 40 %), the previous
+  // name lingering meanwhile. 0.65 is where two-fold cross-validation landed,
+  // at the edge of that 0.68-0.78 translation; with tailClearLead below it
+  // keeps the same tunes and false positives. THRESHOLD LAW of
+  // absentObservationRatio still holds: 0.8 < e^-0.13 = 0.878.
+  // rapidChangePenalty measured without any effect from 0 to 10, kept as is.
   sameTuneTransitionCost: 0,
-  tuneChangePenalty: 1.0,
+  tuneChangePenalty: 0.65,
 
-  unknownStayPenalty: 0.2,
-  tuneToUnknownPenalty: 0.5,
-  unknownToTunePenalty: 0.5,
+  unknownStayPenalty: 0.13,
+  tuneToUnknownPenalty: 0.325,
+  unknownToTunePenalty: 0.325,
 
   rapidChangePenalty: 2.0,
 
-  bucketHighConfidence: 0.5,
-  bucketMediumConfidence: 0.3,
+  bucketHighConfidence: 0.61,
+  bucketMediumConfidence: 0.42,
   maxAlternates: 4,
 
   minSegmentWindows: 2,
+  tailClearLead: 0.06,
+  tailClearLeadOverThird: 0.15,
   sameTuneMergeGapWindows: 10,
 
   flatWindowTopN: 3,
   flatWindowMarginThreshold: 0.05,
 
-  tempoSpreadThreshold: 0.12,
+  // Off (2026-11-08) — see the field's doc.
+  tempoSpreadThreshold: 0,
 };

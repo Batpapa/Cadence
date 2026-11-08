@@ -236,6 +236,44 @@ function asUnknown(s: DetectedTuneSegment): DetectedTuneSegment {
   };
 }
 
+/** Whether one of the segment's windows named its tune clearly — the live
+ *  tail's rule, see tailClearLead in detectionTemporalConfig.ts. Reads the RAW
+ *  windows (the segmenter's own array, index-aligned with the timeline), whose
+ *  candidates come sorted by score. */
+export function hasClearWindow(
+  seg: DetectedTuneSegment,
+  windows: readonly { candidates: readonly { tuneId: string; score: number }[] }[],
+  lead: number,
+  leadOverThird: number,
+): boolean {
+  for (let i = seg.firstWindowIndex; i < seg.firstWindowIndex + seg.windowCount; i++) {
+    const cs = windows[i]?.candidates;
+    if (!cs || cs.length === 0) continue;
+    const k = cs.findIndex(c => c.tuneId === seg.tuneId);
+    if (k < 0 || k > 1 || cs[k]!.score < cs[0]!.score - 0.005) continue;
+    const s = cs[k]!.score;
+    const other = cs.find(c => c.tuneId !== seg.tuneId)?.score ?? 0;
+    if (s - other >= lead) return true;
+    if (s - (cs[2]?.score ?? 0) >= leadOverThird) return true;
+  }
+  return false;
+}
+
+/** The last segment as UNKNOWN when it is a tune that has not yet passed the
+ *  live tail's rule (hasClearWindow); otherwise the array unchanged. Applied
+ *  BEFORE filterShortSegments, which then merges it with an UNKNOWN neighbour. */
+export function hideUnclearTail(
+  segments: DetectedTuneSegment[],
+  windows: readonly { candidates: readonly { tuneId: string; score: number }[] }[],
+  lead: number | undefined,
+  leadOverThird: number | undefined,
+): DetectedTuneSegment[] {
+  const last = segments[segments.length - 1];
+  if (lead === undefined || !last || last.tuneId === UNKNOWN_STATE) return segments;
+  if (hasClearWindow(last, windows, lead, leadOverThird ?? Infinity)) return segments;
+  return [...segments.slice(0, -1), asUnknown(last)];
+}
+
 /** How many windows in [firstIdx, firstIdx+windowCount) had `tuneId` as their
  *  own #1-ranked raw candidate (the rank in TemporalTimeline.rows, 1-based, set by
  *  buildTemporalTimeline straight off each window's own sorted candidate

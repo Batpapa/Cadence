@@ -400,6 +400,9 @@ export interface PlayerScore {
    *  on the score): the whole waveform is tinted with it — a poor one reads
    *  as poor everywhere (2026-10-29, the user). */
   tint?: number;
+  /** Semitones the score is drawn moved by, before the player's own
+   *  transposition: the score viewer's (fileViewer.ts). */
+  keyShift?: number;
 }
 
 export function AudioPlayer({ entry, binding, hooks, score }: {
@@ -727,7 +730,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
         {score && (
           <SyncedScore
             abc={score.abc} meter={score.meter} follow={score.follow} engine={null} region={null}
-            transpose={0} playing={false} maxHeight={score.maxHeight} minHeight={score.minHeight} face={score.face} tools={score.tools}
+            transpose={score.keyShift ?? 0} playing={false} maxHeight={score.maxHeight} minHeight={score.minHeight} face={score.face} tools={score.tools}
           />
         )}
         <div style={{ fontSize: '11px', color: 'var(--color-dim)', textAlign: 'center', padding: '20px 0' }}>
@@ -768,7 +771,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
           follow={score.follow}
           engine={engine}
           region={region}
-          transpose={effects.transpose}
+          transpose={effects.transpose + (score.keyShift ?? 0)}
           playing={playing}
           maxHeight={score.maxHeight}
           minHeight={score.minHeight}

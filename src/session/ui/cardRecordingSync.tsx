@@ -370,6 +370,7 @@ export function mountRecordingFollow(host: HTMLElement, r: CardRecording, opts: 
   expanded: boolean;
   onState: (s: AudioSyncState) => void;
   forced: boolean;
+  transpose: number;
 }): AudioSyncView {
   return mountScoreFollow(host, { ...opts, target: RECORDING, getAudio: (onStatus, signal) => recordingAudio(r, onStatus, signal) });
 }

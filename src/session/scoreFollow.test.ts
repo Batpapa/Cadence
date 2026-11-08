@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { followScore, positionAt, withPickup, passStarts, barQuavers, contourToMidi, contourSlots, alignContour, localMatch, quaverToMs, msToQuaver, FOLLOW_FPS, type TimelineEvent, type FollowResult } from './scoreFollow';
+import { followScore, keyOf, positionAt, withPickup, passStarts, barQuavers, contourToMidi, contourSlots, alignContour, localMatch, quaverToMs, msToQuaver, FOLLOW_FPS, type TimelineEvent, type FollowResult } from './scoreFollow';
 
 describe('contour quavers on the drawn score', () => {
   // |:D|G3 GAB|A/B/c z B3:| in 6/8, a quaver = 333 ms, played twice by abcjs.
@@ -196,5 +196,31 @@ describe('placing the contour on the drawn notes', () => {
   it('gives up without pitches, or when too few match', () => {
     expect(alignContour([60, 62, 64], { ms: [0, 100, 200], pitch: [undefined, undefined, undefined] })).toBeNull();
     expect(alignContour([60, 61, 62, 63, 64], notes([70, 70, 70, 70, 70]))).toBeNull();
+  });
+});
+
+describe('keyOf', () => {
+  // A D-major reel's notes (MIDI), and a recording of it: 48 note energies a
+  // frame, each quaver held for 4 frames, the octave above sounding too.
+  const tune = [62, 64, 66, 67, 69, 71, 73, 74, 69, 66, 62, 66, 69, 74, 73, 71, 69, 67, 66, 64];
+  const play = (notes: number[]) => {
+    const f = new Float32Array(notes.length * 4 * 48);
+    notes.forEach((m, i) => {
+      for (let k = 0; k < 4; k++) {
+        const t = i * 4 + k;
+        f[t * 48 + (m - 48)] = 1;
+        if (m + 12 < 96) f[t * 48 + (m + 12 - 48)] = 0.4;
+      }
+    });
+    return f;
+  };
+
+  it('finds the score as written when it is played as written', () => {
+    expect(keyOf(play(tune), tune)).toBe(0);
+  });
+
+  it('finds how far up the recording plays it, modulo the octave', () => {
+    expect(keyOf(play(tune.map(m => m + 2)), tune)).toBe(2);
+    expect(keyOf(play(tune.map(m => m - 3)), tune)).toBe(9);
   });
 });

@@ -10,6 +10,8 @@ import { showPreviewModal, type AudioSyncBinding } from '../../components/fileVi
 import { getContext } from '../../store';
 import type { AppContext, Attachment, Card } from '../../types';
 import { MusicNoteIcon } from '../../components/icons';
+import { transposeMode } from '../keyName';
+import { transposeAbcText } from '../../services/abcTranspose';
 import { t } from '../../services/i18nService';
 
 // ── ABC preview of a matched FolkFriend setting ───────────────────────────────
@@ -39,11 +41,14 @@ export function settingAbcText(displayName: string, settingId: string, meta: Set
   ].join('\n');
 }
 
-function showAbcPreview(displayName: string, settingId: string, meta: SettingAbcMeta, audioSync?: AudioSyncBinding): void {
+/** The index's rendition of the setting, in the key it was played in
+ *  (`keyOffset`, see abcTranspose.ts). */
+async function showAbcPreview(displayName: string, settingId: string, meta: SettingAbcMeta, audioSync?: AudioSyncBinding, keyOffset?: number | null): Promise<void> {
+  const abc = await transposeAbcText(settingAbcText(displayName, settingId, meta), keyOffset ?? 0);
   showPreviewModal({
     name: `${displayName}.abc`,
     mimeType: 'text/vnd.abc',
-    data: toBase64(settingAbcText(displayName, settingId, meta)),
+    data: toBase64(abc),
   }, undefined, { audioSync });
 }
 
@@ -54,7 +59,8 @@ function showAbcPreview(displayName: string, settingId: string, meta: SettingAbc
  *  labelled bar of silence. Greyed only when not a single tune has a score. */
 export function HeardSetAbc({ title, tunes, size = 12 }: {
   title: string;
-  tunes: Array<{ label: string; settingId: string | null }>;
+  /** `keyOffset`: each tune in the key it was played in (keyOffsetOf). */
+  tunes: Array<{ label: string; settingId: string | null; keyOffset?: number | null }>;
   size?: number;
 }) {
   const key = tunes.map(x => x.settingId ?? '-').join(',');
@@ -84,12 +90,16 @@ export function HeardSetAbc({ title, tunes, size = 12 }: {
       title={t('sessions.listenAbc')}
       onClick={(e) => {
         e.stopPropagation();
-        const abc = buildHeardSetAbc(title, tunes.map((x, i) => {
+        void Promise.all(tunes.map((x, i) => {
           const meta = list[i];
-          return { label: x.label, abc: meta?.abc && x.settingId ? settingAbcText(x.label, x.settingId, meta) : null };
-        }));
-        if (!abc) return;
-        showPreviewModal({ name: `${tunesetAbcFileName(title)}`, mimeType: 'text/vnd.abc', data: toBase64(abc) });
+          return meta?.abc && x.settingId
+            ? transposeAbcText(settingAbcText(x.label, x.settingId, meta), x.keyOffset ?? 0)
+            : Promise.resolve(null);
+        })).then(texts => {
+          const abc = buildHeardSetAbc(title, tunes.map((x, i) => ({ label: x.label, abc: texts[i] ?? null })));
+          if (!abc) return;
+          showPreviewModal({ name: `${tunesetAbcFileName(title)}`, mimeType: 'text/vnd.abc', data: toBase64(abc) });
+        });
       }}
     >
       {icon}
@@ -138,12 +148,17 @@ export function useSettingMeta(settingId: string): SettingAbcMeta | null | undef
  *  model.ts's hasRecognisedSetting): a key is a property of a VERSION, and a
  *  tune named by hand has none that was heard. Without it: type and meter.
  *
+ *  `keyOffset`: the semitones the recording plays the setting above its
+ *  written key (model.ts's keyOffsetOf) — the key shown is the one PLAYED,
+ *  with nothing to say it differs from the score's (the user's call,
+ *  2026-11-07: nobody minds which key TheSession wrote it in).
+ *
  *  A component rather than a bare hook so a list can use it per row. Text
  *  only: the caller's element carries the styling. */
-export function TuneFacts({ dance, meter, settingId }: { dance: string; meter?: string; settingId?: string }) {
+export function TuneFacts({ dance, meter, settingId, keyOffset }: { dance: string; meter?: string; settingId?: string; keyOffset?: number | null }) {
   // Called either way: a hook may not be skipped. '' resolves to nothing.
   const meta = useSettingMeta(settingId ?? '');
-  const mode = settingId ? meta?.mode : undefined;
+  const mode = settingId && meta?.mode ? transposeMode(meta.mode, keyOffset ?? 0) : undefined;
   return <>{dance}{meter && <> · {meter}</>}{mode && <> · {mode}</>}</>;
 }
 
@@ -161,7 +176,7 @@ export function TuneFacts({ dance, meter, settingId }: { dance: string; meter?: 
  *  Which of the card's scores is findSettingInScore's call: the TheSession
  *  score first, then any ABC carrying the setting — asking the FILE, so a score
  *  predating the `generatedBy` marker is never passed over for a label. */
-async function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined, audioSync?: AudioSyncBinding) {
+async function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined, audioSync?: AudioSyncBinding, keyOffset?: number | null) {
   if (!cardId || !ctx) return null;
   const card = getContext().user.cards[cardId];
   const id = parseInt(settingId, 10);
@@ -200,6 +215,9 @@ async function cardScorePreview(settingId: string, cardId: string | undefined, c
   return () => showPreviewModal(entry, undefined, {
     audioSync,
     initialIndex: target.blockIndex,
+    // In the key it was played in: the card's file is the user's and is never
+    // rewritten, so the viewer opens it transposed (abcTranspose.ts).
+    initialTranspose: keyOffset ?? undefined,
     // The star stays where the card put it, NOT on the version we opened at.
     favoriteIndex: target.preferredIndex,
     // None on a link: it keeps nothing but its URL.
@@ -260,10 +278,13 @@ function useCardCarries(settingId: string, card: Card | undefined, ask: boolean)
  * is none. Same geometry as the slice play button: w-6 h-6 circle, icon
  * flex-centered.
  */
-export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, audioSync }: {
+export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, audioSync, keyOffset }: {
   settingId: string;
   displayName: string;
   size?: number;
+  /** The semitones the recording plays this setting above its written key
+   *  (model.ts's keyOffsetOf): the score opens in the key PLAYED. */
+  keyOffset?: number | null;
   /** The library card this setting belongs to, when it is already there. Given
    *  both this and `ctx`, the preview carries the ★ that makes this version the
    *  one the card opens on — the same gesture the file viewer already uses for a
@@ -300,10 +321,10 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, aud
         e.stopPropagation();
         // Asynchronous now: the card's score may have to come back from Drive
         // before we can even tell whether it carries this setting.
-        void cardScorePreview(settingId, cardId, ctx, audioSync)
+        void cardScorePreview(settingId, cardId, ctx, audioSync, keyOffset)
           .then(fromCard => {
             if (fromCard) fromCard();
-            else if (meta?.abc) showAbcPreview(displayName, settingId, meta, audioSync);
+            else if (meta?.abc) void showAbcPreview(displayName, settingId, meta, audioSync, keyOffset);
           });
       }}
     >

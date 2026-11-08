@@ -180,7 +180,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
         return {
           title: t('help.context.sessionsLive'),
           sections: [
-            { style: 'definition', heading: t('help.sessionsLive.during.heading'), items: [t('help.sessionsLive.during.1'), t('help.sessionsLive.during.2'), t('help.sessionsLive.during.3'), t('help.sessionsLive.during.4'), t('help.sessionsLive.during.5'), t('help.sessionsLive.during.6')] },
+            { style: 'definition', heading: t('help.sessionsLive.during.heading'), items: [t('help.sessionsLive.during.1'), t('help.sessionsLive.during.2'), t('help.sessionsLive.during.3'), t('help.sessionsLive.during.4'), t('help.sessionsLive.during.5')] },
             detectionSection(),
           ],
         };
@@ -189,7 +189,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
         return {
           title: t('help.context.sessionsImport'),
           sections: [
-            { style: 'definition', heading: t('help.sessionsImport.during.heading'), items: [t('help.sessionsImport.during.1'), t('help.sessionsImport.during.2'), t('help.sessionsImport.during.3'), t('help.sessionsImport.during.4'), t('help.sessionsImport.during.5')] },
+            { style: 'definition', heading: t('help.sessionsImport.during.heading'), items: [t('help.sessionsImport.during.1'), t('help.sessionsImport.during.2'), t('help.sessionsImport.during.3'), t('help.sessionsImport.during.4')] },
             detectionSection(),
           ],
         };

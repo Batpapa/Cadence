@@ -1,7 +1,12 @@
 'use strict';
 // FolkFriend features for score following: the engine built with
-// `take_features` (folkfriend-src/rust/pkg-node-align), plus ffmpeg decoding
-// of a time span of a recording.
+// `take_features` and the cleaned features (folkfriend-src/rust/pkg-node-align),
+// plus ffmpeg decoding of a time span of a recording.
+//
+// Two kinds since 2026-11-07, as in the app: `featuresOf` (take_features —
+// the Play-along's follower and the live tempo) and `alignFeaturesOf` (the
+// cleaned ones scoreFollowWorker.ts aligns on: harmonic part, each note minus
+// its 10-second median, the 3 strongest notes).
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -20,6 +25,26 @@ function engine() {
     ptr = ff.alloc_single_pcm_window();
   }
   return ff;
+}
+
+let ffClean = null, ptrClean = 0;
+/** Frames × 48 cleaned pitch energies, as scoreFollowWorker.ts reads them
+ *  (take_clean_features(10 s, centred, every second, 3 strongest)). */
+function alignFeaturesOf(pcm) {
+  if (!ffClean) {
+    ffClean = new FolkFriendWASM();
+    ffClean.set_sample_rate(RATE);
+    ffClean.enable_clean_features();
+    ptrClean = ffClean.alloc_single_pcm_window();
+  }
+  ffClean.flush_pcm_buffer();
+  const n = Math.floor(pcm.length / WINDOW);
+  for (let i = 0; i < n; i++) {
+    ffClean.get_allocated_pcm_window(ptrClean).set(pcm.subarray(i * WINDOW, (i + 1) * WINDOW));
+    ffClean.feed_single_pcm_window(ptrClean);
+  }
+  const fps = RATE / WINDOW;
+  return ffClean.take_clean_features(Math.round(10 * fps), false, Math.round(fps), 3);
 }
 
 /** Frames × 48 pitch energies of a mono 48 kHz signal. */
@@ -48,4 +73,4 @@ function decodeSpan(file, start, duration) {
   }
 }
 
-module.exports = { featuresOf, decodeSpan, RATE };
+module.exports = { featuresOf, alignFeaturesOf, decodeSpan, RATE };

@@ -61,6 +61,9 @@ export interface FollowOptions {
    *  quaver). Session reels run near 190-230 — a 256-quaver pass in 40 s. */
   bpms: number[];
   transposes: number[];
+  /** Align in the key the recording plays the score in (keyOf) rather than
+   *  in `transposes`. */
+  findKey: boolean;
   /** Feature frames per second: the sample rate the features were made at,
    *  over FF_PCM_WINDOW. */
   fps: number;
@@ -82,7 +85,44 @@ export const FOLLOW_DEFAULTS: FollowOptions = {
   bpms: [60, 70, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260],
   transposes: [0],
   fps: FOLLOW_FPS,
+  // 2026-11-07, the user: a recording may play the tune in another key than
+  // the score's — the key is found, not assumed (keyOf).
+  findKey: true,
 };
+
+/** The key a recording plays a score in: the transposition (0-11, semitones
+ *  added to the score) under which the recording's pitch classes — each
+ *  one's energy over the whole span — best correlate with the score's, one
+ *  count per quaver, both standardised. Read off the notes alone, no tempo,
+ *  no alignment.
+ *
+ *  Measured (2026-11-07, experiments/score-follow and the research journal)
+ *  on the 337 annotated session tunes, each score moved by a random number of
+ *  semitones: the right key every time, at the cost of one pass over the
+ *  features. Searching the twelve keys by alignment instead costs eight times
+ *  the alignment and was wrong 3 times in 21 — a fifth away fits the
+ *  alignment nearly as well, the notes heard do not. */
+export function keyOf(features: Float32Array, score: number[]): number {
+  const heard = new Float64Array(12), written = new Float64Array(12);
+  const frames = Math.floor(features.length / MIDI_NUM);
+  for (let t = 0; t < frames; t++) {
+    for (let p = 0; p < MIDI_NUM; p++) heard[(p + MIDI_LOW) % 12] += features[t * MIDI_NUM + p]!;
+  }
+  for (const m of score) written[((m % 12) + 12) % 12] += 1;
+  const standard = (v: Float64Array): number[] => {
+    const mean = v.reduce((a, b) => a + b, 0) / 12;
+    const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / 12) || 1;
+    return Array.from(v, x => (x - mean) / sd);
+  };
+  const h = standard(heard), w = standard(written);
+  let best = 0, bestFit = -Infinity;
+  for (let k = 0; k < 12; k++) {
+    let fit = 0;
+    for (let pc = 0; pc < 12; pc++) fit += w[pc]! * h[(pc + k) % 12]!;
+    if (fit > bestFit) { bestFit = fit; best = k; }
+  }
+  return best;
+}
 
 export interface FollowResult {
   /** Start of every quaver entered, in seconds from the start of the
@@ -93,6 +133,7 @@ export interface FollowResult {
   /** End of the last aligned quaver, seconds. */
   end: number;
   bpm: number;
+  /** The key it was aligned in: semitones added to the score, 0-11. */
   transpose: number;
   /** Mean log score per frame — comparable between scores on the same audio. */
   perFrame: number;
@@ -271,8 +312,18 @@ function alignAt(
  *  MATCH_USABLE it is not followed at all — set between the right score in
  *  a noisy pub and a wrong one. The same two lines judge the whole and each
  *  stretch of it. */
-export const MATCH_GOOD = 0.6;
-export const MATCH_USABLE = 0.5;
+export const MATCH_GOOD = 0.735;
+export const MATCH_USABLE = 0.66;
+/** 2026-11-07: the two lines above moved with the features alignments are made
+ *  of (scoreFollowWorker.ts reads the cleaned ones since then): the share of
+ *  notes on the score runs higher there, the right score's median 0.71 -> 0.80
+ *  over the 337 annotated tunes. Each line moved to the value equally rare
+ *  among the right scores' shares (0.5 -> 0.66, 0.6 -> 0.735); in an 85-minute
+ *  recording that leaves 3 of 24 tunes never played « found » and followed
+ *  instead of 7 at 0.5 (15 with the previous features). The Play-along follows
+ *  take_features' energies, not the cleaned ones: its own lines, the old. */
+export const LIVE_MATCH_GOOD = 0.6;
+export const LIVE_MATCH_USABLE = 0.5;
 
 /** For each aligned quaver, of its frames that had a pitch at all, how many
  *  had the score's pitch class loudest. */
@@ -364,7 +415,8 @@ export function followScore(
   const at = Math.max(0, Math.min(Math.floor(frames / 4), frames - probeFrames));
   const probe = probeFrames === frames ? prepare(features, frames)
     : prepare(features.subarray(at * MIDI_NUM, (at + probeFrames) * MIDI_NUM), probeFrames);
-  const coarse = opt.transposes.flatMap(transpose => opt.bpms.map(bpm => ({ bpm, transpose })));
+  const transposes = opt.findKey ? [keyOf(features, score)] : opt.transposes;
+  const coarse = transposes.flatMap(transpose => opt.bpms.map(bpm => ({ bpm, transpose })));
   const runs = coarse.length + 2;
   let done = 0;
   const search = (tempi: Tempo[]): Found | null => {

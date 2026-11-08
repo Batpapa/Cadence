@@ -6,7 +6,7 @@ import { findCardDetections, sessionsOf, detectionsOnCards, setDetectionOn } fro
 import { PassRow, PlayPassButton, useSlicePlayer, type SlicePlayer } from './PassRow';
 import { HeartIcon } from '../../components/icons';
 import { isTuneset } from '../../services/cardTypeService';
-import { hasRecognisedSetting, type Analysis, type Detection } from '../model';
+import { hasRecognisedSetting, keyOffsetOf, type Analysis, type Detection } from '../model';
 import type { Card } from '../../types';
 import { findSetHearings, chainSpan, recordOf } from '../tunesets';
 import { loadSessionAudio } from '../db';
@@ -148,7 +148,7 @@ export function SetHearingRow({ session, chain, setCard, title, player, interact
         </span>
         <HeardSetAbc
           title={title}
-          tunes={chain.map(d => ({ label: tuneName(d).text, settingId: hasRecognisedSetting(d) ? d.settingId : null }))}
+          tunes={chain.map(d => ({ label: tuneName(d).text, settingId: hasRecognisedSetting(d) ? d.settingId : null, keyOffset: keyOffsetOf(d) }))}
         />
       </div>
       <button

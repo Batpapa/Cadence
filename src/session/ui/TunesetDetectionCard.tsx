@@ -4,7 +4,7 @@ import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, HourglassIcon, TuneSetIcon } from '../../components/icons';
 import { getContext } from '../../store';
-import { hasRecognisedSetting, type Detection, type TunesetRecord } from '../model';
+import { hasRecognisedSetting, keyOffsetOf, type Detection, type TunesetRecord } from '../model';
 import { setCardFor, chainSpan, isSettled } from '../tunesets';
 import { hasLibrary } from '../../services/pageMode';
 import { setDetectionOn } from '../detections';
@@ -154,7 +154,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
 
         <HeardSetAbc
           title={name}
-          tunes={chain.map((d, i) => ({ label: names[i]!, settingId: hasRecognisedSetting(d) ? d.settingId : null }))}
+          tunes={chain.map((d, i) => ({ label: names[i]!, settingId: hasRecognisedSetting(d) ? d.settingId : null, keyOffset: keyOffsetOf(d) }))}
         />
 
         <TunesetDeckButton

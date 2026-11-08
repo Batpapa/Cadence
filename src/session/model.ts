@@ -19,6 +19,12 @@ export interface DetectionAlternate {
   dance: string;
   meter: string;
   meanScore: number;
+  /** How many semitones above `settingId` as written the recording plays it
+   *  (2026-11-07): the key the recogniser found it in, the score-weighted
+   *  majority of its windows (WindowCandidate.transpose), from -5 to +6.
+   *  Absent = as written — and on every analysis made before, and on a tune
+   *  named by hand, which nothing heard. Read it through keyOffsetOf(). */
+  transpose?: number;
 }
 
 export interface Detection {
@@ -286,14 +292,10 @@ export interface TuneAnalyserModuleData {
    *  FROZEN name: it is in every user's synced blob, and a renamed field would
    *  read as absent — on — for everyone who had switched sets off. */
   experimentalSets?: boolean;
-  /** How far the instruments are tuned off written pitch, in ENGINE semitones
-   *  (see PitchShiftControl's `flip` for why that is the opposite sign of what a
-   *  player says). Absent = as written. The module's own setting since
-   *  2026-09-13: a file import runs too fast to catch with a control on its own
-   *  screen, so the value is chosen on the module's screen before anything
-   *  starts, and read at the start of a live recording, an import and a
-   *  re-analysis alike. Read it through `pitchShiftSetting()`. */
-  pitchShift?: number;
+  // `pitchShift` (the instruments' pitch in semitones, 2026-09-13) and
+  // `anyPitch` (2026-11-07) were settings here, retired the same day the engine
+  // started looking in every key and tuning by itself (ffWorker.ts). Synced
+  // blobs may still hold them: nothing reads them. Do not reuse the names.
   /** The user's template for the name of a new live recording or capture —
    *  see sessionNaming.ts. Absent = the usual name ("Recording of …"), and
    *  removed rather than emptied when set back. Read it through
@@ -388,6 +390,11 @@ export interface WindowCandidate {
   dance: string;
   meter: string;
   score: number;
+  /** The key it was found in (2026-11-07): the window plays the setting this
+   *  many semitones above its written key, from -5 to +6 — the engine looks in
+   *  every key and knows it only modulo the octave, so the nearer way round is
+   *  kept. Absent = as written (and on every window stored before). */
+  transpose?: number;
 }
 
 export interface WindowResult {
@@ -434,6 +441,9 @@ export interface NoteAndTempoFeatures {
 
 export interface WindowDebugFeatures {
   contour: string | null;
+  /** 12 when the previous engine (until 2026-11-07) re-queried the contour an
+   *  octave up for a low instrument; always 0 since — pitch classes have no
+   *  octave. Kept for the windows already stored. */
   octaveShiftApplied: number;
   /** null when FolkFriend found too few notes to build a contour at all
    *  (the same case that makes `WindowResult.empty` true) — distinguished
@@ -481,6 +491,25 @@ export function hasRecognisedSetting(ann: Detection): boolean {
   if (ann.manual) return false;
   return [viterbiPickOf(ann), ...(ann.alternates ?? [])]
     .some(o => o.tuneId === ann.tuneId && o.settingId === ann.settingId);
+}
+
+/** How many semitones above its setting as written the detection's tune was
+ *  played (DetectionAlternate.transpose) — 0 as written, and `null` when
+ *  nothing heard that setting (a tune named by hand, see hasRecognisedSetting):
+ *  no key can be said for it. */
+export function keyOffsetOf(ann: Detection): number | null {
+  if (ann.manual) return null;
+  const heard = [viterbiPickOf(ann), ...(ann.alternates ?? [])]
+    .find(o => o.tuneId === ann.tuneId && o.settingId === ann.settingId);
+  return heard ? heard.transpose ?? 0 : null;
+}
+
+/** The engine's transposition (0-11, the recording plays the setting that many
+ *  semitones above its written key, modulo the octave) as the nearer signed
+ *  offset, -5 to +6. */
+export function signedKeyOffset(r: number): number {
+  const k = ((Math.round(r) % 12) + 12) % 12;
+  return k > 6 ? k - 12 : k;
 }
 
 /** What choosing an identity writes onto a detection.

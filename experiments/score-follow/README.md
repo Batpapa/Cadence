@@ -11,6 +11,8 @@ recording so the score's cursor can follow the real audio
   export `take_features()` (frames × 48 pitches, MIDI 48–95, 46.9 frames/s at
   48 kHz). Build: `folkfriend-src/rust`, `wasm-pack build --target nodejs
   --release --out-dir pkg-node-align` (this folder reads it from there).
+  **Since 2026-11-07 alignments read the cleaned energies** (`alignFeaturesOf`,
+  the app's scoreFollowWorker.ts): see "Cleaned features" below.
 - **Score**: the setting's `contour` from the recognition index — one symbol per
   quaver, repeats unfolded, pickup included: one pass of the tune on a quaver
   grid, the very sequence the recogniser matched.
@@ -99,6 +101,71 @@ The share on the score does not tell them apart (played 52–83 %, absent
 52–64 %): an absent tune is found somewhere, and followed more often than not
 — one clean reel (8:46–11:31) draws most of the absent reels. So the app never
 says a tune is absent, and shows where in the recording it looked.
+
+## Cleaned features (2026-11-07)
+
+The recognition engine's cleaning of each frame (`take_clean_features`, folkfriend's
+`feature/clean.rs`): its harmonic part (median filters 9 frames x 9 bins, soft mask — strums,
+bodhrán and attacks out), each note minus its median over 10 s (drones, held chords), then
+the 3 strongest notes of each frame. `lib/engine.js` `alignFeaturesOf`; real.js, locate.js,
+synth.js, probe.js and live.mjs's offline truth read it, like the app. The Play-along's
+follower and the tempo keep `take_features`: no gain for the tempo, and the harmonic
+filter's 4 frames of look-ahead broke the live follower (synthetic solo 100 % → 16-28 % on
+the right note).
+
+real.js, 330 tunes common to every variant (feature-independent measures):
+| features | under 80 % covered | ends off, p90 start/end | pass CV med/p90 | best decoy claims med/p90 |
+|---|---|---|---|---|
+| take_features | 20 | 5.5 / 4.6 s | 0.28 / 1.32 % | 11 / 89 % |
+| cleaned, all 48 notes | 2 | 5.0 / 5.0 | 0.66 / 1.91 | 106 / 111 (anything fits anywhere) |
+| cleaned, 5 notes | 6 | 4.7 / 3.8 | 0.41 / 1.42 | 12 / 92 |
+| cleaned, 4 notes | 11 | 4.9 / 3.3 | 0.37 / 1.42 | 8 / 39 |
+| **cleaned, 3 notes (kept)** | **17** | **5.0 / 3.6** | **0.18 / 1.24** | **4 / 12** |
+| cleaned, 5 notes, no drone removal | 7 | 4.8 / 4.2 | 0.45 / 1.55 | 19 / 98 |
+| cleaned, 3 notes, "another tune" 1.5 | 5 | 4.8 / 3.9 | 0.45 / 1.67 | 17 / 101 |
+| cleaned, 3 notes, "another tune" 1.0 | 39 | 10.6 / 10.0 | 0.08 / 1.07 | 3 / 6 |
+3 notes is better on every measure but one tune (of 337) whose best decoy beats it; 1.2 stays.
+Synthetic (synth.js): unchanged, median 7-8 ms, p90 24-32 ms, 100 % within 100 ms.
+
+The share on the score runs higher on the cleaned energies (the right score's median 0.71 →
+0.80): MATCH_USABLE / MATCH_GOOD moved to the values equally rare among the right scores
+(0.5 → 0.66, 0.6 → 0.735); the Play-along keeps 0.5 / 0.6 (LIVE_MATCH_*). locate's zone worth
+keeps 0.5 (LOCATE_WRONG_SHARE): at 0.66 it picked worse zones (20 tunes held instead of 22).
+
+locate.js, tabac (85 min), 26 tunes played + 24 absent:
+| | held where annotated | followed | absent tunes followed (false finds) |
+|---|---|---|---|
+| take_features, verdict 0.5 | 20 | 24 | 15 |
+| cleaned 3 notes, verdict 0.5 | 22 | 24 | 7 |
+| cleaned 3 notes, zone 0.66, verdict 0.66 | 20 | 22 | 2 |
+| **cleaned 3 notes, zone 0.5, verdict 0.66 (the app)** | **22** | **21** | **3** |
+Played tunes now 64-86 % on the score where held, absent ones 63-68 % where followed.
+
+## The key the recording plays the score in (2026-11-08)
+
+A recording may play the tune in another key than its score (the recognition now finds tunes in
+any key). `keyOf` (scoreFollow.ts, mirrored in `lib/align.js`, option `findKey`, benches `KEY=1`):
+the transposition under which the recording's pitch-class energy best correlates with the score's
+pitch classes, both standardised — read off the notes alone, before any alignment.
+
+Each annotated tune's score moved by a random number of semitones, the key to find being the
+opposite: `keyOf` right on **337 / 337**. Searching the twelve keys by alignment instead (every
+key at every tempo of the probe) took eight times as long and was wrong 3 times in 21: a fifth away
+fits the alignment nearly as well, the notes heard do not.
+
+With the key found rather than assumed, on the cleaned features (`real.js`, `locate.js`):
+
+| | written key | key found |
+|---|---|---|
+| tunes followed over less than 80 % | 17 | 17 |
+| ends, 90th percentile (start / end) | 5.0 / 3.5 s | 5.0 / 3.5 s |
+| best decoy's claim, median / 90th percentile | 4 / 12 % | 5 / 14 % |
+| true setting beats every decoy | 337 / 337 | 337 / 337 |
+| 85-min recording: found where played / followed | 22 / 21 | 21 / 21 |
+| 85-min recording: tunes never played « found » | 3 / 24 | 3 / 24 (the same) |
+
+The Play-along does not look for the key (one note held fits a score in any key somewhere): it
+follows the key on screen, the viewer's transposition included.
 
 ## Live: the Play-along (2026-10-31)
 

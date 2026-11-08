@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
 import { IncrementalViterbiSegmenter } from '../../src/session/recognition/viterbiSegmenter';
 import { ANALYSIS_HOP_S } from '../../src/session/sessionConfig';
+import { DETECTION_TEMPORAL_CONFIG } from '../../src/session/recognition/detectionTemporalConfig';
 import type { WindowResult } from '../../src/session/model';
 
 // Replays each annotated fixture through the segmenter ONE WINDOW AT A TIME, as
@@ -13,6 +14,7 @@ import type { WindowResult } from '../../src/session/model';
 //
 // Writes one JSON per session to $BENCH_OUT (scored by score.mjs beside it).
 // $SESSIONS (comma-separated) replays only those fixtures — a quick look on a subset.
+// $SEG_CFG (JSON) overrides fields of the segmenter's config, e.g. '{"tuneChangePenalty":1.5}'.
 // $WINDOWS_DIR replays other window dumps of the same recordings instead
 // (an engine experiment), with the same file names.
 
@@ -32,6 +34,8 @@ const SESSIONS = [
   '20260227_3_marcellin_fond',
 ];
 
+const cfg = { ...DETECTION_TEMPORAL_CONFIG, ...JSON.parse(process.env['SEG_CFG'] ?? '{}') };
+
 interface Shown { id: string; tuneId: string; start: number; end: number | null; finalized: boolean }
 
 it('replays every fixture window by window', () => {
@@ -43,7 +47,7 @@ it('replays every fixture window by window', () => {
   for (const session of only?.length ? only : SESSIONS) {
     const raw = JSON.parse(fs.readFileSync(nodePath.join(DIR, `${session}-windows.json`), 'utf-8')) as WindowResult[] | Record<string, WindowResult>;
     const windows = Array.isArray(raw) ? raw : Object.values(raw);
-    const seg = new IncrementalViterbiSegmenter(ANALYSIS_HOP_S);
+    const seg = new IncrementalViterbiSegmenter(ANALYSIS_HOP_S, cfg);
     const shown = new Map<string, Shown>();
     // Every state a detection id passes through: [now, tuneId, start, end, kind].
     const log: [number, string, string, number, number | null, string][] = [];

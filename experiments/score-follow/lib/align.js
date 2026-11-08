@@ -149,6 +149,7 @@ const TEMPO_PROBE_FRAMES = Math.round(30 * FPS);
  *  earlier search (every tempo on the whole, then ±5/±10), for comparison. */
 function align(features, score, options = {}) {
   const opt = { ...DEFAULTS, ...options };
+  if (opt.findKey) opt.transposes = [keyOf(features, score)];
   const frames = features.length / MIDI_NUM;
   const fpq = (bpm) => FPS / ((bpm / 60) * 2);
   const prepare = (f, n) => {
@@ -184,4 +185,24 @@ function align(features, score, options = {}) {
   return best;
 }
 
-module.exports = { align, emissions, FPS, MIDI_LOW, MIDI_NUM };
+/** The key the recording plays the score in, as scoreFollow.ts's keyOf: the
+ *  transposition (0-11, semitones added to the score) under which the
+ *  recording's pitch-class energy best correlates with the score's pitch
+ *  classes, each standardised. */
+function keyOf(features, score) {
+  const a = new Float64Array(12), b = new Float64Array(12);
+  const frames = features.length / MIDI_NUM;
+  for (let t = 0; t < frames; t++) for (let p = 0; p < MIDI_NUM; p++) a[(p + MIDI_LOW) % 12] += features[t * MIDI_NUM + p];
+  for (const m of score) b[m % 12] += 1;
+  const z = (v) => { const m = v.reduce((x, y) => x + y, 0) / 12; const s = Math.sqrt(v.reduce((x, y) => x + (y - m) ** 2, 0) / 12) || 1; return v.map((x) => (x - m) / s); };
+  const za = z(a), zb = z(b);
+  let best = 0, bestC = -Infinity;
+  for (let t = 0; t < 12; t++) {
+    let c = 0;
+    for (let pc = 0; pc < 12; pc++) c += zb[pc] * za[(pc + t) % 12];
+    if (c > bestC) { bestC = c; best = t; }
+  }
+  return best;
+}
+
+module.exports = { align, keyOf, emissions, FPS, MIDI_LOW, MIDI_NUM };

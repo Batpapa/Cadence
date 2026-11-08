@@ -16,8 +16,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 // that list scrolls, as the button it hangs from moves away.
 //
 // Entries: a box that stays ticked (the panel stays open, so several can be
-// set in one go), an action (which closes it), or a piece of content of its
-// own — the pitch's stepper, which also leaves it open.
+// set in one go), or an action (which closes it).
 
 export interface MenuToggle {
   kind: 'toggle';
@@ -35,14 +34,7 @@ export interface MenuAction {
   hint?: string;
 }
 
-/** Anything else the panel holds — the pitch's stepper. It stays open. */
-export interface MenuContent {
-  kind: 'content';
-  key: string;
-  content: ComponentChildren;
-}
-
-export type MenuEntry = MenuToggle | MenuAction | MenuContent;
+export type MenuEntry = MenuToggle | MenuAction;
 
 let ids = 0;
 
@@ -122,9 +114,7 @@ export function Menu({ icon, label, entries, disabled, busy, class: className }:
             ? { right: `${pos.right}px`, top: pos.top !== undefined ? `${pos.top}px` : undefined, bottom: pos.bottom !== undefined ? `${pos.bottom}px` : undefined }
             : { visibility: 'hidden', top: '0px', right: '0px' }}
         >
-          {entries.map(e => e.kind === 'content' ? (
-            <div key={e.key} class="menu-content">{e.content}</div>
-          ) : e.kind === 'toggle' ? (
+          {entries.map(e => e.kind === 'toggle' ? (
             <label key={e.label} class="bill-item" role="menuitemcheckbox" aria-checked={e.checked}>
               <span class="bill-item-title">{e.label}</span>
               <span class="bill-item-cost">

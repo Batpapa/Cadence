@@ -103,12 +103,6 @@ export class LiveSession {
    *  in-memory and never persisted: picking a destination is a decision about
    *  right now, not a preference (see components/deckSelector.tsx). */
   pinnedDeckIds: Set<string> = new Set();
-  /** Manual transposition (semitones, -12..12) applied to the ongoing analysis.
-   *  ENGINE sign: positive raises the transcribed contour to meet an index held
-   *  at written pitch, so a session played a tone DOWN is +2 here — the
-   *  opposite of what a musician says, flipped for display in
-   *  PitchShiftControl.tsx. In-memory only, resets to 0 next recording. */
-  pitchShift = 0;
   /** "Keep the recordings" as it was when this one began (keepRecordings.ts):
    *  off, the chunks are still written while it runs, then dropped at the stop
    *  — and no Drive backup is sent of it. Read once, so a recording is kept or
@@ -135,12 +129,6 @@ export class LiveSession {
   listenTempo(fn: () => void): () => void {
     this.tempoListeners.add(fn);
     return () => { this.tempoListeners.delete(fn); };
-  }
-
-  /** Live-adjustable: affects analysis windows from now on, not past ones. */
-  setPitchShift(semitones: number): void {
-    this.pitchShift = semitones;
-    this.recognition?.setPitchShift(semitones);
   }
 
   /** `sourceKind` is fixed for the life of the session: switching source
@@ -274,7 +262,6 @@ export class LiveSession {
           for (const fn of this.tempoListeners) fn();
         },
       }, { tempo: true });
-      if (this.pitchShift !== 0) this.recognition.setPitchShift(this.pitchShift);
       await this.recognition.ready;
 
       // Held from before the first draft write until the recording is saved or

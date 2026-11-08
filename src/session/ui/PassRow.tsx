@@ -12,7 +12,7 @@ import { COMPANION_GONE, readCompanionRange } from '../../services/driveService'
 import { loadSessionAudio, fetchSyncedAudio, audioDownloadProgress, audioArrivals } from '../db';
 import { audioDownloadMode } from '../audioDownloads';
 import { fetchRemotePassage } from '../audio/remotePassage';
-import { TUNE_ANALYSER_MODULE_KEY, hasRecognisedSetting, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
+import { TUNE_ANALYSER_MODULE_KEY, hasRecognisedSetting, keyOffsetOf, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
 import { followFrom, followTo, type FollowAudio } from '../scoreFollowClient';
 import { BUCKET_TEXT, ClipControls, fmtLongTime, type ClipSessionRef } from './sessionUiShared';
 import { AbcPreview } from './abcPreview';
@@ -418,12 +418,12 @@ export function detectionAudioSync(sessionId: string, detection: Detection, here
     // A version is a tune when it has a key: the header abcjs needs to read
     // the notes. One without notes fails on its own, and says so.
     plays: (version) => /^K:/m.test(version),
-    mount: (host, version, face, expanded, onState, forced) => {
+    mount: (host, version, face, expanded, onState, forced, transpose) => {
       // Two players at once would talk over each other from behind the dialog.
       beforeOpen?.();
       return mountScoreFollow(host, {
         target: { kind: 'passage', start: detection.start, end: detection.end ?? detection.start + 60 },
-        version, getAudio, face, expanded, onState, forced,
+        version, getAudio, face, expanded, onState, forced, transpose,
       });
     },
   };
@@ -456,7 +456,7 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
           <PlayPassButton sessionId={session.id} detection={detection} player={player} />
         </span>
         <AbcPreview
-          settingId={detection.settingId} displayName={detection.displayName} cardId={cardId} ctx={ctx}
+          settingId={detection.settingId} displayName={detection.displayName} cardId={cardId} ctx={ctx} keyOffset={keyOffsetOf(detection)}
           audioSync={detectionAudioSync(session.id, detection, player.isHere(session.id), player.stop)}
         />
       </div>

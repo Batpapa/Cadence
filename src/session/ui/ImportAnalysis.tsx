@@ -27,11 +27,6 @@ import { useThrottled } from './throttle';
 // the previous callbacks, not additive) — this component is the ONE place
 // that calls it, fanning updates out to local state.
 //
-// No pitch control here (2026-09-13): an import outruns anyone reaching for
-// it, and changing it midway would analyse half the file at one pitch and half
-// at another. The instruments' pitch is the module's setting, read when the
-// import starts — see TuneAnalyserModuleData.pitchShift.
-//
 // Uses <DetectionCard> directly as JSX. Earlier
 // versions of this component mounted them via a synchronous Preact render()
 // call from inside a useMemo instead — reentrant (a render() call during

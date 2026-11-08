@@ -1,9 +1,9 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
-import { shiftContour } from './contourShift';
+import { pitchClassesForDisplay } from './contourShift';
 import { normalizeDisplayName } from '../../utils';
-import type { WindowResult, WindowCandidate, WindowDebugFeatures, NoteAndTempoFeatures, DetectionEvent } from '../model';
+import { signedKeyOffset, type WindowResult, type WindowCandidate, type WindowDebugFeatures, type NoteAndTempoFeatures, type DetectionEvent } from '../model';
 import { TempoTracker, type TempoReading } from '../liveTempo';
 import { FEATURE_PITCHES } from '../scoreFollow';
 import {
@@ -16,12 +16,41 @@ import {
 // incremental Viterbi detector (viterbiSegmenter.ts). PCM chunks arrive (from
 // the audio worklet's MessagePort or the main thread); every ANALYSIS_HOP_S of
 // new signal, the last ANALYSIS_WINDOW_S are transcribed and queried.
+//
+// ── The engine: pitch classes, whatever the key (2026-11-07) ──
+// The recognition instance transcribes and compares PITCH CLASSES, octave
+// forgotten (folkfriend-src feature/pitch_class.rs): each window's spectra lose
+// their percussive part (harmonic/percussive separation) and their constant
+// background (drone removal), octaves are summed into 12 classes before the
+// melody is followed, and the index is folded the same way. Two instruments
+// playing the tune in different registers (whistle + banjo, fiddle + low
+// whistle) then add up instead of competing for the note, and octave errors
+// cannot happen. Measured on the 17 annotated sessions of test-fixtures (415 +
+// 283 tunes), live replay window by window, the detector's floor chosen on one
+// half and scored on the other: 675/698 tunes found for 16 false positives,
+// against 645/698 for 27 with the previous engine (48 notes + an octave
+// fallback); names shown wrongly for more than 30 s in live: 62 -> 16.
+//
+// And whatever the key and the tuning (set_any_pitch): each window's tuning is
+// estimated and read off, and the tune is looked for in all twelve keys — the
+// written key's candidates exactly as before, plus the best 1000 transposed
+// (setting, key) pairs. A session a quarter-tone sharp went from 8/96 tunes to
+// 91/96; at written pitch the same list (675/698 for 14 false positives, against
+// 674 for 15), a few more wrong names shown for a moment (39 against 30 in
+// ~13 h). It replaced the manual "instruments' pitch" setting (whole semitones),
+// which nobody could set right without knowing the session was off. It cost
+// 112 ms a window against 65 (SIMD build) when first built; the query has been
+// made about twice as fast since, results unchanged (vendor/folkfriend/README.md). Full record: the research journal (outside
+// the repo) and experiments/session-bench. Score following and the tempo
+// tracker run their own instances in the default mode.
 
 interface RawQueryRecord {
   setting_id: string;
   setting: { tune_id: string; meter: string; mode: string; abc: string; dance: string; contour: string };
   display_name: string;
   score: number;
+  /** The key it was found in: semitones above the written key, 0-11. */
+  transpose?: number;
 }
 
 export type FFWorkerRequest =
@@ -30,7 +59,6 @@ export type FFWorkerRequest =
   | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean }
   | { type: 'worklet-port'; port: MessagePort }
   | { type: 'pcm'; buffer: ArrayBuffer; ack?: boolean }
-  | { type: 'set-pitch-shift'; semitones: number }
   | { type: 'live-resume' }
   | { type: 'stop' };
 
@@ -58,11 +86,6 @@ let pcmPtr = 0;
 let sampleRate = 48000;
 let hopS = ANALYSIS_HOP_S;
 let segmenter = new IncrementalViterbiSegmenter(hopS);
-/** User-controlled transposition applied to every transcribed contour before
- *  querying the index (e.g. a session played in Bb) — independent of, and
- *  composes with, the automatic banjo octave fallback below. Live-adjustable
- *  mid-session; a fresh worker per session already resets it to 0. */
-let manualShift = 0;
 
 // Ring buffer holding the last ANALYSIS_WINDOW_S seconds (plus slack).
 let ring: Float32Array = new Float32Array(0);
@@ -243,6 +266,11 @@ async function handleInit(sr: number, hop?: number, tempo?: boolean): Promise<vo
   ff.set_tempo_range(FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM);
   ff.set_num_repass(FF_QUERY_REPASS_SIZE);
   ff.set_min_query_length(FF_MIN_QUERY_LENGTH);
+  // Before the index is loaded: it is then folded as it arrives (see the top
+  // of this file). Only this instance — tempoFf below must keep serving
+  // 48-note take_features.
+  ff.set_pitch_class_mode();
+  ff.set_any_pitch(true);
   pcmPtr = ff.alloc_single_pcm_window();
   if (tempo) {
     tempoFf = new FolkFriendWASM();
@@ -295,13 +323,6 @@ function tailOfRing(n: number): Float32Array {
 // needed).
 const TOP_N_CANDIDATES = 10;
 
-/** Engine-level "confident enough top match" gate for the octave fallback
- *  below — independent of whichever downstream detection algorithm consumes
- *  the candidates (was segmenterConfig.ts's ENTER_THRESHOLD, reused here
- *  purely as a numeric floor, before segmenter.ts was replaced by the
- *  Viterbi detector). */
-const OCTAVE_FALLBACK_THRESHOLD = 0.40;
-
 /** Debug transcribe response (2026-08-18): `transcribe_pcm_buffer_debug()`
  *  replaces `transcribe_pcm_buffer()` — same underlying computation (see
  *  folkfriend-src's contour_from_notes, which always builds this data
@@ -310,14 +331,21 @@ const OCTAVE_FALLBACK_THRESHOLD = 0.40;
 type RawTranscribeDebug = { contour: string; features: NoteAndTempoFeatures } | { error: string; features: null };
 
 function mapCandidates(raw: RawQueryRecord[]): WindowCandidate[] {
-  return raw.map(r => ({
-    tuneId: r.setting.tune_id,
-    settingId: r.setting_id,
-    displayName: normalizeDisplayName(r.display_name),
-    dance: r.setting.dance,
-    meter: r.setting.meter,
-    score: r.score,
-  }));
+  return raw.map(r => {
+    const c: WindowCandidate = {
+      tuneId: r.setting.tune_id,
+      settingId: r.setting_id,
+      displayName: normalizeDisplayName(r.display_name),
+      dance: r.setting.dance,
+      meter: r.setting.meter,
+      score: r.score,
+    };
+    // Stored only when off the written key: most windows are not, and every
+    // window of an analysis is kept.
+    const transpose = signedKeyOffset(r.transpose ?? 0);
+    if (transpose !== 0) c.transpose = transpose;
+    return c;
+  });
 }
 
 /** Candidate query (2026-08-18): plain `run_transcription_query()` — NOT the
@@ -352,55 +380,22 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   if ('error' in rawDebug) {
     return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
   }
-  const rawContour = rawDebug.contour;
+  const contour = rawDebug.contour;
   const features = rawDebug.features;
-
-  // Manual shift first — everything below operates on this as the new baseline.
-  //
-  // SIGN, since this had it backwards in a comment until 2026-09-09 and no user
-  // could guess it either: the shift is applied to the RECORDING's contour, and
-  // the index stores tunes at WRITTEN pitch with no transposition invariance.
-  // So a session played a tone DOWN needs +2 here — the transcription is raised
-  // to meet the index. That is the opposite of how a musician says it ("we're a
-  // tone down"), which is why PitchShiftControl.tsx flips the sign at the UI
-  // boundary and never shows this one.
-  const contour = manualShift !== 0 ? shiftContour(rawContour, manualShift) : rawContour;
-  if (manualShift !== 0 && contour.length === 0) {
-    return { result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: true, candidates: [] }, abc: null };
-  }
 
   // No score filtering here: the Viterbi detector applies its own candidate
   // floor (minCandidateProbability), and the calibration dump needs the
   // sub-floor scores to be tunable at all.
-  let candidates = queryContour(f, contour).slice(0, TOP_N_CANDIDATES);
-  let matchedContour = contour;
-  let octaveShiftApplied = 0;
-
-  // Octave fallback: the index query has no transposition invariance and the
-  // index contours sit at fiddle register, so low instruments (Irish tenor
-  // banjo, an octave below the fiddle) transcribe an octave down and score
-  // junk. When the window would fall below OCTAVE_FALLBACK_THRESHOLD anyway,
-  // retry with the contour lifted one octave and keep whichever the index
-  // scores higher — the decision stays with FolkFriend's own score, never a
-  // register guess.
-  if ((candidates[0]?.score ?? 0) < OCTAVE_FALLBACK_THRESHOLD) {
-    const lifted = shiftContour(contour, 12);
-    const liftedCandidates = lifted.length > 0 ? queryContour(f, lifted).slice(0, TOP_N_CANDIDATES) : [];
-    if ((liftedCandidates[0]?.score ?? 0) > (candidates[0]?.score ?? 0)) {
-      candidates = liftedCandidates;
-      matchedContour = lifted;
-      octaveShiftApplied = 12;
-    }
-  }
+  const candidates = queryContour(f, contour).slice(0, TOP_N_CANDIDATES);
 
   let abc: string | null = null;
-  try { abc = f.contour_to_abc(matchedContour); } catch { /* cosmetic only */ }
+  try { abc = f.contour_to_abc(pitchClassesForDisplay(contour)); } catch { /* cosmetic only */ }
 
   // "Enriched top-10" (2026-08-18): candidates stay capped at TOP_N_CANDIDATES
   // as always — debug only adds note/tempo/contour telemetry, no extra
   // candidates, keeping the per-window storage growth to just this struct
   // (a few hundred bytes) instead of duplicating (part of) the candidate list.
-  const debug: WindowDebugFeatures = { contour: matchedContour, octaveShiftApplied, features };
+  const debug: WindowDebugFeatures = { contour, octaveShiftApplied: 0, features };
 
   return {
     result: { tWindowStart: tStart, tWindowEnd: tEnd, empty: candidates.length === 0, candidates, debug },
@@ -535,9 +530,6 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
         // The ack doubles as backpressure: it is sent after any analysis this
         // chunk triggered, so a file import cannot flood the message queue.
         if (msg.ack) post({ type: 'pcm-ack' });
-        break;
-      case 'set-pitch-shift':
-        manualShift = msg.semitones;
         break;
       case 'live-resume':
         // A deliberate pause/resume must NOT be padded as if it were lost
