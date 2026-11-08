@@ -45,7 +45,7 @@ import { setDetectionOn } from '../detections';
 import { useMediaVolume } from '../../components/useMediaVolume';
 import { returningToOffset } from '../../components/scrollRestoration';
 import { generateId } from '../../utils';
-import { getContext } from '../../store';
+import { getContext, leaveDeletedPage, navEntry } from '../../store';
 import { tunesetsOf, sameTunesets, chainSpan, setCardFor } from '../tunesets';
 import { TunesetDetectionCard, chainPlayId, type TunesetCardOptions } from './TunesetDetectionCard';
 import { repinSetReview, recutSetClip, setReviewId, type Span } from './tunesetShared';
@@ -1445,7 +1445,14 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         getName={() => session.name}
         getDefaultName={() => session.name}
         onRename={(val) => { session.name = val; persist(); }}
-        onDelete={() => { void deleteSession(session.id).then(() => ctx.navigate({ view: 'sessions' })); }}
+        // deleteSession resolves only once the recording is cleared, Drive
+        // included — long enough to have gone elsewhere meanwhile. Turning
+        // round from THAT page would be a step nobody asked for; the entry
+        // left behind is stepped over anyway (store.ts, popstate).
+        onDelete={() => {
+          const here = navEntry.value;
+          void deleteSession(session.id).then(() => { if (navEntry.value === here) leaveDeletedPage(); });
+        }}
         menu={titleMenu}
         hasNotes={!!session.notes?.trim()}
         onNotes={() => showAnalysisNotesModal(session.notes ?? '', (notes) => {

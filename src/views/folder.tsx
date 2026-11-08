@@ -1,5 +1,5 @@
 import { useState, useRef } from 'preact/hooks';
-import { appState, navigate, mutate, getContext } from '../store';
+import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon, StarIcon, LibraryIcon, WandIcon, StudyIcon } from '../components/icons';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
@@ -518,12 +518,11 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               title={t('folder.deleteFolder')}
               onClick={() => {
                 const doDelete = (deleteOrphans: boolean) => {
-                  const parent = findParentFolder(folderId!, 'folder', user);
                   void mutate(u => {
                     if (deleteOrphans) removeCards(u, orphanedCardsAfterDeckRemoval(collectFolderDeckIds(u, folderId!), u));
                     deleteFolderRecursive(u, folderId!);
                   });
-                  navigate({ view: 'folder', folderId: parent });
+                  leaveDeletedPage();
                 };
                 const orphans = orphanedCardsAfterDeckRemoval(collectFolderDeckIds(user, folderId!), user);
                 if (orphans.length > 0) {

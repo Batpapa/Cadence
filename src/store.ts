@@ -7,6 +7,7 @@ import { saveFailure, reportSaveFailure, reportSaveRecovered } from './services/
 import { normaliseState } from './services/stateNormalise';
 import { setDateFormatPref } from './services/dateFormat';
 import { closeTopOverlay } from './components/overlayStack';
+import { sessionsOf } from './session/detections';
 
 export const appState    = signal<AppState>(emptyState());
 export const routeSignal = signal<Route>({ view: 'folder', folderId: null });
@@ -30,9 +31,11 @@ function isValidRoute(route: Route, user: AppState): boolean {
     case 'study':   return route.deckId ? !!user.decks[route.deckId] : (route.cardIds?.length ?? 0) > 0;
     case 'library':  return true;
     case 'modules':  return true;
-    // Sessions live in a separate IndexedDB, not `user` — can't validate synchronously
-    // here; SessionsView redirects to the library itself if the id doesn't resolve.
-    case 'sessions': return true;
+    // A finished analysis lives in `user.modules` (session/db.ts), so it
+    // answers here like a card does. A draft being recorded is not there, but
+    // no route names one: the live screen is the bare `{view:'sessions'}`, and
+    // stop() promotes the analysis before navigating to it (LiveSession.tsx).
+    case 'sessions': return !route.sessionId || !!sessionsOf(user)[route.sessionId];
     case 'trending': return true;
   }
 }
@@ -156,16 +159,38 @@ const stateFor = (route: Route): NavState =>
  *  that needs to know what lies further back has to have kept it — which is
  *  what `leaveStudy` needs. Entries below the cursor are exactly the ones the
  *  browser still holds: a navigation overwrites the position it pushes and
- *  truncates everything above it, so nothing stale can be read going down. */
+ *  truncates everything above it, so nothing stale can be read going down —
+ *  nor going up as far as `_maxIdx`, which that same truncation lowers. */
 const _routeByIdx = new Map<number, Route>();
 
+/** Back and forward are offered only when they would take somewhere: an entry
+ *  naming something deleted is stepped over (popstate), so a run of nothing
+ *  but those is no way back at all, and a button that does nothing must look
+ *  like it (2026-11-08). Re-read on every move of the cursor AND on every
+ *  change of the library — a deletion closes a way without moving anything.
+ *  An entry this run holds no route for counts as alive: the button stays as
+ *  it always was. */
+function refreshNavFlags(): void {
+  const user = appState.value;
+  const alive = (i: number) => {
+    const route = _routeByIdx.get(i);
+    return !route || isValidRoute(route, user);
+  };
+  let back = false;
+  for (let i = _idx - 1; i >= 0 && !back; i--) back = alive(i);
+  let forward = false;
+  for (let i = _idx + 1; i <= _maxIdx && !forward; i++) forward = alive(i);
+  canGoBack.value    = back;
+  canGoForward.value = forward;
+}
+
 export function navigate(route: Route): void {
+  _arrivedBack = false;
   _idx = _maxIdx = _idx + 1;
   _currentNav = ++_navSeq;
   _routeByIdx.set(_idx, route);
   routeSignal.value  = route;
-  canGoBack.value    = true;
-  canGoForward.value = false;
+  refreshNavFlags();
   navEntry.value     = _currentNav;
   history.pushState(stateFor(route), '');
 }
@@ -211,6 +236,23 @@ export function replaceRouteNow(route: Route): void {
 export function goBack(): void { history.back(); }
 export function goForward(): void { history.forward(); }
 
+/** After deleting what is on screen: a U-turn, back to the page it was
+ *  reached from — the deck, the filtered library, the folder of analyses with
+ *  its filters — rather than to a root that knows nothing of where the user
+ *  was. Reached by a click or by forward, that page is behind; reached by
+ *  back, it is AHEAD, and that is where this goes (2026-11-08): Deck → A → B,
+ *  back to A, delete A lands on B, the page just left. Entries naming
+ *  something gone are stepped over on the way (popstate).
+ *
+ *  With nothing alive that way — the app reopened straight onto the page, or
+ *  everything there deleted too — it stays, and the page says the thing is
+ *  gone. A fallback destination per screen was weighed and refused: rules to
+ *  maintain for a case that almost never happens. */
+export function leaveDeletedPage(): void {
+  if (_arrivedBack) { if (canGoForward.value) history.forward(); }
+  else if (canGoBack.value) history.back();
+}
+
 /** Leaves the study session on screen for the page it was started from.
  *
  *  A plain back cannot do it: every card of a session is its own entry, so
@@ -241,13 +283,14 @@ export function leaveStudy(): boolean {
  *  with someone else's route. */
 function initHistory(userId: string): void {
   _userId = userId;
+  _arrivedBack = false;
+  _skipFrom = null;
   _idx = _maxIdx = 0;
   _routeByIdx.clear();
   _routeByIdx.set(0, routeSignal.value);
   _currentNav = ++_navSeq;
   navEntry.value = _currentNav;
-  canGoBack.value = false;
-  canGoForward.value = false;
+  refreshNavFlags();
   // Or the browser restores its own scroll position and fights _scrollByNav.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   if (!_sentinelPushed) {
@@ -262,6 +305,8 @@ function initHistory(userId: string): void {
 
   if (_popstateBound) return;
   _popstateBound = true;
+  // A deletion can close the only way back without the cursor moving.
+  effect(refreshNavFlags);
   window.addEventListener('popstate', (e) => {
     // Our own doing (see the forward below): the cursor is back where it
     // belongs and there is nothing to decide.
@@ -295,12 +340,41 @@ function initHistory(userId: string): void {
     }
 
     // The sentinel, with nothing open: the user asked to leave, so let them.
+    // (A skip below never steps onto it: it turns round at index 0.)
     if (st.sentinel) { history.back(); return; }
+
+    // An entry naming something deleted since — a card, a deck, a folder, an
+    // analysis — is stepped over, in the direction of the gesture, both ways
+    // (user's rule, 2026-11-08): back after a deletion would otherwise reopen
+    // the page just deleted, and forward after leaveDeletedPage the same.
+    // Nothing is shown on the way: a route is only applied once a live entry
+    // is reached. With none that way, the cursor returns to where the gesture
+    // started and the screen does not move.
+    //
+    // By position (idx/maxIdx) rather than by reading `_routeByIdx` ahead:
+    // entries left by an earlier load of the page are not in that map, while
+    // the state each popstate hands over always carries its route.
+    if (st.userId === _userId && !isValidRoute(st.route, appState.value)) {
+      if (_skipFrom === null) _skipFrom = _idx;
+      const more = wentBack ? st.idx > 0 : st.idx < _maxIdx;
+      _idx = st.idx;
+      if (more) {
+        if (wentBack) history.back(); else history.forward();
+        return;
+      }
+      const from = _skipFrom;
+      _skipFrom = null;
+      _swallowNextPop++;
+      history.go(from - _idx);
+      _idx = from;
+      return;
+    }
+    _skipFrom = null;
+    _arrivedBack = wentBack;
 
     _idx = st.idx;
     _currentNav = st.nav;
-    canGoBack.value    = _idx > 0;
-    canGoForward.value = _idx < _maxIdx;
+    refreshNavFlags();
     routeSignal.value  = st.userId === _userId ? st.route : { view: 'folder', folderId: null };
     navEntry.value     = _currentNav;
   });
@@ -312,6 +386,14 @@ let _sentinelPushed = false;
  *  Cancelling a back means moving the cursor forward, which fires a second
  *  popstate for the entry we just returned to. */
 let _swallowNextPop = 0;
+/** Where the gesture now stepping over deleted entries started — the entry
+ *  to return to if nothing alive lies that way. Null when not skipping. */
+let _skipFrom: number | null = null;
+/** Whether the page on screen was reached by going BACK, so that the page it
+ *  was reached from lies ahead — what leaveDeletedPage turns round towards.
+ *  False after a click, a forward, or a fresh load (direction unknown: the
+ *  usual case, behind, is the guess). */
+let _arrivedBack = false;
 
 /** The single place a new state becomes the current one.
  *

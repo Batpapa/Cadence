@@ -1,5 +1,5 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
-import { appState, navigate, mutate, getContext } from '../store';
+import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { CardSearchField } from '../components/cardSearchField';
 import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, StudyIcon } from '../components/icons';
@@ -212,7 +212,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                     if (parent) s.folders[parent]!.deckIds = s.folders[parent]!.deckIds.filter(id => id !== deckId);
                     else s.rootDeckIds = s.rootDeckIds.filter(id => id !== deckId);
                   });
-                  navigate({ view: 'folder', folderId: findParentFolder(deckId, 'deck', user) });
+                  leaveDeletedPage();
                 };
                 const orphans = orphanedCardsAfterDeckRemoval([deckId], user);
                 if (orphans.length > 0) {
