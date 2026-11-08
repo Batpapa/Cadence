@@ -27,11 +27,12 @@ import { showNewCardModal, type NewCardPreset } from './theSessionImport';
 import { t } from '../services/i18nService';
 import { theSessionOffered, irishTuneInfoOffered } from '../services/extensions';
 import { downloadIcon } from './playbackIcons';
+import { viewMimeType } from '../services/heic';
 
 // ── MIME helpers ──────────────────────────────────────────────────────────────
 
 function isPreviewable(entry: FileEntry): boolean {
-  const m = entry.mimeType;
+  const m = viewMimeType(entry.mimeType, entry.name);
   return m.startsWith('audio/') || m.startsWith('image/') || m.startsWith('video/') ||
     m === 'application/pdf' || m.startsWith('text/') ||
     entry.name.endsWith('.md') || entry.name.endsWith('.txt') ||
@@ -149,7 +150,7 @@ function openRemoteFile(
 }
 
 function mimeIcon(entry: FileEntry): string {
-  const m = entry.mimeType;
+  const m = viewMimeType(entry.mimeType, entry.name);
   if (entry.name.endsWith('.abc') || m === 'text/vnd.abc') return '𝄞';
   if (m.startsWith('audio/'))  return '♫';
   if (m.startsWith('video/'))  return '▶';

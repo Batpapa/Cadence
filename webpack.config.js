@@ -260,6 +260,16 @@ module.exports = (env, argv) => {
           use: 'ts-loader',
           exclude: /node_modules/,
         },
+        // libheif-js's WASM bundle (services/heicWorker.ts) asks `typeof
+        // __filename` to find out whether it runs under Node. In an ES module
+        // webpack answers "string" to that test but leaves the name itself
+        // undefined, and the worker died on load ("__filename is not
+        // defined", 2026-11-08). Left alone, the test says "undefined" in a
+        // browser, as it should.
+        {
+          test: /[\\/]libheif-js[\\/]libheif-wasm[\\/].*\.mjs$/,
+          parser: { node: false },
+        },
         {
           test: /\.css$/,
           use: [

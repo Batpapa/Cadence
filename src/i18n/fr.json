@@ -1056,6 +1056,8 @@
   "fileViewer.remove.message": "Retirer « {name} » de cette carte ?",
   "fileViewer.remove.messageRef": "Retirer « {name} » de cette carte ? La carte référencée n'est pas supprimée.",
   "fileViewer.abcError": "Impossible d'afficher la notation ABC.",
+  "fileViewer.imageConverting": "Conversion de l'image…",
+  "fileViewer.imageUnreadable": "Impossible de lire cette image.",
   "fileViewer.abc.sheetTab": "Partition",
   "fileViewer.abc.textTab": "ABC",
   "fileViewer.abc.bothTab": "Partition + ABC",

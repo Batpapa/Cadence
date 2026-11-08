@@ -1,5 +1,6 @@
 import { formatBytes } from '../utils';
 import { needsAudioSniff, sniffAudioMime, SNIFF_BYTES } from './audioSniff';
+import { sniffHeif } from './heic';
 import { t } from './i18nService';
 import { isNative } from '../native/platform';
 
@@ -216,6 +217,7 @@ const TYPE_BY_EXTENSION: Record<string, string> = {
   weba: 'audio/webm', webm: 'video/webm', mp4: 'video/mp4', m4v: 'video/mp4',
   mov: 'video/quicktime',
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  heic: 'image/heic', heif: 'image/heif',
   pdf: 'application/pdf',
   txt: 'text/plain', md: 'text/markdown', abc: 'text/vnd.abc',
 };
@@ -282,7 +284,7 @@ function sniffOther(head: Uint8Array): string | null {
   if (starts(0x89, 0x50, 0x4e, 0x47)) return 'image/png';
   if (starts(0xff, 0xd8, 0xff)) return 'image/jpeg';
   if (starts(0x47, 0x49, 0x46, 0x38)) return 'image/gif';                         // GIF8
-  return null;
+  return sniffHeif(head);
 }
 
 /** Whether the content is worth reading at all, before a byte of it is: a
