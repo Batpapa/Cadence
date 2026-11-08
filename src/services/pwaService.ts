@@ -16,6 +16,25 @@ let deferredPrompt: BeforeInstallPromptEvent | null = null;
  *  re-render happened to notice it had become available. */
 export const canInstallSignal = signal(false);
 
+/** Whether the browser reports the web app installed on this device — the one
+ *  detection the welcome screen keeps (the author, 2026-11-08), so that its
+ *  "Web app" button, finding no install prompt, can tell "already installed"
+ *  from "install it from the browser's menu". `navigator.getInstalledRelatedApps`
+ *  against manifest.json's `related_applications`: Chrome on Android (84+) and
+ *  on a computer (140+), from a page within the app's scope. Elsewhere it stays
+ *  false, which reads as "not known", never as "not installed". */
+export const webAppInstalledSignal = signal(false);
+
+function queryWebAppInstalled(): void {
+  const query = (navigator as { getInstalledRelatedApps?: () => Promise<{ platform: string }[]> })
+    .getInstalledRelatedApps;
+  if (!query) return;
+  // Silent on failure: the button then falls back to the browser-menu steps.
+  void query.call(navigator)
+    .then(apps => { if (apps.some(a => a.platform === 'webapp')) webAppInstalledSignal.value = true; })
+    .catch(() => { /* see above */ });
+}
+
 /** Must be called at module-eval time, NOT once the app has booted.
  *  The browser fires `beforeinstallprompt` exactly once per page load and the
  *  offer is lost for good if nobody was listening — and boot here is async
@@ -31,7 +50,9 @@ export function initPWA(): void {
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
     canInstallSignal.value = false;
+    webAppInstalledSignal.value = true;
   });
+  queryWebAppInstalled();
 }
 
 export function isStandalone(): boolean {
