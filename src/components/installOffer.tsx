@@ -41,16 +41,14 @@ export function installAction(): (() => void) | null {
 
 export const openPlayStore = (): void => { window.open(PLAY_STORE_URL, '_blank', 'noopener'); };
 
-/** One install as the welcome screen shows it (2026-11-08): always there, and
- *  saying where it stands — installable, running right here, installed, or not
- *  for this device (the author: "if an install is not possible, say so; if it
- *  is already done, say so too"). */
+/** One install as the welcome screen offers it (the author's rule,
+ *  2026-11-08): in a browser both, in the web app the Android app only, in the
+ *  Android app nothing — the functions below return null for what is not on
+ *  offer. Each one either opens what is already installed, installs, or is not
+ *  available here. */
 export type InstallState =
+  | { kind: 'open'; run: () => void }
   | { kind: 'install'; run: () => void }
-  /** This is the one running. */
-  | { kind: 'current' }
-  /** `run` opens it, where a page can. */
-  | { kind: 'installed'; run?: () => void }
   /** `run`, when set, still leads somewhere: the Android app's listing from
    *  an iPhone (the author: it must navigate to the store all the same). */
   | { kind: 'unavailable'; run?: () => void };
@@ -74,18 +72,16 @@ function openWebApp(): void {
   location.href = 'web+cadence:open';
 }
 
-/** The web app. "Installed" only when known: running as one, installed during
- *  this visit, or reported by the browser (installedSignal) — iOS never says,
- *  and there the offer simply stays. Outside it, the tile opens it
- *  (openWebApp). A Chromium browser that has not (yet) handed over its prompt,
- *  or any Android browser, can still install from its own menu, so it gets
- *  the steps rather than a "not for this device". */
-export function webAppInstallState(): InstallState {
+/** The web app, offered in a browser only. Opened when the browser reports it
+ *  installed (installedSignal) — iOS never says, and there the offer simply
+ *  stays. A Chromium browser that has not (yet) handed over its prompt, or any
+ *  Android browser, can still install from its own menu, so it gets the steps
+ *  rather than a "not available". */
+export function webAppInstallState(): InstallState | null {
   const run = webAppInstallAction();
   const installed = installedSignal.value.webApp;
-  if (isNative()) return { kind: 'unavailable' };
-  if (isStandalone()) return { kind: 'current' };
-  if (installed) return { kind: 'installed', run: openWebApp };
+  if (isNative() || isStandalone()) return null;
+  if (installed) return { kind: 'open', run: openWebApp };
   if (run) return { kind: 'install', run };
   if (/Android/.test(navigator.userAgent) || 'BeforeInstallPromptEvent' in window) {
     return { kind: 'install', run: () => showSteps('welcome.install.browserMenu') };
@@ -93,16 +89,16 @@ export function webAppInstallState(): InstallState {
   return { kind: 'unavailable' };
 }
 
-/** The Android app. Installed when running in it, or when Chrome on Android
- *  reports it (only from app versions declaring this site, see installedSignal),
- *  and then opened by the tile. On an iPhone it stays on show, marked "not
- *  for this device" and still leading to the listing: an Apple user should
- *  learn that it exists (the author, 2026-11-08). A computer keeps the offer:
- *  the Play listing installs onto the visitor's phone from there. */
-export function playInstallState(): InstallState {
+/** The Android app, offered everywhere but inside it. Opened when Chrome on
+ *  Android reports it installed (only from app versions declaring this site,
+ *  see installedSignal). On an iPhone it stays on show, "not available" but
+ *  still leading to the listing: an Apple user should learn that it exists
+ *  (the author, 2026-11-08). A computer keeps the offer: the Play listing
+ *  installs onto the visitor's phone from there. */
+export function playInstallState(): InstallState | null {
   const installed = installedSignal.value.play;
-  if (isNative()) return { kind: 'current' };
-  if (installed) return { kind: 'installed', run: openNativeApp };
+  if (isNative()) return null;
+  if (installed) return { kind: 'open', run: openNativeApp };
   if (!PLAY_STORE_LIVE) return { kind: 'unavailable' };
   if (isIOS()) return { kind: 'unavailable', run: openPlayStore };
   return { kind: 'install', run: openPlayStore };

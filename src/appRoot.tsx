@@ -283,7 +283,8 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   const [, redraw] = useState(0);
   // Both ways in, side by side under the sign-in (2026-11-08) — it used to be
   // one discreet link in the top corner, which a visitor who had just scanned
-  // a neighbour's QR at a session never saw. Always both, each with its state.
+  // a neighbour's QR at a session never saw. Null for what is not on offer
+  // from here (installOffer.tsx): nothing at all inside the Android app.
   const webApp = webAppInstallState();
   const play = playInstallState();
 
@@ -452,15 +453,17 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             </p>
           )}
 
-          <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
-            <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
-              {t('settings.install')}
+          {(webApp || play) && (
+            <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
+              <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
+                {t('settings.install')}
+              </div>
+              <div class="flex gap-2">
+                {webApp && <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} state={webApp} />}
+                {play && <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} state={play} />}
+              </div>
             </div>
-            <div class="flex gap-2">
-              <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} state={webApp} />
-              <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} state={play} />
-            </div>
-          </div>
+          )}
 
           {/* Under the sign-in when the tour is beside it; at the very end
               of the page when the tour is below. */}
@@ -495,30 +498,27 @@ export function mountUserSelector(
   render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} onRecover={onRecover} />, root);
 }
 
-/** One of the welcome screen's two installs. Logo and name, nothing else
- *  inside (the author, 2026-11-08); the state, when there is one to tell, is
- *  a small tag sitting on the bottom border at the right, like a fieldset's
- *  legend — so every tile keeps the same size, and the tag can never run into
- *  the name however narrow the screen. A button whenever there is somewhere
- *  to go: installing, opening what is installed, or — for the Android app on
- *  an iPhone — its Play listing all the same. */
+/** One of the welcome screen's installs. Logo and name inside, nothing else
+ *  (the author, 2026-11-08); what pressing it does — open, install, or not
+ *  available — is a small tag sitting on the bottom border at the right, like
+ *  a fieldset's legend, so every tile keeps the same size and the tag can never
+ *  run into the name however narrow the screen. An installed one is tinted. */
 function InstallTile({ icon, label, state }: {
   icon: ComponentChildren;
   label: string;
   state: InstallState;
 }) {
-  const run = 'run' in state ? state.run : undefined;
+  const { run } = state;
   const tone =
-    state.kind === 'installed' || state.kind === 'current' ? 'border-success/50 bg-success/10'
-    : state.kind === 'unavailable' ? 'border-dashed border-border'
-    : 'border-border bg-elevated hover:bg-surface';
+    state.kind === 'open' ? 'border-success/50 bg-success/10 hover:border-success'
+    : state.kind === 'unavailable' ? `border-dashed border-border ${run ? 'hover:border-muted' : ''}`
+    : 'border-border bg-elevated hover:border-muted hover:bg-surface';
   const tag =
-    state.kind === 'installed' ? { key: 'welcome.install.installed', color: 'text-success' }
-    : state.kind === 'current' ? { key: 'welcome.install.thisDevice', color: 'text-success' }
-    : state.kind === 'unavailable' ? { key: 'welcome.install.notForDevice', color: 'text-dim' }
-    : null;
-  const cls = `relative flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border text-[13.5px] transition-colors ${tone} ${
-    run ? 'cursor-pointer hover:border-muted' : ''}`;
+    state.kind === 'open' ? { key: 'welcome.install.open', color: 'text-success' }
+    : state.kind === 'install' ? { key: 'welcome.install.install', color: 'text-accent' }
+    : { key: 'welcome.install.unavailable', color: 'text-dim' };
+  const cls = `relative flex-1 min-w-0 flex items-center justify-center px-3 py-[11px] rounded-xl border text-[13.5px] transition-colors ${tone} ${
+    run ? 'cursor-pointer' : ''}`;
   const body = (
     <>
       <span class={`flex items-center gap-2 min-w-0 text-primary ${state.kind === 'unavailable' ? 'opacity-60' : ''}`}>
@@ -526,11 +526,9 @@ function InstallTile({ icon, label, state }: {
         <span class="truncate">{label}</span>
       </span>
       {/* bg-bg masks the border line behind the tag. */}
-      {tag && (
-        <span class={`absolute right-2.5 bottom-0 translate-y-1/2 px-1 bg-bg text-[10px] leading-none whitespace-nowrap ${tag.color}`}>
-          {t(tag.key)}
-        </span>
-      )}
+      <span class={`absolute right-2.5 bottom-0 translate-y-1/2 px-1 bg-bg text-[10px] leading-none whitespace-nowrap ${tag.color}`}>
+        {t(tag.key)}
+      </span>
     </>
   );
   return run
