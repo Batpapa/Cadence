@@ -96,10 +96,11 @@ export function ShareAppBody() {
   // What to hand over: the website, or the Android app's Play listing
   // (2026-11-08). At a session the neighbour is right there and can be asked
   // which phone they hold; on Android the listing saves them the detour
-  // through the site, whose own offer of the app is easy to miss. The site
-  // stays the default: it works on any phone, and on Android it still leads to
-  // the app.
-  const [target, setTarget] = useState<'site' | 'android'>('site');
+  // through the site, whose own offer of the app is easy to miss. The site is
+  // the default — it works on any phone, and on Android it still leads to the
+  // app — except inside the Android app, where what is being shown off is the
+  // app itself (the author, 2026-11-08).
+  const [target, setTarget] = useState<'site' | 'android'>(PLAY_STORE_LIVE && isNative() ? 'android' : 'site');
   const url = target === 'android' ? PLAY_STORE_URL : appUrl();
   const [copied, setCopied] = useState(false);
   // Absent on Firefox desktop among others, so the share sheet can never be the

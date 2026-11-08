@@ -1,4 +1,4 @@
-import { render } from 'preact';
+import { render, type ComponentChildren } from 'preact';
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks';
 import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
 import type { AppContext } from './types';
@@ -10,9 +10,9 @@ import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
-import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon } from './components/icons';
+import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon, CheckIcon } from './components/icons';
 import { WelcomeTour } from './components/welcomeTour';
-import { webAppInstallAction, showsPlayButton, offersPlayApp, openPlayStore } from './components/installOffer';
+import { webAppInstallState, playInstallState, type InstallState } from './components/installOffer';
 import { t } from './services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from './services/updateService';
 import { initDriveClient } from './services/driveService';
@@ -283,9 +283,9 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   const [, redraw] = useState(0);
   // Both ways in, side by side under the sign-in (2026-11-08) — it used to be
   // one discreet link in the top corner, which a visitor who had just scanned
-  // a neighbour's QR at a session never saw.
-  const installWebApp = webAppInstallAction();
-  const playButton = showsPlayButton();
+  // a neighbour's QR at a session never saw. Always both, each with its state.
+  const webApp = webAppInstallState();
+  const play = playInstallState();
 
   const select = async (id: string) => {
     setLoading(id);
@@ -452,38 +452,15 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             </p>
           )}
 
-          {(installWebApp || playButton) && (
-            <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
-              <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
-                {t('settings.install')}
-              </div>
-              <div class="flex gap-2">
-                {installWebApp && (
-                  <button
-                    type="button"
-                    class="flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border border-border bg-elevated hover:border-muted hover:bg-surface transition-colors cursor-pointer text-[13.5px] text-primary"
-                    onClick={installWebApp}
-                  >
-                    <InstallIcon size={15} />
-                    <span class="truncate">{t('welcome.install.webApp')}</span>
-                  </button>
-                )}
-                {/* Accent-bordered on Android, where the app is the better
-                    way in (native > web app > website, the author's order). */}
-                {playButton && (
-                  <button
-                    type="button"
-                    class={`flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border bg-elevated hover:bg-surface transition-colors cursor-pointer text-[13.5px] text-primary ${
-                      offersPlayApp() ? 'border-accent/70 hover:border-accent' : 'border-border hover:border-muted'}`}
-                    onClick={openPlayStore}
-                  >
-                    <GooglePlayIcon size={15} />
-                    <span class="truncate">{t('shareApp.target.android')}</span>
-                  </button>
-                )}
-              </div>
+          <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
+            <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
+              {t('settings.install')}
             </div>
-          )}
+            <div class="flex gap-2">
+              <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} state={webApp} />
+              <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} state={play} />
+            </div>
+          </div>
 
           {/* Under the sign-in when the tour is beside it; at the very end
               of the page when the tour is below. */}
@@ -516,6 +493,51 @@ export function mountUserSelector(
   onRecover: (() => Promise<DriveRecovery>) | null,
 ): void {
   render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} onRecover={onRecover} />, root);
+}
+
+/** One of the welcome screen's two installs, in whichever state it is. A
+ *  button whenever there is somewhere to go: installing, opening what is
+ *  installed, or — for the Android app on an iPhone — its Play listing all the
+ *  same. */
+function InstallTile({ icon, label, state }: {
+  icon: ComponentChildren;
+  label: string;
+  state: InstallState;
+}) {
+  const run = state.run;
+  // No status under an installable tile: the tile itself is the offer. What
+  // gets marked is the rest (the author, 2026-11-08) — installed in the success
+  // tint with a check, not possible here dashed and dimmed with the reason.
+  const tone =
+    state.kind === 'installed' ? 'border-success/50 bg-success/10' + (run ? ' hover:border-success hover:bg-success/15' : '')
+    : state.kind === 'unavailable' ? 'border-dashed border-border' + (run ? ' hover:border-muted' : '')
+    : 'border-border bg-elevated hover:border-muted hover:bg-surface';
+  const status =
+    state.kind === 'installed' ? (
+      <span class="text-[11px] leading-snug text-pretty">
+        <span class="inline-flex items-center gap-1 text-success">
+          <CheckIcon size={10} />{t('welcome.install.installed')}
+        </span>
+        {run
+          ? <span class="text-accent"><span class="text-dim">{' · '}</span>{t('welcome.install.open')}</span>
+          : state.hint && <span class="text-dim">{' · '}{t(state.hint)}</span>}
+      </span>
+    )
+    : state.kind === 'unavailable' ? <span class="text-[11px] text-dim leading-snug text-pretty">{t(state.reason)}</span>
+    : null;
+  const body = (
+    <>
+      <span class={`flex items-center gap-2 max-w-full text-[13.5px] text-primary ${state.kind === 'unavailable' ? 'opacity-60' : ''}`}>
+        <span class="shrink-0 flex">{icon}</span>
+        <span class="truncate">{label}</span>
+      </span>
+      {status}
+    </>
+  );
+  const cls = `flex-1 min-w-0 flex flex-col items-center justify-center gap-1 px-3 py-[10px] rounded-xl border text-center transition-colors ${tone}`;
+  return run
+    ? <button type="button" class={`${cls} cursor-pointer`} onClick={run}>{body}</button>
+    : <div class={cls}>{body}</div>;
 }
 
 const preloadDrive = () => { void initDriveClient().catch(() => { /* retried by the click itself */ }); };

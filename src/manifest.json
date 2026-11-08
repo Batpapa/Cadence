@@ -7,6 +7,11 @@
   "display": "standalone",
   "background_color": "#0d0d0d",
   "theme_color": "#0d0d0d",
+  "related_applications": [
+    { "platform": "play", "id": "io.github.batpapa.cadence", "url": "https://play.google.com/store/apps/details?id=io.github.batpapa.cadence" },
+    { "platform": "webapp", "url": "manifest.json", "id": "https://batpapa.github.io/Cadence/" }
+  ],
+  "prefer_related_applications": false,
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
