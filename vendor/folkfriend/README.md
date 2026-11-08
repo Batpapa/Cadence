@@ -9,14 +9,14 @@ About screen.
 
 **Source: [github.com/Batpapa/folkfriend](https://github.com/Batpapa/folkfriend)**,
 a fork of upstream carrying Cadence's changes. The files here are built from its
-commit **`6b53e2c`** (2026-11-08: the pitch-class mode, "any pitch", the cleaned
-features and the query speed-ups — see the sections below) **plus the two additive
-changes of "Played pitch" below, NOT YET COMMITTED to the fork** (`folkfriend_bg.wasm`
-MD5 `d87710c9ded87c7ce957c87fd5196ad7`, `folkfriend_bg_simd.wasm` MD5
-`2a616af88f4c72b98999afdf24b6ac76`). Commit `6b53e2c` itself builds
-`bd96c7b53ccc50ee7317e6be1fffbda9` / `04160e3bcd7e807f833971685c73caac`. The module
-shipped from 2026-10-29 to 2026-11-07 is commit `1b37f01`; from 2026-09-13 to
-2026-10-29, commit `b0d0a58`. **Whenever these files
+commit **`e09a2fc`** (2026-11-09: the two additive changes of "Played pitch" below, on
+top of the pitch-class mode, "any pitch", the cleaned features and the query speed-ups)
+and that build reproduces them byte for byte (`folkfriend_bg.wasm` MD5
+`d87710c9ded87c7ce957c87fd5196ad7`, `folkfriend_bg_simd.wasm` MD5
+`2a616af88f4c72b98999afdf24b6ac76`). The module shipped on 2026-11-08 is commit
+`6b53e2c` (`bd96c7b53ccc50ee7317e6be1fffbda9` / `04160e3bcd7e807f833971685c73caac`);
+from 2026-10-29 to 2026-11-07, commit `1b37f01`; from 2026-09-13 to 2026-10-29,
+commit `b0d0a58`. **Whenever these files
 change, commit to the fork first and update the commit named here.**
 
 ## Contents
