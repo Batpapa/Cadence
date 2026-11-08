@@ -2,8 +2,9 @@
 // The store reaches driveService, which reads localStorage at module evaluation
 // — in a bare node environment the import throws before a single test runs.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy } from './store';
-import type { Route } from './types';
+import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState } from './store';
+import { emptyState } from './utils';
+import type { Card, Route } from './types';
 
 // ── The browser history bridge ───────────────────────────────────────────────
 // Added with it (2026-09-10). The app declares `display: standalone`, so before
@@ -133,5 +134,130 @@ describe('popstate', () => {
     navigate(LIB);
     pop(entry(0, { view: 'card', cardId: 'someone-elses-card' }, 'u2'));
     expect(routeSignal.value).toEqual(HOME);
+  });
+});
+
+describe('deleted pages', () => {
+  // The library in force is the empty one: every card, deck and analysis a
+  // route names below is one that is gone.
+  const GONE: Route = { view: 'card', cardId: 'deleted' };
+  const MODULES: Route = { view: 'modules' };
+
+  beforeEach(() => {
+    appState.value = emptyState();
+    vi.restoreAllMocks();
+  });
+
+  it('steps back over an entry naming something deleted, showing nothing on the way', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    navigate(GONE);
+    navigate(MODULES);
+    pop(entry(1, GONE));
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(routeSignal.value).toEqual(MODULES);
+    pop(entry(0, HOME));
+    expect(routeSignal.value).toEqual(HOME);
+    expect(canGoForward.value).toBe(true);
+  });
+
+  it('steps forward over one the same way', () => {
+    const forward = vi.spyOn(history, 'forward').mockImplementation(() => {});
+    navigate(GONE);
+    navigate(MODULES);
+    pop(entry(0, HOME));
+    pop(entry(1, GONE));
+    expect(forward).toHaveBeenCalledTimes(1);
+    expect(routeSignal.value).toEqual(HOME);
+    pop(entry(2, MODULES));
+    expect(routeSignal.value).toEqual(MODULES);
+  });
+
+  it('treats an analysis that is no longer in the library as deleted', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    navigate({ view: 'sessions', sessionId: 'deleted' });
+    navigate(MODULES);
+    pop(entry(1, { view: 'sessions', sessionId: 'deleted' }));
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(routeSignal.value).toEqual(MODULES);
+  });
+
+  it('turns round to where the gesture started when nothing alive lies that way', () => {
+    // Never onto the sentinel, which would leave the app.
+    routeSignal.value = GONE;
+    initRoutePersistence('u1');
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    const go = vi.spyOn(history, 'go').mockImplementation(() => {});
+    navigate(MODULES);
+    pop(entry(0, GONE));
+    expect(back).not.toHaveBeenCalled();
+    expect(go).toHaveBeenCalledWith(1);
+    pop(entry(1, MODULES));   // the return itself, swallowed
+    expect(routeSignal.value).toEqual(MODULES);
+    expect(canGoBack.value).toBe(false);
+  });
+
+  // A button that would do nothing must look like it (2026-11-08). The
+  // browser's own can still be pressed — that is the turn-round above.
+  it('does not offer back when only deleted pages lie behind', () => {
+    routeSignal.value = GONE;
+    initRoutePersistence('u1');
+    navigate(MODULES);
+    expect(canGoBack.value).toBe(false);
+  });
+
+  it('does not offer forward when only deleted pages lie ahead', () => {
+    navigate(GONE);
+    pop(entry(0, HOME));
+    expect(canGoForward.value).toBe(false);
+  });
+
+  it('closes the way back the moment the page behind is deleted', () => {
+    appState.value = { ...emptyState(), cards: { c1: {} as Card } };
+    routeSignal.value = { view: 'card', cardId: 'c1' };
+    initRoutePersistence('u1');
+    navigate(MODULES);
+    expect(canGoBack.value).toBe(true);
+    appState.value = emptyState();
+    expect(canGoBack.value).toBe(false);
+  });
+});
+
+describe('leaveDeletedPage', () => {
+  // A U-turn: back to the page this one was reached from (2026-11-08).
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  it('goes back when the page was reached by a click', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    navigate(LIB);
+    leaveDeletedPage();
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes forward when the page was reached by going back', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    const forward = vi.spyOn(history, 'forward').mockImplementation(() => {});
+    navigate(LIB);
+    navigate({ view: 'modules' });
+    pop(entry(1, LIB));
+    leaveDeletedPage();
+    expect(forward).toHaveBeenCalledTimes(1);
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('goes back again once the page was reached by going forward', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    navigate(LIB);
+    pop(entry(0, HOME));
+    pop(entry(1, LIB));
+    leaveDeletedPage();
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays when the app was opened straight onto the page', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    const forward = vi.spyOn(history, 'forward').mockImplementation(() => {});
+    leaveDeletedPage();
+    expect(back).not.toHaveBeenCalled();
+    expect(forward).not.toHaveBeenCalled();
   });
 });

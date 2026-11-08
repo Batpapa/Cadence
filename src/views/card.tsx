@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'preact/hooks';
 import { Fragment } from 'preact';
-import { appState, navigate, mutate } from '../store';
+import { appState, navigate, mutate, leaveDeletedPage } from '../store';
 import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets';
 import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
@@ -837,7 +837,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 const doomed = appState.value.cards[cardId];
                 void mutate(s => removeCards(s, [cardId]))
                   .then(() => { if (doomed) void condemnCardAttachments([doomed]); });
-                navigate({ view: 'folder', folderId: null });
+                leaveDeletedPage();
               },
             )}
           >
