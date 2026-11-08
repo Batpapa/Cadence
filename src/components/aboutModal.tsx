@@ -89,8 +89,9 @@ function AboutBody() {
         </div>
       </div>
 
-      <section class="space-y-3">
-        <div class="section-title">{t('shareApp.title')}</div>
+      {/* The title is ShareAppBody's own: the choice of what to share sits on
+          its line. */}
+      <section>
         <ShareAppBody />
       </section>
 
