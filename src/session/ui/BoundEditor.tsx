@@ -6,7 +6,7 @@ import { t } from '../../services/i18nService';
 import { showModal, closeModal, askUnsavedChanges, type ModalAction } from '../../components/modal';
 import { playIcon, pauseIcon } from '../../components/playbackIcons';
 import { ResetIcon, ScoreFollowIcon, MagnetIcon, iconElement } from '../../components/icons';
-import { hasRecognisedSetting, type Detection } from '../model';
+import { hasRecognisedSetting, keyOffsetOf, type Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
   snapMarks, passMarks, alignmentMarks, findSnap, findTwin, clampLinked, closingSnap, missingRanges,
@@ -966,7 +966,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
         <div>
           <p class="text-sm font-semibold text-primary capitalize truncate">{ann.displayName}</p>
           <p class="text-xs text-muted">
-            <TuneFacts dance={ann.dance} meter={ann.meter} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} /> · {t('sessions.bounds.length', { d: fmtShort(draft.end - draft.start) })}
+            <TuneFacts dance={ann.dance} meter={ann.meter} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} keyOffset={keyOffsetOf(ann)} /> · {t('sessions.bounds.length', { d: fmtShort(draft.end - draft.start) })}
           </p>
         </div>
       )}

@@ -518,7 +518,6 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
         { target: 'nav-modules', action: 'click', titleKey: 'walkthrough.analyser.modules.title', textKey: 'walkthrough.analyser.modules.text' },
         { target: 'module-sessions', action: 'click', deny: ['module-pin-sessions'], titleKey: 'walkthrough.analyser.open.title', textKey: 'walkthrough.analyser.open.text' },
         { target: 'analyser-start', titleKey: 'walkthrough.analyser.start.title', textKey: 'walkthrough.analyser.start.text' },
-        { target: 'analyser-pitch', titleKey: 'walkthrough.analyser.pitch.title', textKey: 'walkthrough.analyser.pitch.text' },
         { target: 'analyser-gear', titleKey: 'walkthrough.analyser.gear.title', textKey: 'walkthrough.analyser.gear.text' },
         { target: 'analyser-tabs', action: 'do', titleKey: 'walkthrough.analyser.tabs.title', textKey: 'walkthrough.analyser.tabs.text',
           after: act => act.click('analyser-tab-sessions') },

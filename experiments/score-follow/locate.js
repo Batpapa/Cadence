@@ -12,7 +12,7 @@
 //   node experiments/score-follow/locate.js [session-substring] [maxTunes]   (from Cadence/)
 const fs = require('node:fs');
 const path = require('node:path');
-const { featuresOf, decodeSpan, RATE } = require('./lib/engine');
+const { alignFeaturesOf: featuresOf, decodeSpan, RATE } = require('./lib/engine');
 const { align, FPS, MIDI_LOW, MIDI_NUM } = require('./lib/align');
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -34,7 +34,8 @@ const LOCATE_HOP_S = 2 * 60;
 const LOCATE_JOIN_S = 10;
 const ZONE_MARGIN_S = 15;
 const ZONE_MAX_S = LONG_S - 2 * ZONE_MARGIN_S;
-const MATCH_USABLE = 0.5;
+const MATCH_USABLE = 0.66; // scoreFollow.ts, on the cleaned features since 2026-11-07 (the verdict)
+const LOCATE_WRONG_SHARE = 0.5; // scoreFollowWorker.ts (the zone's worth)
 const BPMS = process.env.BPMS ? process.env.BPMS.split(',').map(Number) : undefined;
 
 /** Features of a whole file, decoded 5 minutes at a time (the app streams). */
@@ -83,10 +84,10 @@ function locate(features, fps, score) {
   for (let k = 0; k < count; k++) {
     const a = Math.min(k * hop, last);
     const sub = features.subarray(a * MIDI_NUM, Math.min(frames, a + win) * MIDI_NUM);
-    const r = align(sub, score, BPMS ? { bpms: BPMS } : {});
+    const r = align(sub, score, { ...(BPMS ? { bpms: BPMS } : {}), findKey: !!process.env.KEY });
     if (!r || r.onsets.length === 0) continue;
     const { hit, n } = hitsOf(sub, score, r);
-    const worth = hit - MATCH_USABLE * n;
+    const worth = hit - LOCATE_WRONG_SHARE * n;
     if (worth > 0) finds.push({ worth, start: a / fps + r.onsets[0].frame / fps, end: a / fps + r.end / fps });
   }
   if (!finds.length) return null;
@@ -114,7 +115,7 @@ function locate(features, fps, score) {
 function judge(features, z, score) {
   const a = Math.floor(z.from * FPS), b = Math.min(features.length / MIDI_NUM, Math.ceil(z.to * FPS));
   const sub = features.subarray(a * MIDI_NUM, b * MIDI_NUM);
-  const r = align(sub, score, BPMS ? { bpms: BPMS } : {});
+  const r = align(sub, score, { ...(BPMS ? { bpms: BPMS } : {}), findKey: !!process.env.KEY });
   if (!r || r.onsets.length === 0) return { ok: false, match: 0, cover: 0 };
   const { hit, n } = hitsOf(sub, score, r);
   const match = n ? hit / n : 0;

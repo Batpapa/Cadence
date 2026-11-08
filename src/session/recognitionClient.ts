@@ -94,12 +94,6 @@ export class RecognitionClient implements RecognitionSink {
     this.send({ type: 'worklet-port', port }, [port]);
   }
 
-  /** Update the manual transposition applied to every contour from now on —
-   *  takes effect on the next analysis window, doesn't touch past ones. */
-  setPitchShift(semitones: number): void {
-    this.send({ type: 'set-pitch-shift', semitones });
-  }
-
   /** Tells the worker a manual pause just ended, so its wall-clock drift
    *  correction (#16) doesn't mistake the pause itself for lost audio. */
   notifyLiveResume(): void {

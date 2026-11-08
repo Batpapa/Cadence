@@ -9,7 +9,7 @@ import { viterbiPickOf, type Detection, type DetectionAlternate } from '../sessi
 import { TuneFinder, canOfferCapture, type FinderStatus, type Run, type SourceKind } from './tuneFinder';
 import { RunStore } from './runStore';
 import { Menu, type MenuEntry } from './Menu';
-import { GearIcon, ExportIcon, CadenceLogo, TuningForkIcon, ResetIcon } from './icons';
+import { GearIcon, ExportIcon, CadenceLogo } from './icons';
 import {
   nameOf, runDuration, runText, downloadRunText, downloadRunPackage, downloadRunAudio, downloadClip, downloadSetClip, downloadAllClips,
 } from './exports';
@@ -137,24 +137,6 @@ function loadingText(status: Extract<FinderStatus, { kind: 'loading' }>, lang: L
   // the compressed size, on another scale than the bytes counted here.
   if (p?.phase === 'downloading') return tr(lang, 'downloading', { mb: mb(p.loadedBytes) });
   return tr(lang, 'preparing');
-}
-
-// ── The instruments' pitch ──
-// The analyser's control (PitchShiftControl.tsx), its sign and its words: the
-// value is how the instruments SOUND against the written tune, negative =
-// lower, and the engine takes the opposite. Inline, in place of the strip's
-// text: a dialog would not fit in a 92 px frame.
-
-const flip = (semitones: number) => -semitones;
-const signed = (heard: number) => (heard > 0 ? `+${heard}` : String(heard));
-
-function pitchDescription(lang: Lang, heard: number): string {
-  if (heard === 0) return app(lang, 'sessions.pitchShift.asWritten');
-  const dir = heard < 0 ? 'lower' : 'higher';
-  const n = Math.abs(heard);
-  if (n === 1) return app(lang, `sessions.pitchShift.semitone.${dir}`);
-  if (n === 2) return app(lang, `sessions.pitchShift.tone.${dir}`);
-  return app(lang, `sessions.pitchShift.semitones.${dir}`).replace('{n}', String(n));
 }
 
 // ── Playing a detection ──
@@ -402,8 +384,6 @@ export function FinderWidget({ opts: given }: { opts: WidgetOptions }) {
   const [dragOver, setDragOver] = useState(false);
   /** The detection whose alternatives are shown, as `${run}:${id}`. */
   const [expanded, setExpanded] = useState<string | null>(null);
-  /** The instruments' pitch, as heard (see flip). */
-  const [heard, setHeard] = useState(0);
   /** Per analysis, as an analysis is where a set is: the box in its title. */
   const [setsShown, setSetsShown] = useState<ReadonlyMap<number, boolean>>(new Map());
   const showsSets = (run: Run) => setsShown.get(run.index) ?? given.sets;
@@ -544,19 +524,6 @@ export function FinderWidget({ opts: given }: { opts: WidgetOptions }) {
     finder.analyseFile(file);
   };
 
-  /** The run's recording again, at the pitch now set, in place: it opens,
-   *  the others stay as they are. */
-  const reanalyse = (run: Run) => {
-    setFresh(false);
-    setFollow(true);
-    setCollapsed(prev => {
-      const next = new Set(prev);
-      next.delete(run.index);
-      return next;
-    });
-    finder.reanalyse(run.index);
-  };
-
   const submitLink = () => {
     if (!url.trim()) return;
     startRun();
@@ -583,34 +550,11 @@ export function FinderWidget({ opts: given }: { opts: WidgetOptions }) {
   const tuneLine = (d: Detection) => <><TuneLink d={d} opts={opts} className="tune" />{d.dance && <span class="detail">{d.dance}</span>}</>;
   const status_ = (text: string) => <span class="status">{text}</span>;
 
-  // A file takes the pitch it starts with: the control waits for the end.
-  const pitchLocked = busy && !!activeRun && !liveNow;
-  const stepPitch = (delta: number) => {
-    const next = Math.max(-12, Math.min(12, heard + delta));
-    if (next === heard) return;
-    setHeard(next);
-    finder.setPitchShift(flip(next));
-  };
-
   let line: ComponentChildren = null;
   /** A recording's progress, drawn rather than written. */
   let progress: number | null = null;
 
   const latest = activeRun?.detections[activeRun.detections.length - 1];
-
-  /** The pitch's panel: the stepper, and which way in words — the sign alone
-   *  was the whole trouble with the analyser's first stepper. */
-  const pitchPanel = (
-    <div class="pitch-panel">
-      <div class="pitch-head">{tr(lang, 'pitch')}</div>
-      <div class="pitch">
-        <button type="button" class="step" disabled={heard <= -12} onClick={() => stepPitch(-1)} aria-label="−1">−</button>
-        <span class={`value${heard === 0 ? '' : ' shifted'}`}>{heard === 0 ? '0' : signed(heard)}</span>
-        <button type="button" class="step" disabled={heard >= 12} onClick={() => stepPitch(1)} aria-label="+1">+</button>
-      </div>
-      <p class="pitch-words">{app(lang, 'sessions.pitchShift.question')} <strong>{pitchDescription(lang, heard)}</strong></p>
-    </div>
-  );
 
   if (status.kind === 'error') {
     // One short sentence; a refusal's own words, when there are some, on hover.
@@ -850,16 +794,6 @@ export function FinderWidget({ opts: given }: { opts: WidgetOptions }) {
           <span class="credit-words">{tr(lang, 'credit')}</span>
           <CadenceLogo glyph size={20} />
         </a>
-        {/* The pitch, behind the analyser's own tuning fork — with its value
-            beside it once set, so a shifted analysis never looks like a plain
-            one. */}
-        <Menu
-          class="pitch-toggle"
-          icon={<><TuningForkIcon size={15} />{heard !== 0 && <span class="pitch-value">{signed(heard)}</span>}</>}
-          label={pitchLocked ? tr(lang, 'pitch.locked') : app(lang, 'sessions.pitchShift.hint')}
-          disabled={pitchLocked}
-          entries={[{ kind: 'content', key: 'pitch', content: pitchPanel }]}
-        />
       </div>
       <div class="strip">
         <span class={`meter${listening ? ' live' : ''}`} ref={meterRef}>
@@ -917,18 +851,6 @@ export function FinderWidget({ opts: given }: { opts: WidgetOptions }) {
                       {!run.label && <span class="started">{startTime(run, lang)}</span>}
                       <span class="count">{n}</span>
                     </button>
-                    {/* Once the pitch is changed, every analysis made before
-                        can be made again at it — greyed while one is running. */}
-                    {finder.canReanalyse(run.index) && (
-                      <button
-                        type="button"
-                        class="icon-button"
-                        disabled={busy}
-                        title={tr(lang, 'reanalyse', { pitch: signed(heard) })}
-                        aria-label={tr(lang, 'reanalyse', { pitch: signed(heard) })}
-                        onClick={() => reanalyse(run)}
-                      ><ResetIcon size={15} /></button>
-                    )}
                     {opts.tools && (
                       <>
                         <Menu icon={<GearIcon size={15} />} label={tr(lang, 'display')} entries={gearEntries(run)} />

@@ -29,7 +29,7 @@ import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const { featuresOf, decodeSpan } = require('./lib/engine');
+const { featuresOf, alignFeaturesOf, decodeSpan } = require('./lib/engine');
 const { renderSequence } = require('./lib/render');
 const { align, FPS, MIDI_LOW } = require('./lib/align');
 const { LiveFollower, LiveCursor, VersionWatch, versionMerge } = await import(pathToFileURL(path.resolve(here, '../../src/session/liveFollow.ts')).href);
@@ -310,7 +310,8 @@ function real() {
       const pcm = decodeSpan(audio, from, end + M - from);
       const feats = featuresOf(pcm);
       const score = toMidi(setting.contour);
-      const off = align(feats, score, { transposes: [0], otherPenalty: 1.2 });
+      // The truth is the recording's model as the app runs it: on the cleaned features.
+      const off = align(alignFeaturesOf(pcm), score, { transposes: [0], otherPenalty: 1.2 });
       const notes = off.onsets.map((o) => ({ t: o.frame / FPS, index: o.index }));
       const r = runCase(feats, levelsOf(pcm), score, truthOf(notes, off.end / FPS));
       r.acqStretches = notes.length ? 1 : 0;

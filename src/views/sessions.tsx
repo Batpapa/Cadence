@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getContext, appState } from '../store';
+import { getContext } from '../store';
 import { t } from '../services/i18nService';
 import type { AppContext, Route } from '../types';
 import { loadSessionMeta } from '../session/db';
@@ -9,11 +9,9 @@ import { SessionLibrary } from '../session/ui/SessionLibrary';
 import { LiveSessionScreen } from '../session/ui/LiveSession';
 import { ImportAnalysis } from '../session/ui/ImportAnalysis';
 import { SessionSummary } from '../session/ui/SessionSummary';
-import { startLiveSession, startImport, startLinkImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive, setPitchShiftSetting } from '../session/ui/sessionModule';
-import { PitchShiftControl } from '../session/ui/PitchShiftControl';
+import { startLiveSession, startImport, startLinkImport, showImportSessionModal, showSessionSettingsModal, startReanalyze, liveScreenActive, importScreenActive } from '../session/ui/sessionModule';
 import { LiveTempoBar } from '../session/ui/LiveTempo';
 import { analysisTempo } from '../session/ui/analysisView';
-import { pitchShiftSetting } from '../session/detections';
 import { GearIcon, WaveformIcon } from '../components/icons';
 
 // ── Sessions page (the tune analyzer) ───────────────────────────────────────────
@@ -92,12 +90,6 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
             {t('sessions.moduleTitle')}
           </h1>
           <div class="flex items-center gap-2">
-            {/* The instruments' pitch, set here before anything starts — an
-                import runs too fast to catch with a control on its own screen.
-                Beside the gear rather than inside its settings: it shows its
-                value once set, and a shift left on by mistake would otherwise
-                analyse every session after it wrong without a word. */}
-            <div class="flex" data-tour="analyser-pitch"><PitchShiftControl value={pitchShiftSetting(appState.value)} onChange={setPitchShiftSetting} /></div>
             <button
               type="button"
               class="w-8 h-8 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"

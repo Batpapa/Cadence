@@ -1,4 +1,4 @@
-import { MATCH_GOOD, MATCH_USABLE } from '../session/scoreFollow';
+import { MATCH_GOOD, MATCH_USABLE, LIVE_MATCH_GOOD, LIVE_MATCH_USABLE } from '../session/scoreFollow';
 
 // ── The colour of an alignment's quality ─────────────────────────────────────
 // One continuous scale for how well a score holds on a recording — the
@@ -7,21 +7,26 @@ import { MATCH_GOOD, MATCH_USABLE } from '../session/scoreFollow';
 // little below MATCH_USABLE, amber halfway to MATCH_GOOD, green from it on;
 // mixed in between, in the theme's own three colours.
 
-const RED_UNTIL = MATCH_USABLE - 0.1;
-const AMBER_AT = (MATCH_USABLE + MATCH_GOOD) / 2;
+/** The two lines a share is read against: an alignment's (the default), or the
+ *  Play-along's, whose features run on another scale (see scoreFollow.ts). */
+export interface QualityScale { good: number; usable: number }
+export const ALIGNMENT_SCALE: QualityScale = { good: MATCH_GOOD, usable: MATCH_USABLE };
+export const LIVE_SCALE: QualityScale = { good: LIVE_MATCH_GOOD, usable: LIVE_MATCH_USABLE };
 
 /** Steps the scale is drawn in: finer would be invisible, and each step is a
  *  string a frame compares. */
 const STEPS = 50;
 
 /** `share` (0–1, the share of notes on the score) as a CSS colour. */
-export function qualityColour(share: number): string {
+export function qualityColour(share: number, scale: QualityScale = ALIGNMENT_SCALE): string {
+  const RED_UNTIL = scale.usable - 0.1;
+  const AMBER_AT = (scale.usable + scale.good) / 2;
   const s = Math.round(Math.min(1, Math.max(0, share)) * STEPS) / STEPS;
   if (s <= RED_UNTIL) return 'var(--color-danger)';
-  if (s >= MATCH_GOOD) return 'var(--color-success)';
+  if (s >= scale.good) return 'var(--color-success)';
   const [from, to, p] = s < AMBER_AT
     ? ['var(--color-danger)', 'var(--color-warn)', (s - RED_UNTIL) / (AMBER_AT - RED_UNTIL)]
-    : ['var(--color-warn)', 'var(--color-success)', (s - AMBER_AT) / (MATCH_GOOD - AMBER_AT)];
+    : ['var(--color-warn)', 'var(--color-success)', (s - AMBER_AT) / (scale.good - AMBER_AT)];
   return `color-mix(in oklab, ${to} ${Math.round(p * 100)}%, ${from})`;
 }
 

@@ -1,4 +1,4 @@
-import { MATCH_USABLE, type FollowResult } from './scoreFollow';
+import type { FollowResult } from './scoreFollow';
 
 // ── Bounds from the score's alignment ────────────────────────────────────────
 // A detection's bounds come from 10 s windows on a 5 s hop: off by a few
@@ -8,25 +8,42 @@ import { MATCH_USABLE, type FollowResult } from './scoreFollow';
 // within a tenth of a pass of a pass boundary (measured 2026-10-31 on 318
 // detections of seven sessions).
 //
-// Hence the rule, measured there: where the alignment stops past 80 % of a
-// pass, the pass was finished and the bound goes to its end; before 10 %, it
-// was the next pass's first notes, or the next tune's taken for them, and the
-// bound goes back to the pass's start. In between, the alignment is suspect
-// — most often it ran a quarter of a pass into the next tune of the set,
-// same meter, same rhythm — and nothing is proposed. Against the annotations,
-// the end's error went from 2.5 / 14.5 s (median / 90th percentile) to
-// 0.7 / 6.6 s; better than the detection on 152 ends, worse on 13. The start
-// mirrors it.
+// Hence the rule, the same at both bounds by what it means (2026-11-08, the
+// user): where no more than P_MISSTAIL of a pass is missing from the aligned
+// stretch — at its end the pass's last notes, at its start its first ones —
+// they were missed, and the bound goes on to the pass's end, or back to its
+// start. Where it spills no more than P_OVERSHOOT into a pass — the next
+// one's first notes at the end, the one before's last at the start, most
+// often the neighbouring tune's taken for them — the bound goes back to the
+// pass boundary. In between, the alignment is suspect — most often it ran a
+// quarter of a pass into the next tune of the set, same meter, same rhythm —
+// and nothing is proposed.
+//
+// Measured end to end on the seven annotated sessions (2026-11-08, current
+// engine: 328 detections matched one to one), error against the annotations
+// p50 / p90: start 2.5 / 7.5 s as detected, 0.6 / 4.5 s by the rule (30
+// starts off by more than 5 s, 64 detected); end 1.5 / 4.5 → 0.6 / 2.5 s
+// (15, 32 detected); better than the detection on 280 bounds, worse on 12;
+// sets chained as before. The rule as it was until then (end 0.8 / 0.1, the
+// start the other way round, 0.1 / 0.2) gave 5.5 s at the start's p90, 2.8 at
+// the end's, 265 better. A larger P_MISSTAIL gains a little more and chains
+// separate tunes by mistake; a guard against cutting where the alignment
+// stops on its margin's edge, or a 30 s margin before the start, gained
+// nothing.
 //
 // Offered in the bound editor, and applied by the analysis itself as it goes
 // (alignedBounds, below) — for everyone since 2026-11-01, after a day in
 // developer mode: "ça fonctionne suffisamment" (the user). The recogniser's
 // bounds stay in Detection.detected, offered back by the bound editor.
 
-/** A pass played this far is a pass finished. */
-export const PASS_DONE = 0.8;
-/** A pass begun no further than this was not begun. */
-export const PASS_UNBEGUN = 0.1;
+/** Share of a pass that may be missing from the aligned stretch, at either
+ *  end, for the pass to be taken as played whole: the bound is extended to
+ *  the pass boundary. */
+export const P_MISSTAIL = 0.2;
+/** Share of a pass the aligned stretch may spill into, at either end, for
+ *  those notes to be taken as not the tune's: the bound is cut back to the
+ *  pass boundary. */
+export const P_OVERSHOOT = 0.15;
 /** Seconds of recording aligned on each side of a detection — not the viewer's
  *  3 s: aligned that close, the alignment stopped on the margin's edge in a
  *  third of the detections, and the edge then said nothing of the passes. */
@@ -114,15 +131,25 @@ export function withinReach(suggestion: number | null, bound: number): number | 
   return suggestion !== null && Math.abs(suggestion - bound) <= MAX_MOVE_S ? suggestion : null;
 }
 
-/** Whether the alignment is worth proposing anything from: below
- *  MATCH_USABLE, the score is no more the recording's than a wrong one. */
-export const trusted = (g: PassGeometry): boolean => g.match >= MATCH_USABLE;
+/** The least share of notes on the score (FollowResult.match) an alignment
+ *  needs to put a bound on its passes — its own line, below the Synchro
+ *  audio's MATCH_USABLE: the rule already keeps out what lands mid-pass, the
+ *  usual mark of a wrong or lost alignment. Measured end to end (2026-11-08,
+ *  seven annotated sessions, the rule P_MISSTAIL / P_OVERSHOOT): at
+ *  MATCH_USABLE (0.66), 280 bounds better than the detection, 12 worse; at
+ *  0.6, 289 / 13, sets unchanged; below, nothing more (11 alignments of 341
+ *  score under 0.6); at 0.7, 249 / 12. The user's case (Tabac, Ellen's
+ *  Delight): aligned right on its pass at 0.65, proposed nothing. */
+export const BOUND_MATCH = 0.6;
+
+/** Whether the alignment is worth proposing anything from. */
+export const trusted = (g: PassGeometry): boolean => g.match >= BOUND_MATCH;
 
 /** Where the tune ends by the rule, or null where it proposes nothing. */
 export function suggestedEnd(g: PassGeometry): number | null {
   if (!trusted(g)) return null;
-  if (g.tailFrac >= PASS_DONE) return g.last + (1 - g.tailFrac) * g.pass;
-  if (g.tailFrac <= PASS_UNBEGUN) return g.last - g.tailFrac * g.pass;
+  if (g.tailFrac >= 1 - P_MISSTAIL) return g.last + (1 - g.tailFrac) * g.pass;
+  if (g.tailFrac <= P_OVERSHOOT) return g.last - g.tailFrac * g.pass;
   return null;
 }
 
@@ -132,8 +159,8 @@ export function suggestedEnd(g: PassGeometry): number | null {
  *  next. */
 export function suggestedStart(g: PassGeometry): number | null {
   if (!trusted(g)) return null;
-  if (g.headFrac <= PASS_UNBEGUN) return g.first - g.headFrac * g.pass;
-  if (g.headFrac >= PASS_DONE) return g.first + (1 - g.headFrac) * g.pass;
+  if (g.headFrac <= P_MISSTAIL) return g.first - g.headFrac * g.pass;
+  if (g.headFrac >= 1 - P_OVERSHOOT) return g.first + (1 - g.headFrac) * g.pass;
   return null;
 }
 

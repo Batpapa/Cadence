@@ -68,14 +68,6 @@ interface RunState {
   /** What its detections are played from; null when the browser could not
    *  play it back (a QuickTime or AVI video, typically). */
   sound: Blob | MemoryRecorder | null;
-  /** What it can be analysed again from: the file itself, played back or not,
-   *  or the listening's recording. Null when there is none (no MediaRecorder). */
-  input: File | MemoryRecorder | null;
-  /** The pitch was changed since it was analysed: it can be again. */
-  stale: boolean;
-  /** While it is analysed again: what it had, given back should the new
-   *  analysis fail or be cancelled before it began. */
-  previous?: DetectionTracker;
   /** How far into it the decoder has heard, in seconds. */
   heardS: number;
   /** Put back from a page that died (runStore.ts): its list only, no sound. */
@@ -150,8 +142,7 @@ export class TuneFinder {
   /** The run in progress; null between runs. The last of `all`, except
    *  for one analysed again, which keeps its place. */
   private active: RunState | null = null;
-  /** What the run in progress is doing: its own source, or `file` for one
-   *  analysed again from its recording — a listening included. */
+  /** What the run in progress is doing: its own source. */
   private op: SourceKind | null = null;
   /** The run started last: the one the strip speaks of once it is over. */
   private latest: RunState | null = null;
@@ -162,10 +153,6 @@ export class TuneFinder {
 
   status: FinderStatus = { kind: 'idle' };
   listeningSince = 0;
-  /** The analyser's manual transposition, ENGINE sign (see
-   *  PitchShiftControl.tsx: a session a tone down is +2 here). Live-adjustable
-   *  while listening; a file takes the value it starts with. */
-  private pitchShift = 0;
 
   constructor(private readonly onChange: () => void) {}
 
@@ -240,7 +227,7 @@ export class TuneFinder {
     if (!this.untouched || saved.length === 0) return;
     this.all = saved.map(s => ({
       kind: s.kind, label: s.label, startedAt: s.startedAt, heardS: s.heardS,
-      tracker: trackerOf(s), sound: null, input: null, stale: false, recovered: true,
+      tracker: trackerOf(s), sound: null, recovered: true,
     }));
     this.latest = this.all[this.all.length - 1] ?? null;
     this.onChange();
@@ -255,19 +242,6 @@ export class TuneFinder {
   }
 
   /** Signal level 0–1 for the meter (poll from the UI). */
-  /** In the engine's sign — the widget flips it, as Cadence does. */
-  setPitchShift(semitones: number): void {
-    this.pitchShift = semitones;
-    // Only a live run takes it on the way: a file analysed at two pitches
-    // would be wrong at one of them (the analyser's own rule, 2026-09-13).
-    if (this.active && (this.op === 'mic' || this.op === 'device')) {
-      this.recognition?.setPitchShift(semitones);
-    }
-    for (const r of this.all) if (r !== this.active) r.stale = true;
-  }
-
-  getPitchShift(): number { return this.pitchShift; }
-
   level(): number {
     return this.status.kind === 'listening' ? this.live?.getLevel() ?? 0 : 0;
   }
@@ -289,7 +263,7 @@ export class TuneFinder {
       return null;
     }
     this.active = {
-      kind, label, startedAt: Date.now(), tracker: new DetectionTracker(), sound: null, input: null, stale: false, heardS: 0,
+      kind, label, startedAt: Date.now(), tracker: new DetectionTracker(), sound: null, heardS: 0,
     };
     this.all = [...this.all, this.active];
     this.op = kind;
@@ -336,7 +310,6 @@ export class TuneFinder {
       this.recorder = new MemoryRecorder(source.recordingStream);
       this.recorder.start();
       this.active!.sound = this.recorder;
-      this.active!.input = this.recorder;
     } catch (err) {
       console.warn('[thesession-embed] no recorder, detections will not be playable', err);
       this.recorder = null;
@@ -356,37 +329,6 @@ export class TuneFinder {
     if (run === null) return;
     this.set({ kind: 'checking' });
     this.bootFile(run, file).catch(err => this.failed(run, err));
-  }
-
-  /** Whether a run can be analysed again: the pitch was changed since it
-   *  was analysed, and there is something to analyse — once nothing else is
-   *  running (reanalyse() waits for that). */
-  canReanalyse(runIndex: number): boolean {
-    const r = this.all[runIndex];
-    return !!r?.input && r.stale;
-  }
-
-  /** The run's recording analysed again at the pitch now set, in place: same
-   *  place, same title, its list replaced as the new one comes. A listening is
-   *  analysed as a file there, from its recording. */
-  reanalyse(runIndex: number): void {
-    const r = this.all[runIndex];
-    const input = r?.input;
-    if (!r || !input || this.active || !this.canReanalyse(runIndex)) return;
-    r.previous = r.tracker;
-    r.tracker = new DetectionTracker();
-    r.stale = false;
-    this.active = r;
-    this.op = 'file';
-    this.latest = r;
-    const run = ++this.run;
-    this.set({ kind: 'checking' });
-    const file = input instanceof MemoryRecorder
-      ? input.file().then(blob => new File([blob], r.label || 'recording', { type: blob.type }))
-      : Promise.resolve(input);
-    file
-      .then(f => (run === this.run ? this.bootFile(run, f) : undefined))
-      .catch(err => this.failed(run, err));
   }
 
   /** A DIRECT link to a recording only, as in the analyser (see
@@ -424,10 +366,7 @@ export class TuneFinder {
    *  video's sound extracted for playback (nothing is played here, and the
    *  decoder reads a video's audio track as it is). */
   private async bootFile(run: number, file: File): Promise<void> {
-    if (this.active) {
-      this.active.input = file;
-      if (canPlayFile(file)) this.active.sound = file;
-    }
+    if (this.active && canPlayFile(file)) this.active.sound = file;
     const duration = await probeAudioDuration(file);
     if (duration !== null && duration < IMPORT_MIN_S) throw new FinderFailure('too-short', String(IMPORT_MIN_S));
 
@@ -492,7 +431,6 @@ export class TuneFinder {
         }
       },
     }, fromFile ? { hopS: HOP_S_IMPORT } : {});
-    if (this.pitchShift !== 0) recognition.setPitchShift(this.pitchShift);
     this.recognition = recognition;
     return recognition;
   }
@@ -581,16 +519,7 @@ export class TuneFinder {
     this.recognition?.dispose();
     this.recognition = null;
     const run = this.active;
-    if (run?.previous) {
-      // Analysed again: never dropped. Failed or cancelled before the analysis
-      // began, it gets back what it had; once begun, the new one stands,
-      // partial or not, as a file's would.
-      if (!analysed) {
-        run.tracker = run.previous;
-        run.stale = true;
-      }
-      run.previous = undefined;
-    } else if (run && run.tracker.list().length === 0 && !(analysed && (this.op === 'file' || this.op === 'link'))) {
+    if (run && run.tracker.list().length === 0 && !(analysed && (this.op === 'file' || this.op === 'link'))) {
       this.all = this.all.filter(r => r !== run);
       if (this.latest === run) this.latest = this.all[this.all.length - 1] ?? null;
     }

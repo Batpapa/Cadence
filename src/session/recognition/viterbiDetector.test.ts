@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
-import { runViterbiDetection, filterShortSegments, countTop1Windows, type DetectedTuneSegment } from './viterbiDetector';
+import { runViterbiDetection, filterShortSegments, countTop1Windows, hasClearWindow, hideUnclearTail, type DetectedTuneSegment } from './viterbiDetector';
 import { buildTemporalTimeline, UNKNOWN_STATE, type TemporalTimeline } from './temporalObservationBuilder';
 import type { DetectionTemporalConfig } from './detectionTemporalConfig';
 import type { WindowResult, WindowCandidate } from '../model';
@@ -534,5 +534,42 @@ describe('countTop1Windows', () => {
     const timeline: TemporalTimeline = { windows: [], tuneIds: ['A'], meta: new Map(), rows: rowsFromRanks(ranks) };
     expect(countTop1Windows('A', 3, 2, timeline)).toBe(0); // indices 3,4 are both rank 2
     expect(countTop1Windows('A', 0, 3, timeline)).toBe(3);
+  });
+});
+
+// ── The live tail's clear-window rule (2026-11-07) ─────────────────────────
+// See tailClearLead in detectionTemporalConfig.ts: the tail is shown once one
+// of its windows named it clearly — ahead of the best other candidate, or of
+// the third when an index twin ties with it.
+describe('hasClearWindow / hideUnclearTail', () => {
+  const win = (...c: [string, number][]) => ({ candidates: c.map(([tuneId, score]) => ({ tuneId, score })) });
+
+  it('needs one window where the tune leads the next candidate by the margin', () => {
+    const tail = seg('B', 2, 0, 10, 0);
+    expect(hasClearWindow(tail, [win(['B', 0.52], ['C', 0.50], ['D', 0.45]), win(['B', 0.55], ['C', 0.51], ['D', 0.45])], 0.06, 0.15)).toBe(false);
+    expect(hasClearWindow(tail, [win(['B', 0.52], ['C', 0.50], ['D', 0.45]), win(['B', 0.60], ['C', 0.51], ['D', 0.45])], 0.06, 0.15)).toBe(true);
+  });
+
+  it('accepts a tie with an index twin when both lead the third candidate clearly', () => {
+    const tail = seg('B', 1, 0, 5, 0);
+    // B second only by tie order, its twin first, the third well behind
+    expect(hasClearWindow(tail, [win(['T', 0.70], ['B', 0.70], ['C', 0.53])], 0.06, 0.15)).toBe(true);
+    expect(hasClearWindow(tail, [win(['T', 0.70], ['B', 0.70], ['C', 0.60])], 0.06, 0.15)).toBe(false);
+    // not at the top: never clear
+    expect(hasClearWindow(tail, [win(['T', 0.80], ['B', 0.70], ['C', 0.40])], 0.06, 0.15)).toBe(false);
+  });
+
+  it('turns an unclear tune tail into UNKNOWN and leaves everything else alone', () => {
+    const a = seg('A', 4, 0, 20, 0);
+    const b = seg('B', 1, 20, 25, 4);
+    const windows = [win(['A', 0.7]), win(['A', 0.7]), win(['A', 0.7]), win(['A', 0.7]), win(['B', 0.52], ['A', 0.50], ['C', 0.45])];
+    const hidden = hideUnclearTail([a, b], windows, 0.06, 0.15);
+    expect(hidden.map(s => s.tuneId)).toEqual(['A', UNKNOWN_STATE]);
+    expect(hidden[0]).toBe(a);
+    // no rule configured (previous engine): untouched
+    expect(hideUnclearTail([a, b], windows, undefined, undefined)).toEqual([a, b]);
+    // a clear tail stays
+    windows[4] = win(['B', 0.62], ['A', 0.50], ['C', 0.45]);
+    expect(hideUnclearTail([a, b], windows, 0.06, 0.15).map(s => s.tuneId)).toEqual(['A', 'B']);
   });
 });

@@ -11,7 +11,7 @@ import { scrollContainerOf } from './domInterop';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
 import { getContext } from '../../store';
-import { viterbiPickOf, hasRecognisedSetting, type Detection, type DetectionAlternate } from '../model';
+import { viterbiPickOf, hasRecognisedSetting, keyOffsetOf, type Detection, type DetectionAlternate } from '../model';
 import { reviewEntryIndex } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { currentPick, provisionalEnd } from '../detectionState';
@@ -592,7 +592,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
         })()}
 
         <AbcPreview
-          settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx}
+          settingId={ann.settingId} displayName={ann.displayName} cardId={known?.id} ctx={opts.ctx} keyOffset={keyOffsetOf(ann)}
           audioSync={opts.follow && detectionAudioSync(opts.sessionId, ann, opts.follow.here, opts.follow.beforeOpen)}
         />
 
@@ -737,7 +737,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
       {opts.details !== false && <div class={`${focus ? 'text-sm' : 'text-xs'} text-muted flex items-center gap-1.5 flex-wrap`}>
         {/* No meter (2026-10-28, the user's call): a reel's 4/4 and a jig's
             6/8 are in the dance's name already. */}
-        <span><TuneFacts dance={ann.dance} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} /> ·</span>
+        <span><TuneFacts dance={ann.dance} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} keyOffset={keyOffsetOf(ann)} /> ·</span>
         {opts.onEditBounds ? (
           <button
             class="inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 font-mono tabular-nums text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer group"

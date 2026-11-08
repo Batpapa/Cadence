@@ -5,7 +5,7 @@
 //   node experiments/score-follow/probe.js <audio> <settingId> <from s> <to s>   (from Cadence/)
 const fs = require('node:fs');
 const path = require('node:path');
-const { featuresOf, decodeSpan } = require('./lib/engine');
+const { alignFeaturesOf: featuresOf, decodeSpan } = require('./lib/engine');
 const { align, FPS, MIDI_LOW } = require('./lib/align');
 
 const [audio, settingId, fromS, toS] = process.argv.slice(2);

@@ -6,7 +6,7 @@ import { startPlayAlong, playAlongOffset, setPlayAlongOffset, type PlayAlong, ty
 import { beatOfDance, type Beat } from '../liveFollow';
 import { capturing } from '../../services/audioSession';
 import { devMode } from '../../services/devMode';
-import { qualityColour } from '../../components/followColour';
+import { qualityColour, LIVE_SCALE } from '../../components/followColour';
 import { CrossIcon, MinusIcon, PlusIcon, ExpandIcon, CollapseIcon, SaveIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 import type { PlayAlongView } from '../../components/fileViewer';
@@ -220,10 +220,16 @@ interface PaneProps {
   source: Signal<Source>;
   /** Null where there is no card to keep a take on: no record button. */
   take: PlayAlongTake | null;
+  /** The viewer's transposition, in semitones: the score is drawn and
+   *  followed in that key. Only that one (2026-11-07, the user): the follower
+   *  never looks for the key itself — one note held would fit a score in any
+   *  key somewhere; a player in another key transposes the score. */
+  transpose: Signal<number>;
 }
 
-function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face, expanded, source, take }: PaneProps) {
+function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face, expanded, source, take, transpose }: PaneProps) {
   const shown = version.value;
+  const shift = transpose.value;
   const shownIndex = index.value;
   const src = source.value;
   const client = src.kind === 'open' ? src.client : null;
@@ -273,15 +279,16 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
     setScore({ abc, meter, dance: /^R:(.*)$/m.exec(shown)?.[1] });
     setClock(null);
     setNoNotes(false);
-    void scoreContour(abc, meter).then((pitches) => {
+    void scoreContour(abc, meter).then((written) => {
       if (cancelled) return;
-      if (!pitches) { setNoNotes(true); return; }
+      if (!written) { setNoNotes(true); return; }
       if (!client) return;
+      const pitches = shift === 0 ? written : written.map(p => p + shift);
       client.setScore(pitches);
       setClock({ pitches, position: () => client.position() });
     });
     return () => { cancelled = true; };
-  }, [shown, client]);
+  }, [shown, client, shift]);
 
   // Every version of the file, to tell which one is played: their notes read
   // one after the other (each is engraved out of sight), then followed side
@@ -297,7 +304,7 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
         if (!/^K:/m.test(v)) continue;
         const pitches = await scoreContour(bareScore(v), meterOf(v));
         if (cancelled) return;
-        if (pitches) { slots.push(i); scores.push(pitches); }
+        if (pitches) { slots.push(i); scores.push(shift === 0 ? pitches : pitches.map(p => p + shift)); }
       }
       const at = slots.indexOf(index.peek());
       if (scores.length < 2 || at < 0) return;
@@ -311,7 +318,7 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
       setWatch(null);
       setOffer(null);
     };
-  }, [client, suggest, versions]);
+  }, [client, suggest, versions, shift]);
 
   // Another version on screen — offered, or chosen from the viewer's arrows.
   useEffect(() => {
@@ -446,7 +453,7 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   } else {
     shownBpm.current = null;
   }
-  const dot = following && match !== null ? qualityColour(match) : 'var(--color-text-dim)';
+  const dot = following && match !== null ? qualityColour(match, LIVE_SCALE) : 'var(--color-text-dim)';
   const takePhase = take?.phase.value ?? 'idle';
   const takeNote = take?.note.value ?? null;
   const chip = 'inline-flex items-center justify-center rounded-full border transition-colors cursor-pointer';
@@ -487,7 +494,7 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
       {score && (
         <SyncedScore
           abc={score.abc} meter={score.meter} follow={null} engine={null} region={null}
-          transpose={0} playing={false} maxHeight={maxHeight} minHeight={fit !== null ? maxHeight : undefined} face={face.value} clock={clock ?? undefined} tools={tools}
+          transpose={shift} playing={false} maxHeight={maxHeight} minHeight={fit !== null ? maxHeight : undefined} face={face.value} clock={clock ?? undefined} tools={tools}
         />
       )}
       {/* Under the score, measured as one (belowRef). */}
@@ -605,18 +612,21 @@ export function mountPlayAlong(host: HTMLElement, opts: {
   expanded: boolean;
   /** Adds a take to the card the score belongs to; absent, no record button. */
   onKeepRecording?: (a: Attachment) => void;
+  /** The viewer's transposition (see PaneProps.transpose). */
+  transpose: number;
 }): PlayAlongView {
   const take = opts.onKeepRecording ? new PlayAlongTake(opts.onKeepRecording) : null;
   const version = signal(opts.versions[opts.index] ?? '');
   const index = signal(opts.index);
   const face = signal(opts.face);
   const expanded = signal(opts.expanded);
+  const transpose = signal(opts.transpose);
   const source = signal<Source>({ kind: 'opening' });
   open(source, () => { source.value = { kind: 'failed', message: t('fileViewer.abc.playAlong.error.ended') }; });
   render(
     <PlayAlongPane
       version={version} index={index} versions={opts.versions} suggest={opts.suggest} onShowVersion={opts.onShowVersion}
-      face={face} expanded={expanded} source={source} take={take}
+      face={face} expanded={expanded} source={source} take={take} transpose={transpose}
     />,
     host,
   );
@@ -624,6 +634,7 @@ export function mountPlayAlong(host: HTMLElement, opts: {
     setVersion: (v, i) => { version.value = v; index.value = i; },
     setFace: (f) => { face.value = f; },
     setExpanded: (v) => { expanded.value = v; },
+    setTranspose: (t) => { transpose.value = t; },
     settleTake: (proceed) => take?.settle(proceed) ?? false,
     unmount: () => {
       take?.drop();

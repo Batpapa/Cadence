@@ -67,7 +67,7 @@ export function cardAudioSync(attachments: Attachment[]): AudioSyncBinding | und
       chosen = recordings.length === 1 ? recordings[0]! : await ui.chooseRecording(recordings, version);
       return chosen !== null;
     },
-    mount: (host, version, face, expanded, onState, forced) =>
-      ui!.mountRecordingFollow(host, chosen!, { version, face, expanded, onState, forced }),
+    mount: (host, version, face, expanded, onState, forced, transpose) =>
+      ui!.mountRecordingFollow(host, chosen!, { version, face, expanded, onState, forced, transpose }),
   };
 }

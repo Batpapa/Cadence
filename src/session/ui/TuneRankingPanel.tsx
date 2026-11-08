@@ -13,7 +13,8 @@ import { showDeckPickerModal } from '../../components/batchEdit';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
 import type { TuneSort } from '../../types';
 import { matchesSearch } from '../../utils';
-import type { Analysis, Detection } from '../model';
+import { keyOffsetOf, type Analysis, type Detection } from '../model';
+import { transposeMode } from '../keyName';
 import { getSettingAbcMeta, getSettingAbcMetaSync, onTuneIndexCached } from '../recognition/indexStore';
 import { loadSessionAudio } from '../db';
 import { tuneName, TuneDeckButton, prepareClip, fileClip, isClipAttached, type PreparedClip } from './sessionUiShared';
@@ -260,7 +261,12 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     load();
     return onTuneIndexCached(load);
   }, []);
-  const modeOf = (d: Detection): string | undefined => getSettingAbcMetaSync(d.settingId)?.mode || undefined;
+  // The key PLAYED (keyOffsetOf): the chips, the CSV and the text report say
+  // the key the tune was heard in, as the detection cards do.
+  const modeOf = (d: Detection): string | undefined => {
+    const mode = getSettingAbcMetaSync(d.settingId)?.mode;
+    return mode ? transposeMode(mode, keyOffsetOf(d) ?? 0) : undefined;
+  };
 
   /** The three sections that read a value off each pass — which analysis it is
    *  in, its tune type, its key — and so filter passes rather than tunes. */

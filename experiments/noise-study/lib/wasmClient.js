@@ -1,21 +1,26 @@
 'use strict';
 const path = require('node:path');
 const { FolkFriendWASM } = require(path.resolve(__dirname, '../wasm-node/folkfriend.js'));
-const { shiftContour } = require('./shiftContour');
 
 const FF_PCM_WINDOW = 1024; // must match Cadence's sessionConfig.ts FF_PCM_WINDOW / Rust's ff_config::SPEC_WINDOW_SIZE
-const OCTAVE_FALLBACK_THRESHOLD = 0.40; // must match ffWorker.ts
 
 function mapCandidates(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw.map(r => ({
-    tuneId: r.setting.tune_id,
-    settingId: r.setting_id,
-    displayName: r.display_name,
-    dance: r.setting.dance,
-    meter: r.setting.meter,
-    score: r.score,
-  }));
+  return raw.map(r => {
+    const c = {
+      tuneId: r.setting.tune_id,
+      settingId: r.setting_id,
+      displayName: r.display_name,
+      dance: r.setting.dance,
+      meter: r.setting.meter,
+      score: r.score,
+    };
+    // The key it was found in, as ffWorker.ts stores it: signed, -5..+6, only off 0.
+    const k = (((r.transpose ?? 0) % 12) + 12) % 12;
+    const transpose = k > 6 ? k - 12 : k;
+    if (transpose !== 0) c.transpose = transpose;
+    return c;
+  });
 }
 
 /** Reads a numeric `export const NAME = value` straight out of the app's
@@ -38,6 +43,10 @@ class WasmClient {
     this.ff.set_tempo_range(engineConst('FF_TEMPO_MIN_BPM'), engineConst('FF_TEMPO_MAX_BPM'));
     this.ff.set_num_repass(engineConst('FF_QUERY_REPASS_SIZE'));
     this.ff.set_min_query_length(engineConst('FF_MIN_QUERY_LENGTH'));
+    // Pitch classes, whatever the key (2026-11-07): as ffWorker.ts, switched on
+    // before the index is loaded.
+    this.ff.set_pitch_class_mode();
+    this.ff.set_any_pitch(true);
     this.pcmPtr = this.ff.alloc_single_pcm_window();
   }
 
@@ -50,8 +59,7 @@ class WasmClient {
     return Array.isArray(raw) ? raw : [];
   }
 
-  /** Mirrors ffWorker.ts's analyzeSignal() exactly (debug variant), including
-   *  the octave fallback. `pcm` is a Float32Array of exactly one analysis
+  /** Mirrors ffWorker.ts's analyzeSignal() exactly (debug variant). `pcm` is a Float32Array of exactly one analysis
    *  window's samples (15s @ 48kHz in production, same here). */
   analyzeWindow(pcm, tStart, tEnd) {
     const f = this.ff;
@@ -77,22 +85,7 @@ class WasmClient {
     const contour = raw.contour;
     const features = raw.features;
 
-    let fullCandidates = this.queryContourFull(contour);
-    let usedContour = contour;
-    let octaveShiftApplied = 0;
-
-    const top1 = fullCandidates[0]?.score ?? 0;
-    if (top1 < OCTAVE_FALLBACK_THRESHOLD) {
-      const lifted = shiftContour(contour, 12);
-      const liftedCandidates = lifted.length > 0 ? this.queryContourFull(lifted) : [];
-      const liftedTop1 = liftedCandidates[0]?.score ?? 0;
-      if (liftedTop1 > top1) {
-        fullCandidates = liftedCandidates;
-        usedContour = lifted;
-        octaveShiftApplied = 12;
-      }
-    }
-
+    const fullCandidates = this.queryContourFull(contour);
     const mapped = mapCandidates(fullCandidates);
     const candidates = mapped.slice(0, 10); // matches ffWorker.ts's TOP_N_CANDIDATES=10, production-shaped
 
@@ -102,8 +95,8 @@ class WasmClient {
       empty: candidates.length === 0,
       candidates,
       debug: {
-        contour: usedContour,
-        octaveShiftApplied,
+        contour,
+        octaveShiftApplied: 0,
         features,
         fullCandidates: mapped, // untruncated (up to ~100), for candidatesAboveX / sum-of-top-N stats
       },

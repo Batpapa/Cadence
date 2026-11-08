@@ -217,6 +217,14 @@ export class FolkFriendWASM {
         wasm.__wbg_folkfriendwasm_free(ptr);
     }
     /**
+    * Pitch-class mode: recognise a tune whatever the key and the tuning it is played in (on),
+    * or at the index's own pitch (off, the default). See FolkFriend::set_any_pitch.
+    * @param {boolean} on
+    */
+    set_any_pitch(on) {
+        wasm.folkfriendwasm_set_any_pitch(this.__wbg_ptr, on);
+    }
+    /**
     * @returns {Float32Array}
     */
     take_features() {
@@ -316,6 +324,21 @@ export class FolkFriendWASM {
         wasm.folkfriendwasm_flush_pcm_buffer(this.__wbg_ptr);
     }
     /**
+    * The cleaned frames fed since the last call (frames x 48, as take_features): each note
+    * minus its median over `drone_frames` frames (centred, or the frames up to it when
+    * `causal`; 0 = nothing removed), the median taken every `stride` frames, then the
+    * `top_k` strongest notes of each frame kept (0 = all). Flushes.
+    * @param {number} drone_frames
+    * @param {boolean} causal
+    * @param {number} stride
+    * @param {number} top_k
+    * @returns {Float32Array}
+    */
+    take_clean_features(drone_frames, causal, stride, top_k) {
+        const ret = wasm.folkfriendwasm_take_clean_features(this.__wbg_ptr, drone_frames, causal, stride, top_k);
+        return takeObject(ret);
+    }
+    /**
     * @param {string} tune_id
     * @returns {string}
     */
@@ -344,6 +367,27 @@ export class FolkFriendWASM {
     */
     set_min_query_length(min_query_length) {
         wasm.folkfriendwasm_set_min_query_length(this.__wbg_ptr, min_query_length);
+    }
+    /**
+    * Pitch-class recognition (Cadence, 2026-11-07), one-way: see
+    * FolkFriend::set_pitch_class_mode. Contours this instance returns are then
+    * pitch classes ('a' = C ... 'l' = B) and its index is folded to match.
+    */
+    set_pitch_class_mode() {
+        wasm.folkfriendwasm_set_pitch_class_mode(this.__wbg_ptr);
+    }
+    /**
+    * Score following (Cadence, 2026-11-07, feature/clean.rs): from now on this instance
+    * streams the frames it is fed into cleaned 48-note energies — the harmonic part, as the
+    * pitch-class engine reads it — instead of take_features'. Measured on Cadence's
+    * annotated sessions (experiments/score-follow): with take_clean_features(10 s of
+    * frames, false, 1 s, 3), 17 tunes followed over less than 80 % of their span instead of
+    * 20, the ends nearer the annotations, the passes more regular, and a wrong score
+    * claiming 12 % of a span at the 90th percentile instead of 89 % — in a long recording,
+    * half as many tunes found that were never played.
+    */
+    enable_clean_features() {
+        wasm.folkfriendwasm_enable_clean_features(this.__wbg_ptr);
     }
     /**
     * @param {string} tune_id

@@ -61,6 +61,18 @@ describe('the bounds the passes suggest', () => {
     expect(suggestedStart(g)).toBeCloseTo(10.25);
   });
 
+  it('tolerates as much missing, and as much spilt, at either bound', () => {
+    // Three quavers of 16 missing (under P_MISSTAIL): at the start as at the end.
+    expect(suggestedStart(passGeometry(played(3, 45), 0)!)).toBeCloseTo(10 - 0.75);
+    expect(suggestedEnd(passGeometry(played(0, 61), 0)!)).toBeCloseTo(10 + 64 * 0.25);
+    // Two quavers spilt into the next pass, or from the one before (under P_OVERSHOOT).
+    expect(suggestedEnd(passGeometry(played(0, 50), 0)!)).toBeCloseTo(10 + 48 * 0.25);
+    expect(suggestedStart(passGeometry(played(14, 50), 0)!)).toBeCloseTo(10.5);
+    // Four missing, or three spilt: mid-pass, nothing.
+    expect(suggestedStart(passGeometry(played(4, 44), 0)!)).toBeNull();
+    expect(suggestedEnd(passGeometry(played(0, 51), 0)!)).toBeNull();
+  });
+
   it('proposes nothing from an alignment no better than a wrong score', () => {
     const g = passGeometry(played(0, 62, 10, 0.45), 0)!;
     expect(suggestedEnd(g)).toBeNull();
@@ -152,9 +164,9 @@ describe('a suggestion too far from the recogniser', () => {
 
 describe('the edges of the recording', () => {
   it('puts a start on the recording’s own where it began mid-pass', () => {
-    // From the 14th quaver of 16, at 0.2 s: the tune was already playing.
-    const g = passGeometry(played(13, 40, 0.2), 0)!;
-    expect(suggestedStart(g)).toBeCloseTo(0.2 + 0.75);
+    // From the 15th quaver of 16, at 0.2 s: the tune was already playing.
+    const g = passGeometry(played(14, 40, 0.2), 0)!;
+    expect(suggestedStart(g)).toBeCloseTo(0.2 + 0.5);
     expect(suggestionsIn(g, 0, 600).start).toBe(0);
   });
 

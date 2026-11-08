@@ -5,6 +5,12 @@
 export class FolkFriendWASM {
   free(): void;
 /**
+* Pitch-class mode: recognise a tune whatever the key and the tuning it is played in (on),
+* or at the index's own pitch (off, the default). See FolkFriend::set_any_pitch.
+* @param {boolean} on
+*/
+  set_any_pitch(on: boolean): void;
+/**
 * @returns {Float32Array}
 */
   take_features(): Float32Array;
@@ -54,6 +60,18 @@ export class FolkFriendWASM {
 */
   flush_pcm_buffer(): void;
 /**
+* The cleaned frames fed since the last call (frames x 48, as take_features): each note
+* minus its median over `drone_frames` frames (centred, or the frames up to it when
+* `causal`; 0 = nothing removed), the median taken every `stride` frames, then the
+* `top_k` strongest notes of each frame kept (0 = all). Flushes.
+* @param {number} drone_frames
+* @param {boolean} causal
+* @param {number} stride
+* @param {number} top_k
+* @returns {Float32Array}
+*/
+  take_clean_features(drone_frames: number, causal: boolean, stride: number, top_k: number): Float32Array;
+/**
 * @param {string} tune_id
 * @returns {string}
 */
@@ -64,6 +82,23 @@ export class FolkFriendWASM {
 * @param {number} min_query_length
 */
   set_min_query_length(min_query_length: number): void;
+/**
+* Pitch-class recognition (Cadence, 2026-11-07), one-way: see
+* FolkFriend::set_pitch_class_mode. Contours this instance returns are then
+* pitch classes ('a' = C ... 'l' = B) and its index is folded to match.
+*/
+  set_pitch_class_mode(): void;
+/**
+* Score following (Cadence, 2026-11-07, feature/clean.rs): from now on this instance
+* streams the frames it is fed into cleaned 48-note energies — the harmonic part, as the
+* pitch-class engine reads it — instead of take_features'. Measured on Cadence's
+* annotated sessions (experiments/score-follow): with take_clean_features(10 s of
+* frames, false, 1 s, 3), 17 tunes followed over less than 80 % of their span instead of
+* 20, the ends nearer the annotations, the passes more regular, and a wrong score
+* claiming 12 % of a span at the 90th percentile instead of 89 % — in a long recording,
+* half as many tunes found that were never played.
+*/
+  enable_clean_features(): void;
 /**
 * @param {string} tune_id
 * @returns {string}
@@ -124,6 +159,7 @@ export interface InitOutput {
   readonly folkfriendwasm_aliases_from_tune_id: (a: number, b: number, c: number, d: number) => void;
   readonly folkfriendwasm_alloc_single_pcm_window: (a: number) => number;
   readonly folkfriendwasm_contour_to_abc: (a: number, b: number, c: number, d: number) => void;
+  readonly folkfriendwasm_enable_clean_features: (a: number) => void;
   readonly folkfriendwasm_feed_entire_pcm_signal: (a: number) => void;
   readonly folkfriendwasm_feed_single_pcm_window: (a: number, b: number) => void;
   readonly folkfriendwasm_flush_pcm_buffer: (a: number) => void;
@@ -133,13 +169,16 @@ export interface InitOutput {
   readonly folkfriendwasm_run_name_query: (a: number, b: number, c: number, d: number) => void;
   readonly folkfriendwasm_run_transcription_query: (a: number, b: number, c: number, d: number) => void;
   readonly folkfriendwasm_run_transcription_query_debug: (a: number, b: number, c: number, d: number) => void;
+  readonly folkfriendwasm_set_any_pitch: (a: number, b: number) => void;
   readonly folkfriendwasm_set_min_query_length: (a: number, b: number) => void;
   readonly folkfriendwasm_set_note_filter: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_set_num_repass: (a: number, b: number) => void;
+  readonly folkfriendwasm_set_pitch_class_mode: (a: number) => void;
   readonly folkfriendwasm_set_sample_rate: (a: number, b: number) => number;
   readonly folkfriendwasm_set_tempo_model: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_set_tempo_range: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_settings_from_tune_id: (a: number, b: number, c: number, d: number) => void;
+  readonly folkfriendwasm_take_clean_features: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly folkfriendwasm_take_features: (a: number) => number;
   readonly folkfriendwasm_transcribe_pcm_buffer: (a: number, b: number) => void;
   readonly folkfriendwasm_transcribe_pcm_buffer_debug: (a: number, b: number) => void;

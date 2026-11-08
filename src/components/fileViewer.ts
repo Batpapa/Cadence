@@ -5,6 +5,7 @@ import { isNative } from '../native/platform';
 import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { qualityColour, faded } from './followColour';
+import { keyGapText } from '../session/keyName';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon,
   WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon } from './icons';
@@ -595,6 +596,10 @@ export interface PreviewModalOpts {
   /** Multi-tune ABC files: which splitAbcTunes() index to open at — the
    *  attachment's stored `preferredIndex`, if any. */
   initialIndex?: number;
+  /** An ABC score opened already transposed, in semitones: a card's score
+   *  opened from a detection, in the key it was played in (2026-11-07). The
+   *  reader's own transposition from there, never stored either. */
+  initialTranspose?: number;
   /** Called when the user stars a version as the new default. Independent of
    *  `onSave` — available in read-only contexts (study) too, since picking a
    *  favorite version isn't "editing" the card's content. */
@@ -649,10 +654,11 @@ export interface AudioSyncBinding {
    *  card's recordings (cardAudioSync.ts). False: it stays off. */
   choose?: (version: string) => Promise<boolean>;
   /** Puts the audio sync of `version` in `host`, on the viewer's face (stave
-   *  or text) and at its size. `onState` hears how its alignment goes. */
+   *  or text) and at its size, drawn in the viewer's key (`transpose`,
+   *  semitones). `onState` hears how its alignment goes. */
   mount: (
     host: HTMLElement, version: string, face: ScoreFace, expanded: boolean,
-    onState: (s: AudioSyncState) => void, forced: boolean,
+    onState: (s: AudioSyncState) => void, forced: boolean, transpose: number,
   ) => AudioSyncView;
 }
 
@@ -664,8 +670,11 @@ export interface AudioSyncBinding {
  *  it in full, for the tooltip. */
 export type AudioSyncState =
   | { kind: 'aligning'; ratio: number; title: string }
-  | { kind: 'aligned'; title: string; percent: number }
-  | { kind: 'none'; title: string; percent?: number };
+  | { kind: 'aligned'; title: string; percent: number; keyGap?: number }
+  | { kind: 'none'; title: string; percent?: number; keyGap?: number };
+// `keyGap`: how many semitones above the score as shown the recording plays
+// it (2026-11-07, the user: the gap is said wherever audio and score meet),
+// -5 to +6; absent or 0 when they agree.
 
 /** Room the toggles' labels need beyond their own width to come back once
  *  they were dropped (fitToggles). */
@@ -685,6 +694,9 @@ export interface AudioSyncView {
   setForced: (forced: boolean) => void;
   setFace: (face: ScoreFace) => void;
   setExpanded: (expanded: boolean) => void;
+  /** The viewer's transposition changed: the score drawn in that key, the
+   *  gap to the recording measured from it. */
+  setTranspose: (semitones: number) => void;
   unmount: () => void;
 }
 
@@ -696,6 +708,8 @@ export interface PlayAlongView {
   setVersion: (version: string, index: number) => void;
   setFace: (face: ScoreFace) => void;
   setExpanded: (expanded: boolean) => void;
+  /** The viewer's transposition changed: the score is followed in that key. */
+  setTranspose: (semitones: number) => void;
   /** A take recorded and neither kept nor discarded: asks first, and true
    *  when it did — `proceed` runs once it is answered. */
   settleTake: (proceed: () => void) => boolean;
@@ -1048,8 +1062,9 @@ export function showPreviewModal(
     // Transposition is the exception: it belongs to the READING, not to the
     // reader — a whistle player in D does not want every score they open
     // shifted for the one tune they were reading in B flat. It starts at zero
-    // on every opening and is never stored.
-    let transpose = 0;
+    // on every opening and is never stored — save where the opening asks for a
+    // key: a detection's, the one it was played in.
+    let transpose = Math.max(-12, Math.min(12, Math.round(opts?.initialTranspose ?? 0)));
 
     const container = document.createElement('div');
     // `abc-viewer`: the container the "both" face asks how wide it is, to put
@@ -1219,9 +1234,12 @@ export function showPreviewModal(
       audioSyncBtn.setAttribute('aria-pressed', String(on));
       // How well, in figures, on the toggle itself (2026-10-29, the user).
       const percent = s && s.kind !== 'aligning' ? s.percent : undefined;
+      const gap = s && s.kind !== 'aligning' ? s.keyGap ?? 0 : 0;
       const label = percent === undefined
         ? t('fileViewer.abc.audioSync')
-        : t('fileViewer.abc.audioSync.percent', { percent });
+        : gap !== 0
+          ? t('fileViewer.abc.audioSync.percentKey', { percent, shift: keyGapText(gap) })
+          : t('fileViewer.abc.audioSync.percent', { percent });
       audioSyncLabel.textContent = label;
       audioSyncBtn.setAttribute('aria-label', label);
       const title = s?.title ?? t(audioSync.fromDrive ? 'fileViewer.abc.audioSync.hintDrive' : 'fileViewer.abc.audioSync.hint');
@@ -1252,7 +1270,7 @@ export function showPreviewModal(
         if (!audioSyncView) return;
         audioSyncState = s;
         paintAudioSync();
-      }, audioSyncForced);
+      }, audioSyncForced, transpose);
     };
     /** The hidden way round the verdict (2026-10-29, the user): a right click
      *  — a long press on a touch screen — follows the alignment even when it
@@ -1472,6 +1490,7 @@ export function showPreviewModal(
           face: currentMode,
           expanded: modalExpanded,
           onKeepRecording: opts?.onKeepRecording,
+          transpose,
         });
       } else {
         playAlongView!.unmount();
@@ -1905,9 +1924,9 @@ export function showPreviewModal(
     // Not stored, unlike everything beside it: it belongs to the reading, not
     // to the reader. A whistle player who shifts one tune to B flat does not
     // want every score they open afterwards shifted with it.
-    // One round button that opens a dialog, exactly like the analyser's own
-    // pitch control (PitchShiftControl) — the user's call, and for the same
-    // reason it was built that way there: a "− value +" stepper inline is about
+    // One round button that opens a dialog, as the analyser's pitch control did
+    // until 2026-11-07 — the user's call, and for the same reason it was built
+    // that way there: a "− value +" stepper inline is about
     // three times the width of a button in a bar that is already full, and the
     // room a dialog buys is what lets the question be asked in words.
     //
@@ -1942,9 +1961,12 @@ export function showPreviewModal(
         if (next === transpose) return;
         transpose = next;
         updateTranspose();
-        // The dots move, and the sound with them.
+        // The dots move, and the sound with them — and the Play-along's
+        // score, which follows the key on screen.
         redrawScore();
         transport.retime();
+        playAlongView?.setTranspose(transpose);
+        audioSyncView?.setTranspose(transpose);
       });
     };
 
