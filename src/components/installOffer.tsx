@@ -42,16 +42,18 @@ export function installAction(): (() => void) | null {
 export const openPlayStore = (): void => { window.open(PLAY_STORE_URL, '_blank', 'noopener'); };
 
 /** One install as the welcome screen shows it (2026-11-08): always there, and
- *  saying where it stands — installable, already installed, or not possible
- *  here and why (the author: "if an install is not possible, say so; if it is
- *  already done, say so too"). `reason` is an i18n key. */
+ *  saying where it stands — installable, running right here, installed, or not
+ *  for this device (the author: "if an install is not possible, say so; if it
+ *  is already done, say so too"). */
 export type InstallState =
   | { kind: 'install'; run: () => void }
-  /** `run` opens it, where a page can; otherwise `hint` says where it is. */
-  | { kind: 'installed'; run?: () => void; hint?: string }
+  /** This is the one running. */
+  | { kind: 'current' }
+  /** `run` opens it, where a page can. */
+  | { kind: 'installed'; run?: () => void }
   /** `run`, when set, still leads somewhere: the Android app's listing from
    *  an iPhone (the author: it must navigate to the store all the same). */
-  | { kind: 'unavailable'; reason: string; run?: () => void };
+  | { kind: 'unavailable'; run?: () => void };
 
 /** Opens the Android app from Chrome: an intent on the app's own scheme (the
  *  BROWSABLE filter in AndroidManifest.xml), falling back to the Play listing —
@@ -63,37 +65,46 @@ function openNativeApp(): void {
     + `S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
 }
 
+/** Opens the installed web app from a browser tab, through the protocol it
+ *  registers on install (manifest.json `protocol_handlers`; Chrome and Edge on
+ *  a computer). The browser asks once whether to allow it. An app installed
+ *  before the handler existed only gets it once its manifest is refreshed;
+ *  until then nothing happens here. */
+function openWebApp(): void {
+  location.href = 'web+cadence:open';
+}
+
 /** The web app. "Installed" only when known: running as one, installed during
  *  this visit, or reported by the browser (installedSignal) — iOS never says,
- *  and there the offer simply stays. No page can open an installed web app, so
- *  outside it the tile only says where to find it. A Chromium browser that has
- *  not (yet) handed over its prompt, or any Android browser, can still install
- *  from its own menu, so it gets the steps rather than a "not possible". */
+ *  and there the offer simply stays. Outside it, the tile opens it
+ *  (openWebApp). A Chromium browser that has not (yet) handed over its prompt,
+ *  or any Android browser, can still install from its own menu, so it gets
+ *  the steps rather than a "not for this device". */
 export function webAppInstallState(): InstallState {
   const run = webAppInstallAction();
   const installed = installedSignal.value.webApp;
-  if (isNative()) return { kind: 'unavailable', reason: 'welcome.install.notFromApp' };
-  if (isStandalone()) return { kind: 'installed', hint: 'welcome.install.thisOne' };
-  if (installed) return { kind: 'installed', hint: 'welcome.install.openFromIcon' };
+  if (isNative()) return { kind: 'unavailable' };
+  if (isStandalone()) return { kind: 'current' };
+  if (installed) return { kind: 'installed', run: openWebApp };
   if (run) return { kind: 'install', run };
   if (/Android/.test(navigator.userAgent) || 'BeforeInstallPromptEvent' in window) {
     return { kind: 'install', run: () => showSteps('welcome.install.browserMenu') };
   }
-  return { kind: 'unavailable', reason: 'welcome.install.notThisBrowser' };
+  return { kind: 'unavailable' };
 }
 
 /** The Android app. Installed when running in it, or when Chrome on Android
  *  reports it (only from app versions declaring this site, see installedSignal),
- *  and then opened by the tile. On an iPhone it stays on show, marked
- *  "Android only": an Apple user should still learn that it exists (the
- *  author, 2026-11-08). A computer keeps the offer: the Play listing installs
- *  onto the visitor's phone from there. */
+ *  and then opened by the tile. On an iPhone it stays on show, marked "not
+ *  for this device" and still leading to the listing: an Apple user should
+ *  learn that it exists (the author, 2026-11-08). A computer keeps the offer:
+ *  the Play listing installs onto the visitor's phone from there. */
 export function playInstallState(): InstallState {
   const installed = installedSignal.value.play;
-  if (isNative()) return { kind: 'installed', hint: 'welcome.install.thisOne' };
+  if (isNative()) return { kind: 'current' };
   if (installed) return { kind: 'installed', run: openNativeApp };
-  if (!PLAY_STORE_LIVE) return { kind: 'unavailable', reason: 'welcome.install.notYet' };
-  if (isIOS()) return { kind: 'unavailable', reason: 'welcome.install.androidOnly', run: openPlayStore };
+  if (!PLAY_STORE_LIVE) return { kind: 'unavailable' };
+  if (isIOS()) return { kind: 'unavailable', run: openPlayStore };
   return { kind: 'install', run: openPlayStore };
 }
 
