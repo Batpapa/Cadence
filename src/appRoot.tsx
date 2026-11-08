@@ -13,6 +13,7 @@ import { WelcomePrefs } from './components/welcomePrefs';
 import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon } from './components/icons';
 import { WelcomeTour } from './components/welcomeTour';
 import { webAppButtonAction, openPlayStore } from './components/installOffer';
+import { isNative } from './native/platform';
 import { t } from './services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from './services/updateService';
 import { initDriveClient } from './services/driveService';
@@ -284,8 +285,10 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   // Both ways in, side by side under the sign-in (2026-11-08) — it used to be
   // one discreet link in the top corner, which a visitor who had just scanned
   // a neighbour's QR at a session never saw. No "Web app" where it cannot
-  // apply: inside the Android app, or inside the web app itself.
+  // apply: inside the Android app, or inside the web app itself. No "Android
+  // app" inside the Android app — so nothing at all there.
   const installWebApp = webAppButtonAction();
+  const showPlay = !isNative();
 
   const select = async (id: string) => {
     setLoading(id);
@@ -452,15 +455,17 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             </p>
           )}
 
-          <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
-            <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
-              {t('settings.install')}
+          {(installWebApp || showPlay) && (
+            <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
+              <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
+                {t('settings.install')}
+              </div>
+              <div class="flex gap-2">
+                {installWebApp && <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} onClick={installWebApp} />}
+                {showPlay && <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} onClick={openPlayStore} />}
+              </div>
             </div>
-            <div class="flex gap-2">
-              {installWebApp && <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} onClick={installWebApp} />}
-              <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} onClick={openPlayStore} />
-            </div>
-          </div>
+          )}
 
           {/* Under the sign-in when the tour is beside it; at the very end
               of the page when the tour is below. */}
