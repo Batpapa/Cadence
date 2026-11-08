@@ -1056,6 +1056,8 @@
   "fileViewer.remove.message": "Remove \"{name}\" from this card?",
   "fileViewer.remove.messageRef": "Remove \"{name}\" from this card? The referenced card itself is not deleted.",
   "fileViewer.abcError": "Could not render ABC notation.",
+  "fileViewer.imageConverting": "Converting the picture…",
+  "fileViewer.imageUnreadable": "This picture could not be read.",
   "fileViewer.abc.sheetTab": "Sheet",
   "fileViewer.abc.textTab": "ABC",
   "fileViewer.abc.bothTab": "Sheet + ABC",

@@ -744,6 +744,10 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 .abc-bottom-row.abc-bottom-stacked > .abc-transport { grid-column: 1 / -1; }
 .abc-bottom-row.abc-bottom-stacked > .abc-bottom-start { grid-column: 1; grid-row: 2; }
 .abc-bottom-row.abc-bottom-stacked > .abc-bottom-end { grid-column: 2; grid-row: 2; }
+/* Nothing beside the transport (every face but the source): one column, the
+   transport's own wrapping and nothing measured — see layoutBottomRow. */
+.abc-bottom-row.abc-bottom-solo { grid-template-columns: minmax(0, 1fr); }
+.abc-bottom-row.abc-bottom-solo > .abc-transport { grid-column: 1; }
 
 /* The ABC source face's marks (fileViewer.ts, 2026-10-15), in its layer
    under the text. Where play will start: a bar against the note's left edge,

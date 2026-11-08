@@ -3,6 +3,7 @@ import type { AppState, FileEntry } from './types';
 import { t, tIn, currentLanguage, type Lang } from './services/i18nService';
 import { SCHEMA_VERSION } from './services/migration';
 import { needsAudioSniff, sniffAudioMime, SNIFF_BYTES } from './services/audioSniff';
+import { sniffHeif } from './services/heic';
 import { isNative } from './native/platform';
 import { safeFileName } from './services/attachmentNames';
 
@@ -147,12 +148,15 @@ export const DAY_NAMES_KEYS = [
  *  way that matters: `.webm` is video/webm in Chromium whatever the file holds,
  *  so a recording attached by hand opened in a bare <video> instead of the
  *  custom audio player. When the label is one of those guesses, the file's own
- *  head decides — see audioSniff.ts. */
+ *  head decides — see audioSniff.ts.
+ *
+ *  An empty label is also what a HEIC photo gets where the system knows no
+ *  type for the extension: its head says so too (see heic.ts). */
 async function resolveMimeType(file: File): Promise<string> {
   if (!needsAudioSniff(file.type)) return file.type;
   try {
     const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
-    return sniffAudioMime(head) ?? file.type;
+    return sniffAudioMime(head) ?? sniffHeif(head) ?? file.type;
   } catch {
     return file.type; // unreadable head: the declared type is all we have
   }

@@ -33,6 +33,7 @@ import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon, boundIcon } from
 import { appState, mutate } from '../store';
 import { registerOverlay } from './overlayStack';
 import { mountPlayAlong } from '../session/ui/PlayAlongView';
+import { viewMimeType, isHeif, heifToJpeg } from '../services/heic';
 
 // ── ABC Transcription Tools share-link integration ────────────────────────────
 // https://michaeleskin.com/abctools/userguide.html#generate_share_link — the
@@ -772,7 +773,8 @@ export function showPreviewModal(
   // to ask first (see ModalOptions.guardDismiss).
   let guardClose: ((dismiss: () => void) => boolean) | null = null;
 
-  const m = entry.mimeType;
+  // A HEIC with no type of its own is still a picture (heic.ts).
+  const m = viewMimeType(entry.mimeType, entry.name);
   // 0.85 (not 0.9) to match the shared modal shell's own dialog max-height
   // (modal.tsx) now that this modal is portaled through it — media sized
   // against a bigger budget than the dialog actually allows would overflow.
@@ -804,6 +806,32 @@ export function showPreviewModal(
     img.className = 'max-w-full object-contain rounded';
     img.style.maxHeight = mediaMaxH;
     img.style.cursor = 'zoom-in';
+
+    // A HEIC the browser cannot show (every one but Safari's) is converted
+    // here, at the moment it is shown; the stored file stays the original.
+    // Native first: when the browser reads it, there is nothing to load.
+    if (isHeif(entry.mimeType, entry.name)) {
+      img.addEventListener('error', () => {
+        if (closed) return;
+        URL.revokeObjectURL(img.src);
+        img.style.display = 'none';
+        const status = document.createElement('p');
+        status.className = 'text-sm text-muted py-8';
+        status.textContent = t('fileViewer.imageConverting');
+        body.appendChild(status);
+        heifToJpeg(new Blob([entryToBytes(entry)]))
+          .then((jpeg) => {
+            if (closed) return;
+            img.src = URL.createObjectURL(jpeg);
+            img.style.display = '';
+            status.remove();
+          })
+          .catch((e) => {
+            console.warn('[heic] could not convert ' + entry.name, e);
+            status.textContent = t('fileViewer.imageUnreadable');
+          });
+      }, { once: true });
+    }
 
     img.addEventListener('click', () => {
       const lightbox = document.createElement('div');
@@ -2532,18 +2560,51 @@ export function showPreviewModal(
     /** One line or two: the transport keeps its natural width in the middle
      *  and each side gets the room of the wider one, so it stays centred —
      *  the whole has to fit, or the transport goes up a line of its own. Read
-     *  off the pieces' natural widths, never off the layout they are in, so
-     *  switching does not change the answer and cannot flicker. */
+     *  off the pieces' natural widths (`max-content`), never off the layout
+     *  they are in.
+     *
+     *  That alone did not keep it still (2026-11-08, an Android tablet in
+     *  portrait, reproduced in Chromium at 795-801 px wide, zoom 125 %, a set's
+     *  score: ~30 switches in 0.7 s, for ever). Nothing beside the transport,
+     *  the score face, was decided by the same sum without the grid's two gaps:
+     *  "it fits" while its column was 16 px short, so the transport wrapped
+     *  onto two lines by itself; the taller row made the dialog scroll, its
+     *  scrollbar (6 px, styles.css) took that off the row, "it does not fit",
+     *  stacked — on one line again, shorter, no scrollbar, and round again.
+     *  Hence:
+     *  - nothing beside it: nothing measured. The transport has the row
+     *    (`abc-bottom-solo`) and wraps by CSS alone, which nothing can chase;
+     *  - beside the source face's buttons: a slack wider than that scrollbar
+     *    before going back to one line, and a stop after a few switches a
+     *    second, kept until the window is resized. */
+    const STACK_SLACK_PX = 12;
+    let stackFlips: number[] = [];
+    let stackFrozenAt = '';
     const layoutBottomRow = (): void => {
-      const gap = parseFloat(getComputedStyle(bottomRow).columnGap) || 0;
-      const sideW = (el: HTMLElement) => (el.style.display === 'none' ? 0 : el.scrollWidth);
+      const natural = (el: HTMLElement): number => {
+        const prev = el.style.width;
+        el.style.width = 'max-content';
+        const w = el.offsetWidth;
+        el.style.width = prev;
+        return w;
+      };
+      const sideW = (el: HTMLElement) => (el.style.display === 'none' ? 0 : natural(el));
       const side = Math.max(sideW(versionEdit), sideW(saveGroup));
-      const prev = transportBar.style.width;
-      transportBar.style.width = 'max-content';
-      const middle = transportBar.offsetWidth;
-      transportBar.style.width = prev;
-      const need = middle + (side > 0 ? 2 * (side + gap) : 0);
-      bottomRow.classList.toggle('abc-bottom-stacked', need > bottomRow.clientWidth);
+      bottomRow.classList.toggle('abc-bottom-solo', side === 0);
+      if (side === 0) { bottomRow.classList.remove('abc-bottom-stacked'); return; }
+      const gap = parseFloat(getComputedStyle(bottomRow).columnGap) || 0;
+      const need = natural(transportBar) + 2 * (side + gap);
+      const room = bottomRow.clientWidth;
+      const stacked = bottomRow.classList.contains('abc-bottom-stacked');
+      const stack = stacked ? need + STACK_SLACK_PX > room : need > room;
+      if (stack === stacked) return;
+      const windowSize = `${window.innerWidth}x${window.innerHeight}`;
+      if (stackFrozenAt === windowSize) return;
+      const now = performance.now();
+      stackFlips = stackFlips.filter((at) => now - at < 1000);
+      stackFlips.push(now);
+      if (stackFlips.length > 4) { stackFrozenAt = windowSize; return; }
+      bottomRow.classList.toggle('abc-bottom-stacked', stack);
     };
     let bottomRaf = 0;
     const bottomRo = new ResizeObserver(() => {
