@@ -1834,7 +1834,7 @@
   "help.sessionSummary.recording.3": "**Delete from this device** frees the space taken by the recording while keeping the results. Without a copy on Drive, this is permanent: no more listening or clips.",
   "help.sessionSummary.recording.4": "With Google Drive connected, a copy on Drive lets you listen to the recording on your other devices. A **struck-through cloud** to the right of the player says it has not been made: tap it to make it. Without it, the audio **stays on the device that recorded it**: other devices only receive the results. When the audio is only on Drive, the player's ▶ carries a small cloud: it downloads the audio for this visit (the percentage shows), without keeping it; **Keep on this device**, in the menu, keeps it.",
   "help.sessionSummary.edit.heading": "Correcting results",
-  "help.sessionSummary.edit.1": "In the **Editor** view, on top of each tune's controls: **“Merge with previous”** joins two consecutive detections of the same tune, and a tune's **bin** removes it from the analysis.",
+  "help.sessionSummary.edit.1": "In the **Editor** view, on top of each tune's controls: **“Merge with previous”** joins two consecutive detections of the same tune played in the same key, and a tune's **bin** removes it from the analysis.",
   "help.sessionSummary.share.heading": "Sharing and exporting",
   "help.sessionSummary.share.1": "**Export the analysis…**, in the **⋯** menu, offers **Cadence Analysis** (.cds, re-importable, with or without the audio, as a file or with a share key valid 10 minutes), **CSV** (spreadsheet, one row per recognised tune) or **TXT** (readable list, to download or copy).",
   "help.trending.what.heading": "What this module shows",

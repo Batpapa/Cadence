@@ -17,6 +17,7 @@ import { isDriveConnected } from '../../services/driveService';
 import type { Analysis, Detection, SyncedAudio, TuneAnalyserModuleData } from '../model';
 import { TUNE_ANALYSER_MODULE_KEY } from '../model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields, insertionIndex } from '../model';
+import { samePlayedPitch } from '../recognition/pitchSplit';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
 import { showDetectionTempo } from './LiveTempo';
 import { useSlicePlayer } from './PassRow';
@@ -1067,9 +1068,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // All that is left of the third row, and it only appears when there is
     // something to merge WITH — the same tune detected twice in a row, which
     // is a false set change. Every other card is now two lines.
+    // In the same key only (user's rule, 2026-11-08): the same tune played again
+    // in another key is two playings, cut so on purpose (pitchSplit.ts).
     extraControls: () => {
       const prev = session.annotations[i - 1];
-      if (!editing || !prev || prev.tuneId !== ann.tuneId) return null;
+      if (!editing || !prev || prev.tuneId !== ann.tuneId || !samePlayedPitch(prev, ann)) return null;
       return (
         <button
           class="text-[11px] text-accent hover:underline cursor-pointer"

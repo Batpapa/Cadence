@@ -1,6 +1,7 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { loadTuneIndex, type IndexProgress } from './indexStore';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
+import { PlayedPitch } from './playedPitch';
 import { pitchClassesForDisplay } from './contourShift';
 import { normalizeDisplayName } from '../../utils';
 import { signedKeyOffset, type WindowResult, type WindowCandidate, type WindowDebugFeatures, type NoteAndTempoFeatures, type DetectionEvent } from '../model';
@@ -51,6 +52,9 @@ interface RawQueryRecord {
   score: number;
   /** The key it was found in: semitones above the written key, 0-11. */
   transpose?: number;
+  /** The tune's other aligned (setting, transposition 0-11, score), best first
+   *  (2026-11-08) — read by PlayedPitch. */
+  other_keys?: [string, number, number][];
 }
 
 export type FFWorkerRequest =
@@ -86,6 +90,9 @@ let pcmPtr = 0;
 let sampleRate = 48000;
 let hopS = ANALYSIS_HOP_S;
 let segmenter = new IncrementalViterbiSegmenter(hopS);
+// The candidates' played pitch (playedPitch.ts), from the loaded index's
+// settings — one per index load, it caches the tunes it has met.
+let playedPitch: PlayedPitch | null = null;
 
 // Ring buffer holding the last ANALYSIS_WINDOW_S seconds (plus slack).
 let ring: Float32Array = new Float32Array(0);
@@ -282,6 +289,11 @@ async function handleInit(sr: number, hop?: number, tempo?: boolean): Promise<vo
 
   const index = await loadTuneIndex(progress => post({ type: 'init-progress', progress }));
   ff.load_index_from_json_obj(index.indexData);
+  const engine = ff;
+  playedPitch = new PlayedPitch(tuneId => {
+    const raw = JSON.parse(engine.settings_from_tune_id(tuneId)) as Array<[string, { contour: string }]> | { error: string };
+    return Array.isArray(raw) ? raw.map(([id, s]) => [id, s.contour] as [string, string]) : [];
+  });
 
   ring = new Float32Array(Math.ceil((ANALYSIS_WINDOW_S + hopS) * sampleRate));
   ringWrite = 0;
@@ -330,7 +342,7 @@ const TOP_N_CANDIDATES = 10;
  *  before crossing the WASM boundary. Zero extra engine cost. */
 type RawTranscribeDebug = { contour: string; features: NoteAndTempoFeatures } | { error: string; features: null };
 
-function mapCandidates(raw: RawQueryRecord[]): WindowCandidate[] {
+function mapCandidates(raw: RawQueryRecord[], tuning: number | undefined): WindowCandidate[] {
   return raw.map(r => {
     const c: WindowCandidate = {
       tuneId: r.setting.tune_id,
@@ -344,6 +356,7 @@ function mapCandidates(raw: RawQueryRecord[]): WindowCandidate[] {
     // window of an analysis is kept.
     const transpose = signedKeyOffset(r.transpose ?? 0);
     if (transpose !== 0) c.transpose = transpose;
+    playedPitch?.annotate(c, r, tuning);
     return c;
   });
 }
@@ -356,10 +369,11 @@ function mapCandidates(raw: RawQueryRecord[]): WindowCandidate[] {
  *  doubled per-window IndexedDB storage for no feature the 2026-08-17/18
  *  noise study actually needed (every feature there — margin,
  *  candidatesAbove20/30/40/50, sum_top5/10 — only ever looks at the top 10). */
-function queryContour(f: FolkFriendWASM, contour: string): WindowCandidate[] {
+function queryContour(f: FolkFriendWASM, contour: string, tuning: number | undefined): WindowCandidate[] {
   const raw = JSON.parse(f.run_transcription_query(contour)) as RawQueryRecord[] | { error: string };
   if (!Array.isArray(raw)) return [];
-  return mapCandidates(raw);
+  // cut before mapping: the played pitch reads the engine's settings of each tune
+  return mapCandidates(raw.slice(0, TOP_N_CANDIDATES), tuning);
 }
 
 /** Feed a PCM signal into FolkFriend and return the analysis of it. */
@@ -386,7 +400,7 @@ function analyzeSignal(pcm: Float32Array, tStart: number, tEnd: number): { resul
   // No score filtering here: the Viterbi detector applies its own candidate
   // floor (minCandidateProbability), and the calibration dump needs the
   // sub-floor scores to be tunable at all.
-  const candidates = queryContour(f, contour).slice(0, TOP_N_CANDIDATES);
+  const candidates = queryContour(f, contour, features?.tuning);
 
   let abc: string | null = null;
   try { abc = f.contour_to_abc(pitchClassesForDisplay(contour)); } catch { /* cosmetic only */ }

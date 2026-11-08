@@ -246,6 +246,16 @@ export interface DetectionTemporalConfig {
    *  the user). The filter stays in temporalObservationBuilder.ts for the
    *  experiments that measure it. */
   tempoSpreadThreshold: number;
+
+  /** The pitch split (2026-11-08, pitchSplit.ts), run on each tune segment after
+   *  the same-tune merge: a detection is cut where its tune starts being played
+   *  at another pitch (the same tune again straight away in another key). Lambda
+   *  is the price of a change of pitch, in the unit of a window's score;
+   *  tolerance, in semitones, how far a pitch may sit from another and still be
+   *  the same (a quarter tone). Measured and swept in pitchSplit.ts's header.
+   *  Undefined lambda = no split (the engine before). */
+  pitchSplitLambda?: number;
+  pitchSplitTolerance?: number;
 }
 
 /** The thresholds of the engine the app runs: pitch classes, whatever the key
@@ -302,4 +312,8 @@ export const DETECTION_TEMPORAL_CONFIG: DetectionTemporalConfig = {
 
   // Off (2026-11-08) — see the field's doc.
   tempoSpreadThreshold: 0,
+
+  // 2026-11-08 — see pitchSplit.ts: plateau 0.5-0.6, the side away from wrong cuts.
+  pitchSplitLambda: 0.6,
+  pitchSplitTolerance: 0.5,
 };
