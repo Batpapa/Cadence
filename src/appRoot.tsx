@@ -10,7 +10,7 @@ import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
-import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon, CheckIcon } from './components/icons';
+import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon } from './components/icons';
 import { WelcomeTour } from './components/welcomeTour';
 import { webAppInstallState, playInstallState, type InstallState } from './components/installOffer';
 import { t } from './services/i18nService';
@@ -495,48 +495,46 @@ export function mountUserSelector(
   render(<UserSelector users={users} onSelect={onSelect} onCreate={onCreate} onRecover={onRecover} />, root);
 }
 
-/** One of the welcome screen's two installs, in whichever state it is. A
- *  button whenever there is somewhere to go: installing, opening what is
- *  installed, or — for the Android app on an iPhone — its Play listing all the
- *  same. */
+/** One of the welcome screen's two installs. Logo and name, nothing else
+ *  inside (the author, 2026-11-08); the state, when there is one to tell, is
+ *  a small tag sitting on the bottom border at the right, like a fieldset's
+ *  legend — so every tile keeps the same size, and the tag can never run into
+ *  the name however narrow the screen. A button whenever there is somewhere
+ *  to go: installing, opening what is installed, or — for the Android app on
+ *  an iPhone — its Play listing all the same. */
 function InstallTile({ icon, label, state }: {
   icon: ComponentChildren;
   label: string;
   state: InstallState;
 }) {
-  const run = state.run;
-  // No status under an installable tile: the tile itself is the offer. What
-  // gets marked is the rest (the author, 2026-11-08) — installed in the success
-  // tint with a check, not possible here dashed and dimmed with the reason.
+  const run = 'run' in state ? state.run : undefined;
   const tone =
-    state.kind === 'installed' ? 'border-success/50 bg-success/10' + (run ? ' hover:border-success hover:bg-success/15' : '')
-    : state.kind === 'unavailable' ? 'border-dashed border-border' + (run ? ' hover:border-muted' : '')
-    : 'border-border bg-elevated hover:border-muted hover:bg-surface';
-  const status =
-    state.kind === 'installed' ? (
-      <span class="text-[11px] leading-snug text-pretty">
-        <span class="inline-flex items-center gap-1 text-success">
-          <CheckIcon size={10} />{t('welcome.install.installed')}
-        </span>
-        {run
-          ? <span class="text-accent"><span class="text-dim">{' · '}</span>{t('welcome.install.open')}</span>
-          : state.hint && <span class="text-dim">{' · '}{t(state.hint)}</span>}
-      </span>
-    )
-    : state.kind === 'unavailable' ? <span class="text-[11px] text-dim leading-snug text-pretty">{t(state.reason)}</span>
+    state.kind === 'installed' || state.kind === 'current' ? 'border-success/50 bg-success/10'
+    : state.kind === 'unavailable' ? 'border-dashed border-border'
+    : 'border-border bg-elevated hover:bg-surface';
+  const tag =
+    state.kind === 'installed' ? { key: 'welcome.install.installed', color: 'text-success' }
+    : state.kind === 'current' ? { key: 'welcome.install.thisDevice', color: 'text-success' }
+    : state.kind === 'unavailable' ? { key: 'welcome.install.notForDevice', color: 'text-dim' }
     : null;
+  const cls = `relative flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border text-[13.5px] transition-colors ${tone} ${
+    run ? 'cursor-pointer hover:border-muted' : ''}`;
   const body = (
     <>
-      <span class={`flex items-center gap-2 max-w-full text-[13.5px] text-primary ${state.kind === 'unavailable' ? 'opacity-60' : ''}`}>
+      <span class={`flex items-center gap-2 min-w-0 text-primary ${state.kind === 'unavailable' ? 'opacity-60' : ''}`}>
         <span class="shrink-0 flex">{icon}</span>
         <span class="truncate">{label}</span>
       </span>
-      {status}
+      {/* bg-bg masks the border line behind the tag. */}
+      {tag && (
+        <span class={`absolute right-2.5 bottom-0 translate-y-1/2 px-1 bg-bg text-[10px] leading-none whitespace-nowrap ${tag.color}`}>
+          {t(tag.key)}
+        </span>
+      )}
     </>
   );
-  const cls = `flex-1 min-w-0 flex flex-col items-center justify-center gap-1 px-3 py-[10px] rounded-xl border text-center transition-colors ${tone}`;
   return run
-    ? <button type="button" class={`${cls} cursor-pointer`} onClick={run}>{body}</button>
+    ? <button type="button" class={cls} onClick={run}>{body}</button>
     : <div class={cls}>{body}</div>;
 }
 
