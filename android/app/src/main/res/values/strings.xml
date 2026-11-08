@@ -4,14 +4,4 @@
     <string name="title_activity_main">Cadence</string>
     <string name="package_name">io.github.batpapa.cadence</string>
     <string name="custom_url_scheme">io.github.batpapa.cadence</string>
-    <!-- Declares the website as this app's own, so that Chrome on Android can
-         tell the site's welcome screen the app is already installed
-         (navigator.getInstalledRelatedApps, with related_applications in the
-         site's manifest.json). Nothing to serve on the site for this. -->
-    <string name="asset_statements" translatable="false">
-        [{
-            \"relation\": [\"delegate_permission/common.handle_all_urls\"],
-            \"target\": {\"namespace\": \"web\", \"site\": \"https://batpapa.github.io\"}
-        }]
-    </string>
 </resources>

@@ -38,18 +38,6 @@ import type { User } from './types';
 // up a message instead; nothing below may start (see the check there).
 if (document.documentElement.dataset.unsupported) throw new Error('Cadence: browser too old');
 
-// Opened through the web app's protocol handler (manifest.json, the welcome
-// screen's "Open"): the `open` parameter only carried the link that launched
-// it, and means nothing past this point — off the address bar before anything
-// reads or records the address.
-{
-  const launched = new URL(location.href);
-  if (launched.searchParams.has('open')) {
-    launched.searchParams.delete('open');
-    history.replaceState(history.state, '', launched.href);
-  }
-}
-
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
 }

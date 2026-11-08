@@ -1,4 +1,4 @@
-import { canInstallSignal, installedSignal, isStandalone, isIOS, triggerInstall, PLAY_APP_ID } from '../services/pwaService';
+import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
 import { isMacSafariInstallable } from '../utils';
 import { isNative } from '../native/platform';
 import { t } from '../services/i18nService';
@@ -8,7 +8,7 @@ import { showModal, closeModal } from './modal';
 // Shared by the header's ⋮ menu and the welcome screen (2026-10-26), the day
 // the Android app went live on Google Play.
 
-export const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${PLAY_APP_ID}`;
+export const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=io.github.batpapa.cadence';
 
 /** Whether the Play app can be offered to anyone. False while the listing was
  *  open to the testers only (2026-10-26): everyone else would have landed on a
@@ -41,67 +41,22 @@ export function installAction(): (() => void) | null {
 
 export const openPlayStore = (): void => { window.open(PLAY_STORE_URL, '_blank', 'noopener'); };
 
-/** One install as the welcome screen offers it (the author's rule,
- *  2026-11-08): in a browser both, in the web app the Android app only, in the
- *  Android app nothing — the functions below return null for what is not on
- *  offer. Each one either opens what is already installed, installs, or is not
- *  available here. */
-export type InstallState =
-  | { kind: 'open'; run: () => void }
-  | { kind: 'install'; run: () => void }
-  /** `run`, when set, still leads somewhere: the Android app's listing from
-   *  an iPhone (the author: it must navigate to the store all the same). */
-  | { kind: 'unavailable'; run?: () => void };
-
-/** Opens the Android app from Chrome: an intent on the app's own scheme (the
- *  BROWSABLE filter in AndroidManifest.xml), falling back to the Play listing —
- *  which, for an installed app, shows "Open". Only offered once Chrome has
- *  reported the app installed, which takes the same app version as the filter;
- *  the fallback covers any mismatch. */
-function openNativeApp(): void {
-  location.href = `intent://open#Intent;scheme=${PLAY_APP_ID};package=${PLAY_APP_ID};`
-    + `S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
-}
-
-/** Opens the installed web app from a browser tab, through the protocol it
- *  registers on install (manifest.json `protocol_handlers`; Chrome and Edge on
- *  a computer). The browser asks once whether to allow it. An app installed
- *  before the handler existed only gets it once its manifest is refreshed;
- *  until then nothing happens here. */
-function openWebApp(): void {
-  location.href = 'web+cadence:open';
-}
-
-/** The web app, offered in a browser only. Opened when the browser reports it
- *  installed (installedSignal) — iOS never says, and there the offer simply
- *  stays. A Chromium browser that has not (yet) handed over its prompt, or any
- *  Android browser, can still install from its own menu, so it gets the steps
- *  rather than a "not available". */
-export function webAppInstallState(): InstallState | null {
+/** The welcome screen's "Web app" button (2026-11-08). Two plain buttons, no
+ *  detection of what is already installed — tried the same day and dropped:
+ *  only partly possible (nothing on iOS, no way to open an installed web app
+ *  from Chrome on Android), so the buttons ended up saying different things
+ *  for the same situation. Pressing it starts what installing takes here: the
+ *  browser's own prompt, or the steps — iOS, Mac Safari, a browser menu — or,
+ *  where no browser menu can install, a word saying so. Null where it cannot
+ *  apply at all: inside the Android app, or inside the web app itself. */
+export function webAppButtonAction(): (() => void) | null {
   const run = webAppInstallAction();
-  const installed = installedSignal.value.webApp;
   if (isNative() || isStandalone()) return null;
-  if (installed) return { kind: 'open', run: openWebApp };
-  if (run) return { kind: 'install', run };
+  if (run) return run;
   if (/Android/.test(navigator.userAgent) || 'BeforeInstallPromptEvent' in window) {
-    return { kind: 'install', run: () => showSteps('welcome.install.browserMenu') };
+    return () => showSteps('welcome.install.browserMenu');
   }
-  return { kind: 'unavailable' };
-}
-
-/** The Android app, offered everywhere but inside it. Opened when Chrome on
- *  Android reports it installed (only from app versions declaring this site,
- *  see installedSignal). On an iPhone it stays on show, "not available" but
- *  still leading to the listing: an Apple user should learn that it exists
- *  (the author, 2026-11-08). A computer keeps the offer: the Play listing
- *  installs onto the visitor's phone from there. */
-export function playInstallState(): InstallState | null {
-  const installed = installedSignal.value.play;
-  if (isNative()) return null;
-  if (installed) return { kind: 'open', run: openNativeApp };
-  if (!PLAY_STORE_LIVE) return { kind: 'unavailable' };
-  if (isIOS()) return { kind: 'unavailable', run: openPlayStore };
-  return { kind: 'install', run: openPlayStore };
+  return () => showSteps('welcome.install.notThisBrowser');
 }
 
 function showSteps(key: string): void {
