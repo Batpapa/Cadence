@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../services/i18nService';
-import { ShareIcon, WhatsAppIcon, ExternalLinkIcon } from './icons';
+import { ShareIcon, WhatsAppIcon, ExternalLinkIcon, GlobeIcon, GooglePlayIcon } from './icons';
 import { copyText } from '../utils';
 import { isNative } from '../native/platform';
+import { PLAY_STORE_LIVE, PLAY_STORE_URL } from './installOffer';
 
 // ── "Share Cadence" ──────────────────────────────────────────────────────────
 // From a festival report (2026-09-09): the address appeared NOWHERE in the
@@ -88,11 +89,18 @@ function QrCode({ text }: { text: string }) {
   );
 }
 
-/** QR, link and share sheet, then the community — the "Share Cadence" part of
- *  the About modal (aboutModal.tsx), which used to be a modal of its own behind
- *  a header button. */
+/** Title and what to share, QR, link and share sheet, then the community — the
+ *  "Share Cadence" part of the About modal (aboutModal.tsx), which used to be a
+ *  modal of its own behind a header button. */
 export function ShareAppBody() {
-  const url = appUrl();
+  // What to hand over: the website, or the Android app's Play listing
+  // (2026-11-08). At a session the neighbour is right there and can be asked
+  // which phone they hold; on Android the listing saves them the detour
+  // through the site, whose own offer of the app is easy to miss. The site
+  // stays the default: it works on any phone, and on Android it still leads to
+  // the app.
+  const [target, setTarget] = useState<'site' | 'android'>('site');
+  const url = target === 'android' ? PLAY_STORE_URL : appUrl();
   const [copied, setCopied] = useState(false);
   // Absent on Firefox desktop among others, so the share sheet can never be the
   // only way out of this modal — the link and its copy button always are.
@@ -120,7 +128,38 @@ export function ShareAppBody() {
   };
 
   return (
-    <div class="space-y-4">
+    <div class="space-y-3">
+      {/* The choice as two logos beside the title (the author's layout,
+          2026-11-08): a globe for the website, the Play mark for the Android
+          app, readable at a glance while the neighbour waits. Absent while the
+          Play listing is not public: it would lead to a page saying the app is
+          not available. */}
+      <div class="flex items-center gap-2">
+        <div class="section-title flex-1 min-w-0">{t('shareApp.title')}</div>
+        {PLAY_STORE_LIVE && (
+          <div class="flex items-center gap-1.5" role="tablist">
+            {([['site', 'shareApp.target.site'], ['android', 'shareApp.target.android']] as const).map(([id, key]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={target === id}
+                aria-label={t(key)}
+                title={t(key)}
+                class={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors cursor-pointer ${
+                  target === id
+                    ? 'border-accent bg-accent/15 text-primary'
+                    : 'border-border text-muted opacity-60 hover:opacity-100 hover:text-primary'}`}
+                onClick={() => setTarget(id)}
+              >
+                {id === 'site' ? <GlobeIcon size={18} /> : <GooglePlayIcon size={18} />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div class="space-y-4">
       <QrCode text={url} />
 
       <div class="flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2">
@@ -198,6 +237,7 @@ export function ShareAppBody() {
           <ExternalLinkIcon size={11} />
         </span>
       </a>
+      </div>
     </div>
   );
 }

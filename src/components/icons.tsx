@@ -113,6 +113,22 @@ export function WhatsAppIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+/** The Google Play mark, in its own four colours — same exception as
+ *  WhatsAppIcon above: a brand logo is a promise about where the link goes, and
+ *  in monochrome it is just a "play" triangle. Simple Icons' "googleplay"
+ *  outline, its four sub-paths split apart to colour each one: left blue, top
+ *  green, tip yellow, bottom red, as on the store's own logo. */
+export function GooglePlayIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+      <path fill="#00A0FF" d="M1.337.924a1.486 1.486 0 0 0-.112.568v21.017c0 .217.045.419.124.6l11.155-11.087L1.337.924z"/>
+      <path fill="#00D26A" d="M13.544 10.989l3.258-3.238L3.45.195a1.466 1.466 0 0 0-.946-.179l11.04 10.973z"/>
+      <path fill="#FFC400" d="M22.018 13.298l-3.919 2.218-3.515-3.493 3.543-3.521 3.891 2.202a1.49 1.49 0 0 1 0 2.594z"/>
+      <path fill="#FF3A44" d="M13.544 13.056l-11 10.933c.298.036.612-.016.906-.183l13.324-7.54-3.23-3.21z"/>
+    </svg>
+  );
+}
+
 export function WarningTriangleIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

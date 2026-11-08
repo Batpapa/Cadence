@@ -10,9 +10,9 @@ import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
-import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon } from './components/icons';
+import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon } from './components/icons';
 import { WelcomeTour } from './components/welcomeTour';
-import { installAction } from './components/installOffer';
+import { webAppInstallAction, showsPlayButton, offersPlayApp, openPlayStore } from './components/installOffer';
 import { t } from './services/i18nService';
 import { updateReady, applyUpdate, versionLabel } from './services/updateService';
 import { initDriveClient } from './services/driveService';
@@ -281,7 +281,11 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
   const [recoverError, setRecoverError] = useState<'failed' | 'inAppBrowser' | null>(null);
   // t() is not reactive: a language picked on this screen redraws it.
   const [, redraw] = useState(0);
-  const install = installAction();
+  // Both ways in, side by side under the sign-in (2026-11-08) — it used to be
+  // one discreet link in the top corner, which a visitor who had just scanned
+  // a neighbour's QR at a session never saw.
+  const installWebApp = webAppInstallAction();
+  const playButton = showsPlayButton();
 
   const select = async (id: string) => {
     setLoading(id);
@@ -331,14 +335,6 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
       {/* No Settings before a user exists: language and theme are here. Below
           the status bar where the page runs under it (Android 15+, iOS). */}
       <div class="fade-in absolute z-10 right-3 flex items-center gap-1" style="top:calc(var(--safe-top) + 8px);animation-delay:1s">
-        {/* The same offer as the header's ⋮ menu (2026-10-26): a first-time
-            visitor lands here, and on Android the Play app is the better way
-            in. Only when there is something to install. */}
-        {install && (
-          <button type="button" class="btn-ghost text-xs inline-flex items-center gap-1.5 text-accent" onClick={install}>
-            <InstallIcon size={13} />{t('settings.install')}
-          </button>
-        )}
         <WelcomePrefs onLanguageChange={() => redraw(x => x + 1)} />
       </div>
       <div class="shrink-0 flex flex-col items-center px-4 pt-14 pb-12 lg:flex-1 lg:min-w-0 lg:overflow-y-auto lg:py-10">
@@ -454,6 +450,39 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             <p class="text-xs text-muted leading-relaxed text-center text-pretty mt-2.5">
               {t(recoverError === 'inAppBrowser' ? 'settings.sync.inAppBrowserError' : 'userSelector.recover.failed')}
             </p>
+          )}
+
+          {(installWebApp || playButton) && (
+            <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
+              <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
+                {t('settings.install')}
+              </div>
+              <div class="flex gap-2">
+                {installWebApp && (
+                  <button
+                    type="button"
+                    class="flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border border-border bg-elevated hover:border-muted hover:bg-surface transition-colors cursor-pointer text-[13.5px] text-primary"
+                    onClick={installWebApp}
+                  >
+                    <InstallIcon size={15} />
+                    <span class="truncate">{t('welcome.install.webApp')}</span>
+                  </button>
+                )}
+                {/* Accent-bordered on Android, where the app is the better
+                    way in (native > web app > website, the author's order). */}
+                {playButton && (
+                  <button
+                    type="button"
+                    class={`flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border bg-elevated hover:bg-surface transition-colors cursor-pointer text-[13.5px] text-primary ${
+                      offersPlayApp() ? 'border-accent/70 hover:border-accent' : 'border-border hover:border-muted'}`}
+                    onClick={openPlayStore}
+                  >
+                    <GooglePlayIcon size={15} />
+                    <span class="truncate">{t('shareApp.target.android')}</span>
+                  </button>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Under the sign-in when the tour is beside it; at the very end

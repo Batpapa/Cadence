@@ -13,7 +13,7 @@ export const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=io.
 /** Whether the Play app can be offered to anyone. False while the listing was
  *  open to the testers only (2026-10-26): everyone else would have landed on a
  *  page that says the app is not available. Public since 2026-10-28. */
-const PLAY_STORE_LIVE = true;
+export const PLAY_STORE_LIVE = true;
 
 /** Android, in a browser — not inside the app itself, which says Android too —
  *  and the Play app public: where the Play app is the step up. */
@@ -33,10 +33,32 @@ export function offersPlayApp(): boolean {
  *  Reads canInstallSignal: a component calling it during render re-renders when
  *  the browser's offer arrives. */
 export function installAction(): (() => void) | null {
-  const canPrompt = canInstallSignal.value;
+  const webApp = webAppInstallAction();
   if (isNative()) return null;
-  if (offersPlayApp()) return () => { window.open(PLAY_STORE_URL, '_blank', 'noopener'); };
-  if (isStandalone()) return null;
+  if (offersPlayApp()) return openPlayStore;
+  return webApp;
+}
+
+export const openPlayStore = (): void => { window.open(PLAY_STORE_URL, '_blank', 'noopener'); };
+
+/** Where the Play listing is worth a button on the welcome screen, which shows
+ *  both ways in side by side (2026-11-08): everywhere but in the app itself
+ *  and on an iPhone or iPad, where it could not be installed. A computer keeps
+ *  it — the listing installs onto the visitor's phone from there. */
+export function showsPlayButton(): boolean {
+  return PLAY_STORE_LIVE && !isNative() && !isIOS();
+}
+
+/** Installing the web app, whatever else is on offer — the welcome screen's
+ *  "Web app" button, and installAction's fallback where Play is not the step
+ *  up. Null in the app itself, once installed, and where no page can start an
+ *  install nor the steps be spelled out.
+ *
+ *  Reads canInstallSignal first, before any early return: a component calling
+ *  it during render must subscribe whatever the outcome. */
+export function webAppInstallAction(): (() => void) | null {
+  const canPrompt = canInstallSignal.value;
+  if (isNative() || isStandalone()) return null;
   const ios = isIOS();
   if (!canPrompt && !ios && !isMacSafariInstallable()) return null;
   return () => {
