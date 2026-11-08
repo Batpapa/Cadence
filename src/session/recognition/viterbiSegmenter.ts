@@ -1,5 +1,6 @@
 import type { WindowResult, Detection, DetectionAlternate, DetectionEvidence, DetectionEvent } from '../model';
-import { StreamingViterbiDecoder, filterShortSegments, hideUnclearTail, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
+import { StreamingViterbiDecoder, cutSegment, filterShortSegments, hideUnclearTail, mergeNearbySameTune, type DetectedTuneSegment } from './viterbiDetector';
+import { pitchCuts, segmentPitch } from './pitchSplit';
 import { IncrementalTimelineBuilder, UNKNOWN_STATE } from './temporalObservationBuilder';
 import { DETECTION_TEMPORAL_CONFIG, type DetectionTemporalConfig } from './detectionTemporalConfig';
 
@@ -143,6 +144,12 @@ function withKey(alt: DetectionAlternate, windows: WindowResult[], first: number
   return best === 0 ? alt : { ...alt, transpose: best };
 }
 
+/** The played pitch on the decoder's pick (DetectionAlternate.pitch), when its
+ *  windows carried one. */
+function withPitch(alt: DetectionAlternate, pitch: number | undefined): DetectionAlternate {
+  return pitch === undefined ? alt : { ...alt, pitch };
+}
+
 /** Exported for AlternatesPopover.tsx — reused to color a raw meanScore
  *  (Detection.meanScore/DetectionAlternate.meanScore) the same way
  *  the confidence badge colors `ann.bucket`, even though that badge's own
@@ -169,6 +176,11 @@ export class IncrementalViterbiSegmenter {
   // reasoning as `decoder` above — needs `this.cfg`, so built in the
   // constructor body rather than as a field initializer.
   private readonly timelineBuilder: IncrementalTimelineBuilder;
+  // The pitch split's cuts per segment (tune, first window, window count): a
+  // window never changes once received, so the same segment always cuts the
+  // same way — without this every recompute re-ran it over the whole history.
+  // Rebuilt each recompute with the segments still standing.
+  private pitchCutsMemo = new Map<string, number[]>();
 
   constructor(hopS: number, cfg: DetectionTemporalConfig = DETECTION_TEMPORAL_CONFIG) {
     this.hopS = hopS;
@@ -236,10 +248,10 @@ export class IncrementalViterbiSegmenter {
       meanScore: seg.averageProbability,
       evidence,
       alternates,
-      viterbiPick: withKey({
+      viterbiPick: withPitch(withKey({
         tuneId: seg.tuneId, settingId: seg.settingId, displayName: seg.displayName,
         dance: seg.dance, meter: seg.meter, meanScore: seg.averageProbability,
-      }, this.windows, seg.firstWindowIndex, seg.windowCount),
+      }, this.windows, seg.firstWindowIndex, seg.windowCount), segmentPitch(this.windows, seg.tuneId, seg.firstWindowIndex, seg.windowCount)),
       // Always false straight out of the segmenter — it never decides an
       // identity override itself, only the orchestrators' applyEvents()
       // (liveSession.ts/importSession.ts) do, by preserving a prior true
@@ -281,7 +293,22 @@ export class IncrementalViterbiSegmenter {
     // Bridges a brief UNKNOWN drop between two occurrences of the same tune
     // (e.g. a couple of quiet/noisy windows mid-performance) into one
     // continuous segment, instead of reporting two separate detections.
-    const segments = mergeNearbySameTune(filteredSegments, timeline, this.cfg.sameTuneMergeGapWindows);
+    const merged = mergeNearbySameTune(filteredSegments, timeline, this.cfg.sameTuneMergeGapWindows);
+    // The same tune played again straight away at another pitch (another key) is
+    // another detection (2026-11-08, pitchSplit.ts) — after the merge, so that one
+    // bridged across a pause is cut too. Windows without a pitch (stored before)
+    // never cut.
+    const lambda = this.cfg.pitchSplitLambda;
+    const memo = new Map<string, number[]>();
+    const segments = lambda === undefined ? merged : merged.flatMap(s => {
+      if (s.tuneId === UNKNOWN_STATE) return [s];
+      const key = `${s.tuneId}|${s.firstWindowIndex}|${s.windowCount}`;
+      const cuts = this.pitchCutsMemo.get(key)
+        ?? pitchCuts(this.windows, s.tuneId, s.firstWindowIndex, s.windowCount, { lambda, tolerance: this.cfg.pitchSplitTolerance ?? 0.5 });
+      memo.set(key, cuts);
+      return cutSegment(s, cuts, timeline);
+    });
+    this.pitchCutsMemo = memo;
     const lastSegment = segments[segments.length - 1] ?? null;
     const newSegments = segments.filter(s => s.tuneId !== UNKNOWN_STATE);
 

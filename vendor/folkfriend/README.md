@@ -10,9 +10,11 @@ About screen.
 **Source: [github.com/Batpapa/folkfriend](https://github.com/Batpapa/folkfriend)**,
 a fork of upstream carrying Cadence's changes. The files here are built from its
 commit **`6b53e2c`** (2026-11-08: the pitch-class mode, "any pitch", the cleaned
-features and the query speed-ups — see the sections below) and that build reproduces
-them byte for byte (`folkfriend_bg.wasm` MD5 `bd96c7b53ccc50ee7317e6be1fffbda9`,
-`folkfriend_bg_simd.wasm` MD5 `04160e3bcd7e807f833971685c73caac`). The module
+features and the query speed-ups — see the sections below) **plus the two additive
+changes of "Played pitch" below, NOT YET COMMITTED to the fork** (`folkfriend_bg.wasm`
+MD5 `d87710c9ded87c7ce957c87fd5196ad7`, `folkfriend_bg_simd.wasm` MD5
+`2a616af88f4c72b98999afdf24b6ac76`). Commit `6b53e2c` itself builds
+`bd96c7b53ccc50ee7317e6be1fffbda9` / `04160e3bcd7e807f833971685c73caac`. The module
 shipped from 2026-10-29 to 2026-11-07 is commit `1b37f01`; from 2026-09-13 to
 2026-10-29, commit `b0d0a58`. **Whenever these files
 change, commit to the fork first and update the commit named here.**
@@ -242,6 +244,21 @@ Each result of a transcription query also says the key it was found in (`transpo
 the recording plays the setting that many semitones above its written key, modulo the octave;
 always 0 outside this mode). Cadence stores it per window candidate and shows each detection in
 the key it was played in. No score changes with it.
+
+## Played pitch (2026-11-08), every result unchanged
+
+Two additions for the pitch split (Cadence `playedPitch.ts` / `pitchSplit.ts`: the same tune
+played again straight away in another key is another detection):
+- `transcribe_pcm_buffer_debug`'s `features` carry `tuning` in pitch-class mode with any pitch:
+  the window's tuning estimate (`pitch_class::window_tuning`, semitones off A = 440, -0.5 .. 0.5),
+  computed already and dropped until now.
+- each any-key query result carries `other_keys`: the other (setting, transposition 0-11, score)
+  pairs of the same tune that the full search aligned, best first, at most 24 (`OTHER_KEYS_MAX`),
+  also computed already and dropped.
+Results, their order and their scores are unchanged: the 18 annotated sessions' windows
+(19 700) are identical to the fixtures (contour, top 10, scores, transposition) with both builds,
+and the two builds give byte-for-byte the same windows. Research record outside the repo
+(recognition-research/JOURNAL.md, section 17).
 
 ## Speed-ups (2026-11-08), every result unchanged
 

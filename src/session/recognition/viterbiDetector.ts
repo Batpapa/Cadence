@@ -433,6 +433,40 @@ export function mergeNearbySameTune(
   return result;
 }
 
+/** A tune segment cut into parts, each part after the first beginning at one
+ *  of `cuts` (window indices inside the segment, increasing) — the pitch split
+ *  (pitchSplit.ts). Outer bounds stay the segment's; an inner boundary is placed
+ *  like any other between two windows (windowRangeToTime), and each part's
+ *  probabilities are computed over its own windows, as extractSegments does. */
+export function cutSegment(seg: DetectedTuneSegment, cuts: readonly number[], timeline: TemporalTimeline): DetectedTuneSegment[] {
+  if (!cuts.length) return [seg];
+  const end = seg.firstWindowIndex + seg.windowCount;
+  const bounds = [seg.firstWindowIndex, ...cuts, end];
+  const row = timeline.rows.get(seg.tuneId);
+  const parts: DetectedTuneSegment[] = [];
+  for (let p = 0; p + 1 < bounds.length; p++) {
+    const first = bounds[p]!, next = bounds[p + 1]!;
+    const probs: number[] = new Array<number>(next - first).fill(0);
+    if (row) {
+      for (let k = rowStartAt(row, first); k < row.t.length && row.t[k]! < next; k++) probs[row.t[k]! - first] = row.score[k]!;
+    }
+    const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
+    const { start, end: stop } = windowRangeToTime(first, next - 1, timeline);
+    parts.push({
+      ...seg,
+      startTime: p === 0 ? seg.startTime : start,
+      endTime: next === end ? seg.endTime : stop,
+      firstWindowIndex: first,
+      windowCount: next - first,
+      confidence: avg,
+      averageProbability: avg,
+      minimumProbability: Math.min(...probs),
+      maximumProbability: Math.max(...probs),
+    });
+  }
+  return parts;
+}
+
 /** The latest window index t* such that EVERY current per-state optimal
  *  backtrack path — not just the single overall winner finalize() below
  *  backtracks — agrees on the decoded state for every window in [0, t*].

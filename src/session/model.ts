@@ -25,6 +25,14 @@ export interface DetectionAlternate {
    *  Absent = as written — and on every analysis made before, and on a tune
    *  named by hand, which nothing heard. Read it through keyOffsetOf(). */
   transpose?: number;
+  /** On `viterbiPick` only (2026-11-08): the pitch the detection was played at,
+   *  in semitones above its tune's MAIN setting as written, tuning included
+   *  (the score-weighted mean of its windows' WindowCandidate.pitch) — what
+   *  tells two detections of a tune in two keys apart whatever setting each
+   *  was recognised in. Absent on analyses made before, on a tune named by
+   *  hand, and when no window carried a pitch. Read it through
+   *  samePlayedPitch() (recognition/pitchSplit.ts). */
+  pitch?: number;
 }
 
 export interface Detection {
@@ -395,6 +403,17 @@ export interface WindowCandidate {
    *  every key and knows it only modulo the octave, so the nearer way round is
    *  kept. Absent = as written (and on every window stored before). */
   transpose?: number;
+  /** The pitch the tune was played at (2026-11-08, playedPitch.ts), in
+   *  semitones above its MAIN setting as written, tuning included, from -6 to
+   *  +6 — comparable from one window to the next whatever setting won each.
+   *  Feeds the pitch split (pitchSplit.ts). Absent on every window stored
+   *  before, and when the engine did not estimate the tuning: such a window
+   *  never cuts a detection. */
+  pitch?: number;
+  /** The other pitches the tune was aligned at in this window, [pitch, best
+   *  score there], same scale as `pitch` — how close it came in another key
+   *  (the pitch split's "soft" cost). Absent when there were none. */
+  otherPitches?: [number, number][];
 }
 
 export interface WindowResult {
@@ -437,6 +456,10 @@ export interface NoteAndTempoFeatures {
   best_rhythm_score: number;
   best_combined_score: number;
   contour_length: number;
+  /** The window's tuning in semitones off A = 440, -0.5 .. 0.5 (2026-11-08):
+   *  estimated and corrected by the pitch-class engine's any-pitch mode, and
+   *  read into WindowCandidate.pitch. Absent on windows stored before. */
+  tuning?: number;
 }
 
 export interface WindowDebugFeatures {
