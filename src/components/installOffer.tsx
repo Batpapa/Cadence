@@ -1,8 +1,8 @@
-import { canInstallSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
+import { canInstallSignal, webAppInstalledSignal, isStandalone, isIOS, triggerInstall } from '../services/pwaService';
 import { isMacSafariInstallable } from '../utils';
 import { isNative } from '../native/platform';
 import { t } from '../services/i18nService';
-import { showModal, closeModal } from './modal';
+import { showModal } from './modal';
 
 // ── Installing Cadence ───────────────────────────────────────────────────────
 // Shared by the header's ⋮ menu and the welcome screen (2026-10-26), the day
@@ -42,28 +42,35 @@ export function installAction(): (() => void) | null {
 export const openPlayStore = (): void => { window.open(PLAY_STORE_URL, '_blank', 'noopener'); };
 
 /** The welcome screen's "Web app" button (2026-11-08). Two plain buttons, no
- *  detection of what is already installed — tried the same day and dropped:
- *  only partly possible (nothing on iOS, no way to open an installed web app
- *  from Chrome on Android), so the buttons ended up saying different things
- *  for the same situation. Pressing it starts what installing takes here: the
- *  browser's own prompt, or the steps — iOS, Mac Safari, a browser menu — or,
- *  where no browser menu can install, a word saying so. Null where it cannot
- *  apply at all: inside the Android app, or inside the web app itself. */
+ *  state shown on them — showing what is installed was tried the same day and
+ *  dropped: only partly possible (nothing on iOS, no way to open an installed
+ *  web app from Chrome on Android), so the buttons ended up saying different
+ *  things for the same situation. Pressing it says the web app is already
+ *  installed when the browser reports it (webAppInstalledSignal, the one
+ *  detection kept: without it "no prompt" cannot tell "installed" from "use the
+ *  menu"), else starts what installing takes here: the browser's own prompt,
+ *  or the steps — iOS, Mac Safari, a browser menu — or, where no browser menu
+ *  can install, a word saying so. Null where it cannot apply at all: inside
+ *  the Android app, or inside the web app itself. */
 export function webAppButtonAction(): (() => void) | null {
   const run = webAppInstallAction();
   if (isNative() || isStandalone()) return null;
-  if (run) return run;
-  if (/Android/.test(navigator.userAgent) || 'BeforeInstallPromptEvent' in window) {
-    return () => showSteps('welcome.install.browserMenu');
-  }
-  return () => showSteps('welcome.install.notThisBrowser');
+  const menu = /Android/.test(navigator.userAgent) || 'BeforeInstallPromptEvent' in window;
+  return () => {
+    // Read on press: the browser's answer may come after the first render.
+    if (webAppInstalledSignal.value) showSteps('welcome.install.alreadyInstalled');
+    else if (run) run();
+    else showSteps(menu ? 'welcome.install.browserMenu' : 'welcome.install.notThisBrowser');
+  };
 }
 
 function showSteps(key: string): void {
   const body = document.createElement('p');
   body.className = 'text-sm text-muted leading-relaxed';
   body.textContent = t(key);
-  showModal(t('settings.install'), body, [{ label: t('common.close'), primary: true, onClick: closeModal }]);
+  // No button (the author, 2026-11-08): a message to read, closed by the
+  // header's cross, Escape or a tap outside like any modal.
+  showModal(t('settings.install'), body, []);
 }
 
 /** Installing the web app, whatever else is on offer — the welcome screen's
