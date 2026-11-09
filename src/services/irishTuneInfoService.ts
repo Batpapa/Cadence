@@ -212,7 +212,8 @@ function toTheSessionType(rhythm: string): string {
 }
 
 export function tuneToCard(tune: TuneDetail, audioFile?: FileEntry | null): Card {
-  const tags: string[] = ['IrishTuneInfo'];
+  // No source tag: the externalId says it (cardSourceService.ts).
+  const tags: string[] = [];
   if (tune.rhythm) tags.push(toTheSessionType(tune.rhythm));
   if (tune.mode) tags.push(toTheSessionKeyFormat(tune.mode));
   const attachments: Attachment[] = audioFile ? [{ type: 'file', ...audioFile }] : [];

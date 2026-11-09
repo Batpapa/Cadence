@@ -49,3 +49,18 @@ export function renameTagEverywhere(state: AppState, from: string, to: string): 
   }
   return n;
 }
+
+/** Removes a tag from every card that carries it; the cards themselves stay.
+ *  The other half of the library's pencil (asked for 2026-11-09, once tag
+ *  groups made "dissolving" a group a thing: a single tag needed the same).
+ *  Only the cards' own `tags`, as renameTagEverywhere. Returns how many cards
+ *  changed. */
+export function removeTagEverywhere(state: AppState, tag: string): number {
+  let n = 0;
+  for (const card of Object.values(state.cards)) {
+    if (!card.tags?.includes(tag)) continue;
+    card.tags = card.tags.filter(tg => tg !== tag);
+    n++;
+  }
+  return n;
+}

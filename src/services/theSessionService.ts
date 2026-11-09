@@ -303,7 +303,8 @@ function mostCommonKey(settings: Array<{ key: string }>): string | null {
 }
 
 export function tuneResultToCard(tune: TuneResult): Card {
-  const tags: string[] = ['TheSession'];
+  // No source tag: the externalId says it (cardSourceService.ts).
+  const tags: string[] = [];
   if (tune.type) tags.push(tune.type);
   if (tune.topKey) tags.push(tune.topKey);
   const settings = tune.settings;
@@ -652,7 +653,9 @@ export async function buildSetCards(
     // computedName is on, so this is only what it is called until then.
     name: set.name,
     defaultImportance: previous?.defaultImportance ?? 1,
-    tags: [...new Set(['TheSession', ...set.tags, ...(previous?.tags ?? [])])],
+    // No "TheSession" tag: the externalId says where the set comes from
+    // (cardSourceService.ts).
+    tags: [...new Set([...set.tags, ...(previous?.tags ?? [])])],
     type: CARD_TYPE_TUNESET,
     computedName: previous ? previous.computedName : true,
     // TheSession gives a set no aliases, so any a set has are the user's own —
