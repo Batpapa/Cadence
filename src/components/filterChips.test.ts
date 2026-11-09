@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels, renameChip } from './filterChips';
+import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from './filterChips';
 import type { FilterState } from '../types';
 
 const chips = (...e: [string, FilterState][]) => new Map(e);
@@ -65,22 +65,5 @@ describe('folderChipLabels', () => {
     expect(labels.get('a')).toBe('Hiver / Mardis');
     expect(labels.get('b')).toBe('Été / Mardis');
     expect(labels.get('c')).toBe('Été');
-  });
-});
-
-describe('renameChip', () => {
-  it('moves a pinned chip to the new name, in its place and state', () => {
-    const c = chips(['jig', 'include'], ['Em', 'exclude'], ['reel', 'include']);
-    expect([...renameChip(c, 'Em', 'Eminor')]).toEqual([['jig', 'include'], ['Eminor', 'exclude'], ['reel', 'include']]);
-  });
-
-  it('lets the new name keep its own state on a merge', () => {
-    const c = chips(['Eminor', 'include'], ['Em', 'exclude']);
-    expect([...renameChip(c, 'Em', 'Eminor')]).toEqual([['Eminor', 'include']]);
-  });
-
-  it('hands back the very same map when the old name is not pinned', () => {
-    const c = chips(['jig', 'include']);
-    expect(renameChip(c, 'Em', 'Eminor')).toBe(c);
   });
 });

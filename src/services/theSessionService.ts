@@ -4,6 +4,7 @@ import { TuneUnavailableError, withTuneIdentity, type SkippedTune } from './tune
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET } from './cardTypeService';
 import { tunesetAbcPlaceholder, isAbcFile, decodeAbc, splitAbcTunes } from './abcService';
 import { sourceAliases, refreshedAliases, setCardAliases } from './aliasService';
+import { keyTag, typeTag } from './tagGroups';
 
 const BASE = 'https://thesession.org';
 
@@ -303,10 +304,11 @@ function mostCommonKey(settings: Array<{ key: string }>): string | null {
 }
 
 export function tuneResultToCard(tune: TuneResult): Card {
-  // No source tag: the externalId says it (cardSourceService.ts).
+  // No source tag: the externalId says it (cardSourceService.ts). Type and key
+  // in their groups, "type::reel", "key::Aminor" (tagGroups.ts).
   const tags: string[] = [];
-  if (tune.type) tags.push(tune.type);
-  if (tune.topKey) tags.push(tune.topKey);
+  if (tune.type) tags.push(typeTag(tune.type));
+  if (tune.topKey) tags.push(keyTag(tune.topKey));
   const settings = tune.settings;
   // Always merged (2026-08-24) — was previously a togglable option, but the
   // only place that ever turned it off was theSessionImport.ts's checkbox;

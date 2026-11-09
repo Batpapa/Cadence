@@ -14,6 +14,7 @@ import { STRATEGY_ICONS } from '../components/studyModal';
 import { RATING_BUTTONS, RATING_GRID } from '../components/ratingButtons';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
 import { fmtDate } from '../services/dateFormat';
+import { TagText } from '../components/tagText';
 
 const STRATEGY_LABEL_KEYS: Record<StudyStrategy, string> = {
   random: 'study.strategy.random', optimal: 'study.strategy.optimal', stochastic: 'study.strategy.stochastic',
@@ -399,7 +400,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               <div class="flex flex-wrap items-center gap-1.5">
                 {card.tags.map(tag => (
                   <span key={tag} class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-elevated border border-border text-muted">
-                    {tag}
+                    <TagText tag={tag} />
                   </span>
                 ))}
               </div>

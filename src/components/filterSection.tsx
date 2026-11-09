@@ -6,6 +6,20 @@ import { ChevronDownIcon, FilterClearIcon, FilterIcon, FolderIcon, PencilIcon, V
 import { matchesSearch } from '../utils';
 import { DateField } from './dateField';
 
+/** A chip of a section drawn as a tree (`tree`): a tag group and its tags
+ *  (tagGroups.ts), a deck folder and its decks (deckChips.ts). */
+export interface FilterTreeNode {
+  /** The chip's key. */
+  id: string;
+  children: FilterTreeNode[];
+  /** A group even with nothing under it on screen — a pinned folder whose
+   *  decks are all filtered away still shows as a folder. Otherwise a node is
+   *  a group when it has children. */
+  group?: boolean;
+}
+
+const isGroupNode = (n: FilterTreeNode) => !!n.group || n.children.length > 0;
+
 export type FilterMap = Map<string, FilterState>;
 
 /** Steps a chip round: off → include → exclude → off.
@@ -30,9 +44,15 @@ export function cycleFilter(prev: FilterMap, key: string, back = false): FilterM
   return n;
 }
 
-export function FilterSection({ labelKey, items, folderItems = [], covered, activeMap, labelOf, titleOf, available, onToggle, highlight, orMode, onToggleOr, onRename }: {
+export function FilterSection({ labelKey, items, folderItems = [], tree, covered, activeMap, labelOf, titleOf, available, onToggle, highlight, orMode, onToggleOr, onRename }: {
   labelKey: string;
   items: string[];
+  /** Drawn instead of `items` and `folderItems`: each group's chip (with a
+   *  folder glyph) on a line of its own; under it, one step in, a line of its
+   *  values, then its own groups; the plain values on a last line. A group chip
+   *  stands for everything under it. Same layout for tag groups and deck
+   *  folders (user's call, 2026-11-09). */
+  tree?: FilterTreeNode[];
   /** Folder chips (keys from `folderChipKey`), shown first with a folder glyph
    *  and set apart from `items` by a thin rule. A folder chip stands for
    *  everything below it; the caller's predicate decides what that means. */
@@ -112,6 +132,32 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
     );
   };
 
+  // Indented (user's pick, 2026-11-09, after trying outlined boxes, folding,
+  // and one line per top-level group: none read as clearly, whatever the room
+  // this takes). A group's chip alone on its line; under it, one step in, a
+  // line of its values, then its own groups; the top level's plain values
+  // close the section.
+  const step = (depth: number) => ({ paddingLeft: `${depth * 0.875}rem` });
+  /** One line of values, `depth` steps in. */
+  const valueRow = (values: FilterTreeNode[], depth: number): ComponentChildren => values.length > 0 && (
+    <div class="flex flex-wrap items-center gap-1.5" style={step(depth)}>
+      {values.map(v => chip(v.id, false))}
+    </div>
+  );
+  const groupRow = (node: FilterTreeNode, depth: number): ComponentChildren => (
+    <div key={node.id} class="space-y-1">
+      <div class="flex items-center" style={step(depth)}>{chip(node.id, true)}</div>
+      {valueRow(node.children.filter(c => !isGroupNode(c)), depth + 1)}
+      {node.children.filter(isGroupNode).map(g => groupRow(g, depth + 1))}
+    </div>
+  );
+  const level = (nodes: FilterTreeNode[]): ComponentChildren => (
+    <div class="space-y-1">
+      {nodes.filter(isGroupNode).map(g => groupRow(g, 0))}
+      {valueRow(nodes.filter(n => !isGroupNode(n)), 0)}
+    </div>
+  );
+
   return (
     <div>
       <div class="flex items-center">
@@ -154,7 +200,10 @@ export function FilterSection({ labelKey, items, folderItems = [], covered, acti
           <span class="ml-1.5 text-xs text-accent">{t('library.tags.rename.hint')}</span>
         )}
       </div>
-      {open && (
+      {open && tree && (
+        <div class="pt-1">{level(tree)}</div>
+      )}
+      {open && !tree && (
         <div class="flex flex-wrap items-center gap-1.5 pt-1">
           {folderItems.map(id => chip(id, true))}
           {folderItems.length > 0 && items.length > 0 && <span class="w-px h-4 bg-border mx-0.5" aria-hidden="true" />}

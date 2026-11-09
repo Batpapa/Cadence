@@ -4,6 +4,7 @@ import { sourceAliases } from './aliasService';
 import { withTuneIdentity } from './tuneFetchError';
 import { SCRAPER_BASE as BASE, markScraperServerWarm } from './scraperServerStatus';
 import { CARD_TYPE_TUNE } from './cardTypeService';
+import { keyTag, typeTag } from './tagGroups';
 export { isScraperServerWarm as isServerWarm } from './scraperServerStatus';
 
 // ── API shapes (normalized to `name`, matching theSessionService's convention) ──
@@ -212,10 +213,11 @@ function toTheSessionType(rhythm: string): string {
 }
 
 export function tuneToCard(tune: TuneDetail, audioFile?: FileEntry | null): Card {
-  // No source tag: the externalId says it (cardSourceService.ts).
+  // No source tag: the externalId says it (cardSourceService.ts). Type and key
+  // in their groups, as TheSession's (tagGroups.ts).
   const tags: string[] = [];
-  if (tune.rhythm) tags.push(toTheSessionType(tune.rhythm));
-  if (tune.mode) tags.push(toTheSessionKeyFormat(tune.mode));
+  if (tune.rhythm) tags.push(typeTag(toTheSessionType(tune.rhythm)));
+  if (tune.mode) tags.push(keyTag(toTheSessionKeyFormat(tune.mode)));
   const attachments: Attachment[] = audioFile ? [{ type: 'file', ...audioFile }] : [];
   return {
     id: generateId(),

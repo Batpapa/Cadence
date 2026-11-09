@@ -49,8 +49,9 @@ describe('migrating a card to TheSession', () => {
     expect(card.name).toBe('The Butterfly');
     expect(card.externalId).toBe('thesession:1197');
     expect(card.type).toBe('tune');
-    // No source tag: the externalId says it (cardSourceService.ts).
-    expect(card.tags).toEqual(['slip jig', 'Eminor']);
+    // No source tag: the externalId says it (cardSourceService.ts); type and
+    // key in their groups (tagGroups.ts).
+    expect(card.tags).toEqual(['type::slip jig', 'key::Eminor']);
     expect(card.content.notes).toBe('');
     expect(card.content.attachments.length).toBe(1);
   });

@@ -26,7 +26,8 @@ import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 import { decksContainingCard } from '../services/deckService';
-import { knownChips, renameChip } from '../components/filterChips';
+import { knownChips } from '../components/filterChips';
+import { coveredByTagGroups, dropTagNodeChips, renameTagNodeChips, tagChipValues, tagDisplay, tagLabel, tagNodeExists, tagTree } from '../services/tagGroups';
 import { deckChipKnown, deckChipSection } from '../components/deckChips';
 import { showRenameTagEverywhereModal } from '../components/tagModal';
 import { cardAvailability, replayFSRS } from '../services/knowledgeService';
@@ -361,7 +362,10 @@ export function LibraryView() {
   // would list a set without lighting the chip that let it in. Built once per
   // render: the sets' tune lists are resolved here and nowhere else.
   const tuneTagsOn = setsMatchTuneTags(user);
-  const filterTags = new Map(pool.map(c => [c.id, tuneTagsOn ? tagsWithTunes(c, user.cards) : c.tags ?? []]));
+  // Each tag together with the groups above it (tagGroups.ts): a card tagged
+  // "key::A::minor" answers to the chips "key" and "key::A" too, as a card
+  // answers to its deck's folders.
+  const filterTags = new Map(pool.map(c => [c.id, tagChipValues(tuneTagsOn ? tagsWithTunes(c, user.cards) : c.tags ?? [])]));
   const filterTagsOf = (c: Card) => filterTags.get(c.id) ?? [];
 
   // A pinned chip naming a deck or a folder deleted since, a tag no card
@@ -372,13 +376,16 @@ export function LibraryView() {
   // maps keep whatever the route carried. A pinned chip that does name
   // something is always offered, even with nothing in the pool behind it.
   const deckKnown = (key: string) => deckChipKnown(user, key);
-  const tagKnown  = (tag: string) => allCards.some(c => (c.tags ?? []).includes(tag));
+  const tagKnown  = (tag: string) => tagNodeExists(allCards, tag);
   const typeKnown = (type: string) => typeItems.includes(type);
   const liveTags  = knownChips(activeTags, tagKnown);
   const liveTypes = knownChips(activeTypes, typeKnown);
   const liveSources = knownChips(activeSources, sourceKnown);
 
   const allTags    = [...new Set([...pool.flatMap(filterTagsOf), ...liveTags.keys()])].sort();
+  const tagGroupTree = tagTree(allTags);
+  // What an included group chip takes in, drawn as covered (deck folders' rule).
+  const coveredTags = coveredByTagGroups(allTags, [...liveTags].filter(([, s]) => s === 'include').map(([k]) => k));
   const hasOrphans = pool.some(c => decksContainingCard(c.id, user).length === 0);
   // The decks and their folders, as chips (deckChips.ts, shared with the
   // analyser's tunes tab).
@@ -549,10 +556,12 @@ export function LibraryView() {
   // A chip pinned on the old name follows the rename instead of vanishing.
   const renameTag  = (tag: string) => showRenameTagEverywhereModal(
     tag,
-    to => setActiveTags(prev => renameChip(prev, tag, to)),
-    // A deleted tag's chip goes with it, rather than lying in the route until
-    // a tag of that name comes back and finds itself filtered.
-    () => setActiveTags(prev => { const next = new Map(prev); next.delete(tag); return next; }),
+    // A group's chips follow it, the ones under it included.
+    to => setActiveTags(prev => renameTagNodeChips(prev, tag, to)),
+    // A deleted tag's chip goes with it (a dissolved group's, with those under
+    // it), rather than lying in the route until a tag of that name comes back
+    // and finds itself filtered.
+    () => setActiveTags(prev => dropTagNodeChips(prev, tag)),
   );
 
   // ── Selection toolbar data ────────────────────────────────────────────────────
@@ -927,6 +936,7 @@ export function LibraryView() {
             labelKey="library.filterDecks"
             items={deckSection.items}
             folderItems={deckSection.folderItems}
+            tree={deckSection.tree}
             covered={deckSection.covered}
             activeMap={liveDecks}
             labelOf={deckSection.labelOf}
@@ -968,9 +978,11 @@ export function LibraryView() {
           <FilterSection
             labelKey="library.filterTags"
             items={allTags}
+            tree={tagGroupTree}
+            covered={coveredTags}
             activeMap={liveTags}
-            labelOf={tag => tag}
-            titleOf={tag => tag}
+            labelOf={tagLabel}
+            titleOf={tagDisplay}
             available={availTags}
             onToggle={toggleTag}
             highlight={q}

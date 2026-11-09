@@ -5,6 +5,7 @@ import type { AppContext } from '../types';
 import { t } from '../services/i18nService';
 import { scoreMatch, scoreWithAliases, NO_SCORE_MATCH } from '../utils';
 import { registerOverlay } from './overlayStack';
+import { tagDisplay } from '../services/tagGroups';
 import { getZoom } from '../services/zoomService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
     if (m.score < NO_SCORE_MATCH) items.push({
       label: card.name,
       // The alias that found it says more than the tags, when there is one.
-      sublabel: m.via !== undefined ? t('search.viaAlias', { alias: m.via }) : card.tags?.join(', ') || undefined,
+      sublabel: m.via !== undefined ? t('search.viaAlias', { alias: m.via }) : card.tags?.map(tagDisplay).join(', ') || undefined,
       kind: 'card',
       score: m.score,
       viaAlias: m.via !== undefined,

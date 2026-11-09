@@ -275,8 +275,21 @@ describe('normaliseState — source tags', () => {
       card('hand', { tags: ['TheSession'] }),
     );
     normaliseState(s);
-    expect(s.cards['ts']!.tags).toEqual(['reel']);
-    expect(s.cards['iti']!.tags).toEqual(['jig']);
+    // The type left behind moves into its group (tagGroups.ts).
+    expect(s.cards['ts']!.tags).toEqual(['type::reel']);
+    expect(s.cards['iti']!.tags).toEqual(['type::jig']);
     expect(s.cards['hand']!.tags).toEqual(['TheSession']);
+  });
+});
+
+describe('normaliseState — import tags into groups', () => {
+  it("moves an imported tune's flat type and key into their groups, and leaves a hand-made card", () => {
+    const s = state(
+      card('ts', { externalId: 'thesession:1', tags: ['reel', 'Gmajor', 'fast'] }),
+      card('hand', { tags: ['reel', 'Gmajor'] }),
+    );
+    normaliseState(s);
+    expect(s.cards['ts']!.tags).toEqual(['type::reel', 'key::Gmajor', 'fast']);
+    expect(s.cards['hand']!.tags).toEqual(['reel', 'Gmajor']);
   });
 });

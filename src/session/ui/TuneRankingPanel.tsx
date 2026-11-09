@@ -38,6 +38,7 @@ import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChip
 import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf, type SessionTree } from '../sessionTree';
 import { mutateWithRule, uploadAttachmentSoon } from '../../services/attachmentStore';
 import { hasLibrary } from '../../services/pageMode';
+import { coveredByTagGroups, keyTag, tagChipValues, tagDisplay, tagLabel, tagNodeExists, tagTree, typeTag } from '../../services/tagGroups';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
 // The analyses read the other way round: by tune instead of by evening. It is
@@ -155,7 +156,7 @@ const NO_CHIPS: FilterMap = new Map();
 /** Whether a tag is still carried by some card — a chip of a tag renamed or
  *  dropped since is ignored, as the library ignores its own. */
 function cardTagKnown(user: AppState, tag: string): boolean {
-  return Object.values(user.cards).some(c => (c.tags ?? []).includes(tag));
+  return tagNodeExists(Object.values(user.cards), tag);
 }
 
 /** The card chips that do filter the list: none where there is no library
@@ -271,7 +272,14 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   /** The three sections that read a value off each pass — which analysis it is
    *  in, its tune type, its key — and so filter passes rather than tunes. */
   const facetAnalyses: PassFacet = { chips: activeAnalyses, or: analysesOr, valuesOf: (_d, s) => [s.id, ...(foldersAboveSession.get(s.id) ?? [])] };
-  const facetTags: PassFacet = { chips: tags, or: tagsOr, valuesOf: d => { const m = modeOf(d); return [d.dance, m].filter((v): v is string => !!v); } };
+  // Spelled as an imported card's tags (tagGroups.ts): "type::reel",
+  // "key::Dmajor", each with the groups above it, so a chip "key" or "type"
+  // takes in what is under it, as in the library.
+  const heardTagsOf = (d: Detection): string[] => {
+    const m = modeOf(d);
+    return [d.dance ? typeTag(d.dance) : undefined, m ? keyTag(m) : undefined].filter((v): v is string => !!v);
+  };
+  const facetTags: PassFacet = { chips: tags, or: tagsOr, valuesOf: d => tagChipValues(heardTagsOf(d)) };
   // "Detected between" is one more of them — it keeps the passes of the period
   // — and only there when a day is set.
   const facetDetected = detectedRangeFacet(detectedFrom, detectedTo);
@@ -352,11 +360,13 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     const card = cardId ? user.cards[cardId] : undefined;
     if (!card) return [];
     let out = tagsOfCardId.get(card.id);
-    if (!out) { out = tuneTagsOn ? tagsWithTunes(card, user.cards) : card.tags ?? []; tagsOfCardId.set(card.id, out); }
+    // With the groups above each tag, as the library reads them (tagGroups.ts).
+    if (!out) { out = tagChipValues(tuneTagsOn ? tagsWithTunes(card, user.cards) : card.tags ?? []); tagsOfCardId.set(card.id, out); }
     return out;
   };
   const liveCardTags = liveCard.cardTags;
   const cardTagItems = [...new Set([...[...linkedCards].flatMap(cardTagValues), ...liveCardTags.keys()])].sort();
+  const coveredCardTags = coveredByTagGroups(cardTagItems, [...liveCardTags].filter(([, s]) => s === 'include').map(([k]) => k));
   // Not a partition, as in the library: a lone tag still splits the list,
   // unless every row carries it.
   const hasCardTagMix = liveCardTags.size > 0 || cardTagItems.length > 1
@@ -476,11 +486,12 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     }
     return [...out].sort((a, b) => a.localeCompare(b));
   };
-  // The types first, then the keys — the two kinds of tag read apart, as
-  // they did when they were two sections. A pinned chip always shows.
-  const danceChips = chipsOf(d => d.dance || undefined, new Map());
-  const modeChips = chipsOf(modeOf, new Map());
-  const tagChips = [...new Set([...danceChips, ...modeChips, ...tags.keys()])];
+  // The groups "type" and "key", drawn as a tree (FilterSection's `tree`), with
+  // the groups above each value. A pinned chip always shows.
+  const danceChips = chipsOf(d => d.dance ? typeTag(d.dance) : undefined, new Map());
+  const modeChips = chipsOf(d => { const m = modeOf(d); return m ? keyTag(m) : undefined; }, new Map());
+  const tagChips = tagChipValues([...new Set([...danceChips, ...modeChips, ...tags.keys()])]);
+  const coveredHeardTags = coveredByTagGroups(tagChips, [...tags].filter(([, s]) => s === 'include').map(([k]) => k));
   /** Both kinds are offered only when both exist — as the library shows its
    *  types only when there is a mix. A pinned chip always shows. */
   const kindItems = setsOn ? [KIND_TUNE, KIND_SET].filter(k => kinds.has(k) || (k === KIND_SET ? allSets.rows.length > 0 : all.length > allSets.rows.length)) : [];
@@ -828,9 +839,11 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
           <FilterSection
             labelKey="library.filterTags"
             items={tagChips}
+            tree={tagTree(tagChips)}
+            covered={coveredHeardTags}
             activeMap={tags}
-            labelOf={v => v}
-            titleOf={() => ''}
+            labelOf={tagLabel}
+            titleOf={tagDisplay}
             available={availTags}
             onToggle={(v, back) => onView({ tags: cycleFilter(tags, v, back) })}
             highlight={query}
@@ -870,6 +883,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
             labelKey="library.filterDecks"
             items={deckSection.items}
             folderItems={deckSection.folderItems}
+            tree={deckSection.tree}
             covered={deckSection.covered}
             activeMap={deckSection.live}
             labelOf={deckSection.labelOf}
@@ -885,9 +899,11 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
           <FilterSection
             labelKey="library.filterTags"
             items={cardTagItems}
+            tree={tagTree(cardTagItems)}
+            covered={coveredCardTags}
             activeMap={liveCardTags}
-            labelOf={tag => tag}
-            titleOf={tag => tag}
+            labelOf={tagLabel}
+            titleOf={tagDisplay}
             available={availCardTags}
             onToggle={(tag, back) => onView({ cardTags: cycleFilter(liveCardTags, tag, back) })}
             highlight={query}

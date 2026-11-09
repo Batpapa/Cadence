@@ -35,6 +35,7 @@ import { showDeckPickerPopover } from '../components/deckSelector';
 import type { Card, SessionRating } from '../types';
 import { fmtDate, fieldValueToDate } from '../services/dateFormat';
 import { mountDateField } from '../components/dateField';
+import { TagText } from '../components/tagText';
 
 // ── Local bridges ─────────────────────────────────────────────────────────────
 
@@ -428,7 +429,7 @@ function TagPill({ tag, index, selected, scratch, onSelect, onReorder }: {
       }`}
       onClick={onSelect}
     >
-      {tag}
+      <TagText tag={tag} />
     </button>
   );
 }
