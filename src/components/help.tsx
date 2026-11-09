@@ -110,7 +110,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
         sections: [
           { style: 'definition', heading: t('help.library.what.heading'),   items: [t('help.library.what.1'), t('help.library.what.2'), t('help.library.what.3'), t('help.library.what.4')],
             extension: irish(importLine(t('help.library.what.import'), t('help.library.what.importIti'))) },
-          { style: 'logic',      heading: t('help.library.search.heading'), items: [t('help.library.search.1'), t('help.library.search.2'), t('help.library.search.3'), t('help.library.search.4'), t('help.library.search.5'), t('help.library.search.6'), t('help.library.search.7')],
+          { style: 'logic',      heading: t('help.library.search.heading'), items: [t('help.library.search.1'), t('help.library.search.2'), t('help.library.search.3'), t('help.library.search.4'), t('help.library.search.5'), t('help.library.search.6'), t('help.library.search.7'), t('help.library.search.8')],
             extension: irish(importLine(t('help.library.search.number'), t('help.library.search.numberIti'))) },
           { style: 'logic',      heading: t('help.library.sort.heading'),   items: [t('help.library.sort.1'), t('help.library.sort.2'), t('help.library.sort.3')] },
           { style: 'logic',      heading: t('help.library.select.heading'), items: [t('help.library.select.1'), t('help.library.select.2')], extension: irish(theSessionOffered() && t('help.library.select.3')) },

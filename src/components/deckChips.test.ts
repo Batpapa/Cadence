@@ -46,6 +46,19 @@ describe('deckChipSection', () => {
     expect(deckChipSection(user(), none, id => id === 'c1', false).hasMix).toBe(false);
     expect(deckChipSection(user(), new Map([['r', 'include']]), id => id === 'c1', false).hasMix).toBe(true);
   });
+  it('draws the chips as a tree: folders nested, each deck under its folder, the rest last', () => {
+    const s = deckChipSection(user(), none, id => id === 'c1' || id === 'c2', true);
+    const show = (ns: typeof s.tree): unknown => ns.map(n => n.group ? [n.id, show(n.children)] : n.id);
+    expect(show(s.tree)).toEqual([
+      [folderChipKey('folk'), [[folderChipKey('reels'), ['r']]]],
+      NO_DECK,
+      'j',
+    ]);
+  });
+  it('names a folder by its name alone, the tree saying where it is', () => {
+    const s = deckChipSection(user(), none, () => true, false);
+    expect(s.labelOf(folderChipKey('reels'))).toBe('Reels');
+  });
   it('ignores a chip naming a deck or a folder deleted since', () => {
     const s = deckChipSection(user(), new Map<string, FilterState>([['gone', 'include'], [folderChipKey('gone'), 'exclude'], ['r', 'include']]), () => true, false);
     expect([...s.live.keys()]).toEqual(['r']);

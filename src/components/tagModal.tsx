@@ -4,7 +4,8 @@ import { appState, mutate } from '../store';
 import { showModal, closeModal, renderModalBody, confirmModal } from './modal';
 import { focusIfDesktop, matchesSearch } from '../utils';
 import { t } from '../services/i18nService';
-import { removeTagEverywhere, renameTagEverywhere } from '../services/cardService';
+import { removeTagEverywhere } from '../services/cardService';
+import { dissolveTagNode, isUnderTag, renameTagNode, tagDisplay, tagNodeExists, tagNodeHasChildren } from '../services/tagGroups';
 import { iconElement, TrashIcon } from './icons';
 
 /** Every tag the library has ever been given, sorted — the suggestion pool
@@ -228,11 +229,13 @@ function LibraryTagBody({ tag, draft, noop, onSubmit }: {
   const clean = value.trim().replace(/,/g, '');
   const cards = Object.values(appState.value.cards);
   // The cards' OWN tags, which are all the rename touches — not the library
-  // filter's view, where a set also answers to its tunes' tags.
-  const carrying = cards.filter(c => (c.tags ?? []).includes(tag)).length;
+  // filter's view, where a set also answers to its tunes' tags. A group counts
+  // every card carrying something under it, since the rename moves all of it.
+  const carrying = cards.filter(c => (c.tags ?? []).some(tg => isUnderTag(tg, tag))).length;
   // Case-sensitive, like every other tag comparison: "jig" → "Jig" is a plain
-  // rename, unless a "Jig" already exists.
-  const merging  = clean !== '' && clean !== tag && cards.some(c => (c.tags ?? []).includes(clean));
+  // rename, unless a "Jig" already exists. A group merges with a group (or a
+  // tag) of the new name.
+  const merging  = clean !== '' && clean !== tag && tagNodeExists(cards, clean);
 
   // From the input event, not an effect — see CardTagBody's `set`.
   const set = (v: string) => {
@@ -250,7 +253,7 @@ function LibraryTagBody({ tag, draft, noop, onSubmit }: {
       // Choosing the tag itself would mean "no change".
       exclude={[tag]}
       readout={t(carrying === 1 ? 'library.tags.rename.cards' : 'library.tags.rename.cardsPlural', { n: carrying })}
-      note={merging ? t('library.tags.rename.merge', { tag: clean }) : null}
+      note={merging ? t('library.tags.rename.merge', { tag: tagDisplay(clean) }) : null}
       onSubmit={onSubmit}
     />
   );
@@ -260,11 +263,13 @@ function LibraryTagBody({ tag, draft, noop, onSubmit }: {
  *  tag filter. Same field as the card page's rename, but the opposite answer to
  *  a name that already exists: there it would collapse two of one card's tags
  *  and is refused, here it is what cleaning up imported cards IS ("Em" into an
- *  existing "Eminor"), so it merges and says so under the field. See
- *  `renameTagEverywhere` for what a merge does to each card.
+ *  existing "Eminor"), so it merges and says so under the field. A group
+ *  (2026-11-09) is renamed with everything under it — see renameTagNode — and
+ *  typing a path ("key::A::minor") moves a tag into a group.
  *
  *  Starts on the current name rather than empty: fixing a tag is usually a
- *  small edit of it. `onDone` gets the new name, so the filter can follow it. */
+ *  small edit of it. `onDone` gets the new name, so the filter can follow it;
+ *  `onRemoved`, once the tag or group is gone, so its chips can go too. */
 export function showRenameTagEverywhereModal(
   tag: string,
   onDone?: (to: string) => void,
@@ -272,23 +277,38 @@ export function showRenameTagEverywhereModal(
 ): void {
   const noop  = signal(true);
   const draft = { tag: '' };
+  const cards = () => Object.values(appState.value.cards);
+  const isGroup = tagNodeHasChildren(cards(), tag);
+  const shown = tagDisplay(tag);
 
   const commit = () => {
     const to = draft.tag;
     if (!to) return;
     closeModal();
-    void mutate(s => { renameTagEverywhere(s, tag, to); }).then(() => onDone?.(to));
+    cleanup();
+    void mutate(s => { renameTagNode(s, tag, to); }).then(() => onDone?.(to));
   };
 
-  // Removing the tag from every card (2026-11-09): irreversible, so asked
-  // again with the count — the cards themselves stay, which the question says.
+  // A plain tag can be removed from every card (2026-11-09); a group is
+  // dissolved instead — its content moves up a level and nothing is lost, as
+  // decided for groups ("no deleting with the content"). Both irreversible, so
+  // asked again with the count; the cards themselves stay, which both say.
   const remove = () => {
-    const n = Object.values(appState.value.cards).filter(c => (c.tags ?? []).includes(tag)).length;
+    const n = cards().filter(c => (c.tags ?? []).some(tg => isGroup ? isUnderTag(tg, tag) : tg === tag)).length;
     closeModal();
     cleanup();
+    if (isGroup) {
+      confirmModal(
+        t('library.tags.dissolve.title', { tag: shown }),
+        t(n === 1 ? 'library.tags.dissolve.message' : 'library.tags.dissolve.messagePlural', { tag: shown, n }),
+        t('library.tags.dissolve.confirm'),
+        () => { void mutate(s => { dissolveTagNode(s, tag); }).then(() => onRemoved?.()); },
+      );
+      return;
+    }
     confirmModal(
-      t('library.tags.remove.title', { tag }),
-      t(n === 1 ? 'library.tags.remove.message' : 'library.tags.remove.messagePlural', { tag, n }),
+      t('library.tags.remove.title', { tag: shown }),
+      t(n === 1 ? 'library.tags.remove.message' : 'library.tags.remove.messagePlural', { tag: shown, n }),
       t('library.tags.remove.confirm'),
       () => { void mutate(s => { removeTagEverywhere(s, tag); }).then(() => onRemoved?.()); },
     );
@@ -298,10 +318,12 @@ export function showRenameTagEverywhereModal(
     <LibraryTagBody tag={tag} draft={draft} noop={noop} onSubmit={commit} />,
   );
   showModal(
-    t('library.tags.rename.title', { tag }),
+    t(isGroup ? 'library.tags.renameGroup.title' : 'library.tags.rename.title', { tag: shown }),
     el,
     [
-      { label: t('library.tags.remove.button'), icon: iconElement(TrashIcon), danger: true, align: 'start', onClick: remove },
+      isGroup
+        ? { label: t('library.tags.dissolve.button'), danger: true, align: 'start', onClick: remove }
+        : { label: t('library.tags.remove.button'), icon: iconElement(TrashIcon), danger: true, align: 'start', onClick: remove },
       { label: t('common.save'), primary: true, disabled: noop, onClick: commit },
     ],
     { maxWidth: '28rem', onDismiss: cleanup },

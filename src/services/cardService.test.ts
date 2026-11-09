@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { removeCards, removeTagEverywhere, renameTagEverywhere } from './cardService';
+import { removeCards, removeTagEverywhere } from './cardService';
 import { orphanedCardsAfterDeckRemoval } from './deckService';
 import { emptyState } from '../utils';
 import type { AppState } from '../types';
@@ -190,42 +190,6 @@ describe('orphanedCardsAfterDeckRemoval', () => {
     addDeck(s, 'd1', ['a']);
 
     expect(orphanedCardsAfterDeckRemoval(['d1'], s)).toEqual(['a']);
-  });
-});
-
-describe('renameTagEverywhere', () => {
-  function tagged(...cards: [string, string[]][]): AppState {
-    const s = stateWith(P1);
-    for (const [id, tags] of cards) { addCard(s, id); s.cards[id]!.tags = [...tags]; }
-    return s;
-  }
-
-  it('renames in place on every card carrying the tag, and leaves the others alone', () => {
-    const s = tagged(['a', ['jig', 'Em', 'TheSession']], ['b', ['Em']], ['c', ['reel']]);
-    expect(renameTagEverywhere(s, 'Em', 'Eminor')).toBe(2);
-    expect(s.cards['a']!.tags).toEqual(['jig', 'Eminor', 'TheSession']);
-    expect(s.cards['b']!.tags).toEqual(['Eminor']);
-    expect(s.cards['c']!.tags).toEqual(['reel']);
-  });
-
-  it('merges into an existing tag without ever doubling it, keeping its slot', () => {
-    const s = tagged(['a', ['Eminor', 'jig', 'Em']], ['b', ['Em', 'reel']]);
-    renameTagEverywhere(s, 'Em', 'Eminor');
-    expect(s.cards['a']!.tags).toEqual(['Eminor', 'jig']);
-    expect(s.cards['b']!.tags).toEqual(['Eminor', 'reel']);
-  });
-
-  it('takes a change of case as a rename', () => {
-    const s = tagged(['a', ['jig']]);
-    renameTagEverywhere(s, 'jig', 'Jig');
-    expect(s.cards['a']!.tags).toEqual(['Jig']);
-  });
-
-  it('does nothing for an empty or unchanged name', () => {
-    const s = tagged(['a', ['jig']]);
-    expect(renameTagEverywhere(s, 'jig', '')).toBe(0);
-    expect(renameTagEverywhere(s, 'jig', 'jig')).toBe(0);
-    expect(s.cards['a']!.tags).toEqual(['jig']);
   });
 });
 
