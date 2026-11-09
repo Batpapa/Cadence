@@ -43,7 +43,7 @@ async function db(): Promise<IDBPDatabase> {
 export async function stageAnalyses(items: ReadonlyArray<Staged>): Promise<void> {
   // A copy of the bytes, not the Blob read from the analyser's own database:
   // WebKit can store a blob that came out of IndexedDB wrongly when it goes
-  // back in (audio/webmSliceRepair.ts). Made BEFORE the transaction opens: one
+  // back in (2026-10-18, a slice stored without its offset). Made BEFORE the transaction opens: one
   // that waits on anything but its own requests (arrayBuffer here) is closed
   // by the browser — "The transaction has finished" (2026-10-26).
   const copies: Staged[] = await Promise.all(items.map(async item => ({
