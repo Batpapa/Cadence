@@ -1,6 +1,7 @@
 import type { AppState, Card, CardRef } from '../types';
 import { resolveCardRef } from './cardRefService';
 import { isTuneset } from './cardTypeService';
+import { stripSourceTag } from './cardSourceService';
 
 /** How a set's tunes are strung together into its name. The session
  *  convention, and deliberately not TheSession's own comma — an imported set
@@ -54,6 +55,13 @@ function cardRefsOf(card: Card): CardRef[] {
  *     better, and the historical name is never what you want. */
 export function normaliseState(state: AppState): void {
   const cards = state.cards ?? {};
+
+  // Not derived, but the same need for a choke point: the tag naming a card's
+  // source, which its externalId carries alone since 2026-11-09. Here rather
+  // than in a schema migration, because an older build still writes the tag
+  // on import and refresh, and its cards arrive by Drive long after any
+  // one-off migration has run (cardSourceService.ts).
+  for (const card of Object.values(cards)) stripSourceTag(card);
 
   // Two passes, in this order, and it provably terminates without iterating to
   // a fixpoint: a set's name is built from TUNE names, which are never

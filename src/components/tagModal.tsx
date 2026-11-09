@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import { appState, mutate } from '../store';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, confirmModal } from './modal';
 import { focusIfDesktop, matchesSearch } from '../utils';
 import { t } from '../services/i18nService';
-import { renameTagEverywhere } from '../services/cardService';
+import { removeTagEverywhere, renameTagEverywhere } from '../services/cardService';
+import { iconElement, TrashIcon } from './icons';
 
 /** Every tag the library has ever been given, sorted — the suggestion pool
  *  behind each of these fields. */
@@ -264,7 +265,11 @@ function LibraryTagBody({ tag, draft, noop, onSubmit }: {
  *
  *  Starts on the current name rather than empty: fixing a tag is usually a
  *  small edit of it. `onDone` gets the new name, so the filter can follow it. */
-export function showRenameTagEverywhereModal(tag: string, onDone?: (to: string) => void): void {
+export function showRenameTagEverywhereModal(
+  tag: string,
+  onDone?: (to: string) => void,
+  onRemoved?: () => void,
+): void {
   const noop  = signal(true);
   const draft = { tag: '' };
 
@@ -275,13 +280,30 @@ export function showRenameTagEverywhereModal(tag: string, onDone?: (to: string) 
     void mutate(s => { renameTagEverywhere(s, tag, to); }).then(() => onDone?.(to));
   };
 
+  // Removing the tag from every card (2026-11-09): irreversible, so asked
+  // again with the count — the cards themselves stay, which the question says.
+  const remove = () => {
+    const n = Object.values(appState.value.cards).filter(c => (c.tags ?? []).includes(tag)).length;
+    closeModal();
+    cleanup();
+    confirmModal(
+      t('library.tags.remove.title', { tag }),
+      t(n === 1 ? 'library.tags.remove.message' : 'library.tags.remove.messagePlural', { tag, n }),
+      t('library.tags.remove.confirm'),
+      () => { void mutate(s => { removeTagEverywhere(s, tag); }).then(() => onRemoved?.()); },
+    );
+  };
+
   const { el, cleanup } = renderModalBody(
     <LibraryTagBody tag={tag} draft={draft} noop={noop} onSubmit={commit} />,
   );
   showModal(
     t('library.tags.rename.title', { tag }),
     el,
-    [{ label: t('common.save'), primary: true, disabled: noop, onClick: commit }],
+    [
+      { label: t('library.tags.remove.button'), icon: iconElement(TrashIcon), danger: true, align: 'start', onClick: remove },
+      { label: t('common.save'), primary: true, disabled: noop, onClick: commit },
+    ],
     { maxWidth: '28rem', onDismiss: cleanup },
   );
 }

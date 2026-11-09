@@ -266,3 +266,17 @@ describe('normaliseState — automatic set names', () => {
     expect((s.cards['mentions']!.content.attachments[0] as CardReferenceAttachment).title).toBe('Cooley\'s');
   });
 });
+
+describe('normaliseState — source tags', () => {
+  it("drops the tag naming a card's source, which its externalId carries", () => {
+    const s = state(
+      card('ts', { externalId: 'thesession:1', tags: ['TheSession', 'reel'] }),
+      card('iti', { externalId: 'irishtuneinfo:2', tags: ['IrishTuneInfo', 'jig'] }),
+      card('hand', { tags: ['TheSession'] }),
+    );
+    normaliseState(s);
+    expect(s.cards['ts']!.tags).toEqual(['reel']);
+    expect(s.cards['iti']!.tags).toEqual(['jig']);
+    expect(s.cards['hand']!.tags).toEqual(['TheSession']);
+  });
+});

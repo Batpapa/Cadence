@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { removeCards, renameTagEverywhere } from './cardService';
+import { removeCards, removeTagEverywhere, renameTagEverywhere } from './cardService';
 import { orphanedCardsAfterDeckRemoval } from './deckService';
 import { emptyState } from '../utils';
 import type { AppState } from '../types';
@@ -226,5 +226,26 @@ describe('renameTagEverywhere', () => {
     expect(renameTagEverywhere(s, 'jig', '')).toBe(0);
     expect(renameTagEverywhere(s, 'jig', 'jig')).toBe(0);
     expect(s.cards['a']!.tags).toEqual(['jig']);
+  });
+});
+
+describe('removeTagEverywhere', () => {
+  it('removes the tag from every card carrying it, and keeps the cards', () => {
+    const s = stateWith(P1);
+    for (const [id, tags] of [['a', ['jig', 'Em']], ['b', ['Em']], ['c', ['reel']]] as const) {
+      addCard(s, id); s.cards[id]!.tags = [...tags];
+    }
+    expect(removeTagEverywhere(s, 'Em')).toBe(2);
+    expect(s.cards['a']!.tags).toEqual(['jig']);
+    expect(s.cards['b']!.tags).toEqual([]);
+    expect(s.cards['c']!.tags).toEqual(['reel']);
+    expect(Object.keys(s.cards).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('is case-sensitive, like every tag comparison', () => {
+    const s = stateWith(P1);
+    addCard(s, 'a'); s.cards['a']!.tags = ['Jig'];
+    expect(removeTagEverywhere(s, 'jig')).toBe(0);
+    expect(s.cards['a']!.tags).toEqual(['Jig']);
   });
 });

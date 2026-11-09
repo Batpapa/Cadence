@@ -4,6 +4,7 @@ import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } fro
 import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, type AliasMatch } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, iconElement } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
+import { CARD_SOURCES, cardSource, cardSourceLabel } from '../services/cardSourceService';
 import { buildTunesetCard } from '../services/tunesetCard';
 import { showDeckChoiceModal } from '../components/deckSelector';
 import { generateId } from '../utils';
@@ -229,6 +230,10 @@ function showExportModal(cards: Card[], user: AppState): void {
  *  be confused with a real, if unlikely, type value — same reasoning as
  *  NO_DECK (deckChips.ts), and the same shape so the two read alike. */
 const NO_TYPE = '__no_type__';
+/** The "no source" chip: a card made by hand, or from a source this build does
+ *  not know (cardSource). Same shape as NO_TYPE. Stored in routes: never
+ *  rename it. */
+const NO_SOURCE = '__no_source__';
 const SORT_MODES: LibrarySort[] = ['alpha', 'lastReviewed', 'lastAdded', 'importance', 'recall', 'difficulty'];
 const SORT_ICON: Record<LibrarySort, ComponentType<{ size?: number }>> = {
   alpha: SortAlphaIcon,
@@ -282,6 +287,7 @@ export function LibraryView() {
   const [activeTags,  setActiveTags]  = useState<FilterMap>(() => new Map(savedRoute?.tags ?? []));
   const [activeDecks, setActiveDecks] = useState<FilterMap>(() => new Map(savedRoute?.decks ?? []));
   const [activeTypes, setActiveTypes] = useState<FilterMap>(() => new Map(savedRoute?.types ?? []));
+  const [activeSources, setActiveSources] = useState<FilterMap>(() => new Map(savedRoute?.sources ?? []));
   // `sort` and `sortAsc` are written to the route as a pair, so a route carries
   // both or neither. A history entry (back/forward, or the route restored at
   // boot) therefore replays exactly what was on screen; a fresh navigation here
@@ -320,8 +326,8 @@ export function LibraryView() {
   }, [sortOpen]);
 
   useEffect(() => {
-    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], types: [...activeTypes], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo, cards: onlyCards ?? undefined });
-  }, [searchQuery, activeTags, activeDecks, activeTypes, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo, onlyCards]);
+    replaceRoute({ view: 'library', search: searchQuery, tags: [...activeTags], decks: [...activeDecks], types: [...activeTypes], sources: [...activeSources], sort: sortMode, sortAsc, tagOr: tagFilterOr, deckOr: deckFilterOr, reviewedFrom: revFrom, reviewedTo: revTo, cards: onlyCards ?? undefined });
+  }, [searchQuery, activeTags, activeDecks, activeTypes, activeSources, sortMode, sortAsc, tagFilterOr, deckFilterOr, revFrom, revTo, onlyCards]);
 
   // No autofocus on the search field (2026-09-08). Every other focusIfDesktop
   // call in the app is in something the user just opened IN ORDER to type — a
@@ -337,6 +343,16 @@ export function LibraryView() {
   // its label already puts it. "No type" leads, as NO_DECK does below and as
   // "Aucun" does in the card view's own type selector.
   const typeItems  = [NO_TYPE, ...CARD_TYPES];
+  // Sources: this build's list (cardSourceService), "no source" first, read
+  // off the externalId, which replaced the "TheSession" tag (2026-11-09).
+  // Unlike the types, only the ones the cards in play actually have are
+  // offered (the user's call, 2026-11-09), plus a pinned chip, so a filter
+  // never narrows the list from a chip nobody can see.
+  const sourceKeyOf = (c: Card) => cardSource(c) ?? NO_SOURCE;
+  const sourceKnown = (source: string) => source === NO_SOURCE || (CARD_SOURCES as readonly string[]).includes(source);
+  const sourcesInPool = new Set<string>(pool.map(sourceKeyOf));
+  const sourceItems = [NO_SOURCE, ...CARD_SOURCES]
+    .filter(s => sourcesInPool.has(s) || activeSources.has(s));
 
   // What the tag section matches a card on: a set is also found by its tunes'
   // tags, unless that is switched off in Misc. (see tagsWithTunes). Every tag
@@ -360,6 +376,7 @@ export function LibraryView() {
   const typeKnown = (type: string) => typeItems.includes(type);
   const liveTags  = knownChips(activeTags, tagKnown);
   const liveTypes = knownChips(activeTypes, typeKnown);
+  const liveSources = knownChips(activeSources, sourceKnown);
 
   const allTags    = [...new Set([...pool.flatMap(filterTagsOf), ...liveTags.keys()])].sort();
   const hasOrphans = pool.some(c => decksContainingCard(c.id, user).length === 0);
@@ -390,6 +407,8 @@ export function LibraryView() {
     || (allTags.length === 1 && pool.some(c => !filterTagsOf(c).includes(allTags[0]!)));
   const hasTypeMix = liveTypes.size > 0
     || new Set(pool.map(c => knownCardType(c) ?? NO_TYPE)).size > 1;
+  // Sources are a partition too, "no source" included.
+  const hasSourceMix = liveSources.size > 0 || sourcesInPool.size > 1;
   // The rule above stops at the chip sections. The review dates stay whatever
   // the library holds: with no review anywhere they still answer two different
   // questions — everything, or the empty set that proves nothing was revised in
@@ -401,11 +420,12 @@ export function LibraryView() {
    *  toggles filter nothing on their own; the search and the "N cards" limit
    *  each have their own cross. The clear empties the pinned maps whole, so a
    *  chip of a deck deleted since does not ride along in the route. */
-  const filterCount = liveDecks.size + liveTypes.size + liveTags.size
+  const filterCount = liveDecks.size + liveTypes.size + liveSources.size + liveTags.size
     + (revFrom !== '' || revTo !== '' ? 1 : 0);
   const filters = useFiltersPanel(filterCount, () => {
     setActiveDecks(new Map());
     setActiveTypes(new Map());
+    setActiveSources(new Map());
     setActiveTags(new Map());
     setRevFrom('');
     setRevTo('');
@@ -462,9 +482,18 @@ export function LibraryView() {
       (inclTypes.length === 0 || inclTypes.includes(typeKey)) && !exclTypes.includes(typeKey)
     );
 
+    // "Any of", like the types and for the same reason: one source per card.
+    const sourceKey     = sourceKeyOf(c);
+    const sourceEntries = [...liveSources];
+    const inclSources   = sourceEntries.filter(([, fs]) => fs === 'include').map(([id]) => id);
+    const exclSources   = sourceEntries.filter(([, fs]) => fs === 'exclude').map(([id]) => id);
+    const matchSources  = liveSources.size === 0 || (
+      (inclSources.length === 0 || inclSources.includes(sourceKey)) && !exclSources.includes(sourceKey)
+    );
+
     const matchReviewed = hasReviewInRange(user.cardWorks[`${user.currentProfileId}:${c.id}`]?.history, revRange);
 
-    return matchText && matchTags && matchDecks && matchTypes && matchReviewed;
+    return matchText && matchTags && matchDecks && matchTypes && matchSources && matchReviewed;
   });
   let filtered: Card[];
   // Ties resolve alphabetically. The tie-break lives inside the comparator, so
@@ -508,6 +537,7 @@ export function LibraryView() {
   const availTags  = new Set(filtered.flatMap(filterTagsOf));
   const availDecks = new Set(filtered.flatMap(c => deckSection.valuesOf(c.id)));
   const availTypes = new Set(filtered.map(c => knownCardType(c) ?? NO_TYPE));
+  const availSources = new Set(filtered.map(sourceKeyOf));
 
   // ── Toggle handlers ───────────────────────────────────────────────────────────
   // Cycled from the known chips, so the first click after a deletion also drops
@@ -515,8 +545,15 @@ export function LibraryView() {
   const toggleTag  = (tag: string, back?: boolean) => setActiveTags(prev  => cycleFilter(knownChips(prev, tagKnown), tag, back));
   const toggleDeck = (id: string,  back?: boolean) => setActiveDecks(prev => cycleFilter(knownChips(prev, deckKnown), id, back));
   const toggleType = (id: string,  back?: boolean) => setActiveTypes(prev => cycleFilter(knownChips(prev, typeKnown), id, back));
+  const toggleSource = (id: string, back?: boolean) => setActiveSources(prev => cycleFilter(knownChips(prev, sourceKnown), id, back));
   // A chip pinned on the old name follows the rename instead of vanishing.
-  const renameTag  = (tag: string) => showRenameTagEverywhereModal(tag, to => setActiveTags(prev => renameChip(prev, tag, to)));
+  const renameTag  = (tag: string) => showRenameTagEverywhereModal(
+    tag,
+    to => setActiveTags(prev => renameChip(prev, tag, to)),
+    // A deleted tag's chip goes with it, rather than lying in the route until
+    // a tag of that name comes back and finds itself filtered.
+    () => setActiveTags(prev => { const next = new Map(prev); next.delete(tag); return next; }),
+  );
 
   // ── Selection toolbar data ────────────────────────────────────────────────────
   const selectedArr   = [...selected];
@@ -913,6 +950,18 @@ export function LibraryView() {
             titleOf={id => t(cardTypeLabelKey(id === NO_TYPE ? undefined : id))}
             available={availTypes}
             onToggle={toggleType}
+          />
+        )}
+        {/* No `onToggleOr` either: one source per card. */}
+        {hasSourceMix && (
+          <FilterSection
+            labelKey="library.filterSources"
+            items={sourceItems}
+            activeMap={liveSources}
+            labelOf={id => id === NO_SOURCE ? t('library.filterNoSource') : cardSourceLabel(id)}
+            titleOf={id => id === NO_SOURCE ? t('library.filterNoSource') : cardSourceLabel(id)}
+            available={availSources}
+            onToggle={toggleSource}
           />
         )}
         {hasTagMix && (

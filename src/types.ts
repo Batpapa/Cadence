@@ -496,7 +496,7 @@ export type Route =
   // tab is the first), and the library does not know or say where it came from.
   // It is state like the filters, kept in the route, so coming back from a card
   // lands on the same limited list; it goes when the user removes it.
-  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; types?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean; reviewedFrom?: string; reviewedTo?: string; cards?: string[] }
+  | { view: 'library'; search?: string; tags?: [string, FilterState][]; decks?: [string, FilterState][]; types?: [string, FilterState][]; sources?: [string, FilterState][]; sort?: LibrarySort; sortAsc?: boolean; tagOr?: boolean; deckOr?: boolean; reviewedFrom?: string; reviewedTo?: string; cards?: string[] }
   | { view: 'deck'; deckId: string }
   | { view: 'card'; cardId: string; contextDeckId?: string }
   // `skippedCardIds` is the cards set aside by a skip in the round under way.
