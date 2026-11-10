@@ -36,6 +36,21 @@ export function theSessionTuneId(card: Card): string | null {
   return /^\d+$/.test(rest) ? rest : null;
 }
 
+/** The card of a tune id, as `findByExternalId('thesession:' + tuneId)`
+ *  answers it — the first card in `cards` order — from a map built in one pass.
+ *  For a list that names a tune per row: searching every card per row took
+ *  seconds per click over 3000 rows and 1500 cards (bench, 2026-11-10). */
+export function cardsByExternalTuneId(cards: Record<string, Card>): (tuneId: string) => Card | undefined {
+  const byTune = new Map<string, Card>();
+  for (const card of Object.values(cards)) {
+    const ext = card.externalId;
+    if (!ext?.startsWith('thesession:')) continue;
+    const tuneId = ext.slice('thesession:'.length);
+    if (!byTune.has(tuneId)) byTune.set(tuneId, card);
+  }
+  return tuneId => byTune.get(tuneId);
+}
+
 /** Every session that recognised this card's tune, newest session first, each
  *  with its detections in playing order.
  *

@@ -135,6 +135,23 @@ export function setCardFor(tuneIds: readonly string[], cards: Record<string, Car
   });
 }
 
+/** `setCardFor` for many sets at once: each set card's tunes resolved once,
+ *  rather than every card searched again for every set. Same answer — the
+ *  first set card, in `cards` order, made of exactly these tunes. The list of
+ *  every set heard asked `setCardFor` per row, and 2000 rows over 1500 cards
+ *  took seconds per click (bench, 2026-11-10). */
+export function setCardIndex(cards: Record<string, Card>): (tuneIds: readonly string[]) => Card | undefined {
+  const byTunes = new Map<string, Card>();
+  for (const card of Object.values(cards)) {
+    if (!isTuneset(card)) continue;
+    const ids = setTuneIds(card, cards);
+    if (!ids) continue;
+    const key = JSON.stringify(ids);
+    if (!byTunes.has(key)) byTunes.set(key, card);
+  }
+  return tuneIds => byTunes.get(JSON.stringify(tuneIds));
+}
+
 // ── Where a set card was heard ───────────────────────────────────────────────
 
 export interface SetHearing {

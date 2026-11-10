@@ -25,10 +25,10 @@ import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesC
 import { showExportDetectionsModal } from './ExportDetectionsModal';
 import type { DetectedTuneLine } from '../../services/analysisExport';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey } from '../../services/cardTypeService';
-import { setDetectionOn } from '../detections';
+import { setDetectionOn, cardsByExternalTuneId } from '../detections';
 import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
-import { recordOf, setCardFor, cardsByTuneId, chainSpan } from '../tunesets';
+import { recordOf, setCardFor, setCardIndex, cardsByTuneId, chainSpan } from '../tunesets';
 import { buildTunesetCard } from '../../services/tunesetCard';
 import { TunesetDeckButton, prepareSetClip, fileSetClip, isSetClipAttached } from './tunesetShared';
 import { SetHearingRow } from './DetectedIn';
@@ -57,18 +57,6 @@ const SORT_ICON: Record<TuneSort, ComponentType<{ size?: number }>> = {
   lastHeard: ClockIcon,
   count: WeightedBarsIcon,
 };
-
-/** The card each detected tune already has, if any — built once per render
- *  rather than searched per row: a lookup per tune over every card is the kind
- *  of quadratic that only shows up on the machine of whoever has most of both. */
-function cardIdByTuneId(): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const card of Object.values(getContext().user.cards)) {
-    const ext = card.externalId;
-    if (ext?.startsWith('thesession:')) out.set(ext.slice('thesession:'.length), card.id);
-  }
-  return out;
-}
 
 /** Everything about this list that survives leaving the screen. Held by the
  *  parent and mirrored into the route, so that coming back from a detection
@@ -180,6 +168,16 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   filtersShown: boolean;
 }) {
   const ctx = getContext();
+  // The cards each row is looked up in — a tune's, a set's, and the tunes'
+  // cards a set's + needs — built once per render rather than searched per
+  // row: a lookup per row over every card is the kind of quadratic that only
+  // shows up on the machine of whoever has most of both. It did: a tester
+  // with 7000 detections waited seconds per click; the bench (3400 rows, 1500
+  // cards) measured 4 s for opening a tune, ticking a row, typing a letter
+  // (2026-11-10).
+  const cardOf = cardsByExternalTuneId(ctx.user.cards);
+  const setCardOf = setCardIndex(ctx.user.cards);
+  const tuneCards = cardsByTuneId(ctx.user.cards);
   const { sort: sortMode, sortAsc, analyses: pinnedAnalyses, analysesOr, others, othersOr, tags, tagsOr, kinds, detectedFrom, detectedTo, decksOr, cardTagsOr } = view;
   /** Set detection (an option of the module, on by default): off, this panel
    *  lists tunes only, exactly as before sets existed. */
@@ -318,7 +316,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   /** A set's card: the one made of exactly its tunes, in order. */
   const setCardOfKey = (key: string) => {
     const ids = tuneIdsOfSetKey(key);
-    return ids ? setCardFor(ids, ctx.user.cards) : undefined;
+    return ids ? setCardOf(ids) : undefined;
   };
   /** The set whose + was tapped while it could not create — the reason shows
    *  under its row, and only then (as in an analysis). */
@@ -341,15 +339,16 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     }
   };
 
-  const cards = cardIdByTuneId();
   /** The kind chips: a row answers to `tune` or to `tuneset`. */
   const kindOk = (isSet: boolean) => (!isSet || setsOn) && passesChips([isSet ? KIND_SET : KIND_TUNE], kinds);
   // Every tune and set whatever the chips say — what a selection acts on, and
   // how the empty screen tells "nothing detected yet" from "nothing matches".
-  const allSets = setsOn ? rankDetectedSets(sessions, [], likedOf) : noSets;
+  // With no chip pinned in the pass sections, the sets heard are all of them:
+  // a section with no chip lets every chain through (passesChipsAll).
+  const allSets = !setsOn ? noSets : facets.every(f => f.chips.size === 0) ? heardSets : rankDetectedSets(sessions, [], likedOf);
   const all = [...rankDetectedTunes(sessions), ...allSets.rows];
   /** The card a row stands for: the tune's, or the set's. */
-  const cardIdOfRow = (key: string) => (tuneIdsOfSetKey(key) ? setCardOfKey(key)?.id : cards.get(key));
+  const cardIdOfRow = (key: string) => (tuneIdsOfSetKey(key) ? setCardOfKey(key)?.id : cardOf(key)?.id);
 
   // ── The card filters (2026-11-05) ── Decks and card tags, read off the CARD
   // of each row, so they filter rows as "Other" does, never passes: the counts
@@ -430,16 +429,18 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     // The name is resolved before filtering, not just for display: someone
     // typing "Cooley" is typing the name they see, which may be their own card's.
     const tunes = kindOk(false)
-      ? rankDetectedTunes(from).map(row => ({ row, name: tuneName(row).text, cardId: cards.get(row.tuneId), members: null as string[] | null }))
+      ? rankDetectedTunes(from).map(row => ({ row, name: tuneName(row, cardOf).text, cardId: cardOf(row.tuneId)?.id, members: null as string[] | null }))
       : [];
-    const setsHeard = kindOk(true) ? rankDetectedSets(sessions, facetsUsed, likedOf) : null;
+    // The sets of the list on screen are `heardSets`, already grouped: only
+    // another choice of sections (availOf) has to group them again.
+    const setsHeard = !kindOk(true) ? null : facetsUsed === facets ? heardSets : rankDetectedSets(sessions, facetsUsed, likedOf);
     const sets = setsHeard
       ? setsHeard.rows.map(row => {
         const chain = setsHeard.occurrences.get(row.tuneId)![0]!.chain;
-        const setCard = setCardFor(chain.map(d => d.tuneId), ctx.user.cards);
+        const setCard = setCardOf(chain.map(d => d.tuneId));
         return {
           row,
-          name: setCard?.name ?? chain.map(d => tuneName(d).text).join(TUNESET_NAME_SEPARATOR),
+          name: setCard?.name ?? chain.map(d => tuneName(d, cardOf).text).join(TUNESET_NAME_SEPARATOR),
           cardId: setCard?.id,
           members: chain.map(d => d.tuneId),
         };
@@ -520,7 +521,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   const availKinds = new Set(kindItems);
   /** A set's name as everywhere else: its card's, else its tunes' joined. */
   const setNameOf = (key: string): string => setCardOfKey(key)?.name
-    ?? (allSets.occurrences.get(key)?.[0]?.chain.map(d => tuneName(d).text).join(TUNESET_NAME_SEPARATOR) ?? key);
+    ?? (allSets.occurrences.get(key)?.[0]?.chain.map(d => tuneName(d, cardOf).text).join(TUNESET_NAME_SEPARATOR) ?? key);
 
   const hasSelection = selected.size > 0;
   if (masterRef.current) masterRef.current.indeterminate = hasSelection && selected.size < rows.length;
@@ -557,7 +558,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   // from `all` rather than `rows` for exactly that reason.
   const selectedRows = all
     .filter(row => selected.has(row.tuneId))
-    .map(row => ({ row, name: tuneIdsOfSetKey(row.tuneId) ? setNameOf(row.tuneId) : tuneName(row).text }));
+    .map(row => ({ row, name: tuneIdsOfSetKey(row.tuneId) ? setNameOf(row.tuneId) : tuneName(row, cardOf).text }));
   /** The cards behind the selection — a tune with no card has nothing to show
    *  in the library, so it simply does not travel. */
   const selectedCardIds = selectedRows
@@ -1142,9 +1143,10 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                       ctx={ctx}
                       onChanged={() => { setExplain(null); refresh(); }}
                       onExplain={(missing) => setExplain(e => (e?.key === row.tuneId ? null : { key: row.tuneId, missing: missing ?? [] }))}
+                      byTune={tuneCards}
                     />
                   ) : (
-                    <TuneDeckButton tuneId={row.tuneId} ctx={ctx} onCardAdded={refresh} />
+                    <TuneDeckButton tuneId={row.tuneId} ctx={ctx} onCardAdded={refresh} cardOf={cardOf} />
                   )}
 
                   {/* One line, truncated — a library row never grows to two,
@@ -1220,7 +1222,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                   <p class="pl-10 pr-3 pb-2 text-[11px] text-dim leading-snug">
                     {t('sessions.set.needCards', { names: explain.missing.map(id => {
                       const d = allSets.occurrences.get(row.tuneId)?.[0]?.chain.find(x => x.tuneId === id);
-                      return d ? tuneName(d).text : id;
+                      return d ? tuneName(d, cardOf).text : id;
                     }).join(', ') })}
                   </p>
                 )}

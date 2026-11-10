@@ -100,9 +100,12 @@ export function useTuneNames(): void {
 
 /** `text` is what to show; `exact` is true when it came from a card or from
  *  TheSession's index — false while it is still the re-cased guess, which is
- *  worth knowing for anything that would otherwise treat it as authoritative. */
-export function tuneName(d: { tuneId: string; displayName: string }): { text: string; exact: boolean } {
-  const card = findByExternalId(`thesession:${d.tuneId}`, getContext().user.cards);
+ *  worth knowing for anything that would otherwise treat it as authoritative.
+ *
+ *  `cardOf` (see cardsByExternalTuneId): for a caller naming thousands of tunes
+ *  in one render, which would otherwise search every card for each of them. */
+export function tuneName(d: { tuneId: string; displayName: string }, cardOf?: (tuneId: string) => Card | undefined): { text: string; exact: boolean } {
+  const card = cardOf ? cardOf(d.tuneId) : findByExternalId(`thesession:${d.tuneId}`, getContext().user.cards);
   if (card) return { text: card.name, exact: true };
 
   const indexed = cachedTuneName(d.tuneId);
@@ -722,10 +725,12 @@ export interface TuneDeckButtonProps {
    *  deck choice modal. */
   getPinnedDeckIds?: () => Set<string>;
   onCardAdded?: () => void;
+  /** As tuneName's: given by a list drawing one button per row. */
+  cardOf?: (tuneId: string) => Card | undefined;
 }
 
-export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: TuneDeckButtonProps) {
-  const known = findByExternalId(`thesession:${tuneId}`, getContext().user.cards);
+export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded, cardOf }: TuneDeckButtonProps) {
+  const known = cardOf ? cardOf(tuneId) : findByExternalId(`thesession:${tuneId}`, getContext().user.cards);
   const [busy, setBusy] = useState(false);
 
   /** Writes the already-fetched card. Split from the fetch on purpose: the tune
@@ -815,10 +820,11 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded }: T
   // Dimmed, not disabled, once the card is in every deck: there is nothing
   // left to add, but this is also the only place that shows WHERE it already
   // sits, so it stays open for a look.
+  const everyDeck = isInEveryDeck(known.id);
   return (
     <button
-      class={`${round} ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
-      title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
+      class={`${round} ${everyDeck ? 'opacity-40' : ''}`}
+      title={everyDeck ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
       disabled={busy}
       dangerouslySetInnerHTML={{ __html: deckAddIcon }}
       onClick={onLinkClick}

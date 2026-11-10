@@ -238,7 +238,7 @@ export function SetClipControls({ session, setCard, span, audioAvailable, getAud
  *  of cards); until then the + LOOKS disabled but still answers a tap, with
  *  the reason, which a phone has no tooltip to give (the user's rule,
  *  2026-10-19: the reason only on demand). */
-export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDeckIds, onChanged, onExplain }: {
+export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDeckIds, onChanged, onExplain, byTune: givenByTune }: {
   tuneIds: string[];
   setCard: Card | undefined;
   /** Still being decoded: nothing to create from yet. */
@@ -248,6 +248,9 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
   onChanged?: () => void;
   /** Asked to say why the + does nothing — the names of the missing tunes. */
   onExplain: (missing: string[] | null) => void;
+  /** `cardsByTuneId` of the cards, from a list drawing one button per row:
+   *  rebuilt by every button, it cost seconds per click (bench, 2026-11-10). */
+  byTune?: ReadonlyMap<string, Card>;
 }) {
   const [busy, setBusy] = useState(false);
   const round = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
@@ -255,10 +258,11 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
   // The standalone analyser has no library to file a set in (pageMode.ts).
   if (!hasLibrary()) return null;
   if (setCard) {
+    const everyDeck = isInEveryDeck(setCard.id);
     return (
       <button
-        class={`${round} cursor-pointer bg-accent/10 text-accent hover:bg-accent/20 ${isInEveryDeck(setCard.id) ? 'opacity-40' : ''}`}
-        title={isInEveryDeck(setCard.id) ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
+        class={`${round} cursor-pointer bg-accent/10 text-accent hover:bg-accent/20 ${everyDeck ? 'opacity-40' : ''}`}
+        title={everyDeck ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
         disabled={busy}
         dangerouslySetInnerHTML={{ __html: deckAddIcon }}
         onClick={(e) => {
@@ -281,7 +285,7 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
     );
   }
 
-  const byTune = cardsByTuneId(getContext().user.cards);
+  const byTune = givenByTune ?? cardsByTuneId(getContext().user.cards);
   const missing = tuneIds.filter(id => !byTune.has(id));
   const ready = settled && missing.length === 0;
 
