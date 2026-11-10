@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { findCardDetections, theSessionTuneId, detectionsOnCards, sessionsOf } from './detections';
+import { findCardDetections, theSessionTuneId, cardsByExternalTuneId, detectionsOnCards, sessionsOf } from './detections';
+import { findByExternalId } from '../services/theSessionService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection } from './model';
 import type { Card } from '../types';
 
@@ -40,6 +41,21 @@ describe('theSessionTuneId', () => {
     expect(theSessionTuneId(card('irishtuneinfo:42'))).toBeNull();
     expect(theSessionTuneId(card('thesession-set:1-2'))).toBeNull();
     expect(theSessionTuneId(card('thesession:abc'))).toBeNull();
+  });
+});
+
+describe('cardsByExternalTuneId', () => {
+  it('gives findByExternalId\'s answer, the first card of a tune included', () => {
+    const named = (id: string, externalId?: string): Card => ({ ...card(externalId), id });
+    const cards = Object.fromEntries([
+      named('a', 'thesession:1197'), named('b', 'thesession:1197'), named('c', 'thesession:abc'),
+      named('d', 'irishtuneinfo:42'), named('e'),
+    ].map(c => [c.id, c]));
+    const cardOf = cardsByExternalTuneId(cards);
+    for (const tuneId of ['1197', 'abc', '42', '', 'irishtuneinfo:42']) {
+      expect(cardOf(tuneId)?.id).toBe(findByExternalId(`thesession:${tuneId}`, cards)?.id);
+    }
+    expect(cardOf('1197')?.id).toBe('a');
   });
 });
 

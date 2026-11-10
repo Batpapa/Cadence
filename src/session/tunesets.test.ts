@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Card } from '../types';
 import type { Analysis, Detection, TunesetRecord } from './model';
 import {
-  reconcileTunesets, sameTunesets, recordOf, setCardFor, findSetHearings, isSettled, chainSpan,
+  reconcileTunesets, sameTunesets, recordOf, setCardFor, setCardIndex, findSetHearings, isSettled, chainSpan,
 } from './tunesets';
 import { buildTunesetCard } from '../services/tunesetCard';
 import { withChains, chainsOf } from './ui/timelineModel';
@@ -145,6 +145,18 @@ describe('set cards', () => {
     expect(setCardFor(['1', '2'], cards)?.id).toBe('set');
     expect(setCardFor(['2', '1'], cards)).toBeUndefined();
     expect(setCardFor(['1', '2', '3'], cards)).toBeUndefined();
+  });
+
+  it('gives setCardFor\'s answer from an index, the first set card included', () => {
+    const twin = { ...buildTunesetCard([cards.ta!, cards.tb!], { defaultRepeat: 1, attachments: [], newId: () => 'twin' }) };
+    const withTwin: Record<string, Card> = { ...cards, twin };
+    const lone = buildTunesetCard([cards.tc!], { defaultRepeat: 1, attachments: [], newId: () => 'lone' });
+    withTwin.lone = lone;
+    const index = setCardIndex(withTwin);
+    for (const ids of [['1', '2'], ['2', '1'], ['1', '2', '3'], ['3'], [], ['1,2']]) {
+      expect(index(ids)?.id).toBe(setCardFor(ids, withTwin)?.id);
+    }
+    expect(index(['1', '2'])?.id).toBe('set');
   });
 
   it('finds where a set was heard, newest analysis first', () => {
