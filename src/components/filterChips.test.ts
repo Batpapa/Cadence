@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from './filterChips';
+import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders } from './filterChips';
 import type { FilterState } from '../types';
 
 const chips = (...e: [string, FilterState][]) => new Map(e);
@@ -53,17 +53,5 @@ describe('coveredByFolders', () => {
   it('covers nothing for an excluded folder, or for an included chip that is not a folder', () => {
     expect(covered(chips([folderChipKey('hiver'), 'exclude']))).toEqual([]);
     expect(covered(chips(['s3', 'include']))).toEqual([]);
-  });
-});
-
-describe('folderChipLabels', () => {
-  const names: Record<string, string> = { a: 'Mardis', b: 'Mardis', c: 'Été' };
-  const paths: Record<string, string> = { a: 'Hiver / Mardis', b: 'Été / Mardis', c: 'Été' };
-
-  it('uses the name, and the path only where two names collide', () => {
-    const labels = folderChipLabels(['a', 'b', 'c'], id => names[id]!, id => paths[id]!);
-    expect(labels.get('a')).toBe('Hiver / Mardis');
-    expect(labels.get('b')).toBe('Été / Mardis');
-    expect(labels.get('c')).toBe('Été');
   });
 });

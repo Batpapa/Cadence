@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { t } from '../../services/i18nService';
 import { HeartIcon, ChevronDownIcon, CheckIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon, LibraryIcon, TuneSetIcon } from '../../components/icons';
-import { FilterSection, FilterGroup, ReviewedRangeSection, cycleFilter, type FilterMap } from '../../components/filterSection';
+import { FilterSection, FilterGroup, ReviewedRangeSection, cycleFilter, type FilterMap, type FilterTreeNode } from '../../components/filterSection';
 import { deckChipKnown, deckChipSection } from '../../components/deckChips';
 import { decksContainingCard } from '../../services/deckService';
 import { tagsWithTunes, setsMatchTuneTags } from '../../services/cardRefService';
@@ -34,7 +34,7 @@ import { TunesetDeckButton, prepareSetClip, fileSetClip, isSetClipAttached } fro
 import { SetHearingRow } from './DetectedIn';
 import { generateId } from '../../utils';
 import type { AppState, Card } from '../../types';
-import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders, folderChipLabels } from '../../components/filterChips';
+import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders } from '../../components/filterChips';
 import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf, type SessionTree } from '../sessionTree';
 import { mutateWithRule, uploadAttachmentSoon } from '../../services/attachmentStore';
 import { hasLibrary } from '../../services/pageMode';
@@ -204,7 +204,6 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   for (const keys of foldersAboveSession.values()) for (const k of keys) offeredFolders.add(folderIdOfChip(k)!);
   for (const k of activeAnalyses.keys()) { const id = folderIdOfChip(k); if (id !== null) offeredFolders.add(id); }
   const folderIds = [...offeredFolders].sort((a, b) => folderPathOf(tree, a).localeCompare(folderPathOf(tree, b)));
-  const folderLabels = folderChipLabels(folderIds, id => tree.folders[id]?.name ?? id, id => folderPathOf(tree, id));
   const folderItems = folderIds.map(folderChipKey);
   const coveredAnalyses = coveredByFolders(
     [...sessionIds, ...folderItems],
@@ -216,6 +215,29 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     },
     activeAnalyses,
   );
+  // The same chips as a tree (FilterSection's `tree`), drawn as the decks are
+  // (deckChipSection): an analysis under the innermost folder above it, a
+  // folder under its parent; analyses filed nowhere close the section. Every
+  // folder above an analysis is offered, so no chip is left without its
+  // parent. Folders by path, analyses in the order of `sessions`.
+  const analysisTree: FilterTreeNode[] = [];
+  {
+    const nodes = new Map<string, FilterTreeNode>();
+    for (const key of folderItems) nodes.set(key, { id: key, children: [], group: true });
+    for (const s of sessions) nodes.set(s.id, { id: s.id, children: [] });
+    const parentOf = (key: string): string | undefined => {
+      const id = folderIdOfChip(key);
+      const above = id === null
+        ? foldersAboveSession.get(key) ?? []
+        : folderChain(tree, id).slice(0, -1).map(f => folderChipKey(f.id));
+      return above.at(-1);
+    };
+    for (const key of [...folderItems, ...sessions.map(s => s.id)]) {
+      const parent = parentOf(key);
+      const node = nodes.get(key)!;
+      (parent !== undefined && nodes.has(parent) ? nodes.get(parent)!.children : analysisTree).push(node);
+    }
+  }
   const [openTuneId, setOpenTuneId] = useState<string | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -804,11 +826,14 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
           labelKey="sessions.ranking.filterAnalyses"
           items={sessions.map(s => s.id)}
           folderItems={folderItems}
+          tree={analysisTree}
           covered={coveredAnalyses}
           activeMap={activeAnalyses}
+          // A folder by its name alone, as a deck folder: in the tree, where it
+          // sits says which one it is (the path stays in its title).
           labelOf={id => {
             const folderId = folderIdOfChip(id);
-            return folderId !== null ? folderLabels.get(folderId) ?? folderId : sessions.find(s => s.id === id)?.name ?? id;
+            return folderId !== null ? tree.folders[folderId]?.name ?? folderId : sessions.find(s => s.id === id)?.name ?? id;
           }}
           titleOf={id => {
             const folderId = folderIdOfChip(id);

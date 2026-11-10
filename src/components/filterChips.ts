@@ -58,16 +58,3 @@ export function coveredByFolders(
   }
   return out;
 }
-
-/** What each folder chip is called: its name, or its whole path when another
- *  folder offered alongside has the same name — two "Mardis" under two parents
- *  are two different chips, and a phone has no tooltip to tell them apart. */
-export function folderChipLabels(
-  folderIds: readonly string[],
-  nameOf: (id: string) => string,
-  pathOf: (id: string) => string,
-): Map<string, string> {
-  const seen = new Map<string, number>();
-  for (const id of folderIds) seen.set(nameOf(id), (seen.get(nameOf(id)) ?? 0) + 1);
-  return new Map(folderIds.map(id => [id, (seen.get(nameOf(id)) ?? 0) > 1 ? pathOf(id) : nameOf(id)]));
-}
