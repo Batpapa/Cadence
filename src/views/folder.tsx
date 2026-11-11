@@ -259,28 +259,17 @@ function Dashboard({ user }: { user: AppState }) {
 
   return (
     <div class="space-y-5 pb-2">
-      {/* What is due, and the one way to review it */}
+      {/* What is due */}
       <div class="card-block" data-tour="dashboard">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div class="min-w-0">
-            <div class="section-title">{t('dashboard.toReview')}</div>
-            {/* Words rather than a lone 0: on a first day, every card never
-                reviewed, a big zero read as « nothing to do » next to a
-                Study all that has nine cards to show. */}
-            <div class="flex items-baseline flex-wrap gap-x-2 mt-1">
-              {due > 0
-                ? <span class="text-2xl font-mono font-semibold text-primary">{due}</span>
-                : <span class="text-sm font-medium text-primary">{t('dashboard.nothingDue')}</span>}
-              <span class="text-xs text-dim">{dueSub}</span>
-            </div>
-          </div>
-          {cardIds.length > 0 && (
-            <StudyButton
-              opts={{ entries: cardIds.map(cardId => ({ cardId })), title: t('folder.title.home'), defaultContext: null }}
-              label={t('folder.studyAll')}
-              tour="study-all"
-            />
-          )}
+        <div class="section-title">{t('dashboard.toReview')}</div>
+        {/* Words rather than a lone 0: on a first day, every card never
+            reviewed, a big zero read as « nothing to do » next to a
+            Study all that has nine cards to show. */}
+        <div class="flex items-baseline flex-wrap gap-x-2 mt-1">
+          {due > 0
+            ? <span class="text-2xl font-mono font-semibold text-primary">{due}</span>
+            : <span class="text-sm font-medium text-primary">{t('dashboard.nothingDue')}</span>}
+          <span class="text-xs text-dim">{dueSub}</span>
         </div>
       </div>
 
@@ -539,13 +528,15 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               {t('smartEdit.open')}
             </button>
           )}
-          {/* A folder's own; the home's « Study all » is in its dashboard,
-              beside what is due. */}
-          {folderId && folderEntries.length > 0 && (
+          {/* Only the folder view carries the tooltip: its label was shortened
+              to "Study", while the home button keeps the self-explanatory
+              "Study all" and a tooltip there would just repeat the label. */}
+          {folderEntries.length > 0 && (
             <StudyButton
               opts={{ entries: folderEntries, title: folderTitle, defaultContext: null }}
-              label={t('folder.study')}
-              title={t('folder.studyTitle')}
+              label={folderId ? t('folder.study') : t('folder.studyAll')}
+              title={folderId ? t('folder.studyTitle') : undefined}
+              tour="study-all"
               showLabel={roomForLabel}
             />
           )}
