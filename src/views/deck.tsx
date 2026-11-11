@@ -116,9 +116,11 @@ export function DeckView({ deckId }: { deckId: string }) {
         {/* Header */}
         {/* Wraps rather than squeezes: on a narrow phone the split Study
             button left the name three words to a column (2026-11-11), so the
-            actions go under it once the name would fall below 12rem. */}
+            actions go under it only when the name does not fit beside them:
+            the name keeps its own width (flex-auto, basis auto) rather than a
+            floor, which broke a short name onto a line of its own. */}
         <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-          <div class="flex-1 min-w-[12rem]">
+          <div class="flex-auto min-w-0">
             <div class="flex items-center gap-2">
               <IconButton
                 data-tour="deck-star"

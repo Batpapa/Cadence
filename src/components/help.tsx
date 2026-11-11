@@ -97,7 +97,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
         title: t('help.context.home'),
         sections: [
           { style: 'definition', heading: t('help.home.start.heading'),    items: [t('help.home.start.1'), t('help.home.start.2'), t('help.home.start.3')] },
-          { style: 'metrics',    heading: t('help.home.stats.heading'),    items: [t('help.home.stats.1'), t('help.home.stats.2'), t('help.home.stats.3'), t('help.home.stats.4'), t('help.home.stats.5')] },
+          { style: 'metrics',    heading: t('help.home.stats.heading'),    items: [t('help.home.stats.1'), t('help.home.stats.2'), t('help.home.stats.3'), t('help.home.stats.4')] },
           { style: 'logic',      heading: t('help.home.study.heading'),    items: [t('help.home.study.1'), t('help.home.study.2')] },
           { style: 'logic',      heading: t('help.home.organize.heading'), items: [t('help.home.organize.1'), t('help.home.organize.2'), t('help.home.organize.3'), t('help.home.organize.4')] },
           { style: 'logic',      heading: t('help.home.smartEdit.heading'), items: [t('help.home.smartEdit.1'), t('help.home.smartEdit.2'), t('help.home.smartEdit.3')], extension: irish(tuneAnalyserOffered() && t('help.home.smartEdit.analyses')) },
