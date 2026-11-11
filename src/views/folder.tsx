@@ -5,7 +5,7 @@ import { TrashIcon, StarIcon, LibraryIcon, WandIcon, FolderIcon, ChevronDownIcon
 import { IconButton, EmptyState } from '../components/ui';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
-import { StudyButton } from '../components/studyModal';
+import { StudyButton, useRoomForStudyLabel } from '../components/studyModal';
 import { CustomSelect } from '../components/customSelect';
 import { createLongPressHandlers } from '../components/longPress';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, isFolderDescendant, moveFolderToParent } from '../services/deckService';
@@ -367,6 +367,9 @@ export function FolderView({ folderId }: { folderId: string | null }) {
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName,      setEditName]      = useState('');
+  // Study's label in a folder's header, while the name fits beside it.
+  const headerRef    = useRef<HTMLDivElement>(null);
+  const roomForLabel = useRoomForStudyLabel(headerRef, [folder?.name, isEditingName]);
 
   // ── Folder drag state ───────────────────────────────────────────────────────
   const draggedFolderId  = useRef<string | null>(null);
@@ -468,8 +471,9 @@ export function FolderView({ folderId }: { folderId: string | null }) {
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
 
       {/* ── Header ── */}
-      {/* Wraps like the deck's header, for the same split Study button. */}
-      <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+      {/* Laid out like the deck's header: the actions stay top right, Study's
+          label goes first when the row runs short, then the name wraps. */}
+      <div ref={headerRef} class={`flex ${folder ? 'items-start' : 'items-center'} justify-between gap-4`}>
         <div class="flex-auto min-w-0">
           {folder ? (
             isEditingName ? (
@@ -522,12 +526,12 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             </div>
           )}
         </div>
-        <div class="flex gap-2 shrink-0 ml-auto">
+        <div class="flex gap-2 shrink-0">
           {/* Home only: smart edit works on the whole library, not on the
               folder it would be opened from. Loaded on demand. */}
           {!folderId && (
             <button
-              class="btn-outline px-3 inline-flex items-center gap-1.5"
+              class="btn-outline px-3 inline-flex items-center gap-1.5 whitespace-nowrap"
               title={t('smartEdit.openTitle')}
               onClick={() => { void import('../components/smartEdit').then(m => m.showSmartEdit()); }}
             >
@@ -542,6 +546,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               opts={{ entries: folderEntries, title: folderTitle, defaultContext: null }}
               label={t('folder.study')}
               title={t('folder.studyTitle')}
+              showLabel={roomForLabel}
             />
           )}
           {folder && (

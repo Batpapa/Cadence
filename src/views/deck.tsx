@@ -10,7 +10,7 @@ import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckTo
 import { removeCards } from '../services/cardService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import { StudyButton } from '../components/studyModal';
+import { StudyButton, useRoomForStudyLabel } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 
 
@@ -32,6 +32,9 @@ export function DeckView({ deckId }: { deckId: string }) {
   // Inline name editing
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName]           = useState('');
+  // Study's label in the header, while the name fits beside it on one line.
+  const headerRef    = useRef<HTMLDivElement>(null);
+  const roomForLabel = useRoomForStudyLabel(headerRef, [deck?.name, isEditingName]);
 
   // Inline deck importance editing
   const [editingImportanceId, setEditingImportanceId] = useState<string | null>(null);
@@ -114,12 +117,10 @@ export function DeckView({ deckId }: { deckId: string }) {
       <div class="px-6 pt-6 pb-4 space-y-6">
 
         {/* Header */}
-        {/* Wraps rather than squeezes: on a narrow phone the split Study
-            button left the name three words to a column (2026-11-11), so the
-            actions go under it only when the name does not fit beside them:
-            the name keeps its own width (flex-auto, basis auto) rather than a
-            floor, which broke a short name onto a line of its own. */}
-        <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        {/* The actions stay top right, always (the author, 2026-11-11). When
+            the row runs short, Study's label goes first, then the name wraps
+            (useRoomForStudyLabel). */}
+        <div ref={headerRef} class="flex items-start justify-between gap-4">
           <div class="flex-auto min-w-0">
             <div class="flex items-center gap-2">
               <IconButton
@@ -179,7 +180,7 @@ export function DeckView({ deckId }: { deckId: string }) {
               />
             </div>
           </div>
-          <div class="flex gap-2 shrink-0 ml-auto">
+          <div class="flex gap-2 shrink-0">
             {/* Stays clickable when all cards are mastered: the study modal
                 hosts the "exclude mastered" toggle that unlocks that case,
                 and one press opens it when nothing would come up. */}
@@ -188,6 +189,7 @@ export function DeckView({ deckId }: { deckId: string }) {
               label={t('deck.study')}
               title={t('deck.studyTitle')}
               disabled={noCards}
+              showLabel={roomForLabel}
             />
             <IconButton
               variant="danger"

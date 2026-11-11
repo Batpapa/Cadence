@@ -1,5 +1,5 @@
-import type { ComponentType } from 'preact';
-import { useState } from 'preact/hooks';
+import type { ComponentType, RefObject } from 'preact';
+import { useState, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { CustomSelect } from './customSelect';
 import { pickRandom, pickOptimal, pickStochastic, pickSequential } from '../services/deckService';
@@ -118,7 +118,7 @@ function studyNow(opts: StudyModalOpts): void {
 /** The app's one Study button: the green action starts at once (studyNow),
  *  the narrow part beside it — the remembered strategy's glyph and a chevron —
  *  opens the dialog to change the context, the weighting or the strategy. */
-export function StudyButton({ opts, label, title, tour, disabled }: {
+export function StudyButton({ opts, label, title, tour, disabled, showLabel = true }: {
   opts: StudyModalOpts;
   label: string;
   title?: string;
@@ -126,6 +126,10 @@ export function StudyButton({ opts, label, title, tour, disabled }: {
    *  `study-open-options`. */
   tour?: string;
   disabled?: boolean;
+  /** False: the icon alone. The label is still laid out — out of the flow,
+   *  invisible — for `useRoomForStudyLabel` to measure it; the button then
+   *  carries it as its name. */
+  showLabel?: boolean;
 }) {
   const strategy = rememberedStrategy(appState.value, opts.deckId);
   const ic = STRATEGY_ICONS[strategy];
@@ -134,13 +138,14 @@ export function StudyButton({ opts, label, title, tour, disabled }: {
     <div class="inline-flex shrink-0" data-tour={tour}>
       <button
         type="button"
-        class="btn-study rounded-r-none px-3 text-sm font-medium inline-flex items-center gap-1.5"
+        class="btn-study rounded-r-none px-3 text-sm font-medium inline-flex items-center gap-1.5 relative"
         title={title ? `${title} · ${strategyName}` : strategyName}
+        aria-label={showLabel ? undefined : label}
         disabled={disabled}
         onClick={() => studyNow(opts)}
       >
         <StudyIcon size={16} />
-        {label}
+        <span data-study-label class={showLabel ? 'whitespace-nowrap' : 'absolute invisible pointer-events-none whitespace-nowrap'}>{label}</span>
       </button>
       <button
         type="button"
@@ -156,6 +161,61 @@ export function StudyButton({ opts, label, title, tour, disabled }: {
       </button>
     </div>
   );
+}
+
+/** For a header row laid out [title][actions holding a StudyButton]: whether
+ *  Study's label has room. The actions stay top right whatever happens (the
+ *  author, 2026-11-11); when the row runs short the label goes first, and the
+ *  title wraps only once it has.
+ *
+ *  The rule: the label shows when the title ON ONE LINE, the gap, and the
+ *  actions WITH their label fit the row. Each term is measured the same way
+ *  whichever way the label currently is — the title's text by the sum of its
+ *  line boxes (wrapped or not), the label by its own box, laid out even when
+ *  hidden — so the answer cannot flip itself back and forth. A row that
+ *  measures itself loops otherwise (2026-09: the page froze on a scrollbar).
+ *  Pure CSS was tried first: the shrinking was continuous, the label went
+ *  while the button was still wide and empty, and the actions could be
+ *  squeezed off the row. Units: everything is divided by the row's own
+ *  rendered/layout ratio, so the app's CSS zoom does not mix two pixel
+ *  spaces. While the name is being edited (an input, no h1), the answer stays. */
+export function useRoomForStudyLabel(rowRef: RefObject<HTMLElement>, deps: unknown[]): boolean {
+  const [room, setRoom] = useState(true);
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const decide = () => {
+      const title = row.firstElementChild as HTMLElement | null;
+      const actions = row.lastElementChild as HTMLElement | null;
+      const h1 = title?.querySelector('h1');
+      const label = actions?.querySelector<HTMLElement>('[data-study-label]');
+      if (!title || !actions || !h1 || !label) return;
+      const cs = getComputedStyle(row);
+      const rowW = parseFloat(cs.width);
+      const scale = row.getBoundingClientRect().width / rowW || 1;
+      const range = document.createRange();
+      range.selectNodeContents(h1);
+      const lines = Array.from(range.getClientRects());
+      // A wrapped title loses the space at each break: one is added back per
+      // break, rounded up (0.35em), so an error hides the label a little
+      // early rather than letting the title wrap beside it.
+      const text = lines.reduce((s, r) => s + r.width, 0)
+        + Math.max(0, lines.length - 1) * 0.35 * parseFloat(getComputedStyle(h1).fontSize) * scale;
+      const titleW = (h1.getBoundingClientRect().left - title.getBoundingClientRect().left + text) / scale;
+      const btn = label.parentElement!;
+      const shown = !label.classList.contains('absolute');
+      const labelW = label.getBoundingClientRect().width / scale + parseFloat(getComputedStyle(btn).columnGap || '0');
+      const actionsFull = actions.getBoundingClientRect().width / scale + (shown ? 0 : labelW);
+      setRoom(titleW + (parseFloat(cs.columnGap) || 0) + actionsFull <= rowW + 0.5);
+    };
+    decide();
+    const ro = new ResizeObserver(decide);
+    ro.observe(row);
+    // The webfont may land after the first measure, widening the text.
+    void document.fonts?.ready.then(decide);
+    return () => ro.disconnect();
+  }, deps);
+  return room;
 }
 
 function StudyModalBody({ entries, title, defaultContext = null, deckId }: StudyModalOpts) {
