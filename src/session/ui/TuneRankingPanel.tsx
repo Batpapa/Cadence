@@ -4,7 +4,7 @@ import { t } from '../../services/i18nService';
 import { HeartIcon, ChevronDownIcon, CheckIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon, LibraryIcon, TuneSetIcon } from '../../components/icons';
 import { FilterSection, FilterGroup, ReviewedRangeSection, cycleFilter, type FilterMap, type FilterTreeNode } from '../../components/filterSection';
 import { deckChipKnown, deckChipSection } from '../../components/deckChips';
-import { decksContainingCard } from '../../services/deckService';
+import { deckIdsByCard } from '../../services/deckService';
 import { tagsWithTunes, setsMatchTuneTags } from '../../services/cardRefService';
 import { createLongPressHandlers } from '../../components/longPress';
 import { useContextMenu } from '../../components/contextMenu';
@@ -38,6 +38,7 @@ import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders } from '../
 import { sessionTreeOf, folderChain, parentFolderOf, folderPathOf, type SessionTree } from '../sessionTree';
 import { mutateWithRule, uploadAttachmentSoon } from '../../services/attachmentStore';
 import { hasLibrary } from '../../services/pageMode';
+import { offsetToRestore } from '../../components/scrollRestoration';
 import { coveredByTagGroups, keyTag, tagChipValues, tagDisplay, tagLabel, tagNodeExists, tagTree, typeTag } from '../../services/tagGroups';
 
 // ── Screen: what this scene plays ────────────────────────────────────────────
@@ -52,6 +53,8 @@ import { coveredByTagGroups, keyTag, tagChipValues, tagDisplay, tagLabel, tagNod
 // attach. A tune found from this side has to be actionable from this side.
 
 const SORT_MODES: TuneSort[] = ['alpha', 'lastHeard', 'count'];
+/** Rows drawn per page (see `drawn`): about ten screens of closed rows. */
+const ROWS_PAGE = 150;
 const SORT_ICON: Record<TuneSort, ComponentType<{ size?: number }>> = {
   alpha: SortAlphaIcon,
   lastHeard: ClockIcon,
@@ -358,14 +361,10 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   const liveCard = liveCardChips(view, user);
   const allCardIds = all.map(r => cardIdOfRow(r.tuneId));
   const linkedCards = new Set(allCardIds.filter((id): id is string => !!id));
-  const decksOfCard = new Map<string, string[]>();
-  const decksOf = (cardId: string | undefined): string[] => {
-    if (!cardId) return [];
-    let out = decksOfCard.get(cardId);
-    if (!out) { out = decksContainingCard(cardId, user); decksOfCard.set(cardId, out); }
-    return out;
-  };
-  const deckSection = deckChipSection(user, liveCard.decks, id => linkedCards.has(id), allCardIds.some(id => decksOf(id).length === 0));
+  // One pass over the decks, not every deck searched per card (deckIdsByCard).
+  // A row without a card is in no deck.
+  const decksByCard = deckIdsByCard(user);
+  const deckSection = deckChipSection(user, liveCard.decks, id => linkedCards.has(id), allCardIds.some(id => !id || !decksByCard.has(id)));
   const deckValuesOf = new Map<string, string[]>();
   const deckValues = (cardId: string | undefined): string[] => {
     const key = cardId ?? '';
@@ -454,6 +453,55 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
 
   const shown = listFrom(heard, facets);
   const rows = sortTuneRows(shown, sortMode, sortAsc);
+
+  // ── Drawn a page at a time (2026-11-11) ── A tester with 7000 detections
+  // had 3400 rows here, and every gesture — opening a tune, ticking one,
+  // typing a letter — re-drew all of them: about half of a second per click
+  // on the bench. Only the first pages are drawn, the next as the reader
+  // nears the end. Everything that acts on the LIST still reads `rows`, all
+  // of it: the count, "select all", a Shift range, the export.
+  //
+  // Nothing is kept from one render to the next but a number of rows, so a
+  // sync, another tab or an edit is drawn as it lands.
+  const [drawn, setDrawn] = useState(ROWS_PAGE);
+  const listRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // Back to the first page when the list itself changes — a filter, the
+  // order, the search — never when a row is ticked or opened, which re-render
+  // the same list. `view` changes only through onView.
+  const firstListRun = useRef(true);
+  useEffect(() => {
+    if (firstListRun.current) { firstListRun.current = false; return; }
+    setDrawn(ROWS_PAGE);
+  }, [view, query]);
+  // Coming back to an offset (from a card, an analysis): draw enough rows at
+  // once for the page to be that tall, or the restoration would wait for a
+  // height that only scrolling brings, then settle at the bottom of page one.
+  // Counted with the shortest row drawn, measured here so the zoom is in it:
+  // a row only grows when opened, so this never draws too few.
+  useEffect(() => {
+    const target = offsetToRestore();
+    const list = listRef.current;
+    if (target <= 0 || !list) return;
+    const heights = Array.from(list.children, c => (c as HTMLElement).offsetHeight).filter(h => h > 0);
+    if (heights.length === 0) return;
+    const needed = Math.ceil((target + window.innerHeight) / Math.min(...heights)) + ROWS_PAGE;
+    setDrawn(d => Math.max(d, needed));
+  }, []);
+  // The next page once the end is in sight. Observed against the view's own
+  // scroller, which is what scrolls: against the window, the margin would not
+  // reach past the scroller's edge. Re-armed after each page, so a screen
+  // that still shows the end asks again instead of waiting for a scroll.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || drawn >= rows.length) return;
+    const observer = new IntersectionObserver(
+      entries => { if (entries.some(e => e.isIntersecting)) setDrawn(d => d + ROWS_PAGE); },
+      { root: el.closest('.overflow-y-auto'), rootMargin: '0px 0px 1200px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [drawn, rows.length]);
 
   // ── Which chips could still do something ──
   // Derived from what is ON SCREEN, not from the whole corpus: a chip that
@@ -1069,8 +1117,9 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
           {all.length === 0 ? t('sessions.ranking.empty') : t('sessions.ranking.noMatch')}
         </p>
       ) : (
-        <div class="space-y-1">
-          {rows.map(({ row, name, cardId, members }) => {
+        <>
+        <div class="space-y-1" ref={listRef}>
+          {rows.slice(0, drawn).map(({ row, name, cardId, members }) => {
             const isSel = selected.has(row.tuneId);
             const isOpen = openTuneId === row.tuneId;
             return (
@@ -1270,6 +1319,8 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
             );
           })}
         </div>
+        {drawn < rows.length && <div ref={sentinelRef} class="h-4" aria-hidden="true" />}
+        </>
       )}
     </div>
   );

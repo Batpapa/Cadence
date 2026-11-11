@@ -127,7 +127,15 @@ function subscribeToStateEpoch(): number {
  *  on arrival (centring a linked row) must leave it to the restoration then,
  *  or it undoes it. */
 export function returningToOffset(): boolean {
-  return recallScroll(navEntry.peek()) > 0;
+  return offsetToRestore() > 0;
+}
+
+/** The offset the entry on screen is about to be restored to, 0 for a fresh
+ *  arrival. For a view that draws its list a page at a time: it has to draw
+ *  enough at once to be that tall, or `restoreTo` would wait for a height that
+ *  only scrolling can bring, and settle at the bottom of the first page. */
+export function offsetToRestore(): number {
+  return recallScroll(navEntry.peek());
 }
 
 let started = false;

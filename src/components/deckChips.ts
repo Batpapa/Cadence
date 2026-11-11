@@ -1,6 +1,6 @@
 import type { AppState, FilterState } from '../types';
 import { t } from '../services/i18nService';
-import { decksContainingCard, deckPath, folderPath, findParentFolder, folderChainIds } from '../services/deckService';
+import { deckIdsByCard, deckPath, folderPath, findParentFolder, folderChainIds } from '../services/deckService';
 import { folderChipKey, folderIdOfChip, knownChips, coveredByFolders } from './filterChips';
 import type { FilterTreeNode } from './filterSection';
 
@@ -107,6 +107,12 @@ export function deckChipSection(
     (parent !== undefined && nodes.has(parent) ? nodes.get(parent)!.children : tree).push(node);
   }
 
+  // Each card's decks, read once for the whole section rather than every deck
+  // searched per card: `valuesOf` is asked of every row, twice (bench,
+  // 2026-11-10: half of a library render). Built from `user` on each call, so
+  // nothing outlives the state it was read from.
+  const decksOfCard = deckIdsByCard(user);
+
   return {
     live,
     items,
@@ -126,7 +132,7 @@ export function deckChipSection(
       return folderId !== null ? folderPath(folderId, user) : deckPath(id, user);
     },
     valuesOf: cardId => {
-      const decks = cardId ? decksContainingCard(cardId, user) : [];
+      const decks = cardId ? decksOfCard.get(cardId) ?? [] : [];
       if (decks.length === 0) return [NO_DECK];
       const out = new Set<string>();
       for (const d of decks) {
