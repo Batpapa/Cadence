@@ -269,7 +269,7 @@ const SYNC_TITLE: Record<DriveStatus, string> = {
 
 function SyncBtn({ status, icon }: { status: DriveStatus; icon: number }) {
   const cls =
-    status === 'pending'   ? 'text-warn cursor-pointer' :
+    status === 'pending'   ? 'text-gold cursor-pointer' :
     status === 'syncing'   ? 'text-accent animate-pulse cursor-default' :
     status === 'connected' ? 'text-success cursor-default' :
                              'text-danger cursor-pointer';

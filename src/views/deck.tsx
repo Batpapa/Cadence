@@ -2,7 +2,7 @@ import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { CardSearchField } from '../components/cardSearchField';
-import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, StudyIcon, ChevronDownIcon } from '../components/icons';
+import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, ChevronDownIcon } from '../components/icons';
 import { IconButton, Metric, EmptyState } from '../components/ui';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
@@ -10,7 +10,7 @@ import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckTo
 import { removeCards } from '../services/cardService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import { showStudyModal } from '../components/studyModal';
+import { StudyButton } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 
 
@@ -114,12 +114,15 @@ export function DeckView({ deckId }: { deckId: string }) {
       <div class="px-6 pt-6 pb-4 space-y-6">
 
         {/* Header */}
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex-1 min-w-0">
+        {/* Wraps rather than squeezes: on a narrow phone the split Study
+            button left the name three words to a column (2026-11-11), so the
+            actions go under it once the name would fall below 12rem. */}
+        <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+          <div class="flex-1 min-w-[12rem]">
             <div class="flex items-center gap-2">
               <IconButton
                 data-tour="deck-star"
-                class={`-ml-1.5 ${deck.favorite ? 'text-warn hover:text-warn' : 'hover:text-warn'}`}
+                class={`-ml-1.5 ${deck.favorite ? 'text-gold hover:text-gold' : 'hover:text-gold'}`}
                 label={deck.favorite ? t('deck.unfavorite') : t('deck.favorite')}
                 aria-pressed={!!deck.favorite}
                 onClick={() => mutate(s => { const d = s.decks[deckId]; if (d) d.favorite = !d.favorite; })}
@@ -174,19 +177,16 @@ export function DeckView({ deckId }: { deckId: string }) {
               />
             </div>
           </div>
-          <div class="flex gap-2 shrink-0">
+          <div class="flex gap-2 shrink-0 ml-auto">
             {/* Stays clickable when all cards are mastered: the study modal
-                hosts the "exclude mastered" toggle that unlocks that case. */}
-            <button
-              type="button"
-              class="btn-study px-3 text-sm font-medium inline-flex items-center gap-1.5"
+                hosts the "exclude mastered" toggle that unlocks that case,
+                and one press opens it when nothing would come up. */}
+            <StudyButton
+              opts={{ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId }}
+              label={t('deck.study')}
               title={t('deck.studyTitle')}
               disabled={noCards}
-              onClick={() => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId })}
-            >
-              <StudyIcon size={16} />
-              {t('deck.study')}
-            </button>
+            />
             <IconButton
               variant="danger"
               label={t('deck.deleteTitle')}

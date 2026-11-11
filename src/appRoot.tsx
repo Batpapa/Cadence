@@ -1,6 +1,6 @@
 import { render, type ComponentChildren } from 'preact';
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks';
-import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate } from './store';
+import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate, navEntry } from './store';
 import type { AppContext } from './types';
 import { isMobileDevice } from './utils';
 import { Sidebar } from './components/sidebar';
@@ -35,6 +35,14 @@ const SIDEBAR_DEFAULT       = 224;
 const SIDEBAR_MIN           = 120;
 const SIDEBAR_MAX           = 400;
 
+/** Whether the side panel is put away in the wide layout: as last left, else
+ *  away on a touch device. */
+function wideSidebarCollapsed(): boolean {
+  const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+  if (stored !== null) return stored === 'true';
+  return isMobileDevice();
+}
+
 // Routes to the appropriate Preact component.
 // key= on stateful views forces a remount when the ID changes (resets local
 // state) — and, via stateEpoch, when a Drive apply replaces the whole state
@@ -65,12 +73,25 @@ function AppRoot() {
     const n = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '', 10);
     return isNaN(n) ? SIDEBAR_DEFAULT : Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, n));
   });
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    if (stored !== null) return stored === 'true';
-    return isMobileDevice();
-  });
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 768);
+  // The stored state is the WIDE layout's only (2026-11-11). Where the panel
+  // slides over the page it is a drawer: it opens put away, and an open
+  // drawer is never remembered — it used to be, so a phone reopened on a
+  // covered page after any visit that had left it open.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => isNarrow || wideSidebarCollapsed());
+
+  // A drawer is put away by the navigation it was opened for: picking a deck
+  // in it used to leave it over the deck just opened, one more tap to close.
+  // Setting, not toggling: the walkthrough's own close after a row
+  // (scenarios.ts, act.click on the backdrop) stays harmless. On a new
+  // history entry only (navEntry: navigate, back/forward), not on every route
+  // write: a rewrite of the same visit can come from background work —
+  // Trending's load ends in replaceRoute — and would shut the drawer under
+  // the finger that just opened it.
+  const entry = navEntry.value;
+  useEffect(() => {
+    if (isNarrow) setSidebarCollapsed(true);
+  }, [entry]);
 
   // Hides the static legal footer of index.html while a user is open: its
   // links are in Settings → About here (see styles.css).
@@ -85,6 +106,8 @@ function AppRoot() {
       const el = wrapperRef.current;
       if (el) el.style.transition = 'none';
       setIsNarrow(e.matches);
+      // Into a drawer: put away. Back to the wide layout: as it was left there.
+      setSidebarCollapsed(e.matches || wideSidebarCollapsed());
       requestAnimationFrame(() => requestAnimationFrame(() => {
         if (el) el.style.removeProperty('transition');
       }));
@@ -106,7 +129,7 @@ function AppRoot() {
   const toggleSidebar = () => {
     setSidebarCollapsed(c => {
       const next = !c;
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      if (!isNarrow) localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
       return next;
     });
   };

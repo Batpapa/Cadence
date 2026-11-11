@@ -298,7 +298,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
         {topBar}
         <div class="flex-1 overflow-y-auto p-6">
           <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
-            <div class="text-warn flex"><StarIcon size={32} filled /></div>
+            <div class="text-gold flex"><StarIcon size={32} filled /></div>
             <h2 class="text-xl font-semibold text-success">{t('study.mastered.title')}</h2>
             <button class="btn-primary mt-2" onClick={leave}>{deckId ? t('study.mastered.back') : t('study.leave')}</button>
           </div>

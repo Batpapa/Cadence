@@ -1,16 +1,16 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon, StarIcon, LibraryIcon, WandIcon, StudyIcon, FolderIcon, ChevronDownIcon, PlusIcon } from '../components/icons';
+import { TrashIcon, StarIcon, LibraryIcon, WandIcon, FolderIcon, ChevronDownIcon, PlusIcon } from '../components/icons';
 import { IconButton, Segmented, EmptyState } from '../components/ui';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
-import { showStudyModal } from '../components/studyModal';
+import { StudyButton } from '../components/studyModal';
 import { CustomSelect } from '../components/customSelect';
 import { createLongPressHandlers } from '../components/longPress';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, isFolderDescendant, moveFolderToParent } from '../services/deckService';
 import { removeCards } from '../services/cardService';
-import { deckAvailability, deckEase } from '../services/knowledgeService';
+import { deckAvailability, deckEase, isAvailable } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, CardWork, DeckEntry } from '../types';
 import { fmtDayMonth } from '../services/dateFormat';
@@ -37,7 +37,7 @@ import { fmtDayMonth } from '../services/dateFormat';
  *  that no other screen can show. Cheap, too — a lookup per row.
  *
  *  Timestamps rather than entries: nothing on this screen looks at a rating,
- *  and a flat array is what the three readers below actually want. */
+ *  and a flat array is what the readers below actually want. */
 function profileReviewTimes(works: Record<string, CardWork>, profileId: string, cards: AppState['cards']): number[] {
   const out: number[] = [];
   for (const w of Object.values(works)) {
@@ -45,16 +45,6 @@ function profileReviewTimes(works: Record<string, CardWork>, profileId: string, 
     for (const e of w.history) out.push(e.ts);
   }
   return out;
-}
-
-function studyStreak(times: number[]): number {
-  const days = new Set<string>();
-  for (const ts of times) days.add(new Date(ts).toDateString());
-  let streak = 0;
-  const d = new Date();
-  if (!days.has(d.toDateString())) d.setDate(d.getDate() - 1);
-  while (days.has(d.toDateString())) { streak++; d.setDate(d.getDate() - 1); }
-  return streak;
 }
 
 /** How many CALENDAR days before today `ts` falls, where the user is: 0 for
@@ -223,17 +213,50 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
+/** What is due now, for the current profile: the reviewed cards whose recall
+ *  has fallen under the mastery threshold — the very cards a study with
+ *  « exclude mastered » proposes, less those never reviewed, counted apart:
+ *  on a first day every card is one, and calling them all « to review » would
+ *  only say the library is new. */
+function dueNow(user: AppState): { due: Set<string>; fresh: number } {
+  const due = new Set<string>();
+  let fresh = 0;
+  for (const cardId of Object.keys(user.cards)) {
+    const work = user.cardWorks[`${user.currentProfileId}:${cardId}`];
+    if (!work || work.history.length === 0) fresh++;
+    else if (!isAvailable(user, work)) due.add(cardId);
+  }
+  return { due, fresh };
+}
+
+/** How many decks the home lists by name under what is due; the rest is a count. */
+const DUE_DECKS_SHOWN = 8;
+
 function Dashboard({ user }: { user: AppState }) {
   const [actPeriod, setActPeriod] = useState<ActivityPeriod>('1y');
 
-  const allCards       = Object.values(user.cards);
-  // Read once, for the four figures below and the bars: they are four views of
-  // one set of reviews and must never be able to disagree about which set.
+  const cardIds        = Object.keys(user.cards);
+  // Read once, for the two figures below and the bars: they are views of one
+  // set of reviews and must never be able to disagree about which set.
   const reviewTimes    = profileReviewTimes(user.cardWorks, user.currentProfileId, user.cards);
   const totalReviews   = reviewTimes.length;
   const weekReviews    = reviewsLastNDays(reviewTimes, 7).reduce((a, b) => a + b, 0);
-  const streak         = studyStreak(reviewTimes);
-  const deckCount      = Object.keys(user.decks).length;
+
+  // The home answers « what is there to review? » first (2026-11-11). It
+  // opened on three counters — cards, reviews this week, and a streak with
+  // its « keep it up! », which is the app telling the user what to do: no
+  // streak here any more, nothing to keep up.
+  const { due, fresh } = dueNow(user);
+  const dueDecks = Object.values(user.decks)
+    .map(deck => ({ deck, n: deck.entries.filter(e => due.has(e.cardId)).length }))
+    .filter(d => d.n > 0)
+    .sort((a, b) => b.n - a.n || a.deck.name.localeCompare(b.deck.name));
+  // « of N cards » belongs to a count: after « Nothing due right now » it
+  // would read as part of the sentence.
+  const freshPart = fresh > 0 ? t(fresh !== 1 ? 'dashboard.neverReviewedPlural' : 'dashboard.neverReviewed', { count: fresh }) : null;
+  const dueSub = cardIds.length === 0 ? t('library.empty')
+    : due.size === 0 ? (freshPart ? `· ${freshPart}` : '')
+    : [t(cardIds.length !== 1 ? 'dashboard.ofCardsPlural' : 'dashboard.ofCards', { count: cardIds.length }), ...(freshPart ? [freshPart] : [])].join(' · ');
 
   const PERIOD_LABELS: Record<ActivityPeriod, string> = {
     '7d': t('dashboard.period.7d'), '30d': t('dashboard.period.30d'), '1y': t('dashboard.period.1y'),
@@ -241,25 +264,57 @@ function Dashboard({ user }: { user: AppState }) {
 
   return (
     <div class="space-y-5 pb-2">
-      {/* Stats */}
-      <div class="grid grid-cols-3 gap-3" data-tour="dashboard">
-        {[
-          { label: t('dashboard.cards'),    value: String(allCards.length),  sub: t(deckCount !== 1 ? 'dashboard.decks' : 'dashboard.deck', { count: deckCount }) },
-          { label: t('dashboard.thisWeek'), value: String(weekReviews),      sub: t('dashboard.totalReviews', { count: totalReviews }) },
-          { label: t('dashboard.streak'),   value: t('common.durationDays', { n: streak }), sub: streak > 0 ? t('dashboard.streakKeep') : t('dashboard.streakStart') },
-        ].map(({ label, value, sub }) => (
-          <div key={label} class="card-block space-y-0.5">
-            <div class="text-2xl font-mono font-semibold text-primary">{value}</div>
-            <div class="text-xs text-muted">{label}</div>
-            <div class="text-xs text-dim">{sub}</div>
+      {/* What is due, and the one way to review it */}
+      <div class="card-block space-y-3" data-tour="dashboard">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div class="min-w-0">
+            <div class="section-title">{t('dashboard.toReview')}</div>
+            {/* Words rather than a lone 0: on a first day, every card never
+                reviewed, a big zero read as « nothing to do » next to a
+                Study all that has nine cards to show. */}
+            <div class="flex items-baseline flex-wrap gap-x-2 mt-1">
+              {due.size > 0
+                ? <span class="text-2xl font-mono font-semibold text-primary">{due.size}</span>
+                : <span class="text-sm font-medium text-primary">{t('dashboard.nothingDue')}</span>}
+              <span class="text-xs text-dim">{dueSub}</span>
+            </div>
           </div>
-        ))}
+          {cardIds.length > 0 && (
+            <StudyButton
+              opts={{ entries: cardIds.map(cardId => ({ cardId })), title: t('folder.title.home'), defaultContext: null }}
+              label={t('folder.studyAll')}
+              tour="study-all"
+            />
+          )}
+        </div>
+        {dueDecks.length > 0 && (
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs text-dim">{t('dashboard.decksToReview')}</span>
+            {dueDecks.slice(0, DUE_DECKS_SHOWN).map(({ deck, n }) => (
+              <button
+                key={deck.id}
+                type="button"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-elevated hover:border-accent/50 transition-colors cursor-pointer text-sm text-primary"
+                onClick={() => navigate({ view: 'deck', deckId: deck.id })}
+              >
+                {deck.name}
+                <span class="text-xs font-mono text-dim">{n}</span>
+              </button>
+            ))}
+            {dueDecks.length > DUE_DECKS_SHOWN && (
+              <span class="text-xs text-dim">{t('dashboard.moreDecks', { count: dueDecks.length - DUE_DECKS_SHOWN })}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Activity chart */}
       <div class="card-block space-y-2" data-tour="activity">
-        <div class="flex items-center justify-between">
-          <div class="section-title">{t('dashboard.activity')}</div>
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="section-title">{t('dashboard.activity')}</div>
+            <div class="text-xs text-dim mt-0.5">{t('dashboard.activitySummary', { week: weekReviews, total: totalReviews })}</div>
+          </div>
           <Segmented
             value={actPeriod}
             options={(['7d', '30d', '1y'] as ActivityPeriod[]).map(p => ({ value: p, label: PERIOD_LABELS[p] }))}
@@ -422,8 +477,9 @@ export function FolderView({ folderId }: { folderId: string | null }) {
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
 
       {/* ── Header ── */}
-      <div class="flex items-center justify-between">
-        <div>
+      {/* Wraps like the deck's header, for the same split Study button. */}
+      <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div class="flex-1 min-w-[12rem]">
           {folder ? (
             isEditingName ? (
               <input
@@ -475,7 +531,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
             </div>
           )}
         </div>
-        <div class="flex gap-2 shrink-0">
+        <div class="flex gap-2 shrink-0 ml-auto">
           {/* Home only: smart edit works on the whole library, not on the
               folder it would be opened from. Loaded on demand. */}
           {!folderId && (
@@ -488,19 +544,14 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               {t('smartEdit.open')}
             </button>
           )}
-          {/* Only the folder view carries the tooltip: its label was shortened
-              to "Study", while the home button keeps the self-explanatory
-              "Study all" and a tooltip there would just repeat the label. */}
-          {folderEntries.length > 0 && (
-            <button
-              class="btn-study px-3 text-sm font-medium inline-flex items-center gap-1.5"
-              title={folderId ? t('folder.studyTitle') : undefined}
-              data-tour="study-all"
-              onClick={() => showStudyModal({ entries: folderEntries, title: folderTitle, defaultContext: null })}
-            >
-              <StudyIcon size={16} />
-              {folderId ? t('folder.study') : t('folder.studyAll')}
-            </button>
+          {/* A folder's own; the home's « Study all » is in its dashboard,
+              beside what is due. */}
+          {folderId && folderEntries.length > 0 && (
+            <StudyButton
+              opts={{ entries: folderEntries, title: folderTitle, defaultContext: null }}
+              label={t('folder.study')}
+              title={t('folder.studyTitle')}
+            />
           )}
           {folder && (
             <IconButton
@@ -556,7 +607,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-elevated hover:border-accent/50 transition-colors cursor-pointer text-sm text-primary"
                   onClick={() => navigate({ view: 'deck', deckId: deck.id })}
                 >
-                  <span class="text-warn flex items-center"><StarIcon size={12} filled /></span>
+                  <span class="text-gold flex items-center"><StarIcon size={12} filled /></span>
                   {deck.name}
                 </button>
               ))}

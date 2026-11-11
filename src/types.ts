@@ -274,6 +274,10 @@ export interface User {
    *  the mastery threshold were 100% — study flow only, deck metrics keep the
    *  real threshold. */
   excludeMastered?: boolean;
+  /** The strategy last picked in the study dialog, which the Study button's
+   *  one press starts with (studyModal.tsx, `rememberedStrategy`, the single
+   *  reader). Absent = optimal. */
+  studyStrategy?: StudyStrategy;
   forgettingRate: number; // λ: scales S → S/λ for scheduling; 1 = FSRS default, >1 = faster forgetting
 
   // Score playback — how ABC sounds, wherever a score is opened. Global rather
