@@ -53,9 +53,10 @@ export function StandaloneShell({ lang, onLanguageChange, onBack, notice, scroll
               page. Only when there is something to install. */}
           {install && (
             // The icon alone on a phone: beside the mark and the three
-            // settings, the label would not fit.
+            // settings, the label would not fit. The icon is one text-xs line
+            // tall (16 px), so the button keeps its height without the label.
             <button type="button" class="btn-ghost text-xs inline-flex items-center gap-1.5 text-accent" title={tIn(lang, 'settings.install')} aria-label={tIn(lang, 'settings.install')} onClick={install}>
-              <InstallIcon size={14} /><span class="hidden sm:inline">{tIn(lang, 'settings.install')}</span>
+              <span class="h-4 flex items-center shrink-0"><InstallIcon size={14} /></span><span class="hidden sm:inline">{tIn(lang, 'settings.install')}</span>
             </button>
           )}
           {/* The welcome screen's own: language, theme, zoom — device
