@@ -3,8 +3,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { t } from '../services/i18nService';
 import { modalMaxW, modalMaxH } from '../services/zoomService';
-import { showModal, closeModal, renderModalBody } from './modal';
-import { PinIcon } from './icons';
+import { showModal, closeModal, renderModalBody, MODAL_W, MODAL_BACKDROP, MODAL_TITLE_CLASS } from './modal';
+import { PinIcon, PlusIcon, CrossIcon } from './icons';
+import { IconButton } from './ui';
 import { appState, mutate } from '../store';
 import { generateId } from '../utils';
 import { registerOverlay } from './overlayStack';
@@ -169,10 +170,11 @@ export function NewDeckField({ onCreated }: { onCreated: (deckId: string, name: 
     />
   ) : (
     <button
-      class="flex items-center gap-2 text-sm text-dim hover:text-accent transition-colors cursor-pointer"
+      type="button"
+      class="flex items-center gap-2 min-h-8 text-sm text-dim hover:text-accent transition-colors cursor-pointer"
       onClick={() => setAddingNew(true)}
     >
-      <span class="text-base leading-none">+</span><span>{t('newCard.newDeck')}</span>
+      <PlusIcon size={14} /><span>{t('newCard.newDeck')}</span>
     </button>
   );
 }
@@ -245,11 +247,14 @@ export function showDeckChoiceModal(opts: DeckChoiceOptions): void {
   // nowhere"), and when the card is already in every deck it is the ONLY answer
   // left — greying the button out there would trap the user in a dialog they
   // opened to look at something.
+  const dismiss = () => { cleanup(); opts.onDismiss?.(); };
   showModal(t('newCard.selectDecks'), el, [
     // `closeModal` pops the stack without running `onDismiss`, so the body's
     // Preact tree has to be unmounted here too — otherwise confirming leaks it.
+    // Cancel is a dismissal like the ✕: the whole operation goes with it.
+    { label: t('common.cancel'), onClick: () => { closeModal(); dismiss(); } },
     { label: t('deckChoice.confirm'), primary: true, onClick: () => { closeModal(); cleanup(); opts.onConfirm(draft.chosen); } },
-  ], { maxWidth: '22rem', onDismiss: () => { cleanup(); opts.onDismiss?.(); } });
+  ], { maxWidth: MODAL_W.s, onDismiss: dismiss });
 }
 
 // ── Deck membership popover ──────────────────────────────────────────────────
@@ -303,17 +308,19 @@ function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onCh
 
   return (
     <div
-      class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
+      class={`fixed inset-0 z-50 flex items-center justify-center ${MODAL_BACKDROP}`}
       onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) closePicker(); }}
     >
       <div
         class="bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 flex flex-col overflow-hidden"
-        style={{ maxWidth: `min(360px, ${modalMaxW(0.9)})`, maxHeight: modalMaxH(0.65) }}
+        style={{ maxWidth: `min(${MODAL_W.s}, ${modalMaxW(0.9)})`, maxHeight: modalMaxH(0.65) }}
       >
-        <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-          <span class="text-sm font-semibold text-primary">{t('newCard.selectDecks')}</span>
-          <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={closePicker}>✕</button>
+        {/* The modal shell's header, drawn here because this is not one of
+            its dialogs (it applies every click at once, with no footer). */}
+        <div class="flex items-center justify-between pl-4 pr-2 py-2 border-b border-border shrink-0">
+          <span class={MODAL_TITLE_CLASS}>{t('newCard.selectDecks')}</span>
+          <IconButton label={t('common.close')} onClick={closePicker}><CrossIcon size={16} /></IconButton>
         </div>
 
         <div class="overflow-y-auto flex-1 py-2">
@@ -349,4 +356,4 @@ export function DeckPickerHost() {
 /** icons.tsx's DeckAddIcon as an SVG string — the "already a card, manage its
  *  decks" affordance (a chain until 2026-10-20). */
 export const deckAddIcon =
-  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/><line x1="12" y1="4.6" x2="12" y2="9.4"/><line x1="9" y1="7" x2="15" y2="7"/></svg>';
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/><line x1="12" y1="4.6" x2="12" y2="9.4"/><line x1="9" y1="7" x2="15" y2="7"/></svg>';

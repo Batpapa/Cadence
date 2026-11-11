@@ -5,6 +5,7 @@ import { t } from '../services/i18nService';
 import { ChevronDownIcon, FilterClearIcon, FilterIcon, FolderIcon, PencilIcon, VennAndIcon, VennOrIcon } from './icons';
 import { matchesSearch } from '../utils';
 import { DateField } from './dateField';
+import { IconButton } from './ui';
 
 /** A chip of a section drawn as a tree (`tree`): a tag group and its tags
  *  (tagGroups.ts), a deck folder and its decks (deckChips.ts). */
@@ -95,7 +96,7 @@ export function FilterSection({ labelKey, items, folderItems = [], tree, covered
           onClick={() => onRename(id)}
           onContextMenu={(e) => { e.preventDefault(); onRename(id); }}
         >
-          {isFolder && <span class="flex items-center shrink-0"><FolderIcon size={10} /></span>}
+          {isFolder && <span class="flex items-center shrink-0"><FolderIcon size={12} /></span>}
           {labelOf(id)}
         </button>
       );
@@ -117,7 +118,7 @@ export function FilterSection({ labelKey, items, folderItems = [], tree, covered
           isCovered           ? 'border-accent/50 text-primary hoverable:border-accent hoverable:text-accent cursor-pointer' :
           isAvail             ? 'border-border text-muted hoverable:border-accent hoverable:text-accent cursor-pointer' :
           orMode              ? 'border-border text-muted opacity-50 hoverable:border-accent hoverable:text-accent cursor-pointer' :
-                                'border-border text-muted opacity-30 cursor-not-allowed'
+                                'border-border text-muted opacity-40 cursor-not-allowed'
         }`}
         title={titleOf(id)}
         onClick={() => onToggle(id)}
@@ -126,7 +127,7 @@ export function FilterSection({ labelKey, items, folderItems = [], tree, covered
         // buttons never fire this anyway.
         onContextMenu={(e) => { e.preventDefault(); onToggle(id, true); }}
       >
-        {isFolder && <span class="flex items-center shrink-0"><FolderIcon size={10} /></span>}
+        {isFolder && <span class="flex items-center shrink-0"><FolderIcon size={12} /></span>}
         {label}
       </button>
     );
@@ -168,33 +169,34 @@ export function FilterSection({ labelKey, items, folderItems = [], tree, covered
           onClick={() => { if (open) setRenaming(false); setOpen(o => !o); }}
         >
           <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
-            <ChevronDownIcon size={10} />
+            <ChevronDownIcon size={12} />
           </span>
           <span>{t(labelKey)}</span>
         </button>
+        {/* 32 px targets with a negative margin, so the heading line keeps
+            the height of its text and the sections stay as tight as before. */}
         {showOrToggle && (
-          <button
-            class="ml-1 flex items-center p-0.5 rounded text-muted hover:text-primary transition-colors"
-            title={orMode ? t('library.filter.or') : t('library.filter.and')}
+          <IconButton
+            class="ml-1 -my-1.5"
+            label={orMode ? t('library.filter.or') : t('library.filter.and')}
             onClick={() => onToggleOr()}
           >
-            {orMode ? <VennOrIcon size={15} /> : <VennAndIcon size={15} />}
-          </button>
+            {orMode ? <VennOrIcon size={16} /> : <VennAndIcon size={16} />}
+          </IconButton>
         )}
         {/* Only on an open section: the pencil acts on chips, so it shows
-            with them (user's call, 2026-11-01). `hoverable:`, because it has
-            a pressed state a stuck hover would fake. */}
+            with them (user's call, 2026-11-01). Its pressed state is the
+            accent tint, which a hover never puts on. */}
         {open && onRename && (
-          <button
-            class={`ml-1 flex items-center p-1 rounded transition-colors cursor-pointer ${
-              renaming ? 'text-accent bg-accent/10' : 'text-muted hoverable:text-primary'
-            }`}
-            title={t('library.tags.rename.mode')}
+          <IconButton
+            class="ml-1 -my-1.5"
+            on={renaming}
+            label={t('library.tags.rename.mode')}
             aria-pressed={renaming}
             onClick={() => setRenaming(r => !r)}
           >
             <PencilIcon size={12} />
-          </button>
+          </IconButton>
         )}
         {open && renaming && onRename && (
           <span class="ml-1.5 text-xs text-accent">{t('library.tags.rename.hint')}</span>
@@ -232,7 +234,7 @@ export function FilterGroup({ labelKey, active, children }: {
         onClick={() => setOpen(o => !o)}
       >
         <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
-          <ChevronDownIcon size={10} />
+          <ChevronDownIcon size={12} />
         </span>
         <span class={active ? 'text-accent' : ''}>{t(labelKey)}</span>
       </button>
@@ -287,7 +289,7 @@ export function FiltersButton({ shown, count, onPress, tour }: {
   return (
     <button
       type="button"
-      class={`shrink-0 inline-flex items-center gap-1.5 px-2.5 rounded border text-xs transition-colors cursor-pointer ${
+      class={`shrink-0 inline-flex items-center gap-1.5 px-2.5 rounded-md border text-xs transition-colors cursor-pointer ${
         active ? 'bg-accent/10 border-accent text-accent hoverable:bg-accent/20' :
         shown  ? 'border-accent/50 text-primary hoverable:border-accent' :
                  'border-border text-muted hoverable:border-accent hoverable:text-primary'
@@ -334,7 +336,7 @@ export function ReviewedRangeSection({ from, to, onChange, labelKey = 'library.f
           onClick={() => setOpen(o => !o)}
         >
           <span class={`flex items-center shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}>
-            <ChevronDownIcon size={10} />
+            <ChevronDownIcon size={12} />
           </span>
           <span class={active ? 'text-accent' : ''}>{t(labelKey)}</span>
         </button>

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { createPortal } from 'preact/compat';
-import type { ComponentChild, RefObject } from 'preact';
+import type { ComponentChild } from 'preact';
 import type { AppContext, Card } from '../types';
 import { focusIfDesktop, sortByRelevance } from '../utils';
 import { appState } from '../store';
@@ -12,14 +11,15 @@ import {
 import { findByExternalId, fetchTunesByIds as fetchTunesByIdsTheSession, tuneResultToCard } from '../services/theSessionService';
 import { ensureItiMapping } from '../services/itiMappingService';
 import { describeTune, tuneFetchStatus, type SkippedTune } from '../services/tuneFetchError';
-import { showModal, closeModal } from './modal';
+import { showModal, closeModal, MODAL_W } from './modal';
 import { t } from '../services/i18nService';
-import { getZoom } from '../services/zoomService';
 import { CheckIcon } from './icons';
+import { InlineStatus, Segmented, Switch } from './ui';
+import { InputRow, SuggestDropdown, errorLine, successLine } from './importAtoms';
 import { mutateWithRule } from '../services/attachmentStore';
 
-/** Only the newest lookup gets to write — a local copy of theSessionImport's,
- *  by the same convention as the atoms below.
+/** Only the newest lookup gets to write — a local copy of theSessionImport's
+ *  (the field and its list are shared, in importAtoms.tsx; this hook is not).
  *
  *  The previews here are debounced, which keeps the racers down to one in
  *  ordinary typing, but a debounce cannot cancel a request already sent: clear
@@ -33,113 +33,6 @@ function useLatestOnly() {
     begin: () => { const mine = ++seq.current; return () => mine === seq.current; },
     cancel: () => { seq.current++; },
   };
-}
-
-// ── Tab helpers (same look as theSessionImport's — kept as a local copy
-// rather than shared, matching how these two files already don't share code
-// with each other). ───────────────────────────────────────────────────────
-
-function Tab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      class={`px-3 py-1.5 text-xs font-medium rounded transition-colors cursor-pointer ${
-        active ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-elevated'
-      }`}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
-}
-
-/** Input that looks like .input but has an inline right-side info span,
- *  wired to a floating <SuggestDropdown>. */
-function InputRow({ placeholder, value, onInput, info, inputRef, title, onKeyDown, onFocus, onBlur, maxLength, disabled }: {
-  placeholder: string;
-  value: string;
-  onInput: (v: string) => void;
-  info: string;
-  inputRef: RefObject<HTMLInputElement>;
-  title?: string;
-  onKeyDown?: (e: KeyboardEvent) => void;
-  onFocus?: () => void;
-  onBlur?: () => void;
-  maxLength?: number;
-  disabled?: boolean;
-}) {
-  return (
-    <div class="flex-1 relative flex items-center bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent overflow-hidden" title={title}>
-      <input
-        ref={inputRef}
-        type="text"
-        class="flex-1 min-w-0 bg-transparent outline-none text-sm text-primary placeholder:text-dim"
-        placeholder={placeholder}
-        value={value}
-        maxLength={maxLength}
-        disabled={disabled}
-        onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-        onKeyDown={onKeyDown}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        onPaste={(e) => {
-          // Pasting a newline-separated list into a single-line input drops
-          // the newlines on some browsers — normalize to ';' before it hits onInput.
-          const text = e.clipboardData?.getData('text');
-          if (!text || !/[\r\n]/.test(text)) return;
-          e.preventDefault();
-          const el = e.target as HTMLInputElement;
-          const cleaned = text.replace(/[\r\n]+/g, ';');
-          const start = el.selectionStart ?? el.value.length;
-          const end = el.selectionEnd ?? el.value.length;
-          const next = el.value.slice(0, start) + cleaned + el.value.slice(end);
-          onInput(next);
-        }}
-      />
-      <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-dim bg-bg pl-2 pointer-events-none whitespace-nowrap">{info}</span>
-    </div>
-  );
-}
-
-/** Floating suggestion list anchored under an input — position computed at
- *  open-time (and whenever `items` changes), portaled to document.body so it
- *  isn't clipped by the modal's own overflow. Unmounts (and is removed from
- *  the DOM) along with whatever renders it — no manual cleanup needed, unlike
- *  the old vanilla version's MutationObserver-based self-teardown. */
-function SuggestDropdown<T>({ anchorRef, items, renderItem, onPick, open }: {
-  anchorRef: RefObject<HTMLElement>;
-  items: T[];
-  renderItem: (item: T) => ComponentChild;
-  onPick: (item: T) => void;
-  open: boolean;
-}) {
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useEffect(() => {
-    if (!open || !anchorRef.current || items.length === 0) { setPos(null); return; }
-    const z = getZoom() / 100;
-    const rect = anchorRef.current.getBoundingClientRect();
-    setPos({ top: (rect.bottom + 4) / z, left: rect.left / z, width: rect.width / z });
-    // eslint-disable-next-line
-  }, [open, items]);
-
-  if (!open || !pos || items.length === 0) return null;
-
-  return createPortal((
-    <div
-      class="fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-y-auto"
-      style={{ top: `${pos.top}px`, left: `${pos.left}px`, width: `${pos.width}px`, maxHeight: '220px' }}
-    >
-      {items.map((item, i) => (
-        <div
-          key={i}
-          class="flex items-center gap-3 px-3 py-2 hover:bg-bg cursor-pointer"
-          onMouseDown={(e) => { e.preventDefault(); onPick(item); }}
-        >
-          {renderItem(item)}
-        </div>
-      ))}
-    </div>
-  ), document.body);
 }
 
 const fetchingMsg  = () => isServerWarm() ? t('irishTuneInfo.status.fetching')  : t('irishTuneInfo.status.wakingServer');
@@ -214,7 +107,7 @@ function promptUseTheSession(mapped: { name: string }[], totalRequested: number)
     showModal(t('irishTuneInfo.mapping.title'), p, [
       { label: t('irishTuneInfo.mapping.keepIti'), onClick: () => { closeModal(); resolve('iti'); } },
       { label: t('irishTuneInfo.mapping.useTheSession'), primary: true, onClick: () => { closeModal(); resolve('thesession'); } },
-    ], { maxWidth: '28rem', onDismiss: () => resolve('cancel') });
+    ], { maxWidth: MODAL_W.m, onDismiss: () => resolve('cancel') });
   });
 }
 
@@ -307,7 +200,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
   const [status, setStatus] = useState<ComponentChild>('');
 
   const setImportedStatus = (cardId: string, cardName: string) => {
-    setStatus(
+    setStatus(successLine(
       <>
         {t('irishTuneInfo.status.imported', { name: '\x00' }).split('\x00')[0]}
         <span class="text-accent cursor-pointer hover:underline" onClick={() => { ctx.navigate({ view: 'card', cardId }); onNavigateToCard?.(); }}>
@@ -315,7 +208,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
         </span>
         {t('irishTuneInfo.status.imported', { name: '\x00' }).split('\x00')[1]}
       </>,
-    );
+    ));
   };
 
   // ── Shared: import a single tune ──────────────────────────────────────────
@@ -338,7 +231,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
             // TheSession won't serve this one, but the IrishTuneInfo copy is
             // still there — send the user back to it rather than dead-ending
             // them on a redirect they only accepted as a shortcut.
-            setStatus(t('irishTuneInfo.redirect.unavailable'));
+            setStatus(<InlineStatus tone="warn">{t('irishTuneInfo.redirect.unavailable')}</InlineStatus>);
             setBusy(false);
             return;
           }
@@ -352,7 +245,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
             setBusy(false);
           })(); }, () => { setStatus(''); setBusy(false); });
         } catch (e) {
-          setStatus(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) }));
+          setStatus(errorLine(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) })));
           setBusy(false);
         }
         return;
@@ -386,7 +279,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
         onSuccess();
       }
     } catch (e) {
-      setStatus(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) }));
+      setStatus(errorLine(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) })));
       setBusy(false);
     }
   };
@@ -449,38 +342,39 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
         ...itiSkippedIds.map(id => existingCardIdByTuneId!.get(id)!),
       ];
       if (allNewCards.length === 0 && linkIds.length === 0) {
-        setStatus(buildBatchSummary(0, 0, sessionFetch?.displayCards.length ?? 0, sessionFetch?.blocked));
+        setStatus(<InlineStatus tone="warn">{buildBatchSummary(0, 0, sessionFetch?.displayCards.length ?? 0, sessionFetch?.blocked)}</InlineStatus>);
         onDone();
         return;
       }
       withDeckChoice(() => { void (async () => {
         await commitCards(allNewCards, linkIds, getTargetDeckIds);
         const redirectedCount = sessionFetch?.displayCards.length ?? 0;
-        setStatus(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked));
+        setStatus(successLine(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked)));
         onDone();
       })(); }, () => { setStatus(''); onDone(); });
     } catch (e) {
-      setStatus(tuneFetchStatus(e, 'irishTuneInfo.error'));
+      setStatus(errorLine(tuneFetchStatus(e, 'irishTuneInfo.error')));
       onDone();
     }
   };
 
   return (
     <div class="space-y-3">
+      {/* An option turned on, not items picked: a Switch (UI charter). The
+          label wraps it, so its text toggles it too. */}
       <label class="flex items-center gap-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          class="card-checkbox"
-          checked={includeAudio}
-          onChange={(e) => setIncludeAudio((e.target as HTMLInputElement).checked)}
-        />
+        <Switch checked={includeAudio} onChange={setIncludeAudio} />
         <span class="text-xs text-muted">{t('irishTuneInfo.includeAudio')}</span>
       </label>
 
-      <div class="flex gap-1 p-1 bg-bg rounded-lg">
-        <Tab label={t('irishTuneInfo.tabTune')} active={tab === 'tune'} onClick={() => setTab('tune')} />
-        <Tab label={t('irishTuneInfo.tabPlaylist')} active={tab === 'playlist'} onClick={() => setTab('playlist')} />
-      </div>
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'tune', label: t('irishTuneInfo.tabTune') },
+          { value: 'playlist', label: t('irishTuneInfo.tabPlaylist') },
+        ]}
+      />
 
       <div class="space-y-3">
         {tab === 'tune' ? (
@@ -500,7 +394,7 @@ export function IrishTuneInfoBody({ ctx, getTargetDeckIds, onNavigateToCard, wit
         )}
       </div>
 
-      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
+      <div class="text-xs text-muted min-h-[1.25rem]">{status}</div>
     </div>
   );
 }
@@ -580,7 +474,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           setPendingId(tune.id); setPendingIds(null);
           setInfo(`${tune.name} · ${tune.rhythm}`);
           setStatus('');
-        } catch { if (fresh()) setStatus(t('irishTuneInfo.id.notFound')); }
+        } catch { if (fresh()) setStatus(errorLine(t('irishTuneInfo.id.notFound'))); }
       }, 150);
     } else if (trimmed.length >= 2) {
       timerRef.current = setTimeout(async () => {
@@ -591,7 +485,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           setSuggestions(sorted);
           setDropdownOpen(sorted.length > 0);
           setStatus(sorted.length ? '' : t('irishTuneInfo.noResults'));
-        } catch (e) { setStatus(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) })); }
+        } catch (e) { setStatus(errorLine(t('irishTuneInfo.error', { message: e instanceof Error ? e.message : String(e) }))); }
       }, 300);
     }
   };
@@ -722,7 +616,7 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
       setStatus('');
     } catch {
       if (!fresh()) return;
-      setStatus(<>{t('irishTuneInfo.playlist.notFound')}<br /><span class="text-warn">{t('irishTuneInfo.playlist.makePublicHint')}</span></>);
+      setStatus(<>{errorLine(t('irishTuneInfo.playlist.notFound'))}<p class="text-warn mt-1">{t('irishTuneInfo.playlist.makePublicHint')}</p></>);
     }
   };
 
@@ -788,7 +682,7 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
       ];
       if (allNewCards.length === 0 && linkIds.length === 0) {
         setProgress(100);
-        setStatus(buildBatchSummary(0, 0, sessionFetch?.displayCards.length ?? 0, sessionFetch?.blocked));
+        setStatus(<InlineStatus tone="warn">{buildBatchSummary(0, 0, sessionFetch?.displayCards.length ?? 0, sessionFetch?.blocked)}</InlineStatus>);
         setBusy(false);
         return;
       }
@@ -796,11 +690,11 @@ function PlaylistTab({ includeAudio, getTargetDeckIds, withDeckChoice, setStatus
         await commitCards(allNewCards, linkIds, getTargetDeckIds);
         setProgress(100);
         const redirectedCount = sessionFetch?.displayCards.length ?? 0;
-        setStatus(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked));
+        setStatus(successLine(buildBatchSummary(itiNewCards.length, itiSkippedIds.length, redirectedCount, sessionFetch?.blocked)));
         setBusy(false);
       })(); }, () => { setStatus(''); setProgress(null); setBusy(false); });
     } catch (e) {
-      setStatus(tuneFetchStatus(e, 'irishTuneInfo.error'));
+      setStatus(errorLine(tuneFetchStatus(e, 'irishTuneInfo.error')));
       setBusy(false);
     }
   };

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { render } from 'preact';
-import { createPortal } from 'preact/compat';
-import type { ComponentChild, RefObject } from 'preact';
+import type { ComponentChild } from 'preact';
 import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance, ownFormatAccept } from '../utils';
 import { parseCardPackage } from '../services/importExport';
@@ -19,12 +18,14 @@ import { describeTune, tuneFetchStatus, TuneUnavailableError, type SkippedTune }
 import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../services/tuneNameIndexService';
 import { t } from '../services/i18nService';
 import { theSessionOffered, irishTuneInfoOffered } from '../services/extensions';
-import { modalMaxH, modalMaxW, getZoom } from '../services/zoomService';
+import { modalMaxH, modalMaxW } from '../services/zoomService';
 import { IrishTuneInfoBody } from './irishTuneInfoImport';
+import { InputRow, SuggestDropdown, errorLine, successLine } from './importAtoms';
 import { showDeckChoiceModal } from './deckSelector';
-import { CheckIcon, ArrowLeftIcon, ArrowRightIcon } from './icons';
+import { CheckIcon, ArrowLeftIcon, ArrowRightIcon, CrossIcon, ImportTrayIcon, SearchIcon, GlobeIcon, FileIcon, ShareIcon } from './icons';
+import { ChoiceCard, InlineStatus, Segmented } from './ui';
 import { registerOverlay } from './overlayStack';
-import { usePinnedTop } from './modal';
+import { usePinnedTop, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from './modal';
 
 // ── Shared: import a batch of cards from a .cdc package (file or share key) ────
 // Dedupes on externalId when present (two independent shares of the same
@@ -124,112 +125,6 @@ function useLatestOnly() {
   };
 }
 
-// ── Small shared UI atoms (local to this file — see the top-of-file doc on
-// why theSessionImport.tsx and irishTuneInfoImport.tsx each keep their own
-// copies rather than sharing one). ────────────────────────────────────────
-
-function Tab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      class={`px-3 py-1.5 text-xs font-medium rounded transition-colors cursor-pointer ${
-        active ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-elevated'
-      }`}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
-}
-
-function InputRow({ placeholder, value, onInput, info, inputRef, title, onKeyDown, onFocus, onBlur, maxLength, disabled }: {
-  placeholder: string;
-  value: string;
-  onInput: (v: string) => void;
-  info: string;
-  inputRef: RefObject<HTMLInputElement>;
-  title?: string;
-  onKeyDown?: (e: KeyboardEvent) => void;
-  onFocus?: () => void;
-  onBlur?: () => void;
-  maxLength?: number;
-  disabled?: boolean;
-}) {
-  return (
-    <div class="flex-1 relative flex items-center bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent overflow-hidden" title={title}>
-      <input
-        ref={inputRef}
-        type="text"
-        class="flex-1 min-w-0 bg-transparent outline-none text-sm text-primary placeholder:text-dim"
-        placeholder={placeholder}
-        value={value}
-        maxLength={maxLength}
-        disabled={disabled}
-        onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-        onKeyDown={onKeyDown}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        onPaste={(e) => {
-          // Pasting a newline-separated list into a single-line input drops
-          // the newlines on some browsers — normalize to ';' before it hits onInput.
-          const text = e.clipboardData?.getData('text');
-          if (!text || !/[\r\n]/.test(text)) return;
-          e.preventDefault();
-          const el = e.target as HTMLInputElement;
-          const cleaned = text.replace(/[\r\n]+/g, ';');
-          const start = el.selectionStart ?? el.value.length;
-          const end = el.selectionEnd ?? el.value.length;
-          const next = el.value.slice(0, start) + cleaned + el.value.slice(end);
-          onInput(next);
-        }}
-      />
-      <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-dim bg-bg pl-2 pointer-events-none whitespace-nowrap">{info}</span>
-    </div>
-  );
-}
-
-/** Floating suggestion list anchored under an input — position computed at
- *  open-time (and whenever `items` changes), portaled to document.body.
- *  Unmounts along with whatever renders it — no manual cleanup needed. */
-function SuggestDropdown<T>({ anchorRef, items, renderItem, onPick, open }: {
-  anchorRef: RefObject<HTMLElement>;
-  items: T[];
-  renderItem: (item: T) => ComponentChild;
-  onPick: (item: T) => void;
-  open: boolean;
-}) {
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useEffect(() => {
-    if (!open || !anchorRef.current || items.length === 0) { setPos(null); return; }
-    const z = getZoom() / 100;
-    const rect = anchorRef.current.getBoundingClientRect();
-    setPos({ top: (rect.bottom + 4) / z, left: rect.left / z, width: rect.width / z });
-    // eslint-disable-next-line
-  }, [open, items]);
-
-  if (!open || !pos || items.length === 0) return null;
-
-  return createPortal((
-    <div
-      // Belongs to the field it hangs from: a walkthrough lifts it over its
-      // veil and lets it be picked from (walkthrough/, styles.css).
-      data-tour-float
-      class="fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-y-auto"
-      style={{ top: `${pos.top}px`, left: `${pos.left}px`, width: `${pos.width}px`, maxHeight: '220px' }}
-    >
-      {items.map((item, i) => (
-        <div
-          key={i}
-          class="flex items-center gap-3 px-3 py-2 hover:bg-bg cursor-pointer"
-          onMouseDown={(e) => { e.preventDefault(); onPick(item); }}
-        >
-          {renderItem(item)}
-        </div>
-      ))}
-    </div>
-  ), document.body);
-}
-
 // ── TheSession body ───────────────────────────────────────────────────────────
 
 export interface TheSessionBodyProps {
@@ -248,7 +143,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
   const [status, setStatus] = useState<ComponentChild>('');
 
   const setImportedStatus = (cardId: string, cardName: string) => {
-    setStatus(
+    setStatus(successLine(
       <>
         {t('theSession.status.imported', { name: '\x00' }).split('\x00')[0]}
         <span class="text-accent cursor-pointer hover:underline" data-tour="ts-imported" onClick={() => { ctx.navigate({ view: 'card', cardId }); onNavigateToCard?.(); }}>
@@ -256,7 +151,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
         </span>
         {t('theSession.status.imported', { name: '\x00' }).split('\x00')[1]}
       </>,
-    );
+    ));
   };
 
   // ── Shared: import a single tune ──────────────────────────────────────────
@@ -270,7 +165,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
     try {
       tune = await fetchTuneById(tuneId);
     } catch (e) {
-      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })));
       setBusy(false);
       return;
     }
@@ -314,7 +209,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
       const { tunes, skippedIds, blocked } = await fetchTunesByIds(ids, onProgress, id => existingCardIdByTuneId.has(id));
       fetched = { newCards: tunes.map(tune => tuneResultToCard(tune)), skippedIds, blocked, existingCardIdByTuneId };
     } catch (e) {
-      setStatus(tuneFetchStatus(e, 'theSession.error'));
+      setStatus(errorLine(tuneFetchStatus(e, 'theSession.error')));
       onDone();
       return;
     }
@@ -322,7 +217,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
     // The whole batch came back empty (every id blocked or unknown): there is
     // no card to place, so the deck question would have no subject.
     if (newCards.length === 0 && skippedIds.length === 0) {
-      setStatus(batchSummary(0, 0, blocked));
+      setStatus(<InlineStatus tone="warn">{batchSummary(0, 0, blocked)}</InlineStatus>);
       onDone();
       return;
     }
@@ -337,18 +232,24 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
           }
         }
       });
-      setStatus(batchSummary(newCards.length, skippedIds.length, blocked));
+      setStatus(successLine(batchSummary(newCards.length, skippedIds.length, blocked)));
       onDone();
     })(); }, () => { setStatus(''); onDone(); });
   };
 
   return (
     <div class="space-y-3">
-      <div class="flex gap-1 p-1 bg-bg rounded-lg" data-tour="ts-tabs">
-        <Tab label={t('theSession.tabTune')} active={tab === 'tune'} onClick={() => setTab('tune')} />
-        <Tab label={t('theSession.tabMember')} active={tab === 'member'} onClick={() => setTab('member')} />
-        <Tab label={t('theSession.tabBookmarks')} active={tab === 'bookmarks'} onClick={() => setTab('bookmarks')} />
-        <Tab label={t('theSession.tabSets')} active={tab === 'sets'} onClick={() => setTab('sets')} />
+      <div data-tour="ts-tabs">
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'tune', label: t('theSession.tabTune') },
+            { value: 'member', label: t('theSession.tabMember') },
+            { value: 'bookmarks', label: t('theSession.tabBookmarks') },
+            { value: 'sets', label: t('theSession.tabSets') },
+          ]}
+        />
       </div>
 
       <div class="space-y-3">
@@ -366,7 +267,7 @@ export function TheSessionBody({ ctx, getTargetDeckIds, onNavigateToCard, withDe
         )}
       </div>
 
-      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
+      <div class="text-xs text-muted min-h-[1.25rem]">{status}</div>
     </div>
   );
 }
@@ -457,7 +358,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           if (!fresh()) return;
           // 451 is not "no such tune": it exists and was taken down. Calling
           // that "not found" sends the user hunting for a typo they didn't make.
-          setStatus(e instanceof TuneUnavailableError ? t('theSession.id.unavailable') : t('theSession.id.notFound'));
+          setStatus(errorLine(e instanceof TuneUnavailableError ? t('theSession.id.unavailable') : t('theSession.id.notFound')));
         }
       }, 150);
     } else if (trimmed.length >= 2) {
@@ -487,7 +388,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
           setSuggestions(tunes);
           setDropdownOpen(tunes.length > 0);
           setStatus(tunes.length ? '' : t('theSession.noResults'));
-        } catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
       }, 300);
     }
   };
@@ -543,6 +444,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
       )}
 
       <SuggestDropdown
+        tourFloat
         anchorRef={inputRef}
         items={suggestions}
         open={dropdownOpen}
@@ -611,7 +513,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       setStatus('');
     } catch (e) {
       if (!fresh()) return;
-      setStatus(memberErrorStatus(e));
+      setStatus(errorLine(memberErrorStatus(e)));
       selectedMemberIdRef.current = null; bump(x => x + 1);
     }
   };
@@ -633,7 +535,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       // be a question about no cards at all.
       if (newCards.length === 0 && skippedIds.length === 0) {
         setProgress(100);
-        setStatus(batchSummary(0, 0, blocked));
+        setStatus(<InlineStatus tone="warn">{batchSummary(0, 0, blocked)}</InlineStatus>);
         setBusy(false);
         return;
       }
@@ -651,11 +553,11 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           }
         });
         setProgress(100);
-        setStatus(batchSummary(newCards.length, skippedIds.length, blocked));
+        setStatus(successLine(batchSummary(newCards.length, skippedIds.length, blocked)));
         setBusy(false);
       })(); }, () => { setStatus(''); setProgress(null); setBusy(false); });
     } catch (e) {
-      setStatus(tuneFetchStatus(e, 'theSession.error'));
+      setStatus(errorLine(tuneFetchStatus(e, 'theSession.error')));
       setBusy(false);
     }
   };
@@ -686,7 +588,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           setSuggestions(sorted);
           setDropdownOpen(sorted.length > 0);
           setStatus(sorted.length ? '' : t('theSession.noResults'));
-        } catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
       }, 300);
     }
   };
@@ -731,6 +633,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       )}
 
       <SuggestDropdown
+        tourFloat
         anchorRef={inputRef}
         items={suggestions}
         open={dropdownOpen}
@@ -796,7 +699,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       setStatus('');
     } catch (e) {
       if (!fresh()) return;
-      setStatus(memberErrorStatus(e));
+      setStatus(errorLine(memberErrorStatus(e)));
       selectedMemberIdRef.current = null; bump(x => x + 1);
     }
   };
@@ -841,7 +744,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       // known set of cards — and skipped entirely when there is none.
       if (newCards.length === 0 && skipped === 0) {
         setProgress(100);
-        setStatus(batchSummary(0, 0, blocked));
+        setStatus(<InlineStatus tone="warn">{batchSummary(0, 0, blocked)}</InlineStatus>);
         setBusy(false);
         return;
       }
@@ -863,11 +766,11 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           }
         });
         setProgress(100);
-        setStatus(batchSummary(newCards.length, skipped, blocked));
+        setStatus(successLine(batchSummary(newCards.length, skipped, blocked)));
         setBusy(false);
       })(); }, () => { setStatus(''); setProgress(null); setBusy(false); });
     } catch (e) {
-      setStatus(e instanceof MemberUnavailableError ? memberErrorStatus(e) : tuneFetchStatus(e, 'theSession.error'));
+      setStatus(errorLine(e instanceof MemberUnavailableError ? memberErrorStatus(e) : tuneFetchStatus(e, 'theSession.error')));
       setBusy(false);
     }
   };
@@ -898,7 +801,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           setSuggestions(sorted);
           setDropdownOpen(sorted.length > 0);
           setStatus(sorted.length ? '' : t('theSession.noResults'));
-        } catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
       }, 300);
     }
   };
@@ -936,6 +839,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       )}
 
       <SuggestDropdown
+        tourFloat
         anchorRef={inputRef}
         items={suggestions}
         open={dropdownOpen}
@@ -998,7 +902,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       setStatus('');
     } catch (e) {
       if (!fresh()) return;
-      setStatus(memberErrorStatus(e));
+      setStatus(errorLine(memberErrorStatus(e)));
       selectedMemberIdRef.current = null; bump(x => x + 1);
     }
   };
@@ -1017,7 +921,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         setStatus(t('theSession.sets.loading', { loaded, total }));
       });
     } catch (e) {
-      setStatus(tuneFetchStatus(e, 'theSession.error'));
+      setStatus(errorLine(tuneFetchStatus(e, 'theSession.error')));
       setBusy(false);
       return;
     }
@@ -1089,12 +993,12 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         }
       });
       setProgress(100);
-      setStatus(
+      setStatus(successLine(
         t('theSession.sets.done', { sets: imported, tunes: created })
         + (skipped > 0 ? t('theSession.sets.doneSkipped', { count: skipped }) : ''),
-      );
+      ));
     } catch (e) {
-      setStatus(tuneFetchStatus(e, 'theSession.error'));
+      setStatus(errorLine(tuneFetchStatus(e, 'theSession.error')));
     } finally {
       setBusy(false);
     }
@@ -1126,7 +1030,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
           setSuggestions(sorted);
           setDropdownOpen(sorted.length > 0);
           setStatus(sorted.length ? '' : t('theSession.noResults'));
-        } catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        } catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
       }, 300);
     }
   };
@@ -1164,6 +1068,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
       )}
 
       <SuggestDropdown
+        tourFloat
         anchorRef={inputRef}
         items={suggestions}
         open={dropdownOpen}
@@ -1204,39 +1109,22 @@ function importDescKey(): string {
   return irishTuneInfoOffered() ? 'newCard.importDesc' : 'newCard.importDescTheSession';
 }
 
-function ChoiceCard({ icon, label, desc, accentColor, tour, onClick }: {
-  icon: string; label: string; desc: string; accentColor: string; tour?: string; onClick: () => void;
-}) {
-  const [hover, setHover] = useState(false);
-  return (
-    <button
-      data-tour={tour}
-      class="flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer"
-      style={{ transition: 'border-color 0.15s, background 0.15s', borderColor: hover ? accentColor : undefined, background: hover ? `${accentColor}12` : undefined }}
-      title={desc}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onClick={onClick}
-    >
-      <span class="shrink-0 flex items-center" style={{ color: accentColor }} dangerouslySetInnerHTML={{ __html: icon }} />
-      <div class="flex-1 text-sm font-medium text-primary">{label}</div>
-      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
-    </button>
-  );
-}
+/** The rows of this wizard are the shared ChoiceCard (components/ui.tsx): its
+ *  description is on screen, where it used to be only a tooltip — which a
+ *  finger never sees. The icons are all in the accent: the warn and success
+ *  they used to wear per row warned of nothing and succeeded at nothing. */
+const ICON_SIZE = 20;
+/** A page with a pencil — "start a blank one". No icon in icons.tsx draws it
+ *  (PencilIcon is the bare pencil of "rename"), so it stays here. */
+const ICON_CREATE = `<svg width="${ICON_SIZE}" height="${ICON_SIZE}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 
-const ICON_CREATE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-const ICON_IMPORT = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-const ICON_TS = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
-const ICON_ITI = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
-const ICON_JSON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-const ICON_SHARE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+const nextStep = <ArrowRightIcon size={16} />;
 
 function RootStep({ navigate }: { navigate: (s: Step) => void }) {
   return (
     <>
-      <ChoiceCard icon={ICON_CREATE} label={t('newCard.tabCreate')} desc={t('newCard.createDesc')} accentColor="var(--color-accent)" tour="newcard-create" onClick={() => navigate('create')} />
-      <ChoiceCard icon={ICON_IMPORT} label={t('newCard.tabImport')} desc={t(importDescKey())} accentColor="var(--color-warn)" tour="newcard-import" onClick={() => navigate('import')} />
+      <ChoiceCard icon={<span class="flex" dangerouslySetInnerHTML={{ __html: ICON_CREATE }} />} label={t('newCard.tabCreate')} desc={t('newCard.createDesc')} trailing={nextStep} tour="newcard-create" onClick={() => navigate('create')} />
+      <ChoiceCard icon={<ImportTrayIcon size={ICON_SIZE} />} label={t('newCard.tabImport')} desc={t(importDescKey())} trailing={nextStep} tour="newcard-import" onClick={() => navigate('import')} />
     </>
   );
 }
@@ -1268,13 +1156,13 @@ function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
         if (deck && !deck.entries.some(e => e.cardId === id)) deck.entries.push({ cardId: id });
       }
     });
-    setStatus(
+    setStatus(successLine(
       <>
         {t('newCard.create.done', { name: '\x00' }).split('\x00')[0]}
         <span class="text-accent cursor-pointer hover:underline" data-tour="newcard-open" onClick={() => onOpenCard(createdId)}>{trimmed}</span>
         {t('newCard.create.done', { name: '\x00' }).split('\x00')[1]}
       </>,
-    );
+    ));
     // `busy` was set on the way in and never cleared, so the button stayed
     // disabled for good and this step could only ever create ONE card per
     // opening (bug found in a browser on 2026-09-06, older than the deck work).
@@ -1304,7 +1192,7 @@ function CreateStep({ withDeckChoice, getChosenDeckIds, onOpenCard }: {
         {t('newCard.createBtn')}
       </button>
       </div>
-      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
+      <div class="text-xs text-muted min-h-[1.25rem]">{status}</div>
     </>
   );
 }
@@ -1318,12 +1206,13 @@ function ImportStep({ navigate }: { navigate: (s: Step) => void }) {
   return (
     <>
       {theSessionOffered() && (
-        <ChoiceCard icon={ICON_TS}   label={t('newCard.tabTheSession')}    desc={t('newCard.theSessionDesc')}    accentColor="var(--color-success)" tour="newcard-thesession" onClick={() => navigate('thesession')} />
+        <ChoiceCard icon={<SearchIcon size={ICON_SIZE} />} label={t('newCard.tabTheSession')} desc={t('newCard.theSessionDesc')} trailing={nextStep} tour="newcard-thesession" onClick={() => navigate('thesession')} />
       )}
       {irishTuneInfoOffered() && (
-        <ChoiceCard icon={ICON_ITI}  label={t('newCard.tabIrishTuneInfo')} desc={t('newCard.irishTuneInfoDesc')} accentColor="var(--color-accent)"  tour="newcard-iti" onClick={() => navigate('irishtuneinfo')} />
+        <ChoiceCard icon={<GlobeIcon size={ICON_SIZE} />} label={t('newCard.tabIrishTuneInfo')} desc={t('newCard.irishTuneInfoDesc')} trailing={nextStep} tour="newcard-iti" onClick={() => navigate('irishtuneinfo')} />
       )}
-      <ChoiceCard icon={ICON_JSON} label={t('newCard.tabImportJson')}    desc={t('newCard.importJsonDesc')}    accentColor="var(--color-warn)"    onClick={() => navigate('json')} />
+      {/* A page, not the import tray: the tray is the entry that led here. */}
+      <ChoiceCard icon={<FileIcon size={ICON_SIZE} />} label={t('newCard.tabImportJson')} desc={t('newCard.importJsonDesc')} trailing={nextStep} onClick={() => navigate('json')} />
     </>
   );
 }
@@ -1331,8 +1220,8 @@ function ImportStep({ navigate }: { navigate: (s: Step) => void }) {
 function JsonStep({ navigate }: { navigate: (s: Step) => void }) {
   return (
     <>
-      <ChoiceCard icon={ICON_JSON}  label={t('library.export.file')} desc={t('newCard.importJsonDesc')} accentColor="var(--color-warn)"    onClick={() => navigate('json-file')} />
-      <ChoiceCard icon={ICON_SHARE} label={t('newCard.share.label')} desc={t('newCard.share.desc')}     accentColor="var(--color-accent)"  onClick={() => navigate('share')} />
+      <ChoiceCard icon={<FileIcon size={ICON_SIZE} />} label={t('library.export.file')} desc={t('newCard.importJsonDesc')} trailing={nextStep} onClick={() => navigate('json-file')} />
+      <ChoiceCard icon={<ShareIcon size={ICON_SIZE} />} label={t('newCard.share.label')} desc={t('newCard.share.desc')} trailing={nextStep} onClick={() => navigate('share')} />
     </>
   );
 }
@@ -1342,7 +1231,7 @@ function JsonFileStep({ getChosenDeckIds, withDeckChoice }: {
   withDeckChoice: (onReady: () => void, onCancel?: () => void) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<ComponentChild>('');
 
   const doImportFile = async (file: File) => {
     setBusy(true); setStatus(t('newCard.import.importing'));
@@ -1350,15 +1239,15 @@ function JsonFileStep({ getChosenDeckIds, withDeckChoice }: {
     try {
       cards = await parseCardPackage(file);
     } catch (e) {
-      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })));
       setBusy(false);
       return;
     }
     if (cards.length === 0) { setStatus(t('newCard.import.empty')); setBusy(false); return; }
     withDeckChoice(
       () => { void (async () => {
-        try { setStatus(await importCardPackage(cards, getChosenDeckIds())); }
-        catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        try { setStatus(successLine(await importCardPackage(cards, getChosenDeckIds()))); }
+        catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
         finally { setBusy(false); }
       })(); },
       () => { setStatus(''); setBusy(false); },
@@ -1383,7 +1272,7 @@ function JsonFileStep({ getChosenDeckIds, withDeckChoice }: {
       >
         {t('newCard.import.pick')}
       </button>
-      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
+      <div class="text-xs text-muted min-h-[1.25rem]">{status}</div>
     </>
   );
 }
@@ -1394,7 +1283,7 @@ function ShareStep({ getChosenDeckIds, withDeckChoice }: {
 }) {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<ComponentChild>('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { focusIfDesktop(inputRef.current!); }, []);
@@ -1409,15 +1298,15 @@ function ShareStep({ getChosenDeckIds, withDeckChoice }: {
       const file = new File([text], `share-${trimmed}.cdc`, { type: 'application/octet-stream' });
       cards = await parseCardPackage(file);
     } catch (e) {
-      setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })));
       setBusy(false);
       return;
     }
     if (cards.length === 0) { setStatus(t('newCard.import.empty')); setBusy(false); return; }
     withDeckChoice(
       () => { void (async () => {
-        try { setStatus(await importCardPackage(cards, getChosenDeckIds())); }
-        catch (e) { setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })); }
+        try { setStatus(successLine(await importCardPackage(cards, getChosenDeckIds()))); }
+        catch (e) { setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }))); }
         finally { setBusy(false); }
       })(); },
       () => { setStatus(''); setBusy(false); },
@@ -1441,7 +1330,7 @@ function ShareStep({ getChosenDeckIds, withDeckChoice }: {
           {t('newCard.share.importBtn')}
         </button>
       </div>
-      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
+      <div class="text-xs text-muted min-h-[1.25rem]">{status}</div>
     </>
   );
 }
@@ -1503,9 +1392,11 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
     import:       t('newCard.tabImport'),
     thesession:   t('newCard.tabTheSession'),
     irishtuneinfo: t('newCard.tabIrishTuneInfo'),
+    // Each step after the JSON one is named by the row that led to it: the
+    // three of them used to share "Cadence Cards", so the title never moved.
     json:         t('newCard.tabImportJson'),
-    'json-file':  t('newCard.tabImportJson'),
-    share:        t('newCard.tabImportJson'),
+    'json-file':  t('library.export.file'),
+    share:        t('newCard.share.label'),
   };
 
   const onOpenCard = (cardId: string) => { ctx.navigate({ view: 'card', cardId }); onClose(); };
@@ -1520,26 +1411,28 @@ function NewCardModal({ ctx, initialDeckIds, preset, onClose }: { ctx: AppContex
   return (
     <div
       ref={overlayRef}
-      class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center bg-black/75 backdrop-blur-sm`}
+      class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center ${MODAL_BACKDROP}`}
       onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onClose(); }}
     >
       <div
         ref={dialogRef}
         class="bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col"
-        style={{ maxWidth: `min(440px, ${modalMaxW(0.9)})`, maxHeight: modalMaxH(0.85), ...pinned.dialogStyle }}
+        style={{ maxWidth: `min(${MODAL_W.m}, ${modalMaxW(0.9)})`, maxHeight: modalMaxH(0.85), ...pinned.dialogStyle }}
         onPointerDownCapture={pinned.onPointerDownCapture}
         onKeyDownCapture={pinned.onKeyDownCapture}
       >
-        <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+        {/* The shell's header (modal.tsx), drawn here because this dialog is
+            not in the shared stack: same row, same title, same two buttons. */}
+        <div class="flex items-center justify-between gap-2 px-5 py-2.5 min-h-[3.25rem] border-b border-border shrink-0">
           <div class="flex items-center gap-2 min-w-0">
             {step !== 'root' && (
-              <button class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0 flex items-center" aria-label={t('modal.back')} onClick={() => setStep(backParent(step))}><ArrowLeftIcon size={16} /></button>
+              <button class="icon-btn -ml-2 shrink-0" title={t('modal.back')} aria-label={t('modal.back')} onClick={() => setStep(backParent(step))}><ArrowLeftIcon size={16} /></button>
             )}
-            <h2 class="text-sm font-semibold text-primary truncate">{TITLES[step]}</h2>
+            <h2 class={MODAL_TITLE_CLASS}>{TITLES[step]}</h2>
           </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0" onClick={onClose}>✕</button>
+          <div class="flex items-center gap-1 shrink-0">
+            <button class="icon-btn -mr-2" title={t('common.close')} aria-label={t('common.close')} onClick={onClose}><CrossIcon size={16} /></button>
           </div>
         </div>
 

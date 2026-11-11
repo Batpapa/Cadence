@@ -7,6 +7,8 @@ import { scoreMatch, scoreWithAliases, NO_SCORE_MATCH } from '../utils';
 import { registerOverlay } from './overlayStack';
 import { tagDisplay } from '../services/tagGroups';
 import { getZoom } from '../services/zoomService';
+import { MODAL_BACKDROP } from './modal';
+import { SearchIcon } from './icons';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,10 +73,12 @@ function buildItems(ctx: AppContext, query: string): PaletteItem[] {
 }
 
 // ── Kind badge ────────────────────────────────────────────────────────────────
+// The word says the kind. A deck was in the success green, which means "it
+// went well" everywhere else (UI charter, 2026-11-11): neutral now.
 
 const KIND_STYLE: Record<PaletteItem['kind'], string> = {
   card:   'bg-accent/10 text-accent',
-  deck:   'bg-success/10 text-success',
+  deck:   'bg-surface text-muted',
   folder: 'bg-elevated text-muted',
 };
 
@@ -158,13 +162,13 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
 
   return (
     <div
-      class="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm"
+      class={`fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] ${MODAL_BACKDROP}`}
       onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) closePalette(); }}
     >
       <div class="bg-elevated border border-border rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col">
         <div class="flex items-center gap-3 px-4 py-3 border-b border-border">
-          <span class="text-dim text-sm shrink-0">⌕</span>
+          <span class="text-dim shrink-0 flex"><SearchIcon size={16} /></span>
           <input
             ref={inputRef}
             type="text"
@@ -174,7 +178,7 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
             onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
             onKeyDown={onKeyDown}
           />
-          <span class="text-[10px] text-dim font-mono shrink-0">Esc</span>
+          <span class="text-2xs text-dim font-mono shrink-0 [@media(pointer:coarse)]:hidden">Esc</span>
         </div>
 
         <div ref={listRef} class="max-h-72 overflow-y-auto py-1" style={listMax !== null ? { maxHeight: `min(18rem, ${listMax}px)` } : undefined}>
@@ -191,7 +195,7 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
                 onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => select(item)}
               >
-                <span class={`text-[10px] font-medium px-1.5 py-0.5 rounded ${KIND_STYLE[item.kind]} shrink-0 w-12 text-center`}>
+                <span class={`text-2xs font-medium px-1.5 py-0.5 rounded ${KIND_STYLE[item.kind]} shrink-0 w-12 text-center`}>
                   {t(`commandPalette.kind.${item.kind}`)}
                 </span>
                 <div class="flex-1 min-w-0">

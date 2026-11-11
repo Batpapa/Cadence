@@ -6,7 +6,8 @@ import { fileToEntry, focusIfDesktop } from '../utils';
 import { attachmentFor } from '../services/attachmentStore';
 import { pickFiles } from '../services/filePicker';
 import { appState } from '../store';
-import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
+import { showModal, closeModal, renderModalBody, askUnsavedChanges, MODAL_W } from './modal';
+import { ChoiceCard } from './ui';
 import { CustomSelect } from './customSelect';
 import { FileIcon, ClipboardIcon, MicIcon, ArrowRightIcon } from './icons';
 import { showRecordMicModal } from './recordMicModal';
@@ -44,23 +45,14 @@ async function addFromDevice(onAdd: (a: Attachment) => void): Promise<void> {
 }
 
 /** One source, named and nothing more: "from the device" and "from the
- *  clipboard" each say the whole of what they do. */
+ *  clipboard" each say the whole of what they do — so the shared ChoiceCard
+ *  with no description line. */
 function SourceRow({ icon, label, onClick }: {
   icon: ComponentChild;
   label: string;
   onClick: () => void;
 }) {
-  return (
-    <button
-      type="button"
-      class="flex items-center gap-3.5 w-full px-4 py-3 rounded-xl border border-border bg-bg text-left cursor-pointer transition-colors hoverable:border-accent"
-      onClick={onClick}
-    >
-      <span class="shrink-0 flex items-center text-accent">{icon}</span>
-      <span class="flex-1 min-w-0 text-sm font-medium text-primary">{label}</span>
-      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
-    </button>
-  );
+  return <ChoiceCard icon={icon} label={label} trailing={<ArrowRightIcon size={16} />} onClick={onClick} />;
 }
 
 /** The "File" entry of the attachment list's "+" menu. */
@@ -73,24 +65,24 @@ export function showAddFileModal(onAdd: (a: Attachment) => void): void {
   const { el, cleanup } = renderModalBody(
     <div class="space-y-2">
       <SourceRow
-        icon={<FileIcon size={18} />}
+        icon={<FileIcon size={20} />}
         label={t('fileViewer.source.device')}
         onClick={() => { leave(); void addFromDevice(onAdd); }}
       />
       <SourceRow
-        icon={<ClipboardIcon size={18} />}
+        icon={<ClipboardIcon size={20} />}
         label={t('fileViewer.source.clipboard')}
         onClick={() => { leave(); showPasteTextModal(onAdd); }}
       />
       <SourceRow
-        icon={<MicIcon size={18} />}
+        icon={<MicIcon size={20} />}
         label={t('fileViewer.source.mic')}
         onClick={() => { leave(); showRecordMicModal(onAdd, () => showAddFileModal(onAdd)); }}
       />
     </div>,
   );
   leave = () => { closeModal(); cleanup(); };
-  showModal(t('fileViewer.source.title'), el, [], { maxWidth: '24rem', onDismiss: cleanup });
+  showModal(t('fileViewer.source.title'), el, [], { maxWidth: MODAL_W.s, onDismiss: cleanup });
 }
 
 // ── The paste dialog ─────────────────────────────────────────────────────────
@@ -147,7 +139,7 @@ function PasteTextBody({ draft, disabled }: { draft: Draft; disabled: Signal<boo
     <div class="space-y-3">
       <textarea
         ref={areaRef}
-        class="w-full h-64 font-mono text-xs p-3 border border-border rounded-lg bg-bg text-primary resize-y outline-none focus:border-accent"
+        class="input h-64 font-mono text-xs p-3 resize-y"
         spellcheck={false}
         placeholder={t('fileViewer.paste.placeholder')}
         value={text}
@@ -239,7 +231,7 @@ function showPasteTextModal(onAdd: (a: Attachment) => void): void {
       onClick: add,
     },
   ], {
-    maxWidth: '34rem',
+    maxWidth: MODAL_W.l,
     onDismiss: cleanup,
     // Back to the two sources: this dialog is the second half of one choice,
     // and picking the wrong half should cost an arrow rather than a reopening.

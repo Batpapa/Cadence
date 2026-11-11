@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { focusIfDesktop, formatBytes, isMobileDevice, isAppleTouchDevice, ownFormatAccept } from '../../utils';
-import { showModal, closeModal, closeAllModals, renderModalBody, alertModal, confirmModal } from '../../components/modal';
+import { showModal, closeModal, closeAllModals, renderModalBody, alertModal, confirmModal, MODAL_W } from '../../components/modal';
+import { ChoiceCard as UiChoiceCard, InlineStatus, IconButton, Switch } from '../../components/ui';
 import { LiveSession } from '../liveSession';
 import { editSessionTree, placeSession, sessionTreeOf } from '../sessionTree';
 import { ImportSession } from '../importSession';
@@ -67,23 +68,20 @@ const SHARE_ICON_SHARE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="
 // ── Share a session (annotations + optionally the audio) via a short key —
 // same mechanism as card sharing (shareService.ts). ─────────────────────────
 
-function ShareChoiceCard({ icon, label, desc, accentColor, onClick }: {
-  icon: string; label: string; desc: string; accentColor: string; onClick: () => void;
+/** One way in, as every dialog of the app offers them (ChoiceCard): the
+ *  description on screen, not in a tooltip a finger never sees. The icons are
+ *  the HTML strings above, hence the span. */
+function ShareChoiceCard({ icon, label, desc, onClick }: {
+  icon: string; label: string; desc: string; onClick: () => void;
 }) {
-  const [hover, setHover] = useState(false);
   return (
-    <button
-      class="flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer"
-      style={{ transition: 'border-color 0.15s, background 0.15s', borderColor: hover ? accentColor : undefined, background: hover ? `${accentColor}12` : undefined }}
-      title={desc}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+    <UiChoiceCard
+      icon={<span class="flex items-center" dangerouslySetInnerHTML={{ __html: icon }} />}
+      label={label}
+      desc={desc}
+      trailing={<ArrowRightIcon size={16} />}
       onClick={onClick}
-    >
-      <span class="shrink-0 flex items-center" style={{ color: accentColor }} dangerouslySetInnerHTML={{ __html: icon }} />
-      <div class="flex-1 text-sm font-medium text-primary">{label}</div>
-      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
-    </button>
+    />
   );
 }
 
@@ -91,6 +89,8 @@ function ShareChoiceCard({ icon, label, desc, accentColor, onClick }: {
 function KeyEntryStep({ withAudio, onImported }: { withAudio: boolean; onImported: (session: Analysis) => void }) {
   const [key, setKey] = useState('');
   const [status, setStatus] = useState('');
+  /** The status line is an error, shown as one. */
+  const [failed, setFailed] = useState(false);
   const [importing, setImporting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -98,12 +98,14 @@ function KeyEntryStep({ withAudio, onImported }: { withAudio: boolean; onImporte
 
   const doImport = () => {
     setImporting(true);
+    setFailed(false);
     setStatus(t('newCard.import.importing'));
     void importSharedSession(key.trim(), withAudio).then(session => {
       closeModal();
       onImported(session);
     }).catch(e => {
       setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+      setFailed(true);
       setImporting(false);
     });
   };
@@ -111,23 +113,23 @@ function KeyEntryStep({ withAudio, onImported }: { withAudio: boolean; onImporte
   return (
     <>
       <div class="flex gap-2">
-        <div class="flex-1 flex items-center bg-bg border border-border rounded px-3 py-2 transition-colors focus-within:border-accent">
-          <input
-            ref={inputRef}
-            type="text"
-            maxLength={6}
-            class="flex-1 min-w-0 bg-transparent outline-none text-sm text-primary placeholder:text-dim"
-            placeholder={t('newCard.share.placeholder')}
-            value={key}
-            onInput={(e) => setKey((e.target as HTMLInputElement).value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && key.trim().length === 6) doImport(); }}
-          />
-        </div>
+        <input
+          ref={inputRef}
+          type="text"
+          maxLength={6}
+          class="input flex-1 min-w-0"
+          placeholder={t('newCard.share.placeholder')}
+          value={key}
+          onInput={(e) => setKey((e.target as HTMLInputElement).value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && key.trim().length === 6) doImport(); }}
+        />
         <button class="btn-primary text-xs shrink-0" disabled={importing || key.trim().length !== 6} onClick={doImport}>
           {t('newCard.share.importBtn')}
         </button>
       </div>
-      <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>
+      {failed
+        ? <InlineStatus tone="error" class="min-h-[1.25rem]">{status}</InlineStatus>
+        : <p class="text-xs text-muted min-h-[1.25rem]">{status}</p>}
     </>
   );
 }
@@ -167,7 +169,6 @@ function ImportSessionBody({ ctx }: { ctx: AppContext }) {
         icon={SHARE_ICON_FILE_DOWN}
         label={t('library.export.file')}
         desc={t('sessions.share.fileImportDesc')}
-        accentColor="var(--color-warn)"
         onClick={() => {
           closeModal();
           const inp = document.createElement('input');
@@ -188,7 +189,6 @@ function ImportSessionBody({ ctx }: { ctx: AppContext }) {
         icon={SHARE_ICON_SHARE}
         label={t('newCard.share.label')}
         desc={t('newCard.share.desc')}
-        accentColor="var(--color-accent)"
         onClick={() => setStep('key')}
       />
     </div>
@@ -197,7 +197,7 @@ function ImportSessionBody({ ctx }: { ctx: AppContext }) {
 
 export function showImportSessionModal(ctx: AppContext): void {
   const { el, cleanup } = renderModalBody(<ImportSessionBody ctx={ctx} />);
-  showModal(t('sessions.share.importTitle'), el, [], { maxWidth: '28rem', onDismiss: cleanup });
+  showModal(t('sessions.share.importTitle'), el, [], { maxWidth: MODAL_W.m, onDismiss: cleanup });
 }
 
 /** The import phases that have a screen of their own. Exported so the view
@@ -452,7 +452,7 @@ async function finishImportRun(
             });
           },
         },
-      ], { maxWidth: '28rem', onDismiss: dismiss }); // onDismiss covers the X button / outside click too
+      ], { maxWidth: MODAL_W.m, onDismiss: dismiss }); // onDismiss covers the X button / outside click too
       return;
     }
     setActiveImport(null);
@@ -588,26 +588,22 @@ function SettingRow({ checked, onToggle, label, hint, children }: {
   const [hintOpen, setHintOpen] = useState(false);
   return (
     <div>
-      <div class="flex items-start gap-1.5">
-        <label class="flex items-start gap-3 cursor-pointer select-none min-w-0 flex-1">
-          <input
-            type="checkbox"
-            class="card-checkbox mt-0.5"
-            checked={checked}
-            onChange={(e) => onToggle((e.target as HTMLInputElement).checked)}
-          />
-          <span class="text-sm text-primary">{label}</span>
-        </label>
-        <button
-          class={`flex items-center p-0.5 rounded-full transition-colors cursor-pointer shrink-0 ${
-            hintOpen ? 'text-accent' : 'text-dim hover:text-primary'
-          }`}
-          title={t('settings.explain')}
+      {/* The general settings' row: label and `?` on the left, the app's one
+          on/off switch on the right (it was a checkbox here — a box is for
+          picking items, a switch for turning an option on). */}
+      <div class="flex items-center gap-1.5">
+        <span class="text-sm text-primary min-w-0">{label}</span>
+        <IconButton
+          label={t('settings.explain')}
+          on={hintOpen}
           aria-expanded={hintOpen}
           onClick={() => setHintOpen(o => !o)}
         >
           <HelpIcon size={14} />
-        </button>
+        </IconButton>
+        <span class="ml-auto shrink-0 flex">
+          <Switch checked={checked} onChange={onToggle} label={label} />
+        </span>
       </div>
       {hintOpen && (
         <p class="text-xs text-dim leading-relaxed mt-2 px-3 py-2 rounded-lg border border-border bg-bg">{hint}</p>
@@ -652,7 +648,7 @@ function BackfillRow() {
     <div class="space-y-2">
       {/* The same button as "download everything" below: the two are each
           other's mirror. */}
-      <button class="btn-ghost border border-border w-full text-sm" disabled={nothingToDo || progress !== null} onClick={run}>
+      <button class="btn-outline w-full" disabled={nothingToDo || progress !== null} onClick={run}>
         {progress
           ? t('sessions.syncAudio.backfill.running', { done: String(progress.done), total: String(progress.total) })
           : nothingToDo
@@ -780,18 +776,16 @@ function BlockTitle({ label, hint }: { label: string; hint: ComponentChild }) {
   const [hintOpen, setHintOpen] = useState(false);
   return (
     <>
-      <div class="flex items-start gap-1.5">
+      <div class="flex items-center gap-1.5">
         <span class="text-sm text-primary flex-1 min-w-0">{label}</span>
-        <button
-          class={`flex items-center p-0.5 rounded-full transition-colors cursor-pointer shrink-0 ${
-            hintOpen ? 'text-accent' : 'text-dim hover:text-primary'
-          }`}
-          title={t('settings.explain')}
+        <IconButton
+          label={t('settings.explain')}
+          on={hintOpen}
           aria-expanded={hintOpen}
           onClick={() => setHintOpen(o => !o)}
         >
           <HelpIcon size={14} />
-        </button>
+        </IconButton>
       </div>
       {/* A div, not a p: a hint may hold more than a sentence — the name
           template's list of fields. */}
@@ -899,7 +893,7 @@ function DownloadAllRow() {
 
   return (
     <div class="space-y-2">
-      <button class="btn-ghost border border-border w-full text-sm" disabled={nothingToDo || progress !== null} onClick={run}>
+      <button class="btn-outline w-full" disabled={nothingToDo || progress !== null} onClick={run}>
         {progress
           ? t('sessions.download.all.running', { done: progress.done, total: progress.total })
           : nothingToDo
@@ -986,7 +980,7 @@ function DriveBackupsRow() {
   return (
     <div class="space-y-2">
       {entries === null ? (
-        <button class="btn-ghost border border-border w-full text-sm" disabled={loading} onClick={load}>
+        <button class="btn-outline w-full" disabled={loading} onClick={load}>
           {loading ? t('sessions.liveBackup.list.loading') : t('sessions.liveBackup.list.show')}
         </button>
       ) : entries.length === 0 ? (
@@ -1000,7 +994,7 @@ function DriveBackupsRow() {
                 <p class="text-sm text-primary truncate">
                   {entry.meta ? (entry.meta.name || t('sessions.liveBackup.offer.unnamed')) : t('sessions.liveBackup.list.unreadable')}
                 </p>
-                <p class="text-[11px] text-dim truncate">
+                <p class="text-2xs text-dim truncate">
                   {entry.meta ? `${fmtSessionDateTime(entry.meta.date)} · ${fmtLongTime(entry.meta.durationS)} · ` : ''}
                   {formatBytes(entry.bytes)}
                 </p>
@@ -1272,5 +1266,5 @@ function SessionSettingsBody() {
 export function showSessionSettingsModal(): void {
   const { el, cleanup } = renderModalBody(<SessionSettingsBody />);
   // No footer: nothing to confirm, so nothing to press.
-  showModal(t('sessions.settings.title'), el, [], { maxWidth: '26rem', onDismiss: cleanup });
+  showModal(t('sessions.settings.title'), el, [], { maxWidth: MODAL_W.m, onDismiss: cleanup });
 }

@@ -201,12 +201,107 @@
 }
 
 @layer components {
-  .btn        { @apply px-3 py-1.5 text-sm font-medium rounded transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed; }
+  /* ── The UI charter (review of 2026-11-11, decisions by the user) ──────────
+     One drawing per concept, defined here so the vanilla-DOM code (fileViewer,
+     the library export) wears the same classes as the Preact one. The rules
+     these classes stand for:
+     - every button, labelled or not, has a 6 px radius (rounded-md);
+     - every pointer target is at least 32 px (min-h-8 / min-w-8), whatever
+       the size of what is drawn inside it;
+     - colours are tokens, and a status colour says a status, never decorates;
+     - no text under 11 px (`text-2xs`, tailwind.config.js);
+     - something easy to redo is removed at once, behind a NEUTRAL bin; what
+       is costly to redo is confirmed, and confirmed in solid red. Never an
+       undo afterwards. A red trigger (`icon-btn-danger`) is for an object's
+       own header (a card, a deck, an analysis); a bin on a ROW of a list stays
+       neutral, red under the pointer, and the confirmation carries the red.
+     `npm run ui:check` (scripts/uiCheck.mjs) flags what drifts from them. */
+  .btn        { @apply px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed; }
   .btn-ghost  { @apply btn text-muted hover:text-primary hover:bg-elevated disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted disabled:hover:bg-transparent; }
+  /* A secondary action that must still read as a button at rest: the ghost,
+     framed. Was invented twice by hand before it had a name. */
+  .btn-outline { @apply btn-ghost border border-border; }
   .btn-soft   { @apply btn bg-accent-dim text-primary hover:bg-accent/25 disabled:opacity-40 disabled:cursor-not-allowed; }
   .btn-primary { @apply btn bg-accent hover:bg-accent-hover text-white; }
+  /* A destructive TRIGGER (a Delete in a header, a Remove in a form): tinted,
+     because what it opens is the question. */
   .btn-danger { @apply btn bg-danger/10 hover:bg-danger/20 text-danger; }
+  /* The ANSWER to that question — the button that destroys. Solid, so the
+     most consequential button of the dialog is not its palest. */
+  .btn-danger-solid { @apply btn bg-danger hover:bg-danger/85 text-bg; }
+  /* The text is the page's background, not white: the dark theme's danger is
+     a LIGHT red (#f87171), on which white reads at 2.8:1; the near-black bg
+     reads at 7.6:1 there, and white bg on the light themes' #dc2626 at 4.8. */
   .btn-success { @apply btn bg-success/10 hover:bg-success/20 text-success; }
+  /* Study, the app's own action, keeps a green of its own (the user's call,
+     2026-11-11) rather than the accent. Was hand-built three times. */
+  .btn-study  { @apply btn bg-success/80 hover:bg-success text-white disabled:hover:bg-success/80; }
+
+  /* An icon control. The TARGET is the class (32 px at least, 36 and 44 for
+     the larger sizes); what is drawn inside may be smaller — a 24 px disc in a
+     32 px target is the incipit's pattern (incipit.tsx), and the way to keep a
+     dense row's look while giving the finger its room. Hover goes on the
+     button, so the ring around a smaller drawing is not a dead zone
+     (add `group` beside it for a drawing that follows it — Tailwind cannot
+     @apply `group`; the IconButton component sets it). */
+  .icon-btn {
+    @apply inline-flex items-center justify-center rounded-md transition-colors shrink-0 cursor-pointer
+           text-dim hover:text-primary hover:bg-elevated
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent;
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+  .icon-btn-md { min-width: 2.25rem; min-height: 2.25rem; }
+  .icon-btn-lg { min-width: 2.75rem; min-height: 2.75rem; }
+  /* Framed, for an icon control standing alone in a toolbar. */
+  .icon-btn-outline { @apply border border-border hover:border-accent/60; }
+  /* On (a toggle that is set), or the one action a row offers. */
+  .icon-btn-on { @apply text-accent bg-accent/10 hover:text-accent hover:bg-accent/15; }
+  /* A destructive trigger on an object's header. A NEUTRAL bin is the plain
+     .icon-btn with `hover:text-danger`. */
+  .icon-btn-danger { @apply text-danger bg-danger/10 hover:text-danger hover:bg-danger/20; }
+  /* The drawing inside a target smaller than it: the round pastille of the
+     list rows (play, score, add to deck). */
+  .icon-disc {
+    @apply inline-flex items-center justify-center rounded-full w-6 h-6 bg-accent/10 text-accent transition-colors
+           group-hover:bg-accent/20;
+  }
+  .icon-disc-on { @apply bg-accent text-white group-hover:bg-accent; }
+
+  /* A choice among a few, side by side: one rail, one button, one "on". */
+  .seg        { @apply inline-flex items-center gap-1 p-1 bg-bg rounded-lg; }
+  .seg-btn    { @apply inline-flex items-center justify-center gap-1.5 min-h-8 px-3 text-xs font-medium rounded-md
+                       transition-colors cursor-pointer text-muted hover:text-primary hover:bg-elevated
+                       disabled:opacity-40 disabled:cursor-not-allowed; }
+  .seg-lg .seg-btn { min-height: 2.25rem; }
+  .seg-btn-on, .seg-btn-on:hover { @apply bg-accent text-white; }
+
+  /* Pills. Neutral, selected, and a toggle that is set. */
+  .chip       { @apply inline-flex items-center gap-1 rounded-full border border-border bg-elevated px-2.5 py-0.5
+                       text-xs text-muted transition-colors; }
+  .chip-on    { @apply bg-accent border-accent text-white; }
+  .chip-toggle-on { @apply border-accent/60 bg-accent/10 text-accent; }
+
+  /* A count or a level, never clickable on its own. */
+  .badge      { @apply inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums; }
+
+  /* One surface for every menu: the ⋮ one, a context menu, a select's list. */
+  .menu-surface { @apply bg-elevated border border-border rounded-lg shadow-xl p-1; }
+  .menu-item  { @apply flex w-full items-center gap-2.5 min-h-9 px-2.5 rounded-md text-sm text-primary text-left
+                       transition-colors cursor-pointer hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed; }
+  .menu-item-on { @apply text-accent bg-accent/10; }
+  .menu-item-danger { @apply text-danger hover:bg-danger/10; }
+  .menu-heading { @apply section-title px-2.5 pt-2 pb-1; }
+
+  /* The rows of a dialog that offers a few ways on (Export, New card, Add a
+     file). The description is always visible: a title tooltip does not exist
+     under a finger. */
+  .choice-card {
+    @apply flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-border bg-bg text-left cursor-pointer
+           transition-colors hover:border-accent/60 hover:bg-accent/5;
+  }
+
+  .empty-state { @apply text-sm text-dim text-center py-6 px-4; }
   .input      { @apply w-full bg-bg border border-border rounded px-3 py-2 text-sm text-primary
                        placeholder-dim focus:outline-none focus:border-accent transition-colors; }
   /* A layer that covers the whole screen keeps its content off the system
@@ -256,7 +351,7 @@
      a portrait phone — where the bar holds fewer items, the rest being in ⋮ —
      so the phone's header matches its 3.5 rem bottom bar. */
   .hdr-btn {
-    @apply flex items-center justify-center rounded-lg transition-colors shrink-0;
+    @apply flex items-center justify-center rounded-md transition-colors shrink-0;
     min-width: 2.5rem;
     min-height: 2.5rem;
   }
@@ -712,7 +807,7 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
    for the three so they cannot drift apart, and `.abc-chip-on` for the state.
    Sized as a target first (36 px, the app's floor) and as a glyph second. */
 .abc-chip {
-  @apply flex items-center justify-center gap-1 rounded-lg text-xs font-medium
+  @apply flex items-center justify-center gap-1 rounded-md text-xs font-medium
          transition-colors cursor-pointer shrink-0 border border-border bg-bg text-muted;
   min-width: 2.25rem;
   min-height: 2.25rem;
@@ -819,6 +914,17 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 }
 
 
+
+/* The sidebar's creation bar (sidebar.tsx): its two buttons keep their size,
+   and their words go first when the sidebar is too narrow to hold them — not
+   cut, gone; the icons and the tooltip say the rest (the user, 2026-11-11).
+   The threshold is the bar's content width the two labelled buttons need,
+   measured in layout px (2026-11-11): 182 in English, 194 in French (the
+   wider "Dossier"/"Paquet"), so 200 with a little room — the labels stay down
+   to a 217 px sidebar, the default being 224. A new language with longer
+   words moves this number. */
+.sidebar-new { container: sidebar-new / inline-size; }
+@container sidebar-new (max-width: 12.49rem) { .sidebar-new-label { display: none; } }
 
 /* Library list — show date column when container is wide enough */
 .lib-list { container-type: inline-size; }
@@ -964,7 +1070,7 @@ html.soft-keyboard-open #legal-footer { display: none; }
   font-size: calc(13px * var(--tz));
   font-weight: 500;
   padding: calc(6px * var(--tz)) calc(14px * var(--tz));
-  border-radius: calc(8px * var(--tz));
+  border-radius: calc(6px * var(--tz));
   border: none;
   background: rgb(var(--color-accent-ch));
   color: #fff;

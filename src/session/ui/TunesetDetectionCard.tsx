@@ -3,6 +3,7 @@ import type { ComponentChild } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, HourglassIcon, TuneSetIcon } from '../../components/icons';
+import { IconButton } from '../../components/ui';
 import { getContext } from '../../store';
 import { hasRecognisedSetting, keyOffsetOf, type Detection, type TunesetRecord } from '../model';
 import { setCardFor, chainSpan, isSettled } from '../tunesets';
@@ -143,7 +144,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
       class={`detection-card p-3 rounded-lg border-[3px] border-double space-y-2 ${setCard || !hasLibrary() ? 'bg-surface' : 'bg-bg'} ${open ? 'border-accent/60' : 'border-border'}`}
       data-set-id={opts.record?.id}
     >
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1">
         {open && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
 
@@ -176,35 +177,38 @@ export function TunesetDetectionCard({ chain, opts, children }: {
             its results, so it says what it is instead. Once the set is a card,
             the way to it — the name used to be. */}
         {setCard ? (
+          // The pill is the drawing, the button around it a 32 px target.
           <button
-            class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted cursor-pointer hover:text-accent hover:border-accent/50 transition-colors"
+            class="group shrink-0 inline-flex items-center min-h-8 cursor-pointer"
             title={`${name} · ${t('sessions.openCard')}`}
             onClick={() => opts.onOpenCard?.(setCard.id)}
           >
-            <TuneSetIcon size={11} />
-            {t('sessions.set.label')}
+            <span class="text-2xs px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 border border-border text-muted group-hover:text-accent group-hover:border-accent/50 transition-colors">
+              <TuneSetIcon size={12} />
+              {t('sessions.set.label')}
+            </span>
           </button>
         ) : (
-          <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted" title={name}>
-            <TuneSetIcon size={11} />
+          <span class="text-2xs px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1 border border-border text-muted" title={name}>
+            <TuneSetIcon size={12} />
             {t('sessions.set.label')}
           </span>
         )}
 
         {opts.onToggleLike && opts.record && (
-          <button
-            class={`shrink-0 cursor-pointer transition-colors ${opts.record.liked ? 'text-danger' : 'text-dim hover:text-danger'}`}
-            title={t(opts.record.liked ? 'sessions.set.unlike' : 'sessions.set.like')}
+          <IconButton
+            label={t(opts.record.liked ? 'sessions.set.unlike' : 'sessions.set.like')}
+            class={opts.record.liked ? 'text-danger hover:text-danger' : 'hover:text-danger'}
             onClick={(e) => { e.stopPropagation(); opts.onToggleLike!(opts.record!); }}
           >
-            <HeartIcon size={13} filled={!!opts.record.liked} />
-          </button>
+            <HeartIcon size={14} filled={!!opts.record.liked} />
+          </IconButton>
         )}
       </div>
 
       {/* Under the + it answers. */}
       {missing && (
-        <p class="text-[11px] text-dim leading-snug">
+        <p class="text-2xs text-dim leading-snug">
           {missing.length > 0
             ? t('sessions.set.needCards', { names: missing.map(id => names[tuneIds.indexOf(id)]).join(', ') })
             : t('sessions.set.notSettled')}
@@ -220,7 +224,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
       {opts.details !== false && <div class="text-xs text-muted flex items-center gap-1.5 flex-wrap">
         <span class="font-mono tabular-nums">{range}</span>
         {opts.clip && (
-          <span class="ml-auto flex items-center gap-1.5">
+          <span class="ml-auto flex items-center">
             <SetClipControls
               session={opts.session}
               setCard={setCard}

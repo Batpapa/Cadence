@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import { appState, mutate } from '../store';
-import { showModal, closeModal, renderModalBody, confirmModal } from './modal';
+import { showModal, closeModal, renderModalBody, confirmModal, MODAL_W } from './modal';
 import { focusIfDesktop, matchesSearch } from '../utils';
 import { t } from '../services/i18nService';
 import { removeTagEverywhere } from '../services/cardService';
@@ -97,10 +97,8 @@ export function TagPicker({ value, onChange, exclude, readout, note, onSubmit }:
               // `hoverable:` and not `hover:`: the pin has a real selected
               // state, so a hover stuck on the last thing tapped would be a
               // second pin claiming to be the chosen one.
-              class={`text-xs px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
-                tg === clean
-                  ? 'bg-accent text-white border-accent'
-                  : 'border-border text-muted hoverable:border-accent hoverable:text-accent'
+              class={`chip cursor-pointer ${
+                tg === clean ? 'chip-on' : 'hoverable:border-accent hoverable:text-accent'
               }`}
               onClick={() => onChange(tg === clean ? '' : tg)}
             >{tg}</button>
@@ -203,19 +201,22 @@ export function showCardTagModal(
   const { el, cleanup } = renderModalBody(
     <CardTagBody cardId={cardId} renaming={renaming} draft={draft} noop={noop} onSubmit={commit} />,
   );
-  // No Cancel button: the ✕, Escape and a click outside all back out already,
-  // and a confirm that greys itself out until something would happen cannot be
-  // left half-done. Same reasoning as the batch dialogs.
+  // [Cancel][Primary], as every footer of the charter (2026-11-11): the ✕,
+  // Escape and a click outside back out too, but a lone primary left a finger
+  // without a way out it could see at the bottom of the dialog.
   showModal(
     renaming === null ? t('card.tags.add') : t('card.tags.rename'),
     el,
-    [{
-      label: renaming === null ? t('common.add') : t('common.save'),
-      primary: true,
-      disabled: noop,
-      onClick: commit,
-    }],
-    { maxWidth: '28rem', onDismiss: cleanup },
+    [
+      { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
+      {
+        label: renaming === null ? t('common.add') : t('common.save'),
+        primary: true,
+        disabled: noop,
+        onClick: commit,
+      },
+    ],
+    { maxWidth: MODAL_W.m, onDismiss: cleanup },
   );
 }
 
@@ -324,8 +325,9 @@ export function showRenameTagEverywhereModal(
       isGroup
         ? { label: t('library.tags.dissolve.button'), danger: true, align: 'start', onClick: remove }
         : { label: t('library.tags.remove.button'), icon: iconElement(TrashIcon), danger: true, align: 'start', onClick: remove },
+      { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
       { label: t('common.save'), primary: true, disabled: noop, onClick: commit },
     ],
-    { maxWidth: '28rem', onDismiss: cleanup },
+    { maxWidth: MODAL_W.m, onDismiss: cleanup },
   );
 }

@@ -11,8 +11,7 @@ import { swingAudioParams } from '../services/jigSwing';
 import { resolveCardRef } from '../services/cardRefService';
 import { appState } from '../store';
 import { hydratedEntry } from '../services/attachmentStore';
-import { playIcon, stopIcon } from './playbackIcons';
-import { MusicNoteIcon, ExpandIcon } from './icons';
+import { MusicNoteIcon, ExpandIcon, PlayIcon, StopIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio } from '../services/audioSession';
 import { abcjsVolumeMultiplier } from '../services/playbackVolume';
@@ -199,7 +198,7 @@ export function IncipitRow({ card, where, onOpenScore, class: className = '' }: 
       <div class="flex items-center gap-2">
         <span class="section-title">{t('card.section.incipit')}</span>
         {/* `group` / `group-hover`, and not a `hover:` on the pill itself.
-            The BUTTON is the target — `.tap-btn` gives it 32 px so a finger
+            The BUTTON is the target — `.icon-btn` gives it 32 px so a finger
             can reach it — while the pill inside is 24 px, so a hover state
             living on the pill left a 4 px ring all round that was clickable,
             showed a pointer cursor, and lit nothing. With two of these side by
@@ -207,16 +206,18 @@ export function IncipitRow({ card, where, onOpenScore, class: className = '' }: 
             between them. What reacts is now what you are pointing at. */}
         <button
           type="button"
-          class="tap-btn shrink-0 cursor-pointer group"
+          class="icon-btn group"
           title={t(mode === 'sheet' ? 'card.incipit.showSource' : 'card.incipit.showScore')}
           onClick={() => setMode(m => (m === 'sheet' ? 'text' : 'sheet'))}
         >
           {/* Shows the face it would switch TO, in the viewer's own
-              vocabulary — the "ABC" tab there is this "ABC" here. */}
-          <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors">
+              vocabulary — the "ABC" tab there is this "ABC" here. At the
+              11 px floor, three bold mono capitals take ~20 px of the 24 px
+              disc: `tracking-tighter` keeps them off its edge. */}
+          <span class="icon-disc">
             {mode === 'sheet'
-              ? <span class="text-[8px] font-mono font-bold leading-none">ABC</span>
-              : <MusicNoteIcon size={11} />}
+              ? <span class="text-2xs font-mono font-bold leading-none tracking-tighter">ABC</span>
+              : <MusicNoteIcon size={12} />}
           </span>
         </button>
         {/* Straight to the score, from the one place on the card that is
@@ -232,12 +233,12 @@ export function IncipitRow({ card, where, onOpenScore, class: className = '' }: 
         {onOpenScore && (
           <button
             type="button"
-            class="tap-btn shrink-0 cursor-pointer group"
+            class="icon-btn group"
             title={t('card.incipit.openScore')}
             onClick={onOpenScore}
           >
-            <span class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors">
-              <ExpandIcon size={11} />
+            <span class="icon-disc">
+              <ExpandIcon size={12} />
             </span>
           </button>
         )}
@@ -538,7 +539,7 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
       {audible && (
         <button
           type="button"
-          class="tap-btn shrink-0 cursor-pointer group"
+          class="icon-btn group"
           title={t(playing ? 'card.incipit.stop' : 'card.incipit.play')}
           onClick={() => { void toggle(); }}
         >
@@ -549,10 +550,9 @@ function Incipit({ abc, mode, class: className = '' }: { abc: string; mode: AbcO
               hover state is driven from the button (`group-hover`): a tint on
               the disc alone left the ring between the two lighting nothing.
               Same fix as the two switches in the heading above. */}
-          <span
-            class="w-6 h-6 rounded-full flex items-center justify-center bg-accent/10 text-accent group-hover:bg-accent/20 transition-colors"
-            dangerouslySetInnerHTML={{ __html: playing ? stopIcon(11) : playIcon(11) }}
-          />
+          <span class="icon-disc">
+            {playing ? <StopIcon size={12} /> : <PlayIcon size={12} />}
+          </span>
         </button>
       )}
       {mode === 'text'

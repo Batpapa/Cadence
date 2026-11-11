@@ -40,9 +40,9 @@ export function StandaloneShell({ lang, onLanguageChange, onBack, notice, scroll
           </button>
         )}
         <a class="sa-brand" href={APP_URL} title={tIn(lang, 'standalone.openApp')}>
-          {/* The mark in its brand cyan, as on the welcome screen — a literal,
-              like CadenceMark's: a logo does not follow the theme. Cropped
-              (glyph) so that it reads at header size. */}
+          {/* The mark in its brand colour, as on the welcome screen: the cyan,
+              a teal on the light themes (shell.css). Cropped (glyph) so that
+              it reads at header size. */}
           <span class="sa-mark"><CadenceLogo size={34} glyph /></span>
           <span>Cadence</span>
         </a>
@@ -55,7 +55,7 @@ export function StandaloneShell({ lang, onLanguageChange, onBack, notice, scroll
             // The icon alone on a phone: beside the mark and the three
             // settings, the label would not fit.
             <button type="button" class="btn-ghost text-xs inline-flex items-center gap-1.5 text-accent" title={tIn(lang, 'settings.install')} aria-label={tIn(lang, 'settings.install')} onClick={install}>
-              <InstallIcon size={13} /><span class="hidden sm:inline">{tIn(lang, 'settings.install')}</span>
+              <InstallIcon size={14} /><span class="hidden sm:inline">{tIn(lang, 'settings.install')}</span>
             </button>
           )}
           {/* The welcome screen's own: language, theme, zoom — device

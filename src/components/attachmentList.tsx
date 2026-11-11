@@ -5,7 +5,11 @@ import { identityOf, type AttachmentIdentity, type AudioPresetsBinding } from '.
 import { generateId, addTouchDragSupport, downloadBlob, base64ToBlob, formatBytes, fileToEntry } from '../utils';
 import { hydratedEntry, AttachmentNotHere } from '../services/attachmentStore';
 import { alertModal } from './modal';
-import { TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon } from './icons';
+import {
+  TrashIcon, PlusIcon, GearIcon, WrenchIcon, PencilIcon, ExternalLinkIcon, LinkIcon, PlayIcon,
+  MusicNoteIcon, FileAudioIcon, VideoIcon, ImageIcon, NotesIcon, FileIcon,
+} from './icons';
+import { IconButton } from './ui';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding, type PreviewModalOpts } from './fileViewer';
 import { cardAudioSync } from './cardAudioSync';
@@ -14,7 +18,7 @@ import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
 import { showAddFileModal } from './addFileModal';
 import { showAddLinkModal, showEditLinkModal } from './addLinkModal';
-import { detectPlatform, PLATFORM_ICONS, linkMode, safeExternalUrl, isFileEmbed } from '../services/embedService';
+import { detectPlatform, linkMode, safeExternalUrl, isFileEmbed } from '../services/embedService';
 import { fetchRemoteFile, remoteDisplayName, refusalMessage, typeFromUrl, RemoteFileError } from '../services/remoteFile';
 import { resolveCardRef } from '../services/cardRefService';
 import { tunesetAbcEntry, tunesetAbcFileName, clampRepeat, MAX_REPEAT, tunesetAbcPlaceholder, isAbcFile, isAbcLink, cardScoreIndex } from '../services/abcService';
@@ -149,15 +153,24 @@ function openRemoteFile(
   });
 }
 
-function mimeIcon(entry: FileEntry): string {
+/** The row's type mark. Drawn, never a character: 𝄞 ♫ ▶ ▣ ≣ ¶ ◈ were left
+ *  to the phone's font, which may draw any of them as an emoji — the reason
+ *  ← → went too. A PDF and a text file are both a written page here. */
+function mimeIcon(entry: FileEntry): ComponentChild {
   const m = viewMimeType(entry.mimeType, entry.name);
-  if (entry.name.endsWith('.abc') || m === 'text/vnd.abc') return '𝄞';
-  if (m.startsWith('audio/'))  return '♫';
-  if (m.startsWith('video/'))  return '▶';
-  if (m.startsWith('image/'))  return '▣';
-  if (m === 'application/pdf') return '≣';
-  if (m.startsWith('text/') || entry.name.endsWith('.md') || entry.name.endsWith('.txt')) return '¶';
-  return '◈';
+  if (entry.name.endsWith('.abc') || m === 'text/vnd.abc') return <MusicNoteIcon size={12} />;
+  if (m.startsWith('audio/'))  return <FileAudioIcon size={12} />;
+  if (m.startsWith('video/'))  return <VideoIcon size={12} />;
+  if (m.startsWith('image/'))  return <ImageIcon size={12} />;
+  if (m === 'application/pdf') return <NotesIcon size={12} />;
+  if (m.startsWith('text/') || entry.name.endsWith('.md') || entry.name.endsWith('.txt')) return <NotesIcon size={12} />;
+  return <FileIcon size={12} />;
+}
+
+/** A platform's embed, by what it plays: a video for YouTube, a sound for the
+ *  three audio services (embedService's PLATFORM_ICONS were characters). */
+function platformIcon(platform: NonNullable<ReturnType<typeof detectPlatform>>): ComponentChild {
+  return platform === 'youtube' ? <VideoIcon size={12} /> : <FileAudioIcon size={12} />;
 }
 
 // ── Drag-to-reorder ────────────────────────────────────────────────────────────
@@ -233,7 +246,7 @@ function AttachmentRow({ index, editable, onReorder, scratch, children }: {
   const ref = useRef<HTMLDivElement>(null);
   useReorderDrag(ref, index, editable, scratch, onReorder);
   return (
-    <div ref={ref} class="flex items-center gap-2 px-3 py-1.5 rounded border border-border group">
+    <div ref={ref} class="flex items-center gap-1 px-3 py-0.5 rounded border border-border group">
       {editable && (
         <span class="text-dim cursor-grab active:cursor-grabbing shrink-0 text-xs select-none">⠿</span>
       )}
@@ -364,7 +377,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
   };
   return (
     <>
-      <span class="text-[11px] text-dim shrink-0 w-4 flex items-center justify-center font-mono">{glyph ?? mimeIcon(entry)}</span>
+      <span class="text-dim shrink-0 w-4 mr-1 flex items-center justify-center">{glyph ?? mimeIcon(entry)}</span>
       {draft !== null ? (
         <span class="flex items-center gap-1 flex-1 min-w-0">
           <input
@@ -398,13 +411,9 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
         </span>
       )}
       {editable && onRename && draft === null && (
-        <button
-          class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center"
-          title={t('fileViewer.rename')}
-          onClick={() => { settled.current = false; setDraft(base); }}
-        >
-          <PencilIcon size={11} />
-        </button>
+        <IconButton label={t('fileViewer.rename')} onClick={() => { settled.current = false; setDraft(base); }}>
+          <PencilIcon size={14} />
+        </IconButton>
       )}
       {/* The same glyph the session module downloads with — this was the one
           place still using a bare arrow character, which read as a smaller,
@@ -415,19 +424,17 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
           revoked, so merely scrolling a card allocated a copy of the file per
           pass. */}
       <button
-        class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center"
-        title={t('fileViewer.download')}
+        type="button"
+        class="icon-btn"
+        title={t('fileViewer.download')} aria-label={t('fileViewer.download')}
         onClick={onDownload ?? (() => void withResolvedEntry(entry, resolved =>
           downloadBlob(base64ToBlob(resolved.data, resolved.mimeType), entry.name)))}
-        dangerouslySetInnerHTML={{ __html: downloadIcon(12) }}
+        dangerouslySetInnerHTML={{ __html: downloadIcon(14) }}
       />
       {editable && (
-        <button
-          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
-          title={t('fileViewer.remove')} onClick={() => confirmRemove(entry.name, false, onRemove)}
-        >
-          <TrashIcon size={11} />
-        </button>
+        <IconButton label={t('fileViewer.remove')} class="hover:text-danger" onClick={() => confirmRemove(entry.name, false, onRemove)}>
+          <TrashIcon size={14} />
+        </IconButton>
       )}
     </>
   );
@@ -451,8 +458,8 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets, scor
   // YouTube URL deliberately kept external must not look like an embed. A
   // file takes the icon an attached file of its type would, guessed from the
   // URL since nothing of it is stored.
-  const icon = mode === 'link' ? '↗'
-    : platform ? PLATFORM_ICONS[platform]
+  const icon = mode === 'link' ? <ExternalLinkIcon size={12} />
+    : platform ? platformIcon(platform)
     : mimeIcon({ name: '', data: '', mimeType: typeFromUrl(entry.url) });
   // A safe href only for an external link or a file — a platform's embed never
   // becomes one, and a scheme the browser would run as script never becomes
@@ -471,11 +478,10 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets, scor
   }
 
   const labelClass = 'text-xs font-mono truncate flex-1 text-muted hover:text-primary transition-colors';
-  const actionClass = 'text-dim hover:text-accent transition-colors shrink-0 cursor-pointer flex items-center';
 
   return (
     <>
-      <span class="text-[11px] text-dim shrink-0 w-4 text-center font-mono">{icon}</span>
+      <span class="text-dim shrink-0 w-4 mr-1 flex items-center justify-center">{icon}</span>
 
       {/* A real anchor rather than a click handler, so a middle click or a
           Ctrl+click behaves the way every other link on the page does — and so
@@ -484,7 +490,9 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets, scor
         href ? (
           <a href={href} target="_blank" rel="noopener noreferrer" class={labelClass} title={entry.url}>{label}</a>
         ) : (
-          <span class={`${labelClass} italic`} title={t('embed.badUrl')}>{label}</span>
+          // In red and not merely slanted: a link that cannot open is a fault,
+          // and the title alone said so only to a mouse.
+          <span class="text-xs font-mono truncate flex-1 text-danger" title={t('embed.badUrl')}>{label}</span>
         )
       ) : (
         <span class={`${labelClass} cursor-pointer`} title={entry.url} onClick={play}>{label}</span>
@@ -494,25 +502,24 @@ function EmbedRowContent({ entry, onRemove, onEdit, editable, audioPresets, scor
           of a file's row (rename, download, remove), so the pencil sits in
           the same place on every row of the list. */}
       {editable && onEdit && (
-        <button class={actionClass} title={t('embed.edit')} onClick={onEdit}>
-          <PencilIcon size={11} />
-        </button>
+        <IconButton label={t('embed.edit')} onClick={onEdit}>
+          <PencilIcon size={14} />
+        </IconButton>
       )}
       {mode === 'embed' && (
-        <button class={`${actionClass} text-xs`} title={t('embed.play')} onClick={play}>▶</button>
+        <IconButton label={t('embed.play')} onClick={play}>
+          <PlayIcon size={12} />
+        </IconButton>
       )}
       {href && (
-        <a href={href} target="_blank" rel="noopener noreferrer" class={actionClass} title={t('embed.open')}>
-          <ExternalLinkIcon size={11} />
+        <a href={href} target="_blank" rel="noopener noreferrer" class="icon-btn" title={t('embed.open')} aria-label={t('embed.open')}>
+          <ExternalLinkIcon size={14} />
         </a>
       )}
       {editable && (
-        <button
-          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
-          title={t('embed.remove')} onClick={() => confirmRemove(label, false, onRemove)}
-        >
-          <TrashIcon size={11} />
-        </button>
+        <IconButton label={t('embed.remove')} class="hover:text-danger" onClick={() => confirmRemove(label, false, onRemove)}>
+          <TrashIcon size={14} />
+        </IconButton>
       )}
     </>
   );
@@ -631,7 +638,7 @@ function showBrokenRefModal(entry: CardRef, type: string | undefined): void {
   ], { maxWidth: '26rem', onDismiss: cleanup });
 }
 
-function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action, repairType }: {
+function CardRefRowContent({ entry, onRemove, editable, glyph = <LinkIcon size={12} />, action, repairType }: {
   entry: CardRef;
   onRemove: () => void;
   editable: boolean;
@@ -652,7 +659,7 @@ function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action, r
           are both no-ops on a non-replaced inline element, which went unnoticed
           while the glyph was a single character and stopped being true the
           moment it became an SVG. */}
-      <span class="text-[11px] text-dim shrink-0 w-4 flex items-center justify-center font-mono">{glyph}</span>
+      <span class="text-dim shrink-0 w-4 mr-1 flex items-center justify-center">{glyph}</span>
       {resolved ? (
         <span
           class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
@@ -661,30 +668,23 @@ function CardRefRowContent({ entry, onRemove, editable, glyph = '↗', action, r
       ) : (
         <>
           <span class="text-xs font-mono truncate flex-1 text-dim">
-            {entry.title}<span class="ml-1 text-danger text-[10px]">{t('fileViewer.cardRef.unresolved')}</span>
+            {entry.title}<span class="ml-1 text-danger text-2xs">{t('fileViewer.cardRef.unresolved')}</span>
           </span>
           {/* Shown whether or not the row is editable: a missing card is just
               as missing while studying, and putting it back is not an edit of
               THIS card — it creates another one. Rendered here rather than
               through the `action` slot below, which the repeat counter already
               occupies on a set's rows, and which knows nothing of resolution. */}
-          <button
-            class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0"
-            title={t('fileViewer.cardRef.repair')}
-            onClick={() => showBrokenRefModal(entry, repairType)}
-          >
-            <WrenchIcon size={11} />
-          </button>
+          <IconButton label={t('fileViewer.cardRef.repair')} onClick={() => showBrokenRefModal(entry, repairType)}>
+            <WrenchIcon size={14} />
+          </IconButton>
         </>
       )}
       {action}
       {editable && (
-        <button
-          class="text-dim hover:text-danger transition-colors cursor-pointer shrink-0"
-          title={t('fileViewer.remove')} onClick={() => confirmRemove(resolved?.name ?? entry.title, true, onRemove)}
-        >
-          <TrashIcon size={11} />
-        </button>
+        <IconButton label={t('fileViewer.remove')} class="hover:text-danger" onClick={() => confirmRemove(resolved?.name ?? entry.title, true, onRemove)}>
+          <TrashIcon size={14} />
+        </IconButton>
       )}
     </>
   );
@@ -763,11 +763,11 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
             // there; a readout that says "once" tells a reader nothing they
             // were not already assuming, and every row would carry one.
             action={onSetRepeat ? (
+              // The button is the 32 px target, the pill inside it the look —
+              // the icon-disc pattern, so the row keeps its small counter.
               <button
                 type="button"
-                class={`shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                  clampRepeat(ref.repeat) > 1 ? 'text-accent bg-accent/10' : 'text-dim hover:text-muted'
-                }`}
+                class="group shrink-0 min-w-8 min-h-8 inline-flex items-center justify-center cursor-pointer"
                 title={t('card.tunes.repeatTitle')}
                 // Left click counts up, right click counts down, both wrapping
                 // at the ends — so 3 → 2 is one gesture instead of a lap round
@@ -778,10 +778,14 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
                   e.preventDefault();
                   onSetRepeat(i, (clampRepeat(ref.repeat) + MAX_REPEAT - 2) % MAX_REPEAT + 1);
                 }}
-              >×{clampRepeat(ref.repeat)}</button>
+              >
+                <span class={`text-2xs font-mono px-1.5 py-0.5 rounded-md transition-colors ${
+                  clampRepeat(ref.repeat) > 1 ? 'text-accent bg-accent/10 group-hover:bg-accent/20' : 'text-dim group-hover:text-muted'
+                }`}>×{clampRepeat(ref.repeat)}</span>
+              </button>
             ) : clampRepeat(ref.repeat) > 1 ? (
               <span
-                class="shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded text-accent bg-accent/10"
+                class="shrink-0 text-2xs font-mono px-1.5 py-0.5 rounded-md text-accent bg-accent/10"
                 title={t('card.tunes.repeatReadOnly', { n: clampRepeat(ref.repeat) })}
               >×{clampRepeat(ref.repeat)}</span>
             ) : null}
@@ -1080,13 +1084,12 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
         <span class="section-title">{t('fileViewer.attachments')}</span>
         {editable && (
           <>
-            <button
-              class="btn-ghost px-2"
-              title={t('fileViewer.addAttachment')}
+            <IconButton
+              label={t('fileViewer.addAttachment')}
               onClick={(e) => addMenu.open(e.clientX, e.clientY)}
             >
-              <PlusIcon size={13} />
-            </button>
+              <PlusIcon size={14} />
+            </IconButton>
             {addMenu.menu}
           </>
         )}

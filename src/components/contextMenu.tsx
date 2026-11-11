@@ -106,7 +106,7 @@ export function useContextMenu(items: ContextMenuEntry[]) {
     <div
       ref={menuRef}
       data-tour="context-menu"
-      class="fixed z-[100] bg-elevated border border-border rounded-lg shadow-2xl overflow-hidden py-1 min-w-[180px]"
+      class="fixed z-[100] menu-surface overflow-hidden min-w-[180px]"
       style={{
         left:   pos.left   !== undefined ? `${pos.left}px`   : undefined,
         right:  pos.right  !== undefined ? `${pos.right}px`  : undefined,
@@ -114,21 +114,19 @@ export function useContextMenu(items: ContextMenuEntry[]) {
         bottom: pos.bottom !== undefined ? `${pos.bottom}px` : undefined,
       }}
     >
+      {/* The app's one menu surface and row (styles.css, UI charter of
+          2026-11-11): the ⋮ menu, this one and the select lists. */}
       {items.map((item, i) => isHeading(item) ? (
         <div
           key={`h:${item.heading}`}
-          class={`px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-dim ${
-            i === 0 ? 'pt-1' : 'mt-1 pt-2 border-t border-border'
-          }`}
+          class={`menu-heading ${i === 0 ? '' : 'mt-1 border-t border-border'}`}
         >
           {item.heading}
         </div>
       ) : (
         <button
           key={item.label}
-          class={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left cursor-pointer border-none bg-transparent transition-colors ${
-            item.danger ? 'text-danger hover:bg-danger/10' : 'text-primary hover:bg-surface'
-          }`}
+          class={`menu-item border-none${item.danger ? ' menu-item-danger' : ''}`}
           onClick={() => { close(); item.onClick(); }}
         >
           {item.icon && <span class="shrink-0 flex items-center">{item.icon}</span>}

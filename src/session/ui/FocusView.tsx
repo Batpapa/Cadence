@@ -2,6 +2,7 @@ import type { ComponentChild } from 'preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { ArrowLeftIcon, ArrowRightIcon, SkipToEndIcon, TuneSetIcon } from '../../components/icons';
+import { EmptyState } from '../../components/ui';
 import type { Detection } from '../model';
 import { fmtLongTime, tuneName } from './sessionUiShared';
 import type { ListGap } from './timelineModel';
@@ -146,8 +147,8 @@ function FocusNav({ anns, spot, onGo, feed }: {
     return () => ro.disconnect();
   }, [kind]);
 
-  const box = 'h-12 px-3 rounded-lg border border-border bg-bg flex items-center gap-2 text-sm font-medium transition-colors';
-  const usable = (on: boolean) => on ? 'cursor-pointer text-primary hover:border-accent/60 hover:bg-accent/5' : 'text-dim opacity-50 cursor-default';
+  const box = 'h-12 px-3 rounded-md border border-border bg-bg flex items-center gap-2 text-sm font-medium transition-colors';
+  const usable = (on: boolean) => on ? 'cursor-pointer text-primary hover:border-accent/60 hover:bg-accent/5' : 'text-primary opacity-40 cursor-default';
   const prevLabel = t('sessions.focus.prev');
   const nextLabel = t('sessions.focus.next');
   const longLive = t('sessions.focus.backToLive');
@@ -232,7 +233,7 @@ export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
   const chain = shown ? chains.find(c => c.some(d => d.id === shown.id)) : undefined;
 
   if (anns.length === 0) {
-    return <p class="text-sm text-dim text-center py-10">{t('sessions.focus.empty')}</p>;
+    return <EmptyState class="py-10">{t('sessions.focus.empty')}</EmptyState>;
   }
 
   return (
@@ -250,12 +251,12 @@ export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
                 {k > 0 && <span class="text-dim">/</span>}
                 {d.id === shown!.id
                   ? <span class="font-semibold text-primary">{tuneName(d).text}</span>
-                  : <button class="cursor-pointer hover:text-accent hover:underline transition-colors" onClick={() => onGo(d)}>{tuneName(d).text}</button>}
+                  : <button class="min-h-8 cursor-pointer hover:text-accent hover:underline transition-colors" onClick={() => onGo(d)}>{tuneName(d).text}</button>}
               </span>
             ))}
           </div>
           <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border shrink-0">
-            <TuneSetIcon size={11} />
+            <TuneSetIcon size={12} />
             {t('sessions.set.label')}
           </span>
         </div>

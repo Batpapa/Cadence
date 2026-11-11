@@ -2,7 +2,8 @@ import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { CardSearchField } from '../components/cardSearchField';
-import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, StudyIcon } from '../components/icons';
+import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, StudyIcon, ChevronDownIcon } from '../components/icons';
+import { IconButton, Metric, EmptyState } from '../components/ui';
 import { confirmModal, confirmModalWithOption } from '../components/modal';
 import { CustomSelect } from '../components/customSelect';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckToParent } from '../services/deckService';
@@ -12,19 +13,6 @@ import { t } from '../services/i18nService';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 
-
-function DeckMetric({ label, value, colorClass = 'text-primary' }: {
-  label: string;
-  value: string;
-  colorClass?: string;
-}) {
-  return (
-    <div class="flex items-baseline gap-2">
-      <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{label}</span>
-      <span class={`text-sm font-mono font-semibold ${colorClass}`}>{value}</span>
-    </div>
-  );
-}
 
 function formatDays(d: number): string {
   if (d >= 365) return t('common.durationYears',    { n: (d / 365).toFixed(1) });
@@ -129,14 +117,15 @@ export function DeckView({ deckId }: { deckId: string }) {
         <div class="flex items-start justify-between gap-4">
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <button
+              <IconButton
                 data-tour="deck-star"
-                class={`shrink-0 flex items-center transition-colors cursor-pointer ${deck.favorite ? 'text-yellow-400' : 'text-dim hover:text-yellow-400'}`}
-                title={deck.favorite ? t('deck.unfavorite') : t('deck.favorite')}
+                class={`-ml-1.5 ${deck.favorite ? 'text-warn hover:text-warn' : 'hover:text-warn'}`}
+                label={deck.favorite ? t('deck.unfavorite') : t('deck.favorite')}
+                aria-pressed={!!deck.favorite}
                 onClick={() => mutate(s => { const d = s.decks[deckId]; if (d) d.favorite = !d.favorite; })}
               >
                 <StarIcon size={20} filled={!!deck.favorite} />
-              </button>
+              </IconButton>
               <div class="flex-1 min-w-0">
             {isEditingName ? (
               <input
@@ -167,7 +156,7 @@ export function DeckView({ deckId }: { deckId: string }) {
               </div>
             </div>
             <div class="flex items-center gap-1 mt-1" data-tour="deck-location">
-              <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('folder.parent.label')}</span>
+              <span class="text-2xs font-medium uppercase tracking-wider text-dim">{t('folder.parent.label')}</span>
               <CustomSelect
                 value={parentId ?? ''}
                 options={parentOptions}
@@ -175,13 +164,11 @@ export function DeckView({ deckId }: { deckId: string }) {
                 renderTrigger={(label, open, toggle) => (
                   <button
                     type="button"
-                    class="text-[10px] font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
+                    class="text-2xs font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
                     onClick={toggle}
                   >
                     {label}
-                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
-                      <polyline points="6 9 12 15 18 9"/>
-                    </svg>
+                    <span class={`shrink-0 flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
                   </button>
                 )}
               />
@@ -191,18 +178,18 @@ export function DeckView({ deckId }: { deckId: string }) {
             {/* Stays clickable when all cards are mastered: the study modal
                 hosts the "exclude mastered" toggle that unlocks that case. */}
             <button
-              class={`${noCards
-                ? 'btn px-3 bg-elevated text-dim cursor-default text-sm font-medium'
-                : 'btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium'} inline-flex items-center gap-1.5`}
+              type="button"
+              class="btn-study px-3 text-sm font-medium inline-flex items-center gap-1.5"
               title={t('deck.studyTitle')}
-              onClick={!noCards ? () => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId }) : undefined}
+              disabled={noCards}
+              onClick={() => showStudyModal({ entries: deck.entries, title: deck.name, defaultContext: deckId, deckId })}
             >
-              <StudyIcon size={15} />
+              <StudyIcon size={16} />
               {t('deck.study')}
             </button>
-            <button
-              class="btn-danger px-2"
-              title={t('deck.deleteTitle')}
+            <IconButton
+              variant="danger"
+              label={t('deck.deleteTitle')}
               onClick={() => {
                 const doDelete = (deleteOrphans: boolean) => {
                   const parent = findParentFolder(deckId, 'deck', user);
@@ -233,29 +220,31 @@ export function DeckView({ deckId }: { deckId: string }) {
                 }
               }}
             >
-              <TrashIcon />
-            </button>
+              <TrashIcon size={14} />
+            </IconButton>
           </div>
         </div>
 
         {/* Metrics — single evenly-spaced inline row */}
         <div class="stats-container border-y border-border" data-tour="deck-stats">
         <div class="stats-grid py-3 px-4 gap-x-4 gap-y-3 justify-items-center">
-          <DeckMetric
+          {/* A zero reads in the muted grey, as on the card page: nothing yet,
+              not a figure to take in. */}
+          <Metric
             label={t('deck.section.availability')}
             value={pct(avail)}
-            colorClass={avail >= 0.75 ? 'text-success' : avail >= 0.4 ? 'text-warn' : avail > 0 ? 'text-danger' : 'text-primary'}
+            colorClass={avail >= 0.75 ? 'text-success' : avail >= 0.4 ? 'text-warn' : avail > 0 ? 'text-danger' : 'text-dim'}
           />
-          <DeckMetric
+          <Metric
             label={t('deck.section.stability')}
             value={stabWindow > 0 ? formatDays(stabWindow) : '—'}
           />
-          <DeckMetric
+          <Metric
             label={t('deck.section.ease')}
             value={ease > 0 ? pct(ease) : '—'}
-            colorClass={ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : ease > 0 ? 'text-danger' : 'text-primary'}
+            colorClass={ease >= 0.6 ? 'text-success' : ease >= 0.35 ? 'text-warn' : ease > 0 ? 'text-danger' : 'text-dim'}
           />
-          <DeckMetric
+          <Metric
             label={t('deck.section.mastery')}
             value={noCards ? '—' : `${deck.entries.length - candidates}/${deck.entries.length}`}
             colorClass={allMastered ? 'text-success' : 'text-primary'}
@@ -269,21 +258,23 @@ export function DeckView({ deckId }: { deckId: string }) {
           (walkthrough/), the field's list of matches hanging over the rows. */}
       <div data-tour="deck-cards">
       {/* ── Cards header + quick-link ── */}
-      <div class="flex items-center justify-between px-6 pb-2">
+      {/* Wraps: on a phone the title, the field and its two buttons did not
+          fit on one line, and the + ran off the screen's right edge
+          (measured on an iPhone 14, before and after the 32 px targets). */}
+      <div class="flex flex-wrap items-center justify-between gap-2 px-6 pb-2">
         <div class="flex items-center gap-2">
           <span class="section-title">{t('deck.section.cards', { count: deck.entries.length })}</span>
-          <button
-            type="button"
-            class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+          <IconButton
+            variant="outline"
             data-tour="deck-library-btn"
-            title={t('deck.viewInLibrary')}
+            label={t('deck.viewInLibrary')}
             onClick={() => navigate({ view: 'library', decks: [[deckId, 'include']] })}
           >
-            <LibraryIcon size={12} />
-          </button>
+            <LibraryIcon size={14} />
+          </IconButton>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 ml-auto">
           {/* The field every card search uses (cardSearchField.tsx), with the
               wording of this one: it links, it does not just search. */}
           <div class="w-44">
@@ -296,15 +287,14 @@ export function DeckView({ deckId }: { deckId: string }) {
               onPick={(card) => mutate(s => { s.decks[deckId]!.entries.push({ cardId: card.id }); })}
             />
           </div>
-          <button
-            type="button"
-            class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+          <IconButton
+            variant="outline"
             data-tour="deck-add-btn"
-            title={t('deck.addCards')}
+            label={t('deck.addCards')}
             onClick={() => showNewCardModal(getContext(), [deckId])}
           >
-            <PlusIcon size={12} />
-          </button>
+            <PlusIcon size={14} />
+          </IconButton>
         </div>
       </div>
 
@@ -312,7 +302,7 @@ export function DeckView({ deckId }: { deckId: string }) {
       <div class="px-6 pb-6" data-tour="deck-card-list">
         <div class="space-y-3">
           {deck.entries.length === 0 ? (
-            <p class="text-sm text-dim italic">{t('deck.empty')}</p>
+            <EmptyState>{t('deck.empty')}</EmptyState>
           ) : (
             <div class="lib-list space-y-1">
               {(() => {
@@ -348,10 +338,10 @@ export function DeckView({ deckId }: { deckId: string }) {
                     onDragLeave={(e) => onDragLeave(e as unknown as DragEvent)}
                     onDrop={(e) => onDrop(entry.cardId, e as unknown as DragEvent)}
                   >
-                    <span class="text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
+                    <span class="text-dim opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
 
                     <span class="flex gap-0.5 items-center shrink-0">
-                      <span class={`w-2 h-2 rounded-full ${availabilityColor(k)}`} title={t('card.dot.recall', { pct: pct(k) })} />
+                      <span class={`w-2 h-2 rounded-full ${availabilityColor(k, cardEase === undefined)}`} title={cardEase === undefined ? t('card.neverReviewed') : t('card.dot.recall', { pct: pct(k) })} />
                       <span
                         class={`w-2 h-2 rounded-full ${cardEase === undefined ? 'bg-border' : cardEase >= 0.6 ? 'bg-success' : cardEase >= 0.35 ? 'bg-warn' : 'bg-danger'}`}
                         title={cardEase !== undefined ? t('card.dot.ease', { pct: pct(cardEase) }) : t('card.neverReviewed')}

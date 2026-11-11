@@ -68,7 +68,7 @@ export function withCutMark(
 function OnSeam({ mark, inSet, children }: { mark: ComponentChild; inSet?: boolean; children: ComponentChild }) {
   return (
     <div class="relative">
-      <span class={`absolute right-3 ${inSet ? '-top-[3px]' : '-top-1'} -translate-y-1/2 z-[3]`}>{mark}</span>
+      <span class={`absolute right-2 ${inSet ? '-top-[3px]' : '-top-1'} -translate-y-1/2 z-[3]`}>{mark}</span>
       {children}
     </div>
   );
@@ -81,16 +81,22 @@ export function SetMarkButton({ kind, active, onClick }: { kind: 'link' | 'unlin
   const title = t(kind === 'link'
     ? (active ? 'sessions.set.linked' : 'sessions.set.linkHint')
     : (active ? 'sessions.set.cutMark' : 'sessions.set.cutHere'));
+  // The small pill is the drawing, astride the seam; the button around it is a
+  // 32 px target (it was 18 × 26). The pill is a toggle chip, on a solid
+  // ground so the cards' edges do not show through its tint.
   return (
     <button
-      class={`shrink-0 h-[18px] w-[26px] inline-flex items-center justify-center rounded-full border bg-bg cursor-pointer transition-colors ${
-        active ? 'border-accent/60 text-accent hover:border-accent' : 'border-border text-dim hover:text-accent hover:border-accent/50'}`}
+      class="group shrink-0 inline-flex items-center justify-center min-w-8 min-h-8 cursor-pointer"
       title={title}
       aria-label={title}
       aria-pressed={active}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
     >
-      {kind === 'link' ? <LinkIcon size={11} /> : <UnlinkIcon size={11} />}
+      <span class="inline-flex rounded-full bg-bg">
+        <span class={`chip px-1.5 ${active ? 'chip-toggle-on group-hover:border-accent' : 'group-hover:text-accent group-hover:border-accent/50'}`}>
+          {kind === 'link' ? <LinkIcon size={12} /> : <UnlinkIcon size={12} />}
+        </span>
+      </span>
     </button>
   );
 }
@@ -106,12 +112,13 @@ export function FeedSilence({ len, linked, onSetOpens }: {
   onSetOpens?: (opens: boolean | undefined) => void;
 }) {
   return (
-    <div class="flex items-center gap-2 py-0.5 text-[11px] text-dim">
+    <div class="flex items-center gap-2 py-0.5 text-2xs text-dim">
       <span class="h-px flex-1 bg-border" />
       <span class="shrink-0 tabular-nums">{fmtLongTime(len)}</span>
       <span class="h-px flex-1 bg-border" />
       {onSetOpens && (
-        <span class="mr-3 flex">
+        // Its 32 px target overhangs the thin line rather than thickening it.
+        <span class="mr-2 -my-2 flex">
           <SetMarkButton kind="link" active={linked} onClick={() => onSetOpens(linked ? undefined : false)} />
         </span>
       )}

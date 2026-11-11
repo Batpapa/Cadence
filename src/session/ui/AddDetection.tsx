@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useRef, useState } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { t } from '../../services/i18nService';
-import { showModal, closeModal } from '../../components/modal';
+import { showModal, closeModal, MODAL_W } from '../../components/modal';
 import { BoundEditor, resetAction, type BoundEdit, type TwinEdit } from './BoundEditor';
 import { TuneLookupField } from './ManualTunePick';
 import { TuneFacts } from './abcPreview';
@@ -154,5 +154,5 @@ export function showAddDetection(opts: {
       },
     },
   // The bound editor's room, and its jog buttons: see BoundEditor's pinTop.
-  ], { maxWidth: '34rem', pinTop: true, onDismiss: cleanup });
+  ], { maxWidth: MODAL_W.l, pinTop: true, onDismiss: cleanup });
 }

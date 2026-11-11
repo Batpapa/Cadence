@@ -2,7 +2,8 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon } from '../../components/icons';
+import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon, CrossIcon, CheckIcon } from '../../components/icons';
+import { IconButton } from '../../components/ui';
 import { findByExternalId } from '../../services/theSessionService';
 import { hasLibrary } from '../../services/pageMode';
 import { AbcPreview, TuneFacts } from './abcPreview';
@@ -165,16 +166,22 @@ function fmtLongTime(s: number): string {
 // the bare glyphs at text-xs, about 12 px wide — too small to hit with a
 // finger while playing in a session (2026-10-08, group feedback). Each glyph
 // now sits on a tinted circle the size of the card's play, score and add
-// buttons above it — bigger read as out of place there (user's call).
-const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: string; cls: string; btn: string; labelKey: string }> = [
-  { rating: 'again', glyph: '✗', cls: 'text-danger',  btn: 'bg-danger/10 hover:bg-danger/20 text-danger',    labelKey: 'rating.again' },
-  { rating: 'hard',  glyph: '△', cls: 'text-warn',    btn: 'bg-warn/10 hover:bg-warn/20 text-warn',          labelKey: 'rating.hard' },
-  { rating: 'good',  glyph: '○', cls: 'text-accent',  btn: 'bg-accent/10 hover:bg-accent/20 text-accent',    labelKey: 'rating.good' },
-  { rating: 'easy',  glyph: '✓', cls: 'text-success', btn: 'bg-success/10 hover:bg-success/20 text-success', labelKey: 'rating.easy' },
+// buttons above it — bigger read as out of place there (user's call). That
+// circle is the 24 px drawing; the button around it is the 32 px target
+// (styles.css, .icon-disc), so the look did not grow, the finger's room did.
+//
+// The four levels keep four drawings. "Again" and "easy" are the app's cross
+// and tick; △ and ○ stay as text, since icons.tsx has no plain triangle or
+// ring (its warning triangle carries a "!", which would say something else).
+const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: ComponentChild; cls: string; btn: string; labelKey: string }> = [
+  { rating: 'again', glyph: <CrossIcon size={12} />, cls: 'text-danger',  btn: 'bg-danger/10 group-hover:bg-danger/20 text-danger',    labelKey: 'rating.again' },
+  { rating: 'hard',  glyph: '△',                    cls: 'text-warn',    btn: 'bg-warn/10 group-hover:bg-warn/20 text-warn',          labelKey: 'rating.hard' },
+  { rating: 'good',  glyph: '○',                    cls: 'text-accent',  btn: 'bg-accent/10 group-hover:bg-accent/20 text-accent',    labelKey: 'rating.good' },
+  { rating: 'easy',  glyph: <CheckIcon size={12} />, cls: 'text-success', btn: 'bg-success/10 group-hover:bg-success/20 text-success', labelKey: 'rating.easy' },
 ];
 
 /** A rating's glyph alone — the Focus view's buttons once their words go. */
-const glyphOf = (rating: SessionRating) => RATING_GLYPHS.find(g => g.rating === rating)?.glyph ?? '';
+const glyphOf = (rating: SessionRating): ComponentChild => RATING_GLYPHS.find(g => g.rating === rating)?.glyph ?? '';
 
 /** How long the "remove" control ignores taps after a rating is given. It
  *  appears where the rating buttons were, so the second tap of a double tap
@@ -233,7 +240,7 @@ export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
             void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1));
           }}
         >
-          <span class={glyph?.cls ?? ''}>{glyph?.glyph ?? ''}</span>
+          <span class={`inline-flex items-center ${glyph?.cls ?? ''}`}>{glyph?.glyph ?? ''}</span>
           <span class="hover:underline">{t('sessions.review.remove')}</span>
         </button>
       </span>
@@ -249,11 +256,11 @@ export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
   return (
     <span class="inline-flex items-center gap-1.5">
       <span class="text-xs text-dim">{t('sessions.review.log')}</span>
-      <span class="inline-flex items-center gap-1">
+      <span class="inline-flex items-center">
         {RATING_GLYPHS.map(({ rating, glyph, btn, labelKey }) => (
           <button
             key={rating}
-            class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 text-xs cursor-pointer transition-colors ${btn}`}
+            class="group icon-btn hover:bg-transparent"
             title={t(labelKey)}
             aria-label={t(labelKey)}
             onClick={() => {
@@ -267,7 +274,7 @@ export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
               }).then(() => setTick(x => x + 1));
             }}
           >
-            {glyph}
+            <span class={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors ${btn}`}>{glyph}</span>
           </button>
         ))}
       </span>
@@ -582,7 +589,9 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
     // purpose: an accent tint would read as a call to attention.
     <div class={`detection-card border ${known || !hasLibrary() ? 'bg-surface' : 'bg-bg'} ${
       focus ? 'p-4 min-[480px]:p-5 rounded-xl space-y-3' : 'p-3 rounded-lg space-y-1.5'} ${isOpen ? 'border-accent/60' : 'border-border'}`} data-ann-id={ann.id} data-tour="detection">
-      <div class="flex items-center gap-2">
+      {/* gap-1: the play, score and deck buttons are 32 px targets around 24 px
+          discs, so their own margin already spaces the drawings. */}
+      <div class="flex items-center gap-1">
         {isOpen && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
 
@@ -625,10 +634,10 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             disclosure caret is the one mark that says "there is more behind
             this" without a word, in any language, and it appears only when the
             picker can actually be opened. */}
+        {/* The pill is the drawing; the button around it is a 32 px target —
+            it opens the alternatives, and at 16 px tall it was missed. */}
         <button
-          class={`${focus ? 'text-xs px-2.5 py-1' : 'text-[10px] px-1.5 py-0.5'} rounded-full shrink-0 inline-flex items-center gap-1 ${
-            ann.userConfirmed ? 'bg-success/15 text-success' : BUCKET_BADGE[ann.bucket]
-          } ${opts.onSelectAlternate ? 'cursor-pointer hover:brightness-110 transition-[filter]' : 'cursor-default'}`}
+          class={`group shrink-0 inline-flex items-center min-h-8 ${opts.onSelectAlternate ? 'cursor-pointer' : 'cursor-default'}`}
           title={opts.onSelectAlternate
             ? t(ann.userConfirmed ? 'sessions.alternates.confirmed' : 'sessions.alternates.trigger')
             : undefined}
@@ -692,42 +701,51 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
               so that every card of it, in a set or not, says the same thing
               (the user's call, 2026-10-30). The badge's colour already carries
               the verdict on its own. Confirmed, there is only ever the check. */}
-          {ann.userConfirmed ? <span>✓</span> : (
-            <>
-              {/* Siblings of the chevron rather than a wrapper around them: the
-                  button's own flex gap then simply skips the word once the
-                  container query hides it, instead of spacing an empty box.
-                  The percentage never hides — see .analysis-list. */}
-              <span class="detection-conf-word">{bucketWord}</span>
-              <span class="tabular-nums">{confidencePct}</span>
-            </>
-          )}
-          {opts.onSelectAlternate && (
-            <span class="flex items-center opacity-70"><ChevronDownIcon size={9} /></span>
-          )}
+          <span class={`${focus ? 'text-xs px-2.5 py-1' : 'text-2xs px-1.5 py-0.5'} rounded-full inline-flex items-center gap-1 ${
+            ann.userConfirmed ? 'bg-success/15 text-success' : BUCKET_BADGE[ann.bucket]
+          } ${opts.onSelectAlternate ? 'group-hover:brightness-110 transition-[filter]' : ''}`}>
+            {ann.userConfirmed ? <CheckIcon size={12} /> : (
+              <>
+                {/* Siblings of the chevron rather than a wrapper around them: the
+                    pill's own flex gap then simply skips the word once the
+                    container query hides it, instead of spacing an empty box.
+                    The percentage never hides — see .analysis-list. */}
+                <span class="detection-conf-word">{bucketWord}</span>
+                <span class="tabular-nums">{confidencePct}</span>
+              </>
+            )}
+            {opts.onSelectAlternate && (
+              <span class="flex items-center opacity-70"><ChevronDownIcon size={12} /></span>
+            )}
+          </span>
         </button>
 
+        {/* A like goes at once, either way: nothing is lost by a tap. */}
         {opts.onToggleLike && (
-          <button
-            class={`shrink-0 cursor-pointer transition-colors ${ann.liked ? 'text-danger' : 'text-dim hover:text-danger'}`}
-            title={t(ann.liked ? 'sessions.unlike' : 'sessions.like')}
+          <IconButton
+            label={t(ann.liked ? 'sessions.unlike' : 'sessions.like')}
+            size={focus ? 'lg' : 'sm'}
+            class={ann.liked ? 'text-danger hover:text-danger' : 'hover:text-danger'}
             onClick={(e) => { e.stopPropagation(); opts.onToggleLike!(ann.id); }}
           >
-            <HeartIcon size={focus ? 20 : 13} filled={ann.liked} />
-          </button>
+            <HeartIcon size={focus ? 20 : 14} filled={ann.liked} />
+          </IconButton>
         )}
 
         {/* Beside the heart, at the end of the row that carries this
             detection's identity — which is what deleting it is about. It used
-            to sit alone on a row of its own below (2026-09-20). */}
+            to sit alone on a row of its own below (2026-09-20). Red: a
+            detection is costly to redo, so the summary asks first — and the red is
+            the question's: a bin on a ROW of a list stays neutral, red under the
+            pointer, or every card of the list would carry a red tile. */}
         {opts.onDelete && (
-          <button
-            class="shrink-0 text-dim hover:text-danger transition-colors cursor-pointer"
-            title={t('common.delete')}
+          <IconButton
+            label={t('common.delete')}
+            class="hover:text-danger"
             onClick={(e) => { e.stopPropagation(); opts.onDelete!(); }}
           >
-            <TrashIcon size={12} />
-          </button>
+            <TrashIcon size={14} />
+          </IconButton>
         )}
       </div>
 
@@ -739,13 +757,16 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             6/8 are in the dance's name already. */}
         <span><TuneFacts dance={ann.dance} settingId={hasRecognisedSetting(ann) ? ann.settingId : undefined} keyOffset={keyOffsetOf(ann)} /> ·</span>
         {opts.onEditBounds ? (
+          // The framed box is the drawing; the button around it the 32 px target.
           <button
-            class="inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 font-mono tabular-nums text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer group"
+            class="group inline-flex items-center min-h-8 cursor-pointer"
             title={t('sessions.bounds.edit')}
             onClick={(e) => { e.stopPropagation(); opts.onEditBounds!(); }}
           >
-            <span>{range}</span>
-            <span class="text-dim group-hover:text-accent flex items-center transition-colors"><PencilIcon size={10} /></span>
+            <span class="inline-flex items-center gap-1.5 rounded-md border border-border px-1.5 py-0.5 font-mono tabular-nums text-muted group-hover:border-accent group-hover:text-primary transition-colors">
+              <span>{range}</span>
+              <span class="text-dim group-hover:text-accent flex items-center transition-colors"><PencilIcon size={12} /></span>
+            </span>
           </button>
         ) : (
           <span>{range}</span>
@@ -756,7 +777,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
         {tempo !== null && <span class="tabular-nums">·{' '}
           {opts.onTempo ? (
             <button
-              class="tabular-nums hover:text-accent transition-colors cursor-pointer"
+              class="tabular-nums min-h-8 inline-flex items-center hover:text-accent transition-colors cursor-pointer"
               title={t('sessions.tempo.detection.open')}
               onClick={(e) => { e.stopPropagation(); opts.onTempo!(ann); }}
             >{tempoText(tempo.rate, ann, tempo.approx)}</button>

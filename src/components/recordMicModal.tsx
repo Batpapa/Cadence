@@ -12,7 +12,7 @@ import { WakeLockManager } from '../session/audio/capture';
 import { pickRecorderMime } from '../session/audio/recorder';
 import { MemoryRecorder } from '../thesessionEmbed/memoryRecorder';
 import { appState } from '../store';
-import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
+import { showModal, closeModal, renderModalBody, askUnsavedChanges, MODAL_W } from './modal';
 import { MicIcon } from './icons';
 import { focusIfDesktop } from '../utils';
 import { t } from '../services/i18nService';
@@ -218,8 +218,10 @@ export function askRecordingName(file: Blob, initial: string): Promise<string | 
     const mimeType = file.type.split(';')[0]!.trim() || 'audio/webm';
     const { el, cleanup } = renderModalBody(<TakeNameRow name={name} extension={extensionOf(mimeType)} onEnter={confirm} />);
     showModal(t('fileViewer.abc.playAlong.take.nameTitle'), el, [
+      // Cancel answers null, as leaving by the ✕ does.
+      { label: t('common.cancel'), onClick: () => { closeModal(); finish(null); } },
       { label: t('common.add'), primary: true, disabled: computed(() => name.value.trim() === ''), onClick: confirm },
-    ], { maxWidth: '24rem', onDismiss: () => finish(null) });
+    ], { maxWidth: MODAL_W.s, onDismiss: () => finish(null) });
   });
 }
 
@@ -283,7 +285,7 @@ export function RecorderRow({ phase, elapsedMs, level, onStart, onStop, compact 
           disabled={phase === 'opening'}
           onClick={onStart}
         >
-          <MicIcon size={compact ? 12 : 13} />
+          <MicIcon size={compact ? 12 : 14} />
           {/* A take held: the same button records a new one in its place,
               and says so (2026-11-01, the user). */}
           {t(phase === 'stopped' ? 'fileViewer.record.restart' : 'fileViewer.record.start')}
@@ -371,7 +373,7 @@ export function showRecordMicModal(onAdd: (a: Attachment) => void, onBack: () =>
       onClick: () => void add(),
     },
   ], {
-    maxWidth: '24rem',
+    maxWidth: MODAL_W.s,
     onDismiss: dispose,
     onBack: () => { if (!settle(back, false)) back(); },
     guardDismiss: (dismiss) => settle(dismiss),

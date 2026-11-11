@@ -5,6 +5,7 @@ import { sessionRecordingSignal } from '../session/ui/sessionStore';
 import { offeredModules, pinnedModuleId, togglePin } from '../components/pinnedModule';
 import { showSettingsModal } from '../components/settingsModal';
 import type { JSX } from 'preact';
+import { EmptyState } from '../components/ui';
 
 // ── Modules page ──────────────────────────────────────────────────────────────
 // Was a modal (modulesModal.ts) — moved to a routed page for back/forward
@@ -76,12 +77,16 @@ export function ModulesView() {
         // Every module comes with an extension, so none switched on leaves
         // this page empty: it says where they are switched on rather than
         // the Modules entry disappearing, which would hide the way back.
-        <div class="p-4 rounded-lg border border-dashed border-border text-center">
-          <p class="text-sm text-muted leading-relaxed">{t('modules.none')}</p>
-          <button type="button" class="btn-ghost text-sm text-accent mt-2" onClick={() => showSettingsModal(getContext(), 'extensions')}>
-            {t('modules.openExtensions')}
-          </button>
-        </div>
+        <EmptyState
+          class="rounded-lg border border-dashed border-border leading-relaxed"
+          action={(
+            <button type="button" class="btn-ghost text-sm text-accent" onClick={() => showSettingsModal(getContext(), 'extensions')}>
+              {t('modules.openExtensions')}
+            </button>
+          )}
+        >
+          {t('modules.none')}
+        </EmptyState>
       ) : (
         <>
           {offered.has('sessions') && (

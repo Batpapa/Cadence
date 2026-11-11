@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { formatBytes, downloadBlob } from '../../utils';
-import { PlusIcon, CloudIcon, CloudUpIcon, TrashIcon, ResetIcon, UploadIcon } from '../../components/icons';
-import { playIcon, pauseIcon, stopIcon, downloadIcon } from '../../components/playbackIcons';
+import { PlusIcon, CloudIcon, CloudUpIcon, TrashIcon, ResetIcon, UploadIcon, PlayIcon, PauseIcon, StopIcon } from '../../components/icons';
+import { downloadIcon } from '../../components/playbackIcons';
+import { IconButton } from '../../components/ui';
 import type { ContextMenuEntry } from '../../components/contextMenu';
 import { confirmModal, alertModal, showModal, closeModalOf, renderModalBody } from '../../components/modal';
 import { signal, type Signal } from '@preact/signals';
@@ -65,9 +66,9 @@ import { repinSetReview, recutSetClip, setReviewId, type Span } from './tunesetS
 // renderList()/renderBar() re-invocation after each mutation.
 
 const BUCKET_SEGMENT: Record<Detection['bucket'], string> = {
-  high: 'rgb(34 197 94 / 0.75)',
-  medium: 'rgb(245 158 11 / 0.75)',
-  low: 'rgb(120 120 120 / 0.55)',
+  high: 'rgb(var(--color-success-ch) / 0.75)',
+  medium: 'rgb(var(--color-warn-ch) / 0.75)',
+  low: 'rgb(var(--color-dim-ch) / 0.55)',
 };
 
 /** Diagonal hatching that LEANS THE OTHER WAY from one detection to the next.
@@ -147,14 +148,15 @@ function NotOnDriveBtn({ state, onClick }: { state: Exclude<DriveAudioState, 'on
   const title = t(NOT_ON_DRIVE_TITLE[state] as Parameters<typeof t>[0]);
   return (
     <button
-      class={`relative w-7 h-7 flex items-center justify-center shrink-0 transition-colors ${tone}`}
+      class={`relative icon-btn ${tone}`}
       title={title}
       aria-label={title}
       disabled={uploading}
       onClick={uploading ? undefined : onClick}
     >
-      {uploading ? <CloudUpIcon size={15} /> : (
+      {uploading ? <CloudUpIcon size={16} /> : (
         <>
+          {/* CloudIcon's outline, unfilled: icons.tsx has only the filled one. */}
           <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
             <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
           </svg>
@@ -461,6 +463,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           .catch((e: unknown) => { setSyncFailed(true); failedTransfer(e); })
           .finally(() => setBusySync(false));
       },
+      // A copy: nothing is lost by it, so not the red of a deletion.
+      { destructive: false },
     );
   };
 
@@ -1075,7 +1079,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       if (!editing || !prev || prev.tuneId !== ann.tuneId || !samePlayedPitch(prev, ann)) return null;
       return (
         <button
-          class="text-[11px] text-accent hover:underline cursor-pointer"
+          class="text-2xs text-accent hover:underline cursor-pointer min-h-8 inline-flex items-center"
           onClick={() => {
             // A merge moves a bound like any other edit — the survivor takes
             // over the other's end — so its rating and its clip settle the
@@ -1180,14 +1184,15 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   const shortGapRow = (hole: ShortGap) => {
     const cut = session.annotations.find(a => a.id === hole.nextId)?.opensSet === true;
     return (
-      <div class="flex items-center gap-3 py-0.5 text-[11px] text-dim">
+      <div class="flex items-center gap-3 py-0.5 text-2xs text-dim">
         <span class="h-px flex-1 bg-border" />
         <span class="shrink-0 px-1 tabular-nums">
           {hole.len > 0 ? t('sessions.gap', { d: fmtLongTime(hole.len) }) : t('sessions.overlap', { d: fmtLongTime(-hole.len) })}
         </span>
         <span class="h-px flex-1 bg-border" />
         {setsOn && (
-          <span class="mr-3 flex">
+          // Its 32 px target overhangs the row rather than thickening it.
+          <span class="mr-2 -my-2 flex">
             <SetMarkButton kind="unlink" active={cut} onClick={() => setOpens(hole.nextId, cut ? undefined : true)} />
           </span>
         )}
@@ -1214,7 +1219,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       // Lit like a card when the head stands in it: a silence is a place in
       // the recording too, and "you are here" has to be answerable there as
       // well.
-      class={`flex items-center gap-3 py-1 text-[11px] transition-colors ${
+      class={`flex items-center gap-3 py-1 text-2xs transition-colors ${
         lit.gapFrom === item.from ? 'text-accent' : 'text-dim'}`}
     >
       <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
@@ -1223,11 +1228,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       {audioUrl && editing ? (
         <span class="shrink-0 inline-flex items-center gap-1">
           <button
-            class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            class="inline-flex items-center gap-1.5 rounded-full px-2 min-h-8 -my-1.5 tabular-nums hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
             title={t('sessions.addDetection.hint')}
             onClick={() => addDetectionIn(item.from, item.len)}
           >
-            <PlusIcon size={9} />
+            <PlusIcon size={12} />
             {t('sessions.gap', { d: fmtLongTime(item.len) })}
           </button>
         </span>
@@ -1236,7 +1241,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       )}
       <span class={`h-px flex-1 ${lit.gapFrom === item.from ? 'bg-accent/50' : 'bg-border'}`} />
       {item.nextId && editing && (
-        <span class="mr-3 flex">
+        <span class="mr-2 -my-2 flex">
           <SetMarkButton kind="link" active={inSet} onClick={() => setOpens(item.nextId!, inSet ? undefined : false)} />
         </span>
       )}
@@ -1322,6 +1327,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       else if (temp) onReanalyze(temp.blob);
       else fetchForReanalysis();
     },
+    // Asked first, but not a deletion: the recording stays, and it can be
+    // analysed again (the UI charter, 2026-11-11).
+    { destructive: false },
   );
 
   const fetchForReanalysis = () => {
@@ -1353,14 +1361,15 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
    *  what can be done with its recording, under a heading — the library's ⋯
    *  groups its entries the same way. In words, each one: the four unlabelled
    *  icons it replaces were passed by a tester looking for exactly these.
-   *  Only what applies NOW is listed. Re-analysing is red with the deletions:
-   *  it replaces the list, confirmed, with no undo. */
+   *  Only what applies NOW is listed. Re-analysing is confirmed, since it
+   *  replaces the list, but not red: nothing is destroyed — red is kept for
+   *  the two deletions (the UI charter, 2026-11-11). */
   const titleMenu: ContextMenuEntry[] = [
     { label: t('sessions.menu.export'), icon: <UploadIcon size={14} />, onClick: () => showShareSessionModal(session) },
     // Out of the audio block (the user's call): it acts on the analysis, the
     // recording is only what it reads.
     ...(audioUrl || temp || (reachable && !transferring) ? [{
-      label: t('sessions.menu.reanalyze'), icon: <ResetIcon size={14} />, danger: true, onClick: reanalyze,
+      label: t('sessions.menu.reanalyze'), icon: <ResetIcon size={14} />, onClick: reanalyze,
     }] : []),
     ...(audioUrl || reachable ? [{ heading: t('sessions.menu.audio') }] : []),
     ...((audioUrl || reachable) && !downloading && (audioUrl || !transferring) ? [{
@@ -1534,11 +1543,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
                   design): the same ▶, a cloud on it; pressed, the recording is
                   brought down for this visit — the cloud turning into its
                   percentage — and plays from where the head stands. */}
+              {/* The play disc of the lists, a size up, in a 32 px target. */}
               <span class="relative shrink-0">
-                <button
-                  class="w-7 h-7 p-0 rounded-full flex items-center justify-center bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:cursor-default"
-                  title={playUrl ? undefined : t('sessions.playFromDrive.whole', { size: formatBytes(synced?.bytes ?? 0) })}
-                  aria-label={playUrl ? undefined : t('sessions.playFromDrive.whole', { size: formatBytes(synced?.bytes ?? 0) })}
+                <IconButton
+                  label={playUrl ? t('audioPlayer.play') : t('sessions.playFromDrive.whole', { size: formatBytes(synced?.bytes ?? 0) })}
+                  class="hover:bg-transparent disabled:opacity-100 disabled:cursor-default"
                   disabled={!playUrl && (comingFromDrive !== null || busySync)}
                   onClick={() => {
                     const a = audioRef.current;
@@ -1546,26 +1555,28 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
                     if (!playUrl) { playFromDrive(); return; }
                     if (a.paused) { stopDrivePassage(); void a.play(); } else a.pause();
                   }}
-                  dangerouslySetInnerHTML={{ __html: playing ? pauseIcon(12) : playIcon(12) }}
-                />
+                >
+                  <span class="icon-disc w-7 h-7">{playing ? <PauseIcon size={12} /> : <PlayIcon size={12} />}</span>
+                </IconButton>
                 {!playUrl && (comingFromDrive !== null ? (
-                  <span class="absolute -right-2.5 -bottom-1.5 px-1 rounded bg-elevated border border-border text-[9px] leading-[13px] font-mono tabular-nums text-accent pointer-events-none">
+                  <span class="absolute -right-2 -bottom-1 px-1 rounded bg-elevated border border-border text-2xs leading-none py-px font-mono tabular-nums text-accent pointer-events-none">
                     {Math.round(comingFromDrive * 100)}%
                   </span>
                 ) : (
-                  <span class="absolute -right-1 -bottom-0.5 text-accent pointer-events-none drop-shadow-sm"><CloudIcon size={11} /></span>
+                  <span class="absolute -right-0.5 bottom-0 text-accent pointer-events-none drop-shadow-sm"><CloudIcon size={12} /></span>
                 ))}
               </span>
-              <button
-                class="w-7 h-7 p-0 rounded-full flex items-center justify-center shrink-0 text-dim hover:text-primary transition-colors"
+              <IconButton
+                label={t('audioPlayer.stop')}
                 onClick={() => { const a = audioRef.current; if (!a) return; a.pause(); a.currentTime = 0; }}
-                dangerouslySetInnerHTML={{ __html: stopIcon(12) }}
-              />
+              >
+                <StopIcon size={12} />
+              </IconButton>
               {timeline('flex-1 min-w-0')}
               {/* Static text: the player writes it straight into the node (see
                   updateTime), and so does the effect giving the length before
                   anything is loaded. */}
-              <span ref={timeLblRef} class="shrink-0 text-[11px] font-mono text-dim tabular-nums">0:00 / 0:00</span>
+              <span ref={timeLblRef} class="shrink-0 text-2xs font-mono text-dim tabular-nums">0:00 / 0:00</span>
               {/* At the end of the line since the timeline came onto it: it used
                   to sit over that end, out of the bar, to scroll away with the
                   page — the time is there now. Pinned with the bar, then: it
@@ -1604,7 +1615,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         <div class="flex items-center gap-2 mt-3">
           {dump && (
             <button
-              class="text-[11px] text-dim hover:text-primary hover:underline cursor-pointer ml-auto"
+              class="text-2xs text-dim hover:text-primary hover:underline cursor-pointer ml-auto min-h-8"
               onClick={() => {
                 const blob = new Blob([JSON.stringify(dump.windows, null, 1)], { type: 'application/json' });
                 downloadBlob(blob, `${session.name || 'session'}-windows.json`);

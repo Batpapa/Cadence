@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { JSX, RefObject } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon, CloudIcon } from '../../components/icons';
+import { HeartIcon, CloudIcon, PlayIcon, PauseIcon, StopIcon } from '../../components/icons';
 import type { AudioSyncBinding } from '../../components/fileViewer';
-import { playIcon, pauseIcon, stopIcon } from '../../components/playbackIcons';
 import { showModal, closeModal, alertModal } from '../../components/modal';
 import { formatBytes } from '../../utils';
 import { appState } from '../../store';
@@ -302,33 +301,40 @@ export function PlayDisc({ playing, fromDrive, loading, progress, stops, title, 
 }) {
   const downloading = progress !== undefined;
   const ring = downloading || loading;
-  const icon = playing ? (stops ? stopIcon(10) : pauseIcon(10)) : playIcon(10);
+  const icon = playing ? (stops ? <StopIcon size={12} /> : <PauseIcon size={12} />) : <PlayIcon size={12} />;
+  // The 24 px disc is the drawing; the button around it is the 32 px target
+  // (styles.css, .icon-disc) — the look of the lists did not change, the
+  // finger's room did.
   return (
-    <span class="relative w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-      {/* The ring: a sweep of the accent behind the button's own disc — filled
-          to the download's progress, or a quarter turning while a passage
-          comes. */}
-      {ring && (
-        <span
-          class={`absolute inset-0 rounded-full ${loading && !downloading ? 'animate-spin' : ''}`}
-          style={{ background: `conic-gradient(var(--color-accent) ${downloading ? progress! * 360 : 90}deg, transparent 0)` }}
-        />
-      )}
-      <button
-        class={`relative ${ring ? 'w-5 h-5 bg-surface text-accent cursor-default' : 'w-6 h-6 cursor-pointer'} p-0 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-          ring ? '' : playing ? 'bg-accent text-white' : 'bg-accent/10 text-accent hover:bg-accent/20'}`}
-        title={title}
-        aria-label={title}
-        disabled={ring}
-        dangerouslySetInnerHTML={{ __html: icon }}
-        onClick={(e) => { e.stopPropagation(); onClick(); }}
-      />
-      {fromDrive && !ring && (
-        <span class="absolute -right-1 -bottom-0.5 text-accent pointer-events-none drop-shadow-sm">
-          <CloudIcon size={10} />
+    <button
+      class="group icon-btn hover:bg-transparent disabled:opacity-100 disabled:cursor-default"
+      title={title}
+      aria-label={title}
+      disabled={ring}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+    >
+      <span class="relative w-6 h-6 rounded-full flex items-center justify-center">
+        {/* The ring: a sweep of the accent behind the button's own disc — filled
+            to the download's progress, or a quarter turning while a passage
+            comes. */}
+        {ring && (
+          <span
+            class={`absolute inset-0 rounded-full ${loading && !downloading ? 'animate-spin' : ''}`}
+            style={{ background: `conic-gradient(var(--color-accent) ${downloading ? progress! * 360 : 90}deg, transparent 0)` }}
+          />
+        )}
+        <span class={ring
+          ? 'relative w-5 h-5 rounded-full flex items-center justify-center bg-surface text-accent'
+          : `icon-disc${playing ? ' icon-disc-on' : ''}`}>
+          {icon}
         </span>
-      )}
-    </span>
+        {fromDrive && !ring && (
+          <span class="absolute -right-1 -bottom-0.5 text-accent pointer-events-none drop-shadow-sm">
+            <CloudIcon size={12} />
+          </span>
+        )}
+      </span>
+    </button>
   );
 }
 
@@ -451,8 +457,8 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
           the pass — an analysis whose audio was forgotten offers no listening
           and no clip — and without reserved room the glyphs of one row would
           sit under the wrong glyphs of the next. */}
-      <div class="shrink-0 flex items-center gap-1.5">
-        <span class="w-6 flex items-center justify-center shrink-0">
+      <div class="shrink-0 flex items-center">
+        <span class="w-8 flex items-center justify-center shrink-0">
           <PlayPassButton sessionId={session.id} detection={detection} player={player} />
         </span>
         <AbcPreview
@@ -461,17 +467,20 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
         />
       </div>
 
+      {/* The pill is the drawing, the button around it a 32 px target. */}
       <button
-        class={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-border ${interactive ? 'cursor-pointer hover:border-accent' : ''} ${
-          detection.userConfirmed ? 'text-success' : BUCKET_TEXT[detection.bucket]}`}
+        class={`group shrink-0 inline-flex items-center min-h-8 ${interactive ? 'cursor-pointer' : ''}`}
         title={t('sessions.openDetection')}
         onClick={onOpen}
       >
-        {fmtLongTime(detection.start)}
+        <span class={`text-2xs font-mono px-1.5 py-0.5 rounded-full border border-border ${interactive ? 'group-hover:border-accent' : ''} ${
+          detection.userConfirmed ? 'text-success' : BUCKET_TEXT[detection.bucket]}`}>
+          {fmtLongTime(detection.start)}
+        </span>
       </button>
 
       <button
-        class={`text-sm text-muted min-w-0 text-left flex-1 inline-flex items-center gap-1.5 ${interactive ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
+        class={`text-sm text-muted min-w-0 min-h-8 text-left flex-1 inline-flex items-center gap-1.5 ${interactive ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
         // The full name, since the visible one is cut.
         title={session.name}
         onClick={onOpen}
@@ -480,11 +489,11 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
         {/* THIS pass, not the tune: a tune hearted once must not look hearted
             on every line. */}
         {detection.liked && (
-          <span class="text-danger shrink-0 flex items-center"><HeartIcon size={10} filled /></span>
+          <span class="text-danger shrink-0 flex items-center"><HeartIcon size={12} filled /></span>
         )}
       </button>
 
-      <div class="shrink-0 flex items-center gap-1.5">
+      <div class="shrink-0 flex items-center">
         <ClipControls
           ann={detection}
           session={session}

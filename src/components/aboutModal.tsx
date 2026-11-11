@@ -1,5 +1,6 @@
 import { useRef } from 'preact/hooks';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, MODAL_W } from './modal';
+import { useBrandColor } from './cadenceMark';
 import { t } from '../services/i18nService';
 import { CadenceLogo } from './icons';
 import { ShareAppBody } from './shareAppModal';
@@ -77,10 +78,13 @@ const DEV_TAPS = 7;
 const DEV_TAP_GAP_MS = 1000;
 
 function AboutBody() {
+  const brand = useBrandColor();
   return (
     <div class="space-y-5">
       <div class="flex items-center gap-3">
-        <span class="w-11 h-11 rounded-[10px] bg-accent/15 text-accent flex items-center justify-center shrink-0">
+        {/* The logo in its own colour on a neutral tile: the accent purple
+            is the interface's (UI charter, 2026-11-11). */}
+        <span class="w-11 h-11 rounded-lg bg-surface flex items-center justify-center shrink-0" style={{ color: brand }}>
           <CadenceLogo size={32} />
         </span>
         <div class="min-w-0 space-y-0.5">
@@ -124,5 +128,5 @@ function AboutBody() {
 
 export function showAboutModal(): void {
   const { el, cleanup } = renderModalBody(<AboutBody />);
-  showModal(t('about.title'), el, [], { maxWidth: '22rem', onDismiss: cleanup });
+  showModal(t('about.title'), el, [], { maxWidth: MODAL_W.s, onDismiss: cleanup });
 }

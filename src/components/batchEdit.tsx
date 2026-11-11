@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import type { ComponentChild } from 'preact';
 import { appState, mutate } from '../store';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, MODAL_W } from './modal';
 import { TagPicker } from './tagModal';
 import { NewDeckField } from './deckSelector';
 import { CustomSelect } from './customSelect';
@@ -28,11 +28,10 @@ interface Draft { noop: Signal<boolean> }
 
 /** Wraps a Preact body in the modal shell, unmounting it when the modal closes.
  *
- *  No Cancel button, on any of these: the ✕, Escape and a click outside all
- *  back out already, and a dialog whose confirm greys itself out until
- *  something would actually happen cannot be left half-done. The refresh dialog
- *  further down never had one, for exactly these reasons; the rest caught up
- *  on 2026-09-06. */
+ *  [Cancel][Confirm], as every footer of the UI charter (2026-11-11). They had
+ *  no Cancel from 2026-09-06 — the ✕, Escape and a click outside back out
+ *  already — but a lone primary left a finger without a way out it could see
+ *  where its eyes end up, at the bottom of the dialog. */
 function open(title: string, node: ComponentChild, confirmLabel: string, draft: Draft, onConfirm: () => void): void {
   const { el, cleanup } = renderModalBody(node);
   showModal(title, el, [
@@ -40,8 +39,9 @@ function open(title: string, node: ComponentChild, confirmLabel: string, draft: 
     // own (a batch's progress) would otherwise see it taken by closeModal in
     // its place — its work going on unseen, and this one left open with its
     // confirm still live for a second run (found 2026-11-06).
+    { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
     { label: confirmLabel, primary: true, disabled: draft.noop, onClick: () => { closeModal(); onConfirm(); } },
-  ], { maxWidth: '28rem', onDismiss: cleanup });
+  ], { maxWidth: MODAL_W.m, onDismiss: cleanup });
 }
 
 // ── Shared multi-pick list ───────────────────────────────────────────────────
@@ -381,7 +381,7 @@ function CardTypeBody({ cardIds, draft }: { cardIds: string[]; draft: Draft & { 
               subject of the dialog. */}
           {losing.map(c => (
             <div key={c.id} class="flex items-center gap-2 text-xs font-mono text-muted truncate">
-              <span class="shrink-0 flex items-center text-dim">{cardTypeIcon(CARD_TYPE_TUNESET, 11)}</span>
+              <span class="shrink-0 flex items-center text-dim">{cardTypeIcon(CARD_TYPE_TUNESET, 12)}</span>
               <span class="truncate">{c.name}</span>
               <span class="text-dim shrink-0">
                 {t((c.tunes?.length ?? 0) === 1 ? 'library.batch.type.tuneCount' : 'library.batch.type.tuneCountPlural', { count: c.tunes?.length ?? 0 })}
@@ -531,7 +531,7 @@ function RefreshPicker<T>({ spec, draft }: { spec: RefreshSpec<T>; draft: Draft 
           return (
             <label
               key={f.key}
-              class={`flex items-center gap-2 px-2 py-1.5 rounded ${off ? 'opacity-50 cursor-not-allowed' : 'hover:bg-elevated cursor-pointer'}`}
+              class={`flex items-center gap-2 px-2 py-1.5 rounded ${off ? 'opacity-40 cursor-not-allowed' : 'hover:bg-elevated cursor-pointer'}`}
             >
               <input type="checkbox" class="card-checkbox" disabled={off} checked={chosen.has(f.key)} onChange={() => toggle(f.key)} />
               <span class="text-sm text-primary flex-1">{t(f.labelKey)}</span>
@@ -676,11 +676,11 @@ export function showRefreshModal<T>(spec: RefreshSpec<T>): void {
   // Deliberately not the `open()` helper above: it closes the modal *after*
   // running onConfirm, which would pop the progress modal this pushes instead
   // of the picker. Closing first keeps the stack in the right order.
-  // No Cancel: the ✕, Escape and a click outside all back out already, and a
-  // dialog whose confirm greys itself out until something is ticked is not one
-  // you can leave in a half-done state. The confirm stays generic — what will
-  // happen is what the ticked lines say, not what one button can name.
+  // [Cancel][Confirm], like the dialogs above. The confirm stays generic —
+  // what will happen is what the ticked lines say, not what one button can
+  // name.
   showModal(spec.title, picker.el, [
+    { label: t('common.cancel'), onClick: () => { closeModal(); picker.cleanup(); } },
     { label: t('common.confirm'), primary: true, disabled: draft.noop, onClick: () => {
       const fields = spec.fields.filter(f => draft.keys.includes(f.key));
       if (fields.length === 0) return;
@@ -692,7 +692,7 @@ export function showRefreshModal<T>(spec: RefreshSpec<T>): void {
       // backdrop already close it. Which is also the safe half of the shell —
       // those three run onDismiss, and a footer button would not, leaving the
       // loop fetching for a torn-down dialog.
-      showModal(spec.title, el, [], { maxWidth: '28rem', onDismiss: () => { cancelled.now = true; cleanup(); } });
+      showModal(spec.title, el, [], { maxWidth: MODAL_W.m, onDismiss: () => { cancelled.now = true; cleanup(); } });
     } },
-  ], { maxWidth: '28rem', onDismiss: picker.cleanup });
+  ], { maxWidth: MODAL_W.m, onDismiss: picker.cleanup });
 }

@@ -17,11 +17,13 @@ const VIEW_LABEL: Record<AnalysisView, string> = {
 /** The room between the tabs and the switches (`gap-2`), and between the two. */
 const GAP_PX = 8;
 
-const TAB_CLS = 'py-1 font-medium rounded whitespace-nowrap';
+// The app's segmented control (styles.css, .seg) and toggle chips (.chip),
+// the twins below wearing the same classes so that they measure the same.
+const TAB_CLS = 'seg-btn whitespace-nowrap';
 const TAB_ROOMY = 'px-3 text-xs';
-const TAB_TIGHT = 'px-2 text-[11px]';
-const STUDY_CLS = 'px-3 py-1 text-xs font-medium rounded-full border whitespace-nowrap inline-flex items-center gap-1.5';
-const STUDY_ICON_ONLY = 'px-2 py-1 rounded-full border inline-flex items-center';
+const TAB_TIGHT = 'px-2 text-2xs';
+const STUDY_CLS = 'chip min-h-8 px-3 font-medium whitespace-nowrap gap-1.5';
+const STUDY_ICON_ONLY = 'chip min-h-8 px-2';
 
 /** How tight the bar has to be: everything at ease; the switches down to their
  *  icons; and then the tabs too. In that order — the user's call: the tabs are
@@ -40,8 +42,7 @@ const SWITCHES = [
  *  hold in all of them. The same bar on the finished analysis and on the live
  *  and import feeds (2026-10-30), at the top of each screen's pinned bar.
  *
- *  32 px tall (`h-8`): the summary places its recording's icons by it — see
- *  `top-14` there.
+ *  40 px tall (`h-10`): the segmented rail's, a 32 px tab in its padding.
  *
  *  Four tabs and the switches have to hold on a phone's width (see Fit).
  *  Measured, not guessed from the screen's width: the labels' lengths differ
@@ -84,23 +85,25 @@ export function AnalysisViewBar() {
   ));
 
   return (
-    <div ref={barRef} class="relative flex items-center gap-2 h-8" data-tour="summary-views">
+    <div ref={barRef} class="relative flex items-center gap-2 h-10" data-tour="summary-views">
       <div class="absolute left-0 top-0 w-0 h-0 overflow-hidden invisible pointer-events-none" aria-hidden="true">
-        <div ref={tabsTwinRef} class="flex gap-1 p-1 w-max">
+        <div ref={tabsTwinRef} class="seg w-max">
           {ANALYSIS_VIEWS.map(v => <span key={v} class={`${TAB_CLS} ${TAB_ROOMY}`}>{t(VIEW_LABEL[v] as Parameters<typeof t>[0])}</span>)}
         </div>
         <div ref={fullTwinRef} class="flex gap-2 w-max">{twins(true)}</div>
         <div ref={iconTwinRef} class="flex gap-2 w-max">{twins(false)}</div>
       </div>
 
-      <div class="flex gap-1 p-1 bg-elevated rounded-lg shrink-0" role="tablist" aria-label={t('sessions.view.label')}>
+      {/* `bg-elevated`, not the rail's own `bg-bg`: the bar stands on the
+          pinned strip's bg, where a bg rail would not show. Its hover is then
+          the surface, the elevated one vanishing on it. */}
+      <div class="seg bg-elevated shrink-0" role="tablist" aria-label={t('sessions.view.label')}>
         {ANALYSIS_VIEWS.map(v => (
           <button
             key={v}
             role="tab"
             aria-selected={view === v}
-            class={`${TAB_CLS} ${tabSize} transition-colors cursor-pointer ${
-              view === v ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-surface'}`}
+            class={`${TAB_CLS} ${tabSize} ${view === v ? 'seg-btn-on' : 'hover:bg-surface'}`}
             onClick={() => setAnalysisView(v)}
           >
             {t(VIEW_LABEL[v] as Parameters<typeof t>[0])}
@@ -111,8 +114,8 @@ export function AnalysisViewBar() {
         {SWITCHES.map((s, i) => (
           <button
             key={s.key}
-            class={`${fit === 'roomy' ? STUDY_CLS : STUDY_ICON_ONLY} transition-colors cursor-pointer ${
-              states[i] ? 'border-accent/60 bg-accent/10 text-accent' : 'border-border text-muted hover:text-primary hover:border-accent/50'}`}
+            class={`${fit === 'roomy' ? STUDY_CLS : STUDY_ICON_ONLY} cursor-pointer ${
+              states[i] ? 'chip-toggle-on' : 'hover:text-primary hover:border-accent/50'}`}
             title={s.hint()}
             aria-label={fit === 'roomy' ? undefined : s.label()}
             aria-pressed={states[i]}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, ExternalLinkIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
+import { Segmented } from '../../components/ui';
 import { listSessions } from '../db';
 import { recoverOrphanedSessions } from '../recovery';
 import { showRecoveryFailures } from './RecoveryFailureModal';
@@ -280,7 +281,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
                 aria-expanded={open}
                 onClick={toggle}
               >
-                <ChevronDownIcon size={10} />
+                <ChevronDownIcon size={12} />
               </button>
             )}
           </>
@@ -299,7 +300,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
           renderTrigger={(_label, open, toggle) => (
             <>
               <button
-                class="btn-ghost w-full justify-center flex items-center gap-2 border border-border"
+                class="btn-outline w-full justify-center flex items-center gap-2"
                 title={t(importFrom === 'link' ? 'sessions.importLinkHint' : 'sessions.importHint')}
                 onClick={() => {
                   if (importFrom === 'link') onImportLink(destinationFolder);
@@ -312,7 +313,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
                     .then(([file]) => { if (file) onImportFile(file, destinationFolder); });
                 }}
               >
-                {importFrom === 'link' ? <ExternalLinkIcon size={13} /> : <FileAudioIcon size={13} />}
+                {importFrom === 'link' ? <ExternalLinkIcon size={14} /> : <FileAudioIcon size={14} />}
                 <span>{t(importFrom === 'link' ? 'sessions.importLink' : 'sessions.import')}</span>
               </button>
               {/* Over the right edge, for the reason the live button's says. */}
@@ -325,15 +326,15 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
                 aria-expanded={open}
                 onClick={toggle}
               >
-                <ChevronDownIcon size={10} />
+                <ChevronDownIcon size={12} />
               </button>
             </>
           )}
         />
       </div>
 
-      <button class="btn-ghost w-full justify-center flex items-center gap-2 mt-2 border border-border" onClick={onImportSession}>
-        <ImportTrayIcon size={13} />
+      <button class="btn-outline w-full justify-center flex items-center gap-2 mt-2" onClick={onImportSession}>
+        <ImportTrayIcon size={14} />
         <span>{t('sessions.share.importSession')}</span>
       </button>
       </div>
@@ -341,21 +342,17 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
           what was played across them. A tab rather than a second module —
           the ranking is derived from these sessions and means nothing without
           them. The search box below serves both. */}
-      {/* The ABC viewer's segmented control, to the class: a background pill
-          holding the two choices, rather than two loose buttons. Same gesture
-          in two places, so it should look like the same gesture. */}
-      <div class="flex gap-1 p-1 mt-3 bg-bg rounded-lg w-fit" data-tour="analyser-tabs">
-        {([['sessions', 'sessions.tab.sessions'], ['tunes', 'sessions.tab.tunes']] as const).map(([id, key]) => (
-          <button
-            key={id}
-            data-tour={`analyser-tab-${id}`}
-            class={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-              tab === id ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-elevated'}`}
-            onClick={() => setTab(id)}
-          >
-            {t(key)}
-          </button>
-        ))}
+      {/* The app's segmented control (Segmented), the ABC viewer's and the
+          analysis views': a background pill holding the two choices, rather
+          than two loose buttons. Same gesture everywhere, so the same look. */}
+      <div class="mt-3 w-fit" data-tour="analyser-tabs">
+        <Segmented
+          value={tab}
+          options={([['sessions', 'sessions.tab.sessions'], ['tunes', 'sessions.tab.tunes']] as const).map(([id, key]) => ({
+            value: id, label: t(key), tour: `analyser-tab-${id}`,
+          }))}
+          onChange={setTab}
+        />
       </div>
 
 

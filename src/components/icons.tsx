@@ -43,7 +43,7 @@ export function RecordingPulseDot({ size = 12, onClick, title, class: className 
 
 export function TrashIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M2 4h12"/>
       <path d="M5 4V2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V4"/>
       <path d="M3.5 4l.9 9a.5.5 0 0 0 .5.5h6.2a.5.5 0 0 0 .5-.5l.9-9"/>
@@ -74,7 +74,7 @@ export function ExternalLinkIcon({ size = 10 }: { size?: number }) {
 
 export function TuningForkIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M5.5 2v5.5a2.5 2.5 0 0 0 5 0V2"/>
       <path d="M8 10.5v3.5"/>
     </svg>
@@ -850,7 +850,7 @@ export function PanelLeftIcon({ size = 14 }: { size?: number }) {
  *  means intensity: the library's difficulty sort. */
 export function TrendIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
       <polyline points="16 7 22 7 22 13"/>
     </svg>
@@ -896,7 +896,7 @@ export function GithubIcon({ size = 12 }: { size?: number }) {
 /** Five pips on a die — a uniform draw. */
 export function DiceIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <rect x="2" y="2" width="20" height="20" rx="4"/>
       <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/>
       <circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/>
@@ -910,7 +910,7 @@ export function DiceIcon({ size = 14 }: { size?: number }) {
 /** Concentric rings on a filled centre — always the single best card. */
 export function BullseyeIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
       <circle cx="12" cy="12" r="10"/>
       <circle cx="12" cy="12" r="6"/>
       <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/>
@@ -934,7 +934,7 @@ export function WeightedBarsIcon({ size = 14 }: { size?: number }) {
  *  the footnote, "the deck's own order" is what the mode actually is. */
 export function SequentialIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <line x1="10" y1="6" x2="21" y2="6"/>
       <line x1="10" y1="12" x2="21" y2="12"/>
       <line x1="10" y1="18" x2="21" y2="18"/>
@@ -950,7 +950,7 @@ export function SequentialIcon({ size = 14 }: { size?: number }) {
  *  half note to anyone who does see it. */
 export function TuneIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="7.5" cy="17.5" r="3.2" fill="currentColor" stroke="none"/>
       <path d="M10.7 17.5V4.6l6.2 2.3v3.3"/>
     </svg>
@@ -977,7 +977,7 @@ export const studyIconSvg = (size = 14): string =>
  *  than two unrelated glyphs — "several of those" is exactly what a set is. */
 export function TuneSetIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="4.4" cy="17.6" r="2.3" fill="currentColor" stroke="none"/>
       <circle cx="11.2" cy="17.6" r="2.3" fill="currentColor" stroke="none"/>
       <circle cx="18" cy="17.6" r="2.3" fill="currentColor" stroke="none"/>
@@ -1117,8 +1117,95 @@ export function SaveIcon({ size = 14 }: { size?: number }) {
  *  separate elements would fill the hole in along with everything else. */
 export function GearIcon({ size = 13, filled = false }: { size?: number; filled?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill-rule="evenodd">
+    <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill-rule="evenodd">
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1zM15 12a3 3 0 1 0-6 0 3 3 0 1 0 6 0z"/>
+    </svg>
+  );
+}
+
+// ── Added with the UI charter (2026-11-11) ───────────────────────────────────
+// What text glyphs (⋯ ▶ ⏸ ■ ⟲ ▣) and inline SVG strings stood for, as
+// components: a glyph is drawn in the phone's own font, sometimes as an emoji,
+// and an inline string escapes every size and stroke rule. The playback ones
+// are playbackIcons.ts's drawings, so the two cannot look different.
+
+/** "More" for an OBJECT (a row, an analysis). The app's own menu, in the
+ *  header, keeps the vertical one. */
+/** FolderIcon, open: a folder of the sidebar whose content is shown. */
+export function FolderOpenIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+/** Two chevrons down / up: show every folder of a tree, or fold them all. */
+export function ExpandAllIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="7 13 12 18 17 13" /><polyline points="7 6 12 11 17 6" />
+    </svg>
+  );
+}
+
+export function CollapseAllIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" />
+    </svg>
+  );
+}
+
+export function MoreHorizontalIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.9"/>
+      <circle cx="12" cy="12" r="1.9"/>
+      <circle cx="19" cy="12" r="1.9"/>
+    </svg>
+  );
+}
+
+export function PlayIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21"/></svg>
+  );
+}
+
+export function PauseIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>
+  );
+}
+
+export function StopIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg>
+  );
+}
+
+/** Loop / repeat. */
+export function RepeatIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+    </svg>
+  );
+}
+
+export function ImageIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>
+    </svg>
+  );
+}
+
+export function VideoIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8z"/>
     </svg>
   );
 }

@@ -142,8 +142,8 @@ export function SetHearingRow({ session, chain, setCard, title, player, interact
   const liked = !!recordOf(session.tunesets, chain)?.liked;
   return (
     <div class="flex items-center gap-2 min-w-0">
-      <div class="shrink-0 flex items-center gap-1.5">
-        <span class="w-6 flex items-center justify-center shrink-0">
+      <div class="shrink-0 flex items-center">
+        <span class="w-8 flex items-center justify-center shrink-0">
           <PlayPassButton sessionId={session.id} detection={asAnn} player={player} />
         </span>
         <HeardSetAbc
@@ -151,22 +151,26 @@ export function SetHearingRow({ session, chain, setCard, title, player, interact
           tunes={chain.map(d => ({ label: tuneName(d).text, settingId: hasRecognisedSetting(d) ? d.settingId : null, keyOffset: keyOffsetOf(d) }))}
         />
       </div>
+      {/* The pill is the drawing, the button around it a 32 px target — as
+          PassRow's. */}
       <button
-        class={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full border border-border text-muted ${interactive ? 'cursor-pointer hover:border-accent' : ''}`}
+        class={`group shrink-0 inline-flex items-center min-h-8 ${interactive ? 'cursor-pointer' : ''}`}
         title={t('sessions.openDetection')}
         onClick={onOpen}
       >
-        {fmtLongTime(span.start)}
+        <span class={`text-2xs font-mono px-1.5 py-0.5 rounded-full border border-border text-muted ${interactive ? 'group-hover:border-accent' : ''}`}>
+          {fmtLongTime(span.start)}
+        </span>
       </button>
       <button
-        class={`text-sm text-muted min-w-0 text-left flex-1 inline-flex items-center gap-1.5 ${interactive ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
+        class={`text-sm text-muted min-w-0 min-h-8 text-left flex-1 inline-flex items-center gap-1.5 ${interactive ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
         title={session.name}
         onClick={onOpen}
       >
         <span class="truncate min-w-0">{session.name}</span>
-        {liked && <span class="text-danger shrink-0 flex items-center"><HeartIcon size={10} filled /></span>}
+        {liked && <span class="text-danger shrink-0 flex items-center"><HeartIcon size={12} filled /></span>}
       </button>
-      <div class="shrink-0 flex items-center gap-1.5">
+      <div class="shrink-0 flex items-center">
         <SetClipControls
           session={session}
           setCard={setCard}

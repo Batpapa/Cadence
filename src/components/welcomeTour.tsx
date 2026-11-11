@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { t } from '../services/i18nService';
-import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIcon, ArrowRightIcon, ScoreFollowIcon, MicIcon } from './icons';
+import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIcon, ArrowRightIcon, ScoreFollowIcon, MicIcon, PlayIcon, VideoIcon } from './icons';
 
 // ── What Cadence does, on the welcome screen (2026-10-26) ────────────────────
 // Two sections under the user list, as tiles of uneven sizes ("bento", picked
@@ -17,6 +17,10 @@ import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIc
 //
 // The brand cyan draws them on the dark theme; on the light ones it would not
 // show against white, hence --tour-brand (styles.css).
+//
+// The "Vitrine" register of the UI charter (2026-11-11): display sizes, 18 px
+// tiles and the cyan are this screen's own and stay, marked ui-ok; the text
+// floor (11 px) holds here as everywhere.
 
 /** Relative to the app, which sits at the site's root. */
 const ANALYSER_URL = 'TuneAnalyser/';
@@ -46,8 +50,8 @@ const NOTES: ReadonlyArray<[number, number]> = [[20, 23], [34, 20], [48, 17], [6
 function Section({ label, title, children }: { label: string; title: string; children: ComponentChildren }) {
   return (
     <section>
-      <span class="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[color:var(--tour-brand)]">{label}</span>
-      <h2 class="mt-2 mb-4 text-2xl lg:text-[30px] font-extralight leading-tight tracking-[-0.01em] text-primary text-balance">{title}</h2>
+      <span class="text-2xs font-semibold uppercase tracking-[0.16em] text-[color:var(--tour-brand)]">{label}</span>
+      <h2 class="mt-2 mb-4 text-2xl lg:text-[30px] font-extralight leading-tight tracking-[-0.01em] text-primary text-balance">{title}</h2>{/* ui-ok: Vitrine register */}
       <div class="grid grid-cols-2 gap-2.5 lg:gap-3">{children}</div>
     </section>
   );
@@ -55,14 +59,14 @@ function Section({ label, title, children }: { label: string; title: string; chi
 
 function Tile({ wide, class: extra = '', children }: { wide?: boolean; class?: string; children: ComponentChildren }) {
   return (
-    <div class={`${wide ? 'col-span-2 ' : ''}rounded-[18px] bg-surface border border-border p-4 ${extra}`}>
+    <div class={`${wide ? 'col-span-2 ' : ''}rounded-[18px] bg-surface border border-border p-4 ${extra}`}>{/* ui-ok: Vitrine register (18 px tiles) */}
       {children}
     </div>
   );
 }
 
 function TileTitle({ children }: { children: ComponentChildren }) {
-  return <span class="block text-[15px] font-medium leading-snug text-primary">{children}</span>;
+  return <span class="block text-[15px] font-medium leading-snug text-primary">{children}</span>; // ui-ok: Vitrine register
 }
 
 function TileText({ children }: { children: ComponentChildren }) {
@@ -74,17 +78,17 @@ function TileText({ children }: { children: ComponentChildren }) {
 function CardPile() {
   return (
     <div class="relative w-[128px] h-[124px] shrink-0" aria-hidden="true">
-      <div class="absolute top-3 left-4 w-[100px] h-[112px] rounded-[10px] bg-elevated border border-border rotate-[7deg] opacity-60" />
-      <div class="absolute top-2 left-2.5 w-[100px] h-[112px] rounded-[10px] bg-elevated border border-border -rotate-[4deg] opacity-80" />
-      <div class="absolute top-1.5 left-3 w-[104px] h-[116px] rounded-[10px] bg-elevated border border-border p-2.5 flex flex-col gap-1.5 shadow-lg">
-        <span class="text-[11.5px] font-medium leading-tight text-primary">Drowsy Maggie</span>
+      <div class="absolute top-3 left-4 w-[100px] h-[112px] rounded-lg bg-elevated border border-border rotate-[7deg] opacity-60" />
+      <div class="absolute top-2 left-2.5 w-[100px] h-[112px] rounded-lg bg-elevated border border-border -rotate-[4deg] opacity-80" />
+      <div class="absolute top-1.5 left-3 w-[104px] h-[116px] rounded-lg bg-elevated border border-border p-2.5 flex flex-col gap-1.5 shadow-lg">
+        <span class="text-2xs font-medium leading-tight text-primary">Drowsy Maggie</span>
         <span class="flex flex-wrap gap-[3px]">
-          <span class="text-[9.5px] px-1.5 rounded-full bg-accent-dim text-accent">reel</span>
-          <span class="text-[9.5px] px-1.5 rounded-full bg-accent-dim text-accent">session</span>
+          <span class="text-2xs px-1.5 rounded-full bg-accent-dim text-accent">reel</span>
+          <span class="text-2xs px-1.5 rounded-full bg-accent-dim text-accent">session</span>
         </span>
-        <span class="mt-auto flex items-center gap-1 text-[9.5px] text-dim"><MusicNoteIcon size={10} />{t('welcome.tour.organise.score')}</span>
-        <span class="flex items-center gap-1 text-[9.5px] text-dim">
-          <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+        <span class="mt-auto flex items-center gap-1 text-2xs text-dim"><MusicNoteIcon size={12} />{t('welcome.tour.organise.score')}</span>
+        <span class="flex items-center gap-1 text-2xs text-dim">
+          <VideoIcon size={12} />
           {t('welcome.tour.organise.video')}
         </span>
       </div>
@@ -118,10 +122,10 @@ function ForgettingCurve() {
 function KnowledgeBar() {
   return (
     <div class="flex gap-0.5 h-1.5" aria-hidden="true">
-      <span class="rounded-[3px] bg-danger" style="flex:10" />
-      <span class="rounded-[3px] bg-warn" style="flex:16" />
-      <span class="rounded-[3px] bg-accent" style="flex:28" />
-      <span class="rounded-[3px] bg-success" style="flex:46" />
+      <span class="rounded bg-danger" style="flex:10" />
+      <span class="rounded bg-warn" style="flex:16" />
+      <span class="rounded bg-accent" style="flex:28" />
+      <span class="rounded bg-success" style="flex:46" />
     </div>
   );
 }
@@ -129,9 +133,9 @@ function KnowledgeBar() {
 /** A share key, as the share window gives it. */
 function ShareKey() {
   return (
-    <span class="flex gap-[3px] font-mono text-[13px] font-medium text-primary" aria-hidden="true">
+    <span class="flex gap-[3px] font-mono text-[13px] font-medium text-primary" aria-hidden="true">{/* ui-ok: Vitrine register (a drawing of the share key) */}
       {'K7Q2XM'.split('').map((c, i) => (
-        <span key={i} class={`w-5 h-[26px] rounded-[5px] bg-elevated border flex items-center justify-center ${i === 5 ? 'border-[color:var(--tour-brand)]' : 'border-border'}`}>{c}</span>
+        <span key={i} class={`w-5 h-[26px] rounded-md bg-elevated border flex items-center justify-center ${i === 5 ? 'border-[color:var(--tour-brand)]' : 'border-border'}`}>{c}</span>
       ))}
     </span>
   );
@@ -140,9 +144,9 @@ function ShareKey() {
 /** A TheSession tune once imported: its card, its score. */
 function ImportedTune() {
   return (
-    <div class="w-[136px] shrink-0 rounded-[10px] bg-elevated border border-border p-2.5" aria-hidden="true">
-      <div class="text-[11.5px] font-medium text-primary">Drowsy Maggie</div>
-      <div class="text-[9.5px] text-dim">Reel · Edor · thesession.org</div>
+    <div class="w-[136px] shrink-0 rounded-lg bg-elevated border border-border p-2.5" aria-hidden="true">
+      <div class="text-2xs font-medium text-primary">Drowsy Maggie</div>
+      <div class="text-2xs text-dim">Reel · Edor · thesession.org</div>
       <svg viewBox="0 0 118 38" class="mt-1.5 block w-[118px] h-[38px]">
         <path d="M0 8H118M0 14H118M0 20H118M0 26H118M0 32H118" class="stroke-border" stroke-width="0.8" />
         {NOTES.map(([x, y], i) => (
@@ -151,8 +155,8 @@ function ImportedTune() {
         <path d="M23 22V4M37 19V4M51 16V4M65 19V4M83 13V2M97 16V2M111 22V2" class="stroke-muted" stroke-width="0.9" />
         <path d="M23 4.5H65M83 2.5H111" class="stroke-muted" stroke-width="2.2" />
       </svg>
-      <div class="mt-0.5 flex items-center gap-1 text-[9.5px] text-accent">
-        <svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+      <div class="mt-0.5 flex items-center gap-1 text-2xs text-accent">
+        <PlayIcon size={12} />
         {t('welcome.tour.thesession.playable')}
       </div>
     </div>
@@ -193,19 +197,27 @@ function FollowWay({ icon, name, text }: { icon: ComponentChildren; name: string
 }
 
 /** One of the modules that open here without an account: the whole tile is
- *  the link, to the module's standalone page. */
+ *  the link, to the module's standalone page.
+ *
+ *  Tinted in the brand cyan alone, like its icon and its picture: it was the
+ *  accent purple behind the cyan, two registers in one tile (UI charter,
+ *  2026-11-11). The tint and the frame are layers under the content, an
+ *  opacity on a layer rather than an alpha on the colour, which a CSS
+ *  variable does not take (color-mix would, but not on iOS 15.4). */
 function ModuleTile({ href, icon, name, text, picture }: {
   href: string; icon: ComponentChildren; name: string; text: string; picture: ComponentChildren;
 }) {
   return (
     <a
       href={href}
-      class="group flex flex-col gap-1.5 min-h-[196px] rounded-[18px] p-3.5 bg-accent-dim border border-accent/45 hover:border-accent transition-colors text-primary no-underline"
+      class="group relative isolate flex flex-col gap-1.5 min-h-[196px] rounded-[18px] p-3.5 bg-surface text-primary no-underline" // ui-ok: Vitrine register (18 px tiles)
       title={t('welcome.tour.try')}
     >
+      <span class="absolute inset-0 -z-10 rounded-[18px] bg-[color:var(--tour-brand)] opacity-[0.08]" aria-hidden="true" />{/* ui-ok: Vitrine register */}
+      <span class="absolute inset-0 -z-10 rounded-[18px] border border-[color:var(--tour-brand)] opacity-45 group-hover:opacity-100 transition-opacity" aria-hidden="true" />{/* ui-ok: Vitrine register */}
       <span class="flex items-center justify-between">
-        <span class="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-[color:var(--tour-brand)] bg-surface">{icon}</span>
-        <span class="w-7 h-7 rounded-full bg-accent text-bg flex items-center justify-center transition-transform group-hover:translate-x-0.5">
+        <span class="w-[34px] h-[34px] rounded-lg flex items-center justify-center text-[color:var(--tour-brand)] bg-surface">{icon}</span>
+        <span class="w-7 h-7 rounded-full bg-[color:var(--tour-brand)] text-bg flex items-center justify-center transition-transform group-hover:translate-x-0.5">
           <ArrowRightIcon size={14} />
         </span>
       </span>
@@ -225,11 +237,11 @@ export function WelcomeTour() {
             <TileTitle>{t('welcome.tour.organise.title')}</TileTitle>
             <TileText>{t('welcome.tour.organise.text')}</TileText>
             <span class="mt-auto flex flex-wrap gap-1" aria-hidden="true">
-              <span class="inline-flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border border-border text-muted">
-                <FolderIcon size={10} />{t('welcome.tour.organise.folder')}
+              <span class="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full border border-border text-muted">
+                <FolderIcon size={12} />{t('welcome.tour.organise.folder')}
               </span>
-              <span class="inline-flex items-center gap-1 text-[10.5px] px-2 py-0.5 rounded-full border border-border text-muted">
-                <span class="flex text-[color:var(--tour-brand)]"><DeckIcon size={10} /></span>Reels
+              <span class="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full border border-border text-muted">
+                <span class="flex text-[color:var(--tour-brand)]"><DeckIcon size={12} /></span>Reels
               </span>
             </span>
           </div>
@@ -239,7 +251,7 @@ export function WelcomeTour() {
         <Tile wide class="flex flex-col gap-2.5">
           <div class="flex items-baseline justify-between gap-2.5">
             <TileTitle>{t('welcome.tour.review.title')}</TileTitle>
-            <span class="text-[10.5px] text-dim whitespace-nowrap">{t('welcome.tour.review.scale')}</span>
+            <span class="text-2xs text-dim whitespace-nowrap">{t('welcome.tour.review.scale')}</span>
           </div>
           <ForgettingCurve />
           <TileText>{t('welcome.tour.review.text')}</TileText>
@@ -250,7 +262,7 @@ export function WelcomeTour() {
           <span class="text-sm font-medium leading-snug text-primary">{t('welcome.tour.strategies.title')}</span>
           <span class="mt-0.5 flex flex-col gap-1.5">
             {(['optimal', 'stochastic', 'random', 'sequential'] as const).map((s, i) => (
-              <span key={s} class={`text-[11px] px-2 py-1 rounded-lg border ${i === 0 ? 'bg-accent-dim border-accent/40 text-accent' : 'border-border text-muted'}`}>
+              <span key={s} class={`text-2xs px-2 py-1 rounded-lg border ${i === 0 ? 'bg-accent-dim border-accent/40 text-accent' : 'border-border text-muted'}`}>
                 {t(`deck.strategy.${s}`)}
               </span>
             ))}
@@ -276,8 +288,8 @@ export function WelcomeTour() {
         <Tile wide class="flex gap-3">
           <div class="flex-1 min-w-0 flex flex-col gap-2">
             <TileTitle>{t('welcome.tour.follow.title')}</TileTitle>
-            <FollowWay icon={<ScoreFollowIcon size={13} />} name={t('fileViewer.abc.audioSync')} text={t('welcome.tour.follow.audioSync')} />
-            <FollowWay icon={<MicIcon size={13} />} name={t('fileViewer.abc.playAlong')} text={t('welcome.tour.follow.playAlong')} />
+            <FollowWay icon={<ScoreFollowIcon size={14} />} name={t('fileViewer.abc.audioSync')} text={t('welcome.tour.follow.audioSync')} />
+            <FollowWay icon={<MicIcon size={14} />} name={t('fileViewer.abc.playAlong')} text={t('welcome.tour.follow.playAlong')} />
           </div>
           <FollowingScore />
         </Tile>
@@ -285,7 +297,7 @@ export function WelcomeTour() {
         {/* The ⊞ the modules sit under in the app, shown here so that it is
             recognised there. */}
         <div class="col-span-2 mt-1.5 flex items-center gap-2 text-xs text-muted">
-          <span class="flex text-[color:var(--tour-brand)]"><ModulesIcon size={15} /></span>
+          <span class="flex text-[color:var(--tour-brand)]"><ModulesIcon size={16} /></span>
           <span><span class="text-primary font-medium">{t('modules.title')}</span> · {t('welcome.tour.modules.hint')}</span>
         </div>
 

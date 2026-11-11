@@ -1,4 +1,5 @@
 import { getZoom } from '../services/zoomService';
+import { iconElement, ChevronDownIcon } from './icons';
 
 /** Height the list is allowed before it prefers to open upwards. */
 const DROPDOWN_MAX_H = 208; // matches max-h-52
@@ -25,7 +26,7 @@ export function mkCustomSelect(
 
   const chevron = document.createElement('span');
   chevron.style.cssText = 'display:flex; align-items:center; flex-shrink:0; transition:transform 0.15s;';
-  chevron.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+  chevron.append(iconElement(ChevronDownIcon, 12));
   trigger.append(labelSpan, chevron);
 
   // Fixed and parented to <body>, not absolute inside the trigger: this select
@@ -33,7 +34,9 @@ export function mkCustomSelect(
   // whose body scrolls. An absolutely-positioned list was cut off there, so
   // reaching the far end of it meant scrolling the modal itself.
   const dropdown = document.createElement('div');
-  dropdown.className = 'fixed z-[100] bg-elevated border border-border rounded-lg shadow-xl py-1 max-h-52 overflow-y-auto';
+  // The app's one menu surface and row (UI charter, 2026-11-11), the same as
+  // the Preact select's (customSelect.tsx).
+  dropdown.className = 'fixed z-[100] menu-surface max-h-52 overflow-y-auto';
   dropdown.style.display = 'none';
 
   /** Anchors the list under the trigger, flipping above when the bottom of the
@@ -71,8 +74,11 @@ export function mkCustomSelect(
     for (const opt of opts) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `w-full text-left px-3 py-1.5 text-sm cursor-pointer truncate ${opt.value === selected ? 'text-accent bg-accent/5' : 'text-muted hover:bg-surface'}`;
-      btn.textContent = opt.label;
+      btn.className = `menu-item${opt.value === selected ? ' menu-item-on' : ''}`;
+      const text = document.createElement('span');
+      text.className = 'truncate';
+      text.textContent = opt.label;
+      btn.append(text);
       btn.onclick = () => {
         selected = opt.value;
         close();

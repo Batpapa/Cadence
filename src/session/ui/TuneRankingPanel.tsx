@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { t } from '../../services/i18nService';
-import { HeartIcon, ChevronDownIcon, CheckIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon, LibraryIcon, TuneSetIcon } from '../../components/icons';
+import { HeartIcon, ChevronDownIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon, LibraryIcon, TuneSetIcon, UploadIcon, MoreHorizontalIcon } from '../../components/icons';
+import { IconButton, EmptyState } from '../../components/ui';
+import { CustomSelect } from '../../components/customSelect';
 import { FilterSection, FilterGroup, ReviewedRangeSection, cycleFilter, type FilterMap, type FilterTreeNode } from '../../components/filterSection';
 import { deckChipKnown, deckChipSection } from '../../components/deckChips';
 import { deckIdsByCard } from '../../services/deckService';
@@ -240,7 +242,6 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
     }
   }
   const [openTuneId, setOpenTuneId] = useState<string | null>(null);
-  const [sortOpen, setSortOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** Bumped after anything that changes the user blob (a card created, a clip
    *  attached), since this tree reads it directly rather than through a signal. */
@@ -248,19 +249,6 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   const refresh = () => bump(x => x + 1);
 
   const masterRef = useRef<HTMLInputElement>(null);
-  const sortRef = useRef<HTMLDivElement>(null);
-
-  // A menu that only closes by choosing from it is a trap. Copied from the
-  // card library along with the menu itself — and forgotten the first time,
-  // which is exactly how a dropdown ends up with no way out.
-  useEffect(() => {
-    if (!sortOpen) return;
-    const onOutside = (e: MouseEvent) => {
-      if (!sortRef.current?.contains(e.target as Node)) setSortOpen(false);
-    };
-    document.addEventListener('pointerdown', onOutside);
-    return () => document.removeEventListener('pointerdown', onOutside);
-  }, [sortOpen]);
 
   const lastClickRef = useRef<string | null>(null);
   const shiftActiveRef = useRef(false);
@@ -1011,74 +999,50 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
         </label>
 
         <div class="flex gap-1 items-center">
-          {/* The ref is what the outside-click effect measures "outside"
-              against, and it was missing: `sortRef.current` stayed null, so the
-              guard `!sortRef.current?.contains(...)` was true for EVERY
-              mousedown — including one on a menu entry, which unmounted the
-              menu before the click could land on it. The menu opened, and
-              picking from it did nothing (2026-09-12). */}
-          <div class="relative" ref={sortRef}>
-            <button
-              type="button"
-              class="btn-ghost text-xs inline-flex items-center justify-center"
-              title={t(`sessions.ranking.sort.${sortMode}`)}
-              onClick={() => setSortOpen(o => !o)}
-            >
-              {(() => { const Icon = SORT_ICON[sortMode]; return <Icon size={13} />; })()}
-            </button>
-            {sortOpen && (
-              <div class="absolute top-full right-0 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[190px]">
-                {SORT_MODES.map(m => {
-                  const Icon = SORT_ICON[m];
-                  const active = m === sortMode;
-                  return (
-                    <button
-                      key={m}
-                      class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
-                      // The criterion changes, the DIRECTION does not — the
-                      // card library's own rule (views/library.tsx sets the
-                      // mode and leaves sortAsc alone). This once also pointed
-                      // each criterion the way it is usually read, which was a
-                      // nice idea and a surprising one: turning the list upside
-                      // down was not what was asked for, and the arrow beside
-                      // this menu is right there to do it (2026-09-12).
-                      // TUNE_SORT_DEFAULT_ASC still decides where a criterion
-                      // STARTS, in SessionLibrary — just not where it lands
-                      // when you switch to it later.
-                      onClick={() => { onView({ sort: m }); setSortOpen(false); }}
-                    >
-                      <span class="shrink-0 flex items-center"><Icon size={12} /></span>
-                      <span class="flex-1">{t(`sessions.ranking.sort.${m}`)}</span>
-                      {active && <span class="text-accent flex items-center"><CheckIcon size={11} /></span>}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* The app's select (CustomSelect), behind the current criterion's
+              icon: it was a dropdown of its own, with its own outside-click —
+              forgotten once, which left a menu that picking from did nothing
+              (2026-09-12). The list is words only; the icon on the trigger
+              says which one is set.
+
+              The criterion changes, the DIRECTION does not — the card
+              library's own rule (views/library.tsx sets the mode and leaves
+              sortAsc alone). This once also pointed each criterion the way it
+              is usually read, which was a nice idea and a surprising one:
+              turning the list upside down was not what was asked for, and the
+              arrow beside this menu is right there to do it (2026-09-12).
+              TUNE_SORT_DEFAULT_ASC still decides where a criterion STARTS, in
+              SessionLibrary — just not where it lands when you switch to it
+              later. */}
+          <CustomSelect
+            value={sortMode}
+            align="right"
+            options={SORT_MODES.map(m => ({ value: m, label: t(`sessions.ranking.sort.${m}`) }))}
+            onChange={(v) => onView({ sort: v as TuneSort })}
+            renderTrigger={(_label, open, toggle) => (
+              <IconButton label={t(`sessions.ranking.sort.${sortMode}`)} aria-expanded={open} onClick={toggle}>
+                {(() => { const Icon = SORT_ICON[sortMode]; return <Icon size={14} />; })()}
+              </IconButton>
             )}
-          </div>
-          <button
-            type="button"
-            class="btn-ghost text-xs inline-flex items-center justify-center"
-            title={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
+          />
+          {/* A bespoke arrow: icons.tsx has no downward one. */}
+          <IconButton
+            label={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
             onClick={() => onView({ sortAsc: !sortAsc })}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${sortAsc ? 'rotate-180' : ''}`}>
               <line x1="12" y1="5" x2="12" y2="19"/>
               <polyline points="19 12 12 19 5 12"/>
             </svg>
-          </button>
+          </IconButton>
           {hasSelection && <>
             <div class="w-px h-4 bg-border mx-1" />
             {/* The card library's export button, first after the separator as
                 there. Needs no library, so the standalone page keeps it. */}
             {exportedRows.length > 0 && (
-              <button
-                class="btn-ghost text-xs inline-flex items-center justify-center"
-                title={t('library.exportSelected')}
-                onClick={() => showExportDetectionsModal(exportLines())}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              </button>
+              <IconButton label={t('library.exportSelected')} onClick={() => showExportDetectionsModal(exportLines())}>
+                <UploadIcon size={14} />
+              </IconButton>
             )}
             {/* The deck page's "view in library" button, carrying the selection
                 instead of a deck filter: the library opens limited to those
@@ -1087,25 +1051,21 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                 filter hides part of it, and while one exists a click ticks a
                 card instead of opening it; "select all" is one click away. */}
             {selectedCardIds.length > 0 && (
-              <button
-                type="button"
-                class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
-                title={t('sessions.ranking.viewInLibrary')}
+              <IconButton
+                label={t('sessions.ranking.viewInLibrary')}
+                variant="outline"
+                class="hover:text-accent"
                 onClick={() => navigate({ view: 'library', cards: selectedCardIds })}
               >
-                <LibraryIcon size={12} />
-              </button>
+                <LibraryIcon size={14} />
+              </IconButton>
             )}
             {/* Both of its actions file into the library — none on the
                 standalone page (pageMode.ts). */}
             {hasLibrary() && (
-              <button
-                class="btn-ghost text-xs inline-flex items-center justify-center"
-                title={t('library.batch.more')}
-                onClick={(e) => bulkMenu.open(e.clientX, e.clientY)}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
-              </button>
+              <IconButton label={t('library.batch.more')} onClick={(e) => bulkMenu.open(e.clientX, e.clientY)}>
+                <MoreHorizontalIcon size={14} />
+              </IconButton>
             )}
           </>}
         </div>
@@ -1113,9 +1073,9 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
       {bulkMenu.menu}
 
       {rows.length === 0 ? (
-        <p class="text-xs text-dim text-center py-4">
+        <EmptyState>
           {all.length === 0 ? t('sessions.ranking.empty') : t('sessions.ranking.noMatch')}
-        </p>
+        </EmptyState>
       ) : (
         <>
         <div class="space-y-1" ref={listRef}>
@@ -1136,14 +1096,15 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                 key={row.tuneId}
                 class={`rounded transition-colors group ${isSel ? 'bg-elevated' : 'hover:bg-elevated'}`}
               >
-                {/* py-2, not the library's py-2.5, and the line still comes out
-                    the same height: the tallest thing in a library row is 20px
-                    of text, the tallest here is a 24px round button. Matching
-                    the PADDING would have made these rows 4px taller than the
-                    ones they are meant to read like — so the box is matched
-                    instead, which is what the eye compares down a column. */}
+                {/* py-1, not the library's py-2.5, and the line still comes out
+                    about the same height: the tallest thing in a library row is
+                    20px of text, the tallest here is the 32px target of a 24px
+                    round button. Matching the PADDING would have made these
+                    rows taller than the ones they are meant to read like — so
+                    the box is matched instead, which is what the eye compares
+                    down a column. */}
                 <div
-                  class="flex items-center gap-3 px-3 py-2 cursor-pointer"
+                  class="flex items-center gap-2 px-3 py-1 cursor-pointer"
                   // Shift-clicking a row would otherwise select the text
                   // between the two, which is never what was meant.
                   onMouseDown={(e) => { if (selected.size > 0 && e.shiftKey) e.preventDefault(); }}
@@ -1242,7 +1203,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                         either, and the deck button beside it already says
                         whether the card exists — a + creates it, the deck
                         glyph files the one that is there. */}
-                    {row.liked && <span class="text-danger shrink-0 flex items-center"><HeartIcon size={11} filled /></span>}
+                    {row.liked && <span class="text-danger shrink-0 flex items-center"><HeartIcon size={12} filled /></span>}
                   </div>
 
                   {/* Count and chevron are ONE control, not two slots: the
@@ -1252,7 +1213,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                       both things — what the number means, and what pressing it
                       does. */}
                   <button
-                    class="shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded cursor-pointer text-dim hover:text-primary transition-colors"
+                    class="shrink-0 flex items-center gap-0.5 px-1.5 min-h-8 rounded-md cursor-pointer text-dim hover:text-primary transition-colors"
                     title={`${t('sessions.ranking.heard', { n: row.count })} · ${t(isOpen ? 'sessions.ranking.collapse' : 'sessions.ranking.show')}`}
                     onClick={(e) => { e.stopPropagation(); toggleOpen(row.tuneId); }}
                   >
@@ -1268,7 +1229,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                     saying "3 times". And everything that can be done with a
                     detection inside its analysis can be done from here. */}
                 {explain?.key === row.tuneId && (
-                  <p class="pl-10 pr-3 pb-2 text-[11px] text-dim leading-snug">
+                  <p class="pl-10 pr-3 pb-2 text-2xs text-dim leading-snug">
                     {t('sessions.set.needCards', { names: explain.missing.map(id => {
                       const d = allSets.occurrences.get(row.tuneId)?.[0]?.chain.find(x => x.tuneId === id);
                       return d ? tuneName(d, cardOf).text : id;

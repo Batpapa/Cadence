@@ -12,7 +12,7 @@ import { keyGapText } from '../keyName';
 import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
 import { formatBytes } from '../../utils';
-import { ExpandIcon, CollapseIcon } from '../../components/icons';
+import { ExpandIcon, CollapseIcon, CrossIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 import type { ScoreFace } from '../../types';
 
@@ -393,15 +393,29 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   // and, as in the viewer, none with the stave and the text together (the
   // user, 2026-11-04).
   const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
+  // On the full page, a ✕ beside it — see PlayAlongView's: the page has no
+  // title bar, and "reduce" alone was not read as a way out. Back to the dialog.
   const tools = shownFace === 'both' && !page ? undefined : (
-    <button
-      class="abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center"
-      title={pageLabel}
-      aria-label={pageLabel}
-      onClick={(e) => { e.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
-    >
-      {page ? <CollapseIcon size={13} /> : <ExpandIcon size={13} />}
-    </button>
+    <>
+      <button
+        class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
+        title={pageLabel}
+        aria-label={pageLabel}
+        onClick={(e) => { e.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
+      >
+        {page ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+      </button>
+      {page && (
+        <button
+          class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
+          title={t('common.close')}
+          aria-label={t('common.close')}
+          onClick={(e) => { e.currentTarget.blur(); leavePage(); }}
+        >
+          <CrossIcon size={16} />
+        </button>
+      )}
+    </>
   );
 
   return (

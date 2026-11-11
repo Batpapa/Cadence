@@ -24,7 +24,7 @@ export function showEmbedModal(entry: EmbedEntry): void {
     body.appendChild(iframe);
   } else {
     const msg = document.createElement('p');
-    msg.className = 'text-sm text-dim italic';
+    msg.className = 'text-sm text-dim';
     msg.textContent = t('embed.error');
     body.appendChild(msg);
   }

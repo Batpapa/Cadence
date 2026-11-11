@@ -1,7 +1,7 @@
 import { useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { AppContext, Route } from '../types';
-import { showModal, renderModalBody } from './modal';
+import { showModal, renderModalBody, MODAL_W } from './modal';
 import { t } from '../services/i18nService';
 import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
 import { cardScoreIndex } from '../services/abcService';
@@ -10,6 +10,7 @@ import { setDetectionOn } from '../session/detections';
 import { EXTENSIONS, type ExtensionId, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered } from '../services/extensions';
 import { offeredModules } from './pinnedModule';
 import { MusicNoteIcon, CheckIcon } from './icons';
+import { Segmented } from './ui';
 import { offeredScenarios, scenarioDone, anyScenarioPending, type Scenario } from '../walkthrough/scenarios';
 
 type SectionStyle = 'definition' | 'logic' | 'metrics';
@@ -252,7 +253,7 @@ function Rich({ text }: { text: string }) {
   text.split(/(`[^`]+`)/).forEach((part, i) => {
     if (part.length > 2 && part.startsWith('`') && part.endsWith('`')) {
       out.push(
-        <code key={i} class="px-1 py-px rounded bg-elevated border border-border font-mono text-[11px] text-primary whitespace-nowrap">
+        <code key={i} class="px-1 py-px rounded bg-elevated border border-border font-mono text-2xs text-primary whitespace-nowrap">
           {part.slice(1, -1)}
         </code>,
       );
@@ -269,21 +270,23 @@ function Rich({ text }: { text: string }) {
   return <>{out}</>;
 }
 
+/** One colour for every kind of section: the success green and the warning
+ *  amber used to take turns here as decoration, and both mean something
+ *  elsewhere (UI charter, 2026-11-11). The icon still tells the kinds apart. */
 const STYLE_ACCENTS: Record<SectionStyle, string> = {
   definition: 'var(--color-accent)',
-  logic:      'var(--color-success)',
-  metrics:    'var(--color-warn)',
+  logic:      'var(--color-accent)',
+  metrics:    'var(--color-accent)',
 };
 
 const STYLE_ICONS: Record<SectionStyle, string> = {
-  definition: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
-  logic:      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
-  metrics:    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>`,
+  definition: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
+  logic:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+  metrics:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>`,
 };
 
 const FALLBACK_STYLES: SectionStyle[] = ['definition', 'logic', 'metrics'];
 
-const CHECK_SVG = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 
 /** The extension's lines, boxed and labelled, so they read as an addition to
  *  the section rather than part of it. Bullets drawn by the caller, to match
@@ -293,7 +296,7 @@ function ExtensionBox({ lines, bullet }: { lines?: ExtensionLines; bullet: () =>
   const ext = EXTENSIONS.find(e => e.id === lines.ext)!;
   return (
     <div class="mt-2.5 rounded-md border border-irish/35 bg-irish/5 px-2.5 pt-2 pb-2.5">
-      <div class="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-irish">
+      <div class="flex items-center gap-1.5 mb-1.5 text-2xs font-semibold text-irish">
         <MusicNoteIcon size={12} />
         <span>{t(ext.labelKey)}</span>
       </div>
@@ -324,12 +327,12 @@ function InfoBody({ sections }: { sections: HelpSection[] }) {
             {section.items.length > 0 && <ul class="flex flex-col gap-1.5 list-none">
               {section.items.map(item => (
                 <li key={item} class="flex gap-2 text-xs leading-relaxed text-primary/75">
-                  <span class="shrink-0 flex items-center mt-0.5 self-start pt-1" style={{ color: accent }} dangerouslySetInnerHTML={{ __html: CHECK_SVG }} />
+                  <span class="shrink-0 flex items-center mt-0.5 self-start pt-0.5" style={{ color: accent }}><CheckIcon size={12} /></span>
                   <span><Rich text={item} /></span>
                 </li>
               ))}
             </ul>}
-            <ExtensionBox lines={section.extension} bullet={() => <span class="shrink-0 flex items-center mt-0.5 self-start pt-1 text-irish" dangerouslySetInnerHTML={{ __html: CHECK_SVG }} />} />
+            <ExtensionBox lines={section.extension} bullet={() => <span class="shrink-0 flex items-center mt-0.5 self-start pt-0.5 text-irish"><CheckIcon size={12} /></span>} />
           </div>
         );
       })}
@@ -337,21 +340,14 @@ function InfoBody({ sections }: { sections: HelpSection[] }) {
   );
 }
 
-const STEP_COLORS = [
-  'var(--color-accent)',
-  'var(--color-success)',
-  'var(--color-warn)',
-];
-
 function GuideBody({ steps }: { steps: HelpSection[] }) {
   return (
     <div class="flex flex-col gap-3">
       {steps.map((step, i) => {
-        const color = STEP_COLORS[i % STEP_COLORS.length]!;
         return (
-          <div key={step.heading} class="bg-bg border border-border rounded-lg p-3.5" style={{ borderLeft: `3px solid ${color}` }}>
+          <div key={step.heading} class="bg-bg border border-border rounded-lg p-3.5" style={{ borderLeft: '3px solid var(--color-accent)' }}>
             <div class="flex items-center gap-2 mb-2">
-              <span class="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: color, color: '#fff' }}>{i + 1}</span>
+              <span class="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-accent text-white">{i + 1}</span>
               <span class="text-sm font-semibold text-primary">{step.heading}</span>
             </div>
             <ul class="flex flex-col gap-1.5 list-none">
@@ -370,17 +366,9 @@ function GuideBody({ steps }: { steps: HelpSection[] }) {
   );
 }
 
-function HelpTab({ label, active, dot, onClick }: { label: string; active: boolean; dot?: boolean; onClick: () => void }) {
-  return (
-    <button
-      class={`px-3 py-2.5 text-xs font-medium cursor-pointer transition-colors border-none bg-transparent inline-flex items-center gap-1.5 ${active ? 'text-accent' : 'text-dim hover:text-primary'}`}
-      style={{ borderBottom: active ? '2px solid var(--color-accent)' : '2px solid transparent', marginBottom: '-1px' }}
-      onClick={onClick}
-    >
-      {label}
-      {dot && <NewDot />}
-    </button>
-  );
+/** A tab's label, with the "not done yet" dot when it has one. */
+function TabLabel({ label, dot }: { label: string; dot?: boolean }) {
+  return <span class="inline-flex items-center gap-1.5">{label}{dot && <NewDot />}</span>;
 }
 
 /** "Not done yet" — the same dot as on the ? button. */
@@ -408,7 +396,7 @@ function ScenarioRow({ s, n }: { s: Scenario; n: number }) {
               {blocked && <div class="text-xs text-warn leading-relaxed mt-1">{t(blocked)}</div>}
             </div>
             <button
-              class={`shrink-0 text-xs ${done ? 'btn-ghost border border-border px-3' : 'btn-primary'}`}
+              class={`shrink-0 text-xs ${done ? 'btn-outline' : 'btn-primary'}`}
               disabled={!!blocked}
               onClick={() => { void import('../walkthrough/engine').then(m => m.startScenario(s.id)); }}
             >
@@ -433,7 +421,7 @@ function WalkthroughBody() {
       {core.map((s, i) => <ScenarioRow key={s.id} s={s} n={i + 1} />)}
       {byExtension.map(({ ext, list }) => (
         <div key={ext.id} class="rounded-lg border border-irish/35 bg-irish/5 p-2.5 flex flex-col gap-2.5">
-          <div class="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-irish">
+          <div class="flex items-center gap-1.5 px-1 text-2xs font-semibold text-irish">
             <MusicNoteIcon size={12} />
             <span>{t(ext.labelKey)}</span>
           </div>
@@ -455,7 +443,7 @@ function HelpModalContent({ sections, initialTab }: { sections: HelpSection[]; i
   // dialog's own scroller goes back to the top on every switch.
   //
   // Found by its overflow style, not by "taller inside than out": the tab row
-  // itself overflows by the 1 px its underlined buttons hang below it, and a
+  // itself overflowed by the 1 px its underlined buttons hung below it, and a
   // size test stopped there and scrolled nothing (measured in a browser).
   const switchTo = (tab: HelpTabId) => {
     setActiveTab(tab);
@@ -466,10 +454,20 @@ function HelpModalContent({ sections, initialTab }: { sections: HelpSection[]; i
 
   return (
     <div ref={rootRef} class="flex flex-col gap-4 -mx-5 -my-4">
-      <div class="flex border-b border-border px-5">
-        <HelpTab label={t('help.tabInfo')}  active={activeTab === 'info'}  onClick={() => switchTo('info')} />
-        <HelpTab label={t('help.tabGuide')} active={activeTab === 'guide'} onClick={() => switchTo('guide')} />
-        <HelpTab label={t('help.tabWalkthrough')} active={activeTab === 'walkthrough'} dot={anyScenarioPending()} onClick={() => switchTo('walkthrough')} />
+      {/* The app's segmented control (UI charter, 2026-11-11): these were
+          underlined tabs, a fourth way of drawing one. The dot only while the
+          tab is not the one open: on the filled button it would not show, and
+          the list itself carries one per walkthrough. */}
+      <div class="px-5 pt-4">
+        <Segmented
+          value={activeTab}
+          onChange={switchTo}
+          options={[
+            { value: 'info', label: t('help.tabInfo') },
+            { value: 'guide', label: t('help.tabGuide') },
+            { value: 'walkthrough', label: <TabLabel label={t('help.tabWalkthrough')} dot={activeTab !== 'walkthrough' && anyScenarioPending()} /> },
+          ]}
+        />
       </div>
       <div class="px-5 pb-4">
         {activeTab === 'info' ? <InfoBody sections={sections} />
@@ -486,5 +484,5 @@ export function showHelpModal(ctx: AppContext, opts: { tab?: HelpTabId } = {}): 
   const { title, sections } = getInfoContent(ctx);
   const { el, cleanup } = renderModalBody(<HelpModalContent sections={nonEmpty(sections)} initialTab={opts.tab ?? 'info'} />);
   // Its tabs are gone back and forth between, and are not the same height.
-  showModal(t('help.title', { context: title }), el, [], { maxWidth: '36rem', expandable: true, pinTop: true, onDismiss: cleanup });
+  showModal(t('help.title', { context: title }), el, [], { maxWidth: MODAL_W.l, expandable: true, pinTop: true, onDismiss: cleanup });
 }

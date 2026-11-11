@@ -21,6 +21,7 @@
     "cap:dev": "cap run android --live-reload --host localhost --port 3002 --forwardPorts 3002:3002",
     "postinstall": "patch-package",
     "test": "vitest run",
+    "ui:check": "node scripts/uiCheck.mjs",
     "test:nightly": "vitest run",
     "deploy": "git add . && (git diff --cached --quiet && echo 'Nothing to commit.' || git commit -m \"${npm_config_msg:-deploy}\") && git push",
     "sweep": "vitest run --config vitest.sweep.config.ts",

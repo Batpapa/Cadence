@@ -35,7 +35,8 @@ interface Common {
    *  page; in a dialog it stays in the flow, where nothing can clip it. */
   floating?: boolean;
   /** The size of a field set among small controls (a deck's header): the same
-   *  look, at the height of the buttons beside it. */
+   *  look, at the height of the buttons beside it — 32 px, the icon buttons'
+   *  target (it was 24, with them). */
   compact?: boolean;
   id?: string;
 }
@@ -103,7 +104,7 @@ export function CardSearchField(props: Props) {
         ref={inputRef}
         id={id}
         type="text"
-        class={`input ${compact ? 'h-6 py-0 px-2 text-xs' : 'text-sm'} ${naming ? 'pr-8' : ''}`}
+        class={`input ${compact ? 'h-8 py-0 px-2 text-xs' : 'text-sm'} ${naming ? 'pr-8' : ''}`}
         placeholder={placeholder ?? t('fileViewer.cardRef.search')}
         value={query}
         disabled={disabled}

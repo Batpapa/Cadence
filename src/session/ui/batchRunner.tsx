@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, renderModalBody, closeModalOf, alertModal } from '../../components/modal';
+import { showModal, renderModalBody, closeModalOf, alertModal, MODAL_W } from '../../components/modal';
 
 // ── Running a bulk action over a selection, and saying what happened ─────────
 // Same shape as the card library's batch refresh (components/batchEdit.tsx's
@@ -162,7 +162,7 @@ export function showBatchProgress(title: string, steps: BatchStep[], onFinished?
   // is also the safe half, since those three run onDismiss and a footer button
   // would not, leaving the loop working for a torn-down dialog.
   showModal(title, el, [], {
-    maxWidth: '28rem',
+    maxWidth: MODAL_W.m,
     onDismiss: () => { cancelled.now = true; cleanup(); onFinished?.(); },
   });
 }
@@ -194,6 +194,6 @@ export function showBlockingProgress(title: string, steps: BatchStep[]): Promise
         resolve();
       }} />,
     );
-    showModal(title, el, [], { maxWidth: '28rem', dismissable: false });
+    showModal(title, el, [], { maxWidth: MODAL_W.m, dismissable: false });
   });
 }
