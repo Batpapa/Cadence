@@ -160,7 +160,7 @@ function reviewDiff(local: AppState, drive: AppState): ReviewDiff {
  *  bookkeeping rather than a user choice. */
 const SETTING_FIELDS = [
   'name', 'language', 'availabilityThreshold', 'weightByImportance',
-  'excludeMastered', 'studyStrategy', 'forgettingRate', 'currentProfileId', 'schemaVersion',
+  'excludeMastered', 'forgettingRate', 'currentProfileId', 'schemaVersion',
 ] as const;
 
 function settingsDiff(local: AppState, drive: AppState): FieldDiff[] {
