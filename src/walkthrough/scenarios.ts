@@ -153,9 +153,11 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
       { target: 'new-card', titleKey: 'walkthrough.discover.newCard.title', textKey: 'walkthrough.discover.newCard.text' },
       { target: 'nav-home', action: 'click', titleKey: 'walkthrough.discover.home.title', textKey: 'walkthrough.discover.home.text' },
       { target: 'dashboard', titleKey: 'walkthrough.discover.dashboard.title', textKey: 'walkthrough.discover.dashboard.text' },
-      { target: 'activity', titleKey: 'walkthrough.discover.activity.title', textKey: 'walkthrough.discover.activity.text' },
+      // Study all before the activity: it sits in the dashboard's block now
+      // (2026-11-11), and the light would otherwise jump back up the page.
       { target: 'study-all', titleKey: 'walkthrough.discover.study.title', textKey: 'walkthrough.discover.study.text',
         available: () => cardCount() > 0 },
+      { target: 'activity', titleKey: 'walkthrough.discover.activity.title', textKey: 'walkthrough.discover.activity.text' },
       { target: 'folders', titleKey: 'walkthrough.discover.folders.title', textKey: 'walkthrough.discover.folders.text' },
       { target: 'decks', titleKey: 'walkthrough.discover.decks.title', textKey: 'walkthrough.discover.decks.text' },
       // The side panel: opened by the user if it is put away, then shown.
@@ -261,7 +263,9 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
     steps: () => {
       const before = reviewCount();
       return [
-        { target: 'study-all', action: 'click', titleKey: 'walkthrough.review.start.title', textKey: 'walkthrough.review.start.text' },
+        // The arrow, not the button: one press on « Study all » starts at
+        // once (2026-11-11), and this tour is about how a session is set up.
+        { target: 'study-open-options', action: 'click', titleKey: 'walkthrough.review.start.title', textKey: 'walkthrough.review.start.text' },
         { target: 'study-options', titleKey: 'walkthrough.review.options.title', textKey: 'walkthrough.review.options.text' },
         // Everything already known: nothing would come up. Mastered cards are
         // let in, by the user, for this session and the next.

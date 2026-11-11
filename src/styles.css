@@ -64,6 +64,11 @@
   --color-success-ch:  74 222 128;
   --color-warn-ch:     251 191 36;
   --color-irish-ch:    52 211 133;
+  /* The app's yellow, the same in every theme: a favourite's star (any star)
+     and the sync cloud waiting to upload. Not `warn`: that one is orange in
+     the green theme, and a star is not a warning (the author, 2026-11-11 —
+     « le jaune était mieux »). Tailwind's yellow-400, which both had before. */
+  --color-gold-ch:     250 204 21;
 }
 
 [data-theme="green"] {
@@ -95,6 +100,7 @@
   --color-success-ch:  21 128 61;
   --color-warn-ch:     232 120 58;
   --color-irish-ch:    22 155 98;
+  --color-gold-ch:     250 204 21;
 }
 
 [data-theme="light"] {
@@ -142,6 +148,7 @@
   --color-success-ch:  22 163 74;
   --color-warn-ch:     192 122 0;
   --color-irish-ch:    21 128 61;
+  --color-gold-ch:     250 204 21;
 }
 
 @layer base {

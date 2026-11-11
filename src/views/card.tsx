@@ -844,13 +844,17 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         </div>
 
         {/* Deck chips */}
-        <div class="basis-full flex flex-wrap gap-1.5" data-tour="card-decks">
+        {/* items-center: the 32px manage button beside them used to stretch
+            every pill to its height. The pills keep the tags' geometry (the
+            .chip padding and a 1px border, transparent here), so the two rows
+            of pins on this page read as one kind of thing. */}
+        <div class="basis-full flex flex-wrap items-center gap-1.5" data-tour="card-decks">
           {deckIds.map(dId => {
             const deck = user.decks[dId]; if (!deck) return null;
             return (
               <span
                 key={dId}
-                class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+                class="inline-flex items-center text-xs px-2.5 py-0.5 rounded-full border border-transparent bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
                 title={deckPath(dId, user)}
                 onClick={() => navigate({ view: 'deck', deckId: dId })}
               >

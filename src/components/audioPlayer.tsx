@@ -266,7 +266,7 @@ function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, nam
               {/* The preset's own name and a drawn star, not the list's "★"
                   label: in the trigger there is room for the icon. */}
               <span class={`truncate flex-1 text-left ${currentId ? '' : 'text-muted'}`}>{current ? current.name : label}</span>
-              {current && current.id === defaultId && <span class="text-warn shrink-0 inline-flex"><StarIcon size={12} filled /></span>}
+              {current && current.id === defaultId && <span class="text-gold shrink-0 inline-flex"><StarIcon size={12} filled /></span>}
               {dirty && <span class="w-1.5 h-1.5 rounded-full bg-warn shrink-0" role="img" aria-label={t('audioPlayer.preset.modified')} title={t('audioPlayer.preset.modified')} />}
               <span class={`shrink-0 inline-flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
             </button>
@@ -278,7 +278,7 @@ function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, nam
           <IconButton
             label={t(current.id === defaultId ? 'audioPlayer.preset.isDefault' : 'audioPlayer.preset.setDefault')}
             onClick={actions.toggleDefault}
-            class={current.id === defaultId ? 'text-warn hover:text-warn' : 'hover:text-warn'}
+            class={current.id === defaultId ? 'text-gold hover:text-gold' : 'hover:text-gold'}
           >
             <StarIcon size={14} filled={current.id === defaultId} />
           </IconButton>
