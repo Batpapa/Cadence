@@ -1,4 +1,4 @@
-import type { ComponentType, RefObject } from 'preact';
+import type { ComponentType, ComponentChildren, RefObject } from 'preact';
 import { useState, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate } from '../store';
 import { CustomSelect } from './customSelect';
@@ -180,9 +180,8 @@ export function StudyButton({ opts, label, title, tour, disabled, showLabel = tr
   title?: string;
   tour?: string;
   disabled?: boolean;
-  /** False: the icon alone. The label is still laid out — out of the flow,
-   *  invisible — for `useRoomForStudyLabel` to measure it; the button then
-   *  carries it as its name. */
+  /** False: the icon alone (see ShrinkLabel); the button then carries the
+   *  label as its name. */
   showLabel?: boolean;
 }) {
   return (
@@ -195,30 +194,46 @@ export function StudyButton({ opts, label, title, tour, disabled, showLabel = tr
       disabled={disabled}
       onClick={() => showStudyModal(opts)}
     >
-      <StudyIcon size={16} />
-      <span data-study-label class={showLabel ? 'whitespace-nowrap' : 'absolute invisible pointer-events-none whitespace-nowrap'}>{label}</span>
+      <ShrinkIcon><StudyIcon size={16} /></ShrinkIcon>
+      <ShrinkLabel shown={showLabel}>{label}</ShrinkLabel>
     </button>
   );
 }
 
-/** For a header row laid out [title][actions holding a StudyButton]: whether
- *  Study's label has room. The actions stay top right whatever happens (the
- *  author, 2026-11-11); when the row runs short the label goes first, and the
- *  title wraps only once it has.
+/** A header action's label that `useHiddenHeaderLabels` can take away. Hidden,
+ *  it is still laid out — out of the flow, invisible — so its width can still
+ *  be measured. The button holding it needs `relative`. */
+export function ShrinkLabel({ shown, children }: { shown: boolean; children: string }) {
+  return <span data-shrink-label class={shown ? 'whitespace-nowrap' : 'absolute invisible pointer-events-none whitespace-nowrap'}>{children}</span>;
+}
+
+/** The icon beside a ShrinkLabel, one text line tall (text-sm: 20 px). Alone,
+ *  a 16 px icon left the button 4 px shorter than with its label — the button
+ *  jumped as the label went, and fell under the 32 px target. */
+export function ShrinkIcon({ children }: { children: ComponentChildren }) {
+  return <span class="h-5 flex items-center shrink-0">{children}</span>;
+}
+
+/** For a header row laid out [title][actions holding ShrinkLabels]: how many
+ *  of those labels to hide, taken in the actions' order — the label at index i
+ *  shows when i >= the answer. The actions stay top right whatever happens (the
+ *  author, 2026-11-11); when the row runs short the labels go first, one after
+ *  the other (on the home: Smart edit's, then Study all's), and the title wraps
+ *  only once they all have.
  *
- *  The rule: the label shows when the title ON ONE LINE, the gap, and the
- *  actions WITH their label fit the row. Each term is measured the same way
- *  whichever way the label currently is — the title's text by the sum of its
- *  line boxes (wrapped or not), the label by its own box, laid out even when
- *  hidden — so the answer cannot flip itself back and forth. A row that
- *  measures itself loops otherwise (2026-09: the page froze on a scrollbar).
- *  Pure CSS was tried first: the shrinking was continuous, the label went
- *  while the button was still wide and empty, and the actions could be
- *  squeezed off the row. Units: everything is divided by the row's own
- *  rendered/layout ratio, so the app's CSS zoom does not mix two pixel
- *  spaces. While the name is being edited (an input, no h1), the answer stays. */
-export function useRoomForStudyLabel(rowRef: RefObject<HTMLElement>, deps: unknown[]): boolean {
-  const [room, setRoom] = useState(true);
+ *  The rule: the fewest labels hidden such that the title ON ONE LINE, the gap,
+ *  and the actions with the remaining labels fit the row. Each term is
+ *  measured the same way whichever labels are currently shown — the title's
+ *  text by the sum of its line boxes (wrapped or not), each label by its own
+ *  box, laid out even when hidden — so the answer cannot flip itself back and
+ *  forth. A row that measures itself loops otherwise (2026-09: the page froze
+ *  on a scrollbar). Pure CSS was tried first: the shrinking was continuous, the
+ *  label went while the button was still wide and empty, and the actions could
+ *  be squeezed off the row. Units: everything is divided by the row's own
+ *  rendered/layout ratio, so the app's CSS zoom does not mix two pixel spaces.
+ *  While the name is being edited (an input, no h1), the answer stays. */
+export function useHiddenHeaderLabels(rowRef: RefObject<HTMLElement>, deps: unknown[]): number {
+  const [hidden, setHidden] = useState(0);
   useLayoutEffect(() => {
     const row = rowRef.current;
     if (!row) return;
@@ -226,8 +241,8 @@ export function useRoomForStudyLabel(rowRef: RefObject<HTMLElement>, deps: unkno
       const title = row.firstElementChild as HTMLElement | null;
       const actions = row.lastElementChild as HTMLElement | null;
       const h1 = title?.querySelector('h1');
-      const label = actions?.querySelector<HTMLElement>('[data-study-label]');
-      if (!title || !actions || !h1 || !label) return;
+      const labels = actions ? Array.from(actions.querySelectorAll<HTMLElement>('[data-shrink-label]')) : [];
+      if (!title || !actions || !h1 || labels.length === 0) return;
       const cs = getComputedStyle(row);
       const rowW = parseFloat(cs.width);
       const scale = row.getBoundingClientRect().width / rowW || 1;
@@ -240,11 +255,15 @@ export function useRoomForStudyLabel(rowRef: RefObject<HTMLElement>, deps: unkno
       const text = lines.reduce((s, r) => s + r.width, 0)
         + Math.max(0, lines.length - 1) * 0.35 * parseFloat(getComputedStyle(h1).fontSize) * scale;
       const titleW = (h1.getBoundingClientRect().left - title.getBoundingClientRect().left + text) / scale;
-      const btn = label.parentElement!;
-      const shown = !label.classList.contains('absolute');
-      const labelW = label.getBoundingClientRect().width / scale + parseFloat(getComputedStyle(btn).columnGap || '0');
-      const actionsFull = actions.getBoundingClientRect().width / scale + (shown ? 0 : labelW);
-      setRoom(titleW + (parseFloat(cs.columnGap) || 0) + actionsFull <= rowW + 0.5);
+      // Each label's share of its button: its box and the gap before it.
+      const widths = labels.map(l => l.getBoundingClientRect().width / scale
+        + parseFloat(getComputedStyle(l.parentElement!).columnGap || '0'));
+      const actionsFull = actions.getBoundingClientRect().width / scale
+        + labels.reduce((s, l, i) => s + (l.classList.contains('absolute') ? widths[i]! : 0), 0);
+      let need = titleW + (parseFloat(cs.columnGap) || 0) + actionsFull - (rowW + 0.5);
+      let n = 0;
+      while (need > 0 && n < labels.length) need -= widths[n++]!;
+      setHidden(n);
     };
     decide();
     const ro = new ResizeObserver(decide);
@@ -253,5 +272,5 @@ export function useRoomForStudyLabel(rowRef: RefObject<HTMLElement>, deps: unkno
     void document.fonts?.ready.then(decide);
     return () => ro.disconnect();
   }, deps);
-  return room;
+  return hidden;
 }

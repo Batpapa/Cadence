@@ -5,7 +5,7 @@ import { TrashIcon, StarIcon, LibraryIcon, WandIcon, FolderIcon, ChevronDownIcon
 import { IconButton, EmptyState } from '../components/ui';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
-import { StudyButton, useRoomForStudyLabel } from '../components/studyModal';
+import { StudyButton, ShrinkLabel, ShrinkIcon, useHiddenHeaderLabels } from '../components/studyModal';
 import { CustomSelect } from '../components/customSelect';
 import { createLongPressHandlers } from '../components/longPress';
 import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, isFolderDescendant, moveFolderToParent } from '../services/deckService';
@@ -356,9 +356,11 @@ export function FolderView({ folderId }: { folderId: string | null }) {
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName,      setEditName]      = useState('');
-  // Study's label in a folder's header, while the name fits beside it.
+  // The header's labels, while the name fits beside them: on the home, Smart
+  // edit's goes first, then Study all's (the author, 2026-11-11).
   const headerRef    = useRef<HTMLDivElement>(null);
-  const roomForLabel = useRoomForStudyLabel(headerRef, [folder?.name, isEditingName]);
+  const hiddenLabels = useHiddenHeaderLabels(headerRef, [folderId, folder?.name, isEditingName]);
+  const studyLabelAt = folderId ? 0 : 1;
 
   // ── Folder drag state ───────────────────────────────────────────────────────
   const draggedFolderId  = useRef<string | null>(null);
@@ -460,8 +462,8 @@ export function FolderView({ folderId }: { folderId: string | null }) {
     <div class="p-6 space-y-6 view-enter overflow-y-auto h-full">
 
       {/* ── Header ── */}
-      {/* Laid out like the deck's header: the actions stay top right, Study's
-          label goes first when the row runs short, then the name wraps. */}
+      {/* Laid out like the deck's header: the actions stay top right, their
+          labels go first when the row runs short, then the name wraps. */}
       <div ref={headerRef} class={`flex ${folder ? 'items-start' : 'items-center'} justify-between gap-4`}>
         <div class="flex-auto min-w-0">
           {folder ? (
@@ -520,12 +522,13 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               folder it would be opened from. Loaded on demand. */}
           {!folderId && (
             <button
-              class="btn-outline px-3 inline-flex items-center gap-1.5 whitespace-nowrap"
+              class="btn-outline px-3 inline-flex items-center gap-1.5 relative"
               title={t('smartEdit.openTitle')}
+              aria-label={hiddenLabels > 0 ? t('smartEdit.open') : undefined}
               onClick={() => { void import('../components/smartEdit').then(m => m.showSmartEdit()); }}
             >
-              <WandIcon size={14} />
-              {t('smartEdit.open')}
+              <ShrinkIcon><WandIcon size={14} /></ShrinkIcon>
+              <ShrinkLabel shown={hiddenLabels === 0}>{t('smartEdit.open')}</ShrinkLabel>
             </button>
           )}
           {/* Only the folder view carries the tooltip: its label was shortened
@@ -537,7 +540,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               label={folderId ? t('folder.study') : t('folder.studyAll')}
               title={folderId ? t('folder.studyTitle') : undefined}
               tour="study-all"
-              showLabel={roomForLabel}
+              showLabel={hiddenLabels <= studyLabelAt}
             />
           )}
           {folder && (
