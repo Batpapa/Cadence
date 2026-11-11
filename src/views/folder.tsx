@@ -2,7 +2,7 @@ import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon, StarIcon, LibraryIcon, WandIcon, FolderIcon, ChevronDownIcon, PlusIcon } from '../components/icons';
-import { IconButton, Segmented, EmptyState } from '../components/ui';
+import { IconButton, EmptyState } from '../components/ui';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { StudyButton } from '../components/studyModal';
@@ -254,7 +254,7 @@ function Dashboard({ user }: { user: AppState }) {
     : [t(cardIds.length !== 1 ? 'dashboard.ofCardsPlural' : 'dashboard.ofCards', { count: cardIds.length }), ...(freshPart ? [freshPart] : [])].join(' · ');
 
   const PERIOD_LABELS: Record<ActivityPeriod, string> = {
-    '7d': t('dashboard.period.7d'), '30d': t('dashboard.period.30d'), '1y': t('dashboard.period.1y'),
+    '7d': t('dashboard.periodLong.7d'), '30d': t('dashboard.periodLong.30d'), '1y': t('dashboard.periodLong.1y'),
   };
 
   return (
@@ -291,10 +291,25 @@ function Dashboard({ user }: { user: AppState }) {
             <div class="section-title">{t('dashboard.activity')}</div>
             <div class="text-xs text-dim mt-0.5">{t('dashboard.activitySummary', { week: weekReviews, total: totalReviews })}</div>
           </div>
-          <Segmented
+          {/* A quiet select, not a segmented bar (the author, 2026-11-11):
+              three buttons took more room and weight than a scale setting
+              deserves — the same discretion as the library's sort. */}
+          <CustomSelect
             value={actPeriod}
             options={(['7d', '30d', '1y'] as ActivityPeriod[]).map(p => ({ value: p, label: PERIOD_LABELS[p] }))}
-            onChange={setActPeriod}
+            onChange={v => setActPeriod(v as ActivityPeriod)}
+            align="right"
+            renderTrigger={(label, open, toggle) => (
+              <button
+                type="button"
+                class="btn-ghost text-xs min-h-8 px-2 inline-flex items-center gap-1 shrink-0 whitespace-nowrap"
+                aria-expanded={open}
+                onClick={toggle}
+              >
+                {label}
+                <span class={`shrink-0 flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
+              </button>
+            )}
           />
         </div>
         <ActivityBars key={actPeriod} times={reviewTimes} period={actPeriod} />

@@ -289,6 +289,14 @@
   .chip-on    { @apply bg-accent border-accent text-white; }
   .chip-toggle-on { @apply border-accent/60 bg-accent/10 text-accent; }
 
+  /* A deck a card belongs to, which opens it: the card view's header and the
+     study view's, one class so they cannot drift apart again (2026-11-11 —
+     the card view's had grown a border and padding the study view's lacked;
+     the author preferred the study view's). Its row must be items-center: a
+     32px button beside it would stretch it to its height. */
+  .deck-pin   { @apply inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent
+                       hover:bg-accent/20 transition-colors cursor-pointer; }
+
   /* A count or a level, never clickable on its own. */
   .badge      { @apply inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums; }
 
