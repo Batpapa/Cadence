@@ -250,6 +250,26 @@ export function decksContainingCard(cardId: string, user: AppState): string[] {
     .map(d => d.id);
 }
 
+/** `decksContainingCard` for every card at once, from one pass over the decks:
+ *  the same decks in the same order. A card in no deck has no key. For a list
+ *  asking it per row — the library and the analyser's Detections tab did, and
+ *  with 1500 cards and 3800 deck entries that was half of every render
+ *  (bench, 2026-11-10). Built from the state it is given, per render: it
+ *  keeps nothing, so a sync or another tab is read as it lands. */
+export function deckIdsByCard(user: AppState): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const d of Object.values(user.decks)) {
+    const seen = new Set<string>();
+    for (const e of d.entries) {
+      if (seen.has(e.cardId)) continue;
+      seen.add(e.cardId);
+      const list = out.get(e.cardId);
+      if (list) list.push(d.id); else out.set(e.cardId, [d.id]);
+    }
+  }
+  return out;
+}
+
 /** Cards that would end up in no deck at all if the given decks were removed. */
 export function orphanedCardsAfterDeckRemoval(deckIds: string[], user: AppState): string[] {
   const removing = new Set(deckIds);

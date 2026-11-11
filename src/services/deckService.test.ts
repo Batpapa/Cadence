@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickSequential, advanceSkips } from './deckService';
+import { pickSequential, advanceSkips, decksContainingCard, deckIdsByCard } from './deckService';
 import { emptyState } from '../utils';
 import type { AppState, CardWork, Deck } from '../types';
 
@@ -136,5 +136,22 @@ describe('advanceSkips', () => {
     const marks = ['a'];
     skips(makeUser(), deckOf('a', 'b', 'c'), marks, 'b');
     expect(marks).toEqual(['a']);
+  });
+});
+
+describe('deckIdsByCard', () => {
+  it('gives decksContainingCard for every card, in the same order', () => {
+    const user = emptyState();
+    user.decks = {
+      d2: { id: 'd2', name: 'B', entries: [{ cardId: 'a' }, { cardId: 'b' }, { cardId: 'a' }] },
+      d1: { id: 'd1', name: 'A', entries: [{ cardId: 'b' }] },
+      d3: { id: 'd3', name: 'C', entries: [] },
+      d4: { id: 'd4', name: 'D', entries: [{ cardId: 'a' }, { cardId: 'gone' }] },
+    };
+    const index = deckIdsByCard(user);
+    for (const cardId of ['a', 'b', 'gone', 'none']) {
+      expect(index.get(cardId) ?? []).toEqual(decksContainingCard(cardId, user));
+    }
+    expect(index.has('none')).toBe(false);
   });
 });

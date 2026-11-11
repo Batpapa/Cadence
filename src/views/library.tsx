@@ -25,12 +25,12 @@ import type { ItiMappingDb, ItiMappingEntry } from '../services/itiMappingDb';
 import { useContextMenu } from '../components/contextMenu';
 import { showStudyModal } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
-import { decksContainingCard } from '../services/deckService';
+import { deckIdsByCard } from '../services/deckService';
 import { knownChips } from '../components/filterChips';
 import { coveredByTagGroups, dropTagNodeChips, renameTagNodeChips, tagChipValues, tagDisplay, tagLabel, tagNodeExists, tagTree } from '../services/tagGroups';
 import { deckChipKnown, deckChipSection } from '../components/deckChips';
 import { showRenameTagEverywhereModal } from '../components/tagModal';
-import { cardAvailability, replayFSRS } from '../services/knowledgeService';
+import { availabilityOfState, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
 import { FilterSection, FiltersButton, ReviewedRangeSection, cycleFilter, useFiltersPanel, type FilterMap } from '../components/filterSection';
@@ -386,7 +386,9 @@ export function LibraryView() {
   const tagGroupTree = tagTree(allTags);
   // What an included group chip takes in, drawn as covered (deck folders' rule).
   const coveredTags = coveredByTagGroups(allTags, [...liveTags].filter(([, s]) => s === 'include').map(([k]) => k));
-  const hasOrphans = pool.some(c => decksContainingCard(c.id, user).length === 0);
+  // One pass over the decks, not every deck searched per card (deckIdsByCard).
+  const decksByCard = deckIdsByCard(user);
+  const hasOrphans = pool.some(c => !decksByCard.has(c.id));
   // The decks and their folders, as chips (deckChips.ts, shared with the
   // analyser's tunes tab).
   const deckSection = deckChipSection(user, activeDecks, inPool, hasOrphans);
@@ -502,6 +504,19 @@ export function LibraryView() {
 
     return matchText && matchTags && matchDecks && matchTypes && matchSources && matchReviewed;
   });
+  // Each card's FSRS state, replayed from its whole history at most once per
+  // render — the sorts and every row's two dots read it, which used to replay
+  // it two or three times per card. Kept for this render only: a review
+  // arriving by sync is read on the next one.
+  const fsrsOfCard = new Map<string, ReturnType<typeof replayFSRS>>();
+  const workOf = (c: Card) => user.cardWorks[`${user.currentProfileId}:${c.id}`];
+  const fsrsOf = (c: Card): ReturnType<typeof replayFSRS> => {
+    if (fsrsOfCard.has(c.id)) return fsrsOfCard.get(c.id);
+    const work = workOf(c);
+    const fsrs = work ? replayFSRS(work.history) : undefined;
+    fsrsOfCard.set(c.id, fsrs);
+    return fsrs;
+  };
   let filtered: Card[];
   // Ties resolve alphabetically. The tie-break lives inside the comparator, so
   // the global sortAsc reverse below flips it together with the primary key.
@@ -517,17 +532,12 @@ export function LibraryView() {
     filtered = [...filteredUnsorted].sort((a, b) => numCmp(b.defaultImportance, a.defaultImportance) || byName(a, b));
   } else if (sortMode === 'recall') {
     // Weakest first: never-reviewed cards count as recall 0 and lead the list.
-    // Precomputed: cardAvailability replays the whole FSRS history per card.
-    const kOf = new Map(filteredUnsorted.map(c =>
-      [c.id, cardAvailability(user, user.cardWorks[`${user.currentProfileId}:${c.id}`])]));
+    // Precomputed: the comparator would ask it twice per comparison.
+    const kOf = new Map(filteredUnsorted.map(c => [c.id, availabilityOfState(user, fsrsOf(c))]));
     filtered = [...filteredUnsorted].sort((a, b) => numCmp(kOf.get(a.id)!, kOf.get(b.id)!) || byName(a, b));
   } else if (sortMode === 'difficulty') {
     // FSRS difficulty D (1–10) ascending; never-reviewed = −∞, so they lead.
-    const dOf = new Map(filteredUnsorted.map(c => {
-      const work = user.cardWorks[`${user.currentProfileId}:${c.id}`];
-      const fsrs = work ? replayFSRS(work.history) : undefined;
-      return [c.id, fsrs?.difficulty ?? Number.NEGATIVE_INFINITY];
-    }));
+    const dOf = new Map(filteredUnsorted.map(c => [c.id, fsrsOf(c)?.difficulty ?? Number.NEGATIVE_INFINITY]));
     filtered = [...filteredUnsorted].sort((a, b) => numCmp(dOf.get(a.id)!, dOf.get(b.id)!) || byName(a, b));
   } else {
     // Relevance as rankByRelevance orders it: best tier, then a name match
@@ -601,23 +611,28 @@ export function LibraryView() {
     if (next.size !== selected.size) setSelected(next);
   }, [user.cards]);
 
-  const addEligible = Object.values(user.decks)
-    .filter(d => selectedArr.some(cId => !d.entries.some(e => e.cardId === cId)))
-    .map(d => ({
+  // How many of the selected cards each deck holds, counted once per deck
+  // through a set of its cards — not every selected card searched in every
+  // deck, twice per menu, which a "select all" paid on every render (bench,
+  // 2026-11-10). `selectedArr` comes from a Set: no card counts twice.
+  const deckShares = selectedArr.length === 0 ? [] : Object.values(user.decks).map(d => {
+    const inDeck = new Set(d.entries.map(e => e.cardId));
+    return { d, n: selectedArr.filter(cId => inDeck.has(cId)).length };
+  });
+
+  const addEligible = deckShares
+    .filter(({ n }) => n < selectedArr.length)
+    .map(({ d, n }) => ({
       id: d.id,
-      info: t('library.deckInfo.add', {
-        n: selectedArr.length - selectedArr.filter(cId => d.entries.some(e => e.cardId === cId)).length,
-      }),
+      info: t('library.deckInfo.add', { n: selectedArr.length - n }),
     }))
     .sort((a, b) => (user.decks[a.id]?.name ?? '').localeCompare(user.decks[b.id]?.name ?? ''));
 
-  const removeEligible = Object.values(user.decks)
-    .filter(d => selectedArr.some(cId => d.entries.some(e => e.cardId === cId)))
-    .map(d => ({
+  const removeEligible = deckShares
+    .filter(({ n }) => n > 0)
+    .map(({ d, n }) => ({
       id: d.id,
-      info: t('library.deckInfo.remove', {
-        n: selectedArr.filter(cId => d.entries.some(e => e.cardId === cId)).length,
-      }),
+      info: t('library.deckInfo.remove', { n }),
     }))
     .sort((a, b) => (user.decks[a.id]?.name ?? '').localeCompare(user.decks[b.id]?.name ?? ''));
 
@@ -1140,9 +1155,9 @@ export function LibraryView() {
                 lastClickRef.current = { cardId: card.id, wasSelected: nowSelected };
               };
               return filtered.map(card => {
-              const work     = user.cardWorks[`${user.currentProfileId}:${card.id}`];
-              const k        = cardAvailability(user, work);
-              const fsrs     = work ? replayFSRS(work.history) : undefined;
+              const work     = workOf(card);
+              const fsrs     = fsrsOf(card);
+              const k        = availabilityOfState(user, fsrs);
               const cardEase = fsrs ? (10 - fsrs.difficulty) / 9 : undefined;
               const isSel    = selected.has(card.id);
               const readout  = sortReadout(sortMode, card, work?.history.at(-1)?.ts, k, cardEase);

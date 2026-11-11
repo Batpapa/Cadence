@@ -168,7 +168,13 @@ export function replayFSRS(history: SessionEntry[]): { stability: number; diffic
 /** Retrievability of a card right now, scaled by user.forgettingRate. */
 export function cardAvailability(user: User, cardWork: CardWork | undefined): number {
   if (!cardWork || cardWork.history.length === 0) return 0;
-  const fsrs = replayFSRS(cardWork.history);
+  return availabilityOfState(user, replayFSRS(cardWork.history));
+}
+
+/** `cardAvailability` from a state already replayed (replayFSRS) — for a list
+ *  that needs the state itself too, and would otherwise replay every history
+ *  twice per row. */
+export function availabilityOfState(user: User, fsrs: ReturnType<typeof replayFSRS>): number {
   if (!fsrs) return 0;
   const elapsedDays = (Date.now() - fsrs.lastTs) / 86400000;
   return fsrsRetrievability(elapsedDays, fsrs.stability, user.forgettingRate ?? 1);
