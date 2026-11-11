@@ -218,19 +218,15 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
  *  « exclude mastered » proposes, less those never reviewed, counted apart:
  *  on a first day every card is one, and calling them all « to review » would
  *  only say the library is new. */
-function dueNow(user: AppState): { due: Set<string>; fresh: number } {
-  const due = new Set<string>();
-  let fresh = 0;
+function dueNow(user: AppState): { due: number; fresh: number } {
+  let due = 0, fresh = 0;
   for (const cardId of Object.keys(user.cards)) {
     const work = user.cardWorks[`${user.currentProfileId}:${cardId}`];
     if (!work || work.history.length === 0) fresh++;
-    else if (!isAvailable(user, work)) due.add(cardId);
+    else if (!isAvailable(user, work)) due++;
   }
   return { due, fresh };
 }
-
-/** How many decks the home lists by name under what is due; the rest is a count. */
-const DUE_DECKS_SHOWN = 8;
 
 function Dashboard({ user }: { user: AppState }) {
   const [actPeriod, setActPeriod] = useState<ActivityPeriod>('1y');
@@ -246,16 +242,15 @@ function Dashboard({ user }: { user: AppState }) {
   // opened on three counters — cards, reviews this week, and a streak with
   // its « keep it up! », which is the app telling the user what to do: no
   // streak here any more, nothing to keep up.
+  // The count alone: no list of the decks that hold due cards (tried, then
+  // dropped the same day — the author: a library can have fifty decks, the
+  // list took the whole screen and told little). The sidebar's dots say it.
   const { due, fresh } = dueNow(user);
-  const dueDecks = Object.values(user.decks)
-    .map(deck => ({ deck, n: deck.entries.filter(e => due.has(e.cardId)).length }))
-    .filter(d => d.n > 0)
-    .sort((a, b) => b.n - a.n || a.deck.name.localeCompare(b.deck.name));
   // « of N cards » belongs to a count: after « Nothing due right now » it
   // would read as part of the sentence.
   const freshPart = fresh > 0 ? t(fresh !== 1 ? 'dashboard.neverReviewedPlural' : 'dashboard.neverReviewed', { count: fresh }) : null;
   const dueSub = cardIds.length === 0 ? t('library.empty')
-    : due.size === 0 ? (freshPart ? `· ${freshPart}` : '')
+    : due === 0 ? (freshPart ? `· ${freshPart}` : '')
     : [t(cardIds.length !== 1 ? 'dashboard.ofCardsPlural' : 'dashboard.ofCards', { count: cardIds.length }), ...(freshPart ? [freshPart] : [])].join(' · ');
 
   const PERIOD_LABELS: Record<ActivityPeriod, string> = {
@@ -265,7 +260,7 @@ function Dashboard({ user }: { user: AppState }) {
   return (
     <div class="space-y-5 pb-2">
       {/* What is due, and the one way to review it */}
-      <div class="card-block space-y-3" data-tour="dashboard">
+      <div class="card-block" data-tour="dashboard">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div class="min-w-0">
             <div class="section-title">{t('dashboard.toReview')}</div>
@@ -273,8 +268,8 @@ function Dashboard({ user }: { user: AppState }) {
                 reviewed, a big zero read as « nothing to do » next to a
                 Study all that has nine cards to show. */}
             <div class="flex items-baseline flex-wrap gap-x-2 mt-1">
-              {due.size > 0
-                ? <span class="text-2xl font-mono font-semibold text-primary">{due.size}</span>
+              {due > 0
+                ? <span class="text-2xl font-mono font-semibold text-primary">{due}</span>
                 : <span class="text-sm font-medium text-primary">{t('dashboard.nothingDue')}</span>}
               <span class="text-xs text-dim">{dueSub}</span>
             </div>
@@ -287,25 +282,6 @@ function Dashboard({ user }: { user: AppState }) {
             />
           )}
         </div>
-        {dueDecks.length > 0 && (
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs text-dim">{t('dashboard.decksToReview')}</span>
-            {dueDecks.slice(0, DUE_DECKS_SHOWN).map(({ deck, n }) => (
-              <button
-                key={deck.id}
-                type="button"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-elevated hover:border-accent/50 transition-colors cursor-pointer text-sm text-primary"
-                onClick={() => navigate({ view: 'deck', deckId: deck.id })}
-              >
-                {deck.name}
-                <span class="text-xs font-mono text-dim">{n}</span>
-              </button>
-            ))}
-            {dueDecks.length > DUE_DECKS_SHOWN && (
-              <span class="text-xs text-dim">{t('dashboard.moreDecks', { count: dueDecks.length - DUE_DECKS_SHOWN })}</span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Activity chart */}
@@ -479,7 +455,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
       {/* ── Header ── */}
       {/* Wraps like the deck's header, for the same split Study button. */}
       <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        <div class="flex-1 min-w-[12rem]">
+        <div class="flex-auto min-w-0">
           {folder ? (
             isEditingName ? (
               <input
