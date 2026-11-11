@@ -13,6 +13,7 @@ import { startLiveSession, startImport, startLinkImport, showImportSessionModal,
 import { LiveTempoBar } from '../session/ui/LiveTempo';
 import { analysisTempo } from '../session/ui/analysisView';
 import { GearIcon, WaveformIcon } from '../components/icons';
+import { IconButton } from '../components/ui';
 
 // ── Sessions page (the tune analyzer) ───────────────────────────────────────────
 // Route `{ view: 'sessions' }` = past-sessions library, or whichever local
@@ -90,15 +91,15 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
             {t('sessions.moduleTitle')}
           </h1>
           <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="w-8 h-8 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
+            <IconButton
+              label={t('sessions.settings.title')}
+              variant="outline"
+              class="hover:text-accent"
               data-tour="analyser-gear"
-              title={t('sessions.settings.title')}
               onClick={showSessionSettingsModal}
             >
               <GearIcon size={14} />
-            </button>
+            </IconButton>
           </div>
         </div>
         <SessionLibrary

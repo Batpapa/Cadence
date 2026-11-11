@@ -2,6 +2,7 @@ import { useRef } from 'preact/hooks';
 import { t } from '../services/i18nService';
 import { focusIfDesktop } from '../utils';
 import { CrossIcon } from './icons';
+import { IconButton } from './ui';
 
 /** A list's search box, with a cross at its end to empty it once something is
  *  typed (user's call, 2026-11-01). Drawn here rather than left to
@@ -27,20 +28,20 @@ export function SearchField({ value, onInput, placeholder, tour }: {
         type="text"
         placeholder={placeholder}
         data-tour={tour}
-        class="input pr-8"
+        class="input pr-9"
         value={value}
         onInput={(e) => onInput((e.target as HTMLInputElement).value)}
       />
+      {/* A 32 px target inside the field's end (a bare 20 px one before);
+          emptying a search is redone by typing, so it goes at once. */}
       {value !== '' && (
-        <button
-          type="button"
-          class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center p-1 rounded text-muted hoverable:text-primary transition-colors cursor-pointer"
-          title={t('search.clear')}
-          aria-label={t('search.clear')}
+        <IconButton
+          class="absolute right-0.5 top-1/2 -translate-y-1/2"
+          label={t('search.clear')}
           onClick={() => { onInput(''); if (ref.current) focusIfDesktop(ref.current); }}
         >
           <CrossIcon size={12} />
-        </button>
+        </IconButton>
       )}
     </div>
   );

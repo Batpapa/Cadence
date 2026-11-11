@@ -5,7 +5,8 @@ import { CustomSelect } from './customSelect';
 import { pickRandom, pickOptimal, pickStochastic, pickSequential } from '../services/deckService';
 import { buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, MODAL_W } from './modal';
+import { Switch, ChoiceCard } from './ui';
 import { DiceIcon, BullseyeIcon, WeightedBarsIcon, SequentialIcon, ArrowRightIcon } from './icons';
 import type { Deck, StudyStrategy, DeckEntry } from '../types';
 
@@ -22,12 +23,14 @@ export interface StudyModalOpts {
 
 /** Icon and colour for each strategy. Exported because the study header shows
  *  the same glyph the picker did — that icon is how you recognise, mid-session,
- *  which mode you started. */
+ *  which mode you started. The DRAWING tells them apart; the colour is the
+ *  accent for all four (raw sky/emerald/violet/amber did not follow the
+ *  themes, and a status hue on a choice says nothing about it). */
 export const STRATEGY_ICONS: Record<StudyStrategy, { Icon: ComponentType<{ size?: number }>; color: string; bg: string }> = {
-  random:     { Icon: DiceIcon,         color: 'text-sky-400',     bg: 'bg-sky-400/10' },
-  optimal:    { Icon: BullseyeIcon,     color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-  stochastic: { Icon: WeightedBarsIcon, color: 'text-violet-400',  bg: 'bg-violet-400/10' },
-  sequential: { Icon: SequentialIcon,   color: 'text-amber-400',   bg: 'bg-amber-400/10' },
+  random:     { Icon: DiceIcon,         color: 'text-accent', bg: 'bg-accent/10' },
+  optimal:    { Icon: BullseyeIcon,     color: 'text-accent', bg: 'bg-accent/10' },
+  stochastic: { Icon: WeightedBarsIcon, color: 'text-accent', bg: 'bg-accent/10' },
+  sequential: { Icon: SequentialIcon,   color: 'text-accent', bg: 'bg-accent/10' },
 };
 
 // `sequential` last on purpose: it is the only one that can be absent (deck
@@ -40,19 +43,13 @@ const STRATEGIES: Array<{ id: StudyStrategy; labelKey: string; subKey: string }>
   { id: 'sequential', labelKey: 'deck.strategy.sequential', subKey: 'deck.strategy.sequential.sub' },
 ];
 
-function Switch({ label, value, tour, onChange }: { label: string; value: boolean; tour?: string; onChange: (v: boolean) => void }) {
+/** A labelled row around the app's one Switch (ui.tsx): the label on the left,
+ *  as this dialog always had it. */
+function SwitchRow({ label, value, tour, onChange }: { label: string; value: boolean; tour?: string; onChange: (v: boolean) => void }) {
   return (
     <div class="flex items-center justify-between gap-3" data-tour={tour}>
-      <span class="text-xs font-semibold text-muted uppercase tracking-widest">{label}</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value}
-        class={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${value ? 'bg-accent' : 'bg-border'}`}
-        onClick={() => onChange(!value)}
-      >
-        <span class={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-4' : 'translate-x-0'}`} />
-      </button>
+      <span class="label mb-0">{label}</span>
+      <Switch checked={value} label={label} onChange={onChange} />
     </div>
   );
 }
@@ -115,7 +112,7 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
       <div class="space-y-4" data-tour="study-options">
       <div>
         <div class="flex items-center gap-3">
-          <label class="text-xs font-semibold text-muted uppercase tracking-widest shrink-0">{t('deck.context.title')}</label>
+          <label class="label mb-0 shrink-0">{t('deck.context.title')}</label>
           <CustomSelect
             value={selectedContext ?? ''}
             options={ctxSelectOpts}
@@ -126,12 +123,12 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
         {excluded > 0 && <p class="text-xs text-warn mt-1">{t('study.excludedByContext', { n: excluded })}</p>}
       </div>
 
-      <Switch
+      <SwitchRow
         label={t('settings.weightByImportance')}
         value={useWeight}
         onChange={v => { setUseWeight(v); void mutate(s => { s.weightByImportance = v; }); }}
       />
-      <Switch
+      <SwitchRow
         label={t('study.excludeMastered')}
         value={exclMastered}
         tour="study-exclude"
@@ -142,7 +139,7 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
       <div class="border-t border-border" />
 
       <div>
-        <div class="text-xs font-semibold text-muted uppercase tracking-widest mb-2">{t('deck.strategy.title')}</div>
+        <div class="label mb-2">{t('deck.strategy.title')}</div>
         <div class="space-y-2">
           {/* Sequential needs an order the user actually chose. A folder or
               library pool has none — at the root it is literally the cards
@@ -151,21 +148,15 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
           {STRATEGIES.filter(s => s.id !== 'sequential' || !!deckId).map(s => {
             const ic = STRATEGY_ICONS[s.id];
             return (
-              <button
+              <ChoiceCard
                 key={s.id}
-                data-tour={`study-${s.id}`}
-                class="w-full text-left card-block hover:border-accent/60 transition-colors cursor-pointer"
+                tour={`study-${s.id}`}
+                icon={<span class={`w-10 h-10 rounded-xl ${ic.bg} ${ic.color} flex items-center justify-center`}><ic.Icon size={20} /></span>}
+                label={t(s.labelKey)}
+                desc={t(s.subKey)}
+                trailing={<ArrowRightIcon size={16} />}
                 onClick={() => pickStrategy(s.id)}
-              >
-                <div class="flex gap-3.5 items-center">
-                  <div class={`shrink-0 w-10 h-10 rounded-xl ${ic.bg} ${ic.color} flex items-center justify-center`}><ic.Icon size={20} /></div>
-                  <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium text-primary">{t(s.labelKey)}</div>
-                    <div class="text-xs text-muted mt-0.5">{t(s.subKey)}</div>
-                  </div>
-                  <div class="shrink-0 text-dim flex items-center"><ArrowRightIcon size={16} /></div>
-                </div>
-              </button>
+              />
             );
           })}
         </div>
@@ -176,5 +167,5 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
 
 export function showStudyModal(opts: StudyModalOpts): void {
   const { el, cleanup } = renderModalBody(<StudyModalBody {...opts} />);
-  showModal(opts.title, el, [], { maxWidth: '28rem', onDismiss: cleanup });
+  showModal(opts.title, el, [], { maxWidth: MODAL_W.m, onDismiss: cleanup });
 }

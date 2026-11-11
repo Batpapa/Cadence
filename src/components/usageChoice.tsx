@@ -4,7 +4,8 @@ import type { AppContext, AppState } from '../types';
 import { t } from '../services/i18nService';
 import { updateUser } from '../services/userService';
 import { addDefaultSamples, addIrishSamples, fetchIrishSampleTunes } from '../services/sampleLibrary';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, MODAL_W } from './modal';
+import { useBrandColor } from './cadenceMark';
 import { CadenceLogo, MusicNoteIcon } from './icons';
 
 // ── What a new user is here for (2026-10-26) ─────────────────────────────────
@@ -29,17 +30,22 @@ const BORDERS = {
   irish: 'border-irish/50 hover:border-irish hover:bg-irish/5',
 };
 
-function Choice({ icon, title, desc, tone = 'plain', disabled, onPick }: {
-  icon: ComponentChildren; title: string; desc: string; tone?: keyof typeof BORDERS; disabled?: boolean; onPick: () => void;
+/** `brand`: the icon is the logo, drawn in its own colour on a neutral tile
+ *  rather than in the accent (UI charter, 2026-11-11). */
+function Choice({ icon, title, desc, tone = 'plain', brand, disabled, onPick }: {
+  icon: ComponentChildren; title: string; desc: string; tone?: keyof typeof BORDERS; brand?: boolean; disabled?: boolean; onPick: () => void;
 }) {
+  const brandColor = useBrandColor();
   return (
     <button
       type="button"
-      class={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl border bg-bg text-left cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-default ${BORDERS[tone]}`}
+      class={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl border bg-bg text-left cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default ${BORDERS[tone]}`}
       disabled={disabled}
       onClick={onPick}
     >
-      <span class="w-10 h-10 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">{icon}</span>
+      {brand
+        ? <span class="w-10 h-10 rounded-lg bg-elevated flex items-center justify-center shrink-0" style={{ color: brandColor }}>{icon}</span>
+        : <span class="w-10 h-10 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">{icon}</span>}
       <span class="flex-1 min-w-0">
         <span class="block text-sm font-medium text-primary">{title}</span>
         <span class="block text-xs text-muted leading-relaxed mt-0.5">{desc}</span>
@@ -82,7 +88,8 @@ function UsageChoice({ onAnswer }: { onAnswer: (irishTrad: boolean, samples: ((s
     <div class="space-y-2.5">
       <p class="text-sm text-muted leading-relaxed pb-1">{t('usageChoice.intro')}</p>
       <Choice
-        icon={<CadenceLogo size={22} glyph />}
+        icon={<CadenceLogo size={24} glyph />}
+        brand
         title={t('usageChoice.default')}
         desc={t('usageChoice.defaultDesc')}
         disabled={busy}
@@ -96,7 +103,7 @@ function UsageChoice({ onAnswer }: { onAnswer: (irishTrad: boolean, samples: ((s
         disabled={busy}
         onPick={() => void pickIrish()}
       />
-      <label class={`flex items-center gap-2 pt-1 select-none ${busy ? 'opacity-50' : 'cursor-pointer'}`}>
+      <label class={`flex items-center gap-2 pt-1 select-none ${busy ? 'opacity-40' : 'cursor-pointer'}`}>
         <input
           type="checkbox"
           class="card-checkbox"
@@ -130,5 +137,5 @@ export function showUsageChoiceModal(ctx: AppContext, onDone: () => void): void 
     onDone();
   };
   const { el, cleanup } = renderModalBody(<UsageChoice onAnswer={answer} />);
-  showModal(t('usageChoice.title'), el, [], { maxWidth: '26rem', dismissable: false });
+  showModal(t('usageChoice.title'), el, [], { maxWidth: MODAL_W.m, dismissable: false });
 }

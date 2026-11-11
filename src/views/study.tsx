@@ -9,7 +9,7 @@ import { renderNotes } from '../components/fileViewer';
 import { AttachmentList, CardRefList, openCardScore, hasScore, type AttachmentListOptions } from '../components/attachmentList';
 import { isTuneset } from '../services/cardTypeService';
 import { IncipitRow } from '../components/incipit';
-import { TuneIcon } from '../components/icons';
+import { TuneIcon, CheckIcon, StarIcon } from '../components/icons';
 import { STRATEGY_ICONS } from '../components/studyModal';
 import { RATING_BUTTONS, RATING_GRID } from '../components/ratingButtons';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
@@ -264,10 +264,10 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
             ? t('study.strategy.sequentialWithPos', { pos: seqPos, total: ctxTotal })
             : t(STRATEGY_LABEL_KEYS[strategy])}
         >
-          <StrategyIcon size={15} />
+          <StrategyIcon size={16} />
           {seqPos > 0 && <span class="text-xs font-mono tabular-nums">{seqPos}/{ctxTotal}</span>}
         </div>
-        <span class="text-xs font-semibold text-muted uppercase tracking-widest">{t('study.header', { deck: deckName })}</span>
+        <span class="section-title">{t('study.header', { deck: deckName })}</span>
         <span class="text-xs text-dim">{t('study.context')} <span class="text-primary">{ctxName}</span></span>
         {excludedByCtx > 0 && (
           <span class="text-xs text-warn">{t('study.excludedByContext', { n: excludedByCtx })}</span>
@@ -283,7 +283,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
         {topBar}
         <div class="flex-1 overflow-y-auto p-6">
           <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
-            <div class="text-5xl">✓</div>
+            <div class="text-success flex"><CheckIcon size={32} /></div>
             <h2 class="text-xl font-semibold text-success">{t('study.complete.title')}</h2>
             <button class="btn-primary mt-2" onClick={leave}>{leaveLabel}</button>
           </div>
@@ -298,7 +298,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
         {topBar}
         <div class="flex-1 overflow-y-auto p-6">
           <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
-            <div class="text-5xl">★</div>
+            <div class="text-warn flex"><StarIcon size={32} filled /></div>
             <h2 class="text-xl font-semibold text-success">{t('study.mastered.title')}</h2>
             <button class="btn-primary mt-2" onClick={leave}>{deckId ? t('study.mastered.back') : t('study.leave')}</button>
           </div>
@@ -341,7 +341,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
 
           <div data-tour="study-card">
             <div class="flex items-center justify-between">
-              <h2 class="text-2xl font-semibold text-primary">{card.name}</h2>
+              <h2 class="text-xl font-semibold text-primary">{card.name}</h2>
               <button class="btn-ghost text-xs" onClick={() => navigate({ view: 'card', cardId: card.id, contextDeckId: contextDeckId ?? undefined })}>{t('study.viewCard')}</button>
             </div>
             {(() => {
@@ -383,7 +383,9 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               ))}
             </div>
             {ratedEntry && (
-              <button class="btn-ghost py-1.5 text-xs w-full text-danger hover:text-danger" onClick={deleteRating}>
+              // Neutral at rest: the rating just given is put back in one tap,
+              // so it goes at once and is not dressed as a deletion that costs.
+              <button class="btn-ghost py-1.5 text-xs w-full hover:text-danger" onClick={deleteRating}>
                 {t('study.deleteReview')}
               </button>
             )}
@@ -399,7 +401,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               <span class="section-title">{t('card.section.tags')}</span>
               <div class="flex flex-wrap items-center gap-1.5">
                 {card.tags.map(tag => (
-                  <span key={tag} class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-elevated border border-border text-muted">
+                  <span key={tag} class="chip">
                     <TagText tag={tag} />
                   </span>
                 ))}
@@ -423,7 +425,7 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           {isTuneset(card) && (card.tunes ?? []).length > 0 && (
             <div class="space-y-2">
               <span class="section-title">{t('card.section.tunes')}</span>
-              <CardRefList refs={card.tunes ?? []} editable={false} onRemove={() => {}} onReorder={() => {}} glyph={<TuneIcon size={11} />} />
+              <CardRefList refs={card.tunes ?? []} editable={false} onRemove={() => {}} onReorder={() => {}} glyph={<TuneIcon size={12} />} />
             </div>
           )}
 

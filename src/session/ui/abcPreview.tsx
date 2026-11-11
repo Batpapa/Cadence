@@ -75,18 +75,20 @@ export function HeardSetAbc({ title, tunes, size = 12 }: {
   const list = metas?.key === key ? metas.list : null;
   const playable = !!list && list.some(m => !!m?.abc);
 
-  const base = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
+  // A 24 px disc inside a 32 px target (styles.css, .icon-disc); greyed out
+  // by the button's own disabled look.
+  const base = 'group icon-btn hover:bg-transparent';
   const icon = <span style={{ transform: 'translateX(-1px)' }}><MusicNoteIcon size={size} /></span>;
   if (!playable) {
     return (
-      <button disabled class={`${base} bg-elevated text-border cursor-default`} title={list ? t('sessions.abcUnavailable') : t('sessions.listenAbc')}>
-        {icon}
+      <button disabled class={base} title={list ? t('sessions.abcUnavailable') : t('sessions.listenAbc')}>
+        <span class="icon-disc">{icon}</span>
       </button>
     );
   }
   return (
     <button
-      class={`${base} bg-accent/10 text-accent hover:bg-accent/20 cursor-pointer`}
+      class={base}
       title={t('sessions.listenAbc')}
       onClick={(e) => {
         e.stopPropagation();
@@ -102,7 +104,7 @@ export function HeardSetAbc({ title, tunes, size = 12 }: {
         });
       }}
     >
-      {icon}
+      <span class="icon-disc">{icon}</span>
     </button>
   );
 }
@@ -298,7 +300,9 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, aud
   const meta = useSettingMeta(settingId);
   const cardCarries = useCardCarries(settingId, cardId ? ctx?.user.cards[cardId] : undefined, meta !== undefined && !meta?.abc);
 
-  const base = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
+  // A 24 px disc inside a 32 px target (styles.css, .icon-disc); greyed out
+  // by the button's own disabled look.
+  const base = 'group icon-btn hover:bg-transparent';
   // The glyph's visual mass sits right of its geometric centre — nudge left.
   const icon = <span style={{ transform: 'translateX(-1px)' }}><MusicNoteIcon size={size} /></span>;
 
@@ -307,15 +311,15 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, aud
   // disabled, unless the card's own score carries the setting.
   if (!meta?.abc && !cardCarries) {
     return (
-      <button disabled class={`${base} bg-elevated text-border cursor-default`} title={meta === undefined ? t('sessions.listenAbc') : t('sessions.abcUnavailable')}>
-        {icon}
+      <button disabled class={base} title={meta === undefined ? t('sessions.listenAbc') : t('sessions.abcUnavailable')}>
+        <span class="icon-disc">{icon}</span>
       </button>
     );
   }
 
   return (
     <button
-      class={`${base} bg-accent/10 text-accent hover:bg-accent/20 cursor-pointer`}
+      class={base}
       title={t('sessions.listenAbc')}
       onClick={(e) => {
         e.stopPropagation();
@@ -328,7 +332,7 @@ export function AbcPreview({ settingId, displayName, size = 12, cardId, ctx, aud
           });
       }}
     >
-      {icon}
+      <span class="icon-disc">{icon}</span>
     </button>
   );
 }

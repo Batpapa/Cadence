@@ -6,8 +6,9 @@ import type { AppContext, IncipitDisplay } from '../types';
 import { generateId, emptyState, ownFormatAccept } from '../utils';
 import { deleteLocalSessionData, localSessionAudioStats, freeableSessionAudio, freeSyncedSessionAudio } from '../session/db';
 import { deleteLocalAttachmentData, localAttachmentBytes } from '../services/attachmentDb';
-import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon, studyIconSvg } from './icons';
-import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal } from './modal';
+import { TrashIcon, ResetIcon, HelpIcon, ExpandIcon, CollapseIcon, CrossIcon, PlusIcon, MinusIcon, UploadIcon, ImportTrayIcon, studyIconSvg } from './icons';
+import { IconButton, Switch } from './ui';
+import { confirmModal, closeModal, closeAllModals, showModal, renderModalBody, alertModal, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from './modal';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, modalMaxH, modalMaxW, zoomWorks } from '../services/zoomService';
 import { playbackVolumePercent, setPlaybackVolumePercent, DEFAULT_VOLUME_PERCENT } from '../services/playbackVolume';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
@@ -64,7 +65,7 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
   return (
     <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-bg hover:border-muted transition-colors">
       <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style="background:rgb(var(--color-accent-ch) / 0.18)">
-        <span class="text-[10px] font-mono font-bold text-accent">{initialsOf(name)}</span>
+        <span class="text-2xs font-mono font-bold text-accent">{initialsOf(name)}</span>
       </div>
       {editing ? (
         <input
@@ -86,10 +87,10 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
         </span>
       )}
       {canDelete && (
-        <button
-          class="btn-danger px-2 shrink-0"
+        <IconButton
+          class="shrink-0 hover:text-danger"
           data-tour={`profile-delete-${pid}`}
-          title={t('settings.profiles.delete.title')}
+          label={t('settings.profiles.delete.title')}
           onClick={() => confirmModal(t('settings.profiles.delete.title'), t('settings.profiles.delete.message', { name }), t('common.delete'), () => {
             void ctx.mutate(s => {
               s.profileIds = (s.profileIds ?? []).filter(id => id !== pid);
@@ -99,8 +100,8 @@ function ProfileRow({ ctx, pid, name, canDelete }: { ctx: AppContext; pid: strin
             });
           })}
         >
-          <TrashIcon size={12} />
-        </button>
+          <TrashIcon size={14} />
+        </IconButton>
       )}
     </div>
   );
@@ -138,7 +139,7 @@ function AddProfileRow({ ctx }: { ctx: AppContext }) {
         class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-dashed border-border bg-transparent text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer"
         onClick={() => setAdding(true)}
       >
-        <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 bg-border text-sm font-bold">+</div>
+        <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 bg-border"><PlusIcon size={14} /></div>
         <span class="text-sm flex-1 text-left">{t('settings.profiles.new')}</span>
       </button>
     );
@@ -147,7 +148,7 @@ function AddProfileRow({ ctx }: { ctx: AppContext }) {
   return (
     <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-accent bg-bg">
       <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-dim bg-border">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <PlusIcon size={14} />
       </div>
       <input
         ref={inputRef}
@@ -188,7 +189,7 @@ function ProfileModalBody({ ctx }: { ctx: AppContext }) {
 
 export function showProfileModal(ctx: AppContext): void {
   const { el, cleanup } = renderModalBody(<ProfileModalBody ctx={ctx} />);
-  showModal(t('settings.profiles.modalTitle'), el, [], { maxWidth: '28rem', onDismiss: cleanup });
+  showModal(t('settings.profiles.modalTitle'), el, [], { maxWidth: MODAL_W.m, onDismiss: cleanup });
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -196,12 +197,12 @@ export function showProfileModal(ctx: AppContext): void {
 export type SectionId = 'study' | 'user' | 'storage' | 'display' | 'extensions' | 'misc';
 
 const SECTION_ICONS: Record<SectionId, string> = {
-  study: studyIconSvg(15),
-  user: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
-  storage: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
-  display: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
-  extensions: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5a2 2 0 1 1 4 0V5h4a1 1 0 0 1 1 1v4h-1.5a2 2 0 1 0 0 4H19v4a1 1 0 0 1-1 1h-4v-1.5a2 2 0 1 0-4 0V19H6a1 1 0 0 1-1-1v-4h1.5a2 2 0 1 0 0-4H5V6a1 1 0 0 1 1-1h4z"/></svg>`,
-  misc: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
+  study: studyIconSvg(16),
+  user: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  storage: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
+  display: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
+  extensions: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5a2 2 0 1 1 4 0V5h4a1 1 0 0 1 1 1v4h-1.5a2 2 0 1 0 0 4H19v4a1 1 0 0 1-1 1h-4v-1.5a2 2 0 1 0-4 0V19H6a1 1 0 0 1-1-1v-4h1.5a2 2 0 1 0 0-4H5V6a1 1 0 0 1 1-1h4z"/></svg>`,
+  misc: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
 };
 
 
@@ -220,16 +221,16 @@ function Row({ label, hint, stacked, children }: {
         <div class="flex items-center gap-1.5 min-w-0">
           <span class="text-sm text-primary">{label}</span>
           {hint && (
-            <button
-              class={`flex items-center p-0.5 rounded-full transition-colors cursor-pointer shrink-0 ${
-                hintOpen ? 'text-accent' : 'text-dim hover:text-primary'
-              }`}
-              title={t('settings.explain')}
+            // A 32 px target around the 14 px drawing (UI charter), its
+            // margins cancelled so that the label's line keeps its height.
+            <IconButton
+              label={t('settings.explain')}
+              class={`-my-2 -mx-1.5${hintOpen ? ' text-accent hover:text-accent' : ''}`}
               aria-expanded={hintOpen}
               onClick={() => setHintOpen(o => !o)}
             >
               <HelpIcon size={14} />
-            </button>
+            </IconButton>
           )}
         </div>
         {!stacked && <div class="flex items-center gap-2 shrink-0">{children}</div>}
@@ -249,25 +250,13 @@ function Sep() {
   return <hr class="border-border" />;
 }
 
-/** Same visual as the toggle previously hand-rolled with inline styles —
- *  intentionally NOT the Tailwind-class `Switch` used elsewhere (studyModal.tsx):
- *  this settings screen predates that convention and restyling it is out of
- *  scope for a Preact-only migration. */
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <label style={`width:34px; height:18px; display:block; position:relative; cursor:${disabled ? 'default' : 'pointer'}; flex-shrink:0; opacity:${disabled ? 0.5 : 1};`}>
-      <div style={`width:34px; height:18px; border-radius:99px; background:${checked ? 'var(--color-accent)' : 'var(--color-border)'}; transition:background 0.15s;`} />
-      <div style={`position:absolute; top:2px; left:${checked ? '16px' : '2px'}; width:14px; height:14px; border-radius:50%; background:white; transition:left 0.15s; box-shadow:0 1px 3px rgba(0,0,0,0.3);`} />
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        style={`position:absolute; opacity:0; inset:0; cursor:${disabled ? 'default' : 'pointer'};`}
-        onChange={(e) => onChange((e.target as HTMLInputElement).checked)}
-      />
-    </label>
-  );
-}
+/** The trigger of every select in this dialog: the look of `.input`, on the
+ *  page's background like the number fields beside it. One string, not four
+ *  copies (UI charter, 2026-11-11); each caller adds its own width. */
+const SELECT_TRIGGER = 'flex items-center gap-2 text-sm bg-bg border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent';
+
+/** Every number field of the dialog at one height. */
+const NUMBER_INPUT = 'input px-2 py-1 text-right font-mono text-sm';
 
 // ── Study section ─────────────────────────────────────────────────────────────
 
@@ -300,7 +289,7 @@ function StudySection({ ctx }: { ctx: AppContext }) {
       <Row label={t('settings.availabilityThreshold')} hint={t('settings.availabilityThresholdHint')}>
         <input
           type="number" min="0" max="100" step="1"
-          class="input w-12 px-2 py-1 text-right font-mono text-sm"
+          class={`${NUMBER_INPUT} w-12`}
           value={threshDraft}
           onInput={(e) => setThreshDraft((e.target as HTMLInputElement).value)}
           onBlur={commitThresh}
@@ -311,7 +300,7 @@ function StudySection({ ctx }: { ctx: AppContext }) {
       <Sep />
 
       <Row label={t('settings.weightByImportance')} hint={t('settings.weightByImportanceHint')}>
-        <Toggle checked={user.weightByImportance ?? true} onChange={(v) => void saveField({ weightByImportance: v })} />
+        <Switch checked={user.weightByImportance ?? true} onChange={(v) => void saveField({ weightByImportance: v })} />
       </Row>
       <Sep />
 
@@ -324,9 +313,9 @@ function StudySection({ ctx }: { ctx: AppContext }) {
             value={lambdaDraft}
             onInput={(e) => setLambda(parseFloat((e.target as HTMLInputElement).value))}
           />
-          <button class="btn-ghost p-0.5 text-dim hover:text-primary shrink-0" title={t('settings.forgettingRate.reset')} onClick={() => setLambda(1)}>
-            <ResetIcon size={13} />
-          </button>
+          <IconButton label={t('settings.forgettingRate.reset')} onClick={() => setLambda(1)}>
+            <ResetIcon size={14} />
+          </IconButton>
         </div>
       </Row>
       <Sep />
@@ -390,7 +379,7 @@ function DriveRow() {
     } catch {
       // Known cause: the OAuth consent screen renders blank inside chat
       // apps' in-app browsers (WhatsApp, Instagram…) — worth a specific
-      // pointer since the status indicator alone ("✕ Error") doesn't
+      // pointer since the status indicator alone ("Error") doesn't
       // explain why. Expected cancellations (popup closed / consent
       // denied) don't reach here as an error worth surfacing further.
       if (isLikelyInAppBrowser()) {
@@ -402,19 +391,21 @@ function DriveRow() {
     }
   };
 
-  const STATUS_UI: Record<DriveStatus, { text: string; cls: string; btnText: string; btnCls: string; btnDisabled: boolean; onClick?: () => void }> = {
+  // `dot`: the status as a small disc in its colour, where the line used to
+  // start with a ● ○ ✕ glyph (UI charter, 2026-11-11).
+  const STATUS_UI: Record<DriveStatus, { text: string; cls: string; dot?: string; btnText: string; btnCls: string; btnDisabled: boolean; onClick?: () => void }> = {
     disconnected: { text: '', cls: 'text-xs', btnText: t('settings.sync.connect'), btnCls: 'btn-primary text-xs shrink-0', btnDisabled: false, onClick: () => { void handleConnect(); } },
     connecting:   { text: t('settings.sync.connecting'), cls: 'text-xs text-muted', btnText: '', btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: true },
-    connected:    { text: '● ' + t('settings.sync.connected'), cls: 'text-xs text-green-500', btnText: t('settings.sync.disconnect'), btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: false, onClick: () => disconnectDrive() },
+    connected:    { text: t('settings.sync.connected'), cls: 'text-xs text-success', dot: 'bg-success', btnText: t('settings.sync.disconnect'), btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: false, onClick: () => disconnectDrive() },
     // Original vanilla version's switch had no case at all for 'pending'
     // (a real, reachable status — see driveService.ts) — left whatever was
     // on screen before stale forever. A declarative re-render can't replicate
     // "leave the DOM untouched", so this treats it the same as 'syncing'
     // (closest existing state: a transitional, disabled, no-action moment)
     // rather than inventing new user-facing copy.
-    pending:      { text: '○ ' + t('settings.sync.syncing'), cls: 'text-xs text-muted', btnText: '', btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: true },
-    syncing:      { text: '○ ' + t('settings.sync.syncing'), cls: 'text-xs text-muted', btnText: '', btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: true },
-    error:        { text: '✕ ' + t('settings.sync.error'), cls: 'text-xs text-danger', btnText: t('settings.sync.reconnect'), btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: false, onClick: () => { void handleConnect(); } },
+    pending:      { text: t('settings.sync.syncing'), cls: 'text-xs text-muted', dot: 'bg-dim', btnText: '', btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: true },
+    syncing:      { text: t('settings.sync.syncing'), cls: 'text-xs text-muted', dot: 'bg-dim', btnText: '', btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: true },
+    error:        { text: t('settings.sync.error'), cls: 'text-xs text-danger', dot: 'bg-danger', btnText: t('settings.sync.reconnect'), btnCls: 'btn-ghost text-xs shrink-0', btnDisabled: false, onClick: () => { void handleConnect(); } },
   };
   const ui = STATUS_UI[status];
 
@@ -424,7 +415,10 @@ function DriveRow() {
       <div data-tour="settings-drive">
       <Row label="Google Drive">
         <div class="flex items-center gap-2">
-          <span class={ui.cls}>{ui.text}</span>
+          <span class={`inline-flex items-center gap-1.5 ${ui.cls}`}>
+            {ui.dot && <span class={`w-1.5 h-1.5 rounded-full shrink-0 ${ui.dot}`} aria-hidden="true" />}
+            {ui.text}
+          </span>
           <button class={ui.btnCls} disabled={ui.btnDisabled} onClick={ui.onClick}>{ui.btnText}</button>
         </div>
       </Row>
@@ -446,9 +440,6 @@ function DriveRow() {
     </>
   );
 }
-
-const EXPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-const IMPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
 /** Safety-net snapshots (the side set aside by a sync decision), downloadable
  *  as ordinary .cdb backups so restoring one reuses the battle-tested
@@ -498,24 +489,27 @@ function SnapshotsRow({ userId }: { userId: string }) {
                 </span>
                 {/* Explicit download button: the whole line used to BE the button,
                     which gave no clue that clicking it saved a file. */}
-                <button
-                  class="btn-ghost p-1 shrink-0"
-                  title={t('settings.snapshots.download')}
+                <IconButton
+                  label={t('settings.snapshots.download')}
                   onClick={() => {
                     void getSnapshotState(s.key).then(state => state && exportSnapshotBackup(state, s.ts, askIncompleteExport));
                   }}
                 >
-                  <span class="flex items-center" dangerouslySetInnerHTML={{ __html: EXPORT_SVG }} />
-                </button>
-                <button
-                  class="btn-ghost p-1 shrink-0 hover:text-danger"
-                  title={t('settings.snapshots.delete')}
+                  <UploadIcon size={14} />
+                </IconButton>
+                {/* A whole copy of the library, asked for first — costly to
+                    lose (the deletion rule, 2026-11-11). Neutral at rest all
+                    the same: a bin on a row of a list, red under the pointer;
+                    the confirmation carries the red. */}
+                <IconButton
+                  class="hover:text-danger"
+                  label={t('settings.snapshots.delete')}
                   onClick={() => remove(s)}
                 >
-                  <TrashIcon size={13} />
-                </button>
+                  <TrashIcon size={14} />
+                </IconButton>
               </div>
-              <span class="text-[11px] text-dim tabular-nums truncate">
+              <span class="text-2xs text-dim tabular-nums truncate">
                 {s.bytes === null ? t('storage.unknown') : formatBytes(s.bytes)} · {t('settings.sync.conflict.stats', { cards: s.cards, reviews: s.reviews })}
               </span>
             </div>
@@ -657,17 +651,20 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
     const choice = signal<ExportKind | null>(null);
     const body = document.createElement('div');
     render(<ExportChoice dataBytes={dataBytes} choice={choice} />, body);
-    showModal(t('settings.export'), body, [{
-      label: t('common.confirm'),
-      primary: true,
-      disabled: computed(() => choice.value === null),
-      onClick: () => {
-        const picked = choice.value;
-        if (!picked) return;   // unreachable — the button is disabled until then
-        closeModal();
-        void runExport(picked === 'full', setBusy);
+    showModal(t('settings.export'), body, [
+      { label: t('common.cancel'), onClick: closeModal },
+      {
+        label: t('common.confirm'),
+        primary: true,
+        disabled: computed(() => choice.value === null),
+        onClick: () => {
+          const picked = choice.value;
+          if (!picked) return;   // unreachable — the button is disabled until then
+          closeModal();
+          void runExport(picked === 'full', setBusy);
+        },
       },
-    }], { maxWidth: '22rem' });
+    ], { maxWidth: MODAL_W.s });
   };
 
   const doImport = (file: File) => {
@@ -687,18 +684,17 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
       {/* Export and import together, for the walkthrough to light — not the
           reset beside them (walkthrough/). */}
       <span class="inline-flex items-center gap-1" data-tour="backup-buttons">
-      <button
-        class="btn-ghost text-xs inline-flex items-center justify-center px-2"
+      <IconButton
         disabled={busy}
-        title={t('settings.export')}
-        dangerouslySetInnerHTML={{ __html: EXPORT_SVG }}
+        label={t('settings.export')}
         onClick={chooseExport}
-      />
-      <label class={`btn-ghost text-xs inline-flex items-center justify-center px-2 ${busy ? 'opacity-40' : 'cursor-pointer'}`} title={t('settings.import')}>
-        {/* The icon markup goes on an inner span, never on the <label> itself:
-            dangerouslySetInnerHTML replaces an element's children, so putting it
-            on the label wiped out the file input and the button did nothing. */}
-        <span class="inline-flex items-center" dangerouslySetInnerHTML={{ __html: IMPORT_SVG }} />
+      >
+        <UploadIcon size={14} />
+      </IconButton>
+      {/* A label, so that the press opens the file picker: dressed as the
+          icon button beside it. */}
+      <label class={`icon-btn ${busy ? 'opacity-40 cursor-not-allowed' : ''}`} title={t('settings.import')} aria-label={t('settings.import')}>
+        <ImportTrayIcon size={14} />
         <input
           type="file"
           accept={ownFormatAccept('.cdb,.cdbf')}
@@ -715,10 +711,10 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
         />
       </label>
       </span>
-      <button
-        class="btn-ghost text-xs inline-flex items-center justify-center px-2 text-danger"
+      <IconButton
+        variant="danger"
         disabled={busy || audioBytes === null}
-        title={t('settings.reset')}
+        label={t('settings.reset')}
         onClick={() => confirmModal(
           t('settings.reset.title'),
           t('settings.reset.message', { size: formatBytes(dataBytes + attachmentBytes + (audioBytes ?? 0)) }),
@@ -727,7 +723,7 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
         )}
       >
         <TrashIcon size={14} />
-      </button>
+      </IconButton>
     </>
   );
 }
@@ -818,7 +814,7 @@ function ExportOption({ kind, label, choice, disabled }: {
       disabled={disabled}
       onClick={() => { choice.value = kind; }}
       class={'w-full text-left rounded-lg border px-3 py-2.5 transition-colors '
-        + (disabled ? 'border-border opacity-50 cursor-default '
+        + (disabled ? 'border-border opacity-40 cursor-default '
           : selected ? 'border-accent bg-accent/10 cursor-pointer ' : 'border-border bg-bg hover:border-accent/60 cursor-pointer ')}
     >
       <div class="flex items-center gap-2">
@@ -1005,7 +1001,7 @@ function AttachmentRules() {
           <input
             type="number"
             min="0"
-            class="input w-20 text-right"
+            class={`${NUMBER_INPUT} w-20`}
             value={text}
             onInput={(e) => setText(e.currentTarget.value)}
             onBlur={commit}
@@ -1180,7 +1176,7 @@ function StorageMatrix({ rows, driveOn, heading }: {
   // section title, and only the breakdown's own labels are stepped in under
   // it. `self-end` drops the column names onto the heading's baseline, where
   // they read as belonging to the figures below rather than to the title.
-  const head = 'text-[10px] uppercase tracking-wider text-dim text-right leading-none self-end pb-1';
+  const head = 'text-2xs font-medium uppercase tracking-wider text-dim text-right leading-none self-end pb-1';
   return (
     <div class={'grid gap-x-4 gap-y-1 pb-1 ' + (driveOn ? 'grid-cols-[1fr_auto_auto]' : 'grid-cols-[1fr_auto]')}>
       <div class="flex items-center gap-1 min-w-0 pt-2">{heading}</div>
@@ -1278,7 +1274,7 @@ function UserSection({ ctx }: { ctx: AppContext }) {
           class="btn-danger w-full flex items-center justify-center gap-2"
           onClick={() => void confirmRemoval()}
         >
-          <TrashIcon size={13} />
+          <TrashIcon size={14} />
           {t('settings.removeUser')}
         </button>
       </div>
@@ -1313,9 +1309,9 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
       {zoomWorks() && <>
         <Row label={t('settings.zoom')}>
           <div class="flex items-center gap-1">
-            <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomOut()} onClick={() => { zoomOut(); bump(x => x + 1); redrawShell(); }}>−</button>
+            <IconButton label={t('settings.zoomOut')} disabled={!canZoomOut()} onClick={() => { zoomOut(); bump(x => x + 1); redrawShell(); }}><MinusIcon size={14} /></IconButton>
             <span class="text-sm font-mono w-12 text-center tabular-nums">{getZoom()}%</span>
-            <button class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomIn()} onClick={() => { zoomIn(); bump(x => x + 1); redrawShell(); }}>+</button>
+            <IconButton label={t('settings.zoomIn')} disabled={!canZoomIn()} onClick={() => { zoomIn(); bump(x => x + 1); redrawShell(); }}><PlusIcon size={14} /></IconButton>
           </div>
         </Row>
         <Sep />
@@ -1327,7 +1323,7 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
             value={theme}
             options={THEMES.map(th => ({ value: th.id, label: t(th.labelKey) }))}
             onChange={(next) => changeTheme(next as Theme)}
-            triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent w-32"
+            triggerClass={`${SELECT_TRIGGER} w-32`}
           />
         </div>
       </Row>
@@ -1343,7 +1339,7 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
               redrawShell();
               void ctx.mutate(s => updateUser(s, { language: newLang as Lang }));
             }}
-            triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent w-32"
+            triggerClass={`${SELECT_TRIGGER} w-32`}
           />
         </div>
       </Row>
@@ -1362,7 +1358,7 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
               // name is written once, at creation, and stays — see
               // sessionNaming.ts.
             })}
-            triggerClass="flex items-center gap-2 text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent min-w-[13rem]"
+            triggerClass={`${SELECT_TRIGGER} min-w-[13rem]`}
           />
         </div>
       </Row>
@@ -1372,7 +1368,7 @@ function DisplaySection({ ctx, redrawShell }: { ctx: AppContext; redrawShell: ()
           is not shown: a row that came and went as the window is resized
           would be one nobody could count on finding. */}
       <Row label={t('settings.navLabels')} hint={t('settings.navLabelsHint')}>
-        <Toggle
+        <Switch
           checked={navLabels(user)}
           onChange={(v) => void ctx.mutate(s => updateUser(s, { navLabels: v }))}
         />
@@ -1422,20 +1418,20 @@ function ExtensionsSection({ ctx }: { ctx: AppContext }) {
           <div key={ext.id} class={`rounded-lg border bg-bg px-3.5 py-3 ${ext.id === 'irishTrad' ? 'border-irish/50' : 'border-border'}`}>
             <div class="flex items-center justify-between gap-4">
               <span class="text-sm font-medium text-primary">{t(ext.labelKey)}</span>
-              <Toggle
+              <Switch
                 checked={on}
                 onChange={(v) => void ctx.mutate(s => updateUser(s, { extensions: { ...s.extensions, [ext.id]: v } }))}
               />
             </div>
             <p class="text-xs text-muted leading-relaxed mt-1.5">{t(ext.descKey)}</p>
-            <div class={`mt-2.5 pt-1 border-t border-border transition-opacity ${on ? '' : 'opacity-50'}`}>
+            <div class={`mt-2.5 pt-1 border-t border-border transition-opacity ${on ? '' : 'opacity-40'}`}>
               {ext.options.map(opt => (
                 <div key={opt.id} class="flex items-center justify-between gap-4 py-1.5 pl-2">
-                  <span class="text-[13px] text-primary">
+                  <span class="text-sm text-primary">
                     {t(opt.labelKey)}
                     {opt.forced && <span class="text-xs text-dim"> · {t('settings.extensions.always')}</span>}
                   </span>
-                  <Toggle
+                  <Switch
                     checked={on && extensionOption(ext.id, opt.id, user)}
                     disabled={!on || opt.forced}
                     onChange={(v) => void ctx.mutate(s => updateUser(s, {
@@ -1472,7 +1468,7 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
       <Row label={t('settings.defaultTuneRepeat')} hint={t('settings.defaultTuneRepeatHint')}>
         <input
           type="number" min="1" max={MAX_REPEAT} step="1"
-          class="input w-12 px-2 py-1 text-right font-mono text-sm"
+          class={`${NUMBER_INPUT} w-12`}
           value={draft}
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
           onBlur={commit}
@@ -1486,7 +1482,7 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
           state means "on", so a plain `!!user.addTunesetAbcOnConvert` would
           draw this switch off while the app kept adding the score. */}
       <Row label={t('settings.addTunesetAbc')} hint={t('settings.addTunesetAbcHint')}>
-        <Toggle
+        <Switch
           checked={addTunesetAbcOnConvert(user)}
           onChange={(v) => void ctx.mutate(s => updateUser(s, { addTunesetAbcOnConvert: v }))}
         />
@@ -1498,7 +1494,7 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
           it is a standing way of reading the library, not a filter of the
           moment. */}
       <Row label={t('settings.setsMatchTuneTags')} hint={t('settings.setsMatchTuneTagsHint')}>
-        <Toggle
+        <Switch
           checked={setsMatchTuneTags(user)}
           onChange={(v) => void ctx.mutate(s => updateUser(s, { setsMatchTuneTags: v }))}
         />
@@ -1522,7 +1518,7 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
           // Wide enough for its longest option: the trigger truncates, and
           // "Card and review" arriving as "Card and…" is a menu that hides
           // the very choice it is offering.
-          triggerClass="flex items-center gap-2 min-w-[10.5rem] text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent"
+          triggerClass={`${SELECT_TRIGGER} min-w-[10.5rem]`}
         />
       </Row>
       <Sep />
@@ -1538,13 +1534,12 @@ function MiscSection({ ctx }: { ctx: AppContext }) {
             value={playbackVolumePercent.value}
             onInput={(e) => setPlaybackVolumePercent(parseInt((e.target as HTMLInputElement).value, 10))}
           />
-          <button
-            class="btn-ghost p-0.5 text-dim hover:text-primary shrink-0"
-            title={t('settings.playbackVolume.reset')}
+          <IconButton
+            label={t('settings.playbackVolume.reset')}
             onClick={() => setPlaybackVolumePercent(DEFAULT_VOLUME_PERCENT)}
           >
-            <ResetIcon size={13} />
-          </button>
+            <ResetIcon size={14} />
+          </IconButton>
         </div>
       </Row>
       <Sep />
@@ -1595,7 +1590,7 @@ function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; init
 
   return (
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      class={`fixed inset-0 z-50 flex items-center justify-center ${MODAL_BACKDROP}`}
       onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (e.target === e.currentTarget && mouseDownOnOverlay.current) onClose(); }}
     >
@@ -1604,21 +1599,25 @@ function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; init
         class={`bg-elevated shadow-2xl flex flex-col overflow-hidden ${
           expanded ? 'w-full h-full safe-area-pad' : 'border border-border rounded-xl'
         }`}
-        style={expanded ? undefined : { width: '660px', maxWidth: modalMaxW(0.9), height: '520px', maxHeight: modalMaxH(0.9) }}
+        style={expanded ? undefined : { width: '660px', maxWidth: modalMaxW(0.9), height: '520px', maxHeight: modalMaxH(0.85) }}
       >
-        <div class="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
-          <span class="text-sm font-semibold text-primary truncate">
+        {/* The shell's own header (modal.tsx): its backdrop, its padding, its
+            small grey capitals and its two icon buttons — this frame had its
+            own of each, none of them on purpose (UI charter, 2026-11-11). */}
+        <div class="flex items-center justify-between gap-2 px-5 py-2.5 min-h-[3.25rem] border-b border-border shrink-0">
+          <span class={MODAL_TITLE_CLASS}>
             {t('settings.title')} — {t(SECTIONS.find(s => s.id === section)!.labelKey)}
           </span>
-          <div class="flex items-center gap-3 shrink-0">
-            <button
-              class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
-              title={t(expanded ? 'modal.collapse' : 'modal.expand')}
+          <div class="flex items-center gap-1 shrink-0">
+            <IconButton
+              label={t(expanded ? 'modal.collapse' : 'modal.expand')}
               onClick={() => setExpanded(e => !e)}
             >
-              {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
-            </button>
-            <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" onClick={onClose}>✕</button>
+              {expanded ? <CollapseIcon size={16} /> : <ExpandIcon size={16} />}
+            </IconButton>
+            <IconButton label={t('common.close')} onClick={onClose}>
+              <CrossIcon size={16} />
+            </IconButton>
           </div>
         </div>
 
@@ -1631,7 +1630,7 @@ function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; init
               <button
                 key={sec.id}
                 data-tour={`settings-nav-${sec.id}`}
-                class={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer ${
+                class={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-left transition-colors cursor-pointer ${
                   compactNav ? 'justify-center' : ''
                 } ${
                   sec.id === section ? 'bg-accent/10 text-accent' : 'text-muted hover:bg-elevated hover:text-primary'
@@ -1665,10 +1664,12 @@ function SettingsModal({ ctx, initialSection, onClose }: { ctx: AppContext; init
  *  is sent first, then the page starts over with no user open. From the
  *  header's ⋮ menu; it used to sit at the foot of this modal's sections. */
 export function confirmLogout(): void {
+  // Not red (UI charter, 2026-11-11): nothing is lost, the user is there to
+  // open again.
   confirmModal(t('settings.logout'), t('settings.logout.message'), t('settings.logout.confirm'), () => {
     closeModal(); closeSettingsModal?.();
     void manualSync().finally(() => { clearLastUserId(); location.reload(); });
-  });
+  }, { destructive: false });
 }
 
 /** Set while the settings modal is open. It renders into its own host

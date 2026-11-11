@@ -1,7 +1,8 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
-import { TrashIcon, StarIcon, LibraryIcon, WandIcon, StudyIcon } from '../components/icons';
+import { TrashIcon, StarIcon, LibraryIcon, WandIcon, StudyIcon, FolderIcon, ChevronDownIcon, PlusIcon } from '../components/icons';
+import { IconButton, Segmented, EmptyState } from '../components/ui';
 import { promptModal, confirmModal, confirmModalWithOption } from '../components/modal';
 import { showCreateDeckModal } from '../components/sidebar';
 import { showStudyModal } from '../components/studyModal';
@@ -192,7 +193,7 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
             return (
               <div key={i} {...barProps(i)}>
                 <div class={`rounded-sm w-full transition-colors ${barColor}`} style={{ height: `${h}px` }} title={title} />
-                <div class="text-[9px] text-dim">{t(DAY_NAMES_KEYS[d.getDay()]!)}</div>
+                <div class="text-2xs text-dim">{t(DAY_NAMES_KEYS[d.getDay()]!)}</div>
               </div>
             );
           }
@@ -206,15 +207,14 @@ function ActivityBars({ times, period }: { times: number[]; period: ActivityPeri
       {selection !== null && (
         <div class="flex items-center justify-center gap-2">
           <span class="text-xs text-success">{selection.label}</span>
-          <button
-            type="button"
-            class="w-6 h-6 shrink-0 flex items-center justify-center rounded-md border border-border text-muted hover:border-accent hover:text-accent transition-colors cursor-pointer"
-            title={t('deck.viewInLibrary')}
+          <IconButton
+            variant="outline"
+            label={t('deck.viewInLibrary')}
             data-tour="activity-library"
             onClick={() => navigate({ view: 'library', reviewedFrom: localDay(selection.start), reviewedTo: localDay(selection.end) })}
           >
-            <LibraryIcon size={12} />
-          </button>
+            <LibraryIcon size={14} />
+          </IconButton>
         </div>
       )}
     </div>
@@ -260,19 +260,11 @@ function Dashboard({ user }: { user: AppState }) {
       <div class="card-block space-y-2" data-tour="activity">
         <div class="flex items-center justify-between">
           <div class="section-title">{t('dashboard.activity')}</div>
-          <div class="flex gap-1">
-            {(['7d', '30d', '1y'] as ActivityPeriod[]).map(p => (
-              <button
-                key={p}
-                class={p === actPeriod
-                  ? 'text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent cursor-pointer'
-                  : 'text-[10px] px-1.5 py-0.5 rounded text-dim hover:text-muted cursor-pointer transition-colors'}
-                onClick={() => setActPeriod(p)}
-              >
-                {PERIOD_LABELS[p]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            value={actPeriod}
+            options={(['7d', '30d', '1y'] as ActivityPeriod[]).map(p => ({ value: p, label: PERIOD_LABELS[p] }))}
+            onChange={setActPeriod}
+          />
         </div>
         <ActivityBars key={actPeriod} times={reviewTimes} period={actPeriod} />
       </div>
@@ -464,7 +456,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
           )}
           {folder && (
             <div class="flex items-center gap-1 mt-1">
-              <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('folder.parent.label')}</span>
+              <span class="text-2xs font-medium uppercase tracking-wider text-dim">{t('folder.parent.label')}</span>
               <CustomSelect
                 value={parentId ?? ''}
                 options={parentOptions}
@@ -472,13 +464,11 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                 renderTrigger={(label, open, toggle) => (
                   <button
                     type="button"
-                    class="text-[10px] font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
+                    class="text-2xs font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
                     onClick={toggle}
                   >
                     {label}
-                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
-                      <polyline points="6 9 12 15 18 9"/>
-                    </svg>
+                    <span class={`shrink-0 flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
                   </button>
                 )}
               />
@@ -490,7 +480,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               folder it would be opened from. Loaded on demand. */}
           {!folderId && (
             <button
-              class="btn-ghost border border-border px-3 inline-flex items-center gap-1.5"
+              class="btn-outline px-3 inline-flex items-center gap-1.5"
               title={t('smartEdit.openTitle')}
               onClick={() => { void import('../components/smartEdit').then(m => m.showSmartEdit()); }}
             >
@@ -503,19 +493,19 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               "Study all" and a tooltip there would just repeat the label. */}
           {folderEntries.length > 0 && (
             <button
-              class="btn px-3 bg-success/80 hover:bg-success text-white transition-colors cursor-pointer text-sm font-medium inline-flex items-center gap-1.5"
+              class="btn-study px-3 text-sm font-medium inline-flex items-center gap-1.5"
               title={folderId ? t('folder.studyTitle') : undefined}
               data-tour="study-all"
               onClick={() => showStudyModal({ entries: folderEntries, title: folderTitle, defaultContext: null })}
             >
-              <StudyIcon size={15} />
+              <StudyIcon size={16} />
               {folderId ? t('folder.study') : t('folder.studyAll')}
             </button>
           )}
           {folder && (
-            <button
-              class="btn-danger px-2"
-              title={t('folder.deleteFolder')}
+            <IconButton
+              variant="danger"
+              label={t('folder.deleteFolder')}
               onClick={() => {
                 const doDelete = (deleteOrphans: boolean) => {
                   void mutate(u => {
@@ -543,8 +533,8 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                 }
               }}
             >
-              <TrashIcon />
-            </button>
+              <TrashIcon size={14} />
+            </IconButton>
           )}
         </div>
       </div>
@@ -566,7 +556,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-elevated hover:border-accent/50 transition-colors cursor-pointer text-sm text-primary"
                   onClick={() => navigate({ view: 'deck', deckId: deck.id })}
                 >
-                  <span class="text-yellow-400 flex items-center"><StarIcon size={12} filled /></span>
+                  <span class="text-warn flex items-center"><StarIcon size={12} filled /></span>
                   {deck.name}
                 </button>
               ))}
@@ -579,7 +569,7 @@ export function FolderView({ folderId }: { folderId: string | null }) {
       <div class="space-y-2" data-tour="folders">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('folder.section.folders')}</span>
-          <button class="btn-ghost text-xs" onClick={() =>
+          <button class="btn-ghost text-xs min-h-8 inline-flex items-center gap-1.5" onClick={() =>
             promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
               mutate(s => {
                 const id = generateId();
@@ -589,11 +579,11 @@ export function FolderView({ folderId }: { folderId: string | null }) {
               });
             })
           }>
-            {t('folder.newFolder')}
+            <PlusIcon size={12} />{t('folder.newFolder')}
           </button>
         </div>
         {folderIds.length === 0 ? (
-          <p class="text-xs text-dim italic">{t('folder.empty.folders')}</p>
+          <EmptyState>{t('folder.empty.folders')}</EmptyState>
         ) : (
           <div class="space-y-1">
             {folderIds.map(subId => {
@@ -617,9 +607,11 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   onDrop={(e) => onFolderDrop(subId, e as unknown as DragEvent)}
                   onClick={() => navigate({ view: 'folder', folderId: subId })}
                 >
-                  <span class="text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
+                  {/* Half-visible at rest rather than hidden: under a finger there is no hover
+                      to reveal it, and nothing else says a long press moves the row. */}
+                  <span class="text-dim opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
                   <span class="text-muted shrink-0 flex items-center">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    <FolderIcon size={14} />
                   </span>
                   <span class="text-sm text-primary flex-1 truncate">{sub.name}</span>
                   <span class="text-xs text-dim shrink-0">{t(sub.folderIds.length === 1 ? 'folder.meta.folders' : 'folder.meta.foldersPlural', { count: sub.folderIds.length })}
@@ -636,12 +628,12 @@ export function FolderView({ folderId }: { folderId: string | null }) {
       <div class="space-y-2" data-tour="decks">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('folder.section.decks')}</span>
-          <button class="btn-ghost text-xs" data-tour="new-deck" onClick={() => showCreateDeckModal(getContext(), folderId)}>
-            {t('folder.newDeck')}
+          <button class="btn-ghost text-xs min-h-8 inline-flex items-center gap-1.5" data-tour="new-deck" onClick={() => showCreateDeckModal(getContext(), folderId)}>
+            <PlusIcon size={12} />{t('folder.newDeck')}
           </button>
         </div>
         {deckIds.length === 0 ? (
-          <p class="text-xs text-dim italic">{t('folder.empty.decks')}</p>
+          <EmptyState>{t('folder.empty.decks')}</EmptyState>
         ) : (
           <div class="space-y-1">
             {deckIds.map(deckId => {
@@ -672,10 +664,10 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   onDrop={(e) => onDeckDrop(deckId, e as unknown as DragEvent)}
                   onClick={() => navigate({ view: 'deck', deckId })}
                 >
-                  <span class="text-dim opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
+                  <span class="text-dim opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
 
                   <span class="flex gap-0.5 items-center shrink-0">
-                    <span class={`w-2 h-2 rounded-full ${availabilityColor(avail)}`} title={t('card.dot.recall', { pct: pct(avail) })} />
+                    <span class={`w-2 h-2 rounded-full ${availabilityColor(avail, ease <= 0)}`} title={ease <= 0 ? t('card.neverReviewed') : t('card.dot.recall', { pct: pct(avail) })} />
                     <span
                       class={`w-2 h-2 rounded-full ${ease <= 0 ? 'bg-border' : ease >= 0.6 ? 'bg-success' : ease >= 0.35 ? 'bg-warn' : 'bg-danger'}`}
                       title={ease > 0 ? t('card.dot.ease', { pct: pct(ease) }) : t('card.neverReviewed')}

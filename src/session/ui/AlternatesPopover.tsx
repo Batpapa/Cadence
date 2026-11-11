@@ -1,14 +1,15 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, closeModal } from '../../components/modal';
+import { showModal, closeModal, MODAL_W } from '../../components/modal';
 import { AbcPreview, TuneFacts } from './abcPreview';
 import { ManualTunePick } from './ManualTunePick';
 import { BUCKET_TEXT, tuneName } from './sessionUiShared';
 import { bucketOf } from '../recognition/viterbiSegmenter';
 import { DETECTION_TEMPORAL_CONFIG } from '../recognition/detectionTemporalConfig';
 import { viterbiPickOf, withManualAlternate, manualAlternateRemovalFields } from '../model';
-import { TrashIcon } from '../../components/icons';
+import { TrashIcon, CheckIcon } from '../../components/icons';
+import { IconButton, EmptyState } from '../../components/ui';
 import type { DetectionAlternate, Detection } from '../model';
 
 // ── "Explore alternatives" picker ─────────────────────────────────────────────
@@ -98,7 +99,7 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rate
   }, []);
 
   if (!ann) {
-    return <p class="text-sm text-dim text-center py-6 px-5">{t('sessions.alternates.retracted')}</p>;
+    return <EmptyState>{t('sessions.alternates.retracted')}</EmptyState>;
   }
 
   const viterbiPick = viterbiPickOf(ann);
@@ -173,14 +174,14 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rate
               onClick={() => { if (!isSelected || canUntick) onSelect(isSelected ? null : opt); }}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isSelected || canUntick) onSelect(isSelected ? null : opt); } }}
             >
-              <span class="w-4 shrink-0 text-accent text-sm leading-none">{isSelected ? '✓' : ''}</span>
-              <AbcPreview settingId={opt.settingId} displayName={opt.displayName} size={11} keyOffset={opt.transpose} />
+              <span class="w-4 shrink-0 text-accent flex items-center">{isSelected && <CheckIcon size={14} />}</span>
+              <AbcPreview settingId={opt.settingId} displayName={opt.displayName} keyOffset={opt.transpose} />
 
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-sm text-primary truncate">{tuneName(opt).text}</span>
                   {isViterbi && (
-                    <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-accent/15 text-accent" title={t('sessions.alternates.viterbiHint')}>
+                    <span class="badge shrink-0 bg-accent/15 text-accent" title={t('sessions.alternates.viterbiHint')}>
                       {t('sessions.alternates.viterbiBadge')}
                     </span>
                   )}
@@ -203,16 +204,14 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rate
                   costs a search to undo, nothing more. Stops the row's click,
                   or removing a variant would also tick it. */}
               {isRemovable(opt) && (
-                <button
-                  type="button"
-                  class="shrink-0 flex items-center text-dim hover:text-danger transition-colors cursor-pointer"
-                  title={t('sessions.alternates.remove')}
-                  aria-label={t('sessions.alternates.remove')}
+                <IconButton
+                  label={t('sessions.alternates.remove')}
+                  class="hover:text-danger"
                   onClick={(e) => { e.stopPropagation(); remove(opt.tuneId); }}
                   onKeyDown={(e) => e.stopPropagation()}
                 >
-                  <TrashIcon size={12} />
-                </button>
+                  <TrashIcon size={14} />
+                </IconButton>
               )}
             </div>
           );
@@ -262,5 +261,5 @@ export function showAlternatesPopover(
   };
   // Adding keeps the modal open: the tune is then ticked from the list.
   render(<AlternatesPopover initial={ann} getLatest={getLatest} onSelect={handleSelect} onAdd={onAdd} onRemove={onRemove} rated={rated} />, body);
-  showModal(t('sessions.alternates.title'), body, [], { maxWidth: '420px', onDismiss: cleanup });
+  showModal(t('sessions.alternates.title'), body, [], { maxWidth: MODAL_W.m, onDismiss: cleanup });
 }

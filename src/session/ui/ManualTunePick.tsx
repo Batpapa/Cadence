@@ -6,6 +6,7 @@ import { fetchTuneById, searchTunes, tuneTypeToMeter, type TuneResult } from '..
 import { TuneUnavailableError } from '../../services/tuneFetchError';
 import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../../services/tuneNameIndexService';
 import { PlusIcon } from '../../components/icons';
+import { InlineStatus } from '../../components/ui';
 import type { DetectionAlternate } from '../model';
 
 // ── Naming a tune by hand ─────────────────────────────────────────────────────
@@ -53,7 +54,11 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   autoFocus?: boolean;
 }) {
   const [value, setValue] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatusText] = useState('');
+  /** The status line is a failure — shown in red, where it was the grey of
+   *  "searching". Every status sets it, so a later one clears it. */
+  const [statusError, setStatusError] = useState(false);
+  const setStatus = (text: string, error = false) => { setStatusText(text); setStatusError(error); };
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [pending, setPending] = useState<TuneResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -100,11 +105,11 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
     try {
       const tune = await fetchTuneById(id);
       if (!fresh()) return;
-      if (tune.settings.length === 0) { setStatus(t('theSession.id.notFound')); return; }
+      if (tune.settings.length === 0) { setStatus(t('theSession.id.notFound'), true); return; }
       report(tune);
       setStatus('');
     } catch (e) {
-      if (fresh()) setStatus(describeError(e));
+      if (fresh()) setStatus(describeError(e), true);
     }
   };
 
@@ -139,7 +144,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
         setSuggestions(tunes);
         setStatus(tunes.length ? '' : t('theSession.noResults'));
       } catch (e) {
-        if (fresh()) setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }));
+        if (fresh()) setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }), true);
       }
     }, 300);
   };
@@ -166,7 +171,9 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
       </div>
 
       {pending && <p class="text-xs text-muted truncate">{pending.name} · {pending.type}</p>}
-      {status && <p class="text-xs text-dim">{status}</p>}
+      {status && (statusError
+        ? <InlineStatus tone="error">{status}</InlineStatus>
+        : <p class="text-xs text-dim">{status}</p>)}
 
       {suggestions.length > 0 && (
         <div class="max-h-48 overflow-y-auto rounded border border-border divide-y divide-border/50">
@@ -213,7 +220,7 @@ export function ManualTunePick({ onAdd }: { onAdd: (tune: DetectionAlternate) =>
         class="w-full flex items-center gap-3 px-5 py-2.5 text-left text-sm text-muted hover:bg-bg hover:text-primary transition-colors cursor-pointer border-t border-border/50"
         onClick={() => setOpen(true)}
       >
-        <span class="w-4 shrink-0 flex items-center justify-center"><PlusIcon size={11} /></span>
+        <span class="w-4 shrink-0 flex items-center justify-center"><PlusIcon size={12} /></span>
         {t('sessions.alternates.other')}
       </button>
     );

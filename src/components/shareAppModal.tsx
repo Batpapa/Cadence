@@ -4,6 +4,7 @@ import { ShareIcon, WhatsAppIcon, ExternalLinkIcon, GlobeIcon, GooglePlayIcon } 
 import { copyText } from '../utils';
 import { isNative } from '../native/platform';
 import { PLAY_STORE_LIVE, PLAY_STORE_URL } from './installOffer';
+import { Segmented } from './ui';
 
 // ── "Share Cadence" ──────────────────────────────────────────────────────────
 // From a festival report (2026-09-09): the address appeared NOWHERE in the
@@ -138,25 +139,14 @@ export function ShareAppBody() {
       <div class="flex items-center gap-2">
         <div class="section-title flex-1 min-w-0">{t('shareApp.title')}</div>
         {PLAY_STORE_LIVE && (
-          <div class="flex items-center gap-1.5" role="tablist">
-            {([['site', 'shareApp.target.site'], ['android', 'shareApp.target.android']] as const).map(([id, key]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={target === id}
-                aria-label={t(key)}
-                title={t(key)}
-                class={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors cursor-pointer ${
-                  target === id
-                    ? 'border-accent bg-accent/15 text-primary'
-                    : 'border-border text-muted opacity-60 hover:opacity-100 hover:text-primary'}`}
-                onClick={() => setTarget(id)}
-              >
-                {id === 'site' ? <GlobeIcon size={18} /> : <GooglePlayIcon size={18} />}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            value={target}
+            onChange={setTarget}
+            options={[
+              { value: 'site', icon: <GlobeIcon size={16} />, title: t('shareApp.target.site') },
+              { value: 'android', icon: <GooglePlayIcon size={16} />, title: t('shareApp.target.android') },
+            ]}
+          />
         )}
       </div>
 
@@ -168,7 +158,7 @@ export function ShareAppBody() {
             fallback whenever the clipboard API is unavailable or refused. */}
         <span class="flex-1 min-w-0 font-mono text-xs text-primary break-all select-all">{url}</span>
         <button
-          class="btn-ghost text-xs shrink-0 px-2 py-1 border border-border rounded-md"
+          class="btn-outline text-xs shrink-0 px-2 py-1"
           onClick={copy}
         >
           {copied ? t('common.copied') : t('shareApp.copy')}
@@ -189,7 +179,8 @@ export function ShareAppBody() {
           second entry point in the header would cost more than it returns. */}
       <div class="h-px bg-border" />
 
-      {/* Tinted WhatsApp green rather than the theme accent, same exception and
+      {/* ui-ok: WhatsApp's brand colours, a third party's (UI charter, 2026-11-11).
+          Tinted WhatsApp green rather than the theme accent, same exception and
           same reason as WhatsAppIcon in icons.tsx: the colour is a promise about
           where the link goes.
           These four values are Tailwind arbitrary classes and NOT an inline
@@ -201,7 +192,7 @@ export function ShareAppBody() {
         href={COMMUNITY_URL}
         target="_blank"
         rel="noopener noreferrer"
-        class="flex flex-col gap-3 rounded-[10px] p-3.5 border transition-colors
+        class="flex flex-col gap-3 rounded-lg p-3.5 border transition-colors
                border-[rgba(37,211,102,.28)] bg-[rgba(37,211,102,.07)]
                hover:border-[rgba(37,211,102,.6)] hover:bg-[rgba(37,211,102,.12)]"
       >
@@ -227,15 +218,16 @@ export function ShareAppBody() {
 
         {/* A span, not a button: it already sits inside the anchor, and nesting
             interactive elements is invalid and breaks keyboard navigation.
+            ui-ok: WhatsApp's brand colours, a third party's.
             Very dark green on the brand green, NOT white — white on #25D366 is
             1.98:1 and unreadable, this pairing is 7.4:1. Inline style is safe
             here precisely because this element has no hover state of its own. */}
         <span
-          class="flex items-center justify-center gap-1.5 rounded-md px-3 py-[7px] text-[13px] font-semibold"
+          class="flex items-center justify-center gap-1.5 rounded-md px-3 py-[7px] text-sm font-semibold"
           style={{ background: '#25D366', color: '#062f16' }}
         >
           {t('shareApp.communityCta')}
-          <ExternalLinkIcon size={11} />
+          <ExternalLinkIcon size={12} />
         </span>
       </a>
       </div>

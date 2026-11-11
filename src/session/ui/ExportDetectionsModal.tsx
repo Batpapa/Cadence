@@ -28,14 +28,12 @@ function ExportDetectionsModal({ lines }: { lines: DetectedTuneLine[] }) {
           icon={SHARE_ICON_FILE_UP}
           label={t('library.export.file')}
           desc={t('sessions.ranking.export.txtDesc')}
-          color="var(--color-warn)"
           onClick={() => { exportDetectedTunesTXT(lines); closeModal(); }}
         />
         <ShareChoiceCard
           icon={SHARE_ICON_CLIPBOARD}
           label={copied === 'no' ? t('common.copyToClipboard') : t(copied === 'yes' ? 'common.copied' : 'common.copyFailed')}
           desc={t('common.copyToClipboardDesc')}
-          color="var(--color-success)"
           onClick={() => {
             void copyText(detectedTunesTextReport(lines)).then(ok => {
               setCopied(ok ? 'yes' : 'failed');
@@ -55,14 +53,12 @@ function ExportDetectionsModal({ lines }: { lines: DetectedTuneLine[] }) {
         icon={SHARE_ICON_CSV}
         label="CSV"
         desc={t('library.export.csvDesc')}
-        color="var(--color-success)"
         onClick={() => { exportDetectedTunesCSV(lines); closeModal(); }}
       />
       <ShareChoiceCard
         icon={SHARE_ICON_TXT}
         label="TXT"
         desc={t('sessions.ranking.export.txtDesc')}
-        color="var(--color-muted)"
         onClick={() => setView('txt')}
       />
     </div>

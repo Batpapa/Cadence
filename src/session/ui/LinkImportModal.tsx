@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import { t } from '../../services/i18nService';
 import { focusIfDesktop, formatBytes } from '../../utils';
-import { showModal, closeModal, renderModalBody, alertModal } from '../../components/modal';
+import { showModal, closeModal, renderModalBody, alertModal, MODAL_W } from '../../components/modal';
 import { safeExternalUrl } from '../../services/embedService';
 import {
   probeRemoteFile, fetchRemoteFile, refusalMessage, RemoteFileError, MAX_REMOTE_ANALYSIS_BYTES,
@@ -175,5 +175,5 @@ export function showLinkImportModal(onFile: (file: File) => void): void {
   showModal(t('sessions.link.title'), el, [
     { label: t('common.cancel'), onClick: leave },
     { label: t('sessions.link.import'), primary: true, disabled, onClick: go },
-  ], { maxWidth: '28rem', onDismiss: cleanup });
+  ], { maxWidth: MODAL_W.m, onDismiss: cleanup });
 }

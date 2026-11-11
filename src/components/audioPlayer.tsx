@@ -9,7 +9,8 @@ import { SyncedScore, passStartsOf } from './syncedScore';
 import { localMatch, type FollowResult } from '../session/scoreFollow';
 import { qualityColour, faded } from './followColour';
 import { CustomSelect } from './customSelect';
-import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon, AddClipIcon } from './icons';
+import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon, AddClipIcon, CrossIcon, ResetIcon, ChevronDownIcon } from './icons';
+import { IconButton } from './ui';
 import {
   AUDIO_LIMITS, MIN_REGION_S, fmtTime, neutralSettings, fitSettings, sameSettings, settingsOf, suggestedPresetName,
   neutralEffects, type AudioSettings, type AudioPresetsBinding,
@@ -36,13 +37,12 @@ function injectSliderStyle(): void {
   s.id = 'cadence-audio-style';
   s.textContent = `
     .cad-range{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;width:100%}
-    .cad-range::-webkit-slider-runnable-track{height:3px;background:linear-gradient(to right,var(--thumb-color,var(--color-accent)) var(--pct,50%),var(--color-border) var(--pct,50%));border-radius:99px}
-    .cad-range::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--thumb-color,var(--color-accent));margin-top:-4.5px}
+    .cad-range::-webkit-slider-runnable-track{height:3px;background:linear-gradient(to right,var(--color-accent) var(--pct,50%),var(--color-border) var(--pct,50%));border-radius:99px}
+    .cad-range::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--color-accent);margin-top:-4.5px}
   `;
   document.head.appendChild(s);
 }
 
-const MONO = '"IBM Plex Mono",monospace';
 const WAVE_H = 56;
 /** Below this width the three sliders go one under the other (2026-10-10, the
  *  user): side by side, a label and a value such as "TRANSPOSE +12 st" no
@@ -76,7 +76,8 @@ function TransportButton({ html, title, active, onClick }: {
     <button
       type="button"
       title={title}
-      class={'px-2 py-[5px] inline-flex items-center justify-center bg-transparent border rounded cursor-pointer leading-none '
+      aria-label={title}
+      class={'min-w-8 min-h-8 px-2 inline-flex items-center justify-center bg-transparent border rounded-md cursor-pointer leading-none '
         + (active ? 'border-accent text-accent hover:text-primary' : 'border-border text-muted hover:border-accent hover:text-primary')}
       dangerouslySetInnerHTML={{ __html: html }}
       onClick={onClick}
@@ -84,14 +85,16 @@ function TransportButton({ html, title, active, onClick }: {
   );
 }
 
-/** `html` instead of `text` for an icon (`boundIcon`). */
+/** `html` instead of `text` for an icon (`boundIcon`). As tall as the
+ *  transport buttons it shares a row with — that row wraps, so a 32 px target
+ *  costs it nothing. */
 function SmallButton({ text, html, title, onClick }: { text?: string; html?: string; title: string; onClick: () => void }) {
   return (
     <button
       type="button"
       title={title}
-      class="px-1.5 py-0.5 text-[9px] inline-flex items-center bg-transparent border border-border rounded-[3px] text-dim cursor-pointer hover:border-dim hover:text-muted"
-      style={{ fontFamily: MONO }}
+      aria-label={title}
+      class="min-w-8 min-h-8 px-1.5 text-2xs font-mono inline-flex items-center justify-center bg-transparent border border-border rounded-md text-dim cursor-pointer hover:border-dim hover:text-muted"
       onClick={onClick}
       {...(html !== undefined ? { dangerouslySetInnerHTML: { __html: html } } : {})}
     >
@@ -101,10 +104,13 @@ function SmallButton({ text, html, title, onClick }: { text?: string; html?: str
 }
 
 /** A labelled range with its value shown, editable by a click on the value,
- *  and a ↺ back to the default once it is moved. Controlled: the value comes
- *  from the player, so it can be set from outside the slider too. */
-function Slider({ label, min, max, step, def, color, fmt, value, onChange }: {
-  label: string; min: number; max: number; step: number; def: number; color: string;
+ *  and a reset back to the default once it is moved. Controlled: the value
+ *  comes from the player, so it can be set from outside the slider too.
+ *
+ *  All three in the accent: transposition was in warn and pitch in success,
+ *  colours that say "careful" and "done" and meant neither here. */
+function Slider({ label, min, max, step, def, fmt, value, onChange }: {
+  label: string; min: number; max: number; step: number; def: number;
   fmt: (v: number) => string; value: number; onChange: (v: number) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
@@ -125,24 +131,24 @@ function Slider({ label, min, max, step, def, color, fmt, value, onChange }: {
   const atDefault = value === def;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-          <span style={{ fontSize: '9px', color: 'var(--color-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
-          <button
-            type="button"
-            title="Reset"
-            style={{
-              background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--color-dim)',
-              padding: 0, lineHeight: 1, transition: 'opacity 0.15s',
-              opacity: atDefault ? 0 : 1, pointerEvents: atDefault ? 'none' : 'auto',
-            }}
+    <div class="flex flex-col gap-0.5">
+      <div class="flex justify-between items-center">
+        <div class="inline-flex items-center gap-0.5">
+          <span class="text-2xs font-medium uppercase tracking-wider text-dim">{label}</span>
+          {/* A 32 px target on a 16 px line: the negative margins keep the
+              row the height of its label, so the three sliders do not grow
+              by a reset that is invisible most of the time. */}
+          <IconButton
+            label={t('audioPlayer.reset')}
+            class={`-my-1.5 transition-opacity ${atDefault ? 'opacity-0 pointer-events-none' : ''}`}
             onClick={() => onChange(def)}
-          >↺</button>
+          >
+            <ResetIcon size={12} />
+          </IconButton>
         </div>
         {editing === null ? (
           <span
-            style={{ fontSize: '11px', fontFamily: MONO, color, fontWeight: 500, cursor: 'pointer' }}
+            class="text-2xs font-mono font-medium text-accent cursor-pointer"
             onClick={() => setEditing(String(value))}
           >{fmt(value)}</span>
         ) : (
@@ -150,10 +156,7 @@ function Slider({ label, min, max, step, def, color, fmt, value, onChange }: {
             ref={inputRef}
             type="text"
             value={editing}
-            style={{
-              fontSize: '11px', fontFamily: MONO, color, fontWeight: 500, background: 'transparent', border: 'none',
-              borderBottom: `1px solid ${color}`, outline: 'none', width: '38px', textAlign: 'right', padding: 0,
-            }}
+            class="text-2xs font-mono font-medium text-accent bg-transparent border-0 border-b border-accent outline-none w-10 text-right p-0"
             onInput={(e) => setEditing((e.target as HTMLInputElement).value.replace(/[^\d\-.]/g, ''))}
             onBlur={commit}
             onKeyDown={(e) => {
@@ -167,7 +170,7 @@ function Slider({ label, min, max, step, def, color, fmt, value, onChange }: {
         type="range"
         class="cad-range"
         min={min} max={max} step={step} value={value}
-        style={{ '--pct': `${((value - min) / (max - min)) * 100}%`, '--thumb-color': color }}
+        style={{ '--pct': `${((value - min) / (max - min)) * 100}%` }}
         onInput={(e) => onChange(parseFloat((e.target as HTMLInputElement).value))}
       />
     </div>
@@ -182,23 +185,6 @@ interface PresetActions {
   rename: (name: string) => void;
   toggleDefault: () => void;
   remove: () => void;
-}
-
-function IconButton({ title, onClick, children, class: extra = '', disabled }: {
-  title: string; onClick: () => void; children: ComponentChildren; class?: string; disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      class={`p-1.5 rounded inline-flex items-center justify-center cursor-pointer transition-colors hover:bg-elevated disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent ${extra || 'text-muted hover:text-primary'}`}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
 }
 
 /** A name being typed: for a new preset, or for the one on screen. */
@@ -242,7 +228,7 @@ function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, nam
         <input
           ref={inputRef}
           type="text"
-          class="flex-1 min-w-0 text-xs bg-bg text-primary border border-accent rounded px-2 py-1.5 outline-none"
+          class="flex-1 min-w-0 min-h-8 text-xs bg-bg text-primary border border-accent rounded-md px-2 py-1.5 outline-none"
           aria-label={t('audioPlayer.preset.name')}
           placeholder={suggestedName}
           value={naming.value}
@@ -253,8 +239,8 @@ function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, nam
             if (e.key === 'Escape') { e.preventDefault(); setNaming(null); }
           }}
         />
-        <IconButton title={t('common.confirm')} onClick={confirm} class="text-accent"><CheckIcon size={14} /></IconButton>
-        <IconButton title={t('common.cancel')} onClick={() => setNaming(null)}><span class="text-sm leading-none">✕</span></IconButton>
+        <IconButton label={t('common.confirm')} onClick={confirm} class="text-accent"><CheckIcon size={14} /></IconButton>
+        <IconButton label={t('common.cancel')} onClick={() => setNaming(null)}><CrossIcon size={14} /></IconButton>
       </div>
     );
   }
@@ -266,21 +252,23 @@ function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, nam
           value={currentId ?? ''}
           options={[
             { value: '', label: t('audioPlayer.preset.none') },
+            // ui-ok: CustomSelect's options are strings, no room for StarIcon — the trigger below draws it
             ...presets.map(p => ({ value: p.id, label: p.id === defaultId ? `${p.name} ★` : p.name })),
           ]}
           onChange={(v) => onChoose(v || null)}
           renderTrigger={(label, open, toggle) => (
             <button
               type="button"
-              class="flex items-center gap-1.5 text-xs bg-bg text-primary border border-border rounded px-2 py-1.5 cursor-pointer hover:border-accent w-full"
+              class="flex items-center gap-1.5 min-h-8 text-xs bg-bg text-primary border border-border rounded-md px-2 py-1.5 cursor-pointer hover:border-accent w-full"
               aria-label={t('audioPlayer.preset.list')}
               onClick={toggle}
             >
-              <span class={`truncate flex-1 text-left ${currentId ? '' : 'text-muted'}`}>{label}</span>
-              {dirty && <span class="text-warn shrink-0" title={t('audioPlayer.preset.modified')}>●</span>}
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
+              {/* The preset's own name and a drawn star, not the list's "★"
+                  label: in the trigger there is room for the icon. */}
+              <span class={`truncate flex-1 text-left ${currentId ? '' : 'text-muted'}`}>{current ? current.name : label}</span>
+              {current && current.id === defaultId && <span class="text-warn shrink-0 inline-flex"><StarIcon size={12} filled /></span>}
+              {dirty && <span class="w-1.5 h-1.5 rounded-full bg-warn shrink-0" role="img" aria-label={t('audioPlayer.preset.modified')} title={t('audioPlayer.preset.modified')} />}
+              <span class={`shrink-0 inline-flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
             </button>
           )}
         />
@@ -288,14 +276,14 @@ function PresetHeader({ presets, currentId, defaultId, dirty, suggestedName, nam
       {current && (
         <>
           <IconButton
-            title={t(current.id === defaultId ? 'audioPlayer.preset.isDefault' : 'audioPlayer.preset.setDefault')}
+            label={t(current.id === defaultId ? 'audioPlayer.preset.isDefault' : 'audioPlayer.preset.setDefault')}
             onClick={actions.toggleDefault}
-            class={current.id === defaultId ? 'text-warn' : 'text-muted hover:text-warn'}
+            class={current.id === defaultId ? 'text-warn hover:text-warn' : 'hover:text-warn'}
           >
-            <StarIcon size={13} filled={current.id === defaultId} />
+            <StarIcon size={14} filled={current.id === defaultId} />
           </IconButton>
-          <IconButton title={t('audioPlayer.preset.rename')} onClick={() => setNaming({ mode: 'rename', value: current.name })}>
-            <PencilIcon size={13} />
+          <IconButton label={t('audioPlayer.preset.rename')} onClick={() => setNaming({ mode: 'rename', value: current.name })}>
+            <PencilIcon size={14} />
           </IconButton>
         </>
       )}
@@ -322,21 +310,28 @@ function PresetFooter({ current, dirty, suggestedName, setNaming, actions, onExt
       {current || onExtract !== undefined ? (
         <div class="flex items-center gap-1 p-1 bg-bg rounded-lg w-fit">
           {onExtract !== undefined && (
-            <IconButton
+            // The class and not IconButton: its props (JSX.HTMLAttributes)
+            // have no `disabled`, and this one greys out.
+            <button
+              type="button"
+              class="icon-btn"
               title={t(onExtract ? 'audioPlayer.clip.title' : 'audioPlayer.clip.whole')}
+              aria-label={t(onExtract ? 'audioPlayer.clip.title' : 'audioPlayer.clip.whole')}
               onClick={() => onExtract?.()}
               disabled={!onExtract}
             >
-              <AddClipIcon size={13} />
-            </IconButton>
+              <AddClipIcon size={14} />
+            </button>
           )}
           {current && (
             <>
-              <IconButton title={t('audioPlayer.preset.saveNew.title')} onClick={() => setNaming({ mode: 'create', value: suggestedName })}>
-                <PlusIcon size={13} />
+              <IconButton label={t('audioPlayer.preset.saveNew.title')} onClick={() => setNaming({ mode: 'create', value: suggestedName })}>
+                <PlusIcon size={14} />
               </IconButton>
-              <IconButton title={t('audioPlayer.preset.delete')} onClick={actions.remove} class="text-muted hover:text-danger">
-                <TrashIcon size={13} />
+              {/* Immediate, unlike an ABC version's: whether a preset is worth
+                  a confirmation is still to be decided (UI charter, 2026-11). */}
+              <IconButton label={t('audioPlayer.preset.delete')} onClick={actions.remove} class="hover:text-danger">
+                <TrashIcon size={14} />
               </IconButton>
             </>
           )}
@@ -733,7 +728,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
             transpose={score.keyShift ?? 0} playing={false} maxHeight={score.maxHeight} minHeight={score.minHeight} face={score.face} tools={score.tools}
           />
         )}
-        <div style={{ fontSize: '11px', color: 'var(--color-dim)', textAlign: 'center', padding: '20px 0' }}>
+        <div class={`text-2xs text-center py-5 ${status.kind === 'error' ? 'text-danger' : 'text-dim'}`}>
           {status.kind === 'loading' ? t('audioPlayer.loading') : t('audioPlayer.error', { msg: status.msg })}
         </div>
       </div>
@@ -836,8 +831,8 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
               <button
                 type="button"
                 title={t('sessions.follow.toPass', { n: i + 1 })}
-                class={`absolute top-0 z-[3] px-1 rounded-sm text-[10px] leading-[14px] font-semibold tabular-nums cursor-pointer transition-colors ${currentMark === i ? 'bg-accent text-white' : 'bg-surface/85 text-muted hover:text-primary'}`}
-                style={{ left: `calc(${(at / duration) * 100}% + 3px)`, fontFamily: MONO }}
+                class={`absolute top-0 z-[3] px-1 rounded-sm text-2xs leading-[14px] font-mono font-semibold tabular-nums cursor-pointer transition-colors ${currentMark === i ? 'bg-accent text-white' : 'bg-surface/85 text-muted hover:text-primary'}`}
+                style={{ left: `calc(${(at / duration) * 100}% + 3px)` }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); engine.seek(at); updateMoving(); }}
               >
@@ -846,9 +841,9 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
             </div>
           ))}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--color-dim)', fontFamily: MONO }}>
+        <div class="flex justify-between text-2xs font-mono text-dim">
           <span ref={timeCurrentRef} />
-          <span style={{ textAlign: 'center' }}>{`${fmtTime(origin + region.start)} → ${fmtTime(origin + region.end)}`}</span>
+          <span class="text-center">{`${fmtTime(origin + region.start)} → ${fmtTime(origin + region.end)}`}</span>
           <span>{fmtTime(origin + duration)}</span>
         </div>
       </div>
@@ -878,11 +873,11 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
         <div style={stacked
           ? { display: 'grid', gridTemplateColumns: '1fr', gap: '10px 0' }
           : { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16px' }}>
-          <Slider label={t('audioPlayer.tempo')} min={AUDIO_LIMITS.tempo.min} max={AUDIO_LIMITS.tempo.max} step={1} def={AUDIO_LIMITS.tempo.def} color="var(--color-accent)"
+          <Slider label={t('audioPlayer.tempo')} min={AUDIO_LIMITS.tempo.min} max={AUDIO_LIMITS.tempo.max} step={1} def={AUDIO_LIMITS.tempo.def}
             fmt={v => `${v}%`} value={effects.tempo} onChange={v => setEffect({ tempo: v })} />
-          <Slider label={t('audioPlayer.transpose')} min={AUDIO_LIMITS.transpose.min} max={AUDIO_LIMITS.transpose.max} step={1} def={AUDIO_LIMITS.transpose.def} color="var(--color-warn)"
+          <Slider label={t('audioPlayer.transpose')} min={AUDIO_LIMITS.transpose.min} max={AUDIO_LIMITS.transpose.max} step={1} def={AUDIO_LIMITS.transpose.def}
             fmt={v => `${v >= 0 ? '+' : ''}${v} st`} value={effects.transpose} onChange={v => setEffect({ transpose: v })} />
-          <Slider label={t('audioPlayer.pitch')} min={AUDIO_LIMITS.pitch.min} max={AUDIO_LIMITS.pitch.max} step={1} def={AUDIO_LIMITS.pitch.def} color="var(--color-success)"
+          <Slider label={t('audioPlayer.pitch')} min={AUDIO_LIMITS.pitch.min} max={AUDIO_LIMITS.pitch.max} step={1} def={AUDIO_LIMITS.pitch.def}
             fmt={v => `${v >= 0 ? '+' : ''}${v} ¢`} value={effects.pitch} onChange={v => setEffect({ pitch: v })} />
         </div>
       </div>

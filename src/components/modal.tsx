@@ -6,7 +6,7 @@ import type { ComponentChild } from 'preact';
 import { t } from '../services/i18nService';
 import { focusIfDesktop } from '../utils';
 import { modalMaxH, modalMaxW } from '../services/zoomService';
-import { ExpandIcon, CollapseIcon, ArrowLeftIcon } from './icons';
+import { ExpandIcon, CollapseIcon, ArrowLeftIcon, CrossIcon } from './icons';
 import { registerOverlay } from './overlayStack';
 
 // ── Modal infrastructure (Preact — 2026-08-26) ──────────────────────────────────
@@ -106,6 +106,20 @@ export interface ModalOptions {
    *  its height changes under the finger. */
   pinTop?: boolean;
 }
+
+/** The widths a dialog may take (UI charter, 2026-11-11) — there were about
+ *  twenty, in rem and px. S for a choice or a short question, M the default,
+ *  L for a rich form (bounds, notes, tempo, help, smart edit). Content-sized
+ *  viewers (a score, an embed) keep their own. */
+export const MODAL_W = { s: '22rem', m: '28rem', l: '36rem' } as const;
+
+/** The shade under every dialog, here and in the dialogs that draw their own
+ *  frame (settings, new card, deck picker, library export): there were four. */
+export const MODAL_BACKDROP = 'bg-black/70 backdrop-blur-sm';
+
+/** The title of every dialog: small grey capitals (the user's call,
+ *  2026-11-11), here and in the dialogs that draw their own frame. */
+export const MODAL_TITLE_CLASS = 'text-xs font-semibold text-muted uppercase tracking-widest truncate';
 
 /** A centred dialog moves when its height changes: half the change goes on
  *  top. In a dialog pressed several times in a row at the same place, the
@@ -351,13 +365,17 @@ export function askUnsavedChanges({ message, save, discard, proceed, canSave = t
   ]);
 }
 
-export function confirmModal(title: string, message: string, confirmLabel: string, onConfirm: () => void): void {
+/** `destructive: false` for a question whose answer destroys nothing — log
+ *  out, upload, analyse again: its button is the accent, not red. Red was
+ *  hard-wired here, so every "are you sure?" looked like a deletion. */
+export function confirmModal(title: string, message: string, confirmLabel: string, onConfirm: () => void, opts: { destructive?: boolean } = {}): void {
   const body = document.createElement('p');
   body.className = 'text-sm text-muted leading-relaxed';
   body.textContent = message;
+  const destructive = opts.destructive ?? true;
   showModal(title, body, [
     { label: t('common.cancel'), onClick: closeModal },
-    { label: confirmLabel, danger: true, tour: 'modal-confirm', onClick: () => { closeModal(); onConfirm(); } },
+    { label: confirmLabel, danger: destructive, primary: !destructive, tour: 'modal-confirm', onClick: () => { closeModal(); onConfirm(); } },
   ]);
 }
 
@@ -437,7 +455,7 @@ function IconMount({ el }: { el: Element }) {
   return <span ref={ref} class="inline-flex items-center" />;
 }
 
-const TITLE_CLASS = 'text-xs font-semibold text-muted uppercase tracking-widest truncate';
+const TITLE_CLASS = MODAL_TITLE_CLASS;
 
 /** The header title, renamable in place when the modal asked for it (see
  *  ModalOptions.titleEdit). Module scope, not declared inside ModalDialog: a
@@ -524,7 +542,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
   return (
     <div
       ref={overlayRef}
-      class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center bg-black/75 backdrop-blur-sm`}
+      class={`fixed inset-0 z-50 flex ${pinned.overlayClass} justify-center ${MODAL_BACKDROP}`}
       onMouseDown={(e) => { mouseDownOnOverlay.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (entry.dismissable && e.target === e.currentTarget && mouseDownOnOverlay.current) dismiss(); }}
     >
@@ -538,14 +556,14 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
         onPointerDownCapture={pinned.onPointerDownCapture}
         onKeyDownCapture={pinned.onKeyDownCapture}
       >
-        <div class="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+        <div class="flex items-center justify-between gap-2 px-5 py-2.5 min-h-[3.25rem] border-b border-border shrink-0">
           {/* Same shape as the card export modal, which is the reference:
               arrow and title share a row, the title truncates, the arrow
               never shrinks. */}
           <div class="flex items-center gap-2 min-w-0">
             {entry.onBack && (
               <button
-                class="text-dim hover:text-primary transition-colors cursor-pointer shrink-0 flex items-center"
+                class="icon-btn -ml-2"
                 title={t('modal.back')}
                 aria-label={t('modal.back')}
                 onClick={entry.onBack}
@@ -553,13 +571,16 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
             )}
             <ModalTitle title={entry.title} titleEdit={entry.titleEdit} />
           </div>
-          <div class="flex items-center gap-3 shrink-0">
+          {/* No gap: each control is a 32 px target already, and the title,
+              which truncates, needs the room on a phone. */}
+          <div class="flex items-center shrink-0">
             {entry.headerActions.map((action, i) => (
               <button
                 key={i}
-                class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
+                class="icon-btn"
                 data-tour={action.tour}
                 title={action.title}
+                aria-label={action.title}
                 onClick={action.onClick}
               >
                 <IconMount el={action.icon} />
@@ -569,17 +590,18 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
                 what is shown, these two act on the window itself. */}
             {entry.expandable && (
               <button
-                class="text-dim hover:text-primary transition-colors cursor-pointer flex items-center"
+                class="icon-btn"
                 title={t(expanded ? 'modal.collapse' : 'modal.expand')}
+                aria-label={t(expanded ? 'modal.collapse' : 'modal.expand')}
                 // Centred again on the way back: the held top was for the
                 // dialog as it was before.
                 onClick={() => { pinned.unpin(); setExpanded(e => !e); }}
               >
-                {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+                {expanded ? <CollapseIcon size={16} /> : <ExpandIcon size={16} />}
               </button>
             )}
             {entry.dismissable && (
-              <button class="text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer" data-tour="modal-close" onClick={dismiss}>✕</button>
+              <button class="icon-btn -mr-2" data-tour="modal-close" title={t('common.close')} aria-label={t('common.close')} onClick={dismiss}><CrossIcon size={16} /></button>
             )}
           </div>
         </div>
@@ -591,7 +613,13 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
             {entry.actions.map((action, i) => (
               <button
                 key={i}
-                class={(action.primary ? 'btn-primary' : action.danger ? 'btn-danger px-2' : 'btn-ghost') + (action.align === 'start' ? ' mr-auto' : '')
+                // The destroying button is solid when it is the dialog's last
+                // word (a confirmation's answer); a Delete set apart on the
+                // left of an editing form, or a Discard among other ways out,
+                // is a trigger and stays tinted.
+                class={(action.primary ? 'btn-primary'
+                  : action.danger ? (i === entry.actions.length - 1 && action.align !== 'start' ? 'btn-danger-solid' : 'btn-danger')
+                  : 'btn-ghost') + (action.align === 'start' ? ' mr-auto' : '')
                   // An icon beside a label: side by side, centred, apart.
                   + (action.icon ? ' inline-flex items-center gap-1.5' : '')}
                 data-tour={action.tour}

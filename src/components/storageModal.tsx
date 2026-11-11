@@ -1,6 +1,6 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { showModal } from './modal';
+import { showModal, MODAL_W } from './modal';
 import { t } from '../services/i18nService';
 import { formatBytes, formatDiskBytes } from '../utils';
 import { ensurePersistentStorage, storageReport, assessStorage, effectivePersisted, type StorageReport } from '../services/storageService';
@@ -98,5 +98,5 @@ function StorageBody() {
 export function showStorageModal(): void {
   const body = document.createElement('div');
   render(<StorageBody />, body);
-  showModal(t('storage.title'), body, [], { maxWidth: '22rem' });
+  showModal(t('storage.title'), body, [], { maxWidth: MODAL_W.s });
 }

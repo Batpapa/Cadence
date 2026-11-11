@@ -5,7 +5,8 @@ import { hasLibrary } from '../../services/pageMode';
 import type { AppContext } from '../../types';
 import { generateId, addTouchDragSupport, matchesSearch } from '../../utils';
 import { promptModal, confirmModal } from '../../components/modal';
-import { MicIcon, FileAudioIcon, DeviceAudioIcon, PencilIcon, TrashIcon } from '../../components/icons';
+import { MicIcon, FileAudioIcon, DeviceAudioIcon, PencilIcon, TrashIcon, FolderIcon, PlusIcon } from '../../components/icons';
+import { IconButton, EmptyState } from '../../components/ui';
 import { fmtLongTime } from './sessionUiShared';
 import { fmtSessionDateTime } from '../sessionNaming';
 import type { Analysis } from '../model';
@@ -35,21 +36,14 @@ import {
  *  selector on the start button, so the icon that chose a recording is the icon
  *  that later identifies it. */
 const SOURCE_BADGE: Record<Analysis['source'], { icon: JSX.Element; title: string }> = {
-  live:   { icon: <MicIcon size={11} />,         title: 'sessions.source.mic' },
-  device: { icon: <DeviceAudioIcon size={11} />, title: 'sessions.source.device' },
-  import: { icon: <FileAudioIcon size={11} />,   title: 'sessions.importBadge' },
+  live:   { icon: <MicIcon size={12} />,         title: 'sessions.source.mic' },
+  device: { icon: <DeviceAudioIcon size={12} />, title: 'sessions.source.device' },
+  import: { icon: <FileAudioIcon size={12} />,   title: 'sessions.importBadge' },
 };
 
-function FolderGlyph() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-/** The way out of a folder: the same folder, with the arrow that says which
- *  way. It carries no name on purpose — it is not a place, it is a direction. */
+/** The way out of a folder: the same folder (icons.tsx's FolderIcon), with the
+ *  arrow that says which way — a drawing of its own, icons.tsx has none. It
+ *  carries no name on purpose — it is not a place, it is a direction. */
 function ParentGlyph() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -325,7 +319,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
     return (
       <div class="mt-4 space-y-2">
         {found.length === 0
-          ? <p class="text-xs text-dim text-center py-4">{t('sessions.noSearchResults')}</p>
+          ? <EmptyState>{t('sessions.noSearchResults')}</EmptyState>
           : found.map(s => (
             <Card
               key={s.id}
@@ -357,7 +351,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
         <div class="flex-1 min-w-0 flex items-center gap-1 flex-wrap text-xs">
           <button
             type="button"
-            class={`cursor-pointer transition-colors ${here === null ? 'text-primary font-medium cursor-default' : 'text-dim hover:text-accent'}`}
+            class={`min-h-8 cursor-pointer transition-colors ${here === null ? 'text-primary font-medium cursor-default' : 'text-dim hover:text-accent'}`}
             disabled={here === null}
             onClick={() => onOpenFolder(null)}
           >
@@ -370,7 +364,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                 <span class="text-dim">/</span>
                 <button
                   type="button"
-                  class={`truncate cursor-pointer transition-colors ${last ? 'text-primary font-medium cursor-default' : 'text-dim hover:text-accent'}`}
+                  class={`min-h-8 truncate cursor-pointer transition-colors ${last ? 'text-primary font-medium cursor-default' : 'text-dim hover:text-accent'}`}
                   disabled={last}
                   onClick={() => onOpenFolder(folder.id)}
                 >
@@ -385,33 +379,22 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
             edited is then the one on screen, not one picked out of a list of
             siblings. So there is nothing to rename at the root. */}
         {current && (
-          <button
-            type="button"
-            class="shrink-0 w-6 h-6 flex items-center justify-center rounded text-dim hover:text-accent hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
-            title={t('sessions.folder.rename')}
-            aria-label={t('sessions.folder.rename')}
-            onClick={rename}
-          >
-            <PencilIcon size={12} />
-          </button>
+          <IconButton label={t('sessions.folder.rename')} class="hover:text-accent" onClick={rename}>
+            <PencilIcon size={14} />
+          </IconButton>
         )}
-        {/* No glyph: the label already carries the plus, same as the sidebar's. */}
-        <button type="button" class="btn-ghost text-xs px-2 py-1 shrink-0 text-dim hover:text-accent" onClick={newFolder}>
-          {t('sessions.folder.new')}
+        {/* The plus is an icon, as on the sidebar and the folder page — it was
+            a "+" written into the label. */}
+        <button type="button" class="btn-ghost text-xs px-2 py-1 min-h-8 shrink-0 inline-flex items-center gap-1.5 text-dim hover:text-accent" onClick={newFolder}>
+          <PlusIcon size={12} /><FolderIcon size={14} />{t('sessions.folder.new')}
         </button>
         {/* Like the rename beside it: only from inside, and for the same
             reason — this one takes a whole subtree, so it must never sit on a
             row you were only scrolling past. */}
         {current && (
-          <button
-            type="button"
-            class="btn-danger px-2 shrink-0"
-            title={t('sessions.folder.delete.title')}
-            aria-label={t('sessions.folder.delete.title')}
-            onClick={removeFolder}
-          >
+          <IconButton label={t('sessions.folder.delete.title')} variant="danger" onClick={removeFolder}>
             <TrashIcon size={14} />
-          </button>
+          </IconButton>
         )}
       </div>
       )}
@@ -435,9 +418,9 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
         )}
 
         {items.length === 0 ? (
-          <p class="text-xs text-dim text-center py-4">
+          <EmptyState>
             {here === null ? t('sessions.empty') : t('sessions.folder.empty')}
-          </p>
+          </EmptyState>
         ) : (
           // Folders and analyses MIXED, by date (2026-10-15, the user's rule):
           // a folder sits where its most recent analysis would — not above
@@ -449,7 +432,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
               return (
                 <Card
                   key={folder.id}
-                  icon={<FolderGlyph />}
+                  icon={<FolderIcon size={12} />}
                   name={folder.name}
                   detail={folderDetail(childFolderIds(tree, folder.id).length, folderOrder(tree, folder.id, allIds).length)}
                   onOpen={() => onOpenFolder(folder.id)}

@@ -456,7 +456,7 @@ async function showRecoveryScreen(root: HTMLElement, err?: unknown): Promise<voi
     }
   } catch (listErr) {
     console.error('Recovery: failed to list users:', listErr);
-    usersEl.innerHTML = `<p class="text-xs text-muted text-center">${escapeHtml(t('recovery.listFailed'))}</p>`;
+    usersEl.innerHTML = `<p class="text-xs text-danger text-center">${escapeHtml(t('recovery.listFailed'))}</p>`;
   }
 
   await renderRecoverySnapshots();
@@ -489,7 +489,7 @@ async function renderRecoverySnapshots(): Promise<void> {
   if (snaps.length === 0) return;
 
   const title = document.createElement('p');
-  title.className = 'text-xs font-semibold uppercase tracking-widest text-muted pt-4 border-t border-border';
+  title.className = 'section-title pt-4 border-t border-border';
   title.textContent = t('recovery.snapshots.title');
   host.appendChild(title);
 
@@ -521,7 +521,7 @@ async function renderRecoverySnapshots(): Promise<void> {
     btn.onclick = () => {
       void runDownload(btn, t('recovery.download'), async () => {
         const state = await getSnapshotState(s.key);
-        if (!state) { alert(t('recovery.snapshotUnreadable')); return false; }
+        if (!state) { alert(t('recovery.snapshotUnreadable')); return false; } // ui-ok: the recovery screen has no ModalHost (plain DOM, before any Preact root)
         // id stripped, exactly like the per-user download above: it is
         // device-local, and the import path assigns its own.
         const { id: _id, ...data } = state as unknown as Record<string, unknown> & { id?: string };
@@ -596,7 +596,7 @@ async function downloadSessionAudioZip(id: string, safeName: string, user: Await
   try {
     const collected = await collectUserSessionAudio(id);
     if (!collected || (collected.audio.length === 0 && collected.orphans.length === 0)) {
-      alert(t('recovery.noAudio'));
+      alert(t('recovery.noAudio')); // ui-ok: the recovery screen has no ModalHost (plain DOM, before any Preact root)
       return false;
     }
     const metaSessions = ((user?.modules?.['tune-analyser'] as { sessions?: Record<string, { name?: string; mimeType?: string }> } | undefined)?.sessions) ?? {};
@@ -624,13 +624,13 @@ async function downloadSessionAudioZip(id: string, safeName: string, user: Await
     return true;
   } catch (e) {
     console.error('Recovery: audio zip failed:', e);
-    alert(t('recovery.audioFailed', { message: e instanceof Error ? e.message : String(e) }));
+    alert(t('recovery.audioFailed', { message: e instanceof Error ? e.message : String(e) })); // ui-ok: the recovery screen has no ModalHost (plain DOM, before any Preact root)
     return false;
   }
 }
 
 // Same icon as the "Export" button in settingsModal.ts, for the same action.
-const EXPORT_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+const EXPORT_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
 /** Every download on the recovery screen says that it happened. A user pressed
  *  "Data" five times in four minutes (2026-09-17: five identical files in his
@@ -666,7 +666,7 @@ async function downloadRawDump(message: string | null): Promise<boolean> {
     return true;
   } catch (dumpErr) {
     console.error('Failed to generate raw dump:', dumpErr);
-    alert(t('recovery.rawFailed'));
+    alert(t('recovery.rawFailed')); // ui-ok: the recovery screen has no ModalHost (plain DOM, before any Preact root)
     return false;
   }
 }

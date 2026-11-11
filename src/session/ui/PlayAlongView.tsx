@@ -478,15 +478,30 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   // then the way out — and, as in the viewer, none with the stave and the
   // text together (the user, 2026-11-04).
   const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
+  // On the full page, a ✕ beside it: the page has no title bar, and the small
+  // "reduce" drawing alone was not read as a way out (UI review, 2026-11-11).
+  // It does what that one does — back to the dialog.
   const tools = shownFace === 'both' && !page ? undefined : (
-    <button
-      class="abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center"
-      title={pageLabel}
-      aria-label={pageLabel}
-      onClick={(ev) => { ev.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
-    >
-      {page ? <CollapseIcon size={13} /> : <ExpandIcon size={13} />}
-    </button>
+    <>
+      <button
+        class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
+        title={pageLabel}
+        aria-label={pageLabel}
+        onClick={(ev) => { ev.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
+      >
+        {page ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+      </button>
+      {page && (
+        <button
+          class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
+          title={t('common.close')}
+          aria-label={t('common.close')}
+          onClick={(ev) => { ev.currentTarget.blur(); leavePage(); }}
+        >
+          <CrossIcon size={16} />
+        </button>
+      )}
+    </>
   );
 
   return (
@@ -507,14 +522,14 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
               <span class="min-w-0">{t('fileViewer.abc.playAlong.suggest', { n: offer + 1 })}</span>
               <button
                 type="button"
-                class="shrink-0 rounded-full bg-accent text-white px-3 min-h-[1.75rem] font-medium hover:opacity-90 transition-opacity cursor-pointer"
+                class="shrink-0 rounded-full bg-accent text-white px-3 min-h-8 font-medium hover:opacity-90 transition-opacity cursor-pointer"
                 onClick={() => onShowVersion(offer)}
               >
                 {t('fileViewer.abc.playAlong.suggest.show')}
               </button>
               <button
                 type="button"
-                class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full text-muted hover:text-primary hover:bg-elevated transition-colors cursor-pointer"
+                class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-full text-muted hover:text-primary hover:bg-elevated transition-colors cursor-pointer"
                 title={t('fileViewer.abc.playAlong.suggest.dismiss')}
                 aria-label={t('fileViewer.abc.playAlong.suggest.dismiss')}
                 onClick={dismiss}
@@ -544,9 +559,9 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
             </div>
             <span class="shrink-0 inline-flex items-center gap-1.5 text-muted" title={t('fileViewer.abc.playAlong.offsetHint')}>
               {t('fileViewer.abc.playAlong.offset')}
-              <button type="button" class={`${idle} w-7 h-7`} aria-label="−" onClick={() => nudge(-OFFSET_STEP_MS)}><MinusIcon size={12} /></button>
+              <button type="button" class={`${idle} w-8 h-8`} title={t('fileViewer.abc.playAlong.offsetDown')} aria-label={t('fileViewer.abc.playAlong.offsetDown')} onClick={() => nudge(-OFFSET_STEP_MS)}><MinusIcon size={12} /></button>
               <span class="tabular-nums w-14 text-center text-primary">{offset} ms</span>
-              <button type="button" class={`${idle} w-7 h-7`} aria-label="+" onClick={() => nudge(OFFSET_STEP_MS)}><PlusIcon size={12} /></button>
+              <button type="button" class={`${idle} w-8 h-8`} title={t('fileViewer.abc.playAlong.offsetUp')} aria-label={t('fileViewer.abc.playAlong.offsetUp')} onClick={() => nudge(OFFSET_STEP_MS)}><PlusIcon size={12} /></button>
             </span>
           </div>
           {/* The take, on a line of its own (2026-11-01, the user): Record —
@@ -566,13 +581,13 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
                   // the user), not a word.
                   <button
                     type="button"
-                    class={`${chip} shrink-0 w-7 h-7 border-accent/60 text-accent bg-accent/10 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-default`}
+                    class={`${chip} shrink-0 w-8 h-8 border-accent/60 text-accent bg-accent/10 hover:bg-accent/20 disabled:opacity-40 disabled:cursor-default`}
                     title={t('fileViewer.abc.playAlong.take.nameTitle')}
                     aria-label={t('fileViewer.abc.playAlong.take.nameTitle')}
                     disabled={takePhase !== 'stopped'}
                     onClick={() => void take.save()}
                   >
-                    <SaveIcon size={13} />
+                    <SaveIcon size={14} />
                   </button>
                 )}
               />
@@ -587,7 +602,7 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
             <div class="flex justify-end">
               <button
                 type="button"
-                class="text-[11px] text-dim hover:text-primary hover:underline cursor-pointer"
+                class="text-2xs text-dim hover:text-primary hover:underline cursor-pointer min-h-8"
                 onClick={() => void client.dump().then(b => downloadBlob(b, `play-along-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`))}
               >
                 {t('fileViewer.abc.playAlong.dump')}

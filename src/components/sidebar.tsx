@@ -4,7 +4,8 @@ import type { RefObject } from 'preact';
 import type { AppContext, AppState, Route, Folder, Deck } from '../types';
 import { generateId, addTouchDragSupport, availabilityColor, pct } from '../utils';
 import { promptModal } from './modal';
-import { DeckIcon } from './icons';
+import { DeckIcon, FolderIcon, FolderOpenIcon, ExpandAllIcon, CollapseAllIcon, PlusIcon } from './icons';
+import { IconButton } from './ui';
 import { findParentFolder } from '../services/deckService';
 import { deckAvailability, deckEase } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
@@ -238,19 +239,10 @@ function isActive(route: Route, type: 'folder' | 'deck', id: string | null = nul
   return (route.view === 'deck' || route.view === 'study') && 'deckId' in route && route.deckId === id;
 }
 
-// ── Icon button ────────────────────────────────────────────────────────────────
-
-function IconBtn({ title, onClick, children }: { title: string; onClick: () => void; children: preact.ComponentChildren }) {
-  return (
-    <button
-      class="w-6 h-6 flex items-center justify-center rounded text-dim hover:text-primary hover:bg-elevated transition-colors cursor-pointer border-none bg-transparent"
-      title={title}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
+/** A row of the tree: as tall as a target (32 px), the same for a folder and
+ *  a deck, and the selection tint of the rest of the app. */
+const ROW_CLASS = 'flex items-center gap-1.5 min-h-8 pr-2 rounded-md cursor-pointer transition-colors text-sm';
+const rowState = (active: boolean) => active ? 'bg-accent/10 text-accent' : 'text-muted hover:text-primary hover:bg-elevated';
 
 // ── Tree items ───────────────────────────────────────────────────────────────
 
@@ -264,11 +256,13 @@ function DeckItem({ ctx, deck, depth }: { ctx: AppContext; deck: Deck; depth: nu
       ref={ref}
       data-tour={`sidebar-deck-${deck.id}`}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      class={`flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer group transition-colors text-sm ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`}
+      class={`${ROW_CLASS} group ${rowState(active)}`}
       onClick={() => ctx.navigate({ view: 'deck', deckId: deck.id })}
     >
-      <span class={`shrink-0 flex items-center ${active ? 'text-accent' : 'text-dim opacity-70'}`}>
-        <DeckIcon size={12} />
+      {/* As wide as a folder's toggle, so the names of a folder and a deck at
+          the same depth start at the same place. */}
+      <span class={`shrink-0 flex items-center justify-center w-6 ${active ? 'text-accent' : 'text-dim'}`}>
+        <DeckIcon size={14} />
       </span>
       <span class="truncate flex-1">{deck.name}</span>
       {deck.entries.length > 0 && (() => {
@@ -279,7 +273,7 @@ function DeckItem({ ctx, deck, depth }: { ctx: AppContext; deck: Deck; depth: nu
         const ease  = deckEase(profileId, deck, user.cards, user.cardWorks, w);
         return (
           <span class="flex gap-0.5 items-center shrink-0">
-            <span class={`w-2 h-2 rounded-full ${availabilityColor(avail)}`} title={t('deck.dot.recall', { pct: pct(avail) })} />
+            <span class={`w-2 h-2 rounded-full ${availabilityColor(avail, ease === 0)}`} title={ease === 0 ? t('deck.neverReviewed') : t('deck.dot.recall', { pct: pct(avail) })} />
             <span
               class={`w-2 h-2 rounded-full ${ease === 0 ? 'bg-border' : ease >= 0.6 ? 'bg-success' : ease >= 0.35 ? 'bg-warn' : 'bg-danger'}`}
               title={ease === 0 ? t('deck.neverReviewed') : t('deck.dot.ease', { pct: pct(ease) })}
@@ -302,25 +296,23 @@ function FolderItem({ ctx, folder, depth }: { ctx: AppContext; folder: Folder; d
       <div
         ref={ref}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        class={`flex items-center gap-1.5 py-1 pr-2 rounded cursor-pointer transition-colors text-sm ${active ? 'bg-accent/15 text-accent' : 'text-muted hover:text-primary hover:bg-elevated'}`}
+        class={`${ROW_CLASS} ${rowState(active)}`}
         onClick={() => ctx.navigate({ view: 'folder', folderId: folder.id })}
       >
+        {/* The folder's own icon folds it: a 24 × 32 target on the row's
+            height, apart from the name, which opens it. */}
         <span
-          class={`shrink-0 flex items-center cursor-pointer ${active ? 'text-accent' : 'text-dim'}`}
+          role="button"
+          aria-expanded={isOpen}
+          aria-label={t(isOpen ? 'sidebar.folder.collapse' : 'sidebar.folder.expand')}
+          title={t(isOpen ? 'sidebar.folder.collapse' : 'sidebar.folder.expand')}
+          class={`shrink-0 flex items-center justify-center w-6 min-h-8 rounded-md cursor-pointer hover:bg-border/60 ${active ? 'text-accent' : 'text-dim'}`}
           onClick={(e) => {
             e.stopPropagation();
             updateCollapsed(next => { if (next.has(folder.id)) next.delete(folder.id); else next.add(folder.id); });
           }}
         >
-          {isOpen ? (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
-            </svg>
-          ) : (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-          )}
+          {isOpen ? <FolderOpenIcon size={14} /> : <FolderIcon size={14} />}
         </span>
         <span class="truncate flex-1 font-medium">{folder.name}</span>
       </div>
@@ -378,17 +370,16 @@ export function Sidebar({ ctx }: { ctx: AppContext }) {
 
   return (
     <aside class="flex flex-col h-full bg-surface border-r border-border w-full">
+      {/* The two bars, top and bottom, are one height (a 32 px target in a
+          4 px margin) and one material, so the tree sits between two equal
+          edges. */}
       <div class="shrink-0 px-2 py-1 flex items-center justify-end gap-0.5 border-b border-border">
-        <IconBtn title={t('sidebar.expandAll')} onClick={() => { collapsedSignal.value = new Set(); }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="7 13 12 18 17 13" /><polyline points="7 6 12 11 17 6" />
-          </svg>
-        </IconBtn>
-        <IconBtn title={t('sidebar.collapseAll')} onClick={() => { collapsedSignal.value = new Set(collectAllFolderIds(user)); }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="17 11 12 6 7 11" /><polyline points="17 18 12 13 7 18" />
-          </svg>
-        </IconBtn>
+        <IconButton label={t('sidebar.expandAll')} onClick={() => { collapsedSignal.value = new Set(); }}>
+          <ExpandAllIcon size={14} />
+        </IconButton>
+        <IconButton label={t('sidebar.collapseAll')} onClick={() => { collapsedSignal.value = new Set(collectAllFolderIds(user)); }}>
+          <CollapseAllIcon size={14} />
+        </IconButton>
       </div>
 
       <div class="flex-1 overflow-y-auto py-1 px-2 space-y-0.5">
@@ -402,29 +393,39 @@ export function Sidebar({ ctx }: { ctx: AppContext }) {
         })}
       </div>
 
-      <div class="border-t border-border shrink-0 px-3 py-2 flex items-center justify-between">
-        <span class="text-[10px] text-dim select-none">{t('sidebar.new')}</span>
-        <div class="flex items-center gap-1">
-          <IconBtn
-            title={t('sidebar.newFolder')}
-            onClick={() => promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
-              ctx.mutate(s => {
-                const id = generateId();
-                s.folders[id] = { id, name, folderIds: [], deckIds: [] };
-                s.rootFolderIds.push(id);
-              });
-            })}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-          </IconBtn>
-          <IconBtn title={t('sidebar.newDeck')} onClick={() => showCreateDeckModal(ctx, null)}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
-            </svg>
-          </IconBtn>
-        </div>
+      {/* Creation, at the foot of the tree: two named buttons, + and the
+          tree's own folder and deck icons, the words the folder page uses.
+          It was a 10 px "New…" beside two bare 24 px icons — the only text of
+          the sidebar under its 14 px, and the only targets under 32.
+          A narrow sidebar drops the WORDS, never the buttons' size (the user,
+          2026-11-11): a container query on this bar (styles.css,
+          .sidebar-new), so the names go before they would be cut, and the
+          icons say the rest — the full name is the tooltip. */}
+      <div class="sidebar-new border-t border-border shrink-0 px-2 py-1 flex items-center gap-1">
+        <button
+          type="button"
+          class="btn-ghost flex-1 min-w-0 min-h-8 px-2 inline-flex items-center justify-center gap-1.5 text-xs"
+          title={t('modal.newFolder.title')}
+          aria-label={t('modal.newFolder.title')}
+          onClick={() => promptModal(t('modal.newFolder.title'), t('modal.newFolder.label'), '', name => {
+            ctx.mutate(s => {
+              const id = generateId();
+              s.folders[id] = { id, name, folderIds: [], deckIds: [] };
+              s.rootFolderIds.push(id);
+            });
+          })}
+        >
+          <span class="shrink-0 flex"><PlusIcon size={12} /></span><span class="shrink-0 flex"><FolderIcon size={14} /></span><span class="sidebar-new-label whitespace-nowrap">{t('sidebar.newFolder')}</span>
+        </button>
+        <button
+          type="button"
+          class="btn-ghost flex-1 min-w-0 min-h-8 px-2 inline-flex items-center justify-center gap-1.5 text-xs"
+          title={t('modal.newDeck.title')}
+          aria-label={t('modal.newDeck.title')}
+          onClick={() => showCreateDeckModal(ctx, null)}
+        >
+          <span class="shrink-0 flex"><PlusIcon size={12} /></span><span class="shrink-0 flex"><DeckIcon size={14} /></span><span class="sidebar-new-label whitespace-nowrap">{t('sidebar.newDeck')}</span>
+        </button>
       </div>
     </aside>
   );

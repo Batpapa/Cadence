@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { t } from '../services/i18nService';
 import { saveFailure, reportSaveRecovered } from '../services/saveHealth';
 import { retrySave } from '../store';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, MODAL_W } from './modal';
 import { showStorageModal } from './storageModal';
 
 /** What went wrong, what it costs, and that nothing has to be done beyond
@@ -48,5 +48,5 @@ export function showSaveFailureModal(): void {
   showModal(t('saveFailure.title'), el, [
     { label: t('saveFailure.openStorage'), onClick: () => { closeModal(); acknowledge(); showStorageModal(); } },
     { label: t('common.close'), primary: true, onClick: () => { closeModal(); acknowledge(); } },
-  ], { maxWidth: '26rem', onDismiss: acknowledge });
+  ], { maxWidth: MODAL_W.m, onDismiss: acknowledge });
 }

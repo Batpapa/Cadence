@@ -8,7 +8,8 @@ import { qualityColour, faded } from './followColour';
 import { keyGapText } from '../session/keyName';
 import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon,
-  WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon } from './icons';
+  WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon,
+  MinusIcon, CrossIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
@@ -26,7 +27,7 @@ import { createAbcPlayer, type AbcPlayer, type PlayState, type Place, type Playe
 import { bindFaceSplit } from './faceSplit';
 import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
 import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds } from '../services/abcBounds';
-import { showModal, updateTopModal, setModalMaxWidth, confirmModal, askUnsavedChanges } from './modal';
+import { showModal, updateTopModal, setModalMaxWidth, confirmModal, askUnsavedChanges, MODAL_W } from './modal';
 import { splitFileName, renamedFileName, safeFileName } from '../services/attachmentNames';
 import type { AudioPresetsBinding } from '../services/audioPresets';
 import { playIcon, pauseIcon, stopIcon, rewindIcon, repeatIcon, boundIcon } from './playbackIcons';
@@ -328,7 +329,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
     // The instrument DOES re-prime: hearing it is the whole point of picking
     // one, and it is a change the current score can actually take on.
     () => { persist(); onApply(); },
-    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
+    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
   );
   // The select's own wrapper is `flex:1`, so it takes what the label leaves.
   instrSelect.style.maxWidth = '14rem';
@@ -403,7 +404,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
     ],
     abcOpenMode(appState.value),
     (v) => void mutate(st => { st.abcOpenMode = v as AbcOpenMode; }),
-    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
+    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
   );
   openSelect.style.maxWidth = '14rem';
 
@@ -431,7 +432,7 @@ export function showAbcPrefsModal(onApply: () => void, onSyntaxCheck?: () => voi
         if (v === ABC_PAPER_AUTO) delete st.abcPaper; else st.abcPaper = v as AbcPaper;
       }).then(() => onApply());
     },
-    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
+    'flex items-center gap-2 w-full text-sm bg-surface border border-border rounded-md px-3 py-1.5 text-primary cursor-pointer hover:border-accent',
   );
   paperSelect.style.maxWidth = '14rem';
 
@@ -474,18 +475,18 @@ function showTransposeModal(current: number, limit: number, onPick: (semitones: 
 
   const row = document.createElement('div');
   row.className = 'flex items-center justify-center gap-5';
-  const stepBtn = 'btn-ghost border border-border w-11 h-11 p-0 rounded-full flex items-center justify-center shrink-0 text-lg leading-none';
+  const stepBtn = 'btn-outline w-11 h-11 p-0 rounded-full flex items-center justify-center shrink-0';
 
   const down = document.createElement('button');
   down.className = stepBtn;
-  down.textContent = '−';
+  down.appendChild(iconElement(MinusIcon, 16));
   down.setAttribute('aria-label', t('fileViewer.abc.transposeDown'));
   const readout = document.createElement('span');
   readout.className = 'font-mono tabular-nums text-2xl text-center';
   readout.style.width = '3ch';
   const up = document.createElement('button');
   up.className = stepBtn;
-  up.textContent = '+';
+  up.appendChild(iconElement(PlusIcon, 16));
   up.setAttribute('aria-label', t('fileViewer.abc.transposeUp'));
   row.append(down, readout, up);
 
@@ -533,7 +534,7 @@ function showTransposeModal(current: number, limit: number, onPick: (semitones: 
   body.append(row, said, reset);
   // + pressed several times, and the first press makes the dialog taller: the
   // reset appears, and the sentence can take a second line.
-  showModal(t('fileViewer.abc.transpose'), body, [], { maxWidth: '20rem', pinTop: true });
+  showModal(t('fileViewer.abc.transpose'), body, [], { maxWidth: MODAL_W.s, pinTop: true });
 }
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
@@ -828,6 +829,7 @@ export function showPreviewModal(
           })
           .catch((e) => {
             console.warn('[heic] could not convert ' + entry.name, e);
+            status.className = 'text-sm text-danger py-8';
             status.textContent = t('fileViewer.imageUnreadable');
           });
       }, { once: true });
@@ -975,7 +977,7 @@ export function showPreviewModal(
     // Safari's floats at the bottom, where both leave the button in the
     // grey around the page.
     const pdfFullscreenBtn = document.createElement('button');
-    pdfFullscreenBtn.className = 'abc-score-tool-small absolute z-20 rounded transition-colors cursor-pointer flex items-center justify-center';
+    pdfFullscreenBtn.className = 'abc-score-tool-small absolute z-20 rounded-md transition-colors cursor-pointer flex items-center justify-center';
     pdfFullscreenBtn.style.setProperty('--abc-ink', '#000000');
     pdfFullscreenBtn.style.background = 'rgba(255, 255, 255, 0.85)';
     Object.assign(pdfFullscreenBtn.style, useEmbed
@@ -983,7 +985,7 @@ export function showPreviewModal(
       : { top: '0.25rem', right: '0.25rem' });
     const labelPdfButton = () => {
       const key = pdfFullscreen ? 'fileViewer.pdf.fullscreenExit' : 'fileViewer.pdf.fullscreen';
-      pdfFullscreenBtn.replaceChildren(iconElement(pdfFullscreen ? CollapseIcon : ExpandIcon, 13));
+      pdfFullscreenBtn.replaceChildren(iconElement(pdfFullscreen ? CollapseIcon : ExpandIcon, 14));
       pdfFullscreenBtn.title = t(key);
       pdfFullscreenBtn.setAttribute('aria-label', t(key));
     };
@@ -1107,7 +1109,7 @@ export function showPreviewModal(
     topRow.className = 'flex items-center justify-between gap-2 flex-nowrap';
 
     const tabBar = document.createElement('div');
-    tabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg w-fit shrink-0';
+    tabBar.className = 'seg seg-lg w-fit shrink-0';
     // Icons, the card's incipit's (incipit.tsx): the note for the stave, "ABC"
     // set small for the text (2026-11-01, the user) — the words in tooltips.
     const mkAbcTab = (label: string, face: Node): HTMLButtonElement => {
@@ -1119,7 +1121,9 @@ export function showPreviewModal(
     };
     const mkAbcGlyph = (): HTMLSpanElement => {
       const g = document.createElement('span');
-      g.className = 'text-[9px] font-mono font-bold leading-none';
+      // Tight tracking: at the 11 px floor (it was 9) the row of faces grew by
+      // 7 px and pushed the Play-along toggle off a 390 px phone's edge.
+      g.className = 'text-2xs font-mono font-bold leading-none tracking-tighter';
       g.textContent = 'ABC';
       return g;
     };
@@ -1128,9 +1132,9 @@ export function showPreviewModal(
     // user): the stave and its text at once, to write ABC while reading what
     // it says — what the tester switched to abcTools for.
     const bothGlyph = document.createElement('span');
-    bothGlyph.className = 'flex items-center gap-0.5';
+    bothGlyph.className = 'flex items-center';
     const plus = document.createElement('span');
-    plus.className = 'text-[10px] font-bold leading-none';
+    plus.className = 'text-2xs font-bold leading-none';
     plus.textContent = '+';
     bothGlyph.append(iconElement(MusicNoteIcon, 12), plus, mkAbcGlyph());
     const sheetTabBtn = mkAbcTab(t('fileViewer.abc.sheetTab'), iconElement(MusicNoteIcon, 14));
@@ -1149,7 +1153,7 @@ export function showPreviewModal(
       b.append(iconElement(icon, 16));
       b.setAttribute('aria-label', label);
       b.title = label;
-      b.className = 'abc-tool-btn text-xs font-medium text-muted hover:text-primary hover:bg-elevated disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted';
+      b.className = 'abc-tool-btn text-xs font-medium text-muted hover:text-primary hover:bg-elevated disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted';
       return b;
     };
     const prevBtn = mkNavBtn(ArrowLeftIcon, t('fileViewer.abc.prevVersion'));
@@ -1393,8 +1397,8 @@ export function showPreviewModal(
     };
     if (audioSyncBtn && audioSync) {
       audioSyncBtn.type = 'button';
-      audioSyncBtn.append(iconElement(ScoreFollowIcon, 13), audioSyncLabel);
-      if (audioSync.fromDrive) audioSyncBtn.appendChild(iconElement(CloudIcon, 11));
+      audioSyncBtn.append(iconElement(ScoreFollowIcon, 14), audioSyncLabel);
+      if (audioSync.fromDrive) audioSyncBtn.appendChild(iconElement(CloudIcon, 12));
       // A long press is not also a click once it has done its work.
       let pressTimer = 0, pressed = false;
       audioSyncBtn.onclick = () => {
@@ -1545,7 +1549,7 @@ export function showPreviewModal(
       paintPlayAlong();
     };
     playAlongBtn.type = 'button';
-    playAlongBtn.append(iconElement(MicIcon, 13), playAlongLabel);
+    playAlongBtn.append(iconElement(MicIcon, 14), playAlongLabel);
     playAlongBtn.setAttribute('aria-label', t('fileViewer.abc.playAlong'));
     // Turned off with a take in hand: asked first (PlayAlongView.settleTake).
     playAlongBtn.onclick = () => {
@@ -1681,12 +1685,12 @@ export function showPreviewModal(
       const head = document.createElement('button');
       head.type = 'button';
       head.className = 'flex items-center gap-2 text-warn font-medium text-left cursor-pointer';
-      head.appendChild(iconElement(WarningTriangleIcon, 13));
+      head.appendChild(iconElement(WarningTriangleIcon, 14));
       const headText = document.createElement('span');
       headText.textContent = t('fileViewer.abc.warnings', { n: String(list.length) });
       const chevron = document.createElement('span');
       chevron.className = 'ml-auto transition-transform';
-      chevron.appendChild(iconElement(ChevronDownIcon, 10));
+      chevron.appendChild(iconElement(ChevronDownIcon, 12));
       head.append(headText, chevron);
       const details = document.createElement('div');
       details.className = 'flex-col gap-1';
@@ -1852,11 +1856,11 @@ export function showPreviewModal(
 
     const boundsGroup = document.createElement('div');
     boundsGroup.className = 'flex items-center rounded-lg border border-border bg-bg shrink-0';
-    const mkBoundBtn = (html: string, cls: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const mkBoundBtn = (face: string | Element, cls: string, title: string, onClick: () => void): HTMLButtonElement => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `abc-tool-btn text-xs font-mono font-semibold ${cls}`;
-      b.innerHTML = html;
+      if (typeof face === 'string') b.innerHTML = face; else b.appendChild(face);
       b.title = title;
       b.setAttribute('aria-label', title);
       b.onclick = () => { b.blur(); onClick(); };
@@ -1864,7 +1868,7 @@ export function showPreviewModal(
     };
     const boundInBtn = mkBoundBtn(boundIcon('in'), 'abc-bound-btn-in', t('fileViewer.abc.bounds.setIn'), () => setBoundHere('in'));
     const boundOutBtn = mkBoundBtn(boundIcon('out'), 'abc-bound-btn-out', t('fileViewer.abc.bounds.setOut'), () => setBoundHere('out'));
-    const boundClearBtn = mkBoundBtn('✕', 'text-muted hover:text-primary disabled:opacity-30 disabled:cursor-default disabled:hover:text-muted',
+    const boundClearBtn = mkBoundBtn(iconElement(CrossIcon, 14), 'text-muted hover:text-primary disabled:opacity-40 disabled:cursor-default disabled:hover:text-muted',
       t('fileViewer.abc.bounds.clear'), () => { bounds = { in: null, out: null }; boundsChanged(); });
     boundsGroup.append(boundInBtn, boundOutBtn, boundClearBtn);
     boundsGroup.dataset.tour = 'abc-bounds';
@@ -1906,7 +1910,7 @@ export function showPreviewModal(
       down.className = 'abc-tool-btn text-muted hover:text-primary';
       down.title = titles.down;
       down.setAttribute('aria-label', titles.down);
-      down.textContent = '−';
+      down.appendChild(iconElement(MinusIcon, 14));
       const value = document.createElement('button');
       value.className = 'px-2 min-h-[2.25rem] text-xs font-medium tabular-nums text-primary cursor-pointer transition-colors hover:text-accent';
       value.title = titles.reset;
@@ -1914,7 +1918,7 @@ export function showPreviewModal(
       up.className = 'abc-tool-btn text-muted hover:text-primary';
       up.title = titles.up;
       up.setAttribute('aria-label', titles.up);
-      up.textContent = '+';
+      up.appendChild(iconElement(PlusIcon, 14));
       down.onclick = () => { down.blur(); onStep(-1); };
       up.onclick = () => { up.blur(); onStep(1); };
       value.onclick = () => { value.blur(); onReset(); };
@@ -2114,11 +2118,11 @@ export function showPreviewModal(
     const scoreTools = document.createElement('div');
     scoreTools.className = 'absolute top-1 right-1 z-20 flex items-center';
     const fullscreenBtn = document.createElement('button');
-    fullscreenBtn.className = 'abc-score-tool-small rounded transition-colors cursor-pointer flex items-center justify-center';
+    fullscreenBtn.className = 'abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center';
     fullscreenBtn.title = t('fileViewer.abc.fullscreen');
     fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreen'));
     fullscreenBtn.dataset.tour = 'abc-fullscreen';
-    fullscreenBtn.appendChild(iconElement(ExpandIcon, 13));
+    fullscreenBtn.appendChild(iconElement(ExpandIcon, 14));
     fullscreenBtn.addEventListener('click', () => fullscreenBtn.blur());
     scoreTools.appendChild(fullscreenBtn);
     scoreFrame.appendChild(scoreTools);
@@ -2238,7 +2242,7 @@ export function showPreviewModal(
       fullscreen.remove();
       fullscreen = null;
       capScore();
-      fullscreenBtn.replaceChildren(iconElement(ExpandIcon, 13));
+      fullscreenBtn.replaceChildren(iconElement(ExpandIcon, 14));
       fullscreenBtn.title = t('fileViewer.abc.fullscreen');
       fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreen'));
       // The box changed width twice over on the way out; the score has to be
@@ -2273,7 +2277,7 @@ export function showPreviewModal(
       overlay.append(scoreFrame, transportBar);
       document.body.appendChild(overlay);
       fullscreen = overlay;
-      fullscreenBtn.replaceChildren(iconElement(CollapseIcon, 13));
+      fullscreenBtn.replaceChildren(iconElement(CollapseIcon, 14));
       fullscreenBtn.title = t('fileViewer.abc.fullscreenExit');
       fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreenExit'));
       wakeLock.hold();
@@ -2535,11 +2539,12 @@ export function showPreviewModal(
       const b = document.createElement('button');
       b.appendChild(icon);
       b.title = title;
-      b.className = `px-2 py-1 rounded transition-colors cursor-pointer text-muted hover:bg-elevated ${danger ? 'hover:text-danger' : 'hover:text-primary'}`;
+      b.setAttribute('aria-label', title);
+      b.className = `abc-tool-btn text-muted hover:bg-elevated ${danger ? 'hover:text-danger' : 'hover:text-primary'}`;
       return b;
     };
-    const addVersionBtn = mkEditBtn(iconElement(PlusIcon, 13), t('fileViewer.abc.addVersion'), false);
-    const deleteVersionBtn = mkEditBtn(iconElement(TrashIcon, 13), t('fileViewer.abc.deleteVersion'), true);
+    const addVersionBtn = mkEditBtn(iconElement(PlusIcon, 14), t('fileViewer.abc.addVersion'), false);
+    const deleteVersionBtn = mkEditBtn(iconElement(TrashIcon, 14), t('fileViewer.abc.deleteVersion'), true);
     versionEdit.append(addVersionBtn, deleteVersionBtn);
 
     const saveGroup = document.createElement('div');
@@ -2696,15 +2701,14 @@ export function showPreviewModal(
       if (before.in !== bounds.in || before.out !== bounds.out) paintBoundControls();
     };
 
-    /** The ● on the ABC tab: the stave may be showing an edit, and nothing
-     *  else on that face would say so. */
+    /** The dot on the ABC tab: the stave may be showing an edit, and nothing
+     *  else on that face would say so. Drawn, not a "●" character. */
     const markDraft = (): void => {
       textTabBtn.replaceChildren(abcGlyph);
       textTabBtn.title = t('fileViewer.abc.textTab');
       if (!draft) return;
       const dot = document.createElement('span');
-      dot.className = 'text-warn ml-1 text-xs';
-      dot.textContent = '●';
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-warn ml-1 shrink-0';
       textTabBtn.appendChild(dot);
       textTabBtn.title = `${t('fileViewer.abc.textTab')} · ${t('unsaved.title')}`;
     };
@@ -2776,16 +2780,19 @@ export function showPreviewModal(
     }
 
     function paintTabs(mode: ScoreFace): void {
-      const active = 'bg-accent text-white';
-      const inactive = 'text-muted hover:text-primary hover:bg-elevated';
-      // `min-h-[2.25rem]`: 36 layout px, which the app's own zoom turns into 45
-      // on a desktop and 32,4 on a phone — the floor `.tap-btn` sets everywhere
-      // else. These were 24 px tall until 2026-09-21. As wide, an icon each —
-      // the "both" tab two icons wide, with a little room either side.
-      const tabBase = 'flex items-center justify-center min-w-[2.25rem] min-h-[2.25rem] rounded transition-colors cursor-pointer';
-      sheetTabBtn.className = `${tabBase} ${mode === 'sheet' ? active : inactive}`;
-      textTabBtn.className  = `${tabBase} ${mode === 'text'  ? active : inactive}`;
-      bothTabBtn.className  = `${tabBase} px-1.5 ${mode === 'both' ? active : inactive}`;
+      // The segmented control's button, on the `seg-lg` rail: 36 layout px,
+      // which the app's own zoom turns into 45 on a desktop and 32,4 on a
+      // phone — the floor `.tap-btn` sets everywhere else. These were 24 px
+      // tall until 2026-09-21. As wide, an icon each (no padding, so the one-icon tabs
+      // stay square) — the "both" tab two icons
+      // wide, with a little room either side.
+      // `px-0 gap-0`: as narrow as before the charter (measured on an
+      // iPhone 14: the class's padding and gap made the rail 30 px wider and
+      // pushed the versions' box off the dialog's right edge).
+      const tabBase = 'seg-btn px-0 gap-0 min-w-[2.25rem]';
+      sheetTabBtn.className = `${tabBase}${mode === 'sheet' ? ' seg-btn-on' : ''}`;
+      textTabBtn.className  = `${tabBase}${mode === 'text'  ? ' seg-btn-on' : ''}`;
+      bothTabBtn.className  = `${tabBase} px-1.5${mode === 'both' ? ' seg-btn-on' : ''}`;
     }
 
     /** Whether the ABC source is on screen — to refill the box only when it
@@ -3880,7 +3887,7 @@ export function showPreviewModal(
       prepareSound();
     }).catch(() => {
       const err = document.createElement('p');
-      err.className = 'text-sm text-dim italic';
+      err.className = 'text-sm text-danger';
       err.textContent = t('fileViewer.abcError');
       body.appendChild(err);
     });
@@ -3989,11 +3996,13 @@ export function showPreviewModal(
         container.append(textarea, saveRow);
       } else {
         const tabBar = document.createElement('div');
-        tabBar.className = 'flex gap-1 p-1 bg-bg rounded-lg w-fit';
+        // The segmented control, at the ABC faces' height: the same rail,
+        // and it was 24 px against their 36.
+        tabBar.className = 'seg seg-lg w-fit';
         const mkTab = (label: string): HTMLButtonElement => {
           const b = document.createElement('button');
           b.textContent = label;
-          b.className = 'px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer';
+          b.className = 'seg-btn';
           return b;
         };
         const renderedTab = mkTab(t('fileViewer.text.renderedTab'));
@@ -4001,10 +4010,8 @@ export function showPreviewModal(
         tabBar.append(renderedTab, sourceTab);
 
         const setTextMode = (mode: 'rendered' | 'source') => {
-          const active = 'bg-accent text-white';
-          const inactive = 'text-muted hover:text-primary hover:bg-elevated';
-          renderedTab.className = `px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${mode === 'rendered' ? active : inactive}`;
-          sourceTab.className = `px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${mode === 'source' ? active : inactive}`;
+          renderedTab.className = `seg-btn${mode === 'rendered' ? ' seg-btn-on' : ''}`;
+          sourceTab.className = `seg-btn${mode === 'source' ? ' seg-btn-on' : ''}`;
           rendered.style.display = mode === 'rendered' ? '' : 'none';
           textarea.style.display = mode === 'source' ? 'block' : 'none';
           saveRow.style.display = mode === 'source' ? 'flex' : 'none';
@@ -4060,12 +4067,12 @@ export function showPreviewModal(
     headerActions: isScore
       ? [
           {
-            icon: iconElement(ExternalLinkIcon, 15),
+            icon: iconElement(ExternalLinkIcon, 16),
             title: t('fileViewer.abc.openInAbcTools'),
             onClick: () => openInAbcTools?.(),
           },
           {
-            icon: iconElement(GearIcon, 15),
+            icon: iconElement(GearIcon, 16),
             title: t('fileViewer.abc.prefs.title'),
             tour: 'abc-gear',
             onClick: () => showAbcPrefsModal(() => reapplyAbcPrefs?.(), () => recheckAbcSyntax?.()),

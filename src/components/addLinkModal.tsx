@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { signal, type Signal } from '@preact/signals';
 import type { Attachment, EmbedEntry, LinkMode } from '../types';
 import { generateId, focusIfDesktop } from '../utils';
-import { showModal, closeModal, renderModalBody, askUnsavedChanges } from './modal';
+import { showModal, closeModal, renderModalBody, askUnsavedChanges, MODAL_W } from './modal';
+import { Segmented } from './ui';
 import { t } from '../services/i18nService';
 import { checkEmbed, checkLink, detectPlatform, safeExternalUrl, linkMode, embedAutoTitle, type LinkCheck, type EmbedPlatform } from '../services/embedService';
 import { refusalMessage, type RemoteRefusal } from '../services/remoteFile';
@@ -245,21 +246,13 @@ function LinkBody({ draft, initial, state, known, saved, lookup, disabled, busy,
         />
       </div>
 
-      {/* The session library's segmented control, to the class: a background
-          pill holding the two choices, rather than two loose buttons. */}
-      <div class="flex gap-1 p-1 bg-bg rounded-lg">
-        {MODES.map(([id, key]) => (
-          <button
-            key={id}
-            type="button"
-            class={`flex-1 px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-              mode === id ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-elevated'}`}
-            onClick={() => apply({ mode: id })}
-          >
-            {t(key)}
-          </button>
-        ))}
-      </div>
+      {/* The app's one segmented control, its two halves sharing the width. */}
+      <Segmented
+        class="flex w-full [&>*]:flex-1"
+        value={mode}
+        options={MODES.map(([id, key]) => ({ value: id, label: t(key) }))}
+        onChange={(id) => apply({ mode: id })}
+      />
 
       <div>
         <label class="label">{t('embed.name')}</label>
@@ -284,7 +277,7 @@ function LinkBody({ draft, initial, state, known, saved, lookup, disabled, busy,
             be lights up once it is confirmed — the list doubles as the
             verdict, and says WHICH of them it is. */}
         {mode === 'embed' && (
-          <p class="mt-1 text-[11px] text-dim leading-relaxed">
+          <p class="mt-1 text-2xs text-dim leading-relaxed">
             {t('embed.mode.hintLabel')}{' '}
             {SUPPORTED.map(([id, label], i) => (
               <span key={id}>
@@ -425,7 +418,7 @@ function showLinkModal(title: string, confirmLabel: string, base: EmbedEntry | u
     { label: t('common.cancel'), onClick: leave },
     { label: confirmLabel, primary: true, disabled, onClick: () => { void commit(); } },
   ], {
-    maxWidth: '26rem',
+    maxWidth: MODAL_W.m,
     onDismiss: cleanup,
     // Leaving with an edit not saved asks first — the ✕, Escape, a click
     // outside, the back gesture. Not the Cancel button: that one IS the

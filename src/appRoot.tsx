@@ -10,7 +10,8 @@ import { CommandPaletteHost } from './components/commandPalette';
 import { initScrollRestoration } from './components/scrollRestoration';
 import { DeckPickerHost } from './components/deckSelector';
 import { WelcomePrefs } from './components/welcomePrefs';
-import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon } from './components/icons';
+import { GithubIcon, CloudDownIcon, UpdateIcon, InstallIcon, GooglePlayIcon, PlusIcon } from './components/icons';
+import { InlineStatus } from './components/ui';
 import { WelcomeTour } from './components/welcomeTour';
 import { webAppButtonAction, openPlayStore } from './components/installOffer';
 import { isNative } from './native/platform';
@@ -229,7 +230,7 @@ function Signature({ class: extra }: { class: string }) {
         target="_blank"
         rel="noopener noreferrer"
         title={t('welcome.sourceTitle')}
-        class="flex items-center gap-1.5 text-[10.5px] text-dim hover:text-primary transition-colors"
+        class="flex items-center gap-1.5 text-2xs text-dim hover:text-primary transition-colors"
       >
         <GithubIcon size={12} />
         <span>Batpapa</span>
@@ -239,7 +240,7 @@ function Signature({ class: extra }: { class: string }) {
           when asking for help. When a newer build is ready it becomes the
           way to get it — nothing is open on this screen for a reload to
           lose, and there is no header here to carry the pill. */}
-      <div class="flex items-center gap-2 text-[10px] text-dim tabular-nums">
+      <div class="flex items-center gap-2 text-2xs text-dim tabular-nums">
         <span>{versionLabel()}</span>
         {updateReady.value && (
           <button
@@ -247,7 +248,7 @@ function Signature({ class: extra }: { class: string }) {
             title={t('update.title', { version: versionLabel(updateReady.value) })}
             onClick={applyUpdate}
           >
-            <UpdateIcon size={11} />
+            <UpdateIcon size={12} />
             {t('update.button')}
           </button>
         )}
@@ -349,10 +350,10 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
         </div>
 
         <div class="rise-in text-center" style="animation-delay:.7s">
-          <div class="text-[38px] font-extralight tracking-[-0.015em] leading-none text-primary">
+          <div class="text-[38px] font-extralight tracking-[-0.015em] leading-none text-primary">{/* ui-ok: Vitrine register */}
             Cadence
           </div>
-          <p class="text-[13.5px] text-muted leading-relaxed mt-3.5 text-pretty">
+          <p class="text-[13.5px] text-muted leading-relaxed mt-3.5 text-pretty">{/* ui-ok: Vitrine register */}
             {t('welcome.tagline')}
           </p>
         </div>
@@ -361,7 +362,7 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
 
         {/* ── Sélection ── */}
         <div class="rise-in w-full" style="animation-delay:1.05s">
-          <h1 class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
+          <h1 class="text-2xs font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
             {t('userSelector.title')}
           </h1>
 
@@ -421,16 +422,17 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             ) : (
               <>
                 <button
-                  class="rise-in w-full flex items-center justify-center gap-2 px-3.5 py-[11px] rounded-xl border border-dashed border-border text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer text-[13.5px]"
+                  class="rise-in w-full flex items-center justify-center gap-2 px-3.5 py-[11px] rounded-xl border border-dashed border-border text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer text-[13.5px]" // ui-ok: Vitrine register
                   style={`animation-delay:${1.1 + users.length * 0.07}s`}
                   disabled={!!loading}
                   onClick={() => setCreating(true)}
                 >
-                  + {t('userSelector.new')}
+                  <PlusIcon size={14} />
+                  {t('userSelector.new')}
                 </button>
                 {onRecover && (
                   <button
-                    class={`rise-in w-full flex items-center justify-center gap-2 px-3.5 py-[11px] rounded-xl border border-dashed border-border text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer text-[13.5px] ${loading === 'drive' ? 'opacity-60' : ''}`}
+                    class={`rise-in w-full flex items-center justify-center gap-2 px-3.5 py-[11px] rounded-xl border border-dashed border-border text-dim hover:border-muted hover:text-primary transition-colors cursor-pointer text-[13.5px] ${loading === 'drive' ? 'opacity-60' : ''}`} // ui-ok: Vitrine register
                     style={`animation-delay:${1.1 + (users.length + 1) * 0.07}s`}
                     disabled={!!loading}
                     // Google's script is only fetched on first use. Starting it
@@ -449,20 +451,21 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
             )}
           </div>
 
+          {/* An error, said as one (UI charter, 2026-11-11): it was grey. */}
           {recoverError && (
-            <p class="text-xs text-muted leading-relaxed text-center text-pretty mt-2.5">
+            <InlineStatus tone="error" class="justify-center text-center leading-relaxed text-pretty mt-2.5">
               {t(recoverError === 'inAppBrowser' ? 'settings.sync.inAppBrowserError' : 'userSelector.recover.failed')}
-            </p>
+            </InlineStatus>
           )}
 
           {(installWebApp || showPlay) && (
             <div class="rise-in mt-8" style={`animation-delay:${1.1 + (users.length + 2) * 0.07}s`}>
-              <div class="text-[10.5px] font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
+              <div class="text-2xs font-semibold text-dim uppercase tracking-[0.16em] text-center mb-3.5">
                 {t('settings.install')}
               </div>
               <div class="flex gap-2">
-                {installWebApp && <InstallTile icon={<InstallIcon size={15} />} label={t('welcome.install.webApp')} onClick={installWebApp} />}
-                {showPlay && <InstallTile icon={<GooglePlayIcon size={15} />} label={t('shareApp.target.android')} onClick={openPlayStore} />}
+                {installWebApp && <InstallTile icon={<InstallIcon size={16} />} label={t('welcome.install.webApp')} onClick={installWebApp} />}
+                {showPlay && <InstallTile icon={<GooglePlayIcon size={16} />} label={t('shareApp.target.android')} onClick={openPlayStore} />}
               </div>
             </div>
           )}
@@ -510,7 +513,7 @@ function InstallTile({ icon, label, onClick }: {
   return (
     <button
       type="button"
-      class="flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border border-border bg-elevated hover:border-muted hover:bg-surface transition-colors cursor-pointer text-[13.5px] text-primary"
+      class="flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-[11px] rounded-xl border border-border bg-elevated hover:border-muted hover:bg-surface transition-colors cursor-pointer text-[13.5px] text-primary" // ui-ok: Vitrine register
       onClick={onClick}
     >
       <span class="shrink-0 flex">{icon}</span>

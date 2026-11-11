@@ -2,7 +2,8 @@ import { signal, computed, type Signal } from '@preact/signals';
 import { useState, useMemo } from 'preact/hooks';
 import type { AppState } from '../types';
 import { t } from '../services/i18nService';
-import { showModal, closeModal, renderModalBody } from './modal';
+import { showModal, closeModal, renderModalBody, MODAL_W } from './modal';
+import { ChevronDownIcon } from './icons';
 import { applyExternalData } from '../services/migration';
 import {
   markSyncedAfterApply, adoptDriveVersionAsBase, setConflictPending,
@@ -127,7 +128,7 @@ function ExhaustiveDiff({ local, drive }: { local: AppState; drive: AppState }) 
         class="btn-ghost text-xs w-full text-left flex items-center gap-1.5 px-0"
         onClick={() => setOpen(o => !o)}
       >
-        <span class="text-dim">{open ? '▾' : '▸'}</span>
+        <span class={`text-dim flex transition-transform ${open ? '' : '-rotate-90'}`}><ChevronDownIcon size={12} /></span>
         {t('settings.sync.diff.exhaustive')}
       </button>
 
@@ -259,7 +260,7 @@ function showDiffModal(diff: StateDiff, driveDeviceId: string | null, identical:
     // No footer button: the ✕, Escape and click-outside are the way out, and
     // all three run cleanup through onDismiss below.
     [],
-    { maxWidth: '30rem', onDismiss: cleanup },
+    { maxWidth: MODAL_W.m, onDismiss: cleanup },
   );
 }
 

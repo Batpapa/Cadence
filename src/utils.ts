@@ -119,7 +119,12 @@ export function toDateStr(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-export function availabilityColor(k: number): string {
+/** The recall dot's colour. `neverReviewed`: grey, like the ease dot beside
+ *  it — a card nobody has studied yet is not a card that was forgotten, and it
+ *  was red on the first day for every card of a fresh library (UX review,
+ *  2026-11-11, the user's call). */
+export function availabilityColor(k: number, neverReviewed = false): string {
+  if (neverReviewed) return 'bg-border';
   if (k >= 0.75) return 'bg-success';
   if (k >= 0.4)  return 'bg-warn';
   return 'bg-danger';
@@ -242,7 +247,9 @@ export function downloadBlob(blob: Blob, filename: string): void {
       .then(m => m.saveBlobNative(blob, filename))
       .catch(err => {
         console.error('[native] save failed', err);
-        alert(t('native.save.failed', { message: err instanceof Error ? err.message : String(err) }));
+        // Native, not alertModal: the recovery screen saves through here too,
+        // and it has no ModalHost for a modal to appear in.
+        alert(t('native.save.failed', { message: err instanceof Error ? err.message : String(err) })); // ui-ok: also reached from the recovery screen, which has no ModalHost
       });
     return;
   }

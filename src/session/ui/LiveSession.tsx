@@ -4,7 +4,8 @@ import type { AppContext } from '../../types';
 import { isTouchPrimaryDevice, isAppleTouchDevice } from '../../utils';
 import { isNative } from '../../native/platform';
 import { offersPlayApp, PLAY_STORE_URL } from '../../components/installOffer';
-import { playIcon, pauseIcon } from '../../components/playbackIcons';
+import { PlayIcon, PauseIcon, StopIcon } from '../../components/icons';
+import { IconButton, InlineStatus } from '../../components/ui';
 import { alertModal } from '../../components/modal';
 import type { LiveSession as LiveSessionEngine, LiveSessionPhase } from '../liveSession';
 import type { Detection } from '../model';
@@ -53,7 +54,10 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
 
   const [phase, setPhase] = useState<LiveSessionPhase>(() => live.getPhase());
   const [dateText, setDateText] = useState(() => fmtDateTime(effectiveDate(), { seconds: true }));
-  const [initStatus, setInitStatus] = useState(() => (live.getPhase() === 'initializing' ? t('sessions.initializing') : ''));
+  // `error`: an explicit flag, where a failure used to be told apart by a
+  // leading ⚠ written in the same grey as the progress lines.
+  const [initStatus, setInitStatusState] = useState(() => ({ text: live.getPhase() === 'initializing' ? t('sessions.initializing') : '', error: false }));
+  const setInitStatus = (text: string, error = false) => setInitStatusState({ text, error });
   const [annotations, setDetections] = useState<Detection[]>(() => live.getDetections());
   const [stateZoneText, setStateZoneText] = useState('');
   const [abcTickerText, setAbcTickerText] = useState('');
@@ -74,7 +78,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       ctx.navigate({ view: 'sessions', sessionId: session.id });
     } catch (err) {
       setActiveLive(null);
-      setInitStatus(`⚠ ${String(err)}`);
+      setInitStatus(String(err), true);
     }
   };
 
@@ -97,7 +101,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       },
       onDetections: (_events, all) => setDetections(all),
       onFinishing: finishingTrackerFor(live),
-      onError: (message) => setInitStatus(`⚠ ${message}`),
+      onError: (message) => setInitStatus(message, true),
       // The capture died under us — browser's own "Stop sharing", the shared
       // tab closed, a microphone unplugged. Save rather than discard: what was
       // recognised is real and the audio is already on disk, so this is a
@@ -268,18 +272,25 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         <AnalysisViewBar />
         <div class="flex items-center gap-3 p-3 mt-3 rounded-lg border border-border bg-bg">
           <span class={`w-2.5 h-2.5 rounded-full shrink-0 ${paused ? 'bg-dim' : 'bg-danger animate-pulse'}`} />
-          <span class="text-xs font-mono font-bold text-danger">{paused ? t('sessions.paused') : 'REC'}</span>
+          <span class="text-xs font-mono font-bold text-danger">{paused ? t('sessions.paused') : t('sessions.rec')}</span>
           <span ref={chronoRef} class="text-sm font-mono text-primary tabular-nums">0:00</span>
           <div class="flex-1 h-1.5 rounded-full bg-elevated overflow-hidden">
             <div ref={vuFillRef} class="h-full bg-accent transition-[width] duration-75" style={{ width: '0%' }} />
           </div>
-          <button
-            class="btn-ghost border border-border w-8 h-8 p-0 rounded-full flex items-center justify-center shrink-0"
-            title={paused ? t('sessions.resume') : t('sessions.pause')}
+          {/* The play disc of the whole app, a size up: the one control of
+              the recording that is reached for while playing. */}
+          <IconButton
+            label={paused ? t('sessions.resume') : t('sessions.pause')}
+            size="md"
+            class="hover:bg-transparent"
             onClick={onPauseClick}
-            dangerouslySetInnerHTML={{ __html: paused ? playIcon(12) : pauseIcon(12) }}
-          />
-          <button class="btn-danger px-3 shrink-0" disabled={stopping} onClick={() => { void onStopClick(); }}>
+          >
+            <span class="icon-disc w-8 h-8">{paused ? <PlayIcon size={14} /> : <PauseIcon size={14} />}</span>
+          </IconButton>
+          {/* Stop SAVES the recording and opens its summary: the way on, not a
+              destructive act — so not red. Throwing it away is the title's bin. */}
+          <button class="btn-primary shrink-0 inline-flex items-center gap-1.5" disabled={stopping} onClick={() => { void onStopClick(); }}>
+            <StopIcon size={12} />
             {t('sessions.stop')}
           </button>
         </div>
@@ -295,21 +306,23 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
         {(phase === 'recording' || phase === 'paused') && live.keepAudio && <LiveBackupIndicator live={live} />}
       </div>
 
-      <p class="text-xs text-dim text-center">{initStatus}</p>
+      {initStatus.error
+        ? <InlineStatus tone="error" class="justify-center">{initStatus.text}</InlineStatus>
+        : <p class="text-xs text-dim text-center">{initStatus.text}</p>}
 
       {/* Not in the Android app: there the recording carries on with the screen
           off or another app on top (foreground service + LiveRenderer — 47 min
           screen off, nothing lost, 2026-10-05), so both would be false. */}
       {!native && <>
-        {isTouchPrimary && <p class="text-[11px] text-dim mt-2 text-center">{t('sessions.foregroundReminder')}</p>}
+        {isTouchPrimary && <p class="text-2xs text-dim mt-2 text-center">{t('sessions.foregroundReminder')}</p>}
         {/* On Android the limit has a way out since 2026-10-26: the Play app. */}
         {isTouchPrimary && offersPlayApp() && (
-          <p class="text-[11px] text-dim mt-1 text-center">
+          <p class="text-2xs text-dim mt-1 text-center">
             {t('sessions.foregroundAppHint')}{' '}
             <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" class="text-accent underline">{t('sessions.foregroundAppLink')}</a>
           </p>
         )}
-        {isTouchPrimary && bgWarningText && <p class="text-xs text-amber-500 mt-2 text-center">{bgWarningText}</p>}
+        {isTouchPrimary && bgWarningText && <p class="text-xs text-warn mt-2 text-center">{bgWarningText}</p>}
       </>}
 
       {/* `analysis-list`: see the summary's. */}
@@ -364,7 +377,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
       </div>
 
       <p class="text-xs text-dim mt-3 text-center min-h-[1rem]">{stateZoneText}</p>
-      <p class="text-[10px] font-mono text-dim/60 text-center truncate mt-1">{abcTickerText}</p>
+      <p class="text-2xs font-mono text-dim/60 text-center truncate mt-1">{abcTickerText}</p>
     </>
   );
 }

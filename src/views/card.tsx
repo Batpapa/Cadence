@@ -5,7 +5,8 @@ import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets'
 import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
 import { copyFileName } from '../services/attachmentNames';
-import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, EyeOffIcon, SaveIcon, PlusIcon, GearIcon, DeckAddIcon } from '../components/icons';
+import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, EyeOffIcon, SaveIcon, PlusIcon, GearIcon, DeckAddIcon, ChevronDownIcon, LinkIcon } from '../components/icons';
+import { IconButton, Metric, EmptyState } from '../components/ui';
 import { selectionIsHidden, toggleSpoiler } from '../components/spoilerToggle';
 import { confirmModal, showModal, closeModal } from '../components/modal';
 import { renderNotes } from '../components/fileViewer';
@@ -62,11 +63,11 @@ function AliasLine({ aliases, onOpen }: { aliases: readonly string[]; onOpen: ()
   return (
     <button
       type="button"
-      class="flex items-baseline gap-1 max-w-full text-left text-xs text-dim hover:text-accent transition-colors cursor-pointer mt-0.5"
+      class="flex items-baseline gap-1 max-w-full text-left text-xs text-dim hover:text-accent transition-colors cursor-pointer mt-0.5 py-2 -my-2"
       title={t('card.aliases.manage')}
       onClick={onOpen}
     >
-      {aliases.length === 0 ? t('card.aliases.add') : (
+      {aliases.length === 0 ? <span class="inline-flex items-center gap-1"><PlusIcon size={12} />{t('card.aliases.add')}</span> : (
         <>
           <span class="truncate min-w-0">{t('card.aliases.line', { list: aliases.slice(0, ALIASES_SHOWN).join(' · ') })}</span>
           {/* Its own span, outside the truncation: on a phone the list is cut,
@@ -75,19 +76,6 @@ function AliasLine({ aliases, onOpen }: { aliases: readonly string[]; onOpen: ()
         </>
       )}
     </button>
-  );
-}
-
-function CardMetric({ label, value, colorClass = 'text-primary' }: {
-  label: string;
-  value: string;
-  colorClass?: string;
-}) {
-  return (
-    <div class="flex items-baseline gap-2">
-      <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{label}</span>
-      <span class={`text-sm font-mono font-semibold ${colorClass}`}>{value}</span>
-    </div>
   );
 }
 
@@ -106,16 +94,18 @@ const RATING_DEFS: Array<{ rating: SessionRating; key: string; activeClass: stri
   { rating: 'good',  key: 'rating.good',  activeClass: 'bg-accent/20 text-accent border-accent/40' },
   { rating: 'easy',  key: 'rating.easy',  activeClass: 'bg-success/20 text-success border-success/40' },
 ];
-const IDLE_BTN = 'btn border border-border text-muted hover:text-primary hover:bg-elevated text-xs py-1.5';
-// Fixed per-source brand colors — intentionally not theme-driven (the app's
-// dark/green/light themes swap via [data-theme], not Tailwind's `dark:` variant).
+const IDLE_BTN = 'btn-outline text-xs py-1.5';
+// One colour per site, so the pin tells them apart with nothing but an id on
+// it. Theme tokens now (they were raw green-500 / blue-500, the same in every
+// theme): TheSession in the Irish extension's own green — the colour it
+// already wore — and irishtune.info in the accent.
 const SOURCE_PIN_COLORS: Record<string, string> = {
-  thesession: 'text-green-500 border-green-500/30 hover:border-green-500/60',
+  thesession: 'text-irish border-irish/30 hover:border-irish/60',
   // A set comes from the same site as a tune, so it wears the same colour —
   // the pin names the source, and what kind of card this is is already said
   // by the type row and its icon.
-  'thesession-set': 'text-green-500 border-green-500/30 hover:border-green-500/60',
-  irishtuneinfo: 'text-blue-500 border-blue-500/30 hover:border-blue-500/60',
+  'thesession-set': 'text-irish border-irish/30 hover:border-irish/60',
+  irishtuneinfo: 'text-accent border-accent/30 hover:border-accent/60',
 };
 const pad = (n: number) => String(n).padStart(2, '0');
 const toInputVal = (ts: number) => {
@@ -161,7 +151,13 @@ function openSessionModal(
   // it goes (a footer button closes without running onDismiss).
   const close = () => { closeModal(); dt.unmount(); };
   showModal(onDelete ? t('card.logReview.editTitle') : t('card.logReview.title'), body, [
-    ...(onDelete ? [{ label: '', icon: iconElement(TrashIcon), danger: true, align: 'start' as const, onClick: () => { close(); onDelete(); } }] : []),
+    // An old review is costly to redo — its date and rating are gone, and the
+    // schedule is replayed without it — so it is asked first (the deletion
+    // rule of 2026-11-11). The review study just took stays immediate there.
+    ...(onDelete ? [{ label: '', icon: iconElement(TrashIcon), danger: true, align: 'start' as const, onClick: () => {
+      close();
+      confirmModal(t('study.deleteReview'), t('card.logReview.deleteConfirm'), t('common.delete'), onDelete);
+    } }] : []),
     { label: t('common.cancel'), onClick: close },
     { label: t('common.save'), primary: true, onClick: () => {
       const ts = fieldValueToDate(dt.getValue())?.getTime() ?? defaultTs;
@@ -422,10 +418,8 @@ function TagPill({ tag, index, selected, scratch, onSelect, onReorder }: {
       aria-pressed={selected}
       // The same pin the tag filters and the tag dialog use, so a selected tag
       // looks selected everywhere in the app.
-      class={`text-xs px-2 py-0.5 rounded-full border transition-colors cursor-grab active:cursor-grabbing select-none ${
-        selected
-          ? 'bg-accent text-white border-accent'
-          : 'bg-elevated border-border text-muted hoverable:border-accent hoverable:text-accent'
+      class={`chip cursor-grab active:cursor-grabbing select-none ${
+        selected ? 'chip-on' : 'hoverable:border-accent hoverable:text-accent'
       }`}
       onClick={onSelect}
     >
@@ -587,6 +581,9 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               t('card.contextMenu.migrateConfirmMessage'),
               t('card.contextMenu.migrate'),
               () => { void migrateCardToTheSession(cardId, itiMapping.sessionId); },
+              // Replaces the content, but keeps the card, its decks and its
+              // history: an accent answer, not the red of a deletion.
+              { destructive: false },
             );
           },
         }] : []),
@@ -814,19 +811,19 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               href={source.url}
               target="_blank"
               rel="noopener"
-              class={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-elevated border transition-colors shrink-0 ${SOURCE_PIN_COLORS[source.source] ?? 'text-dim border-border'}`}
+              class={`inline-flex items-center gap-1 text-2xs font-mono px-2 py-0.5 rounded-full bg-elevated border transition-colors shrink-0 relative before:absolute before:content-[''] before:inset-x-0 before:-inset-y-[5px] ${SOURCE_PIN_COLORS[source.source] ?? 'text-dim border-border'}`}
               title={source.label}
               data-tour="card-source"
               {...pinTriggerProps}
             >
               {source.id}
-              <ExternalLinkIcon size={9} />
+              <ExternalLinkIcon size={12} />
             </a>
           )}
           {pinContextMenu}
-          <button
-            class="btn-danger px-2 shrink-0"
-            title={t('card.deleteTitle')}
+          <IconButton
+            variant="danger"
+            label={t('card.deleteTitle')}
             onClick={() => confirmModal(
               t('card.delete.title'),
               t('card.delete.message', { name: card.name }),
@@ -842,8 +839,8 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               },
             )}
           >
-            <TrashIcon />
-          </button>
+            <TrashIcon size={14} />
+          </IconButton>
         </div>
 
         {/* Deck chips */}
@@ -861,29 +858,28 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               </span>
             );
           })}
-          <span
-            class="inline-flex items-center gap-1 text-xs text-dim hover:text-primary transition-colors cursor-pointer"
-            title={t('card.manageDecks')}
+          <IconButton
+            label={t('card.manageDecks')}
             onClick={() => showManageDecksModal(cardId)}
           >
-            <DeckAddIcon size={11} />
-          </span>
+            <DeckAddIcon size={14} />
+          </IconButton>
         </div>
       </div>
 
       {/* ── Stats ── */}
       <div class="stats-container border-y border-border" data-tour="card-stats">
       <div class="stats-grid py-3 px-4 gap-x-4 gap-y-3 justify-items-center">
-        <CardMetric
+        <Metric
           label={t('card.section.availability')}
           value={k > 0 ? pct(k) : '—'}
           colorClass={rColor}
         />
-        <CardMetric
+        <Metric
           label={t('card.section.stability')}
           value={stabWindow !== undefined ? formatDays(stabWindow) : '—'}
         />
-        <CardMetric
+        <Metric
           label={t('card.section.ease')}
           value={ease !== undefined ? pct(ease) : '—'}
           colorClass={easeColor}
@@ -900,17 +896,17 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               renderTrigger={(label, open, toggle) => (
                 <button
                   type="button"
-                  class="text-[10px] font-medium uppercase tracking-wider text-dim cursor-pointer hover:text-muted transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
+                  class="text-2xs font-medium uppercase tracking-wider text-dim cursor-pointer hover:text-muted transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
                   onClick={toggle}
                 >
                   {t('card.section.importance')}&nbsp;({label}
-                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${open ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
+                  <span class={`flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
                   )
                 </button>
               )}
             />
           ) : (
-            <span class="text-[10px] font-medium uppercase tracking-wider text-dim shrink-0">{t('card.section.importance')}</span>
+            <span class="text-2xs font-medium uppercase tracking-wider text-dim shrink-0">{t('card.section.importance')}</span>
           )}
           {isEditingImportance ? (
             <input
@@ -984,7 +980,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
         <span class="section-title shrink-0">{t('card.section.type')}</span>
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 text-sm text-primary hover:text-accent transition-colors cursor-pointer"
+          class="inline-flex items-center gap-1.5 text-sm text-primary hover:text-accent transition-colors cursor-pointer py-1.5 -my-1.5"
           data-tour="card-type-btn"
           title={typeLocked ? t('card.type.lockedTitle') : t('card.type.change')}
           onClick={(e) => typeLocked
@@ -1016,32 +1012,33 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 finds the two buttons by doing exactly that. */}
             {selectedTag !== null && (
               <>
-                <button
-                  class="tap-btn text-dim hoverable:text-accent hoverable:bg-elevated cursor-pointer"
-                  title={t('card.tags.rename')}
+                <IconButton
+                  label={t('card.tags.rename')}
                   onClick={() => showCardTagModal(cardId, selectedTag, setPickedTag)}
                 >
-                  <PencilIcon size={13} />
-                </button>
-                <button
-                  class="tap-btn text-dim hoverable:text-danger hoverable:bg-elevated cursor-pointer"
-                  title={t('card.tags.remove')}
+                  <PencilIcon size={14} />
+                </IconButton>
+                {/* Immediate, and a neutral bin: a tag taken off ONE card is put
+                    back in two taps (the deletion rule of 2026-11-11). Off the
+                    whole library, it is asked first (tagModal). */}
+                <IconButton
+                  class="hover:text-danger"
+                  label={t('card.tags.remove')}
                   onClick={() => {
                     void mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.filter(tg => tg !== selectedTag); });
                     setPickedTag(null);
                   }}
                 >
-                  <TrashIcon size={13} />
-                </button>
+                  <TrashIcon size={14} />
+                </IconButton>
               </>
             )}
-            <button
-              class="tap-btn text-dim hoverable:text-accent hoverable:bg-elevated cursor-pointer"
-              title={t('card.tags.add')}
+            <IconButton
+              label={t('card.tags.add')}
               onClick={() => showCardTagModal(cardId, null)}
             >
-              <PlusIcon size={13} />
-            </button>
+              <PlusIcon size={14} />
+            </IconButton>
           </div>
         </div>
         {(card.tags ?? []).length > 0 && (
@@ -1081,21 +1078,20 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               onMouseDown={(e) => e.preventDefault()}
               onClick={toggleNotesSpoiler}
             >
-              {notesSel === 'hide' ? <EyeOffIcon size={13} /> : <EyeIcon size={13} />}
+              {notesSel === 'hide' ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
               {t(notesSel === 'hide' ? 'card.notes.hide' : 'card.notes.show')}
             </button>
           )}
-          <button
-            class="btn-ghost px-2"
+          <IconButton
             data-tour="card-notes-edit"
-            title={isEditingNotes ? t('card.saveNotes') : t('card.editNotes')}
+            label={isEditingNotes ? t('card.saveNotes') : t('card.editNotes')}
             onClick={() => {
               if (isEditingNotes) void mutate(s => { s.cards[cardId]!.content.notes = notesDraft; });
               setIsEditingNotes(v => !v);
             }}
           >
-            {isEditingNotes ? <SaveIcon size={13} /> : <PencilIcon size={13} />}
-          </button>
+            {isEditingNotes ? <SaveIcon size={14} /> : <PencilIcon size={14} />}
+          </IconButton>
           </div>
         </div>
         {isEditingNotes ? (
@@ -1161,10 +1157,9 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 </button>
               )}
             </div>
-            <button
-              class="btn-ghost px-2 shrink-0"
+            <IconButton
               data-tour="card-tunes-add"
-              title={t('card.tunes.add')}
+              label={t('card.tunes.add')}
               onClick={() => showCardPicker(
                 picked => mutate(s => {
                   const c = s.cards[cardId];
@@ -1179,15 +1174,15 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 }),
                 { titleKey: 'card.tunes.add', eligible: (c) => canBeTuneOf(c, card), emptyKey: 'card.tunes.onlyTunes' },
               )}
-            ><PlusIcon size={13} /></button>
+            ><PlusIcon size={14} /></IconButton>
           </div>
           {(card.tunes ?? []).length === 0 ? (
-            <p class="text-xs text-dim">{t('card.tunes.empty')}</p>
+            <EmptyState>{t('card.tunes.empty')}</EmptyState>
           ) : (
             <CardRefList
               refs={card.tunes ?? []}
               editable={true}
-              glyph={<TuneIcon size={11} />}
+              glyph={<TuneIcon size={12} />}
               onSetRepeat={(i, repeat) => mutate(s => {
                 const entry = s.cards[cardId]?.tunes?.[i];
                 if (!entry) return;
@@ -1248,7 +1243,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           <div class="space-y-1">
             {backlinks.map(src => (
               <div key={src.id} class="flex items-center gap-2">
-                <span class="text-[11px] text-dim shrink-0 w-4 text-center font-mono">↙</span>
+                <span class="text-dim shrink-0 w-4 flex items-center justify-center"><LinkIcon size={12} /></span>
                 <span
                   class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
                   title={t('card.backlinks.open')}
@@ -1270,16 +1265,16 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       <div class="space-y-2" data-tour="card-history">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.reviewHistory')}</span>
-          <button onClick={() =>
+          <IconButton onClick={() =>
             openSessionModal(Date.now(), 'good', (ts, rating) => mutate(s => {
               const key = `${s.currentProfileId}:${cardId}`;
               if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
               s.cardWorks[key]!.history.push({ ts, rating });
               s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
             }))
-          } class="btn-ghost px-2" title={t('card.logReview.add')}>
-            <PlusIcon size={13} />
-          </button>
+          } label={t('card.logReview.add')}>
+            <PlusIcon size={14} />
+          </IconButton>
         </div>
         {sorted.length > 0 && (
           <div class="flex flex-wrap gap-[3px]">

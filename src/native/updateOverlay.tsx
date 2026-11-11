@@ -39,8 +39,8 @@ function UpdateOverlay({ percent, detailed, onLater }: {
         {/* Not drawn before it shows: the loop starts when it can be seen. */}
         <div class="mb-[22px] w-[78px] h-[78px]">{shown && <CadenceMark size={78} looping />}</div>
         <div>
-          <p class="text-[15px] text-primary">{t('update.downloading.title')}</p>
-          <p class="text-[13.5px] text-muted mt-1.5">
+          <p class="text-[15px] text-primary">{t('update.downloading.title')}</p>{/* ui-ok: Vitrine register */}
+          <p class="text-[13.5px] text-muted mt-1.5">{/* ui-ok: Vitrine register */}
             {t('update.downloading.wait')}
             {/* The plugin's own figure, as it gives it: its whole job, the
                 transfer being 10 to 70 and the checksum, unzip and install

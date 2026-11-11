@@ -3,6 +3,7 @@ import { createPortal } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { getZoom } from '../services/zoomService';
 import { registerOverlay } from './overlayStack';
+import { ChevronDownIcon } from './icons';
 
 /** A panel is never narrower than this, whatever its trigger measures.
  *
@@ -93,30 +94,29 @@ export function CustomSelect({ value, options, onChange, triggerClass, renderTri
       {renderTrigger ? renderTrigger(label, open, toggle) : (
         <button type="button" class={triggerClass} onClick={toggle}>
           <span class="truncate flex-1 text-left">{label}</span>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
+          <span class={`shrink-0 flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
         </button>
       )}
       {/* Portaled to the body rather than positioned inside the wrapper: an
           absolutely placed panel is clipped by any scrolling ancestor, which is
           what a modal body is as soon as its content is a little tall. Same
           treatment as the import screen's suggestion list, for the same
-          reason. */}
+          reason. The app's one menu surface and row (UI charter, 2026-11-11),
+          the same as the vanilla select's (customSelectVanilla.ts). */}
       {open && pos && createPortal((
         <div
           ref={panelRef}
-          class="fixed z-[100] bg-elevated border border-border rounded-lg shadow-xl py-1 max-h-52 overflow-y-auto"
+          class="fixed z-[100] menu-surface max-h-52 overflow-y-auto"
           style={{ top: `${pos.top}px`, left: `${pos.left}px`, width: `${pos.width}px` }}
         >
           {options.map(opt => (
             <button
               key={opt.value}
               type="button"
-              class={`w-full text-left px-3 py-1.5 text-xs cursor-pointer truncate ${opt.value === value ? 'text-accent bg-accent/5' : 'text-muted hover:bg-surface'}`}
+              class={`menu-item${opt.value === value ? ' menu-item-on' : ''}`}
               onClick={() => { onChange(opt.value); setOpen(false); }}
             >
-              {opt.label}
+              <span class="truncate">{opt.label}</span>
             </button>
           ))}
         </div>

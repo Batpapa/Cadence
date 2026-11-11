@@ -3,13 +3,6 @@ import { probeRemoteFile, checkLinkTarget, statusRefusal, RemoteFileError, type 
 
 export type EmbedPlatform = 'youtube' | 'spotify' | 'deezer' | 'soundcloud';
 
-export const PLATFORM_ICONS: Record<EmbedPlatform, string> = {
-  youtube:    '▶',
-  spotify:    '♫',
-  deezer:     '♪',
-  soundcloud: '☁',
-};
-
 const OEMBED_ENDPOINTS: Record<EmbedPlatform, string> = {
   youtube:    'https://www.youtube.com/oembed',
   spotify:    'https://open.spotify.com/oembed',

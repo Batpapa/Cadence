@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { AppContext, AppState, Card, FileAttachment } from '../../types';
 import { t } from '../../services/i18nService';
-import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon } from '../../components/icons';
+import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon, MoreHorizontalIcon } from '../../components/icons';
+import { IconButton } from '../../components/ui';
 import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
 import { useContextMenu, type ContextMenuEntry } from '../../components/contextMenu';
@@ -119,8 +120,8 @@ export function tuneName(d: { tuneId: string; displayName: string }, cardOf?: (t
  *  rather than in either of those, since DetectionCard.tsx imports
  *  AlternatesPopover.tsx — a shared leaf avoids the circular import). */
 export const BUCKET_BADGE: Record<Detection['bucket'], string> = {
-  high: 'bg-green-500/10 text-green-500',
-  medium: 'bg-amber-500/10 text-amber-500',
+  high: 'bg-success/10 text-success',
+  medium: 'bg-warn/10 text-warn',
   low: 'bg-elevated text-dim border border-border',
 };
 
@@ -128,8 +129,8 @@ export const BUCKET_BADGE: Record<Detection['bucket'], string> = {
  *  for coloring a plain score readout, e.g. AlternatesPopover.tsx's per-option
  *  percentage, without stacking a second badge-looking element next to it. */
 export const BUCKET_TEXT: Record<Detection['bucket'], string> = {
-  high: 'text-green-500',
-  medium: 'text-amber-500',
+  high: 'text-success',
+  medium: 'text-warn',
   low: 'text-dim',
 };
 
@@ -211,34 +212,34 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
       )}
 
       {onNotes && (
-        <button
-          class={`btn-ghost px-2 shrink-0 inline-flex items-center justify-center ${hasNotes ? 'text-accent' : ''}`}
-          title={t(hasNotes ? 'sessions.notes.open' : 'sessions.notes.add')}
+        <IconButton
+          label={t(hasNotes ? 'sessions.notes.open' : 'sessions.notes.add')}
+          on={hasNotes}
           onClick={onNotes}
         >
-          <NotesIcon size={13} />
-        </button>
+          <NotesIcon size={14} />
+        </IconButton>
       )}
 
       {menu && (
-        <button
-          class="btn-ghost px-2 shrink-0 inline-flex items-center justify-center"
-          title={t('sessions.menu.title')}
-          aria-label={t('sessions.menu.title')}
+        <IconButton
+          label={t('sessions.menu.title')}
           // Only the summary has this menu; the tour's step on what can be
           // done with the recording points here.
           data-tour="summary-audio"
           onClick={(e) => openMenu.open(e.clientX, e.clientY)}
         >
-          {/* The library's own ⋯ glyph. */}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
-        </button>
+          {/* The library's own ⋯: an object's menu. */}
+          <MoreHorizontalIcon size={14} />
+        </IconButton>
       )}
       {openMenu.menu}
 
-      <button
-        class="btn-danger px-2 shrink-0"
-        title={t('sessions.deleteTitle')}
+      {/* The one delete of an analysis — costly to redo, so red and confirmed.
+         The ⋯ beside it only offers what can be done with its recording. */}
+      <IconButton
+        label={t('sessions.deleteTitle')}
+        variant="danger"
         onClick={() => confirmModal(
           t('sessions.delete.title'),
           t('sessions.delete.message', { name: getName() || getDefaultName() }),
@@ -247,7 +248,7 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
         )}
       >
         <TrashIcon size={14} />
-      </button>
+      </IconButton>
     </div>
   );
 }
@@ -607,14 +608,21 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
 }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadTitle, setDownloadTitle] = useState(t('sessions.downloadClip'));
+  /** Why the last download failed. It was written into the tooltip and wiped
+   *  by the `finally` in the same tick, so nobody ever read it. */
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
   const [attachText, setAttachText] = useState<string | null>(null);
+  /** Why attaching failed: an explicit flag, where the text used to be tested
+   *  for a leading ⚠. */
+  const [attachError, setAttachError] = useState<string | null>(null);
 
   const known = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
   const already = known ? isClipAttached(session, ann) : false;
 
   const doDownload = async () => {
     setDownloading(true);
+    setDownloadError(null);
     try {
       const audio = await getAudio();
       if (!audio) throw new Error(t('sessions.clip.unavailable'));
@@ -623,7 +631,7 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
       });
       downloadBlob(clip.blob, clipFileName(session, ann, clip.extension));
     } catch (err) {
-      setDownloadTitle(`⚠ ${String(err)}`);
+      setDownloadError(String(err));
     } finally {
       setDownloading(false);
       setDownloadTitle(t('sessions.downloadClip'));
@@ -640,17 +648,18 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
       });
       onAttached?.();
     } catch (err) {
-      setAttachText(`⚠ ${String(err)}`);
+      setAttachText(null);
+      setAttachError(String(err));
     }
   };
 
   // doAttach leaves `attaching` set on failure — the control stays disabled
   // and carries the reason, which is the behaviour this had before it became a
   // glyph. The reason has to stay READABLE, so a failed slot gives up its fixed
-  // width: a message in a 24px box would be a message nobody can read, and on a
+  // width: a message in a 32px box would be a message nobody can read, and on a
   // phone there is no tooltip to fall back on. One row out of line is a cheap
   // price, and it points at the row that went wrong.
-  const failed = !!attachText?.startsWith('⚠');
+  const failed = attachError !== null;
 
   /** A slot rather than nothing, when the caller asks for it — see `aligned`.
    *
@@ -663,19 +672,23 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
    *  perfectly normal and did nothing (2026-09-12). Calling a function inlines
    *  the vnode into this component's own tree, where the diff can keep it. */
   const slot = (children: preact.ComponentChildren, wide = false) =>
-    aligned && !wide ? <span class="w-6 flex items-center justify-center shrink-0">{children}</span> : <>{children}</>;
+    aligned && !wide ? <span class="w-8 flex items-center justify-center shrink-0">{children}</span> : <>{children}</>;
 
   return (
     <>
       {slot(audioAvailable && (
-        <button
-          class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center disabled:opacity-50"
-          title={downloadTitle}
-          disabled={downloading}
-          dangerouslySetInnerHTML={{ __html: downloadIcon(13) }}
-          onClick={() => { void doDownload(); }}
-        />
-      ))}
+        <>
+          <button
+            class="icon-btn hover:text-accent"
+            title={downloadTitle}
+            aria-label={t('sessions.downloadClip')}
+            disabled={downloading}
+            dangerouslySetInnerHTML={{ __html: downloadIcon(14) }}
+            onClick={() => { void doDownload(); }}
+          />
+          {downloadError && <span class="text-2xs text-danger">{downloadError}</span>}
+        </>
+      ), !!downloadError)}
 
       {/* Add clip as a standalone MP3 attachment (known card only) — hidden
          once the session's audio has been forgotten, unless a clip was
@@ -691,19 +704,19 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
          that looked idle would be pressed again. */}
       {known && (already || audioAvailable) && slot(
         <button
-          class={`shrink-0 flex items-center transition-colors ${
-            already ? 'text-green-500 cursor-default'
-              : failed ? 'text-danger cursor-default'
-              : `text-accent ${attaching ? 'cursor-default' : 'hover:text-accent/70 cursor-pointer'}`}`}
-          title={already ? t('sessions.attached') : attachText ?? t('sessions.attach')}
+          class={`icon-btn ${
+            already ? 'text-success hover:text-success hover:bg-transparent cursor-default'
+              : failed ? 'text-danger hover:text-danger px-1 disabled:opacity-100 cursor-default'
+              : `text-accent ${attaching ? 'cursor-default' : 'hover:text-accent/70'}`}`}
+          title={already ? t('sessions.attached') : attachError ?? attachText ?? t('sessions.attach')}
           aria-label={already ? t('sessions.attached') : t('sessions.attach')}
           disabled={!already && attaching}
           onClick={already ? undefined : () => { void doAttach(); }}
         >
-          {already ? <ClipAttachedIcon size={13} />
-            : failed ? <span class="text-[11px]">{attachText}</span>
-            : attachText ? <span class="text-[10px] font-mono tabular-nums">{attachText}</span>
-            : <AddClipIcon size={13} />}
+          {already ? <ClipAttachedIcon size={14} />
+            : failed ? <span class="text-2xs">{attachError}</span>
+            : attachText ? <span class="text-2xs font-mono tabular-nums">{attachText}</span>
+            : <AddClipIcon size={14} />}
         </button>,
         failed,
       )}
@@ -806,15 +819,16 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded, car
     });
   };
 
-  const round = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50';
+  // The 24 px disc is the drawing; the button around it is the 32 px target
+  // (styles.css, .icon-disc).
 
   // The standalone analyser has no library to add to (pageMode.ts).
   if (!hasLibrary()) return null;
   if (!known) {
     return (
-      <button class={round} title={t('sessions.addCard')} disabled={busy} onClick={onAddClick}>
-        <PlusIcon size={12} />
-      </button>
+      <IconButton label={t('sessions.addCard')} class="hover:bg-transparent" disabled={busy} onClick={onAddClick}>
+        <span class="icon-disc"><PlusIcon size={12} /></span>
+      </IconButton>
     );
   }
   // Dimmed, not disabled, once the card is in every deck: there is nothing
@@ -822,12 +836,13 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded, car
   // sits, so it stays open for a look.
   const everyDeck = isInEveryDeck(known.id);
   return (
-    <button
-      class={`${round} ${everyDeck ? 'opacity-40' : ''}`}
-      title={everyDeck ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
+    <IconButton
+      label={everyDeck ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
+      class={`hover:bg-transparent ${everyDeck ? 'opacity-40' : ''}`}
       disabled={busy}
-      dangerouslySetInnerHTML={{ __html: deckAddIcon }}
       onClick={onLinkClick}
-    />
+    >
+      <span class="icon-disc" dangerouslySetInnerHTML={{ __html: deckAddIcon }} />
+    </IconButton>
   );
 }

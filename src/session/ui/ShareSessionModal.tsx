@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { showModal, closeModal, updateTopModal } from '../../components/modal';
 import { ArrowRightIcon } from '../../components/icons';
+import { ChoiceCard, InlineStatus } from '../../components/ui';
 import { loadSessionAudio, probeSyncedAudio, downloadSyncedAudioOnce, type SyncedAudioProbe } from '../db';
 import { shareSession, exportSessionFile } from '../../services/sessionShareService';
 import { exportAnalysisCSV, exportAnalysisTXT, exportAnalysisClipsZip, analysisTextReport } from '../../services/analysisExport';
@@ -27,25 +28,23 @@ export const SHARE_ICON_TXT = '<svg width="18" height="18" viewBox="0 0 24 24" f
 export const SHARE_ICON_CLIPBOARD = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const SHARE_ICON_CLIPS = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>';
 
-export function ShareChoiceCard({ icon, label, desc, color, onClick, disabled = false }: {
-  icon: string; label: string; desc: string; color: string; onClick: () => void; disabled?: boolean;
+/** One way out, as every dialog of the app offers them (ChoiceCard): the
+ *  description on screen — it was only a tooltip, which a finger never sees —
+ *  and the icon in the accent, where each row had a decorative colour of its
+ *  own. The icons are the HTML strings above, hence the span. */
+export function ShareChoiceCard({ icon, label, desc, onClick, disabled = false }: {
+  icon: string; label: string; desc: string; onClick: () => void; disabled?: boolean;
 }) {
-  const [hover, setHover] = useState(false);
-  const lit = hover && !disabled;
   return (
-    <button
-      class={`flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-      style={{ transition: 'border-color 0.15s, background 0.15s', borderColor: lit ? color : undefined, background: lit ? `${color}12` : undefined }}
-      title={desc}
-      disabled={disabled}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onClick={onClick}
-    >
-      <span class="shrink-0 flex items-center" style={{ color }} dangerouslySetInnerHTML={{ __html: icon }} />
-      <div class="flex-1 text-sm font-medium text-primary">{label}</div>
-      <span class="text-dim shrink-0 flex items-center"><ArrowRightIcon size={16} /></span>
-    </button>
+    <ChoiceCard
+      icon={<span class="flex items-center" dangerouslySetInnerHTML={{ __html: icon }} />}
+      label={label}
+      desc={desc}
+      trailing={<ArrowRightIcon size={16} />}
+      // ChoiceCard has no disabled state: greyed, and the click does nothing.
+      class={disabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}
+      onClick={disabled ? () => {} : onClick}
+    />
   );
 }
 
@@ -168,7 +167,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     return <p class="text-xs text-muted text-center py-2">{t('sessions.share.fetchingAudio')}</p>;
   }
   if (upload.phase === 'error') {
-    return <p class="text-xs text-muted text-center py-2">{upload.message}</p>;
+    return <InlineStatus tone="error" class="justify-center py-2">{upload.message}</InlineStatus>;
   }
   if (upload.phase === 'result') {
     return <ShareKeyResult keyValue={upload.key} secondsRemaining={upload.secondsRemaining} />;
@@ -180,7 +179,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     return <p class="text-xs text-muted text-center py-2">{t('sessions.export.clipsCutting', { done: clips.done, total: clips.total })}</p>;
   }
   if (clips.phase === 'error') {
-    return <p class="text-xs text-muted text-center py-2">{clips.message}</p>;
+    return <InlineStatus tone="error" class="justify-center py-2">{clips.message}</InlineStatus>;
   }
 
   const doUpload = async (withAudio: Blob | null) => {
@@ -262,14 +261,12 @@ function ShareSessionModal({ session }: { session: Analysis }) {
             icon={SHARE_ICON_FILE_UP}
             label={t('library.export.file')}
             desc={t('sessions.export.txtDesc')}
-            color="var(--color-warn)"
             onClick={() => { exportAnalysisTXT(session, { detailed, nameOf, setBreaks }); closeModal(); }}
           />
           <ShareChoiceCard
             icon={SHARE_ICON_CLIPBOARD}
             label={copied === 'no' ? t('common.copyToClipboard') : t(copied === 'yes' ? 'common.copied' : 'common.copyFailed')}
             desc={t('common.copyToClipboardDesc')}
-            color="var(--color-success)"
             onClick={() => {
               void copyText(analysisTextReport(session, { detailed, nameOf, setBreaks })).then(ok => {
                 setCopied(ok ? 'yes' : 'failed');
@@ -311,7 +308,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
           // On Drive by the record, but Drive cannot be asked right now.
           // Greyed, with the reason — and, for a token, the one way through.
           <>
-            <label class="flex items-center gap-2 select-none opacity-50 cursor-not-allowed">
+            <label class="flex items-center gap-2 select-none opacity-40 cursor-not-allowed">
               <input type="checkbox" class="card-checkbox" checked={false} disabled />
               <span class="text-xs text-muted">{t('sessions.share.includeAudioUnknown')}</span>
             </label>
@@ -335,14 +332,12 @@ function ShareSessionModal({ session }: { session: Analysis }) {
             icon={SHARE_ICON_FILE_UP}
             label={t('library.export.file')}
             desc={t('sessions.share.fileDesc')}
-            color="var(--color-warn)"
             onClick={() => { void withAudio(async audio => { await exportSessionFile(session, audio); closeModal(); }); }}
           />
           <ShareChoiceCard
             icon={SHARE_ICON_SHARE}
             label={t('library.share.label')}
             desc={t('library.share.desc')}
-            color="var(--color-accent)"
             onClick={() => { void withAudio(doUpload); }}
           />
         </div>
@@ -356,7 +351,6 @@ function ShareSessionModal({ session }: { session: Analysis }) {
         icon={SHARE_ICON_FILE_UP}
         label={t('sessions.export.cds')}
         desc={t('sessions.export.cdsDesc')}
-        color="var(--color-warn)"
         onClick={() => setView('package')}
       />
       {/* Read-only: neither comes back into Cadence, and neither carries audio. */}
@@ -364,14 +358,12 @@ function ShareSessionModal({ session }: { session: Analysis }) {
         icon={SHARE_ICON_CSV}
         label="CSV"
         desc={t('sessions.export.csvDesc')}
-        color="var(--color-success)"
         onClick={() => { exportAnalysisCSV(session, nameOf, { setBreaks }); closeModal(); }}
       />
       <ShareChoiceCard
         icon={SHARE_ICON_TXT}
         label="TXT"
         desc={t('sessions.export.txtDesc')}
-        color="var(--color-muted)"
         onClick={() => setView('txt')}
       />
       {/* Read-only too, and the one that needs the recording: greyed with the
@@ -380,7 +372,6 @@ function ShareSessionModal({ session }: { session: Analysis }) {
         icon={SHARE_ICON_CLIPS}
         label={t('sessions.export.clips')}
         desc={t('sessions.export.clipsDesc')}
-        color="var(--color-accent)"
         disabled={audioBytes === null || session.annotations.length === 0}
         onClick={() => { void exportClips(); }}
       />

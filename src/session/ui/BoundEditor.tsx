@@ -3,9 +3,10 @@ import { signal, type Signal } from '@preact/signals';
 import type { ComponentChild } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, closeModal, askUnsavedChanges, type ModalAction } from '../../components/modal';
-import { playIcon, pauseIcon } from '../../components/playbackIcons';
-import { ResetIcon, ScoreFollowIcon, MagnetIcon, iconElement } from '../../components/icons';
+import { showModal, closeModal, askUnsavedChanges, MODAL_W, type ModalAction } from '../../components/modal';
+import { boundIcon } from '../../components/playbackIcons';
+import { ResetIcon, ScoreFollowIcon, MagnetIcon, LinkIcon, PlayIcon, PauseIcon, RepeatIcon, iconElement } from '../../components/icons';
+import { IconButton } from '../../components/ui';
 import { hasRecognisedSetting, keyOffsetOf, type Detection } from '../model';
 import {
   contextWindow, waveformFitsContext, loupeDecodeWindow, clampBound,
@@ -910,7 +911,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
     // One line, whatever it says.
     const line = (text: string) => (
       <p class="flex items-center gap-2.5 px-3 py-2 text-dim">
-        <span class="shrink-0 text-warn"><ScoreFollowIcon size={13} /></span>
+        <span class="shrink-0 text-warn"><ScoreFollowIcon size={14} /></span>
         <span class="flex-1 min-w-0 truncate">{text}</span>
       </p>
     );
@@ -930,7 +931,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
         title={t('sessions.bounds.suggestHint')}
         onClick={() => { moveTo(suggested, { snap: false }); rearmListening(); }}
       >
-        <span class="shrink-0 text-warn"><ScoreFollowIcon size={13} /></span>
+        <span class="shrink-0 text-warn"><ScoreFollowIcon size={14} /></span>
         <span class="flex-1 min-w-0 truncate">
           {t('sessions.bounds.suggestApply', { t: fmtFine(suggested), d: fmtDelta(suggested - active) })}
         </span>
@@ -940,7 +941,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
 
   const boundBtn = (which: 'start' | 'end', value: number, delta: number) => (
     <button
-      class={`rounded-lg border px-3 py-1.5 text-left transition-colors cursor-pointer ${
+      class={`rounded-md border px-3 py-1.5 text-left transition-colors cursor-pointer ${
         bound === which ? 'border-accent bg-accent/10' : 'border-border bg-bg hover:border-dim'}`}
       aria-pressed={bound === which}
       onClick={() => {
@@ -952,11 +953,11 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
         rearmListening();
       }}
     >
-      <span class={`block text-[10px] uppercase tracking-widest ${bound === which ? 'text-accent' : 'text-dim'}`}>
+      <span class={`block text-2xs font-medium uppercase tracking-wider ${bound === which ? 'text-accent' : 'text-dim'}`}>
         {t(which === 'start' ? 'sessions.bounds.start' : 'sessions.bounds.end')}
       </span>
       <span class="block text-base font-mono font-semibold tabular-nums text-primary leading-snug">{fmtFine(value)}</span>
-      <span class="block text-[11px] text-warn tabular-nums h-4">{Math.abs(delta) > .004 ? fmtDelta(delta) : ''}</span>
+      <span class="block text-2xs text-warn tabular-nums h-4">{Math.abs(delta) > .004 ? fmtDelta(delta) : ''}</span>
     </button>
   );
 
@@ -983,7 +984,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           know which other tune you are about to change. */}
       {offered[bound] && (
         <button
-          class={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-[11px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
+          class={`w-full flex items-center gap-2.5 rounded-md border px-3 py-2 text-left text-2xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
             linked[bound] ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted hover:text-primary'}`}
           disabled={locked}
           aria-pressed={linked[bound]}
@@ -1009,10 +1010,10 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
             });
           }}
         >
-          {/* One glyph in both states, like the loop and magnet toggles: the
-              border and colour already say which it is, and a "broken chain"
-              needs a combining overlay that half the fonts draw as two marks. */}
-          <span class="shrink-0 text-sm leading-none">⛓</span>
+          {/* One drawing in both states, like the loop and magnet toggles: the
+              border and colour already say which it is. It was the ⛓ glyph,
+              which phones draw as an emoji. */}
+          <span class="shrink-0 flex items-center"><LinkIcon size={14} /></span>
           <span class="flex-1 min-w-0 truncate">
             {t(linked[bound] ? 'sessions.bounds.linkOn' : 'sessions.bounds.linkOff', {
               name: capitalizeWords(offered[bound]!.name),
@@ -1027,11 +1028,13 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           pressed the bounds touch, and the link above takes its place. */}
       {!offered[bound] && !twin[bound] && closing && (
         <button
-          class="w-full flex items-center gap-2.5 rounded-lg border border-border px-3 py-2 text-left text-[11px] text-muted hover:text-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+          class="w-full flex items-center gap-2.5 rounded-md border border-border px-3 py-2 text-left text-2xs text-muted hover:text-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
           disabled={locked}
           onClick={() => { moveTo(closing.t, { snap: false }); rearmListening(); }}
         >
-          <span class="shrink-0 text-sm leading-none">{bound === 'start' ? '⇤' : '⇥'}</span>
+          {/* The passage-bound drawing of the lists (playbackIcons.ts): [← to
+              the previous tune, →] to the next. It was ⇤ / ⇥, in the phone's font. */}
+          <span class="shrink-0 flex items-center" dangerouslySetInnerHTML={{ __html: boundIcon(bound === 'start' ? 'in' : 'out', 14) }} />
           <span class="flex-1 min-w-0 truncate">
             {t(bound === 'start' ? 'sessions.bounds.snapToPrev' : 'sessions.bounds.snapToNext', {
               name: capitalizeWords(closing.name),
@@ -1041,7 +1044,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
       )}
       {/* The bound the tune's passes suggest (boundSuggest.ts). */}
       {suggesting && (
-        <div class="rounded-lg border border-border text-[11px]">
+        <div class="rounded-lg border border-border text-2xs">
           {suggestPanel()}
         </div>
       )}
@@ -1049,8 +1052,8 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
       {/* ── Context ── */}
       <div>
         <div class="flex items-center justify-between gap-2 mb-1">
-          <span class="text-[10px] uppercase tracking-widest text-dim">{t('sessions.bounds.context')}</span>
-          <span class="text-[11px] text-dim truncate">{t('sessions.bounds.contextHint')}</span>
+          <span class="section-title">{t('sessions.bounds.context')}</span>
+          <span class="text-2xs text-dim truncate">{t('sessions.bounds.contextHint')}</span>
         </div>
         <div
           ref={ctxBoxRef}
@@ -1060,12 +1063,12 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
         >
           <canvas ref={ctxCvRef} class="block w-full h-full" />
           {noWave && (
-            <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[11px] text-dim px-3 pointer-events-none">
+            <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-2xs text-dim px-3 pointer-events-none">
               {t('sessions.bounds.tooLong')}
             </span>
           )}
           {audioMissing && !noWave && (
-            <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[11px] text-dim px-3 pointer-events-none">
+            <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-2xs text-dim px-3 pointer-events-none">
               {t('sessions.bounds.noAudio')}
             </span>
           )}
@@ -1089,7 +1092,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
           ))}
           <div ref={ctxHeadRef} class="absolute inset-y-0 w-0.5 bg-primary pointer-events-none z-[4]" style={{ left: '0px', opacity: 0 }} />
         </div>
-        <div class="flex justify-between text-[10px] text-dim font-mono tabular-nums mt-0.5">
+        <div class="flex justify-between text-2xs text-dim font-mono tabular-nums mt-0.5">
           {[0, .25, .5, .75, 1].map(f => <span key={f}>{fmtShort(win[0] + (win[1] - win[0]) * f)}</span>)}
         </div>
       </div>
@@ -1097,10 +1100,10 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
       {/* ── Magnifier ── */}
       <div>
         <div class="flex items-center justify-between gap-2 mb-1">
-          <span class="text-[10px] uppercase tracking-widest text-dim">
+          <span class="section-title">
             {t('sessions.bounds.loupe')} · {t(bound === 'start' ? 'sessions.bounds.start' : 'sessions.bounds.end')}
           </span>
-          <span class="text-[11px] text-dim truncate">{t('sessions.bounds.loupeHint')}</span>
+          <span class="text-2xs text-dim truncate">{t('sessions.bounds.loupeHint')}</span>
         </div>
         <div
           ref={loupeBoxRef}
@@ -1119,40 +1122,44 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
             {fmtFine(active)}
           </span>
           {snapped && (
-            <span class="absolute left-1/2 -translate-x-1/2 bottom-1.5 z-[4] pointer-events-none rounded-full bg-bg px-2 text-[10px] text-warn whitespace-nowrap inline-flex items-center gap-1">
-              <MagnetIcon size={10} /> {labelOf(snapped)}
+            <span class="absolute left-1/2 -translate-x-1/2 bottom-1.5 z-[4] pointer-events-none rounded-full bg-bg px-2 text-2xs text-warn whitespace-nowrap inline-flex items-center gap-1">
+              <MagnetIcon size={12} /> {labelOf(snapped)}
             </span>
           )}
           <div ref={loupeHeadRef} class="absolute inset-y-0 w-0.5 bg-primary pointer-events-none z-[4]" style={{ left: '0px', opacity: 0 }} />
         </div>
-        <div class="flex justify-between text-[10px] text-dim font-mono mt-0.5">
+        <div class="flex justify-between text-2xs text-dim font-mono mt-0.5">
           <span>−4 s</span><span>−2 s</span><span>0</span><span>+2 s</span><span>+4 s</span>
         </div>
       </div>
 
       {/* ── Transport ── */}
       <div class="flex items-center gap-2 flex-wrap">
-        <button
-          class="w-9 h-9 p-0 rounded-full flex items-center justify-center shrink-0 bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+        {/* The play disc of the lists, at the transport's size. */}
+        <IconButton
+          label={t(playing ? 'sessions.bounds.pause' : 'sessions.bounds.play')}
+          size="md"
+          class="hover:bg-transparent"
           disabled={!audioUrl}
-          title={t(playing ? 'sessions.bounds.pause' : 'sessions.bounds.play')}
-          dangerouslySetInnerHTML={{ __html: playing ? pauseIcon(12) : playIcon(12) }}
           onClick={() => {
             const a = audioRef.current;
             if (!a) return;
             if (!a.paused) { a.pause(); setPlaying(false); return; }
             playAtBound();
           }}
-        />
+        >
+          <span class="icon-disc w-9 h-9">{playing ? <PauseIcon size={12} /> : <PlayIcon size={12} />}</span>
+        </IconButton>
+        {/* Two toggle chips: on, they take the app's "set" tint. */}
         <button
-          class={`min-h-9 px-3 rounded-full border text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
-            loop ? 'border-accent text-accent bg-accent/10' : 'border-border text-muted hover:border-accent hover:text-primary'}`}
+          class={`chip min-h-9 px-3 cursor-pointer disabled:opacity-40 disabled:cursor-default ${
+            loop ? 'chip-toggle-on' : 'hover:border-accent hover:text-primary'}`}
           disabled={!audioUrl}
           aria-pressed={loop}
           title={t('sessions.bounds.loopHint')}
           onClick={toggleLoop}
         >
-          ⟲ {t('sessions.bounds.loop')}
+          <RepeatIcon size={14} /> {t('sessions.bounds.loop')}
         </button>
         {/* Snapping sits in the transport row since 2026-09-22, in the place
             the "Bound here" button held: what it now clicks onto is mostly the
@@ -1164,13 +1171,13 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
             not a transport control: the play and loop buttons act now, this
             one only changes how the next drag behaves. */}
         <button
-          class={`ml-auto min-h-9 px-3 rounded-full border text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-            magnet ? 'border-accent text-accent bg-accent/10' : 'border-border text-muted hover:border-accent hover:text-primary'}`}
+          class={`chip ml-auto min-h-9 px-3 cursor-pointer ${
+            magnet ? 'chip-toggle-on' : 'hover:border-accent hover:text-primary'}`}
           aria-pressed={magnet}
           title={t('sessions.bounds.magnetHint')}
           onClick={() => setMagnet(m => !m)}
         >
-          <MagnetIcon size={13} /> {t('sessions.bounds.magnet')}
+          <MagnetIcon size={14} /> {t('sessions.bounds.magnet')}
         </button>
       </div>
 
@@ -1190,7 +1197,7 @@ export function BoundEditor({ ann, anns, duration, getAudio, onDraft, identitySl
 export function resetAction(resetRef: { current: (() => void) | null }, unchanged: Signal<boolean>): ModalAction {
   return {
     label: t('sessions.bounds.reset'),
-    icon: iconElement(ResetIcon, 13),
+    icon: iconElement(ResetIcon, 14),
     align: 'start',
     disabled: unchanged,
     onClick: () => { resetRef.current?.(); },
@@ -1245,7 +1252,7 @@ export function showBoundEditor(opts: {
     { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
     { label: t('common.save'), primary: true, disabled: unchanged, onClick: save },
   ], {
-    maxWidth: '34rem',
+    maxWidth: MODAL_W.l,
     // The jog buttons are pressed in a row, and the first press brings the
     // Reset line in under them.
     pinTop: true,

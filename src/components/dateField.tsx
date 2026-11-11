@@ -158,10 +158,13 @@ export function DateField({ value, onChange, withTime = false, min, max, allowEm
             type="button"
             // Sized in em, like the native icon, which follows the field's
             // text size: small in the library's filter, larger in a form.
-            class="shrink-0 flex items-center text-primary opacity-90 hover:opacity-100 cursor-pointer [&>svg]:w-[1.1em] [&>svg]:h-[1.1em]"
+            // The padding cancelled by the margin widens what a finger can hit
+            // (about 32 px) without making the field any bigger.
+            class="shrink-0 flex items-center p-2 -m-2 rounded-md text-primary opacity-90 hover:opacity-100 cursor-pointer [&>svg]:w-[1.1em] [&>svg]:h-[1.1em]"
             // Not a tab stop, like the native icon: the keyboard types the date.
             tabIndex={-1}
             title={t('dateField.calendar')}
+            aria-label={t('dateField.calendar')}
             // Inside the click: showPicker refuses to run without a gesture.
             onClick={() => { try { nativeRef.current?.showPicker(); } catch { /* not allowed here: typing still works */ } }}
           >

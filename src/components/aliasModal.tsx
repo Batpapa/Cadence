@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { appState, mutate } from '../store';
-import { showModal, renderModalBody } from './modal';
+import { showModal, renderModalBody, MODAL_W } from './modal';
+import { IconButton, EmptyState } from './ui';
 import { focusIfDesktop } from '../utils';
 import { t } from '../services/i18nService';
 import { PencilIcon, TrashIcon, PromoteIcon } from './icons';
@@ -90,33 +91,31 @@ function AliasRow({ cardId, alias, index, editing, onEdit, onDone }: {
         ) : (
           <span class="flex-1 min-w-0 text-sm text-primary break-words">{alias}</span>
         )}
-        <button
-          type="button"
-          class="tap-btn text-dim hoverable:text-accent hoverable:bg-elevated cursor-pointer shrink-0"
-          title={t('card.aliases.useAsName')}
+        <IconButton
+          label={t('card.aliases.useAsName')}
           // Before the input's blur commits: the swap must see the list as it is.
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => { onDone(); void edit(c => promoteAliasToName(c, index)); }}
         >
-          <PromoteIcon size={13} />
-        </button>
-        <button
-          type="button"
-          class="tap-btn text-dim hoverable:text-accent hoverable:bg-elevated cursor-pointer shrink-0"
-          title={t('card.aliases.rename')}
+          <PromoteIcon size={14} />
+        </IconButton>
+        <IconButton
+          label={t('card.aliases.rename')}
           onClick={startEdit}
         >
-          <PencilIcon size={13} />
-        </button>
-        <button
-          type="button"
-          class="tap-btn text-dim hoverable:text-danger hoverable:bg-elevated cursor-pointer shrink-0"
-          title={t('card.aliases.remove')}
+          <PencilIcon size={14} />
+        </IconButton>
+        {/* Immediate, as it has always been: whether an alias costs a
+            confirmation is still to be decided (deletion rule, 2026-11-11).
+            A neutral bin meanwhile, red only under the pointer. */}
+        <IconButton
+          class="hover:text-danger"
+          label={t('card.aliases.remove')}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => { onDone(); void edit(c => removeAlias(c, index)); }}
         >
-          <TrashIcon size={13} />
-        </button>
+          <TrashIcon size={14} />
+        </IconButton>
       </div>
       {editing && note && <p class="text-xs text-warn leading-relaxed">{note}</p>}
     </div>
@@ -155,7 +154,7 @@ function AliasManager({ cardId }: { cardId: string }) {
       <p class="text-xs text-dim break-words">{t('card.aliases.currentName', { name: card.name })}</p>
 
       {aliases.length === 0 ? (
-        <p class="text-sm text-dim">{t('card.aliases.empty')}</p>
+        <EmptyState class="py-2">{t('card.aliases.empty')}</EmptyState>
       ) : (
         <div class="divide-y divide-border/50">
           {aliases.map((alias, i) => (
@@ -201,5 +200,5 @@ export function showAliasModal(cardId: string): void {
   // No action buttons: every change is already written. The ✕, Escape and a
   // click outside close it.
   // Removing aliases one after another: each row gone would move the next ✕.
-  showModal(t('card.aliases.title'), el, [], { maxWidth: '28rem', pinTop: true, onDismiss: cleanup });
+  showModal(t('card.aliases.title'), el, [], { maxWidth: MODAL_W.m, pinTop: true, onDismiss: cleanup });
 }

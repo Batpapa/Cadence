@@ -17,6 +17,7 @@ import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { importPlaybackWarn } from './sessionStore';
 import { canPlayFile } from '../audio/sources';
 import { useThrottled } from './throttle';
+import { InlineStatus } from '../../components/ui';
 
 // ── Screen: file import ───────────────────────────────────────────────────────
 // Turns an audio file into a full session: same recognition pipeline as live,
@@ -51,6 +52,10 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
     if (phase === 'analyzing') return '';
     return t('sessions.initializing');
   });
+  /** The status line is an error: an explicit flag, where one used to be told
+   *  apart by a leading ⚠ in the same grey as the progress lines. Any later
+   *  status replaces it, as any later text replaced the ⚠ one. */
+  const [statusError, setStatusError] = useState(false);
   const [progress, setProgress] = useState<{ analyzedS: number; totalS: number; etaS: number | null }>({ analyzedS: 0, totalS: 0, etaS: null });
   const [annotations, setDetections] = useState<Detection[]>(() => (imp.getPhase() === 'analyzing' ? imp.getDetections() : []));
 
@@ -72,19 +77,22 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
   const onProgress = useThrottled((p: ImportProgress) => setProgress(p));
   const onDetections = useThrottled((all: Detection[]) => setDetections(all));
 
+  // Every status but the error goes through here, so that one clears the flag.
+  const showStatus = (text: string) => { setStatusError(false); setStatusText(text); };
+
   useEffect(() => {
     imp.setCallbacks({
       onPhase: (phase) => {
-        if (phase === 'initializing') setStatusText(t('sessions.initializing'));
-        else if (phase === 'decoding') setStatusText(t('sessions.decoding'));
-        else if (phase === 'analyzing') setStatusText('');
-        else if (phase === 'extracting') setStatusText(t('sessions.extractingAudio'));
+        if (phase === 'initializing') showStatus(t('sessions.initializing'));
+        else if (phase === 'decoding') showStatus(t('sessions.decoding'));
+        else if (phase === 'analyzing') showStatus('');
+        else if (phase === 'extracting') showStatus(t('sessions.extractingAudio'));
       },
-      onIndexProgress: p => setStatusText(indexProgressText(p)),
+      onIndexProgress: p => showStatus(indexProgressText(p)),
       // Runs before the analysis, so this is what the screen shows while
       // nothing else is happening yet. Its cost follows the size of the file,
       // so on a long video it is worth a number.
-      onExtractProgress: (ratio) => setStatusText(t('sessions.extractingAudio') + ` ${Math.round(ratio * 100)}%`),
+      onExtractProgress: (ratio) => showStatus(t('sessions.extractingAudio') + ` ${Math.round(ratio * 100)}%`),
       // A video's audio, extracted. Nothing on this screen plays it any more,
       // but it settles the warning below — an m4a or a WAV opens where the
       // video it came from did not, and the summary is where that will matter.
@@ -92,7 +100,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
       onProgress,
       onDetections: (_events, all) => onDetections(all),
       onFinishing: finishingTrackerFor(imp),
-      onError: (message) => setStatusText(`⚠ ${message}`),
+      onError: (message) => { setStatusText(message); setStatusError(true); },
     });
     // First render happens just before start() (phase 'idle'), or as a
     // re-entry after the modal was closed and reopened mid-import — matches
@@ -200,13 +208,16 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
                 call): out of the flow, so it moves nothing and saves the line
                 it used to take under the bar's box. */}
             {progress.etaS !== null && (
-              <p class="absolute inset-x-0 top-full mt-1 text-[11px] leading-none text-dim text-center whitespace-nowrap">
+              <p class="absolute inset-x-0 top-full mt-1 text-2xs leading-none text-dim text-center whitespace-nowrap">
                 {t('sessions.etaRemaining', { eta: fmtEta(progress.etaS) })}
               </p>
             )}
           </div>
+          {/* Not red: cancelling stops the work and still offers to keep what
+              was recognised (importSession.ts, discardOnCancel). Deleting the
+              analysis outright is the title's bin, which asks first. */}
           <button
-            class="btn-danger px-3 shrink-0 disabled:opacity-50"
+            class="btn-outline shrink-0"
             disabled={cancelling}
             onClick={() => { setCancelling(true); imp.cancel(); }}
           >
@@ -215,8 +226,10 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
         </div>
       </div>
 
-      <p class="text-xs text-dim mt-2 text-center">{statusText}</p>
-      {importPlaybackWarn.value && <p class="text-xs text-amber-500 mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
+      {statusError
+        ? <InlineStatus tone="error" class="mt-2 justify-center">{statusText}</InlineStatus>
+        : <p class="text-xs text-dim mt-2 text-center">{statusText}</p>}
+      {importPlaybackWarn.value && <p class="text-xs text-warn mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
 
       {/* `analysis-list`: see the summary's. */}
       <div ref={feedAnchorRef} class="analysis-list mt-3 space-y-2">

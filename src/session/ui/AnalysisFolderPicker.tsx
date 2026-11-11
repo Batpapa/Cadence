@@ -1,6 +1,7 @@
 import { t } from '../../services/i18nService';
 import type { AppContext } from '../../types';
 import { CustomSelect } from '../../components/customSelect';
+import { ChevronDownIcon } from '../../components/icons';
 import { editSessionTree, folderPathOf, parentFolderOf, placeSession, sessionTreeOf } from '../sessionTree';
 
 // ── Where one analysis lives ─────────────────────────────────────────────────
@@ -37,7 +38,7 @@ export function AnalysisFolderPicker({ ctx, sessionId }: { ctx: AppContext; sess
 
   return (
     <div class="flex items-center gap-1 mt-1">
-      <span class="text-[10px] font-medium uppercase tracking-wider text-dim">{t('sessions.folder.label')}</span>
+      <span class="text-2xs font-medium uppercase tracking-wider text-dim">{t('sessions.folder.label')}</span>
       <CustomSelect
         value={parentId ?? ''}
         options={options}
@@ -45,13 +46,11 @@ export function AnalysisFolderPicker({ ctx, sessionId }: { ctx: AppContext; sess
         renderTrigger={(label, open, toggle) => (
           <button
             type="button"
-            class="text-[10px] font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
+            class="min-h-8 text-2xs font-medium text-dim cursor-pointer hover:text-accent transition-colors flex items-center gap-0.5 shrink-0 whitespace-nowrap"
             onClick={toggle}
           >
             {label}
-            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            <span class={`shrink-0 flex transition-transform ${open ? 'rotate-180' : ''}`}><ChevronDownIcon size={12} /></span>
           </button>
         )}
       />

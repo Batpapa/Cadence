@@ -2,7 +2,7 @@
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
 import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, type AliasMatch } from '../utils';
-import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, iconElement } from '../components/icons';
+import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, CrossIcon, PlusIcon, MoreHorizontalIcon, UploadIcon, NotesIcon, CopyIcon, ShareIcon, iconElement } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
 import { CARD_SOURCES, cardSource, cardSourceLabel } from '../services/cardSourceService';
 import { buildTunesetCard } from '../services/tunesetCard';
@@ -12,7 +12,8 @@ import { tagsWithTunes, setsMatchTuneTags } from '../services/cardRefService';
 import { CardMap } from '../components/cardMap';
 import { exportCards, exportCardsCSV, exportCardsTXT, cardsTextReport, cardPackageText } from '../services/importExport';
 import { uploadShare } from '../services/shareService';
-import { confirmModal, closeAllModals } from '../components/modal';
+import { confirmModal, closeAllModals, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from '../components/modal';
+import { modalMaxW, modalMaxH } from '../services/zoomService';
 import { askIncompleteExport } from '../components/incompleteExportModal';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { removeCards } from '../services/cardService';
@@ -33,6 +34,7 @@ import { showRenameTagEverywhereModal } from '../components/tagModal';
 import { availabilityOfState, replayFSRS } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import type { AppState, Card, LibrarySort } from '../types';
+import { IconButton, EmptyState } from '../components/ui';
 import { FilterSection, FiltersButton, ReviewedRangeSection, cycleFilter, useFiltersPanel, type FilterMap } from '../components/filterSection';
 import { SearchField } from '../components/searchField';
 import { createLongPressHandlers } from '../components/longPress';
@@ -74,35 +76,45 @@ function sourceIdOf(card: Card, prefix: string): number {
 // ── Export modal ──────────────────────────────────────────────────────────────
 
 function showExportModal(cards: Card[], user: AppState): void {
-  const iconCdc   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-  const iconCsv   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>`;
-  const iconTxt   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>`;
-  const iconClip  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-  const iconFile  = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-  const iconShare = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+  // Built per row: an Element can only sit in one place of the DOM.
+  const iconCdc   = () => iconElement(UploadIcon, 20);
+  // A spreadsheet grid: no icon of icons.tsx draws one, so it stays drawn here.
+  const iconCsv   = () => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>`;
+  const iconTxt   = () => iconElement(NotesIcon, 20);
+  const iconClip  = () => iconElement(CopyIcon, 20);
+  const iconFile  = () => iconElement(UploadIcon, 20);
+  const iconShare = () => iconElement(ShareIcon, 20);
 
   // ── Build modal manually for navigation support ───────────────────────────
+  // The modal shell's backdrop, title and close button, so this frame reads as
+  // every other dialog; sized through the zoom correction like them (a raw
+  // 90vw/85vh ignored the app zoom).
   const overlay = document.createElement('div');
-  overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm';
+  overlay.className = `fixed inset-0 z-50 flex items-center justify-center ${MODAL_BACKDROP}`;
 
   const dialog = document.createElement('div');
   dialog.className = 'bg-elevated border border-border rounded-xl shadow-2xl w-full mx-4 overflow-hidden flex flex-col';
-  dialog.style.cssText = `max-width:min(28rem, 90vw); max-height:85vh;`;
+  dialog.style.cssText = `max-width:min(${MODAL_W.m}, ${modalMaxW(0.9)}); max-height:${modalMaxH(0.85)};`;
 
   const header = document.createElement('div');
-  header.className = 'flex items-center justify-between px-5 py-4 border-b border-border shrink-0';
+  header.className = 'flex items-center justify-between px-5 py-3 border-b border-border shrink-0';
   const headerLeft = document.createElement('div');
-  headerLeft.className = 'flex items-center gap-2 min-w-0';
+  headerLeft.className = 'flex items-center gap-1 min-w-0';
   const backBtn = document.createElement('button');
-  backBtn.className = 'text-dim hover:text-primary transition-colors cursor-pointer shrink-0 flex hidden items-center';
+  backBtn.type = 'button';
+  backBtn.className = 'icon-btn -ml-2 hidden';
   backBtn.append(iconElement(ArrowLeftIcon, 16));
   backBtn.setAttribute('aria-label', t('modal.back'));
+  backBtn.title = t('modal.back');
   const titleEl = document.createElement('h2');
-  titleEl.className = 'text-xs font-semibold text-muted uppercase tracking-widest';
+  titleEl.className = MODAL_TITLE_CLASS;
   headerLeft.append(backBtn, titleEl);
   const closeBtn = document.createElement('button');
-  closeBtn.className = 'text-dim hover:text-primary transition-colors text-lg leading-none cursor-pointer shrink-0';
-  closeBtn.textContent = '✕';
+  closeBtn.type = 'button';
+  closeBtn.className = 'icon-btn -mr-2';
+  closeBtn.append(iconElement(CrossIcon, 16));
+  closeBtn.setAttribute('aria-label', t('common.close'));
+  closeBtn.title = t('common.close');
   header.append(headerLeft, closeBtn);
 
   const body = document.createElement('div');
@@ -120,24 +132,30 @@ function showExportModal(cards: Card[], user: AppState): void {
   overlay.addEventListener('mousedown', e => { mouseDownOnOverlay = e.target === overlay; });
   overlay.addEventListener('click', e => { if (e.target === overlay && mouseDownOnOverlay) close(); });
 
-  const mkChoice = (icon: string, label: string, desc: string, accentColor: string, onClick: () => void) => {
+  // The `.choice-card` row (ChoiceCard's vanilla twin): accent icon, the
+  // description on screen rather than in a tooltip a finger never sees, and
+  // the hover from the class instead of a per-row colour painted in JS.
+  const mkChoice = (makeIcon: () => Element | string, label: string, desc: string, onClick: () => void) => {
     const btn = document.createElement('button');
-    btn.className = 'flex items-center gap-3.5 w-full px-4 py-3.5 rounded-xl border border-border bg-bg text-left cursor-pointer';
-    btn.style.cssText = 'transition: border-color 0.15s, background 0.15s;';
-    btn.title = desc;
+    btn.type = 'button';
+    btn.className = 'choice-card';
     const iconWrap = document.createElement('span');
-    iconWrap.style.color = accentColor;
-    iconWrap.className = 'shrink-0 flex items-center';
-    iconWrap.innerHTML = icon;
+    iconWrap.className = 'shrink-0 flex items-center text-accent';
+    const icon = makeIcon();
+    if (typeof icon === 'string') iconWrap.innerHTML = icon; else iconWrap.append(icon);
+    const text = document.createElement('span');
+    text.className = 'flex-1 min-w-0';
     const labelEl = document.createElement('span');
-  labelEl.className = 'js-choice-label flex-1 text-sm font-medium text-primary';
+    labelEl.className = 'js-choice-label block text-sm font-medium text-primary';
     labelEl.textContent = label;
+    const descEl = document.createElement('span');
+    descEl.className = 'block text-xs text-muted mt-0.5 leading-snug';
+    descEl.textContent = desc;
+    text.append(labelEl, descEl);
     const arrow = document.createElement('span');
     arrow.className = 'text-dim shrink-0 flex items-center';
     arrow.append(iconElement(ArrowRightIcon, 16));
-    btn.append(iconWrap, labelEl, arrow);
-    btn.addEventListener('mouseenter', () => { btn.style.borderColor = accentColor; btn.style.background = `${accentColor}12`; });
-    btn.addEventListener('mouseleave', () => { btn.style.borderColor = ''; btn.style.background = ''; });
+    btn.append(iconWrap, text, arrow);
     btn.onclick = onClick;
     return btn;
   };
@@ -146,11 +164,11 @@ function showExportModal(cards: Card[], user: AppState): void {
     titleEl.textContent = t('library.exportSelected');
     backBtn.classList.add('hidden');
     body.innerHTML = '';
-    const cdc = mkChoice(iconCdc, t('library.export.cdc'), t('library.export.cdcDesc'), 'var(--color-warn)', renderCdc);
+    const cdc = mkChoice(iconCdc, t('library.export.cdc'), t('library.export.cdcDesc'), renderCdc);
     cdc.dataset.tour = 'export-cdc';
     body.appendChild(cdc);
-    body.appendChild(mkChoice(iconCsv, 'CSV', t('library.export.csvDesc'), 'var(--color-success)', () => { close(); exportCardsCSV(cards, user); }));
-    body.appendChild(mkChoice(iconTxt, 'TXT', t('library.export.txtDesc'), 'var(--color-muted)', renderTxt));
+    body.appendChild(mkChoice(iconCsv, 'CSV', t('library.export.csvDesc'), () => { close(); exportCardsCSV(cards, user); }));
+    body.appendChild(mkChoice(iconTxt, 'TXT', t('library.export.txtDesc'), renderTxt));
   };
 
   // Same two-level shape as renderCdc: one format, two destinations. The
@@ -161,12 +179,14 @@ function showExportModal(cards: Card[], user: AppState): void {
     backBtn.classList.remove('hidden');
     backBtn.onclick = renderRoot;
     body.innerHTML = '';
-    body.appendChild(mkChoice(iconTxt, t('library.export.file'), t('library.export.txtDesc'), 'var(--color-warn)',
+    body.appendChild(mkChoice(iconTxt, t('library.export.file'), t('library.export.txtDesc'),
       () => { close(); exportCardsTXT(cards, user); }));
-    const copyRow = mkChoice(iconClip, t('common.copyToClipboard'), t('common.copyToClipboardDesc'), 'var(--color-success)', () => {
+    const copyRow = mkChoice(iconClip, t('common.copyToClipboard'), t('common.copyToClipboardDesc'), () => {
       void copyText(cardsTextReport(cards, user)).then(ok => {
         const label = copyRow.querySelector('.js-choice-label');
         if (label) label.textContent = t(ok ? 'common.copied' : 'common.copyFailed');
+        label?.classList.toggle('text-primary', ok);
+        label?.classList.toggle('text-danger', !ok);
         // A failure keeps the modal open: nothing reached the clipboard, so
         // closing would read as success.
         if (ok) setTimeout(close, 900);
@@ -180,8 +200,8 @@ function showExportModal(cards: Card[], user: AppState): void {
     backBtn.classList.remove('hidden');
     backBtn.onclick = renderRoot;
     body.innerHTML = '';
-    body.appendChild(mkChoice(iconFile,  t('library.export.file'),  t('library.export.cdcDesc'),  'var(--color-warn)',   () => { close(); void exportCards(cards, askIncompleteExport); }));
-    body.appendChild(mkChoice(iconShare, t('library.share.label'),  t('library.share.desc'),       'var(--color-accent)', () => { void renderShareResult(); }));
+    body.appendChild(mkChoice(iconFile,  t('library.export.file'),  t('library.export.cdcDesc'),  () => { close(); void exportCards(cards, askIncompleteExport); }));
+    body.appendChild(mkChoice(iconShare, t('library.share.label'),  t('library.share.desc'),       () => { void renderShareResult(); }));
   };
 
   const renderShareResult = async () => {
@@ -218,6 +238,7 @@ function showExportModal(cards: Card[], user: AppState): void {
       body.append(keyEl, copyBtn, validity);
     } catch (e) {
       status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      status.classList.replace('text-muted', 'text-danger');
       backBtn.classList.remove('hidden');
       backBtn.onclick = renderCdc;
     }
@@ -889,19 +910,18 @@ export function LibraryView() {
           </p>
         </div>
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class={`w-8 h-8 shrink-0 flex items-center justify-center rounded-md border transition-colors cursor-pointer ${
-              mapOpen ? 'bg-accent text-white border-accent' : 'border-border text-muted hover:border-accent hover:text-accent'
-            }`}
-            title={t('dashboard.cardMap')}
+          <IconButton
+            variant="outline"
+            on={mapOpen}
+            label={t('dashboard.cardMap')}
+            aria-pressed={mapOpen}
             data-tour="library-map"
             onClick={() => setMapOpen(o => !o)}
           >
             <ScatterPlotIcon size={16} />
-          </button>
-          <button class="btn-primary" data-tour="new-card" onClick={() => showNewCardModal(getContext())}>
-            {t('library.newCard')}
+          </IconButton>
+          <button class="btn-primary inline-flex items-center gap-1.5" data-tour="new-card" onClick={() => showNewCardModal(getContext())}>
+            <PlusIcon size={14} />{t('library.newCard')}
           </button>
         </div>
       </div>
@@ -933,12 +953,12 @@ export function LibraryView() {
           <div class="flex pt-1">
             <button
               type="button"
-              class="text-xs px-2 py-0.5 rounded-full border bg-accent text-white border-accent inline-flex items-center gap-1.5 cursor-pointer"
+              class="chip chip-on gap-1.5 cursor-pointer"
               title={t('library.limited.clear')}
               onClick={() => setOnlyCards(null)}
             >
               {t(pool.length === 1 ? 'library.limited.one' : 'library.limited.other', { count: pool.length })}
-              <span aria-hidden="true">✕</span>
+              <CrossIcon size={12} />
             </button>
           </div>
         )}
@@ -1036,63 +1056,69 @@ export function LibraryView() {
         </label>
         <div class="flex gap-1 items-center">
           <div ref={sortRef} class="relative">
-            <button
-              type="button"
-              class="btn-ghost text-xs inline-flex items-center justify-center"
+            <IconButton
+              label={t(`library.sort.${sortMode}`)}
+              aria-expanded={sortOpen}
               data-tour="library-sort"
-              title={t(`library.sort.${sortMode}`)}
               onClick={() => setSortOpen(o => !o)}
             >
-              {(() => { const Icon = SORT_ICON[sortMode]; return <Icon size={13} />; })()}
-            </button>
+              {(() => { const Icon = SORT_ICON[sortMode]; return <Icon size={14} />; })()}
+            </IconButton>
+            {/* Not CustomSelect nor useContextMenu, which the charter would
+                have: the guided tour lights this list by its own handle
+                (`library-sort-menu`, walkthrough/scenarios.ts), and neither
+                shared menu can carry one. Drawn with the shared menu classes,
+                so it reads as one of them. */}
             {sortOpen && (
-              <div class="absolute top-full right-0 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[170px]" data-tour="library-sort-menu">
+              <div class="menu-surface absolute top-full right-0 mt-1 z-30 min-w-[180px]" data-tour="library-sort-menu">
                 {SORT_MODES.map(m => {
                   const Icon   = SORT_ICON[m];
                   const active = m === sortMode;
                   return (
                     <button
                       key={m}
-                      class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
+                      type="button"
+                      class={`menu-item${active ? ' menu-item-on' : ''}`}
                       onClick={() => { setSortMode(m); saveSortPref(user.id, m, sortAsc); setSortOpen(false); }}
                     >
-                      <span class="shrink-0 flex items-center"><Icon size={12} /></span>
+                      <span class="shrink-0 flex items-center"><Icon size={14} /></span>
                       <span class="flex-1">{t(`library.sort.${m}`)}</span>
-                      {active && <span class="text-accent flex items-center"><CheckIcon size={11} /></span>}
+                      {active && <span class="text-accent flex items-center"><CheckIcon size={12} /></span>}
                     </button>
                   );
                 })}
               </div>
             )}
           </div>
-          <button
-            type="button"
-            class="btn-ghost text-xs inline-flex items-center justify-center"
+          <IconButton
+            label={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
             data-tour="library-sort-dir"
-            title={sortAsc ? t('library.sort.ascending') : t('library.sort.descending')}
             onClick={() => { const next = !sortAsc; setSortAsc(next); saveSortPref(user.id, sortMode, next); }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${sortAsc ? 'rotate-180' : ''}`}>
+            {/* An arrow with a shaft: icons.tsx has only chevrons, which read
+                as "open", not "order". */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`transition-transform ${sortAsc ? 'rotate-180' : ''}`}>
               <line x1="12" y1="5" x2="12" y2="19"/>
               <polyline points="19 12 12 19 5 12"/>
             </svg>
-          </button>
+          </IconButton>
           {hasSelection && <span class="flex gap-1 items-center" data-tour="library-actions">
             <div class="w-px h-4 bg-border mx-1" />
-            <button class="btn-ghost text-xs inline-flex items-center justify-center" data-tour="library-export" title={t('library.exportSelected')} onClick={() => showExportModal(allCards.filter(c => selected.has(c.id)), user)}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            </button>
-            <button
-              class="btn-ghost text-xs inline-flex items-center justify-center"
-              title={t('library.batch.more')}
+            <IconButton label={t('library.exportSelected')} data-tour="library-export" onClick={() => showExportModal(allCards.filter(c => selected.has(c.id)), user)}>
+              <UploadIcon size={14} />
+            </IconButton>
+            <IconButton
+              label={t('library.batch.more')}
               data-tour="library-bulk"
               onClick={(e) => bulkMenu.open(e.clientX, e.clientY)}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
-            </button>
+              <MoreHorizontalIcon size={14} />
+            </IconButton>
             <button
-              class="btn bg-success/80 hover:bg-success text-white text-xs flex items-center"
+              type="button"
+              class="btn-study text-xs flex items-center"
               title={t('library.study')}
+              aria-label={t('library.study')}
               onClick={() => {
                 const pool = [...selected].map(id => ({ cardId: id }));
                 showStudyModal({ entries: pool, title: t('library.title'), defaultContext: null });
@@ -1100,9 +1126,9 @@ export function LibraryView() {
             >
               <StudyIcon size={14} />
             </button>
-            <button
-              class="btn-danger text-xs flex items-center gap-1.5"
-              title={t('library.deleteSelected')}
+            <IconButton
+              variant="danger"
+              label={t('library.deleteSelected')}
               onClick={() => confirmModal(
                 t('library.delete.title'),
                 t(selected.size !== 1 ? 'library.delete.messagePlural' : 'library.delete.message', { count: selected.size }),
@@ -1113,8 +1139,8 @@ export function LibraryView() {
                 },
               )}
             >
-              <TrashIcon size={13} />
-            </button>
+              <TrashIcon size={14} />
+            </IconButton>
           </span>}
         </div>
       </div>
@@ -1123,9 +1149,9 @@ export function LibraryView() {
       {/* ── Card list ── */}
       <div class="px-6 pb-6">
         {filtered.length === 0 ? (
-          <p class="text-sm text-dim italic">
+          <EmptyState>
             {(q || liveTags.size > 0 || liveDecks.size > 0) ? t('library.noMatch') : t('library.empty')}
-          </p>
+          </EmptyState>
         ) : (
           <div class="lib-list space-y-1">
             {(() => {
@@ -1215,7 +1241,7 @@ export function LibraryView() {
                   />
 
                   <span class="flex gap-0.5 items-center shrink-0">
-                    <span class={`w-2 h-2 rounded-full ${availabilityColor(k)}`} title={t('card.dot.recall', { pct: pct(k) })} />
+                    <span class={`w-2 h-2 rounded-full ${availabilityColor(k, cardEase === undefined)}`} title={cardEase === undefined ? t('card.neverReviewed') : t('card.dot.recall', { pct: pct(k) })} />
                     <span
                       class={`w-2 h-2 rounded-full ${cardEase === undefined ? 'bg-border' : cardEase >= 0.6 ? 'bg-success' : cardEase >= 0.35 ? 'bg-warn' : 'bg-danger'}`}
                       title={cardEase !== undefined ? t('card.dot.ease', { pct: pct(cardEase) }) : t('card.neverReviewed')}

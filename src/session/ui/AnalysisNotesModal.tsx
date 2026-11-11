@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, renderModalBody, askUnsavedChanges } from '../../components/modal';
+import { showModal, renderModalBody, askUnsavedChanges, MODAL_W } from '../../components/modal';
+import { EmptyState } from '../../components/ui';
 import { renderNotes } from '../../components/fileViewer';
 import { PencilIcon } from '../../components/icons';
 import { focusIfDesktop } from '../../utils';
@@ -58,7 +59,7 @@ function NotesBody({ box, onSave }: { box: NotesBox; onSave: (notes: string) => 
       <div class="w-full space-y-4">
         {saved.trim()
           ? <div ref={renderedRef} />
-          : <p class="text-sm text-dim italic">{t('sessions.notes.empty')}</p>}
+          : <EmptyState>{t('sessions.notes.empty')}</EmptyState>}
         <div class="flex justify-end">
           <button class="btn-ghost text-xs inline-flex items-center gap-1.5" onClick={() => setEditing(true)}>
             <PencilIcon size={12} />{t('common.edit')}
@@ -99,7 +100,7 @@ export function showAnalysisNotesModal(notes: string, onSave: (notes: string) =>
   const box: NotesBox = { saved: notes, draft: notes, save: () => false };
   const { el, cleanup } = renderModalBody(<NotesBody box={box} onSave={onSave} />);
   showModal(t('sessions.notes.title'), el, [], {
-    maxWidth: '36rem',
+    maxWidth: MODAL_W.l,
     onDismiss: cleanup,
     guardDismiss: (dismiss) => {
       if (box.draft === box.saved) return false;

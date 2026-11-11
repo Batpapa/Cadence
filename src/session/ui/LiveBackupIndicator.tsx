@@ -45,19 +45,19 @@ export function LiveBackupIndicator({ live }: { live: LiveSession }) {
     error ? 'text-danger cursor-pointer' :
     'text-dim hover:text-muted cursor-pointer';
 
+  // An automatic round never opens a sign-in window, so the one failure that
+  // is not really a failure is "no token". Saying so is what tells the user
+  // that pressing solves it — pressing IS the gesture a token needs (see
+  // driveService's getToken).
+  const errorText = error === null ? null
+    : /needs_auth|auth_failed/.test(error) ? t('sessions.liveBackup.needsAuth')
+    : t('sessions.liveBackup.failed', { error });
+
   return (
-    <div class="flex justify-end mt-1.5">
+    <div class="flex flex-col items-end mt-1.5">
       <button
-        class={`flex items-center gap-1.5 text-[11px] transition-colors ${tone}`}
-        // An automatic round never opens a sign-in window, so the one failure
-        // that is not really a failure is "no token". Saying so is what tells
-        // the user that pressing solves it — pressing IS the gesture a token
-        // needs (see driveService's getToken).
-        title={
-          error === null ? t('sessions.liveBackup.hint')
-          : /needs_auth|auth_failed/.test(error) ? t('sessions.liveBackup.needsAuth')
-          : t('sessions.liveBackup.failed', { error })
-        }
+        class={`flex items-center gap-1.5 min-h-8 text-2xs transition-colors ${tone}`}
+        title={errorText ?? t('sessions.liveBackup.hint')}
         disabled={busy}
         // The outcome is in liveBackupStatus, which this renders — nothing
         // left for the rejection to say here.
@@ -66,6 +66,8 @@ export function LiveBackupIndicator({ live }: { live: LiveSession }) {
         <CloudUpIcon size={12} />
         <span>{label}</span>
       </button>
+      {/* The reason on screen, not in the tooltip alone: a phone has none. */}
+      {errorText && <p class="text-2xs text-danger text-right">{errorText}</p>}
     </div>
   );
 }

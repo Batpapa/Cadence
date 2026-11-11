@@ -28,6 +28,7 @@ import {
   ArrowLeftIcon, ArrowRightIcon, RecordingPulseDot, InstallIcon, WarningTriangleIcon, UpdateIcon, MoreVerticalIcon, LogoutIcon,
 } from './icons';
 import { showAboutModal } from './aboutModal';
+import { useBrandColor } from './cadenceMark';
 import { showStorageModal } from './storageModal';
 import { pinnedModule, isPinnedRouteActive } from './pinnedModule';
 import { storagePersisted, storageUsage, storageQuota, deviceFree, assessStorage, effectivePersisted } from '../services/storageService';
@@ -220,7 +221,7 @@ function HeaderMenu({ anchor, align, tour, onClose, children }: {
       ref={ref}
       role="menu"
       data-tour={tour}
-      class={`fixed z-30 bg-elevated border border-border rounded-xl overflow-hidden shadow-2xl p-1.5
+      class={`fixed z-30 menu-surface overflow-hidden
         ${align === 'center' ? '-translate-x-1/2' : ''}`}
       style={pos}
     >
@@ -232,20 +233,25 @@ function HeaderMenu({ anchor, align, tour, onClose, children }: {
 /** One line per entry, no subtitles (the author's call, 2026-10-23). The icon
  *  column is 24 px for every row, wide enough for the logo glyph, so the labels
  *  line up whatever the icon; `[&>svg]:shrink-0` because an SVG is a flex item
- *  that would otherwise shrink to the column instead of keeping its size. */
-function MenuRow({ icon, label, accent, danger, dot, tour, onClick }: {
-  icon: ComponentChildren; label: string; accent?: boolean; danger?: boolean; dot?: boolean; tour?: string; onClick: () => void;
+ *  that would otherwise shrink to the column instead of keeping its size.
+ *  The shared `.menu-item` row, kept at 44 px here: the ⋮ menu and the profile
+ *  menu are the app's own, opened from the header's 40/44 px buttons. The
+ *  profile menu uses these rows too since the UI charter (2026-11-11): it had
+ *  its own, smaller ones in the same container. `on`: the current choice. */
+function MenuRow({ icon, label, accent, danger, dot, on, trailing, tour, onClick }: {
+  icon: ComponentChildren; label: string; accent?: boolean; danger?: boolean; dot?: boolean; on?: boolean; trailing?: ComponentChildren; tour?: string; onClick: () => void;
 }) {
   return (
     <button
       role="menuitem"
       data-tour={tour}
-      class="w-full flex items-center gap-3 min-h-11 px-2.5 py-2 rounded-lg text-left text-sm text-primary hover:bg-surface cursor-pointer border-none bg-transparent transition-colors"
+      class={`menu-item gap-3 min-h-11 py-2 border-none${on ? ' menu-item-on' : ''}`}
       onClick={onClick}
     >
-      <span class={`w-6 flex items-center justify-center shrink-0 [&>svg]:shrink-0 ${danger ? 'text-danger' : accent ? 'text-accent' : 'text-muted'}`}>{icon}</span>
-      <span class="flex-1 min-w-0 whitespace-nowrap">{label}</span>
+      <span class={`w-6 flex items-center justify-center shrink-0 [&>svg]:shrink-0 ${danger ? 'text-danger' : accent || on ? 'text-accent' : 'text-muted'}`}>{icon}</span>
+      <span class="flex-1 min-w-0 whitespace-nowrap truncate">{label}</span>
       {dot && <span class="w-2 h-2 rounded-full bg-accent shrink-0" />}
+      {trailing && <span class="flex items-center shrink-0">{trailing}</span>}
     </button>
   );
 }
@@ -263,9 +269,9 @@ const SYNC_TITLE: Record<DriveStatus, string> = {
 
 function SyncBtn({ status, icon }: { status: DriveStatus; icon: number }) {
   const cls =
-    status === 'pending'   ? 'text-yellow-400 cursor-pointer' :
+    status === 'pending'   ? 'text-warn cursor-pointer' :
     status === 'syncing'   ? 'text-accent animate-pulse cursor-default' :
-    status === 'connected' ? 'text-green-500 cursor-default' :
+    status === 'connected' ? 'text-success cursor-default' :
                              'text-danger cursor-pointer';
   const clickable = status === 'pending' || status === 'error';
   return (
@@ -357,7 +363,7 @@ function AlertBtn({ compact, icon }: { compact: boolean; icon: number }) {
         <WarningTriangleIcon size={icon} />
         {labelled && <span class="text-xs font-medium">{t('saveFailure.pill')}</span>}
         {!only && (
-          <span class={`absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold text-bg flex items-center justify-center ${
+          <span class={`absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full text-2xs font-semibold text-bg flex items-center justify-center ${
             danger ? 'bg-danger' : 'bg-warn'
           }`}>{alerts.length}</span>
         )}
@@ -391,6 +397,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
   // Sizes follow the device, the layout follows the room: a narrow window on a
   // computer gets the phone's layout at the computer's sizes.
   const icon = isPortraitPhone ? 20 : 18;
+  const brand = useBrandColor();
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -497,7 +504,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
       {!compact && (
         <div ref={centerRef} class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none">
           <button
-            class={`pointer-events-auto hdr-btn ${canGoBack ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
+            class={`pointer-events-auto hdr-btn ${canGoBack ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-dim opacity-40 cursor-default'}`}
             title={t('sidebar.back')}
             disabled={!canGoBack}
             onClick={() => ctx.back()}
@@ -510,11 +517,11 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             onClick={() => setProfileOpen(o => !o)}
           >
             <span
-              class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-[10px] font-mono font-bold text-accent"
+              class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-2xs font-mono font-bold text-accent"
               style="background:rgb(var(--color-accent-ch)/0.18)"
             >{initials}</span>
-            <span class="text-[13px] text-primary font-medium max-w-[100px] truncate">{currentProfile?.name ?? '—'}</span>
-            <span class="text-dim flex items-center"><ChevronDownIcon size={11} /></span>
+            <span class="text-sm text-primary font-medium max-w-[100px] truncate">{currentProfile?.name ?? '—'}</span>
+            <span class="text-dim flex items-center"><ChevronDownIcon size={12} /></span>
           </button>
 
           {recording && (
@@ -529,7 +536,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
           )}
 
           <button
-            class={`pointer-events-auto hdr-btn ${canGoForward ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-border cursor-default'}`}
+            class={`pointer-events-auto hdr-btn ${canGoForward ? 'text-dim hover:text-primary hover:bg-elevated cursor-pointer' : 'text-dim opacity-40 cursor-default'}`}
             title={t('sidebar.forward')}
             disabled={!canGoForward}
             onClick={() => ctx.forward()}
@@ -560,7 +567,7 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             onClick={() => setProfileOpen(o => !o)}
           >
             <span
-              class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-mono font-bold text-accent"
+              class="w-7 h-7 rounded-md flex items-center justify-center text-2xs font-mono font-bold text-accent"
               style="background:rgb(var(--color-accent-ch)/0.18)"
             >{initials}</span>
           </button>
@@ -619,7 +626,8 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
                 logo had no job before; About now also carries sharing the app
                 and the community — the job of a share button testers read as
                 "share what is selected" (2026-10-22). */}
-            <MenuRow icon={<CadenceLogo size={24} glyph />} accent label={t('about.title')} onClick={fromMenu(showAboutModal)} />
+            {/* The logo in its own colour, not the accent (2026-11-11). */}
+            <MenuRow icon={<span class="flex" style={{ color: brand }}><CadenceLogo size={24} glyph /></span>} label={t('about.title')} onClick={fromMenu(showAboutModal)} />
             {/* Last of all, out of Settings (2026-10-26, the author's call):
                 leaving is not a setting. Red like it was there. */}
             <MenuRow icon={<LogoutIcon size={18} />} danger label={t('settings.logout')} onClick={fromMenu(confirmLogout)} />
@@ -634,37 +642,32 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
             if (!profile) return null;
             const active = pid === user.currentProfileId;
             return (
-              <button
+              <MenuRow
                 key={pid}
-                data-tour={`profile-${pid}`}
-                class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-md cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
+                tour={`profile-${pid}`}
+                on={active}
+                icon={
+                  <span
+                    class={`w-6 h-6 rounded-md flex items-center justify-center text-2xs font-mono font-bold ${active ? 'text-accent' : 'text-dim'}`}
+                    style={active ? 'background:rgb(var(--color-accent-ch)/0.18)' : 'background:var(--color-border)'}
+                  >{initialsOf(profile.name)}</span>
+                }
+                label={profile.name}
+                trailing={active ? <CheckIcon size={14} /> : undefined}
                 onClick={() => {
                   setProfileOpen(false);
                   if (pid !== user.currentProfileId) void ctx.mutate(s => { s.currentProfileId = pid; });
                 }}
-              >
-                <div
-                  class="w-4 h-4 rounded flex items-center justify-center shrink-0"
-                  style={active ? 'background:rgb(var(--color-accent-ch)/0.2)' : 'background:var(--color-border)'}
-                >
-                  <span class={`text-[8px] font-mono font-bold ${active ? 'text-accent' : 'text-dim'}`}>
-                    {initialsOf(profile.name)}
-                  </span>
-                </div>
-                <span class="flex-1 truncate">{profile.name}</span>
-                {active && <span class="text-accent flex items-center"><CheckIcon size={11} /></span>}
-              </button>
+              />
             );
           })}
           <div class="h-px bg-border my-1" />
-          <button
-            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-md text-dim hover:text-primary hover:bg-surface cursor-pointer border-none bg-transparent text-left transition-colors"
-            data-tour="profile-manage"
+          <MenuRow
+            icon={<SettingsIcon size={18} />}
+            label={t('sidebar.manageProfiles')}
+            tour="profile-manage"
             onClick={() => { setProfileOpen(false); showProfileModal(ctx); }}
-          >
-            <span class="flex items-center"><SettingsIcon size={12} /></span>
-            {t('sidebar.manageProfiles')}
-          </button>
+          />
         </HeaderMenu>
       )}
 
@@ -678,13 +681,19 @@ export function AppHeader({ ctx, sidebarCollapsed, onToggleSidebar, isPortraitPh
  *  user had to click "four little cubes" to find out what they were, and a
  *  phone has no hover to show the title. Destinations only — Back and Forward
  *  are the history's, not places — but every button keeps the label's line,
- *  so the icons stay on one row. 10 px, and short words written for this bar:
- *  a cell is 60 px with a pinned module on a 360 px phone, and the widest
- *  label, "Tendances", measures 50 px in IBM Plex Sans 500.
+ *  so the icons stay on one row. 11 px since the UI charter (2026-11-11: the
+ *  text floor, 10 px before), and short words written for this bar: a cell
+ *  is 60 px with a pinned module on a 360 px phone, and the widest label,
+ *  "Tendances", measured 50 px at 10 px in IBM Plex Sans 500 — about 55 at 11.
  *
  *  `labelled` false (the `navLabels` setting, 2026-10-29) drops that line on
  *  every button, and the icons grow into the room it leaves: the bar keeps
- *  its height. */
+ *  its height.
+ *
+ *  The active destination carries the app's selected tint, as the header's
+ *  tiles do — on a pill behind the icon rather than on the whole cell, which
+ *  is the bar's full height and would read as a block. The pill is there,
+ *  transparent, on every button, so the icons do not move when it shows. */
 function BottomNavBtn({ title, label, labelled, active, disabled, tour, onClick, children }: {
   title: string; label?: string; labelled: boolean; active?: boolean; disabled?: boolean; tour?: string; onClick: () => void; children: ComponentChildren;
 }) {
@@ -692,13 +701,13 @@ function BottomNavBtn({ title, label, labelled, active, disabled, tour, onClick,
     <button
       data-tour={tour}
       class={`flex-1 min-w-0 flex flex-col items-center justify-center gap-1 transition-colors
-        ${active ? 'text-accent' : disabled ? 'text-border' : 'text-dim active:text-accent'}`}
+        ${active ? 'text-accent' : disabled ? 'text-dim opacity-40' : 'text-dim active:text-accent'}`}
       title={title}
       disabled={disabled}
       onClick={onClick}
     >
-      {children}
-      {labelled && <span class="h-3 text-[10px] leading-3 font-medium whitespace-nowrap" aria-hidden="true">{label}</span>}
+      <span class={`flex items-center justify-center px-3 py-1 rounded-full transition-colors ${active ? 'bg-accent/10' : ''}`}>{children}</span>
+      {labelled && <span class="h-3 text-2xs leading-3 font-medium whitespace-nowrap" aria-hidden="true">{label}</span>}
     </button>
   );
 }

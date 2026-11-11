@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, renderModalBody } from '../../components/modal';
+import { showModal, renderModalBody, MODAL_W } from '../../components/modal';
 import { MetronomeIcon, ChevronDownIcon } from '../../components/icons';
 import { Sparkline } from '../../trending/ui/sparkline';
 import type { LiveSession } from '../liveSession';
@@ -93,7 +93,7 @@ export function LiveTempoBar({ live }: { live: LiveSession }) {
       >
         <span class="text-accent shrink-0"><MetronomeIcon size={18} /></span>
         <span class="flex flex-col leading-tight min-w-0">
-          <span class="text-[11px] text-muted">{t('sessions.tempo.title')}</span>
+          <span class="text-2xs text-muted">{t('sessions.tempo.title')}</span>
           <span class="flex items-baseline gap-1.5 min-w-0">
             <span class={`font-mono tabular-nums text-xl font-bold ${now.known && !paused ? 'text-primary' : 'text-dim'}`}>{now.value}</span>
             <span class="text-xs text-muted truncate">{now.unit}</span>
@@ -111,7 +111,7 @@ export function LiveTempoBar({ live }: { live: LiveSession }) {
 export function showTempoModal(live: LiveSession): void {
   const { el, cleanup } = renderModalBody(<TempoModalBody live={live} />);
   // No footer: nothing to confirm.
-  showModal(t('sessions.tempo.title'), el, [], { maxWidth: '34rem', onDismiss: cleanup });
+  showModal(t('sessions.tempo.title'), el, [], { maxWidth: MODAL_W.l, onDismiss: cleanup });
 }
 
 function TempoModalBody({ live }: { live: LiveSession }) {
@@ -145,7 +145,7 @@ function TempoModalBody({ live }: { live: LiveSession }) {
         : <p class="text-sm text-dim">{t('sessions.tempo.empty')}</p>}
       {/* No list of the tunes under it (2026-11-02, the user): each card
           says its tempo, and opens its own curve. */}
-      <p class="text-[11px] text-dim">{t('sessions.tempo.note')}</p>
+      <p class="text-2xs text-dim">{t('sessions.tempo.note')}</p>
     </div>
   );
 }
@@ -285,7 +285,7 @@ function TempoChart({ readings, curve, current, detections, span, beat = QUAVER_
               style={{ left: `${b.x0 + 1}px`, width: `${b.width}px`, top: `${PAD.top}px`, height: `${plotH}px` }}
             />
             {b.width >= 28 && (
-              <div class="absolute text-[10px] text-muted truncate text-center" style={{ left: `${b.x0 + 1}px`, width: `${b.width}px`, top: '2px' }}>
+              <div class="absolute text-2xs text-muted truncate text-center" style={{ left: `${b.x0 + 1}px`, width: `${b.width}px`, top: '2px' }}>
                 {tuneName(b.d).text}
               </div>
             )}
@@ -302,14 +302,14 @@ function TempoChart({ readings, curve, current, detections, span, beat = QUAVER_
           {h && <circle cx={hx} cy={ys(perMin(h.rate))} r="4.5" fill="var(--color-accent)" stroke="var(--color-surface)" stroke-width="2" />}
         </svg>
         {rateTicks.map(q => (
-          <div key={q} class="absolute text-[10px] font-mono tabular-nums text-dim text-right" style={{ left: '0', width: `${PAD.left - 6}px`, top: `${ys(q) - 7}px` }}>{q}</div>
+          <div key={q} class="absolute text-2xs font-mono tabular-nums text-dim text-right" style={{ left: '0', width: `${PAD.left - 6}px`, top: `${ys(q) - 7}px` }}>{q}</div>
         ))}
         {timeTicks.map(s => (
-          <div key={s} class="absolute text-[10px] font-mono tabular-nums text-dim text-center" style={{ left: `${xs(s) - 20}px`, width: '40px', top: `${PAD.top + plotH + 5}px` }}>{fmtLongTime(s)}</div>
+          <div key={s} class="absolute text-2xs font-mono tabular-nums text-dim text-center" style={{ left: `${xs(s) - 20}px`, width: '40px', top: `${PAD.top + plotH + 5}px` }}>{fmtLongTime(s)}</div>
         ))}
         {h && hVal && (
           <div
-            class="absolute pointer-events-none rounded-md border border-border bg-elevated px-2 py-1.5 text-[11px] leading-snug whitespace-nowrap shadow-lg"
+            class="absolute pointer-events-none rounded-md border border-border bg-elevated px-2 py-1.5 text-2xs leading-snug whitespace-nowrap shadow-lg"
             style={{ top: `${PAD.top + 8}px`, ...(hx > w / 2 ? { right: `${w - hx + 8}px` } : { left: `${hx + 8}px` }) }}
           >
             <div class="font-mono text-dim">{fmtLongTime(h.t)}{hDet ? ` · ${tuneName(hDet).text}` : ''}</div>
@@ -318,10 +318,10 @@ function TempoChart({ readings, curve, current, detections, span, beat = QUAVER_
           </div>
         )}
       </div>
-      <div class="flex items-baseline gap-3 text-[10px] text-dim mt-0.5">
+      <div class="flex items-baseline gap-3 text-2xs text-dim mt-0.5">
         <span>{beat === QUAVER_BEAT ? t('sessions.tempo.axis') : tempoUnitText(beat.unit)}</span>
         {longer && (
-          <button class="text-xs text-muted hover:text-accent transition-colors cursor-pointer" onClick={() => { setAll(a => !a); setHover(null); }}>
+          <button class="text-xs text-muted hover:text-accent transition-colors cursor-pointer min-h-8" onClick={() => { setAll(a => !a); setHover(null); }}>
             {t(all ? 'sessions.tempo.showRecent' : 'sessions.tempo.showAll')}
           </button>
         )}
@@ -349,7 +349,7 @@ export type DetectionTempoSource =
 
 export function showDetectionTempo(ann: Detection, source: DetectionTempoSource): void {
   const { el, cleanup } = renderModalBody(<DetectionTempoBody ann={ann} source={source} />);
-  showModal(t('sessions.tempo.title'), el, [], { maxWidth: '34rem', onDismiss: cleanup });
+  showModal(t('sessions.tempo.title'), el, [], { maxWidth: MODAL_W.l, onDismiss: cleanup });
 }
 
 /** The curve redrawn at most this often while it is worked out, ms. */
@@ -420,7 +420,7 @@ function DetectionTempoBody({ ann, source }: { ann: Detection; source: Detection
       {curve.length > 0
         ? <TempoChart readings={[]} curve={curve} current={null} detections={[ann]} span={{ from: ann.start, to: end }} beat={beatOfDance(ann.dance, ann.meter)} />
         : state === null && <p class="text-sm text-dim">{t('sessions.tempo.empty')}</p>}
-      <p class="text-[11px] text-dim">{t('sessions.tempo.note')}</p>
+      <p class="text-2xs text-dim">{t('sessions.tempo.note')}</p>
     </div>
   );
 }

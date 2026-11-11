@@ -1,7 +1,8 @@
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { appState } from '../store';
-import { showModal, renderModalBody, closeModal } from './modal';
+import { showModal, renderModalBody, closeModal, MODAL_W } from './modal';
+import { IconButton } from './ui';
 import { askIncompleteExport } from './incompleteExportModal';
 import { CheckIcon, ClipboardIcon, CopyIcon, FileIcon, HelpIcon, ImportTrayIcon, SaveIcon, UploadIcon, WandIcon, WarningTriangleIcon } from './icons';
 import { t } from '../services/i18nService';
@@ -189,20 +190,20 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
   return (
     <div class="space-y-3.5 text-sm">
       <div class="flex items-start gap-3 mb-1">
-        <span class="w-8 h-8 rounded-[9px] bg-accent-dim text-accent flex items-center justify-center shrink-0"><WandIcon size={15} /></span>
+        <span class="w-8 h-8 rounded-lg bg-accent-dim text-accent flex items-center justify-center shrink-0"><WandIcon size={16} /></span>
         <p class="text-muted leading-relaxed">{t('smartEdit.intro')}</p>
       </div>
 
       {/* ── 0. The instructions ── */}
-      <StepCard badge={<FileIcon size={13} />} title={t('smartEdit.instructions')} ext=".md">
+      <StepCard badge={<FileIcon size={14} />} title={t('smartEdit.instructions')} ext=".md">
         <p class="text-xs text-dim leading-relaxed">{t('smartEdit.instructionsHint')}</p>
         <div class="flex flex-wrap gap-2">
           <button class={`btn-soft ${ACTION} ${instructionsCopied ? 'text-success' : ''}`} onClick={() => { void copyInstructions(); }}>
-            {instructionsCopied ? <CheckIcon size={12} /> : <CopyIcon size={13} />}
+            {instructionsCopied ? <CheckIcon size={12} /> : <CopyIcon size={14} />}
             {instructionsCopied ? t('smartEdit.copied') : t('smartEdit.copy')}
           </button>
-          <button class={`btn-ghost border border-border ${ACTION}`} onClick={downloadInstructions}>
-            <ImportTrayIcon size={13} />
+          <button class={`btn-outline ${ACTION}`} onClick={downloadInstructions}>
+            <ImportTrayIcon size={14} />
             {t('smartEdit.download')}
           </button>
         </div>
@@ -223,14 +224,14 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
               <span class="text-primary">{t('smartEdit.withContent')}</span>
             </label>
             {/* Outside the label: opening the explanation must not tick the box. */}
-            <button
-              class={`flex items-center p-0.5 rounded-full transition-colors cursor-pointer shrink-0 ${contentHintOpen ? 'text-accent' : 'text-dim hover:text-primary'}`}
-              title={t('settings.explain')}
+            <IconButton
+              on={contentHintOpen}
+              label={t('settings.explain')}
               aria-expanded={contentHintOpen}
               onClick={() => setContentHintOpen(o => !o)}
             >
               <HelpIcon size={14} />
-            </button>
+            </IconButton>
           </div>
           {contentHintOpen && (
             <p class="text-xs text-dim leading-relaxed mt-2 px-3 py-2 rounded-lg border border-border bg-surface">{t('smartEdit.withContentHint')}</p>
@@ -238,16 +239,16 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
         </div>
         <div class="flex flex-wrap gap-2">
           <button class={`btn-soft ${ACTION} ${dataCopied ? 'text-success' : ''}`} disabled={preparing} onClick={() => { void copyData(); }}>
-            {dataCopied ? <CheckIcon size={12} /> : <CopyIcon size={13} />}
+            {dataCopied ? <CheckIcon size={12} /> : <CopyIcon size={14} />}
             {dataCopied ? t('smartEdit.copied') : t('smartEdit.copy')}
           </button>
-          <button class={`btn-ghost border border-border ${ACTION}`} disabled={preparing} onClick={() => { void downloadData(); }}>
-            <ImportTrayIcon size={13} />
+          <button class={`btn-outline ${ACTION}`} disabled={preparing} onClick={() => { void downloadData(); }}>
+            <ImportTrayIcon size={14} />
             {t('smartEdit.download')}
           </button>
         </div>
         {(preparing || size !== null) && (
-          <p class="font-mono text-[11px] text-dim leading-relaxed">
+          <p class="font-mono text-2xs text-dim leading-relaxed">
             {preparing ? t('smartEdit.preparing')
               : t('smartEdit.size', { chars: size!.toLocaleString() })}
           </p>
@@ -259,11 +260,11 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
         <p class="text-xs text-dim leading-relaxed">{t('smartEdit.answerHint')}</p>
         <div class="flex flex-wrap gap-2">
           <button class={`btn-soft ${ACTION}`} disabled={busy !== null} onClick={() => { void paste(); }}>
-            <ClipboardIcon size={13} />
+            <ClipboardIcon size={14} />
             {t('smartEdit.paste')}
           </button>
-          <label class={`btn-ghost border border-border ${ACTION} cursor-pointer`}>
-            <UploadIcon size={13} />
+          <label class={`btn-outline ${ACTION} cursor-pointer`}>
+            <UploadIcon size={14} />
             {t('smartEdit.loadFile')}
             <input
               type="file"
@@ -317,22 +318,22 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
       {verified && verified.summary.changes.length + verified.summary.reviewsAdded + verified.summary.reviewsRemoved > 0 && (
         <StepCard badge="3" title={t('smartEdit.step3')} warn={!done}>
           {done ? (
-            <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-[10px] bg-success/[0.08] text-success">
-              <span class="w-[22px] h-[22px] rounded-full bg-success/20 flex items-center justify-center"><CheckIcon size={11} /></span>
+            <div class="flex items-center gap-2.5 px-3.5 py-3 rounded-lg bg-success/10 text-success">
+              <span class="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center"><CheckIcon size={12} /></span>
               <span class="font-medium">{t('smartEdit.done')}</span>
             </div>
           ) : (
             <>
               <div class="flex items-start gap-2.5">
                 <span class="text-warn mt-0.5 shrink-0"><WarningTriangleIcon size={14} /></span>
-                <p class="text-muted leading-relaxed text-[13px]">{t('smartEdit.backupHint')}</p>
+                <p class="text-muted leading-relaxed text-sm">{t('smartEdit.backupHint')}</p>
               </div>
               <button
-                class={`btn-ghost border border-border w-full ${ACTION} ${backupLaunched ? 'text-success' : ''}`}
+                class={`btn-outline w-full ${ACTION} ${backupLaunched ? 'text-success' : ''}`}
                 disabled={busy !== null}
                 onClick={() => { void backup(); }}
               >
-                {backupLaunched ? <CheckIcon size={12} /> : <SaveIcon size={13} />}
+                {backupLaunched ? <CheckIcon size={12} /> : <SaveIcon size={14} />}
                 {t('smartEdit.backup')}
               </button>
               {backupLaunched && (
@@ -344,13 +345,13 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
               {stale && (
                 <div class="flex items-center gap-2">
                   <p class="text-xs text-danger flex-1">{t('smartEdit.stale')}</p>
-                  <button class="btn-ghost border border-border text-xs px-2 shrink-0" disabled={busy !== null} onClick={() => { void verify(answer); }}>
+                  <button class="btn-outline text-xs px-2 shrink-0" disabled={busy !== null} onClick={() => { void verify(answer); }}>
                     {t('smartEdit.verifyAgain')}
                   </button>
                 </div>
               )}
               <button
-                class={`${hasDeletions(verified.summary) ? 'btn-danger' : 'btn-primary'} w-full rounded-lg h-[34px]`}
+                class={`${hasDeletions(verified.summary) ? 'btn-danger' : 'btn-primary'} w-full h-9`}
                 disabled={!kept || busy !== null || stale}
                 onClick={() => { void apply(verified); }}
               >
@@ -360,6 +361,8 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
           )}
         </StepCard>
       )}
+      {/* In the body rather than a footer: it appears only once the work is
+          done, and the shell's footer is fixed when the dialog opens. */}
       {done && (
         <div class="flex justify-end">
           <button class="btn-primary" onClick={onClose}>{t('common.close')}</button>
@@ -371,8 +374,9 @@ function SmartEdit({ onClose }: { onClose: () => void }) {
 
 /** The classes every action button shares, icon on the left of its label.
  *  `flex-1` with a natural basis: a pair wraps onto two lines only when the
- *  window is too narrow for both labels. */
-const ACTION = 'flex-1 inline-flex items-center justify-center gap-2 rounded-lg h-[34px] whitespace-nowrap';
+ *  window is too narrow for both labels. The button's own radius, at the
+ *  36 px of the scale (it had a 34 px dialect of its own). */
+const ACTION = 'flex-1 inline-flex items-center justify-center gap-2 h-9 whitespace-nowrap';
 
 /** One step of the window: a numbered (or iconed) badge, a title, the file
  *  type it hands out if any, and its content. `warn` tints the step that
@@ -381,12 +385,12 @@ function StepCard({ badge, title, ext, warn, children }: {
   badge: ComponentChildren; title: string; ext?: string; warn?: boolean; children: ComponentChildren;
 }) {
   return (
-    <section class={`rounded-xl border p-4 ${warn ? 'border-warn/25 bg-warn/[0.04]' : 'border-border bg-bg'}`}>
+    <section class={`rounded-xl border p-4 ${warn ? 'border-warn/25 bg-warn/5' : 'border-border bg-bg'}`}>
       <div class="flex items-center gap-2.5 mb-3">
-        <span class={`w-6 h-6 rounded-[7px] flex items-center justify-center shrink-0 font-mono text-xs font-semibold ${
+        <span class={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 font-mono text-xs font-semibold ${
           warn ? 'bg-warn/15 text-warn' : 'bg-accent-dim text-accent'}`}>{badge}</span>
         <h3 class="text-sm font-medium text-primary flex-1">{title}</h3>
-        {ext && <span class="font-mono text-[10.5px] text-dim px-1.5 py-0.5 rounded bg-surface">{ext}</span>}
+        {ext && <span class="font-mono text-2xs text-dim px-1.5 py-0.5 rounded bg-surface">{ext}</span>}
       </div>
       <div class="space-y-3">{children}</div>
     </section>
@@ -394,17 +398,19 @@ function StepCard({ badge, title, ext, warn, children }: {
 }
 
 const MARK = {
-  add: { glyph: '+', mark: 'bg-success/[0.12] text-success', text: 'text-primary' },
+  add: { glyph: '+', mark: 'bg-success/10 text-success', text: 'text-primary' },
   update: { glyph: '~', mark: 'bg-accent-dim text-accent', text: 'text-primary' },
-  remove: { glyph: '−', mark: 'bg-danger/[0.12] text-danger', text: 'text-danger' },
+  remove: { glyph: '−', mark: 'bg-danger/10 text-danger', text: 'text-danger' },
 } as const;
 
 function SummaryLine({ kind, line }: { kind: keyof typeof MARK; line: string }) {
   const m = MARK[kind];
   return (
     <li class="flex items-center gap-2.5">
-      <span class={`w-[18px] h-[18px] rounded-[5px] flex items-center justify-center shrink-0 font-mono text-xs font-semibold ${m.mark}`}>{m.glyph}</span>
-      <span class={`text-[13px] break-words ${m.text}`}>{line}</span>
+      {/* A diff's own marks (+ ~ −), set as text in a square: not controls,
+          and "~" has no icon. */}
+      <span class={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 font-mono text-xs font-semibold ${m.mark}`}>{m.glyph}</span>
+      <span class={`text-sm break-words ${m.text}`}>{line}</span>
     </li>
   );
 }
@@ -435,5 +441,5 @@ function SummaryView({ summary }: { summary: Summary }) {
 
 export function showSmartEdit(): void {
   const body = renderModalBody(<SmartEdit onClose={closeModal} />);
-  showModal(t('smartEdit.title'), body.el, [], { maxWidth: '40rem', onDismiss: body.cleanup });
+  showModal(t('smartEdit.title'), body.el, [], { maxWidth: MODAL_W.l, onDismiss: body.cleanup });
 }

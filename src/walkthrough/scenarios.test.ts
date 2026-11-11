@@ -47,9 +47,10 @@ describe('walkthrough scenarios', () => {
       // data-tour={cond ? 'x' : undefined}: every name quoted in the expression.
       ...[...source.matchAll(/\bdata-tour=\{([^}`]*)\}/g)].flatMap(m => [...m[1]!.matchAll(/'([^']+)'/g)].map(q => q[1]!)),
     ]);
-    // Or a name built from an id — data-tour={`study-${id}`} — which covers
+    // Or a name built from an id — data-tour={`study-${id}`}, or tour={`…`}
+    // on a component passing it on (ChoiceCard, MenuRow) — which covers
     // whatever starts that way.
-    const prefixes = [...source.matchAll(/\bdata-tour=\{`([^`$]+)\$\{/g)].map(m => m[1]!);
+    const prefixes = [...source.matchAll(/\b(?:data-)?tour=\{`([^`$]+)\$\{/g)].map(m => m[1]!);
     expect(prefixes).toContain('deck-');
     expect(prefixes).toContain('sidebar-deck-');
     // A target computed during the run (the deck just made) cannot be checked

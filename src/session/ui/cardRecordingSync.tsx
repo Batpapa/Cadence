@@ -9,7 +9,8 @@ import { scoreContour, bareScore, meterOf } from '../../components/syncedScore';
 import { showModal, closeModal, renderModalBody, alertModal } from '../../components/modal';
 import { showRemoteFailure } from '../../components/remoteFailure';
 import { qualityColour, faded } from '../../components/followColour';
-import { CloudIcon, LinkIcon } from '../../components/icons';
+import { CloudIcon, LinkIcon, FileAudioIcon } from '../../components/icons';
+import { ChoiceCard } from '../../components/ui';
 import { formatBytes } from '../../utils';
 import { t } from '../../services/i18nService';
 import {
@@ -280,19 +281,20 @@ function RecordingChooser({ recordings, version, stop, onPick }: {
           const rec = recordings[i]!;
           const s = states[i]!;
           return (
-            <button
+            // The app's choice row (ChoiceCard): a recording to follow with.
+            <ChoiceCard
               key={i}
-              type="button"
-              class="flex items-center gap-3 w-full px-4 py-3 rounded-xl border border-border bg-bg text-left cursor-pointer transition-colors hoverable:border-accent"
+              icon={<FileAudioIcon size={16} />}
+              label={
+                <span class="flex items-center gap-1.5 min-w-0">
+                  <span class="truncate">{nameOf(rec)}</span>
+                  {where?.[i] === 'drive' && <span class="inline-flex items-center shrink-0 text-dim" title={t('cardAudioSync.onDrive')}><CloudIcon size={12} /></span>}
+                  {where?.[i] === 'link' && <span class="inline-flex items-center shrink-0 text-dim" title={t('cardAudioSync.link')}><LinkIcon size={12} /></span>}
+                </span>
+              }
+              trailing={<RowFigure state={s} best={best >= 0 && rank(s) === best} />}
               onClick={() => onPick(rec)}
-            >
-              <span class="flex-1 min-w-0 flex items-center gap-1.5">
-                <span class="text-sm font-medium text-primary truncate">{nameOf(rec)}</span>
-                {where?.[i] === 'drive' && <span class="inline-flex items-center shrink-0 text-dim" title={t('cardAudioSync.onDrive')}><CloudIcon size={12} /></span>}
-                {where?.[i] === 'link' && <span class="inline-flex items-center shrink-0 text-dim" title={t('cardAudioSync.link')}><LinkIcon size={12} /></span>}
-              </span>
-              <RowFigure state={s} best={best >= 0 && rank(s) === best} />
-            </button>
+            />
           );
         })}
       </div>

@@ -119,7 +119,7 @@ function RecoveryFailureBody({ initial, onClose }: { initial: RecoveryFailure; o
             <p class="text-muted leading-relaxed">
               {t('sessions.recoveryFailed.audioReady', { size: formatBytes(audio.blob.size) })}
             </p>
-            <button class="btn-ghost border border-border" disabled={busy !== null} onClick={download}>
+            <button class="btn-outline" disabled={busy !== null} onClick={download}>
               {t('sessions.recoveryFailed.download')}
             </button>
             {launched && (

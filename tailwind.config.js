@@ -30,6 +30,12 @@ module.exports = {
         // what it adds reads as its own, wherever it is set apart.
         irish:          'rgb(var(--color-irish-ch) / <alpha-value>)',
       },
+      // The floor of the type scale (UI charter, 2026-11-11): nothing under
+      // 11 layout px, which the phone's 90 % zoom brings to 9.9 on screen.
+      // Replaces the 8, 9, 9.5, 10, 10.5 and 11.5 px written by hand.
+      fontSize: {
+        '2xs': ['11px', { lineHeight: '1rem' }],
+      },
       fontFamily: {
         sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
         mono: ['IBM Plex Mono', 'ui-monospace', 'monospace'],

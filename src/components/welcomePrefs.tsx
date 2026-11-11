@@ -5,7 +5,8 @@ import { setWelcomeLanguage, welcomeLanguage } from '../services/userService';
 import { getTheme, setTheme, type Theme } from '../services/themeService';
 import { getZoom, zoomIn, zoomOut, canZoomIn, canZoomOut, zoomWorks } from '../services/zoomService';
 import { registerOverlay } from './overlayStack';
-import { CheckIcon, GlobeIcon, ThemeIcon } from './icons';
+import { CheckIcon, GlobeIcon, ThemeIcon, MinusIcon, PlusIcon } from './icons';
+import { IconButton } from './ui';
 
 const THEMES: Array<{ id: Theme; labelKey: string }> = [
   { id: 'dark',  labelKey: 'settings.theme.dark' },
@@ -20,8 +21,8 @@ const LANGS: Array<{ id: Lang; name: string }> = [
   { id: 'fr', name: 'Français' },
 ];
 
-/** A button and the menu of choices under it — the library's sort menu, same
- *  trigger, same panel, same rows. On the overlay stack, so Android's Back
+/** A button and the menu of choices under it, on the app's one menu surface
+ *  and row (UI charter, 2026-11-11). On the overlay stack, so Android's Back
  *  closes it; Escape is handled here because the app-wide Escape listener only
  *  exists once a user is open. */
 function PrefMenu({ title, button, children }: {
@@ -54,7 +55,7 @@ function PrefMenu({ title, button, children }: {
     <div ref={wrapRef} class="relative">
       <button
         type="button"
-        class="btn-ghost text-xs inline-flex items-center justify-center gap-1.5"
+        class="btn-ghost text-xs min-h-8 inline-flex items-center justify-center gap-1.5"
         title={title}
         aria-label={title}
         aria-haspopup="menu"
@@ -64,7 +65,7 @@ function PrefMenu({ title, button, children }: {
         {button}
       </button>
       {open && (
-        <div role="menu" class="absolute top-full right-0 mt-1 z-30 bg-elevated border border-border rounded-lg overflow-hidden shadow-2xl py-1 min-w-[170px]">
+        <div role="menu" class="absolute top-full right-0 mt-1 z-30 menu-surface overflow-hidden min-w-[170px]">
           {children(close)}
         </div>
       )}
@@ -80,12 +81,12 @@ function MenuItem({ active, icon, onClick, children }: {
       type="button"
       role="menuitemradio"
       aria-checked={active}
-      class={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer border-none bg-transparent text-left transition-colors ${active ? 'text-accent' : 'text-muted hover:bg-surface'}`}
+      class={`menu-item border-none${active ? ' menu-item-on' : ''}`}
       onClick={onClick}
     >
       {icon && <span class="shrink-0 flex items-center">{icon}</span>}
       <span class="flex-1">{children}</span>
-      {active && <span class="text-accent flex items-center"><CheckIcon size={11} /></span>}
+      {active && <span class="text-accent flex items-center"><CheckIcon size={14} /></span>}
     </button>
   );
 }
@@ -120,20 +121,20 @@ export function WelcomePrefs({ onLanguageChange }: { onLanguageChange: () => voi
     <div class="flex items-center gap-1">
       <PrefMenu
         title={t('settings.language')}
-        button={<><GlobeIcon size={13} /><span class="uppercase">{lang}</span></>}
+        button={<><GlobeIcon size={14} /><span class="uppercase">{lang}</span></>}
       >
         {close => LANGS.map(l => (
           <MenuItem
             key={l.id}
             active={lang === l.id}
-            icon={<span class="w-3 text-[9px] font-semibold uppercase text-center">{l.id}</span>}
+            icon={<span class="w-4 text-2xs font-semibold uppercase text-center">{l.id}</span>}
             onClick={() => { close(); if (l.id !== lang) pickLanguage(l.id); }}
           >
             <span lang={l.id}>{l.name}</span>
           </MenuItem>
         ))}
       </PrefMenu>
-      <PrefMenu title={t('settings.theme')} button={<ThemeIcon size={13} />}>
+      <PrefMenu title={t('settings.theme')} button={<ThemeIcon size={14} />}>
         {close => THEMES.map(th => (
           <MenuItem
             key={th.id}
@@ -151,10 +152,10 @@ export function WelcomePrefs({ onLanguageChange }: { onLanguageChange: () => voi
       {zoomWorks() && (
         <PrefMenu title={t('settings.zoom')} button={<span class="tabular-nums">{zoom}%</span>}>
           {() => (
-            <div class="flex items-center justify-between gap-1 px-3 py-2">
-              <button type="button" class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomOut()} onClick={() => stepZoom(zoomOut)}>−</button>
+            <div class="flex items-center justify-between gap-1 px-1.5 py-1">
+              <IconButton label={t('settings.zoomOut')} disabled={!canZoomOut()} onClick={() => stepZoom(zoomOut)}><MinusIcon size={14} /></IconButton>
               <span class="text-sm font-mono w-12 text-center tabular-nums">{zoom}%</span>
-              <button type="button" class="btn-ghost px-2 py-0.5 text-sm" disabled={!canZoomIn()} onClick={() => stepZoom(zoomIn)}>+</button>
+              <IconButton label={t('settings.zoomIn')} disabled={!canZoomIn()} onClick={() => stepZoom(zoomIn)}><PlusIcon size={14} /></IconButton>
             </div>
           )}
         </PrefMenu>

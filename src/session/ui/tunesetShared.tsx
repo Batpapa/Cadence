@@ -164,20 +164,26 @@ export function SetClipControls({ session, setCard, span, audioAvailable, getAud
 }) {
   const [downloadTitle, setDownloadTitle] = useState(t('sessions.set.downloadClip'));
   const [downloading, setDownloading] = useState(false);
+  /** As ClipControls' (sessionUiShared.tsx): the reason a download failed,
+   *  which the tooltip lost to the `finally` straight away. */
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [attachText, setAttachText] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
+  /** An explicit failure, where the text was tested for a leading ⚠. */
+  const [attachError, setAttachError] = useState<string | null>(null);
   const already = isSetClipAttached(session, setCard, span);
-  const failed = !!attachText?.startsWith('⚠');
+  const failed = attachError !== null;
 
   const doDownload = async () => {
     setDownloading(true);
+    setDownloadError(null);
     try {
       const audio = await getAudio();
       if (!audio) throw new Error(t('sessions.clip.unavailable'));
       const clip = await extractClip(audio, span.start, span.end, r => setDownloadTitle(t('sessions.extracting', { pct: Math.round(r * 100) })));
       downloadBlob(clip.blob, setClipFileName(session, setCard?.name ?? t('sessions.set.label'), span, clip.extension));
     } catch (err) {
-      setDownloadTitle(`⚠ ${String(err)}`);
+      setDownloadError(String(err));
     } finally {
       setDownloading(false);
       setDownloadTitle(t('sessions.set.downloadClip'));
@@ -195,7 +201,8 @@ export function SetClipControls({ session, setCard, span, audioAvailable, getAud
       setAttaching(false);
       onAttached?.();
     } catch (err) {
-      setAttachText(`⚠ ${String(err)}`);
+      setAttachText(null);
+      setAttachError(String(err));
     }
   };
 
@@ -204,29 +211,31 @@ export function SetClipControls({ session, setCard, span, audioAvailable, getAud
     <>
       {audioAvailable && (
         <button
-          class="text-dim hover:text-accent transition-colors cursor-pointer shrink-0 flex items-center disabled:opacity-40 disabled:cursor-default disabled:hover:text-dim"
+          class="icon-btn hover:text-accent disabled:hover:text-dim"
           title={downloadTitle}
+          aria-label={t('sessions.set.downloadClip')}
           disabled={downloading || disabled}
-          dangerouslySetInnerHTML={{ __html: downloadIcon(13) }}
+          dangerouslySetInnerHTML={{ __html: downloadIcon(14) }}
           onClick={() => { void doDownload(); }}
         />
       )}
+      {downloadError && <span class="text-2xs text-danger">{downloadError}</span>}
       {(already || audioAvailable) && (
         <button
-          class={`shrink-0 flex items-center transition-colors ${
-            already ? 'text-green-500 cursor-default'
-              : failed ? 'text-danger cursor-default'
-              : canAttach ? `text-accent ${attaching ? 'cursor-default' : 'hover:text-accent/70 cursor-pointer'}`
-              : 'text-border cursor-default'}`}
-          title={already ? t('sessions.set.attached') : !setCard ? t('sessions.set.attachNeedsCard') : attachText ?? t('sessions.set.attach')}
+          class={`icon-btn ${
+            already ? 'text-success hover:text-success hover:bg-transparent cursor-default'
+              : failed ? 'text-danger hover:text-danger px-1 disabled:opacity-100 cursor-default'
+              : canAttach ? `text-accent ${attaching ? 'cursor-default' : 'hover:text-accent/70'}`
+              : 'text-accent'}`}
+          title={already ? t('sessions.set.attached') : !setCard ? t('sessions.set.attachNeedsCard') : attachError ?? attachText ?? t('sessions.set.attach')}
           aria-label={already ? t('sessions.set.attached') : t('sessions.set.attach')}
           disabled={!already && (!canAttach || attaching)}
           onClick={already ? undefined : () => { void doAttach(); }}
         >
-          {already ? <ClipAttachedIcon size={13} />
-            : failed ? <span class="text-[11px]">{attachText}</span>
-            : attachText ? <span class="text-[10px] font-mono tabular-nums">{attachText}</span>
-            : <AddClipIcon size={13} />}
+          {already ? <ClipAttachedIcon size={14} />
+            : failed ? <span class="text-2xs">{attachError}</span>
+            : attachText ? <span class="text-2xs font-mono tabular-nums">{attachText}</span>
+            : <AddClipIcon size={14} />}
         </button>
       )}
     </>
@@ -253,18 +262,20 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
   byTune?: ReadonlyMap<string, Card>;
 }) {
   const [busy, setBusy] = useState(false);
-  const round = 'w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 transition-colors';
+  // A 24 px disc drawn inside a 32 px target (styles.css, .icon-disc).
+  const round = 'group icon-btn hover:bg-transparent';
 
   // The standalone analyser has no library to file a set in (pageMode.ts).
   if (!hasLibrary()) return null;
   if (setCard) {
     const everyDeck = isInEveryDeck(setCard.id);
+    const label = everyDeck ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck');
     return (
       <button
-        class={`${round} cursor-pointer bg-accent/10 text-accent hover:bg-accent/20 ${everyDeck ? 'opacity-40' : ''}`}
-        title={everyDeck ? t('deckChoice.inEveryDeck') : t('sessions.linkToDeck')}
+        class={`${round} ${everyDeck ? 'opacity-40' : ''}`}
+        title={label}
+        aria-label={label}
         disabled={busy}
-        dangerouslySetInnerHTML={{ __html: deckAddIcon }}
         onClick={(e) => {
           e.stopPropagation();
           showDeckChoiceModal({
@@ -281,7 +292,9 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
             },
           });
         }}
-      />
+      >
+        <span class="icon-disc" dangerouslySetInnerHTML={{ __html: deckAddIcon }} />
+      </button>
     );
   }
 
@@ -317,7 +330,7 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
 
   return (
     <button
-      class={`${round} bg-accent/10 text-accent ${ready ? 'cursor-pointer hover:bg-accent/20' : 'opacity-35 cursor-default'}`}
+      class={`${round} ${ready ? '' : 'opacity-40 cursor-default'}`}
       title={t('sessions.set.create')}
       aria-label={t('sessions.set.create')}
       aria-disabled={!ready}
@@ -328,7 +341,7 @@ export function TunesetDeckButton({ tuneIds, setCard, settled, ctx, getPinnedDec
         showDeckChoiceModal({ pinned: getPinnedDeckIds?.() ?? new Set(), onConfirm: create });
       }}
     >
-      <PlusIcon size={12} />
+      <span class="icon-disc"><PlusIcon size={12} /></span>
     </button>
   );
 }

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { ComponentChild } from 'preact';
 import { t } from '../../services/i18nService';
-import { TrendIcon, ResetIcon, MusicNoteIcon, PlusIcon } from '../../components/icons';
-import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
+import { TrendIcon, ResetIcon, MusicNoteIcon, PlusIcon, DeckAddIcon } from '../../components/icons';
+import { Segmented, Switch, InlineStatus, EmptyState } from '../../components/ui';
+import { showDeckChoiceModal, decksContainingCard, isInEveryDeck } from '../../components/deckSelector';
 import { showPreviewModal } from '../../components/fileViewer';
 import { computeRows, sortRows, formatGain, growthIndex, inflationBetween, netGain, deflateFromRoute, type TuneRow, type GainMode } from '../../services/trendingService';
 import { syncPopularityHistory, type SyncProgress } from '../../services/trendingSyncService';
@@ -75,11 +77,8 @@ function closestSnapshotIndex(snapshots: string[], targetTime: number): number {
   return bestIdx;
 }
 
-function gainBtnClass(active: boolean): string {
-  return active
-    ? 'text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent cursor-pointer'
-    : 'text-[10px] px-1.5 py-0.5 rounded text-dim hover:text-muted cursor-pointer transition-colors';
-}
+/** The filter bar's fields: the `.input` look, at the bar's small size. */
+const FIELD_CLASS = 'input text-xs px-2 py-1';
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
@@ -191,15 +190,17 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
       <span class="text-xs text-dim w-6 text-right shrink-0">{rank}</span>
 
       {/* Icons to the left of the name, same order/placement as the session
-         module's DetectionCard row (ABC preview, then add-to-Cadence). */}
+         module's DetectionCard row (ABC preview, then add-to-Cadence). A
+         24 px disc in a 32 px target: the look of the row, a finger's size. */}
       <button
-        class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
-        title={sheetError ? t('trending.detailLoadError') : t('trending.viewSheet')}
+        class="group icon-btn"
+        title={t('trending.viewSheet')}
+        aria-label={t('trending.viewSheet')}
         data-tour="trending-sheet"
         disabled={sheetBusy}
         onClick={() => void doViewSheet()}
       >
-        <MusicNoteIcon size={12} />
+        <span class="icon-disc"><MusicNoteIcon size={12} /></span>
       </button>
 
       {!library ? null : known ? (
@@ -207,20 +208,23 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
         // only, never unlinks from decks left unticked. Shown with no deck at
         // all too: the modal's "+ new deck" is then the way to make the first.
         <button
-          class={`w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
+          class={`group icon-btn ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
           title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
+          aria-label={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
           disabled={actionBusy}
-          dangerouslySetInnerHTML={{ __html: deckAddIcon }}
           onClick={onLinkClick}
-        />
+        >
+          <span class="icon-disc"><DeckAddIcon size={12} /></span>
+        </button>
       ) : (
         <button
-          class="w-6 h-6 p-0 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50"
-          title={actionError ? t('trending.addFailed') : t('trending.add')}
+          class="group icon-btn"
+          title={t('trending.add')}
+          aria-label={t('trending.add')}
           disabled={actionBusy}
           onClick={onAddClick}
         >
-          <PlusIcon size={12} />
+          <span class="icon-disc"><PlusIcon size={12} /></span>
         </button>
       )}
 
@@ -246,6 +250,10 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
           )}
         </div>
         <div class="text-xs text-dim">{t('trending.tunebooks', { n: row.endValue })}</div>
+        {/* On the row, not in the button's tooltip only, where a finger
+            never finds it. */}
+        {sheetError && <div class="text-2xs text-danger">{t('trending.detailLoadError')}</div>}
+        {actionError && <div class="text-2xs text-danger">{t('trending.addFailed')}</div>}
       </div>
 
       {/* Coloured on the figure actually shown, not on the raw gain: deflated,
@@ -289,7 +297,7 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
   const [allRows, setAllRows] = useState<TuneRow[]>([]);
   const [revealed, setRevealed] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<ComponentChild>('');
   const loadingRef = useRef(false);
 
   const tuneCacheRef = useRef(new Map<number, TuneResult>());
@@ -380,7 +388,7 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
       pushRoute(db, gainMode, threshValue, si, ei);
       setStatus(t('trending.updated', { time: timeAgo(new Date(db.snapshots[db.snapshots.length - 1]!).getTime()) }));
     } catch {
-      setStatus(t('trending.loadError'));
+      setStatus(<InlineStatus tone="error">{t('trending.loadError')}</InlineStatus>);
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -419,9 +427,11 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
         </h1>
         <div class="flex items-center gap-3 shrink-0">
           <button
-            class={`text-dim hover:text-accent transition-colors cursor-pointer ${loading ? 'opacity-50 pointer-events-none' : ''}`}
-            data-tour="trending-refresh"
+            class="icon-btn"
             title={t('trending.refresh')}
+            aria-label={t('trending.refresh')}
+            data-tour="trending-refresh"
+            disabled={loading}
             onClick={() => void load()}
           >
             <ResetIcon size={14} />
@@ -443,7 +453,7 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
             <DateField
               // A period has two ends: neither can be cleared.
               allowEmpty={false}
-              class="text-xs px-2 py-1 rounded border border-border bg-bg text-primary"
+              class={`${FIELD_CLASS} w-auto`}
               min={toDateInputValue(dbState.snapshots[0]!)}
               // Never past the other end: a period that runs backwards is not
               // a period.
@@ -466,7 +476,7 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
             <DateField
               // A period has two ends: neither can be cleared.
               allowEmpty={false}
-              class="text-xs px-2 py-1 rounded border border-border bg-bg text-primary"
+              class={`${FIELD_CLASS} w-auto`}
               min={fromText || toDateInputValue(dbState.snapshots[0]!)}
               max={toDateInputValue(dbState.snapshots[dbState.snapshots.length - 1]!)}
               value={toText}
@@ -482,28 +492,18 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
             />
           </div>
 
-          <div class="flex gap-1">
-            <button
-              class={gainBtnClass(gainMode === 'absolute')}
-              onClick={() => {
-                setGainMode('absolute');
-                recompute(dbState, 'absolute', threshValue, startIdx, endIdx);
-                pushRoute(dbState, 'absolute', threshValue, startIdx, endIdx);
-              }}
-            >
-              {t('trending.gainAbsolute')}
-            </button>
-            <button
-              class={gainBtnClass(gainMode === 'percent')}
-              onClick={() => {
-                setGainMode('percent');
-                recompute(dbState, 'percent', threshValue, startIdx, endIdx);
-                pushRoute(dbState, 'percent', threshValue, startIdx, endIdx);
-              }}
-            >
-              {t('trending.gainPercent')}
-            </button>
-          </div>
+          <Segmented
+            value={gainMode}
+            onChange={(gm) => {
+              setGainMode(gm);
+              recompute(dbState, gm, threshValue, startIdx, endIdx);
+              pushRoute(dbState, gm, threshValue, startIdx, endIdx);
+            }}
+            options={[
+              { value: 'absolute', label: t('trending.gainAbsolute') },
+              { value: 'percent', label: t('trending.gainPercent') },
+            ]}
+          />
 
           {/* On by default: without it this table ranks by popularity, not by
               trend — the same four tunes hold the top every week because the
@@ -511,12 +511,9 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
               rate for the chosen period is spelled out beside it, or a
               corrected figure is a number with no unit. */}
           <label class="flex items-center gap-1.5 cursor-pointer select-none" title={t('trending.deflateHint')}>
-            <input
-              type="checkbox"
-              class="card-checkbox"
+            <Switch
               checked={deflate}
-              onChange={(e) => {
-                const on = (e.target as HTMLInputElement).checked;
+              onChange={(on) => {
                 setDeflate(on);
                 recompute(dbState, gainMode, threshValue, startIdx, endIdx, on);
                 pushRoute(dbState, gainMode, threshValue, startIdx, endIdx, on);
@@ -536,7 +533,7 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
             <input
               type="number"
               min="0"
-              class="w-16 text-xs px-2 py-1 rounded border border-border bg-bg text-primary"
+              class={`${FIELD_CLASS} w-16`}
               value={threshValue}
               onInput={(e) => {
                 const v = (e.target as HTMLInputElement).value;
@@ -563,6 +560,10 @@ export function TrendingModule({ initial, env = APP_ENV }: { initial?: TrendingR
             library={env.library}
           />
         ))}
+        {/* The filters left nothing: said, where the count alone showed 0. */}
+        {dbState && dbState.snapshots.length > 0 && !loading && allRows.length === 0 && (
+          <EmptyState>{t('trending.noMatch')}</EmptyState>
+        )}
         <div ref={sentinelRef} class="h-4" style={{ display: revealed >= allRows.length ? 'none' : undefined }} />
       </div>
     </div>

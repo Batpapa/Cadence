@@ -1,6 +1,7 @@
 // The Cadence mark, on its own: the welcome screen draws it, and so does the
 // app's update screen (native/updateOverlay.tsx), which starts before the rest
 // of the app is loaded.
+import { useEffect, useState } from 'preact/hooks';
 
 // Same three strokes as src/icons/icon.svg, unchanged — the app-icon tile
 // (#2a2f34 background) is deliberately NOT shown here, just the mark itself
@@ -13,13 +14,40 @@ const MARK_D = [
   'm 174.01374,224.85436 h -10.1332 c -1.69281,-0.10418 -2.46739,-2.8912 -3.54663,-2.91329 -2.51921,-0.059 -5.74599,14.81212 -8.23323,14.69314 -4.50263,0.13544 -4.03054,-32.52667 -8.86655,-32.55292 -4.82694,-0.1718 -2.18001,18.57973 -8.10657,38.88618 -4.1023,11.90735 -14.73375,17.72954 -24.46172,19.40917 -10.27446,1.57623 -18.489872,-1.90532 -26.287512,-7.83787',
 ];
 
-/** Couleur littérale, hors palette applicative — l'accent violet reste
- *  réservé à l'UI (avatars, boutons) ; le cyan #6cf6e9 est la couleur de
- *  marque du logo, volontairement identique quel que soit le thème actif
- *  (light/green ne le retintent pas — comportement voulu pour un logo). */
+/** The logo's colour, wherever the logo is drawn (the UI charter's decision of
+ *  2026-11-11: it used to be the accent purple in About, the ⋮ menu and the
+ *  usage choice). A literal outside the app's palette: the accent stays the
+ *  interface's, and the cyan is the logo's and the welcome screens' alone —
+ *  never an interface colour. The light and green themes get a deeper teal,
+ *  the same as the welcome tour's --tour-brand (styles.css): the cyan does
+ *  not show against white.
+ *
+ *  Read from the theme rather than through a CSS variable: --tour-brand is
+ *  only defined under .welcome-tour. index.html's bootstrap (and the
+ *  standalone page's) sets the theme before the first paint, so even the
+ *  update screen reads the right one. */
+function brandColor(): string {
+  const theme = document.documentElement.dataset.theme;
+  return theme === 'light' || theme === 'green' ? '#0b7d76' : '#6cf6e9';
+}
+
+/** brandColor, kept current: the welcome screen changes the theme under a
+ *  logo that is already drawn (WelcomePrefs), and so can Settings under the
+ *  About dialog's. Watches the attribute themeService.applyTheme writes. */
+export function useBrandColor(): string {
+  const [color, setColor] = useState(brandColor);
+  useEffect(() => {
+    const mo = new MutationObserver(() => setColor(brandColor()));
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => mo.disconnect();
+  }, []);
+  return color;
+}
+
 /** `looping`: erased and drawn again for as long as it is on screen, instead
  *  of drawn once. */
 export function CadenceMark({ size = 78, looping = false }: { size?: number; looping?: boolean }) {
+  const color = useBrandColor();
   return (
     <svg
       width={size}
@@ -31,7 +59,7 @@ export function CadenceMark({ size = 78, looping = false }: { size?: number; loo
       <g
         transform="translate(-27.564509,-147.72464)"
         fill="none"
-        stroke="#6cf6e9"
+        stroke={color}
         stroke-width="3.3"
         stroke-linecap="round"
         stroke-linejoin="round"
