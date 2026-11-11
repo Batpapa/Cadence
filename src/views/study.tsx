@@ -348,13 +348,13 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
               const cardDeckIds = decksContainingCard(card.id, user);
               if (cardDeckIds.length === 0) return null;
               return (
-                <div class="flex flex-wrap gap-1.5 mt-1.5">
+                <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {cardDeckIds.map(dId => {
                     const deck = user.decks[dId]; if (!deck) return null;
                     return (
                       <span
                         key={dId}
-                        class="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+                        class="deck-pin"
                         onClick={() => navigate({ view: 'deck', deckId: dId })}
                       >
                         {deck.name}
