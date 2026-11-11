@@ -10,7 +10,7 @@ import { findParentFolder, orphanedCardsAfterDeckRemoval, folderPath, moveDeckTo
 import { removeCards } from '../services/cardService';
 import { deckAvailability, cardAvailability, effectiveImportance, isAvailable, deckStability, deckEase, replayFSRS, retentionWindowDays } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
-import { StudyButton, useRoomForStudyLabel } from '../components/studyModal';
+import { StudyButton, useHiddenHeaderLabels } from '../components/studyModal';
 import { showNewCardModal } from '../components/theSessionImport';
 
 
@@ -34,7 +34,7 @@ export function DeckView({ deckId }: { deckId: string }) {
   const [editName, setEditName]           = useState('');
   // Study's label in the header, while the name fits beside it on one line.
   const headerRef    = useRef<HTMLDivElement>(null);
-  const roomForLabel = useRoomForStudyLabel(headerRef, [deck?.name, isEditingName]);
+  const roomForLabel = useHiddenHeaderLabels(headerRef, [deck?.name, isEditingName]) === 0;
 
   // Inline deck importance editing
   const [editingImportanceId, setEditingImportanceId] = useState<string | null>(null);
@@ -119,7 +119,7 @@ export function DeckView({ deckId }: { deckId: string }) {
         {/* Header */}
         {/* The actions stay top right, always (the author, 2026-11-11). When
             the row runs short, Study's label goes first, then the name wraps
-            (useRoomForStudyLabel). */}
+            (useHiddenHeaderLabels). */}
         <div ref={headerRef} class="flex items-start justify-between gap-4">
           <div class="flex-auto min-w-0">
             <div class="flex items-center gap-2">
