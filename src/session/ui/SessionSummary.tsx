@@ -962,6 +962,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       persist();
       bump();
     },
+    onEditNotes: (id, notes) => {
+      const target = session.annotations.find(a => a.id === id);
+      if (!target) return;
+      if (notes.trim()) target.notes = notes; else delete target.notes;
+      persist();
+      bump();
+    },
     // No engine to delegate to for a finished session — same mutate-in-place
     // + persist() pattern as onToggleLike above, through the same
     // alternatePickFields both engines use, so a confirmation means exactly
@@ -1092,6 +1099,9 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             prev.evidence = [...prev.evidence, ...ann.evidence];
             prev.confidence = Math.max(prev.confidence, ann.confidence);
             prev.bucket = prev.confidence >= 0.7 ? 'high' : prev.confidence >= 0.5 ? 'medium' : 'low';
+            // The note of the one merged away is the user's writing: kept,
+            // under the survivor's, rather than lost with the detection.
+            if (ann.notes) prev.notes = prev.notes ? `${prev.notes}\n\n${ann.notes}` : ann.notes;
             session.annotations.splice(i, 1);
             persist();
             bump();
@@ -1272,6 +1282,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         const target = session.tunesets?.find(x => x.id === r.id);
         if (!target) return;
         if (target.liked) delete target.liked; else target.liked = true;
+        persist();
+        bump();
+      },
+      onEditNotes: (r, notes) => {
+        const target = session.tunesets?.find(x => x.id === r.id);
+        if (!target) return;
+        if (notes.trim()) target.notes = notes; else delete target.notes;
         persist();
         bump();
       },

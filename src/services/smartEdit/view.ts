@@ -53,6 +53,8 @@ interface AnalysisView {
   source: string;
   /** The analyses' own folder path ("2026 / Summer"), null at the top. */
   folder: string | null;
+  /** The user's notes on the analysis, markdown — absent when there are none. */
+  notes?: string;
   detections: Array<Record<string, unknown>>;
 }
 
@@ -84,6 +86,7 @@ function analysesView(state: AppState): AnalysisView[] {
     return {
       id: a.id, name: a.name, date: a.date, duration: Math.round(a.duration), source: a.source,
       folder: folderId ? folderPathOf(tree, folderId) : null,
+      ...(a.notes?.trim() ? { notes: a.notes } : {}),
       detections: [...(a.annotations ?? [])].sort((x, y) => x.start - y.start).map(d => detectionView(a, d, ratings, state.cards)),
     };
   });
@@ -104,6 +107,7 @@ function detectionView(a: Analysis, d: Detection, ratings: Map<string, string>, 
     ...(d.userConfirmed ? { confirmed: true } : {}),
     ...(d.liked ? { liked: true } : {}),
     ...(d.manual ? { manual: true } : {}),
+    ...(d.notes?.trim() ? { notes: d.notes } : {}),
     ...(rated ? { rated } : {}),
   };
 }

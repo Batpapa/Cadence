@@ -3,7 +3,8 @@ import { cardOfTuneId } from '../detections';
 import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon, CrossIcon, CheckIcon } from '../../components/icons';
+import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon, CrossIcon, CheckIcon, NotesIcon } from '../../components/icons';
+import { showDetectionNotesModal } from './AnalysisNotesModal';
 import { IconButton } from '../../components/ui';
 import { isCardId } from '../recognition/cardIndex';
 import { hasLibrary } from '../../services/pageMode';
@@ -124,6 +125,10 @@ export interface DetectionCardOptions {
   getPinnedDeckIds?: () => Set<string>;
   /** "I liked this tune" marker — purely personal, unrelated to any card. */
   onToggleLike?: (annotationId: string) => void;
+  /** Saves the note on this detection — its whole text, blank to clear it.
+   *  Makes the notes button right of the heart (2026-11-16, the user's place
+   *  for it, on every view). */
+  onEditNotes?: (annotationId: string, notes: string) => void;
   /** Records the user's verdict on this detection's identity — makes the
    *  confidence badge clickable (it opens the "explore alternatives" picker).
    *  A tune confirms it, `null` un-confirms and hands it back to the decoder.
@@ -735,6 +740,24 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
             onClick={(e) => { e.stopPropagation(); opts.onToggleLike!(ann.id); }}
           >
             <HeartIcon size={focus ? 20 : 14} filled={ann.liked} />
+          </IconButton>
+        )}
+
+        {/* The note, right of the heart — lit when there is one, like the
+            analysis's own notes button. Not on a detection the decoder may
+            still retract or re-id (neither finalized nor confirmed): a heart
+            lost that way costs a tap, a note typed there would be gone. */}
+        {opts.onEditNotes && (ann.finalized || ann.userConfirmed || !!ann.notes) && (
+          <IconButton
+            label={t(ann.notes ? 'sessions.detection.notes.open' : 'sessions.detection.notes.add')}
+            size={focus ? 'lg' : 'sm'}
+            on={!!ann.notes}
+            onClick={(e) => {
+              e.stopPropagation();
+              showDetectionNotesModal(ann.displayName, ann.notes ?? '', (notes) => opts.onEditNotes!(ann.id, notes));
+            }}
+          >
+            <NotesIcon size={focus ? 20 : 14} />
           </IconButton>
         )}
 

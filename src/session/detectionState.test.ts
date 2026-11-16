@@ -166,6 +166,38 @@ describe('DetectionTracker — confirming while it plays (2026-10-10)', () => {
     expect(t.get('a')?.liked).toBe(true);
   });
 
+  it('carries a note across decoder updates, and a cleared note leaves no key', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a'))]);
+    t.setNotes('a', 'Started by Seán');
+    t.apply([update(det('a', { end: 80 }))]);
+    expect(t.get('a')?.notes).toBe('Started by Seán');
+    t.setNotes('a', '   ');
+    expect(t.get('a')).not.toHaveProperty('notes');
+  });
+
+  it('a note follows the confirmation, and goes back with it', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a', { end: null, finalized: false, heardTo: 30 }))]);
+    t.confirm('a', KESH);
+    t.setNotes('a', 'lovely');
+    t.apply([retract('a'), open(det('c', { end: null, finalized: false, heardTo: 40 }, BUTTERFLY))]);
+    expect(t.get('a')?.notes).toBe('lovely');
+    t.confirm('a', null);
+    expect(t.get('c')?.notes).toBe('lovely');
+  });
+
+  it('a note cleared after confirming does not come back from the decoder detection under it', () => {
+    const t = new DetectionTracker();
+    t.apply([open(det('a'))]);
+    t.setNotes('a', 'first');
+    t.confirm('a', KESH);
+    t.setNotes('a', '');
+    expect(t.get('a')).not.toHaveProperty('notes');
+    t.confirm('a', null);
+    expect(t.get('a')).not.toHaveProperty('notes');
+  });
+
   it('removing the hand-named tune it is confirmed as hands it back', () => {
     const t = new DetectionTracker();
     t.apply([open(det('a'))]);

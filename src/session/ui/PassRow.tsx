@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { JSX, RefObject } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon, CloudIcon, PlayIcon, PauseIcon, StopIcon } from '../../components/icons';
+import { HeartIcon, CloudIcon, PlayIcon, PauseIcon, StopIcon, NotesIcon } from '../../components/icons';
 import type { AudioSyncBinding } from '../../components/fileViewer';
 import { showModal, closeModal, alertModal } from '../../components/modal';
 import { formatBytes } from '../../utils';
@@ -435,6 +435,19 @@ export function detectionAudioSync(sessionId: string, detection: Detection, here
   };
 }
 
+/** That THIS pass has a note (2026-11-16), beside its heart — a mark, not a
+ *  control: the row is already the way into the pass, where the note is read
+ *  and edited. Its text shows on hover. */
+export function NoteMark({ notes }: { notes: string | undefined }) {
+  const text = notes?.trim();
+  if (!text) return null;
+  return (
+    <span class="text-accent shrink-0 flex items-center" title={text.length > 300 ? `${text.slice(0, 300)}…` : text}>
+      <NotesIcon size={12} />
+    </span>
+  );
+}
+
 export function PassRow({ session, detection, cardId, ctx, player, interactive, onOpen, onAttached }: {
   session: ClipSessionRef;
   detection: Detection;
@@ -491,6 +504,7 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
         {detection.liked && (
           <span class="text-danger shrink-0 flex items-center"><HeartIcon size={12} filled /></span>
         )}
+        <NoteMark notes={detection.notes} />
       </button>
 
       <div class="shrink-0 flex items-center">

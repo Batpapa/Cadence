@@ -27,7 +27,7 @@ interface NotesBox {
   save: () => boolean;
 }
 
-function NotesBody({ box, onSave }: { box: NotesBox; onSave: (notes: string) => void }) {
+function NotesBody({ box, onSave, placeholder }: { box: NotesBox; onSave: (notes: string) => void; placeholder: string }) {
   const [draft, setDraft] = useState(box.draft);
   const [saved, setSaved] = useState(box.saved);
   const [editing, setEditing] = useState(!box.saved.trim());
@@ -75,7 +75,7 @@ function NotesBody({ box, onSave }: { box: NotesBox; onSave: (notes: string) => 
         ref={textareaRef}
         class="w-full h-72 font-mono text-xs p-3 border border-border rounded-lg bg-bg text-primary resize-y outline-none focus:border-accent"
         value={draft}
-        placeholder={t('sessions.notes.placeholder')}
+        placeholder={placeholder}
         onInput={(e) => setBoth((e.target as HTMLTextAreaElement).value)}
       />
       <div class="flex items-center justify-end gap-2">
@@ -97,9 +97,19 @@ function NotesBody({ box, onSave }: { box: NotesBox; onSave: (notes: string) => 
 /** Opens the notes of an analysis. `onSave` receives the whole text — empty
  *  when the note was cleared — and is the caller's to persist. */
 export function showAnalysisNotesModal(notes: string, onSave: (notes: string) => void): void {
+  showNotesModal(t('sessions.notes.title'), t('sessions.notes.placeholder'), notes, onSave);
+}
+
+/** The same, on one detection (2026-11-16): the very same two states, under
+ *  the tune's name. */
+export function showDetectionNotesModal(name: string, notes: string, onSave: (notes: string) => void): void {
+  showNotesModal(t('sessions.detection.notes.title', { name }), t('sessions.detection.notes.placeholder'), notes, onSave);
+}
+
+function showNotesModal(title: string, placeholder: string, notes: string, onSave: (notes: string) => void): void {
   const box: NotesBox = { saved: notes, draft: notes, save: () => false };
-  const { el, cleanup } = renderModalBody(<NotesBody box={box} onSave={onSave} />);
-  showModal(t('sessions.notes.title'), el, [], {
+  const { el, cleanup } = renderModalBody(<NotesBody box={box} onSave={onSave} placeholder={placeholder} />);
+  showModal(title, el, [], {
     maxWidth: MODAL_W.l,
     onDismiss: cleanup,
     guardDismiss: (dismiss) => {

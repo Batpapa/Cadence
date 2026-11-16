@@ -73,14 +73,22 @@ describe('analysis CSV export', () => {
     exportAnalysisCSV(analysis([det({ displayName: 'Cooley\u2019s, The' })]));
     const rows = csvRows();
     expect(rows[1]).toContain('"Cooley\u2019s, The"');
-    expect(rows[0]!.split(',')).toHaveLength(13);
+    expect(rows[0]!.split(',')).toHaveLength(14);
   });
 
   it("links each detection to its TheSession tune and setting, which a name alone cannot identify", () => {
     exportAnalysisCSV(analysis([det({ tuneId: '63', settingId: '12345' })]));
     const rows = csvRows().map(r => r.split(','));
-    expect(rows[0]!.slice(-2)).toEqual(['TheSession', 'Setting']);
-    expect(rows[1]!.slice(-2)).toEqual(['https://thesession.org/tunes/63', '12345']);
+    expect(rows[0]!.slice(11, 13)).toEqual(['TheSession', 'Setting']);
+    expect(rows[1]!.slice(11, 13)).toEqual(['https://thesession.org/tunes/63', '12345']);
+  });
+
+  it("puts the detection's note last, its line breaks flattened", () => {
+    exportAnalysisCSV(analysis([det({ notes: 'Started by Seán\nfast' }), det({ start: 100, end: 200 })]));
+    const rows = csvRows().map(r => r.split(','));
+    expect(rows[0]!.at(-1)).toBe('Notes');
+    expect(rows[1]!.at(-1)).toBe('Started by Seán' + String.fromCharCode(92) + 'nfast');
+    expect(rows[2]!.at(-1)).toBe('');
   });
 
   it("gives the tempo saved with a detection, in its dance's beat and in quavers", () => {
@@ -133,6 +141,13 @@ describe('analysis TXT export, detailed', () => {
     expect(line).toContain('confirmed');
     expect(line).toContain('liked');
     expect(line).not.toContain('92%');
+  });
+
+  it("puts a detection's note under its line, indented", () => {
+    exportAnalysisTXT(analysis([det({ notes: 'Started by Seán\nfast' })]), { detailed: true });
+    const lines = captured[0]!.split('\r\n');
+    const at = lines.findIndex(l => /^\d\d:/.test(l));
+    expect(lines.slice(at + 1, at + 3)).toEqual(['    Started by Seán', '    fast']);
   });
 
   it('omits the date line when the analysis has none', () => {

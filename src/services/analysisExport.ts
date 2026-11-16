@@ -106,6 +106,8 @@ export function analysisTextReport(session: Analysis, { detailed = false, nameOf
       d.liked ? 'liked' : '',
     ].filter(Boolean).join('  ');
     out.push(`${hms(d.start)} - ${hms(endOf(d, session))}  ${label(d).padEnd(width + 2)}${marks}`.trimEnd());
+    // The detection's note under its line, indented, as written (2026-11-16).
+    if (d.notes?.trim()) out.push(...d.notes.trim().split(/\r\n|\r|\n/).map(l => `    ${l}`.trimEnd()));
   });
 
   return out.join('\r\n');
@@ -148,8 +150,10 @@ export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBrea
   // export gives it — a name alone does not say which of two same-named tunes
   // was heard, and a file meant to be checked against others needs the id.
   // Setting: which of the tune's settings matched, as the bare number.
+  // Notes (2026-11-16): the detection's note, last so that no column a
+  // spreadsheet already reads moves; its line breaks flattened like any field.
   const rows: string[][] = [
-    ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked', 'Tempo', 'Beat', 'Quavers/min', 'TheSession', 'Setting'],
+    ['Start', 'End', 'Tune', 'Dance', 'Meter', 'Confidence %', 'Confirmed', 'Liked', 'Tempo', 'Beat', 'Quavers/min', 'TheSession', 'Setting', 'Notes'],
   ];
 
   const dets = ordered(session);
@@ -171,6 +175,7 @@ export function analysisCsv(session: Analysis, nameOf: NameOf = rawName, setBrea
       tempo ? String(Math.round(tempo.quaversPerMinute)) : '',
       theSessionUrl(d.tuneId),
       d.settingId ?? '',
+      d.notes?.trim() ?? '',
     ]);
   });
 

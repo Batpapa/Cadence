@@ -384,6 +384,11 @@ export class ImportSession {
     this.tracker.toggleLike(annotationId);
   }
 
+  /** See LiveSession's identical method. */
+  setNotes(annotationId: string, notes: string): void {
+    this.tracker.setNotes(annotationId, notes);
+  }
+
   /** The sets heard so far, with the identity a heart or a review hangs on —
    *  asked for by the feed, and only with set detection on. Handed to
    *  the analysis when it is saved (see DetectionTracker.finalSets). */
@@ -394,6 +399,11 @@ export class ImportSession {
   /** Toggle "I liked this set". */
   toggleSetLike(tunesetId: string): void {
     this.tracker.toggleSetLike(tunesetId);
+  }
+
+  /** See LiveSession's identical method. */
+  setSetNotes(tunesetId: string, notes: string): void {
+    this.tracker.setSetNotes(tunesetId, notes);
   }
 
   /** See LiveSession's identical method. */

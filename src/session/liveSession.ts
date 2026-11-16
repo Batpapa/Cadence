@@ -355,6 +355,12 @@ export class LiveSession {
     this.userChanged();
   }
 
+  /** The note on a detection, whole text — blank clears it. */
+  setNotes(annotationId: string, notes: string): void {
+    this.tracker.setNotes(annotationId, notes);
+    this.userChanged();
+  }
+
   /** The sets heard so far, with the identity a heart or a review hangs on —
    *  asked for by the feed, and only with set detection on. Handed to
    *  the analysis when it is saved (see DetectionTracker.finalSets). */
@@ -365,6 +371,12 @@ export class LiveSession {
   /** Toggle "I liked this set". */
   toggleSetLike(tunesetId: string): void {
     this.tracker.toggleSetLike(tunesetId);
+    this.userChanged();
+  }
+
+  /** The set's note, whole text — blank clears it. */
+  setSetNotes(tunesetId: string, notes: string): void {
+    this.tracker.setSetNotes(tunesetId, notes);
     this.userChanged();
   }
 

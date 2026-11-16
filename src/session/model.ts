@@ -132,6 +132,13 @@ export interface Detection {
   /** User marker: "I liked this tune when I heard it" — has no bearing on
    *  recognition or on any card, purely a personal reminder. */
   liked: boolean;
+  /** The user's free note on this detection, markdown (2026-11-16, promised to
+   *  the group on 11-11) — what happened on that tune, who started it. Same
+   *  rules as Analysis.notes: absent = no note, a cleared note is deleted
+   *  rather than stored empty. Absent on every detection before it existed —
+   *  no migration. A merge keeps both notes (SessionSummary), a re-analysis
+   *  loses them, as it loses the hearts, and says so first. */
+  notes?: string;
   /** The user's word on whether this detection OPENS a set (2026-10-20) — the
    *  one mark the set breaks hang on, read by timelineModel.ts's withChains.
    *  Absent: the rule decides (a silence of GAP_MIN_S or more before it opens
@@ -276,6 +283,10 @@ export interface TunesetRecord {
   detectionIds: string[];
   /** "I liked this set" — the set's own heart, apart from its tunes'. */
   liked?: boolean;
+  /** The set's own note, apart from its tunes' (2026-11-16) — markdown, absent
+   *  = none. Kept by reconcileTunesets like the heart, and folded into the
+   *  surviving set when two are merged rather than dropped. */
+  notes?: string;
 }
 
 /** `AppState.modules['tune-analyser']` (see types.ts's User.modules) — the
