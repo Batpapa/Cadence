@@ -7,6 +7,8 @@ import { isTune } from '../../services/cardTypeService';
 import { hasLibrary } from '../../services/pageMode';
 import { detectionTuneId } from '../detections';
 import { cardScoreSettingId } from '../recognition/cardIndex';
+import { recognitionIndexesOf, type RecognitionIndexId } from '../recognition/recognitionIndexes';
+import { tuneName } from './sessionUiShared';
 import type { Card } from '../../types';
 import { fetchTuneById, searchTunes, tuneTypeToMeter, type TuneResult } from '../../services/theSessionService';
 import { TuneUnavailableError } from '../../services/tuneFetchError';
@@ -39,31 +41,114 @@ import type { DetectionAlternate } from '../model';
 // both callers already are a modal, and a portal over one is one more layer to
 // get wrong on a phone for no gain.
 
-// The user's own tune cards come first among the suggestions (2026-11-16): a
+// The lookup searches the recognition indexes (2026-11-16): the ones switched
+// on in the analyser's options, in their order (recognitionIndexes.ts) — no
+// index is the implicit one, so every suggestion says which it comes from. A
 // tune the recogniser can find from a card's ABC (cardIndex.ts) can be named
-// from the card too, with no network — its own tune id, TheSession's when it
-// is a TheSession tune, and the card's score as the version shown.
+// from the card, with no network: its own tune id, TheSession's when it is a
+// TheSession tune, and the card's score as the version shown.
+//
+// A tune in two indexes (a card imported from TheSession) is offered once, by
+// the earlier index — the recogniser's own rule on equal scores. Two cards of
+// one tune both stay: they are two scores.
+//
+// A suggestion is named as the detection will be once picked (tuneName: the
+// card's name, else TheSession's). TheSession's dump does not always say what
+// its site does — tune 55 is "Kesh" there and "The Kesh" on thesession.org — so
+// the list showed "Kesh" and the detection "The Kesh", from the user's card
+// (2026-11-16).
 
-interface Suggestion { id: number; name: string; type: string; via?: string; card?: Card }
+/** What a suggestion, and the tune resolved, say besides the name: dance, key,
+ *  source — in that order (the user, 2026-11-16), no meter: the dance says it. */
+interface TuneFactsLine {
+  type: string;
+  /** "Gmajor", as the rest of the analyser writes keys; absent when unknown. */
+  key?: string;
+  source: RecognitionIndexId;
+}
 
-/** At most this many cards above TheSession's results. */
+const factsText = (f: TuneFactsLine): string =>
+  [f.type, f.key, t(SOURCE_LABEL[f.source])].filter(Boolean).join(' · ');
+
+interface Suggestion extends TuneFactsLine {
+  tuneId: string;
+  name: string;
+  via?: string;
+  /** Set on a card's suggestion. */
+  card?: Card;
+}
+
+/** At most this many cards among the suggestions. */
 const MAX_CARD_SUGGESTIONS = 8;
+
+/** Each index's word on a suggestion. */
+const SOURCE_LABEL: Record<RecognitionIndexId, string> = {
+  cards: 'sessions.tunePick.source.cards',
+  thesession: 'sessions.tunePick.source.thesession',
+};
+
+/** The indexes a lookup searches, in the analyser's order: one switched off
+ *  there is not offered here either. A page without a library has no cards. */
+function lookupOrder(): RecognitionIndexId[] {
+  if (!hasLibrary()) return ['thesession'];
+  return recognitionIndexesOf(getContext().user).filter(c => c.on).map(c => c.id);
+}
+
+const tuneCards = (): Card[] => Object.values(getContext().user.cards).filter(isTune);
 
 /** The tune cards a query names (by name or alias), best first. */
 function cardSuggestions(query: string): Suggestion[] {
-  const tunes = Object.values(getContext().user.cards).filter(isTune);
-  return rankByRelevance(tunes, query).slice(0, MAX_CARD_SUGGESTIONS).map(({ item, via }) => ({
-    id: -1, name: item.name, type: cardDance(item), card: item, ...(via !== undefined ? { via } : {}),
+  return rankByRelevance(tuneCards(), query).slice(0, MAX_CARD_SUGGESTIONS).map(({ item, via }) => ({
+    tuneId: detectionTuneId(item), name: item.name, ...cardFacts(item), card: item,
+    ...(via !== undefined ? { via } : {}),
   }));
 }
 
-/** A card's tune type, off its `type::` tag; empty when it has none. */
-function cardDance(card: Card): string {
-  const tag = card.tags.find(tg => tg.toLowerCase().startsWith('type::'));
-  return tag ? tag.slice('type::'.length).toLowerCase() : '';
+/** A TheSession tune as a suggestion, under the name its detection will show.
+ *  When that is not TheSession's (a card renamed), TheSession's comes under it.
+ *  The key is the local index's (one setting's), absent from the remote search's
+ *  answer: the resolved line then gives the key of the version picked. */
+function theSessionSuggestion(r: { id: number; name: string; type: string; mode?: string }, via: string | undefined): Suggestion {
+  const tuneId = String(r.id);
+  const name = tuneName({ tuneId, displayName: r.name }).text;
+  const shownVia = via ?? (name === r.name ? undefined : r.name);
+  return {
+    tuneId, name, type: r.type, ...(r.mode ? { key: r.mode } : {}), source: 'thesession',
+    ...(shownVia !== undefined ? { via: shownVia } : {}),
+  };
 }
 
-/** Searches TheSession by name or id and reports the tune currently resolved —
+/** The lists in index order, as far as they have answered, each without the
+ *  tunes an earlier index already offers. */
+function mergeSuggestions(order: readonly RecognitionIndexId[], lists: ReadonlyMap<RecognitionIndexId, Suggestion[]>): Suggestion[] {
+  const out: Suggestion[] = [];
+  const offered = new Set<string>();
+  for (const id of order) {
+    const list = lists.get(id);
+    if (!list) break;
+    const fresh = list.filter(s => !offered.has(s.tuneId));
+    out.push(...fresh);
+    for (const s of fresh) offered.add(s.tuneId);
+  }
+  return out;
+}
+
+/** A card's value under a tag group (`type::`, `key::`), as written; empty when
+ *  it has none. */
+function cardTagValue(card: Card, group: string): string {
+  const prefix = `${group}::`;
+  const tag = card.tags.find(tg => tg.toLowerCase().startsWith(prefix));
+  return tag ? tag.slice(prefix.length) : '';
+}
+
+/** A card's dance and key, off its `type::` and `key::` tags (what an import
+ *  writes, and what the card shows). */
+function cardFacts(card: Card): TuneFactsLine {
+  const key = cardTagValue(card, 'key');
+  return { type: cardTagValue(card, 'type').toLowerCase(), ...(key ? { key } : {}), source: 'cards' };
+}
+
+/** Searches the recognition indexes by name or id and reports the tune currently resolved —
  *  `null` whenever there is none, which is what a caller's commit control
  *  watches to know whether it would do anything.
  *
@@ -89,7 +174,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   const setStatus = (text: string, error = false) => { setStatusText(text); setStatusError(error); };
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   /** The tune resolved, as the line under the field names it. */
-  const [pending, setPending] = useState<{ name: string; type: string } | null>(null);
+  const [pending, setPending] = useState<({ name: string } & TuneFactsLine) | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -106,7 +191,12 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
    *  none. A tune with no setting has nothing a detection could point at, so
    *  it never reaches here. */
   const report = (tune: TuneResult | null) => {
-    setPending(tune && { name: tune.name, type: tune.type });
+    // The key of the version the detection will point at (settings[0]).
+    const key = tune?.settings[0]?.key;
+    setPending(tune && {
+      name: tuneName({ tuneId: String(tune.id), displayName: tune.name }).text,
+      type: tune.type, ...(key ? { key } : {}), source: 'thesession',
+    });
     onResolved(tune && {
       tuneId: String(tune.id),
       settingId: String(tune.settings[0]!.id),
@@ -124,8 +214,9 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
    *  is (cardScoreSettingId), whichever ABC it holds when it is shown. */
   const reportCard = (card: Card) => {
     seq.current++;
-    const dance = cardDance(card);
-    setPending({ name: card.name, type: dance });
+    const facts = cardFacts(card);
+    const dance = facts.type;
+    setPending({ name: card.name, ...facts });
     setStatus('');
     onResolved({
       tuneId: detectionTuneId(card),
@@ -144,19 +235,47 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
       : e instanceof Error && /: 404$/.test(e.message) ? t('theSession.id.notFound')
       : t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
 
-  const resolve = async (id: number) => {
-    const fresh = begin();
-    report(null);
+  /** TheSession's tune `id`, fetched: true once reported, else the failure in
+   *  words — or null when a later keystroke made the answer moot. */
+  const fetchTheSession = async (id: number, fresh: () => boolean): Promise<true | string | null> => {
     setStatus(t('theSession.status.fetching'));
     try {
       const tune = await fetchTuneById(id);
-      if (!fresh()) return;
-      if (tune.settings.length === 0) { setStatus(t('theSession.id.notFound'), true); return; }
+      if (!fresh()) return null;
+      if (tune.settings.length === 0) return t('theSession.id.notFound');
       report(tune);
       setStatus('');
+      return true;
     } catch (e) {
-      if (fresh()) setStatus(describeError(e), true);
+      return fresh() ? describeError(e) : null;
     }
+  };
+
+  const resolve = async (id: number) => {
+    const fresh = begin();
+    report(null);
+    const answer = await fetchTheSession(id, fresh);
+    if (typeof answer === 'string') setStatus(answer, true);
+  };
+
+  /** An id typed: the first index in the user's order that has that tune
+   *  answers, so it is never ambiguous. Only TheSession's ids are numbers — a
+   *  card answers for the TheSession tune it was imported from. */
+  const resolveId = async (q: string) => {
+    const fresh = begin();
+    report(null);
+    let failure = t('theSession.id.notFound');
+    for (const source of lookupOrder()) {
+      if (source === 'cards') {
+        const card = tuneCards().find(c => detectionTuneId(c) === q);
+        if (card) { reportCard(card); return; }
+        continue;
+      }
+      const answer = await fetchTheSession(parseInt(q, 10), fresh);
+      if (answer === null || answer === true) return;
+      failure = answer;
+    }
+    if (fresh()) setStatus(failure, true);
   };
 
   const onInput = (val: string) => {
@@ -169,31 +288,43 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
     const q = val.trim();
     if (!q) return;
     if (/^\d+$/.test(q)) {
-      timerRef.current = setTimeout(() => { timerRef.current = null; void resolve(parseInt(q, 10)); }, 150);
+      timerRef.current = setTimeout(() => { timerRef.current = null; void resolveId(q); }, 150);
       return;
     }
     if (q.length < 2) return;
     timerRef.current = setTimeout(async () => {
       timerRef.current = null;
       const fresh = begin();
-      const cards = hasLibrary() ? cardSuggestions(q) : [];
-      setSuggestions(cards);
+      const order = lookupOrder();
+      const lists = new Map<RecognitionIndexId, Suggestion[]>();
+      /** Shown as far as the order has answered: the cards at once when they
+       *  come first, after TheSession's results otherwise. */
+      const show = () => { const all = mergeSuggestions(order, lists); setSuggestions(all); return all.length; };
+      if (order.includes('cards')) lists.set('cards', cardSuggestions(q));
+      if (!order.includes('thesession')) {
+        setStatus(show() ? '' : t('theSession.noResults'));
+        return;
+      }
+      show();
       setStatus(t('theSession.status.searching'));
       try {
         let tunes: Suggestion[];
         try {
           // Local first, remote only when there is no local index at all —
           // the new-card modal's settled rule, for the same reasons.
-          tunes = searchLocalTuneIndex(await ensureTuneSearchIndex(), q);
+          tunes = searchLocalTuneIndex(await ensureTuneSearchIndex(), q).map(r => theSessionSuggestion(r, r.via));
         } catch {
-          tunes = sortByRelevance(await searchTunes(q), q).map(r => ({ ...r, via: r.alias }));
+          tunes = sortByRelevance(await searchTunes(q), q).map(r => theSessionSuggestion(r, r.alias));
         }
         if (!fresh()) return;
-        setSuggestions([...cards, ...tunes]);
-        setStatus(cards.length || tunes.length ? '' : t('theSession.noResults'));
+        lists.set('thesession', tunes);
+        setStatus(show() ? '' : t('theSession.noResults'));
       } catch (e) {
-        // TheSession unreachable: the cards still stand.
-        if (fresh()) setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }), true);
+        if (!fresh()) return;
+        // TheSession unreachable: the cards still stand, wherever they rank.
+        lists.set('thesession', []);
+        show();
+        setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }), true);
       }
     }, 300);
   };
@@ -202,7 +333,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
     setValue(tune.name);
     setSuggestions([]);
     if (tune.card) reportCard(tune.card);
-    else void resolve(tune.id);
+    else void resolve(parseInt(tune.tuneId, 10));
   };
 
   return (
@@ -220,7 +351,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
         {trailing}
       </div>
 
-      {pending && <p class="text-xs text-muted truncate">{pending.name} · {pending.type}</p>}
+      {pending && <p class="text-xs text-muted truncate">{pending.name} · {factsText(pending)}</p>}
       {status && (statusError
         ? <InlineStatus tone="error">{status}</InlineStatus>
         : <p class="text-xs text-dim">{status}</p>)}
@@ -229,17 +360,18 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
         <div class="max-h-48 overflow-y-auto rounded border border-border divide-y divide-border/50">
           {suggestions.map(tune => (
             <button
-              key={tune.card ? `card:${tune.card.id}` : tune.id}
+              key={tune.card ? `card:${tune.card.id}` : tune.tuneId}
               type="button"
-              class="w-full flex items-baseline gap-2 px-3 py-1.5 text-left hover:bg-bg cursor-pointer"
+              class="w-full block px-3 py-1.5 text-left hover:bg-bg cursor-pointer"
               onClick={() => pickSuggestion(tune)}
             >
-              <span class="flex-1 min-w-0">
-                <span class="text-sm text-primary truncate block">{tune.name}</span>
-                {tune.via !== undefined && <span class="text-xs text-dim truncate block">{t('search.viaAlias', { alias: tune.via })}</span>}
-              </span>
-              {tune.card && <span class="text-xs text-accent shrink-0">{t('sessions.tunePick.card')}</span>}
-              <span class="text-xs text-dim shrink-0">{tune.type}</span>
+              {/* The facts under the name, as the alternates list above writes
+                  them: beside it, three of them left a phone's name a few
+                  letters wide. The alias goes right under the name it stands
+                  for, the facts after. */}
+              <span class="text-sm text-primary truncate block">{tune.name}</span>
+              {tune.via !== undefined && <span class="text-xs text-dim truncate block">{t('search.viaAlias', { alias: tune.via })}</span>}
+              <span class="text-xs text-dim truncate block">{factsText(tune)}</span>
             </button>
           ))}
         </div>
