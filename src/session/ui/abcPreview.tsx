@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { getSettingAbcMeta, getSettingAbcMetaSync, onTuneIndexCached, type SettingAbcMeta } from '../recognition/indexStore';
+import { isCardId } from '../recognition/cardIndex';
 import { theSessionKeyToAbc, findSettingInScore } from '../../services/theSessionService';
 import { isAbcFile, isAbcLink, buildHeardSetAbc, tunesetAbcFileName } from '../../services/abcService';
 import { fetchAbcLink, peekAbcLink } from '../../services/abcLink';
@@ -25,8 +26,10 @@ function toBase64(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 }
 
-/** A whole ABC tune for a setting of the recognition index. */
+/** A whole ABC tune for a setting of the recognition index. A card's version
+ *  (cardIndex.ts) already is one: the tune as its file has it. */
 export function settingAbcText(displayName: string, settingId: string, meta: SettingAbcMeta): string {
+  if (isCardId(settingId)) return meta.abc;
   return [
     'X: 1',
     `T: ${displayName}`,

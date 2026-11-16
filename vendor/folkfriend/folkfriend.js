@@ -190,6 +190,25 @@ function debugString(val) {
     return className;
 }
 
+let cachedUint32Memory0 = null;
+
+function getUint32Memory0() {
+    if (cachedUint32Memory0 === null || cachedUint32Memory0.byteLength === 0) {
+        cachedUint32Memory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32Memory0;
+}
+
+function passArrayJsValueToWasm0(array, malloc) {
+    const ptr = malloc(array.length * 4, 4) >>> 0;
+    const mem = getUint32Memory0();
+    for (let i = 0; i < array.length; i++) {
+        mem[ptr / 4 + i] = addHeapObject(array[i]);
+    }
+    WASM_VECTOR_LEN = array.length;
+    return ptr;
+}
+
 function handleError(f, args) {
     try {
         return f.apply(this, args);
@@ -322,6 +341,17 @@ export class FolkFriendWASM {
     */
     flush_pcm_buffer() {
         wasm.folkfriendwasm_flush_pcm_buffer(this.__wbg_ptr);
+    }
+    /**
+    * The sources of a merged index (each setting's `source`) in the order that wins
+    * ties among equal scores, first first (Cadence, 2026-11-16) — see
+    * QueryEngine::set_source_order. Empty by default, which changes nothing.
+    * @param {(string)[]} order
+    */
+    set_source_order(order) {
+        const ptr0 = passArrayJsValueToWasm0(order, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.folkfriendwasm_set_source_order(this.__wbg_ptr, ptr0, len0);
     }
     /**
     * The cleaned frames fed since the last call (frames x 48, as take_features): each note
@@ -778,6 +808,7 @@ function __wbg_finalize_init(instance, module) {
     __wbg_init.__wbindgen_wasm_module = module;
     cachedFloat64Memory0 = null;
     cachedInt32Memory0 = null;
+    cachedUint32Memory0 = null;
     cachedUint8Memory0 = null;
 
 

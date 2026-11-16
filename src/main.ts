@@ -19,6 +19,7 @@ import { sessionRecordingSignal } from './session/ui/sessionStore';
 import { listAllSnapshots, getSnapshotState, type SnapshotMeta } from './services/snapshotService';
 import { initSessionDbForUser, collectUserSessionAudio, userDbName, localSessionAudioStats, initAudioUploadRetry } from './session/db';
 import { initAudioDownloads } from './session/audioDownloads';
+import { installCardRecognition } from './session/recognition/cardIndexSource';
 import { initAttachmentDbForUser, rawAttachmentBlobs } from './services/attachmentDb';
 import { initAttachmentSync } from './services/attachmentStore';
 import { buildZip, audioExtension } from './services/zip';
@@ -804,6 +805,10 @@ function finishBoot(root: HTMLElement): void {
   initAudioUploadRetry();
   // …and, the other way, the ones on Drive brought here if this device asked.
   initAudioDownloads();
+  // The user's tune cards recognised alongside TheSession's index, as the
+  // analyser's options say, and their versions readable by its views
+  // (cardIndexSource.ts).
+  installCardRecognition(() => appState.value);
   // Analyses carried over from the standalone analyser, if its "sign in to
   // keep them" was used (standaloneHandoff.ts): into this user's analyser.
   void importStagedAnalyses(getContext());

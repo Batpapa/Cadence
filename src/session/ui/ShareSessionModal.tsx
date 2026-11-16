@@ -1,14 +1,13 @@
-import { render } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { showModal, closeModal, updateTopModal } from '../../components/modal';
+import { showModal, closeModal, updateTopModal, renderModalBody } from '../../components/modal';
 import { ArrowRightIcon } from '../../components/icons';
 import { ChoiceCard, InlineStatus } from '../../components/ui';
 import { loadSessionAudio, probeSyncedAudio, downloadSyncedAudioOnce, type SyncedAudioProbe } from '../db';
-import { shareSession, exportSessionFile } from '../../services/sessionShareService';
+import { shareSession, exportSessionFile, packageSize } from '../../services/sessionShareService';
+import { getShareCapacity, ShareTooLargeError, isAbortError } from '../../services/shareService';
 import { exportAnalysisCSV, exportAnalysisTXT, exportAnalysisClipsZip, analysisTextReport } from '../../services/analysisExport';
 import { isScraperServerWarm } from '../../services/scraperServerStatus';
-import { SHARE_MAX_AUDIO_BYTES } from '../sessionConfig';
 import { copyText, formatBytes } from '../../utils';
 import type { Analysis, Detection } from '../model';
 import { tuneName, useTuneNames } from './sessionUiShared';
@@ -72,10 +71,25 @@ function ShareKeyResult({ keyValue, secondsRemaining }: { keyValue: string; seco
 
 type UploadState =
   | { phase: 'idle' }
-  | { phase: 'uploading' }
+  /** `sent`/`total` once the body has started to go — a 3-hour recording from
+   *  a phone takes minutes. */
+  | { phase: 'uploading'; sent?: number; total?: number }
+  /** In the share server's queue (shareService.ts), `position` counting this
+   *  one. */
+  | { phase: 'waiting'; position: number }
   | { phase: 'fetchingAudio' }
   | { phase: 'result'; key: string; secondsRemaining: number }
   | { phase: 'error'; message: string };
+
+/** Room on the share server (2026-11-15: no fixed cap any more, it takes what
+ *  fits on its disk, and what does not fit yet waits its turn). Asked when the
+ *  package view opens — which also wakes the server. `max` null: a server
+ *  older than the queue. `unknown`: the question failed, and the server
+ *  decides at the upload. */
+type CapacityState =
+  | { status: 'checking' }
+  | { status: 'ok'; available: number; max: number | null }
+  | { status: 'unknown' };
 
 /** The clips zip, from the click to the download. */
 type ClipsState =
@@ -99,6 +113,12 @@ function ShareSessionModal({ session }: { session: Analysis }) {
   const [view, setView] = useState<'root' | 'package' | 'txt'>('root');
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
   const [detailed, setDetailed] = useState(false);
+  const [capacity, setCapacity] = useState<CapacityState | null>(null); // null: not asked yet
+  // The wait in the queue and the upload after it: cancelled by the button,
+  // and by the window closing — a key nobody will see is not worth the room
+  // it takes from the next in line.
+  const uploadCtrl = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadCtrl.current?.abort(), []);
   // The names as the screen shows them, not the recogniser's lower case. The
   // name index is primed here because nothing guarantees a screen that lists
   // detections ran first (a share from the analysis browser does not).
@@ -122,7 +142,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
       updateTopModal({ title: t('sessions.export.clips'), onBack: undefined });
     } else if (clips.phase === 'error') {
       updateTopModal({ title: t('sessions.export.clips'), onBack: () => setClips({ phase: 'idle' }) });
-    } else if (upload.phase === 'uploading' || upload.phase === 'result') {
+    } else if (upload.phase === 'uploading' || upload.phase === 'waiting' || upload.phase === 'result') {
       updateTopModal({ title: packageTitle, onBack: undefined });
     } else if (upload.phase === 'error') {
       updateTopModal({ title: packageTitle, onBack: () => setUpload({ phase: 'idle' }) });
@@ -142,10 +162,21 @@ function ShareSessionModal({ session }: { session: Analysis }) {
       setRemote(probe);
       setAudioBlob(blob);
       const bytes = blob?.size ?? (probe?.status === 'ok' ? probe.bytes : null);
-      if (bytes !== null) setIncludeAudio(bytes <= SHARE_MAX_AUDIO_BYTES);
+      if (bytes !== null) setIncludeAudio(true);
     })();
     // eslint-disable-next-line
   }, [session.id]);
+
+  // Only for the package: CSV and TXT never touch the share server.
+  useEffect(() => {
+    if (view !== 'package' || capacity !== null) return;
+    setCapacity({ status: 'checking' });
+    getShareCapacity().then(
+      c => setCapacity({ status: 'ok', available: c.availableBytes, max: c.maxBytes }),
+      () => setCapacity({ status: 'unknown' }),
+    );
+    // eslint-disable-next-line
+  }, [view]);
 
   /** From the button, so a token window may open: the only way past "the
    *  Google connection needs renewing" that GIS allows. */
@@ -153,7 +184,7 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     setProbing(true);
     void probeSyncedAudio(session.id, true).then(probe => {
       setRemote(probe);
-      if (probe?.status === 'ok') setIncludeAudio(probe.bytes <= SHARE_MAX_AUDIO_BYTES);
+      if (probe?.status === 'ok') setIncludeAudio(true);
     }).finally(() => setProbing(false));
   };
 
@@ -161,7 +192,26 @@ function ShareSessionModal({ session }: { session: Analysis }) {
     return <p class="text-xs text-muted text-center py-2">{t('sessions.share.checking')}</p>;
   }
   if (upload.phase === 'uploading') {
-    return <p class="text-xs text-muted text-center py-2">{isScraperServerWarm() ? t('sessions.share.uploading') : t('sessions.share.wakingServer')}</p>;
+    // No figure until the first bytes have gone: the server may still be
+    // waking up.
+    const { sent, total } = upload;
+    if (sent === undefined || !total) {
+      return <p class="text-xs text-muted text-center py-2">{isScraperServerWarm() ? t('sessions.share.uploading') : t('sessions.share.wakingServer')}</p>;
+    }
+    return (
+      <div class="space-y-2 py-2">
+        <p class="text-xs text-muted text-center">{t('sessions.share.uploadingProgress', { sent: formatBytes(sent), total: formatBytes(total) })}</p>
+        <div class="knowledge-bar"><div class="knowledge-fill bg-accent" style={{ width: `${Math.min(100, Math.floor(sent / total * 100))}%` }} /></div>
+      </div>
+    );
+  }
+  if (upload.phase === 'waiting') {
+    return (
+      <div class="space-y-3 py-2 text-center">
+        <p class="text-xs text-muted">{t('sessions.share.waitingInQueue', { position: upload.position })}</p>
+        <button class="btn-ghost text-xs" onClick={() => uploadCtrl.current?.abort()}>{t('common.cancel')}</button>
+      </div>
+    );
   }
   if (upload.phase === 'fetchingAudio') {
     return <p class="text-xs text-muted text-center py-2">{t('sessions.share.fetchingAudio')}</p>;
@@ -184,17 +234,39 @@ function ShareSessionModal({ session }: { session: Analysis }) {
 
   const doUpload = async (withAudio: Blob | null) => {
     setUpload({ phase: 'uploading' });
+    const ctrl = new AbortController();
+    uploadCtrl.current = ctrl;
     try {
-      const { key, secondsRemaining } = await shareSession(session, withAudio);
+      const { key, secondsRemaining } = await shareSession(session, withAudio, {
+        signal: ctrl.signal,
+        onWaiting: position => setUpload({ phase: 'waiting', position }),
+        onProgress: (sent, total) => setUpload({ phase: 'uploading', sent, total }),
+      });
       setUpload({ phase: 'result', key, secondsRemaining });
     } catch (e) {
+      if (isAbortError(e)) { setUpload({ phase: 'idle' }); return; }
+      // Larger than the server could ever hold — its own figure, which the
+      // capacity asked at the opening may not have had: back to the choices,
+      // the button greyed with the reason.
+      if (e instanceof ShareTooLargeError) {
+        setCapacity({ status: 'ok', available: 0, max: e.maxBytes });
+        setUpload({ phase: 'idle' });
+        return;
+      }
       setUpload({ phase: 'error', message: t('theSession.error', { message: e instanceof Error ? e.message : String(e) }) });
     }
   };
 
   const remoteBytes = remote?.status === 'ok' ? remote.bytes : null;
   const audioBytes = audioBlob?.size ?? remoteBytes;
-  const tooBig = audioBytes !== null && audioBytes > SHARE_MAX_AUDIO_BYTES;
+  // What the key would send, against the room on the share server. Greyed
+  // while the server is asked — it may take a minute to wake — and, with the
+  // two figures, when it could never fit. Too large for NOW says nothing
+  // before the click (the user's call, 2026-11-16): the wait shows itself.
+  // The file export never depends on any of it.
+  const needed = packageSize(session, includeAudio ? audioBytes : null);
+  const checkingRoom = capacity === null || capacity.status === 'checking';
+  const neverFits = capacity?.status === 'ok' && capacity.max !== null && needed > capacity.max;
 
   /** The audio to send, fetched from Drive at the moment it is needed when it
    *  is not here. A failure says so and sends nothing: an analysis quietly
@@ -302,7 +374,6 @@ function ShareSessionModal({ session }: { session: Analysis }) {
               <span class="text-xs text-muted">{t('sessions.share.includeAudio', { size: formatBytes(audioBytes) })}</span>
             </label>
             {!audioBlob && <p class="text-xs text-dim">{t('sessions.share.audioFromDrive')}</p>}
-            {tooBig && <p class="text-xs text-warn">{t('sessions.share.tooBig')}</p>}
           </>
         ) : remote && remote.status !== 'gone' ? (
           // On Drive by the record, but Drive cannot be asked right now.
@@ -338,9 +409,15 @@ function ShareSessionModal({ session }: { session: Analysis }) {
             icon={SHARE_ICON_SHARE}
             label={t('library.share.label')}
             desc={t('library.share.desc')}
+            disabled={checkingRoom || neverFits}
             onClick={() => { void withAudio(doUpload); }}
           />
-        </div>
+          {checkingRoom && (
+            <p class="text-xs text-dim">{t(isScraperServerWarm() ? 'sessions.share.checkingRoom' : 'sessions.share.wakingServer')}</p>
+          )}
+          {neverFits && capacity?.status === 'ok' && capacity.max !== null && (
+            <p class="text-xs text-warn">{t('sessions.share.tooBigForServer', { max: formatBytes(capacity.max), needed: formatBytes(needed) })}</p>
+          )}        </div>
       </div>
     );
   }
@@ -400,7 +477,8 @@ function ShareSessionModal({ session }: { session: Analysis }) {
  *  HTMLElement body; everything inside it is this component's own JSX now.
  *  Same name/signature as the function it replaces. */
 export function showShareSessionModal(session: Analysis): void {
-  const body = document.createElement('div');
-  render(<ShareSessionModal session={session} />, body);
-  showModal(t('sessions.export.title'), body, []);
+  // Unmounted on dismissal: a wait in the share queue, or an upload, stops
+  // with the window rather than going on behind it.
+  const { el, cleanup } = renderModalBody(<ShareSessionModal session={session} />);
+  showModal(t('sessions.export.title'), el, [], { onDismiss: cleanup });
 }

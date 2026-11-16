@@ -21,6 +21,7 @@ export function folkfriendwasm_set_note_filter(a: number, b: number, c: number):
 export function folkfriendwasm_set_num_repass(a: number, b: number): void;
 export function folkfriendwasm_set_pitch_class_mode(a: number): void;
 export function folkfriendwasm_set_sample_rate(a: number, b: number): number;
+export function folkfriendwasm_set_source_order(a: number, b: number, c: number): void;
 export function folkfriendwasm_set_tempo_model(a: number, b: number, c: number): void;
 export function folkfriendwasm_set_tempo_range(a: number, b: number, c: number): void;
 export function folkfriendwasm_settings_from_tune_id(a: number, b: number, c: number, d: number): void;

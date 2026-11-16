@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildZip, audioExtension, readZip } from './zip';
+import { buildZip, audioExtension, readZip, buildZipBlob, readZipBlob, isZipBlob, zipSize } from './zip';
 
 const u8 = (...b: number[]) => new Uint8Array(b);
 const rd16 = (a: Uint8Array, o: number) => a[o]! | (a[o + 1]! << 8);
@@ -100,5 +100,63 @@ describe('readZip — the other half of the full backup', () => {
     expect(central).toBeGreaterThan(-1);
     view.setUint16(central + 10, 8, true);
     expect(() => readZip(z)).toThrow('zip_compressed_unsupported:audio/s1.webm');
+  });
+});
+
+describe('buildZipBlob / readZipBlob', () => {
+  const pattern = (n: number) => new Uint8Array(n).map((_, i) => (i * 31 + 7) % 256);
+
+  it('writes what buildZip writes, byte for byte', async () => {
+    const files = [
+      { name: 'one.webm', data: u8(1, 2, 3, 4, 5) },
+      { name: 'sous/deux.mp3', data: u8(0xde, 0xad, 0xbe, 0xef) },
+    ];
+    const when = new Date(2026, 7, 31, 12, 0, 0);
+    const blob = await buildZipBlob([
+      { name: 'one.webm', data: new Blob([files[0]!.data]) },
+      { name: 'sous/deux.mp3', data: files[1]!.data },
+    ], when);
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(buildZip(files, when));
+  });
+
+  it('says its size before it is built', async () => {
+    const big = pattern(9 * 1024 * 1024);
+    const entries = [{ name: 'data.cdb', data: '{"cards":{}}' }, { name: 'audio/é.webm', data: new Blob([big]) }];
+    const blob = await buildZipBlob(entries);
+    expect(zipSize([{ name: 'data.cdb', bytes: 12 }, { name: 'audio/é.webm', bytes: big.length }])).toBe(blob.size);
+  });
+
+  it('reads back text and bytes, across more than one copy piece', async () => {
+    const big = pattern(8 * 1024 * 1024 + 4321);
+    const blob = await buildZipBlob([{ name: 'data.cdb', data: '{"a":1}' }, { name: 'audio/x.webm', data: new Blob([big]) }]);
+    expect(await isZipBlob(blob)).toBe(true);
+    const items = await readZipBlob(blob);
+    expect(items.map(i => i.name)).toEqual(['data.cdb', 'audio/x.webm']);
+    expect(await items[0]!.text()).toBe('{"a":1}');
+    const copy = await items[1]!.copy('audio/webm');
+    expect(copy.type).toBe('audio/webm');
+    expect(copy.size).toBe(big.length);
+    const got = new Uint8Array(await copy.arrayBuffer());
+    expect(got.findIndex((b, i) => b !== big[i])).toBe(-1);
+  });
+
+  it('reads an archive buildZip made, and its CRCs are the ones readZip accepts', async () => {
+    const z = buildZip([{ name: 'a.txt', data: new TextEncoder().encode('bonjour') }]);
+    const items = await readZipBlob(new Blob([z]));
+    expect(await items[0]!.text()).toBe('bonjour');
+    const blob = await buildZipBlob([{ name: 'a.txt', data: 'bonjour' }]);
+    expect(readZip(new Uint8Array(await blob.arrayBuffer()))[0]!.name).toBe('a.txt');
+  });
+
+  it('tells JSON from an archive', async () => {
+    expect(await isZipBlob(new Blob(['{"cards":[]}']))).toBe(false);
+    expect(await isZipBlob(new Blob([]))).toBe(false);
+  });
+
+  it('refuses a truncated archive rather than giving a short entry', async () => {
+    const blob = await buildZipBlob([{ name: 'a.bin', data: pattern(5000) }]);
+    // The end kept (directory and end record), the middle of the data gone.
+    const cut = new Blob([blob.slice(0, 2000), blob.slice(blob.size - 22 - 46 - 5)]);
+    await expect((async () => { await (await readZipBlob(cut))[0]!.copy(); })()).rejects.toThrow();
   });
 });

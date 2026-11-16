@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { cardOfTuneId } from '../detections';
 import type { AppContext, AppState, Card, FileAttachment } from '../../types';
 import { t } from '../../services/i18nService';
 import { TrashIcon, PlusIcon, AddClipIcon, ClipAttachedIcon, NotesIcon, MoreHorizontalIcon } from '../../components/icons';
@@ -7,6 +8,7 @@ import { downloadIcon } from '../../components/playbackIcons';
 import { confirmModal } from '../../components/modal';
 import { useContextMenu, type ContextMenuEntry } from '../../components/contextMenu';
 import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
+import { isCardId } from '../recognition/cardIndex';
 import { showDeckChoiceModal, decksContainingCard, isInEveryDeck, deckAddIcon } from '../../components/deckSelector';
 import { primeCachedTuneNames, cachedTuneName, ensureTuneNameIndex } from '../../services/tuneNameIndexService';
 import { fileToEntry, titleCaseTuneName, downloadBlob } from '../../utils';
@@ -106,7 +108,7 @@ export function useTuneNames(): void {
  *  `cardOf` (see cardsByExternalTuneId): for a caller naming thousands of tunes
  *  in one render, which would otherwise search every card for each of them. */
 export function tuneName(d: { tuneId: string; displayName: string }, cardOf?: (tuneId: string) => Card | undefined): { text: string; exact: boolean } {
-  const card = cardOf ? cardOf(d.tuneId) : findByExternalId(`thesession:${d.tuneId}`, getContext().user.cards);
+  const card = cardOf ? cardOf(d.tuneId) : cardOfTuneId(d.tuneId, getContext().user.cards);
   if (card) return { text: card.name, exact: true };
 
   const indexed = cachedTuneName(d.tuneId);
@@ -328,7 +330,7 @@ export function clipFileName(session: ClipSessionRef, ann: Detection, extension:
  *  The name is still read as a fallback: a device on an older build keeps
  *  writing the tag there, and a card synced from it has no `clipOf`. */
 export function isClipAttached(session: ClipSessionRef, ann: Detection): boolean {
-  const card = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
+  const card = cardOfTuneId(ann.tuneId, getContext().user.cards);
   if (!card) return false;
   const key = clipKey(session, ann);
   return card.content.attachments.some(a => a.type === 'file' && (a.clipOf === key || legacyClipTag(a.name)?.key === key));
@@ -359,7 +361,7 @@ export async function prepareClip(
 /** attachClip's second half, inside a recipe: puts the clip on its tune's
  *  card unless that card is gone or already holds it. Whether it did. */
 export function fileClip(s: AppState, tuneId: string, prepared: PreparedClip): boolean {
-  const card = findByExternalId(`thesession:${tuneId}`, s.cards);
+  const card = cardOfTuneId(tuneId, s.cards);
   if (!card || card.content.attachments.some(a => a.type === 'file' && a.clipOf === prepared.clipOf)) return false;
   card.content.attachments.push({ ...prepared.att, clipOf: prepared.clipOf });
   return true;
@@ -380,7 +382,7 @@ export async function attachClip(
 ): Promise<boolean> {
   // getContext(): ctx.user is a snapshot from modal-open time — cards added
   // since (e.g. via "Add to Cadence" on a result) would be missed.
-  if (!findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards)) return false;
+  if (!cardOfTuneId(ann.tuneId, getContext().user.cards)) return false;
   if (isClipAttached(session, ann)) return true;
 
   const prepared = await prepareClip(session, ann, audio, onProgress);
@@ -414,7 +416,7 @@ export async function recutAttachedClip(
   previous: { start: number; end: number | null },
   audio: Blob,
 ): Promise<boolean> {
-  const card = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
+  const card = cardOfTuneId(ann.tuneId, getContext().user.cards);
   if (!card) return false;
 
   const wasAnn = { ...ann, start: previous.start, end: previous.end };
@@ -436,7 +438,7 @@ export async function recutAttachedClip(
   const att = await attachmentFor(entry, getContext().user);
   let replaced = false;
   await ctx.mutate(s => {
-    const target = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
+    const target = cardOfTuneId(ann.tuneId, s.cards);
     if (!target) return;
     // Found again by key rather than by the index read above: the state may
     // have moved on between the extraction and this write.
@@ -480,7 +482,7 @@ async function retargetReview(
   previousEnd: number | null,
   next: { id: string; ts: number } | null,
 ): Promise<boolean> {
-  const card = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
+  const card = cardOfTuneId(ann.tuneId, getContext().user.cards);
   if (!card) return false;
   const startMs = session.date === null ? NaN : Date.parse(session.date);
   const legacyTs = Number.isNaN(startMs) || previousEnd === null ? null : reviewEntryTs(startMs, previousEnd);
@@ -569,7 +571,7 @@ export async function repinSessionDate(
   await ctx.mutate(s => {
     for (const ann of anns) {
       if (ann.end === null) continue;
-      const card = findByExternalId(`thesession:${ann.tuneId}`, s.cards);
+      const card = cardOfTuneId(ann.tuneId, s.cards);
       if (!card) continue;
       const work = s.cardWorks[`${s.currentProfileId}:${card.id}`];
       if (!work) continue;
@@ -617,7 +619,7 @@ export function ClipControls({ ann, session, audioAvailable, getAudio, ctx, onAt
    *  for a leading ⚠. */
   const [attachError, setAttachError] = useState<string | null>(null);
 
-  const known = findByExternalId(`thesession:${ann.tuneId}`, getContext().user.cards);
+  const known = cardOfTuneId(ann.tuneId, getContext().user.cards);
   const already = known ? isClipAttached(session, ann) : false;
 
   const doDownload = async () => {
@@ -743,7 +745,7 @@ export interface TuneDeckButtonProps {
 }
 
 export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded, cardOf }: TuneDeckButtonProps) {
-  const known = cardOf ? cardOf(tuneId) : findByExternalId(`thesession:${tuneId}`, getContext().user.cards);
+  const known = cardOf ? cardOf(tuneId) : cardOfTuneId(tuneId, getContext().user.cards);
   const [busy, setBusy] = useState(false);
 
   /** Writes the already-fetched card. Split from the fetch on purpose: the tune
@@ -824,6 +826,9 @@ export function TuneDeckButton({ tuneId, ctx, getPinnedDeckIds, onCardAdded, car
 
   // The standalone analyser has no library to add to (pageMode.ts).
   if (!hasLibrary()) return null;
+  // A card's own tune (cardIndex.ts) whose card is gone: nothing to fetch it
+  // from, so nothing to add.
+  if (!known && isCardId(tuneId)) return null;
   if (!known) {
     return (
       <IconButton label={t('sessions.addCard')} class="hover:bg-transparent" disabled={busy} onClick={onAddClick}>

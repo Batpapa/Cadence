@@ -1,5 +1,5 @@
 import { getContext } from '../store';
-import { findByExternalId } from '../services/theSessionService';
+import { cardOfTuneId } from './detections';
 import { reviewEntryIndex, retargetedHistory } from '../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from './reviewLink';
 import type { Detection } from './model';
@@ -33,7 +33,7 @@ function startOf(session: SessionRef): number | null {
 /** Where `ann`'s rating is, if it has one: the card's key in cardWorks. */
 function ratedAt(ann: Detection, id: string): string | null {
   const user = getContext().user;
-  const card = findByExternalId(`thesession:${ann.tuneId}`, user.cards);
+  const card = cardOfTuneId(ann.tuneId, user.cards);
   if (!card) return null;
   const key = `${user.currentProfileId}:${card.id}`;
   const history = user.cardWorks[key]?.history;

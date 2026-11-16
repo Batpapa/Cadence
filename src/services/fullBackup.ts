@@ -1,42 +1,45 @@
 import type { AppState } from '../types';
 import { toDateStr, downloadCadenceFile } from '../utils';
-import { buildZip, readZip, audioExtension, type ZipEntry } from './zip';
+import { buildZipBlob, readZipBlob, isZipBlob, audioExtension, ZIP32_MAX_BYTES, type ZipBlobEntry } from './zip';
 import { loadSessionAudio, saveSessionAudio } from '../session/db';
 import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from '../session/model';
 import { externalAttachmentBlobs, externalAttachmentBytes, type ExportGate } from './attachmentStore';
 
-// ── Full backup (.cdbf) ──────────────────────────────────────────────────────
-// The ordinary .cdb is JSON: tunes, decks, reviews, and the analyses with their
-// detections. It has never carried the recordings, which live in a separate
-// per-user database — so the one thing that exists in a single copy was the one
-// thing "export all your data" did not export. A user lost every recording on
-// their phone on 2026-09-09 and a fresh backup would not have helped.
+// ── Backups (.cdb, .cdbf) ────────────────────────────────────────────────────
+// Two choices of one format. The .cdbf (full backup) carries the recordings,
+// which live in a separate per-user database — the one thing that exists in a
+// single copy, and the one thing "export all your data" did not export until a
+// user lost every recording on their phone on 2026-09-09. The .cdb leaves them
+// out: it is small and quick, what someone wants when moving a library rather
+// than archiving a year of sessions.
 //
-// A zip rather than a bigger JSON. Embedding audio as base64 costs 33% and,
-// worse, has to exist as ONE JavaScript string, which throws outright somewhere
-// past half a gigabyte — the share format (.cds) does embed base64 and is
-// capped at 70 MB for precisely that reason. Zip entries are bytes, and
-// buildZip stores without compressing because the payload is already Opus.
+// Both are a zip (zip.ts, STORE): `data.cdb` (the state, JSON), then
+// `attachments/<external id>` and, in a .cdbf, `audio/<session id>.<ext>`.
+// Embedding bytes as base64 costs 33% and, worse, has to exist as ONE
+// JavaScript string, which throws outright somewhere past half a gigabyte.
+// Since 2026-11-15 the archive is a Blob of the stored Blobs, read in pieces
+// for the CRC and never held whole; until then it was assembled in memory and
+// capped at 1.5 GB, and a .cdb was JSON with its attachments in base64.
 //
-// The .cdb is unchanged and still produced: it is small, instant, and it is
-// what someone wants when they are moving a library rather than archiving a
-// year of sessions. This is the other choice, not a replacement.
+// LEGACY READ — a .cdb in JSON is still read (parseBackup). To be REMOVED ON
+// 2027-01-15 (decided 2026-11-15: an old backup is stale anyway):
+// parseJsonBackup, isValidBackup and the branch that calls them. The recovery
+// screen (main.ts, ?mode=recovery) still WRITES a JSON .cdb: move it to the
+// archive first.
 
-const DATA_ENTRY = 'data.cdb';
+export const BACKUP_DATA_ENTRY = 'data.cdb';
 const AUDIO_DIR = 'audio/';
 // Attachments kept out of the blob travel the same way the recordings do: as
-// entries beside the state, not as base64 inside it — the same argument this
-// file's header already makes about the audio, and for the same two reasons.
-// Measured on the library that prompted the externalisation: those ten files
-// are 21.18 MB of bytes and would be 28.24 MB of base64, so 7.06 MB saved —
-// and, which matters more, `data.cdb` stays a 6.3 MB string instead of a
-// 34.5 MB one. Attachments are the category most likely to grow.
+// entries beside the state, not as base64 inside it. Measured on the library
+// that prompted the externalisation: those ten files are 21.18 MB of bytes and
+// would be 28.24 MB of base64, so 7.06 MB saved — and, which matters more,
+// `data.cdb` stays a 6.3 MB string instead of a 34.5 MB one. Attachments are
+// the category most likely to grow.
 const ATTACH_DIR = 'attachments/';
 
-/** The archive is assembled whole in memory — buildZip returns one Uint8Array,
- *  and there is no streaming zip that works on iOS Safari. Past this, the tab
- *  dies rather than producing a file, so it is refused in words instead. */
-export const MAX_FULL_BACKUP_BYTES = 1_500 * 1024 * 1024;
+/** The zip format's own ceiling (ZIP32), less room for its headers. Memory is
+ *  no longer the limit: nothing is held whole. */
+export const MAX_FULL_BACKUP_BYTES = ZIP32_MAX_BYTES - 64 * 1024 * 1024;
 
 export class BackupTooLarge extends Error {
   constructor(public readonly bytes: number) { super('backup_too_large'); }
@@ -48,7 +51,7 @@ function sessionsOf(user: AppState): Record<string, { mimeType?: string }> {
 }
 
 /** What a full backup would weigh, so the button can say so before it is
- *  pressed and the refusal above can happen before any memory is spent. */
+ *  pressed and the refusal above can happen before anything is read. */
 export async function fullBackupSize(user: AppState): Promise<{ audioBytes: number; attachmentBytes: number; count: number }> {
   let audioBytes = 0, count = 0;
   for (const id of Object.keys(sessionsOf(user))) {
@@ -63,9 +66,11 @@ export async function fullBackupSize(user: AppState): Promise<{ audioBytes: numb
   return { audioBytes, attachmentBytes: externalAttachmentBytes(user), count };
 }
 
-export async function exportFullBackup(user: AppState, gate: ExportGate): Promise<void> {
+/** The archive of `user`'s state, its attachments and, `withAudio`, its
+ *  recordings. Null if the gate refused an export missing some attachments. */
+export async function buildBackup(user: AppState, gate: ExportGate, withAudio: boolean): Promise<Blob | null> {
   const { blobs, missing } = await externalAttachmentBlobs(Object.values(user.cards ?? {}));
-  if (missing.length > 0 && !(await gate(missing))) return;
+  if (missing.length > 0 && !(await gate(missing))) return null;
 
   // The state written into the archive KEEPS `external`: the bytes are in the
   // archive too, beside it, so there is nothing to put back inline. What it
@@ -93,7 +98,7 @@ export async function exportFullBackup(user: AppState, gate: ExportGate): Promis
   const { id: _id, ...data } = state;
   const json = JSON.stringify(data);
 
-  const entries: ZipEntry[] = [{ name: DATA_ENTRY, data: new TextEncoder().encode(json) }];
+  const entries: ZipBlobEntry[] = [{ name: BACKUP_DATA_ENTRY, data: json }];
   let total = json.length;
 
   for (const [extId, blob] of blobs) {
@@ -103,57 +108,73 @@ export async function exportFullBackup(user: AppState, gate: ExportGate): Promis
     // points at, the attachment's own name is neither unique nor safe as a
     // path, and the mime type is read back from the state — the same
     // reasoning the audio entries below spell out.
-    entries.push({ name: ATTACH_DIR + extId, data: new Uint8Array(await blob.arrayBuffer()) });
+    entries.push({ name: ATTACH_DIR + extId, data: blob });
   }
 
-  for (const [id, meta] of Object.entries(sessionsOf(user))) {
-    const blob = await loadSessionAudio(id);
-    if (!blob) continue;   // recorded on another device, or freed here
-    total += blob.size;
-    if (total > MAX_FULL_BACKUP_BYTES) throw new BackupTooLarge(total);
-    // Named by session id, not by the session's title: the id is what the
-    // metadata points at, and two sessions may legitimately share a name.
-    entries.push({
-      name: `${AUDIO_DIR}${id}.${audioExtension(blob.type || meta.mimeType)}`,
-      data: new Uint8Array(await blob.arrayBuffer()),
-    });
+  if (withAudio) {
+    for (const [id, meta] of Object.entries(sessionsOf(user))) {
+      const blob = await loadSessionAudio(id);
+      if (!blob) continue;   // recorded on another device, or freed here
+      total += blob.size;
+      if (total > MAX_FULL_BACKUP_BYTES) throw new BackupTooLarge(total);
+      // Named by session id, not by the session's title: the id is what the
+      // metadata points at, and two sessions may legitimately share a name.
+      entries.push({ name: `${AUDIO_DIR}${id}.${audioExtension(blob.type || meta.mimeType)}`, data: blob });
+    }
   }
 
-  const zip = buildZip(entries);
-  downloadCadenceFile(zip, `cadence-backup-${toDateStr(new Date())}.cdbf`);
+  return buildZipBlob(entries);
+}
+
+export async function exportFullBackup(user: AppState, gate: ExportGate): Promise<void> {
+  const zip = await buildBackup(user, gate, true);
+  if (zip) downloadCadenceFile(zip, `cadence-backup-${toDateStr(new Date())}.cdbf`);
 }
 
 export interface FullBackup {
-  /** The same object `parseImport` returns for a .cdb, so the caller applies it
+  /** The same object a .cdb has always given, so the caller applies it
    *  through the one existing path rather than a second one. */
   raw: Record<string, unknown>;
-  /** Session id → recording. Restored only AFTER the state is applied. */
-  audio: Map<string, Blob>;
+  /** Session id → its recording, read when asked for. Restored only AFTER the
+   *  state is applied, one at a time. */
+  audio: Map<string, () => Promise<Blob>>;
   /** External id → an attachment's bytes, for the same reason and at the same
    *  moment: the state has to name them before they are worth writing. */
   attachments: Map<string, Blob>;
 }
 
-export async function parseFullBackup(file: File): Promise<FullBackup> {
-  const entries = readZip(new Uint8Array(await file.arrayBuffer()));
-  const dataEntry = entries.find(e => e.name === DATA_ENTRY);
+/** A .cdb or a .cdbf, whichever it is: an archive, or (LEGACY READ) a .cdb
+ *  in JSON. */
+export async function parseBackup(file: File): Promise<FullBackup> {
+  const name = file.name.toLowerCase();
+  if (!name.endsWith('.cdb') && !name.endsWith('.cdbf')) throw new Error('Expected a .cdb or .cdbf file');
+  if (!(await isZipBlob(file))) {
+    if (!name.endsWith('.cdb')) throw new Error('not_a_zip');
+    return { raw: parseJsonBackup(await file.text()), audio: new Map(), attachments: new Map() };
+  }
+
+  const entries = await readZipBlob(file);
+  const dataEntry = entries.find(e => e.name === BACKUP_DATA_ENTRY);
   if (!dataEntry) throw new Error('backup_missing_data');
 
   let raw: unknown;
-  try { raw = JSON.parse(new TextDecoder().decode(dataEntry.data)); }
+  try { raw = JSON.parse(await dataEntry.text()); }
   catch { throw new Error('Invalid file'); }
-  if (typeof raw !== 'object' || raw === null) throw new Error('Invalid file');
+  // As loose as the archive's reader has always been: only ever written by
+  // buildBackup, unlike a JSON .cdb, which people have edited by hand.
+  if (!isRecord(raw)) throw new Error('Invalid file');
 
-  const sessions = sessionsOf(raw as AppState);
-  const audio = new Map<string, Blob>();
+  const sessions = sessionsOf(raw as unknown as AppState);
+  const audio = new Map<string, () => Promise<Blob>>();
   const attachments = new Map<string, Blob>();
   for (const e of entries) {
     if (e.name.startsWith(ATTACH_DIR)) {
       // Stored untyped: the attachment's declared mimeType is the one the app
       // agreed on (the container sniffing of 2026-09-18), and attachmentBlob
       // re-wraps whatever it finds with it — so guessing one here would only
-      // give the guess a chance to be wrong.
-      attachments.set(e.name.slice(ATTACH_DIR.length), new Blob([new Uint8Array(e.data)]));
+      // give the guess a chance to be wrong. A copy, not a slice of the
+      // archive: it goes into IndexedDB (zip.ts).
+      attachments.set(e.name.slice(ATTACH_DIR.length), await e.copy());
       continue;
     }
     if (!e.name.startsWith(AUDIO_DIR)) continue;
@@ -161,9 +182,30 @@ export async function parseFullBackup(file: File): Promise<FullBackup> {
     // The recorded mime type comes from the metadata, not from the extension:
     // the extension is a lossy rendering of it, and <audio> is fussier than
     // the file system about the difference.
-    audio.set(id, new Blob([new Uint8Array(e.data)], { type: sessions[id]?.mimeType || 'audio/webm' }));
+    audio.set(id, () => e.copy(sessions[id]?.mimeType || 'audio/webm'));
   }
-  return { raw: raw as Record<string, unknown>, audio, attachments };
+  return { raw, audio, attachments };
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function isValidBackup(data: unknown): data is Record<string, unknown> {
+  if (!isRecord(data)) return false;
+  // Old format: has users map + cards
+  const isOldFormat = isRecord(data['users']) && isRecord(data['cards']);
+  // New format: has cards + profiles directly (id may be absent — stripped on export)
+  const isNewFormat = isRecord(data['cards']) && isRecord(data['profiles']);
+  return isOldFormat || isNewFormat;
+}
+
+/** LEGACY READ — a .cdb as it was written until 2026-11-15. */
+function parseJsonBackup(text: string): Record<string, unknown> {
+  let data: unknown;
+  try { data = JSON.parse(text); } catch { throw new Error('Invalid file'); }
+  if (!isValidBackup(data)) throw new Error('File is not a valid Cadence backup');
+  return data;
 }
 
 /** Writes the recordings back, once the state that references them is in place.
@@ -173,10 +215,10 @@ export async function parseFullBackup(file: File): Promise<FullBackup> {
  *  and quota on files that, if they came from a full backup, they already have.
  *  Failures are counted rather than thrown: the state is already restored, and
  *  losing one recording must not read as losing the import. */
-export async function restoreFullBackupAudio(audio: Map<string, Blob>): Promise<{ ok: number; failed: number }> {
+export async function restoreFullBackupAudio(audio: Map<string, () => Promise<Blob>>): Promise<{ ok: number; failed: number }> {
   let ok = 0, failed = 0;
-  for (const [id, blob] of audio) {
-    try { await saveSessionAudio(id, blob, false); ok++; }
+  for (const [id, read] of audio) {
+    try { await saveSessionAudio(id, await read(), false); ok++; }
     catch (e) { console.warn('[backup] could not restore the audio of ' + id, e); failed++; }
   }
   return { ok, failed };

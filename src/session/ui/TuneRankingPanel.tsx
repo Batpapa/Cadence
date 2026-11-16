@@ -12,7 +12,8 @@ import { createLongPressHandlers } from '../../components/longPress';
 import { useContextMenu } from '../../components/contextMenu';
 import { navigate, getContext } from '../../store';
 import { showDeckPickerModal } from '../../components/batchEdit';
-import { findByExternalId, fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
+import { fetchTuneById, tuneResultToCard } from '../../services/theSessionService';
+import { isCardId } from '../recognition/cardIndex';
 import type { TuneSort } from '../../types';
 import { matchesSearch } from '../../utils';
 import { keyOffsetOf, type Analysis, type Detection } from '../model';
@@ -27,7 +28,7 @@ import { rankDetectedTunes, occurrencesOf, sortTuneRows, filterByFacets, passesC
 import { showExportDetectionsModal } from './ExportDetectionsModal';
 import type { DetectedTuneLine } from '../../services/analysisExport';
 import { CARD_TYPE_TUNE, CARD_TYPE_TUNESET, cardTypeLabelKey } from '../../services/cardTypeService';
-import { setDetectionOn, cardsByExternalTuneId } from '../detections';
+import { setDetectionOn, cardsByExternalTuneId, cardOfTuneId } from '../detections';
 import { TUNESET_NAME_SEPARATOR } from '../../services/stateNormalise';
 import { tunesetAbcPlaceholder, addTunesetAbcOnConvert, defaultTuneRepeat } from '../../services/abcService';
 import { recordOf, setCardFor, setCardIndex, cardsByTuneId, chainSpan } from '../tunesets';
@@ -638,7 +639,9 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
           label: name,
           run: async (): Promise<StepOutcome> => {
             // A set, or a tune that already has its card: nothing to fetch.
-            if (tuneIdsOfSetKey(key) || findByExternalId(`thesession:${key}`, getContext().user.cards)) return { status: 'done' };
+            if (tuneIdsOfSetKey(key) || cardOfTuneId(key, getContext().user.cards)) return { status: 'done' };
+            // A card's own tune (cardIndex.ts) whose card is gone: nowhere to fetch it from.
+            if (isCardId(key)) return { status: 'skipped', reason: t('sessions.batch.skip.noCard') };
             fetched.set(key, tuneResultToCard(await fetchTuneById(Number(key))));
             return { status: 'done' };
           },
@@ -683,7 +686,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
             }
             // Re-checked here: the tune may have arrived by another route
             // while the fetches were in flight.
-            const existing = findByExternalId(`thesession:${key}`, s.cards);
+            const existing = cardOfTuneId(key, s.cards);
             const fresh = fetched.get(key);
             let cardId = existing?.id;
             if (!existing && fresh) { s.cards[fresh.id] = fresh; cardId = fresh.id; }
@@ -751,7 +754,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
           if (already > 0) return { status: 'skipped', reason: t('sessions.batch.skip.already') };
           return { status: 'skipped', reason: t('sessions.batch.skip.noAudio') };
         }
-        if (!findByExternalId(`thesession:${row.tuneId}`, getContext().user.cards)) {
+        if (!cardOfTuneId(row.tuneId, getContext().user.cards)) {
           return { status: 'skipped', reason: t('sessions.batch.skip.noCard') };
         }
         const passages = occurrencesOf(heard, row.tuneId);
@@ -1184,6 +1187,9 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                       >
                         {name}
                       </span>
+                    ) : isCardId(row.tuneId) ? (
+                      // A card's own tune (cardIndex.ts) whose card is gone: nowhere to go.
+                      <span class="text-sm text-muted truncate">{name}</span>
                     ) : (
                       // Muted, as in an analysis: no card yet.
                       <a

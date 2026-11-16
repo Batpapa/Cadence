@@ -5,6 +5,7 @@ import { inBeats } from '../session/tempoSummary';
 import type { Beat } from '../session/liveFollow';
 import { buildZip, type ZipEntry } from './zip';
 import { safeFileName } from './attachmentNames';
+import { isCardId } from '../session/recognition/cardIndex';
 
 // ── Read-only exports of an analysis ─────────────────────────────────────────
 // The .cds package (sessionShareService.ts) exists to travel BACK into Cadence:
@@ -201,7 +202,9 @@ export interface DetectedTuneLine {
   tuneIds: string[];
 }
 
-const theSessionUrl = (id: string) => `https://thesession.org/tunes/${id}`;
+/** Empty for a tune recognised from one of the user's cards (cardIndex.ts):
+ *  no page anywhere is it. */
+const theSessionUrl = (id: string) => (isCardId(id) ? '' : `https://thesession.org/tunes/${id}`);
 /** The local day it was played: a session at 23:30 is that evening's, which
  *  the UTC date would move to the next morning. */
 const lastHeardDay = (line: DetectedTuneLine) => (line.lastHeard === null ? '' : toDateStr(new Date(line.lastHeard)));
@@ -221,7 +224,7 @@ export function detectedTunesCsv(lines: readonly DetectedTuneLine[]): string {
       lastHeardDay(l),
       l.liked ? 'yes' : '',
       l.hasCard ? 'yes' : '',
-      l.tuneIds.map(theSessionUrl).join('; '),
+      l.tuneIds.map(theSessionUrl).filter(Boolean).join('; '),
     ]);
   }
   return rows.map(r => r.map(escape).join(',')).join('\r\n');
@@ -257,7 +260,7 @@ export function detectedTunesTextReport(lines: readonly DetectedTuneLine[], now:
       ...(l.liked ? ['liked'] : []),
     ];
     out.push(parts.join(' — '));
-    for (const id of l.tuneIds) out.push(`  ${theSessionUrl(id)}`);
+    for (const id of l.tuneIds) if (!isCardId(id)) out.push(`  ${theSessionUrl(id)}`);
   }
 
   return out.join('\r\n');

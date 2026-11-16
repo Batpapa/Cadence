@@ -1,10 +1,11 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { cardOfTuneId } from '../detections';
 import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
 import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon, CrossIcon, CheckIcon } from '../../components/icons';
 import { IconButton } from '../../components/ui';
-import { findByExternalId } from '../../services/theSessionService';
+import { isCardId } from '../recognition/cardIndex';
 import { hasLibrary } from '../../services/pageMode';
 import { AbcPreview, TuneFacts } from './abcPreview';
 import { PlayDisc, playDiscTitle, detectionAudioSync } from './PassRow';
@@ -488,6 +489,8 @@ function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard, layo
   if (knownCardId) {
     return <span class={cls} title={t('sessions.openCard')} onClick={() => onOpenCard?.(knownCardId)}>{label}</span>;
   }
+  // A card's own tune (cardIndex.ts) whose card is gone: no page to send it to.
+  if (isCardId(tuneId)) return <span class={`${size} text-muted`}>{label}</span>;
   return (
     <a
       class={cls}
@@ -505,7 +508,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // Fresh state, not the snapshot captured at modal-open time: a card added a
   // second ago (onCardAdded) must flip this card to the "known" rendering.
   const user = getContext().user;
-  const known = findByExternalId(`thesession:${ann.tuneId}`, user.cards);
+  const known = cardOfTuneId(ann.tuneId, user.cards);
   // Makes this card re-render once the cached name index has been read, so the
   // recogniser's lower-case name is replaced by TheSession's own spelling.
   useTuneNames();

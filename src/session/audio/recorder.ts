@@ -1,5 +1,5 @@
 import { patchWebmDuration } from './webmDuration';
-import { appendChunk, collectChunks, clearChunks } from '../db';
+import { appendChunk, collectChunks } from '../db';
 import { reportSaveFailure } from '../../services/saveHealth';
 import { RECORDER_TIMESLICE_MS } from '../sessionConfig';
 
@@ -98,7 +98,15 @@ export class SessionFileRecorder {
     this.recorder.resume();
   }
 
-  /** Stops and returns the final session file (duration-fixed for webm). */
+  /** Stops and returns the final session file (duration-fixed for webm).
+   *
+   *  The chunks are LEFT in the database: they are the only copy until the
+   *  caller has written that file, and the caller clears them once it has
+   *  (LiveSession.stop/cancel). Until 2026-11-15 they went here, before
+   *  anything was saved — an iPhone, after evenings of several hours, kept
+   *  the analysis and lost the sound: whatever failed between here and the
+   *  write (the tab killed, the write refused) left a draft with no chunks,
+   *  and recovery saves those without a recording, as it must. */
   async stop(): Promise<{ blob: Blob; mimeType: string; durationMs: number }> {
     // Stopping directly from a paused state (no resume() in between) still
     // needs the trailing pause gap folded in.
@@ -129,7 +137,6 @@ export class SessionFileRecorder {
       } catch { /* seeking degraded but audio intact */ }
     }
 
-    await clearChunks(this.recordingId);
     return { blob, mimeType, durationMs };
   }
 }

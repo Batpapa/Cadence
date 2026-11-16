@@ -1,5 +1,9 @@
 import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
-import { loadTuneIndex, type IndexProgress } from './indexStore';
+import { loadTuneIndex, KV_CARD_CONTOURS, type IndexProgress } from './indexStore';
+import { abcVersionHash, buildCardIndex, type CardIndexTune } from './cardIndex';
+import type { RecognitionIndexId } from './recognitionIndexes';
+import { abcContour } from './abcContour';
+import { kvGet, kvSet } from '../db';
 import { IncrementalViterbiSegmenter } from './viterbiSegmenter';
 import { PlayedPitch } from './playedPitch';
 import { pitchClassesForDisplay } from './contourShift';
@@ -60,7 +64,13 @@ interface RawQueryRecord {
 export type FFWorkerRequest =
   /** `tempo`: follow the tempo of the audio too (liveTempo.ts) — every
    *  analysis, live or file; not the TheSession widget's finder. */
-  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean }
+  /** The indexes to search (recognitionIndexes.ts): `cards` — a `cards`
+   *  message follows, to be merged before the index loads; `theSession` —
+   *  TheSession's index, loaded (downloaded the first time) only when on;
+   *  `sourceOrder` — the indexes' sources in the order that wins ties. */
+  | { type: 'init'; sampleRate: number; hopS?: number; tempo?: boolean; cards: boolean; theSession: boolean; sourceOrder: string[] }
+  /** The user's tune cards (cardIndex.ts), once the page has gathered them. */
+  | { type: 'cards'; tunes: CardIndexTune[] }
   | { type: 'worklet-port'; port: MessagePort }
   | { type: 'pcm'; buffer: ArrayBuffer; ack?: boolean }
   | { type: 'live-resume' }
@@ -237,7 +247,37 @@ function supportsSimd(): boolean {
   }
 }
 
-async function handleInit(sr: number, hop?: number, tempo?: boolean): Promise<void> {
+// ── The user's tune cards, merged into the index (cardIndex.ts) ──
+// They come in a message of their own after `init` (recognitionClient.ts), and
+// the index waits for them: loaded without them, it would have to be loaded again.
+
+let receiveCards: (tunes: CardIndexTune[]) => void = () => {};
+const cardsReceived = new Promise<CardIndexTune[]>(resolve => { receiveCards = resolve; });
+
+/** The cards' versions into the loaded index (abc emptied like TheSession's).
+ *  Only versions not converted before go through abc2midi — the module is not
+ *  even fetched when there are none — and the contour cache keeps exactly the
+ *  versions still on the cards. A TheSession tune keeps its own names. */
+async function mergeCardIndex(indexData: { settings: Record<string, unknown>; aliases: Record<string, string[]> }, tunes: CardIndexTune[]): Promise<void> {
+  if (!tunes.length) return;
+  const cached = (await kvGet<Record<string, string>>(KV_CARD_CONTOURS).catch(() => undefined)) ?? {};
+  let abc2midi: WebAssembly.Module | null = null;
+  const missing = tunes.some(t => t.versions.some(v => !(abcVersionHash(v.abc) in cached)));
+  if (missing) {
+    const res = await fetch(new URL('../../../vendor/abc2midi/abc2midi.wasm', import.meta.url));
+    abc2midi = await WebAssembly.compile(await res.arrayBuffer());
+  }
+  const built = buildCardIndex(tunes, cached, abc => (abc2midi ? abcContour(abc2midi, abc) : null));
+  for (const [id, setting] of Object.entries(built.settings)) indexData.settings[id] = setting;
+  for (const [tuneId, names] of Object.entries(built.aliases)) {
+    if (!indexData.aliases[tuneId]) indexData.aliases[tuneId] = names;
+  }
+  if (missing || Object.keys(cached).length !== Object.keys(built.contours).length) {
+    await kvSet(KV_CARD_CONTOURS, built.contours).catch(() => { /* a cache: converted again next time */ });
+  }
+}
+
+async function handleInit(sr: number, hop: number | undefined, tempo: boolean | undefined, theSession: boolean, sourceOrder: string[]): Promise<void> {
   sampleRate = sr;
   hopS = hop ?? ANALYSIS_HOP_S;
   // Two builds of the same engine, bit-identical in their results — the SIMD
@@ -287,8 +327,24 @@ async function handleInit(sr: number, hop?: number, tempo?: boolean): Promise<vo
     resetTempo();
   }
 
-  const index = await loadTuneIndex(progress => post({ type: 'init-progress', progress }));
-  ff.load_index_from_json_obj(index.indexData);
+  // TheSession's index only when it is searched — off, it is not even
+  // downloaded; the cards' versions merged into whatever is.
+  const indexData: Parameters<typeof mergeCardIndex>[0] = theSession
+    ? (await loadTuneIndex(progress => post({ type: 'init-progress', progress }))).indexData
+    : { settings: {}, aliases: {} };
+  // Each setting says which index it comes from, so that the engine can be told
+  // their order; the cards' own say so already (buildCardIndex). Not when no
+  // order is given (the TheSession widget): nothing would read it.
+  if (theSession && sourceOrder.length) {
+    const source: RecognitionIndexId = 'thesession';
+    for (const id in indexData.settings) (indexData.settings[id] as { source?: string }).source = source;
+  }
+  await mergeCardIndex(indexData, await cardsReceived);
+  // On equal scores, the earlier index's tune wins — by default the cards'
+  // before TheSession's: a card copying a TheSession setting is named for the
+  // card, and represents the tune when it is one (the user, 2026-11-16).
+  ff.set_source_order(sourceOrder);
+  ff.load_index_from_json_obj(indexData);
   const engine = ff;
   playedPitch = new PlayedPitch(tuneId => {
     const raw = JSON.parse(engine.settings_from_tune_id(tuneId)) as Array<[string, { contour: string }]> | { error: string };
@@ -522,7 +578,11 @@ function onRequest(e: MessageEvent<FFWorkerRequest>): void {
   try {
     switch (msg.type) {
       case 'init':
-        void handleInit(msg.sampleRate, msg.hopS, msg.tempo).catch(err => post({ type: 'error', message: String(err) }));
+        if (!msg.cards) receiveCards([]);
+        void handleInit(msg.sampleRate, msg.hopS, msg.tempo, msg.theSession, msg.sourceOrder).catch(err => post({ type: 'error', message: String(err) }));
+        break;
+      case 'cards':
+        receiveCards(msg.tunes);
         break;
       case 'worklet-port':
         // Out of onRequest's try: an error here went up to the page uncaught,

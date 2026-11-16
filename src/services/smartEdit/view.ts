@@ -4,6 +4,8 @@ import { findParentFolder } from '../deckService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection, type TuneAnalyserModuleData } from '../../session/model';
 import { folderPathOf, parentFolderOf, sessionTreeOf } from '../../session/sessionTree';
 import { detectionReviewId } from '../../session/reviewLink';
+import { cardOfTuneId } from '../../session/detections';
+import { isCardId } from '../../session/recognition/cardIndex';
 
 // ── Smart edit: the view of the library (2026-10-11) ─────────────────────────
 // What an external tool (a script, an AI) is given: the user's own data as a
@@ -82,16 +84,19 @@ function analysesView(state: AppState): AnalysisView[] {
     return {
       id: a.id, name: a.name, date: a.date, duration: Math.round(a.duration), source: a.source,
       folder: folderId ? folderPathOf(tree, folderId) : null,
-      detections: [...(a.annotations ?? [])].sort((x, y) => x.start - y.start).map(d => detectionView(a, d, ratings)),
+      detections: [...(a.annotations ?? [])].sort((x, y) => x.start - y.start).map(d => detectionView(a, d, ratings, state.cards)),
     };
   });
 }
 
-function detectionView(a: Analysis, d: Detection, ratings: Map<string, string>): Record<string, unknown> {
+function detectionView(a: Analysis, d: Detection, ratings: Map<string, string>, cards: Record<string, Card>): Record<string, unknown> {
   const rated = ratings.get(detectionReviewId(a.id, d.id));
+  // A tune recognised from one of the user's cards (cardIndex.ts) has no
+  // TheSession id: it names that card instead, by the id the cards list uses.
+  const ownCard = isCardId(d.tuneId) ? cardOfTuneId(d.tuneId, cards) : undefined;
   return {
     tune: displayed(d.displayName),
-    externalId: `thesession:${d.tuneId}`,
+    ...(isCardId(d.tuneId) ? (ownCard ? { card: ownCard.id } : {}) : { externalId: `thesession:${d.tuneId}` }),
     ...(d.dance ? { dance: d.dance } : {}),
     start: Math.round(d.start),
     end: d.end === null ? null : Math.round(d.end),
