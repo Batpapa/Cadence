@@ -409,8 +409,9 @@ export class TuneFinder {
     const state = this.active!;
     const tracker = state.tracker;
     const recognition = new RecognitionClient(sampleRate, {
-      onIndexProgress: progress => {
-        if (run === this.run && this.status.kind === 'loading') this.set({ kind: 'loading', progress });
+      // One step at a time here: the widget has no cards to read beside it.
+      onIndexProgress: steps => {
+        if (run === this.run && this.status.kind === 'loading') this.set({ kind: 'loading', progress: steps[0] ?? null });
       },
       onWindow: result => {
         if (run === this.run) state.heardS = result.tWindowEnd;

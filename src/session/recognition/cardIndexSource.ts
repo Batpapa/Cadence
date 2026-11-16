@@ -150,11 +150,17 @@ function theSessionTuneOf(card: Card): string | null {
 /** Every tune card's versions, for a recognition about to start. The reads go
  *  together (READS_AT_ONCE at a time), so the slowest — a Drive download, a
  *  link out of time — sets the wait, not their sum. */
-export async function cardIndexTunes(cards: Record<string, Card>): Promise<CardIndexTune[]> {
+export async function cardIndexTunes(cards: Record<string, Card>, onRead?: (done: number, total: number) => void): Promise<CardIndexTune[]> {
   const kept = await keptLinks();
   const seen: Record<string, string> = {};
   const reads = Object.values(cards).filter(isTune).flatMap(card => abcSources(card).map(source => ({ card, source })));
-  const texts = await eachLimited(reads, READS_AT_ONCE, r => sourceText(r.source, kept, seen));
+  let done = 0;
+  onRead?.(0, reads.length);
+  const texts = await eachLimited(reads, READS_AT_ONCE, async r => {
+    const text = await sourceText(r.source, kept, seen);
+    onRead?.(++done, reads.length);
+    return text;
+  });
   const byCard = new Map<Card, CardIndexVersion[]>();
   reads.forEach((r, i) => {
     const text = texts[i];
@@ -285,7 +291,7 @@ export function installCardRecognition(state: () => AppState): void {
   const cards = () => state().cards;
   setRecognitionSources(() => ({
     ...recognitionPlan(recognitionIndexesOf(state())),
-    gatherCards: () => cardIndexTunes(cards()),
+    gatherCards: (onRead) => cardIndexTunes(cards(), onRead),
   }));
   setCardSettingResolver({
     now: (settingId) => cardSettingMetaNow(settingId, state()),

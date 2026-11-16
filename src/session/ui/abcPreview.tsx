@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { getSettingAbcMeta, getSettingAbcMetaSync, onTuneIndexCached, type SettingAbcMeta } from '../recognition/indexStore';
-import { isCardId } from '../recognition/cardIndex';
+import { cardGuidOf, isCardId } from '../recognition/cardIndex';
 import { theSessionKeyToAbc, findSettingInScore } from '../../services/theSessionService';
-import { isAbcFile, isAbcLink, buildHeardSetAbc, tunesetAbcFileName } from '../../services/abcService';
+import { cardScoreIndex, decodeAbc, isAbcFile, isAbcLink, splitAbcTunes, buildHeardSetAbc, tunesetAbcFileName } from '../../services/abcService';
 import { fetchAbcLink, peekAbcLink } from '../../services/abcLink';
 import { hydratedEntry } from '../../services/attachmentStore';
 import { getAttachmentBlob } from '../../services/attachmentDb';
@@ -181,11 +181,21 @@ export function TuneFacts({ dance, meter, settingId, keyOffset }: { dance: strin
  *  Which of the card's scores is findSettingInScore's call: the TheSession
  *  score first, then any ABC carrying the setting — asking the FILE, so a score
  *  predating the `generatedBy` marker is never passed over for a label. */
-async function cardScorePreview(settingId: string, cardId: string | undefined, ctx: AppContext | undefined, audioSync?: AudioSyncBinding, keyOffset?: number | null) {
-  if (!cardId || !ctx) return null;
+async function cardScorePreview(settingId: string, givenCardId: string | undefined, ctx: AppContext | undefined, audioSync?: AudioSyncBinding, keyOffset?: number | null) {
+  if (!ctx) return null;
+  // A version of a card's own ABC (cardIndex.ts, "card:<guid>:<hash>", or
+  // "card:<guid>" named by hand): no `S:` to look for, the card is the one its
+  // guid names, and the version is the block whose text the resolver gives
+  // (cardIndexSource.ts) — the version itself, or the score as it is now once
+  // that version has been edited away. Before this, the id read as NaN and
+  // every card detection opened that one block alone (reported 2026-11-16).
+  const guid = cardGuidOf(settingId);
+  const cardId = guid !== null ? Object.values(getContext().user.cards).find(c => c.guid === guid)?.id : givenCardId;
+  if (!cardId) return null;
   const card = getContext().user.cards[cardId];
   const id = parseInt(settingId, 10);
-  if (!card || !Number.isFinite(id)) return null;
+  const wanted = guid !== null ? (await getSettingAbcMeta(settingId))?.abc : undefined;
+  if (!card || (guid === null ? !Number.isFinite(id) : !wanted)) return null;
   // Resolved FIRST, on a copy. `findSettingInScore` reads the `S:` line out of
   // the ABC text, so a score kept outside the blob — `data` empty — carried no
   // setting it could find: the card's own score was silently swapped for the
@@ -213,7 +223,7 @@ async function cardScorePreview(settingId: string, cardId: string | undefined, c
       delete att.external;
     } catch { /* left as it was; findSettingInScore simply will not match it */ }
   }
-  const target = findSettingInScore(resolved, id);
+  const target = guid !== null ? findVersionInScore(resolved, wanted!) : findSettingInScore(resolved, id);
   if (!target) return null;
   const entry = resolved.content.attachments[target.attachmentIndex];
   if (!entry || entry.type !== 'file') return null;
@@ -235,6 +245,25 @@ async function cardScorePreview(settingId: string, cardId: string | undefined, c
       });
     },
   });
+}
+
+/** findSettingInScore for a card's own version: the ABC file holding a block
+ *  that IS this text, the card's score first (cardScoreIndex), on a card whose
+ *  ABC has been read in (`card` a resolved copy). A set's fused score is left
+ *  out, as the cards' index leaves it out (cardIndexSource.ts's abcSources). */
+function findVersionInScore(card: Card, abc: string): { attachmentIndex: number; blockIndex: number; preferredIndex: number | undefined } | null {
+  const attachments = card.content?.attachments ?? [];
+  const score = cardScoreIndex(attachments);
+  const order = attachments.map((_, i) => i).sort((a, b) => Number(b === score) - Number(a === score));
+  for (const i of order) {
+    const a = attachments[i];
+    if (!a || a.type !== 'file' || !isAbcFile(a) || a.generatedBy === 'tuneset') continue;
+    let blocks: string[];
+    try { blocks = splitAbcTunes(decodeAbc(a)); } catch { continue; }
+    const blockIndex = blocks.indexOf(abc);
+    if (blockIndex !== -1) return { attachmentIndex: i, blockIndex, preferredIndex: a.preferredIndex };
+  }
+  return null;
 }
 
 /** Whether the library card holds a score carrying this setting: what lets the

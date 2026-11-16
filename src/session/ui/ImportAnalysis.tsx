@@ -228,7 +228,7 @@ export function ImportAnalysis({ imp, ctx, onOpenCard }: ImportAnalysisProps) {
 
       {statusError
         ? <InlineStatus tone="error" class="mt-2 justify-center">{statusText}</InlineStatus>
-        : <p class="text-xs text-dim mt-2 text-center">{statusText}</p>}
+        : <p class="text-xs text-dim mt-2 text-center whitespace-pre-line">{statusText}</p>}
       {importPlaybackWarn.value && <p class="text-xs text-warn mt-2 text-center">{t('sessions.playbackUnsupported')}</p>}
 
       {/* `analysis-list`: see the summary's. */}

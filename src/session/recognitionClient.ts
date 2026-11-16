@@ -21,18 +21,24 @@ export interface RecognitionSources {
   /** The indexes' sources in the order that wins ties among equal scores
    *  (set_source_order). */
   sourceOrder: string[];
-  /** The tune cards' versions — called only when `cards` is on. */
-  gatherCards: () => Promise<CardIndexTune[]>;
+  /** The tune cards' versions — called only when `cards` is on. `onRead`:
+   *  after each file or link read, `done` of `total`. */
+  gatherCards: (onRead?: (done: number, total: number) => void) => Promise<CardIndexTune[]>;
 }
 
 let recognitionSources: (() => RecognitionSources) | null = null;
+
+/** The count of cards read, said at most this often. */
+const CARDS_READ_EVERY_MS = 150;
 
 export function setRecognitionSources(sources: () => RecognitionSources): void {
   recognitionSources = sources;
 }
 
 export interface RecognitionCallbacks {
-  onIndexProgress?: (p: IndexProgress) => void;
+  /** What the start is doing, one step per thing under way at once: the
+   *  worker's (engine, index), and beside it the page reading the cards. */
+  onIndexProgress?: (steps: IndexProgress[]) => void;
   onWindow?: (result: WindowResult, abc: string | null) => void;
   onDetections?: (events: DetectionEvent[]) => void;
   onError?: (message: string) => void;
@@ -59,6 +65,12 @@ export class RecognitionClient implements RecognitionSink {
   readonly ready: Promise<string>;
   private ackQueue: (() => void)[] = [];
   private stopDone: ((r: { events: DetectionEvent[]; tFinal: number }) => void) | null = null;
+  /** The worker's step, null while it only waits for the cards. */
+  private workerStep: IndexProgress | null = { phase: 'engine' };
+  /** The page's reading of the cards, null before it starts or once it is
+   *  over and the worker has moved on. */
+  private cardsStep: IndexProgress | null = null;
+  private cardsRead = false;
 
   constructor(sampleRate: number, callbacks: RecognitionCallbacks = {}, options: RecognitionOptions = {}) {
     this.cb = callbacks;
@@ -88,7 +100,12 @@ export class RecognitionClient implements RecognitionSink {
     this.worker.onmessage = (e: MessageEvent<FFWorkerResponse>) => {
       const msg = e.data;
       switch (msg.type) {
-        case 'init-progress': this.cb.onIndexProgress?.(msg.progress); break;
+        case 'init-progress':
+          this.workerStep = msg.progress;
+          if (this.cardsRead) this.cardsStep = null;
+          this.sayInit();
+          break;
+        case 'cards-wait':    this.workerStep = null; this.sayInit(); break;
         case 'ready':         noteTuneIndexCached(); resolveReady(msg.version); break;
         case 'window':        this.cb.onWindow?.(msg.result, msg.abc); break;
         case 'annotations':   this.cb.onDetections?.(msg.events); break;
@@ -114,9 +131,29 @@ export class RecognitionClient implements RecognitionSink {
       cards: sources?.cards ?? false, theSession: sources?.theSession ?? true, sourceOrder: sources?.sourceOrder ?? [],
     });
     if (sources?.cards) {
-      void sources.gatherCards().catch((e: unknown) => { console.warn('[recognition] cards not gathered', e); return []; })
+      // On a line of its own beside the worker's step (the user, 2026-11-16):
+      // both go on at once. Once read, the count stays only while the worker
+      // waits for the cards — until it says its next step.
+      let saidAt = 0;
+      const onRead = (done: number, total: number) => {
+        this.cardsStep = { phase: 'cards', done, total };
+        if (done === total) {
+          this.cardsRead = true;
+          if (this.workerStep) this.cardsStep = null;
+        } else if (Date.now() - saidAt < CARDS_READ_EVERY_MS) return;
+        saidAt = Date.now();
+        this.sayInit();
+      };
+      void sources.gatherCards(onRead).catch((e: unknown) => { console.warn('[recognition] cards not gathered', e); return []; })
         .then(tunes => this.send({ type: 'cards', tunes }));
     }
+  }
+
+  /** Nothing when there is nothing to say: the worker waits, and the cards'
+   *  first count has not come yet — the line keeps what it said. */
+  private sayInit(): void {
+    const steps = [this.workerStep, this.cardsStep].filter((s): s is IndexProgress => s !== null);
+    if (steps.length) this.cb.onIndexProgress?.(steps);
   }
 
   private send(msg: FFWorkerRequest, transfer?: Transferable[]): void {

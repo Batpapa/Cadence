@@ -39,7 +39,7 @@ export type LiveSessionPhase = 'idle' | 'initializing' | 'recording' | 'paused' 
 
 export interface LiveSessionCallbacks {
   onPhase?: (phase: LiveSessionPhase) => void;
-  onIndexProgress?: (p: IndexProgress) => void;
+  onIndexProgress?: (steps: IndexProgress[]) => void;
   onWindow?: (result: WindowResult, abc: string | null) => void;
   onDetections?: (events: DetectionEvent[], all: Detection[]) => void;
   /** Stopping, past the recorder: the tunes still being put on their

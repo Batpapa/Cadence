@@ -78,6 +78,8 @@ export type FFWorkerRequest =
 
 export type FFWorkerResponse =
   | { type: 'init-progress'; progress: IndexProgress }
+  /** The index is waiting for the cards the page is still reading. */
+  | { type: 'cards-wait' }
   | { type: 'ready'; version: string }
   | { type: 'window'; result: WindowResult; abc: string | null }
   | { type: 'annotations'; events: DetectionEvent[] }
@@ -251,8 +253,15 @@ function supportsSimd(): boolean {
 // They come in a message of their own after `init` (recognitionClient.ts), and
 // the index waits for them: loaded without them, it would have to be loaded again.
 
+let cardsArrived = false;
 let receiveCards: (tunes: CardIndexTune[]) => void = () => {};
-const cardsReceived = new Promise<CardIndexTune[]>(resolve => { receiveCards = resolve; });
+const cardsReceived = new Promise<CardIndexTune[]>(resolve => {
+  receiveCards = tunes => { cardsArrived = true; resolve(tunes); };
+});
+
+/** A step's count, posted at most this often: the page has a line to redraw,
+ *  not a thousand. */
+const PROGRESS_EVERY_MS = 150;
 
 /** The cards' versions into the loaded index (abc emptied like TheSession's).
  *  Only versions not converted before go through abc2midi — the module is not
@@ -262,12 +271,27 @@ async function mergeCardIndex(indexData: { settings: Record<string, unknown>; al
   if (!tunes.length) return;
   const cached = (await kvGet<Record<string, string>>(KV_CARD_CONTOURS).catch(() => undefined)) ?? {};
   let abc2midi: WebAssembly.Module | null = null;
-  const missing = tunes.some(t => t.versions.some(v => !(abcVersionHash(v.abc) in cached)));
+  // Every version not in the cache: buildCardIndex converts each of them.
+  const total = tunes.reduce((n, t) => n + t.versions.filter(v => !(abcVersionHash(v.abc) in cached)).length, 0);
+  const missing = total > 0;
   if (missing) {
+    post({ type: 'init-progress', progress: { phase: 'contours', done: 0, total } });
     const res = await fetch(new URL('../../../vendor/abc2midi/abc2midi.wasm', import.meta.url));
     abc2midi = await WebAssembly.compile(await res.arrayBuffer());
   }
-  const built = buildCardIndex(tunes, cached, abc => (abc2midi ? abcContour(abc2midi, abc) : null));
+  let done = 0;
+  let saidAt = Date.now();
+  const built = buildCardIndex(tunes, cached, abc => {
+    const contour = abc2midi ? abcContour(abc2midi, abc) : null;
+    done++;
+    // Posted from inside a synchronous loop: delivered all the same, the page
+    // is not the one busy.
+    if (Date.now() - saidAt >= PROGRESS_EVERY_MS) {
+      saidAt = Date.now();
+      post({ type: 'init-progress', progress: { phase: 'contours', done, total } });
+    }
+    return contour;
+  });
   for (const [id, setting] of Object.entries(built.settings)) indexData.settings[id] = setting;
   for (const [tuneId, names] of Object.entries(built.aliases)) {
     if (!indexData.aliases[tuneId]) indexData.aliases[tuneId] = names;
@@ -339,7 +363,11 @@ async function handleInit(sr: number, hop: number | undefined, tempo: boolean | 
     const source: RecognitionIndexId = 'thesession';
     for (const id in indexData.settings) (indexData.settings[id] as { source?: string }).source = source;
   }
+  // Nothing of its own to say while it waits: the page's count of the cards
+  // read is what the line then says (recognitionClient.ts).
+  if (!cardsArrived) post({ type: 'cards-wait' });
   await mergeCardIndex(indexData, await cardsReceived);
+  post({ type: 'init-progress', progress: { phase: 'merging' } });
   // On equal scores, the earlier index's tune wins — by default the cards'
   // before TheSession's: a card copying a TheSession setting is named for the
   // card, and represents the tune when it is one (the user, 2026-11-16).
