@@ -74,7 +74,7 @@ export interface ImportProgress {
 
 export interface ImportSessionCallbacks {
   onPhase?: (phase: ImportPhase) => void;
-  onIndexProgress?: (p: IndexProgress) => void;
+  onIndexProgress?: (steps: IndexProgress[]) => void;
   onProgress?: (p: ImportProgress) => void;
   onDetections?: (events: DetectionEvent[], all: Detection[]) => void;
   /** The end of the analysis, past the recognition: the tunes still being

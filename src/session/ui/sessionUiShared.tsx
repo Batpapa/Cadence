@@ -136,15 +136,30 @@ export const BUCKET_TEXT: Record<Detection['bucket'], string> = {
   low: 'text-dim',
 };
 
-export function indexProgressText(p: IndexProgress): string {
+/** One line per step under way (recognitionClient.ts), for a
+ *  `whitespace-pre-line` status. */
+export function indexProgressText(steps: IndexProgress[]): string {
+  return steps.map(indexStepText).join('\n');
+}
+
+/** A step of one index, "Index <name> : <step>" (the user, 2026-11-16), by
+ *  its short name — the long one is the setting's (sessionModule.tsx). */
+function indexStepText(p: IndexProgress): string {
+  if (p.phase === 'engine') return t('sessions.initializing');
+  if (p.phase === 'merging') return t('sessions.indexesIntoEngine');
+  const of = (id: 'cards' | 'thesession', step: string) =>
+    t('sessions.indexStep', { name: t(id === 'cards' ? 'sessions.indexes.cardsShort' : 'sessions.indexes.thesession'), step });
+  if (p.phase === 'cards') return of('cards', t('sessions.indexStep.reading', { done: p.done, total: p.total }));
+  if (p.phase === 'contours') return of('cards', t('sessions.indexStep.indexing', { done: p.done, total: p.total }));
   if (p.phase === 'downloading') {
     // No "/ N MB" total — see fetchIndex's doc in indexStore.ts for why the
     // download's Content-Length header can't be trusted as a decompressed
     // total (it isn't one).
     const mb = (p.loadedBytes / 1048576).toFixed(1);
-    return t('sessions.downloadingIndex', { mb });
+    return of('thesession', t('sessions.indexStep.downloading', { mb }));
   }
-  return t('sessions.processingIndex');
+  if (p.phase === 'loading') return of('thesession', t('sessions.indexStep.loading'));
+  return of('thesession', t('sessions.indexStep.processing'));
 }
 
 export function fmtEta(etaS: number): string {

@@ -34,9 +34,25 @@ const KV_META = 'tuneIndexMeta';
  *  converted again. */
 export const KV_CARD_CONTOURS = 'cardContours';
 
+/** What a recognition is doing before it can start, step by step — said rather
+ *  than one "loading" line, which, once the cards came in (2026-11-16), could
+ *  last long enough to look stuck (the user, 2026-11-16). */
 export type IndexProgress =
+  /** The engine itself (WASM), before any index. */
+  | { phase: 'engine' }
+  /** TheSession's index: downloaded the first time, then made ready. */
   | { phase: 'downloading'; loadedBytes: number }
-  | { phase: 'processing' };
+  | { phase: 'processing' }
+  /** TheSession's index, read off this device. */
+  | { phase: 'loading' }
+  /** The indexes searched, merged, going into the engine (ffWorker.ts). */
+  | { phase: 'merging' }
+  /** The tune cards' ABC, read (cardIndexSource.ts): `done` of `total` files
+   *  and links. */
+  | { phase: 'cards'; done: number; total: number }
+  /** The cards' versions new since the last recognition, converted to
+   *  contours (ffWorker.ts's mergeCardIndex). */
+  | { phase: 'contours'; done: number; total: number };
 
 async function fetchMeta(): Promise<IndexMeta | null> {
   try {
@@ -91,6 +107,7 @@ async function fetchIndex(onProgress?: (p: IndexProgress) => void): Promise<Tune
  * remote version, a refresh is kicked off in the background for next time.
  */
 export async function loadTuneIndex(onProgress?: (p: IndexProgress) => void): Promise<TuneIndexData> {
+  onProgress?.({ phase: 'loading' });
   const cached = await kvGet<TuneIndexData>(KV_INDEX);
 
   if (cached) {

@@ -308,7 +308,7 @@ export function LiveSessionScreen({ live, ctx, onOpenCard }: LiveSessionScreenPr
 
       {initStatus.error
         ? <InlineStatus tone="error" class="justify-center">{initStatus.text}</InlineStatus>
-        : <p class="text-xs text-dim text-center">{initStatus.text}</p>}
+        : <p class="text-xs text-dim text-center whitespace-pre-line">{initStatus.text}</p>}
 
       {/* Not in the Android app: there the recording carries on with the screen
           off or another app on top (foreground service + LiveRenderer — 47 min
