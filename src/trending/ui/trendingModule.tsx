@@ -186,53 +186,62 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
     // A card: `surface`; none yet: the page's `bg` — as a detection in an
     // analysis (see DetectionCard).
     // Without a library (the standalone page) every row is shown as known.
-    <div class={`flex items-center gap-3 p-2.5 rounded-lg border border-border ${known || !library ? 'bg-surface' : 'bg-bg'}`} data-tour="trending-row">
-      <span class="text-xs text-dim w-6 text-right shrink-0">{rank}</span>
+    //
+    // One line at every width, the name wrapping where it does not fit rather
+    // than truncated (2026-11-16: the user's pick among six mock-ups). The rank
+    // sits over the top-left corner, out of the layout, so the name keeps its
+    // room; the gain goes under the curve it sums up.
+    <div class={`relative p-2.5 rounded-lg border border-border ${known || !library ? 'bg-surface' : 'bg-bg'}`} data-tour="trending-row">
+      <span class="absolute top-[3px] left-1.5 text-2xs leading-none text-dim tabular-nums pointer-events-none">{rank}</span>
+      <div class="flex items-center gap-3">
 
-      {/* Icons to the left of the name, same order/placement as the session
-         module's DetectionCard row (ABC preview, then add-to-Cadence). A
-         24 px disc in a 32 px target: the look of the row, a finger's size. */}
-      <button
-        class="group icon-btn"
-        title={t('trending.viewSheet')}
-        aria-label={t('trending.viewSheet')}
-        data-tour="trending-sheet"
-        disabled={sheetBusy}
-        onClick={() => void doViewSheet()}
-      >
-        <span class="icon-disc"><MusicNoteIcon size={12} /></span>
-      </button>
+        {/* Icons to the left of the name, same order/placement as the session
+           module's DetectionCard row (ABC preview, then add-to-Cadence). A
+           24 px disc in a 32 px target: the look of the row, a finger's size.
+           Spaced like there too (gap-1): the targets' own margin already spaces
+           the discs, and the row's gap-3 set them apart from each other. */}
+        <div class="flex items-center gap-1 shrink-0">
+          <button
+            class="group icon-btn"
+            title={t('trending.viewSheet')}
+            aria-label={t('trending.viewSheet')}
+            data-tour="trending-sheet"
+            disabled={sheetBusy}
+            onClick={() => void doViewSheet()}
+          >
+            <span class="icon-disc"><MusicNoteIcon size={12} /></span>
+          </button>
 
-      {!library ? null : known ? (
-        // Card already exists: offer to put it in a deck instead — additive
-        // only, never unlinks from decks left unticked. Shown with no deck at
-        // all too: the modal's "+ new deck" is then the way to make the first.
-        <button
-          class={`group icon-btn ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
-          title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
-          aria-label={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
-          disabled={actionBusy}
-          onClick={onLinkClick}
-        >
-          <span class="icon-disc"><DeckAddIcon size={12} /></span>
-        </button>
-      ) : (
-        <button
-          class="group icon-btn"
-          title={t('trending.add')}
-          aria-label={t('trending.add')}
-          disabled={actionBusy}
-          onClick={onAddClick}
-        >
-          <span class="icon-disc"><PlusIcon size={12} /></span>
-        </button>
-      )}
+          {!library ? null : known ? (
+            // Card already exists: offer to put it in a deck instead — additive
+            // only, never unlinks from decks left unticked. Shown with no deck at
+            // all too: the modal's "+ new deck" is then the way to make the first.
+            <button
+              class={`group icon-btn ${isInEveryDeck(known.id) ? 'opacity-40' : ''}`}
+              title={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
+              aria-label={isInEveryDeck(known.id) ? t('deckChoice.inEveryDeck') : t('trending.linkToDeck')}
+              disabled={actionBusy}
+              onClick={onLinkClick}
+            >
+              <span class="icon-disc"><DeckAddIcon size={12} /></span>
+            </button>
+          ) : (
+            <button
+              class="group icon-btn"
+              title={t('trending.add')}
+              aria-label={t('trending.add')}
+              disabled={actionBusy}
+              onClick={onAddClick}
+            >
+              <span class="icon-disc"><PlusIcon size={12} /></span>
+            </button>
+          )}
+        </div>
 
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-1.5 min-w-0">
+        <div class="flex-1 min-w-0">
           {known ? (
             <span
-              class="text-sm text-primary truncate cursor-pointer hover:text-accent transition-colors"
+              class="block w-fit max-w-full break-words leading-snug text-sm text-primary cursor-pointer hover:text-accent transition-colors"
               onClick={() => navigate({ view: 'card', cardId: known.id })}
             >
               {row.name}
@@ -240,7 +249,7 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
           ) : (
             // Muted, as in an analysis and the detection library: no card yet.
             <a
-              class={`text-sm ${library ? 'text-muted' : 'text-primary'} truncate hover:text-accent transition-colors`}
+              class={`block w-fit max-w-full break-words leading-snug text-sm ${library ? 'text-muted' : 'text-primary'} hover:text-accent transition-colors`}
               href={externalSourceLink(externalId)!.url}
               target="_blank"
               rel="noopener"
@@ -248,20 +257,21 @@ function TrendingRow({ row, rank, gainMode, getTune, getPinnedDeckIds, library }
               {row.name}
             </a>
           )}
+          <div class="text-xs text-dim">{t('trending.tunebooks', { n: row.endValue })}</div>
+          {/* On the row, not in the button's tooltip only, where a finger
+              never finds it. */}
+          {sheetError && <div class="text-2xs text-danger">{t('trending.detailLoadError')}</div>}
+          {actionError && <div class="text-2xs text-danger">{t('trending.addFailed')}</div>}
         </div>
-        <div class="text-xs text-dim">{t('trending.tunebooks', { n: row.endValue })}</div>
-        {/* On the row, not in the button's tooltip only, where a finger
-            never finds it. */}
-        {sheetError && <div class="text-2xs text-danger">{t('trending.detailLoadError')}</div>}
-        {actionError && <div class="text-2xs text-danger">{t('trending.addFailed')}</div>}
+
+        <div class="flex flex-col items-center gap-0.5 shrink-0">
+          <Sparkline values={row.periodValues} width={50} height={22} />
+          {/* Coloured on the figure actually shown, not on the raw gain: deflated,
+              a tune can gain 30 tunebooks and still be below its baseline, and a
+              green "−12" is a straight contradiction. */}
+          <span class={`text-xs font-semibold ${netGain(row) >= 0 ? 'text-success' : 'text-danger'}`}>{formatGain(row, gainMode)}</span>
+        </div>
       </div>
-
-      {/* Coloured on the figure actually shown, not on the raw gain: deflated,
-          a tune can gain 30 tunebooks and still be below its baseline, and a
-          green "−12" is a straight contradiction. */}
-      <span class={`text-xs font-semibold shrink-0 ${netGain(row) >= 0 ? 'text-success' : 'text-danger'}`}>{formatGain(row, gainMode)}</span>
-
-      <Sparkline values={row.periodValues} width={50} height={22} class="shrink-0" />
     </div>
   );
 }
