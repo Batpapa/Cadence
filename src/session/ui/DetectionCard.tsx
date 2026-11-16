@@ -707,7 +707,10 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
           <span class={`${focus ? 'text-xs px-2.5 py-1' : 'text-2xs px-1.5 py-0.5'} rounded-full inline-flex items-center gap-1 ${
             ann.userConfirmed ? 'bg-success/15 text-success' : BUCKET_BADGE[ann.bucket]
           } ${opts.onSelectAlternate ? 'group-hover:brightness-110 transition-[filter]' : ''}`}>
-            {ann.userConfirmed ? <CheckIcon size={12} /> : (
+            {/* The check in a box one line tall (both text sizes here have a
+                1rem line): a bare 12 px icon left the confirmed pill 4 px
+                shorter than a percentage one beside it. */}
+            {ann.userConfirmed ? <span class="h-4 inline-flex items-center"><CheckIcon size={12} /></span> : (
               <>
                 {/* Siblings of the chevron rather than a wrapper around them: the
                     pill's own flex gap then simply skips the word once the
