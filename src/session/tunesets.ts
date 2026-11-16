@@ -1,7 +1,8 @@
 import type { Card } from '../types';
 import { resolveCardRef } from '../services/cardRefService';
 import { isTuneset } from '../services/cardTypeService';
-import { theSessionTuneId } from './detections';
+import { detectionTuneId, theSessionTuneId } from './detections';
+import { cardTuneId } from './recognition/cardIndex';
 import { chainsOf } from './ui/timelineModel';
 import type { Analysis, Detection, TunesetRecord } from './model';
 
@@ -102,25 +103,28 @@ export function tunesetsOf(session: Analysis, newId: () => string): TunesetRecor
 
 // ── Sets and cards ───────────────────────────────────────────────────────────
 
-/** Every TheSession tune's card, by tune id — built once, not searched per tune. */
+/** Every card, by the tune ids its detections carry (its TheSession tune, and
+ *  its own `card:<guid>`, cardIndex.ts) — built once, not searched per tune. */
 export function cardsByTuneId(cards: Record<string, Card>): Map<string, Card> {
   const out = new Map<string, Card>();
   for (const card of Object.values(cards)) {
+    const own = cardTuneId(card.guid);
+    if (!out.has(own)) out.set(own, card);
     const id = theSessionTuneId(card);
     if (id !== null && !out.has(id)) out.set(id, card);
   }
   return out;
 }
 
-/** A set card's tunes as TheSession tune ids, in playing order — or null when
- *  one of them has none, since such a set can never be recognised. */
+/** A set card's tunes as the tune ids their detections carry, in playing
+ *  order (detectionTuneId) — or null when one of them is gone. A tune card
+ *  without TheSession is recognised from its own ABC since 2026-11-16. */
 export function setTuneIds(set: Card, cards: Record<string, Card>): string[] | null {
   const ids: string[] = [];
   for (const ref of set.tunes ?? []) {
     const tune = resolveCardRef(ref, cards);
-    const id = tune ? theSessionTuneId(tune) : null;
-    if (id === null) return null;
-    ids.push(id);
+    if (!tune) return null;
+    ids.push(detectionTuneId(tune));
   }
   return ids.length > 0 ? ids : null;
 }

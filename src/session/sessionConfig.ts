@@ -173,7 +173,3 @@ export const RECORDER_TIMESLICE_MS = 5000;
  *  will want to change. The countdown only advances while the recording is
  *  actually running — a pause freezes it (see liveBackup.ts). */
 export const LIVE_BACKUP_INTERVAL_MS = 10 * 60_000;
-
-/** Session sharing: base64 inflates the audio blob ~33%, and the JSON envelope
- *  adds a little more on top — stay safely under the backend's 100 MB share cap. */
-export const SHARE_MAX_AUDIO_BYTES = 70 * 1024 * 1024;

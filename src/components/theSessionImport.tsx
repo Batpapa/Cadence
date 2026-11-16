@@ -5,7 +5,7 @@ import type { AppContext, Card } from '../types';
 import { generateId, focusIfDesktop, sortByRelevance, ownFormatAccept } from '../utils';
 import { parseCardPackage } from '../services/importExport';
 import { externaliseIncoming, uploadAttachmentSoon, mutateWithRule } from '../services/attachmentStore';
-import { downloadShare } from '../services/shareService';
+import { downloadShareBlob } from '../services/shareService';
 import { mutate, appState } from '../store';
 import {
   searchTunes, fetchTuneById, fetchMemberTunes, fetchMemberInfo, searchMembers, fetchTunesByIds,
@@ -1294,8 +1294,8 @@ function ShareStep({ getChosenDeckIds, withDeckChoice }: {
     setBusy(true); setStatus(t('newCard.import.importing'));
     let cards;
     try {
-      const text = await downloadShare(trimmed);
-      const file = new File([text], `share-${trimmed}.cdc`, { type: 'application/octet-stream' });
+      // Bytes, not text: a package is a zip since 2026-11-15 (importExport.ts).
+      const file = new File([await downloadShareBlob(trimmed)], `share-${trimmed}.cdc`, { type: 'application/octet-stream' });
       cards = await parseCardPackage(file);
     } catch (e) {
       setStatus(errorLine(t('theSession.error', { message: e instanceof Error ? e.message : String(e) })));

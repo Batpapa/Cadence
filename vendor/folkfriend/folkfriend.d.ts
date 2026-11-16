@@ -60,6 +60,13 @@ export class FolkFriendWASM {
 */
   flush_pcm_buffer(): void;
 /**
+* The sources of a merged index (each setting's `source`) in the order that wins
+* ties among equal scores, first first (Cadence, 2026-11-16) — see
+* QueryEngine::set_source_order. Empty by default, which changes nothing.
+* @param {(string)[]} order
+*/
+  set_source_order(order: (string)[]): void;
+/**
 * The cleaned frames fed since the last call (frames x 48, as take_features): each note
 * minus its median over `drone_frames` frames (centred, or the frames up to it when
 * `causal`; 0 = nothing removed), the median taken every `stride` frames, then the
@@ -175,6 +182,7 @@ export interface InitOutput {
   readonly folkfriendwasm_set_num_repass: (a: number, b: number) => void;
   readonly folkfriendwasm_set_pitch_class_mode: (a: number) => void;
   readonly folkfriendwasm_set_sample_rate: (a: number, b: number) => number;
+  readonly folkfriendwasm_set_source_order: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_set_tempo_model: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_set_tempo_range: (a: number, b: number, c: number) => void;
   readonly folkfriendwasm_settings_from_tune_id: (a: number, b: number, c: number, d: number) => void;

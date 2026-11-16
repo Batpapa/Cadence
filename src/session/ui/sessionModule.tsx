@@ -44,7 +44,8 @@ import {
   lastImportDump, importStarting, importPlaybackWarn,
 } from './sessionStore';
 import { registerCardPanel } from '../../services/cardPanels';
-import { HelpIcon, ArrowRightIcon } from '../../components/icons';
+import { HelpIcon, ArrowRightIcon, ChevronDownIcon } from '../../components/icons';
+import { recognitionIndexesOf, storedRecognitionIndexes, type RecognitionIndexChoice } from '../recognition/recognitionIndexes';
 import { CustomSelect } from '../../components/customSelect';
 import { DetectedIn } from './DetectedIn';
 import { showLinkImportModal } from './LinkImportModal';
@@ -609,6 +610,68 @@ function SettingRow({ checked, onToggle, label, hint, children }: {
         <p class="text-xs text-dim leading-relaxed mt-2 px-3 py-2 rounded-lg border border-border bg-bg">{hint}</p>
       )}
       {children}
+    </div>
+  );
+}
+
+/** The indexes a recognition searches, on or off, most preferred first
+ *  (recognitionIndexes.ts) — for the analyses started from now on. At least
+ *  one stays on: its switch is then locked, since nothing to search is not a
+ *  recognition. */
+function RecognitionIndexesBlock() {
+  const [hintOpen, setHintOpen] = useState(false);
+  const choices = recognitionIndexesOf(appState.value);
+  const save = (next: RecognitionIndexChoice[]) => {
+    void mutate(s => {
+      const m = (s.modules?.[TUNE_ANALYSER_MODULE_KEY] as TuneAnalyserModuleData | undefined) ?? { sessions: {} };
+      // Written whole, both values of every switch (see the field's doc).
+      m.recognitionIndexes = storedRecognitionIndexes(s, next);
+      s.modules = { ...(s.modules ?? {}), [TUNE_ANALYSER_MODULE_KEY]: m };
+    });
+  };
+  const move = (from: number, to: number) => {
+    const next = [...choices];
+    const [entry] = next.splice(from, 1);
+    next.splice(to, 0, entry!);
+    save(next);
+  };
+  const onCount = choices.filter(c => c.on).length;
+  const label = t('sessions.indexes.title');
+  return (
+    <div class="space-y-2">
+      <div class="flex items-center gap-1.5">
+        <span class="text-sm text-primary min-w-0">{label}</span>
+        <IconButton label={t('settings.explain')} on={hintOpen} aria-expanded={hintOpen} onClick={() => setHintOpen(o => !o)}>
+          <HelpIcon size={14} />
+        </IconButton>
+      </div>
+      {hintOpen && (
+        <p class="text-xs text-dim leading-relaxed px-3 py-2 rounded-lg border border-border bg-bg">{t('sessions.indexes.hint')}</p>
+      )}
+      <div class="rounded-lg border border-border divide-y divide-border/50">
+        {choices.map((c, i) => {
+          const name = t(c.id === 'cards' ? 'sessions.indexes.cards' : 'sessions.indexes.thesession');
+          return (
+            <div key={c.id} class="flex items-center gap-1 px-3 py-1.5">
+              <span class="text-xs text-dim w-4 shrink-0">{i + 1}</span>
+              <span class={`text-sm min-w-0 flex-1 truncate ${c.on ? 'text-primary' : 'text-dim'}`}>{name}</span>
+              <IconButton label={t('sessions.indexes.up')} disabled={i === 0} onClick={() => move(i, i - 1)}>
+                <span class="flex rotate-180"><ChevronDownIcon size={12} /></span>
+              </IconButton>
+              <IconButton label={t('sessions.indexes.down')} disabled={i === choices.length - 1} onClick={() => move(i, i + 1)}>
+                <ChevronDownIcon size={12} />
+              </IconButton>
+              <span class={`shrink-0 flex ml-1 ${c.on && onCount === 1 ? 'opacity-50 pointer-events-none' : ''}`}>
+                <Switch
+                  checked={c.on}
+                  label={name}
+                  onChange={(on) => { if (!on && onCount === 1) return; save(choices.map(x => (x.id === c.id ? { ...x, on } : x))); }}
+                />
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1219,6 +1282,10 @@ function SessionSettingsBody() {
           });
         }}
       />
+
+      <hr class="border-border" />
+      <RecognitionIndexesBlock />
+      <hr class="border-border" />
 
       {/* On by default; this device's own (keepRecordings.ts). */}
       <SettingRow

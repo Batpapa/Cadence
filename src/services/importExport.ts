@@ -4,35 +4,27 @@ import { SCHEMA_VERSION, stampTuneType } from './migration';
 import { migrateClipTags } from './attachmentNames';
 import { migrateAudioMimeTypes } from './audioSniff';
 import { cardAliases } from './aliasService';
-import { inlineExternalAttachments, type ExportGate } from './attachmentStore';
+import { externalAttachmentBlobs, type ExportGate } from './attachmentStore';
 import { sanitizeAudioPresets } from './audioPresets';
+import { buildZipBlob, readZipBlob, isZipBlob, type ZipBlobEntry } from './zip';
+import { buildBackup } from './fullBackup';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function isValidBackup(data: unknown): data is Record<string, unknown> {
-  if (!isRecord(data)) return false;
-  // Old format: has users map + cards
-  const isOldFormat = isRecord(data['users']) && isRecord(data['cards']);
-  // New format: has cards + profiles directly (id may be absent — stripped on export)
-  const isNewFormat = isRecord(data['cards']) && isRecord(data['profiles']);
-  return isOldFormat || isNewFormat;
-}
-
-/** Full backup — all user data except id (id is device-local).
+/** Backup — all user data except id (id is device-local) and the recordings:
+ *  the small one of the two backup choices (fullBackup.ts, where the format
+ *  lives — a zip since 2026-11-15).
  *
  *  Serialised compact, not indented (2026-09-10). Two-space indentation was
  *  measured at x2.04 on a realistic library — it doubled every backup, every
  *  snapshot and every shared card package for the benefit of a file nobody
- *  opens in a text editor. Anyone who does can run it through a prettifier.
- *  On a phone it also doubled the peak memory an export has to hold at once,
- *  which is the resource the .cdbf size ceiling exists to protect. */
+ *  opens in a text editor. Anyone who does can run it through a prettifier. */
 export async function exportBackup(user: AppState, gate: ExportGate): Promise<boolean> {
-  const state = await inlinedState(user, gate);
-  if (!state) return false;
-  const { id: _id, ...data } = state;
-  download(JSON.stringify(data), `cadence-backup-${toDateStr(new Date())}.cdb`);
+  const zip = await buildBackup(user, gate, false);
+  if (!zip) return false;
+  downloadCadenceFile(zip, `cadence-backup-${toDateStr(new Date())}.cdb`);
   // Launched, not finished: a browser never says when a download is done —
   // which is why the AI assistant asks the user to confirm it themselves.
   return true;
@@ -42,55 +34,76 @@ export async function exportBackup(user: AppState, gate: ExportGate): Promise<bo
  *  one goes through the ordinary Settings → Backup → Import path, so no
  *  second restore machinery exists to drift out of sync with the first. */
 export async function exportSnapshotBackup(state: AppState, ts: number, gate: ExportGate): Promise<void> {
-  const whole = await inlinedState(state, gate);
-  if (!whole) return;
-  const { id: _id, ...data } = whole as AppState & { id?: string };
-  download(JSON.stringify(data), `cadence-snapshot-${toDateStr(new Date(ts))}.cdb`);
+  const zip = await buildBackup(state, gate, false);
+  if (zip) downloadCadenceFile(zip, `cadence-snapshot-${toDateStr(new Date(ts))}.cdb`);
 }
 
-/** Serializes cards to CDC JSON string without downloading. Null if the gate
- *  refused an export missing some of its attachments. */
-export async function cardPackageText(cards: Card[], gate: ExportGate): Promise<string | null> {
-  const inlined = await inlinedCards(cards, gate);
-  return inlined && JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards: inlined });
+// ── Card packages (.cdc) ─────────────────────────────────────────────────────
+// A zip since 2026-11-15 (zip.ts, STORE): `cards.json`, and beside it
+// `attachments/<external id>` for every externalised attachment — the layout
+// of a backup (fullBackup.ts). Until then the bytes were put back INTO the
+// JSON as base64: a third larger, and one string the size of everything.
+//
+// The cards written keep `external`, minus `driveFileId` for those whose bytes
+// are in the archive: that id names a file in the exporter's Drive. An
+// attachment the gate let through unresolved travels AS IT IS, `driveFileId`
+// included — for anyone else it degrades to "no longer on Drive", which is
+// true, where dropping the id would promise "not sent yet", a wait that never
+// ends.
+//
+// JSON stays a .cdc too, and is read for good: it is what a person or an AI
+// writes by hand (parseCardPackageFromText), and what was exported before.
+
+const CDC_DATA_ENTRY = 'cards.json';
+const CDC_ATTACH_DIR = 'attachments/';
+
+/** The package of `cards`, without downloading it. Null if the gate refused
+ *  an export missing some of its attachments. */
+export async function cardPackageBlob(cards: Card[], gate: ExportGate): Promise<Blob | null> {
+  const copy = structuredClone(cards);
+  const { blobs, missing } = await externalAttachmentBlobs(copy);
+  if (missing.length > 0 && !(await gate(missing))) return null;
+  for (const card of copy) {
+    for (const att of card.content?.attachments ?? []) {
+      if (att.type === 'file' && att.external && blobs.has(att.external.id)) delete att.external.driveFileId;
+    }
+  }
+  const entries: ZipBlobEntry[] = [{ name: CDC_DATA_ENTRY, data: JSON.stringify({ schemaVersion: SCHEMA_VERSION, cards: copy }) }];
+  for (const [extId, blob] of blobs) entries.push({ name: CDC_ATTACH_DIR + extId, data: blob });
+  return buildZipBlob(entries);
 }
 
 /** Card-only export — no history, no decks, no personal data. */
 export async function exportCards(cards: Card[], gate: ExportGate): Promise<void> {
-  const text = await cardPackageText(cards, gate);
-  if (text === null) return;
-  download(text, `cadence-cards-${toDateStr(new Date())}.cdc`);
+  const zip = await cardPackageBlob(cards, gate);
+  if (zip) downloadCadenceFile(zip, `cadence-cards-${toDateStr(new Date())}.cdc`);
 }
 
-// ── Externalised attachments, on the way out ─────────────────────────────────
-// A .cdb and a .cdc are JSON and nothing else, so an attachment whose bytes
-// live outside the blob has to come back INTO it here or the file travels with
-// a hole in it. Both formats are read by builds that predate externalisation
-// and by other people's devices, neither of which could fetch those bytes.
-//
-// On a COPY, never in place. `data` is empty in the running state on purpose,
-// and refilling it there would put back the very megabytes the externalisation
-// took out — paid again on every clone and every sync, for as long as the tab
-// stays open.
-//
-// An attachment the gate let through unresolved travels AS IT IS, `external`
-// and `driveFileId` included. It looks wrong for a share — that id names a
-// file in the exporter's Drive — but the alternative is worse in both
-// directions: in a backup restored by the same person it is the one thing
-// that can still fetch the file back, and for anyone else it degrades to
-// "no longer on Drive", which is true, where dropping the id would promise
-// "not sent yet" — a wait that never ends.
-
-async function inlinedState(state: AppState, gate: ExportGate): Promise<AppState | null> {
-  const copy = structuredClone(state);
-  const missing = await inlineExternalAttachments(Object.values(copy.cards ?? {}));
-  return missing.length === 0 || await gate(missing) ? copy : null;
-}
-
-async function inlinedCards(cards: Card[], gate: ExportGate): Promise<Card[] | null> {
-  const copy = structuredClone(cards);
-  const missing = await inlineExternalAttachments(copy);
-  return missing.length === 0 || await gate(missing) ? copy : null;
+/** The cards of an archived package, as the JSON reader expects them: the
+ *  import takes files INLINE and decides itself, by the receiver's own rule,
+ *  which go outside the blob (externaliseIncoming). So each archived file's
+ *  bytes go back into its `data` — one attachment at a time, never one string
+ *  for the lot. */
+async function readCardPackageZip(file: Blob): Promise<unknown> {
+  const items = await readZipBlob(file);
+  const dataItem = items.find(i => i.name === CDC_DATA_ENTRY);
+  if (!dataItem) throw new Error('File is not a valid card package');
+  let data: unknown;
+  try { data = JSON.parse(await dataItem.text()); } catch { throw new Error('Invalid file'); }
+  if (!isCardPackage(data)) throw new Error('File is not a valid card package');
+  const bytes = new Map(items.filter(i => i.name.startsWith(CDC_ATTACH_DIR)).map(i => [i.name.slice(CDC_ATTACH_DIR.length), i]));
+  for (const raw of data.cards) {
+    const content = isRecord(raw) ? raw['content'] : null;
+    if (!isRecord(content) || !Array.isArray(content['attachments'])) continue;
+    for (const att of content['attachments']) {
+      if (!isRecord(att) || att['type'] !== 'file' || !isRecord(att['external'])) continue;
+      const item = bytes.get(String(att['external']['id']));
+      if (!item) continue;   // unresolved at export: travels as it is
+      att['data'] = arrayBufferToBase64(await (await item.copy()).arrayBuffer());
+      delete att['external'];
+    }
+  }
+  return data;
 }
 
 function isCardPackage(data: unknown): data is { schemaVersion?: number; cards: unknown[] } {
@@ -310,6 +323,10 @@ function stripCodeFence(text: string): string {
 function parseCardPackageText(text: string): Card[] {
   let data: unknown;
   try { data = JSON.parse(stripCodeFence(text)); } catch { throw new Error('Invalid file'); }
+  return parseCardPackageData(data);
+}
+
+function parseCardPackageData(data: unknown): Card[] {
   if (!isCardPackage(data)) throw new Error('File is not a valid card package');
   const from = typeof data.schemaVersion === 'number' ? data.schemaVersion : 0;
   migrateRawCards(data.cards, from);
@@ -341,6 +358,7 @@ function typeSetMembers(cards: Card[]): void {
 
 export async function parseCardPackage(file: File): Promise<Card[]> {
   if (!file.name.endsWith('.cdc')) throw new Error('Expected a .cdc file');
+  if (await isZipBlob(file)) return parseCardPackageData(await readCardPackageZip(file));
   return parseCardPackageText(await file.text());
 }
 
@@ -348,15 +366,6 @@ export async function parseCardPackage(file: File): Promise<Card[]> {
  *  chat reply) instead of a saved file. */
 export function parseCardPackageFromText(text: string): Card[] {
   return parseCardPackageText(text);
-}
-
-export async function parseImport(file: File): Promise<Record<string, unknown>> {
-  if (!file.name.endsWith('.cdb')) throw new Error('Expected a .cdb file');
-  const text = await file.text();
-  let data: unknown;
-  try { data = JSON.parse(text); } catch { throw new Error('Invalid file'); }
-  if (!isValidBackup(data)) throw new Error('File is not a valid Cadence backup');
-  return data;
 }
 
 // ── Read-only card exports ───────────────────────────────────────────────────
@@ -465,8 +474,4 @@ export function cardsTextReport(cards: Card[], user: AppState): string {
 export function exportCardsTXT(cards: Card[], user: AppState): void {
   downloadTextFile(cardsTextReport(cards, user),
     `cadence-cards-${toDateStr(new Date())}.txt`, 'text/plain;charset=utf-8');
-}
-
-function download(json: string, filename: string): void {
-  downloadCadenceFile(json, filename);
 }

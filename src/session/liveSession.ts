@@ -4,7 +4,7 @@ import { createLiveSource, type LiveStreamSource, type LiveSourceKind } from './
 import { SessionFileRecorder } from './audio/recorder';
 import { keepRecordings } from './keepRecordings';
 import { RecognitionClient } from './recognitionClient';
-import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession, collectChunks } from './db';
+import { saveSessionMeta, saveSessionAudio, appendSessionWindow, deleteSessionWindows, deleteSession, collectChunks, clearChunks } from './db';
 import { holdAnalysisLock } from './recovery';
 import type { Analysis, Detection, WindowResult, DetectionEvent, DetectionAlternate, TunesetRecord } from './model';
 import { withSets } from './tunesets';
@@ -493,7 +493,8 @@ export class LiveSession {
     this.reportFinishing();
     try {
       const fileResult = await this.recorder!.stop();
-      // The chunks are gone with the recorder: the file in their place.
+      // The file from here on; the chunks stay in the database, the only
+      // copy, until it is written (below).
       this.aligner?.setAudio(async () => fileResult.blob);
       const { events, tFinal } = await this.recognition!.stop();
       this.applyEvents(events, true);
@@ -537,6 +538,14 @@ export class LiveSession {
       // Not kept: the chunks went with the recorder, and the file goes with
       // this function — the bounds above were put on the passes from it.
       if (this.keepAudio) await saveSessionAudio(session.id, fileResult.blob);
+      // Only now, the recording written: anything that failed before — the
+      // write refused, the tab killed after hours — left the draft AND its
+      // chunks, and recovery rebuilds the sound from them. Cleared earlier, it
+      // saved the analysis without it (2026-11-15, iPhone). Cleared before the
+      // analysis is saved, not after: a tab dying in between leaves a draft
+      // whose recording is already in place, which recovery keeps, rather
+      // than chunks no draft names, which nothing would ever clear.
+      await clearChunks(session.id).catch(() => { /* leftover chunks, nothing lost */ });
       // Another device may have written to Drive during the recording — the
       // computer, while the phone recorded. Taken in first, it is applied
       // silently and the session lands on top of it; saved first, the two
@@ -569,11 +578,14 @@ export class LiveSession {
   async cancel(): Promise<void> {
     this.setPhase('stopping');
     try {
-      await this.recorder?.stop(); // flushes pending writes and clears chunks
+      await this.recorder?.stop(); // flushes pending writes
     } finally {
       this.cleanup();
     }
     try {
+      // The recorder leaves its chunks for whoever saves the file; nothing
+      // will here.
+      await clearChunks(this.sessionId);
       await deleteSession(this.sessionId); // remove the progressively-persisted draft
       // Deleted here means deleted: a backup left on Drive would come back
       // offered for recovery.

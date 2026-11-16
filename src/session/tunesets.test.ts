@@ -147,6 +147,15 @@ describe('set cards', () => {
     expect(setCardFor(['1', '2', '3'], cards)).toBeUndefined();
   });
 
+  // A hand-made tune is recognised from its own ABC since 2026-11-16, under
+  // `card:<guid>` (cardIndex.ts): a set holding one can be matched too.
+  it('matches a set holding a hand-made tune by that tune\'s own id', () => {
+    const own: Card = { id: 'hm', guid: 'hm', name: 'HM', defaultImportance: 1, tags: [], type: 'tune', content: { notes: '', attachments: [] } };
+    const withOwn: Record<string, Card> = { ...cards, hm: own };
+    withOwn.mixed = buildTunesetCard([own, cards.tb!], { defaultRepeat: 1, attachments: [], newId: () => 'mixed' });
+    expect(setCardFor(['card:hm', '2'], withOwn)?.id).toBe('mixed');
+  });
+
   it('gives setCardFor\'s answer from an index, the first set card included', () => {
     const twin = { ...buildTunesetCard([cards.ta!, cards.tb!], { defaultRepeat: 1, attachments: [], newId: () => 'twin' }) };
     const withTwin: Record<string, Card> = { ...cards, twin };

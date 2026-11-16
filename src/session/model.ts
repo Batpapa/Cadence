@@ -254,6 +254,13 @@ export interface Analysis {
    *  being moved, which the set's heart and its review hang on. Absent on every
    *  analysis saved before it existed; built the first time one is shown. */
   tunesets?: TunesetRecord[];
+  /** The ABC of the card versions its detections name (setting ids `card:…`,
+   *  recognition/cardIndex.ts), by setting id — written on the copy that is
+   *  shared or exported (sessionShareService.ts, 2026-11-16), so that whoever
+   *  receives it sees the very version recognised without having the card.
+   *  Read only where the card itself cannot answer (cardIndexSource.ts).
+   *  Absent on every analysis that was never shared out with one. */
+  cardVersions?: Record<string, string>;
   // The audio Blob (+ in-progress crash-recovery scratch data) lives in a
   // local-only, non-Drive-synced IndexedDB under the session id — see
   // session/db.ts. This record itself is small (no audio), so it's kept
@@ -314,6 +321,14 @@ export interface TuneAnalyserModuleData {
    *  {folder} as nothing. Kept, unused, when {folder} leaves `nameTemplate`, so
    *  putting it back finds it again. */
   nameTemplateNoFolder?: string;
+  /** The indexes a recognition searches, most preferred first, each on or off
+   *  (2026-11-16): the user's tune cards and TheSession's index today
+   *  (recognition/recognitionIndexes.ts). The order decides a tie: on equal
+   *  scores, the earlier index's tune wins. Absent = cards then TheSession,
+   *  both on. Written whole, with both values of every switch, so a deliberate
+   *  "off" survives; read it through `recognitionIndexesOf()` only. An id this
+   *  version does not know is kept as it is and not used. */
+  recognitionIndexes?: { id: string; on: boolean }[];
   /** Copy the recording to Drive for sessions saved from now on, so they can be
    *  played on the user's other devices — and so the device is not holding the
    *  only copy of them.

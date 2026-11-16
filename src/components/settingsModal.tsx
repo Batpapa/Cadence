@@ -14,8 +14,8 @@ import { playbackVolumePercent, setPlaybackVolumePercent, DEFAULT_VOLUME_PERCENT
 import { getTheme, setTheme, type Theme } from '../services/themeService';
 import { updateUser, ensureCurrentUser, ensureCurrentProfile, navLabels } from '../services/userService';
 import { applyExternalData } from '../services/migration';
-import { exportBackup, exportSnapshotBackup, parseImport } from '../services/importExport';
-import { exportFullBackup, fullBackupSize, parseFullBackup, restoreFullBackupAudio, BackupTooLarge, MAX_FULL_BACKUP_BYTES } from '../services/fullBackup';
+import { exportBackup, exportSnapshotBackup } from '../services/importExport';
+import { exportFullBackup, fullBackupSize, parseBackup, restoreFullBackupAudio, BackupTooLarge, MAX_FULL_BACKUP_BYTES } from '../services/fullBackup';
 import {
   restoreExternalAttachments, uploadPendingAttachments, externalAttachmentBytes,
   conversionPlan, applyConversion, freeableAttachments, freeUploadedAttachments, sweepLocalAttachments,
@@ -530,18 +530,20 @@ function SnapshotsRow({ userId }: { userId: string }) {
  *  written under session ids the restored state has to already know about, and
  *  a failure between the two leaves recordings that the next import can still
  *  place, rather than metadata pointing at nothing. */
-async function runImport(file: File, full: boolean, setBusy: (b: boolean) => void): Promise<void> {
+async function runImport(file: File, setBusy: (b: boolean) => void): Promise<void> {
   setBusy(true);
   try {
-    const parsed = full ? await parseFullBackup(file) : { raw: await parseImport(file), audio: null, attachments: null };
+    // A .cdb or a .cdbf: one archive format since 2026-11-15, the .cdb only
+    // leaving the recordings out (fullBackup.ts). A .cdb in JSON is still read.
+    const parsed = await parseBackup(file);
     closeAllModals(); closeSettingsModal?.();
     const ctx = getContext();
     await ctx.mutate(s => { Object.assign(s, applyExternalData(parsed.raw, s.id)); });
-    if (parsed.audio) await restoreFullBackupAudio(parsed.audio);
-    if (parsed.attachments) {
+    if (parsed.audio.size > 0) await restoreFullBackupAudio(parsed.audio);
+    if (parsed.attachments.size > 0) {
       await restoreExternalAttachments(parsed.attachments);
       // The archive's attachments arrive with no `driveFileId` (see
-      // exportFullBackup), which IS the upload backlog — but nothing would
+      // buildBackup), which IS the upload backlog — but nothing would
       // look at it again until the next launch, and a restore is exactly the
       // moment someone wants their library whole on their own Drive.
       void uploadPendingAttachments();
@@ -550,10 +552,9 @@ async function runImport(file: File, full: boolean, setBusy: (b: boolean) => voi
     // arrived from outside — which makes this the one moment the rule applies
     // to all of it at once, and not the retroactive conversion that was
     // refused. It runs in both directions, which is what closes the two holes
-    // this had: a .cdb carries its attachments inline whatever their size (it
-    // is JSON and nothing else), and a .cdbf restored on a device with no
-    // Drive would otherwise leave them outside the blob with nothing backing
-    // them up.
+    // this had: a JSON .cdb carries its attachments inline whatever their size,
+    // and an archive restored on a device with no Drive would otherwise leave
+    // them outside the blob with nothing backing them up.
     await applyConversion().catch(e => console.warn('[import] the rule could not be applied', e));
     ctx.navigate({ view: 'folder', folderId: null });
   } catch (e) {
@@ -668,14 +669,14 @@ function BackupButtons({ dataBytes, audioBytes }: { dataBytes: number; audioByte
   };
 
   const doImport = (file: File) => {
-    // The extension decides which reader runs, and the confirmation differs:
-    // only a .cdb leaves the recordings behind, so only a .cdb has to say so.
+    // The confirmation differs by extension: only a .cdb leaves the
+    // recordings behind, so only a .cdb has to say so.
     const full = file.name.toLowerCase().endsWith('.cdbf');
     confirmModal(
       t('settings.import.title'),
       t(full ? 'settings.import.messageFull' : 'settings.import.message'),
       t('settings.import.confirm'),
-      () => { void runImport(file, full, setBusy); },
+      () => { void runImport(file, setBusy); },
     );
   };
 
@@ -768,12 +769,9 @@ function ExportChoice({ dataBytes, choice }: { dataBytes: number; choice: Signal
   // bytes are in NEITHER figure above: out of the blob, and not recordings.
   const attachmentBytes = externalAttachmentBytes(appState.value);
 
-  // A .cdb puts externalised attachments back inline, so it weighs more than
-  // the state does in memory — and base64 is a third bigger again than the
-  // bytes it encodes. Announcing the in-memory figure would understate the
-  // file by that whole third. The archive has no such third: zip entries are
-  // bytes.
-  const dataOnlyBytes = dataBytes + Math.round(attachmentBytes * 4 / 3);
+  // Both are archives since 2026-11-15, carrying externalised attachments as
+  // entries beside the state: their bytes, with no base64 third on top.
+  const dataOnlyBytes = dataBytes + attachmentBytes;
   const fullBytes = audioBytes === null ? null : dataBytes + attachmentBytes + audioBytes;
 
   return (

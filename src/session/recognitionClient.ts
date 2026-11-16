@@ -4,10 +4,32 @@ import type { WindowResult, DetectionEvent } from './model';
 import type { TempoReading } from './liveTempo';
 import type { RecognitionSink } from './audio/sources';
 import { DEBUG_LIVE_AUDIO } from './sessionConfig';
+import type { CardIndexTune } from './recognition/cardIndex';
 
 // ── Main-thread wrapper around the FolkFriend recognition worker ──────────────
 // Implements RecognitionSink: PCM sources (mic worklet, decoded file) feed it
 // interchangeably — the worker only ever sees a stream of chunks.
+
+// The indexes a recognition searches (recognitionIndexes.ts): TheSession's and
+// the user's tune cards (cardIndex.ts), on or off, in the user's order.
+// Installed by the app (cardIndexSource.ts's installCardRecognition); a page
+// without cards — the standalone analyser, the TheSession widget — never
+// installs it and recognises from TheSession's index alone, as before.
+export interface RecognitionSources {
+  cards: boolean;
+  theSession: boolean;
+  /** The indexes' sources in the order that wins ties among equal scores
+   *  (set_source_order). */
+  sourceOrder: string[];
+  /** The tune cards' versions — called only when `cards` is on. */
+  gatherCards: () => Promise<CardIndexTune[]>;
+}
+
+let recognitionSources: (() => RecognitionSources) | null = null;
+
+export function setRecognitionSources(sources: () => RecognitionSources): void {
+  recognitionSources = sources;
+}
 
 export interface RecognitionCallbacks {
   onIndexProgress?: (p: IndexProgress) => void;
@@ -82,7 +104,19 @@ export class RecognitionClient implements RecognitionSink {
       }
     };
 
-    this.send({ type: 'init', sampleRate, hopS: options.hopS, tempo: options.tempo });
+    // `init` goes at once, so that it is the worker's first message whatever
+    // the caller sends next; the cards follow when gathered (some ABC may come
+    // off this device's database), and the worker waits for them before it
+    // loads the index. A failure to gather sends none rather than stalling.
+    const sources = recognitionSources?.() ?? null;
+    this.send({
+      type: 'init', sampleRate, hopS: options.hopS, tempo: options.tempo,
+      cards: sources?.cards ?? false, theSession: sources?.theSession ?? true, sourceOrder: sources?.sourceOrder ?? [],
+    });
+    if (sources?.cards) {
+      void sources.gatherCards().catch((e: unknown) => { console.warn('[recognition] cards not gathered', e); return []; })
+        .then(tunes => this.send({ type: 'cards', tunes }));
+    }
   }
 
   private send(msg: FFWorkerRequest, transfer?: Transferable[]): void {

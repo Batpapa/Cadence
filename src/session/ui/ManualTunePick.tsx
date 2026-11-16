@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import { t } from '../../services/i18nService';
-import { focusIfDesktop, sortByRelevance } from '../../utils';
+import { focusIfDesktop, rankByRelevance, sortByRelevance } from '../../utils';
+import { getContext } from '../../store';
+import { isTune } from '../../services/cardTypeService';
+import { hasLibrary } from '../../services/pageMode';
+import { detectionTuneId } from '../detections';
+import { cardScoreSettingId } from '../recognition/cardIndex';
+import type { Card } from '../../types';
 import { fetchTuneById, searchTunes, tuneTypeToMeter, type TuneResult } from '../../services/theSessionService';
 import { TuneUnavailableError } from '../../services/tuneFetchError';
 import { ensureTuneSearchIndex, searchLocalTuneIndex } from '../../services/tuneNameIndexService';
@@ -33,7 +39,29 @@ import type { DetectionAlternate } from '../model';
 // both callers already are a modal, and a portal over one is one more layer to
 // get wrong on a phone for no gain.
 
-interface Suggestion { id: number; name: string; type: string; via?: string }
+// The user's own tune cards come first among the suggestions (2026-11-16): a
+// tune the recogniser can find from a card's ABC (cardIndex.ts) can be named
+// from the card too, with no network — its own tune id, TheSession's when it
+// is a TheSession tune, and the card's score as the version shown.
+
+interface Suggestion { id: number; name: string; type: string; via?: string; card?: Card }
+
+/** At most this many cards above TheSession's results. */
+const MAX_CARD_SUGGESTIONS = 8;
+
+/** The tune cards a query names (by name or alias), best first. */
+function cardSuggestions(query: string): Suggestion[] {
+  const tunes = Object.values(getContext().user.cards).filter(isTune);
+  return rankByRelevance(tunes, query).slice(0, MAX_CARD_SUGGESTIONS).map(({ item, via }) => ({
+    id: -1, name: item.name, type: cardDance(item), card: item, ...(via !== undefined ? { via } : {}),
+  }));
+}
+
+/** A card's tune type, off its `type::` tag; empty when it has none. */
+function cardDance(card: Card): string {
+  const tag = card.tags.find(tg => tg.toLowerCase().startsWith('type::'));
+  return tag ? tag.slice('type::'.length).toLowerCase() : '';
+}
 
 /** Searches TheSession by name or id and reports the tune currently resolved —
  *  `null` whenever there is none, which is what a caller's commit control
@@ -60,7 +88,8 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   const [statusError, setStatusError] = useState(false);
   const setStatus = (text: string, error = false) => { setStatusText(text); setStatusError(error); };
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [pending, setPending] = useState<TuneResult | null>(null);
+  /** The tune resolved, as the line under the field names it. */
+  const [pending, setPending] = useState<{ name: string; type: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,7 +106,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
    *  none. A tune with no setting has nothing a detection could point at, so
    *  it never reaches here. */
   const report = (tune: TuneResult | null) => {
-    setPending(tune);
+    setPending(tune && { name: tune.name, type: tune.type });
     onResolved(tune && {
       tuneId: String(tune.id),
       settingId: String(tune.settings[0]!.id),
@@ -87,6 +116,23 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
       dance: tune.type,
       meter: tuneTypeToMeter(tune.type),
       // Never shown — a hand-picked tune has no score, and says "manual" instead.
+      meanScore: 0,
+    });
+  };
+
+  /** A card picked: resolved at once. Its version is the card's score as it
+   *  is (cardScoreSettingId), whichever ABC it holds when it is shown. */
+  const reportCard = (card: Card) => {
+    seq.current++;
+    const dance = cardDance(card);
+    setPending({ name: card.name, type: dance });
+    setStatus('');
+    onResolved({
+      tuneId: detectionTuneId(card),
+      settingId: cardScoreSettingId(card.guid),
+      displayName: card.name.toLowerCase(),
+      dance,
+      meter: tuneTypeToMeter(dance),
       meanScore: 0,
     });
   };
@@ -130,6 +176,8 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
     timerRef.current = setTimeout(async () => {
       timerRef.current = null;
       const fresh = begin();
+      const cards = hasLibrary() ? cardSuggestions(q) : [];
+      setSuggestions(cards);
       setStatus(t('theSession.status.searching'));
       try {
         let tunes: Suggestion[];
@@ -141,9 +189,10 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
           tunes = sortByRelevance(await searchTunes(q), q).map(r => ({ ...r, via: r.alias }));
         }
         if (!fresh()) return;
-        setSuggestions(tunes);
-        setStatus(tunes.length ? '' : t('theSession.noResults'));
+        setSuggestions([...cards, ...tunes]);
+        setStatus(cards.length || tunes.length ? '' : t('theSession.noResults'));
       } catch (e) {
+        // TheSession unreachable: the cards still stand.
         if (fresh()) setStatus(t('theSession.error', { message: e instanceof Error ? e.message : String(e) }), true);
       }
     }, 300);
@@ -152,7 +201,8 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
   const pickSuggestion = (tune: Suggestion) => {
     setValue(tune.name);
     setSuggestions([]);
-    void resolve(tune.id);
+    if (tune.card) reportCard(tune.card);
+    else void resolve(tune.id);
   };
 
   return (
@@ -179,7 +229,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
         <div class="max-h-48 overflow-y-auto rounded border border-border divide-y divide-border/50">
           {suggestions.map(tune => (
             <button
-              key={tune.id}
+              key={tune.card ? `card:${tune.card.id}` : tune.id}
               type="button"
               class="w-full flex items-baseline gap-2 px-3 py-1.5 text-left hover:bg-bg cursor-pointer"
               onClick={() => pickSuggestion(tune)}
@@ -188,6 +238,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
                 <span class="text-sm text-primary truncate block">{tune.name}</span>
                 {tune.via !== undefined && <span class="text-xs text-dim truncate block">{t('search.viaAlias', { alias: tune.via })}</span>}
               </span>
+              {tune.card && <span class="text-xs text-accent shrink-0">{t('sessions.tunePick.card')}</span>}
               <span class="text-xs text-dim shrink-0">{tune.type}</span>
             </button>
           ))}

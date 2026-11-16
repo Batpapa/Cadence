@@ -9,10 +9,12 @@ About screen.
 
 **Source: [github.com/Batpapa/folkfriend](https://github.com/Batpapa/folkfriend)**,
 a fork of upstream carrying Cadence's changes. The files here are built from its
-commit **`e09a2fc`** (2026-11-09: the two additive changes of "Played pitch" below, on
-top of the pitch-class mode, "any pitch", the cleaned features and the query speed-ups)
-and that build reproduces them byte for byte (`folkfriend_bg.wasm` MD5
-`d87710c9ded87c7ce957c87fd5196ad7`, `folkfriend_bg_simd.wasm` MD5
+commit **`c5c2482`** (2026-11-16: "Non-numeric ids" and "Source order" below, on top
+of `e09a2fc`; `folkfriend_bg.wasm` MD5 `0309f39ae7bb11b1fc46eaddac7691a4`,
+`folkfriend_bg_simd.wasm` MD5 `e3a583fdf41125bc03c499e596b1717b`). Commit `e09a2fc`
+(2026-11-09: the two additive changes of "Played pitch" below, on top of the
+pitch-class mode, "any pitch", the cleaned features and the query speed-ups) is the
+module shipped from 2026-11-09 to 2026-11-15 (`d87710c9ded87c7ce957c87fd5196ad7` /
 `2a616af88f4c72b98999afdf24b6ac76`). The module shipped on 2026-11-08 is commit
 `6b53e2c` (`bd96c7b53ccc50ee7317e6be1fffbda9` / `04160e3bcd7e807f833971685c73caac`);
 from 2026-10-29 to 2026-11-07, commit `1b37f01`; from 2026-09-13 to 2026-10-29,
@@ -292,6 +294,39 @@ spectra (a Rust test checks the chunks give exactly one pass's result). Cadence'
 following (alignment, locate in a long recording) reads them with 10 s, 1 s, 3; its tempo and
 the Play-along keep `take_features` (no gain measured there; the harmonic filter's 4 frames of
 look-ahead break the live follower).
+
+## Non-numeric ids (2026-11-15), every result unchanged
+
+`QueryEngine::use_tune_index` sorted each tune's setting ids with
+`parse::<i32>().unwrap()`: an index holding any other id (a user's own cards, another tune
+source) panicked on load (checked: "unreachable" with the previous module, the same index
+loads and answers with this one). Numeric ids now sort numerically as before, any other id
+after them by string. Nothing else read the ids as numbers; ties elsewhere already compare
+them as strings. The 18 annotated sessions' windows (19 700) are identical to the fixtures
+(contour, top 10, scores, transposition) with both builds.
+
+## Source order (2026-11-16), every result unchanged without one
+
+Cadence merges several indexes into the one it loads — TheSession's and the user's own
+tune cards (`src/session/recognition/cardIndex.ts`) — and tags each setting with the one it
+comes from: `Setting::source`, an optional field ("thesession", "cards"…). `set_source_order(order)`
+then says which wins a tie among EQUAL scores, first first; a source not named comes after
+every named one. It is read at the three places ties are decided: the n-gram shortlist's
+cut-off (written key, and the any-key pass's ties at its floor) and the final ranking, which
+also picks the setting that represents a tune. Each setting's place in the order is worked
+out once (`Setting::tie_rank`, at load and when the order is set), and only looked at when an
+order is set: without one, every comparison is the old one.
+
+`source` is an `Option`: serde_wasm_bindgen 0.3 hands a missing property over as `undefined`,
+which `#[serde(default)]` does not catch — the untagged TheSession index panicked on load
+until it was. It is left out of a result's JSON when absent, so an untagged index answers
+byte for byte as before.
+
+Checked: the 18 annotated sessions' windows (19 700) identical to the fixtures with both
+builds, no order set; on a merged index, a card copying TheSession setting 1 ranks before it
+with `["cards", "thesession"]` and after it with `["thesession", "cards"]`, and a card copying
+a setting of TheSession tune 5 represents that tune or not accordingly. New in the glue:
+`set_source_order(order: string[])`.
 
 ## Tune index
 

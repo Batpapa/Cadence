@@ -1,0 +1,92 @@
+{
+ "1": {
+  "meter": "4/4",
+  "mode": "Edorian",
+  "abc": "|:D2|EBBA B2 EB|B2 AB dBAG|FDAD BDAD|FDAD dAFD|\r\nEBBA B2 EB|B2 AB defg|afec dBAF|DEFD E2:|\r\n|:gf|eB B2 efge|eB B2 gedB|A2 FA DAFA|A2 FA defg|\r\neB B2 eBgB|eB B2 defg|afec dBAF|DEFD E2:|",
+  "contour": "ooqxxvxxqxxxvxAxvtsovoxovosovoAvsoqxxvxxqxxxvxACEFHECzAxvsoqsoqqooqxxvxxqxxxvxAxvtsovoxovosovoAvsoqxxvxxqxxxvxACEFHECzAxvsoqsoqqFECxxxCEFCCxxxFCAxvvsvovsvvvsvACEFCxxxCxFxCxxxACEFHECzAxvsoqsoqqFECxxxCEFCCxxxFCAxvvsvovsvvvsvACEFCxxxCxFxCxxxACEFHECzAxvsoqsoqq"
+ },
+ "5": {
+  "meter": "6/8",
+  "mode": "Dmixolydian",
+  "abc": "|:DED DEG|A2A ABc|BAG AGE|GEA GED|\r\nDED DEG|A2A ABc|BAG AGE|GED D3:|\r\nded dBG|AGA BGE|ded dBG|AGA GAB|\r\ng2e dBG|AGA BGE|B2G AGE|GED D3:|\r\nA2D B2D|A2D ABc|BAG AGE|GEA GED|\r\nADD BDD|ADD ABc|BAG AGE|GED D3:|",
+  "contour": "oqooqtvvvvxyxvtvtqtqvtqooqooqtvvvvxyxvtvtqtqoooooqooqtvvvvxyxvtvtqtqvtqooqooqtvvvvxyxvtvtqtqooooACAAxtvtvxtqACAAxtvtvtvxFFCAxtvtvxtqxxtvtqtqooooACAAxtvtvxtqACAAxtvtvtvxFFCAxtvtvxtqxxtvtqtqoooovvoxxovvovxyxvtvtqtqvtqovooxoovoovxyxvtvtqtqoooovvoxxovvovxyxvtvtqtqvtqvooxoovoovxyxvtvtqtqoooo"
+ },
+ "10": {
+  "meter": "9/8",
+  "mode": "Eminor",
+  "abc": "|:B2E G2E F3|B2E G2E FED|B2E G2E F3|B2d d2B AFD:|\r\n|:B2d e2f g3|B2d g2e dBA|B2d e2f g2a|b2a g2e dBA:|\r\n|:B3 B2A G2A|B3 BAB dBA|B3 B2A G2A|B2d g2e dBA:|",
+  "contour": "xxqttqsssxxqttqsqoxxqttqsssxxAAAxvsoxxqttqsssxxqttqsqoxxqttqsssxxAAAxvsoxxACCEFFFxxAFFCAxvxxACCEFFHJJHFFCAxvxxACCEFFFxxAFFCAxvxxACCEFFHJJHFFCAxvxxxxxvttvxxxxvxAxvxxxxxvttvxxAFFCAxvxxxxxvttvxxxxvxAxvxxxxxvttvxxAFFCAxv"
+ },
+ "14": {
+  "meter": "12/8",
+  "mode": "Dmajor",
+  "abc": "|:Bcd Bcd c2A A2A|Bcd e2f g3 efg|\r\na2f gfe f2d A2A|Bcd e2c d3 d3:|\r\n|:a2f gfe f2d A2A|Bcd e2f g3 efg|\r\na2f gfe f2d A2A|Bcd e2c d3 d3:|",
+  "contour": "xzAxzAzzvvvvxzACCEFFFCEFHHEFECEEAvvvxzACCzAAAAAAxzAxzAzzvvvvxzACCEFFFCEFHHEFECEEAvvvxzACCzAAAAAAHHEFECEEAvvvxzACCEFFFCEFHHEFECEEAvvvxzACCzAAAAAAHHEFECEEAvvvxzACCEFFFCEFHHEFECEEAvvvxzACCzAAAAAA"
+ },
+ "39": {
+  "meter": "2/4",
+  "mode": "Dmajor",
+  "abc": "|:fA BA|fA BA|d2 e>f|ed BA|\r\nfA BA|fA BA|d2 e>f|ed d2:|\r\n|:fa f>e|ed BA|d2 e>f|ed BA|\r\nfa f>e|ed BA|d2 e>f|ed d2:|",
+  "contour": "EvxvEvxvAACCCAxvEvxvEvxvAACCCAAAEvxvEvxvAACCCAxvEvxvEvxvAACCCAAAEHEECAxvAACCCAxvEHEECAxvAACCCAAAEHEECAxvAACCCAxvEHEECAxvAACCCAAA"
+ },
+ "73": {
+  "meter": "4/4",
+  "mode": "Bminor",
+  "abc": "|:BA|FBBA B2Bd|cBAf ecBA|FBBA B2Bd|cBAc B2:|\r\n|:Bc|d2dc dfed|(3cBA eA fAeA|dcBc defb|afec B2:|\r\nBc|dBB2 bafb|afec ABce|dB B2 bafb|afec B2Bc|\r\ndB B2 bafb|afec ABce|dcBc defb|afec B2|",
+  "contour": "xvsxxvxxxAzxvECzxvsxxvxxxAzxvzxxxvsxxvxxxAzxvECzxvsxxvxxxAzxvzxxxzAAAzAECAzxCvEvCvAzxzACEJHECzxxxzAAAzAECAzvCvEvCvAzxzACEJHECzxxxzAxxxJHEJHECzvxzCAxxxJHEJHECzxxxzAxxxJHEJHECzvxzCAzxzACEJHECzxx"
+ },
+ "101": {
+  "meter": "6/8",
+  "mode": "Dmajor",
+  "abc": "|:DED F2A|d2f edA|G2B F2A|E2F GFE|\r\nDED F2A|d2f edA|Bgf edc|1 d3 dAF:|2 d3 efg||\r\na2f d2e|f2g agf|g2e =cBc|e2f gfe|\r\na2f d2e|f2g agf|egf edc|d3 efg|\r\na2f d2e|f2g agf|g2e =c2d|e2f gfe|\r\nfed gfe|agf bag|egf edc|d3 dAF||",
+  "contour": "oqossvAAECAvttxssvqqstsqoqossvAAECAvxFECAzAAAAvsoqossvAAECAvttxssvqqstsqoqossvAAECAvxFECAzAAACEFHHEAACEEFHFEFFCyxyCCEFECHHEAACEEFHFECFECAzAAACEFHHEAACEEFHFEFFCyyACCEFECECAFECHFEJHFCFECAzAAAAvs"
+ },
+ "122": {
+  "meter": "6/8",
+  "mode": "Gmajor",
+  "abc": "|:g>gg edB|dBe dBA|~G3 BGD|EFE E2D|\r\ng>gg edB|dBe dBA|G2A BGD|1 E2F GBd:|2 E2F GEG||\r\n|:~A3 BGD|EFE EDG|~A3 BGB|eag e2f|\r\ng>gg edB|AGA B2e|dBG GAB|1 EFE DEG:|2 EFDFAd||",
+  "contour": "FFFCAxAxCAxvtvsxtoqsqqqoFFFCAxAxCAxvttvxtoqqstxAFFFCAxAxCAxvtttxtoqsqqqoFFFCAxAxCAxvttvxtoqqstqtvvvxtoqsqqotvvvxtxCHFCCEFFFCAxvtvxxCAxttvxqsqoqtvvvxtoqsqqotvvvxtxCHFCCEFFFCAxvtvxxCAxttvxqsosvA"
+ },
+ "135": {
+  "meter": "3/4",
+  "mode": "Amajor",
+  "abc": "E|:c>dc BAG|A>Bc E2E|F>Ad cEc|c>BA B2E|\r\nc>dc BAG|A>Bc E2E|FAd cEc|1 B>AG A2E:|2 B>AG A2e||\r\nf>ff fga|e2d c>BA|d>ed cBA|FGA B2e|\r\nf>ff fga|e2d c>BA|d>ed cBA|FAG A2e|\r\nf>ff fga|e2d c>BA|d>e{fg}a ecA|FGA B2E|\r\nc>dc BAG|A>Bc E2E|F>Ad cEc|B>AG A3||",
+  "contour": "qzzzxvuvvzqqqssAzqzzzvxxqzzzxvuvvzqqqsvAzqzxxuvvqzzzxvuvvzqqqssAzqzzzvxxqzzzxvuvvzqqqsvAzqzxxuvvCEEEEGHCCAzzvAAAzxvsuvxxCEEEEGHCCAzzvAAAzxvsvuvvCEEEEGHCCAzzvAAHCzvsuvxxqzzzxvuvvzqqqssAzqzxxuvvv"
+ },
+ "241": {
+  "meter": "6/8",
+  "mode": "Eminor",
+  "abc": "|:(E/F/)|GBG FAF|GEE E2F|DFA dAG|FDD DEF|\r\nMGFG AGA|BAB gfg|edB {c}BAF GEE E2:|\r\n|:F|G2G dBG|GA (B/c/) dBG|A2A ecA|A(Bc/d/) ecA|\r\nGAG dBG|egf {a}gfg|edB MBAF|GEE E2:|\r\n|:d|efe edB|def g2e|fdd add|fag fed|\r\ngfg fef|def {a}gfg|edB MBAF|GEE E2:|\r\n|:c|BGG AFF|GEE E2c|BGG dAG|FDD D2c|\r\nBGG AGF|GEE {a}gfg|edB MBAF|GEE E2:|\r\n|:f|gbg faf|gee e2f|gbg fag|fdd def|\r\ngbg faf|egf {a}gfg|edB MBAF|GEE E2:|\r\n|:f|gdc BcA|GEE E2f|gdB dAG|FDD DEF|\r\nG3 {B}AGA|Bcb {a}gfg|edB MBAF|EGG G2:|",
+  "contour": "qtxtsvstqqqqsosvAvtsoooqststvtvxvxFEFCAxyvstqqqqqtxtsvstqqqqsosvAvtsoooqststvtvxvxFEFCAxxvstqqqqstttAxttvxAxtvvvCyvvxyCyvtvtAxtCFEFEFCAxxvstqqqqstttAxttvyAxtvvvCyvvxACyvtvtAxtCFEFEFCAxxvstqqqqACECCAxACEFFCEAAHAAEHFECAFEFECEACEFEFCAxxvstqqqqCECCAxACEFFCEAAHAAEHFECAFEFECEACEHEFCAxxvstqqqqyxttvsstqqqqyxttAvtsooooyxttvtstqqFEFCAxxvstqqqqyxttvsstqqqqyxttAvtsooooyxttvtstqqFEFCAxxvstqqqqEFJFEHEFCCCCEFJFEHFEAAACEFJFEHECFEFEFCAxxvstqqqqEFJFEHEFCCCCEFJFEHFEAAACEFJFEHECFEFEFCAxxvstqqqqEFAyxyvqqqqEFAxAvtsoooqstttxtvxyJHEFCAxxvsqttttEFAyxyvtqqqqEFAxAvtsoooqstttvtvxyJFEFCAxxvsqtttt"
+ },
+ "423": {
+  "meter": "4/4",
+  "mode": "Gmajor",
+  "abc": "|:(3DEF|GF GA (3Bcd ed|Bd BA GB AG|\r\nAB AF DF AF|1 GA Bc d2 (3DEF:|2 GB AF G2 ef||\r\ngf ga gd Bg|fd Ad f2 gf|ed cB AG FD|1 GA Bc d2 ef:|2 GB AF G2 z (3D/E/F/||\r\nG [BG] z [c2G2] z [B2G2]|z2 [c2G2] z [B2G2] z|FG AB cA FD|GA Bc d2 (3DEF|\r\nG [BG] z [c2G2] z [B2G2]|z2 [c2G2] z [B2G2] z|FG AB cA FD|GB AF G2 (3DEF:|",
+  "contour": "oqtstvxyCAxAxvtxvtvxvsosvstvxyAAoqoqtstvxyCAxAxvtxvtvxvsosvstxvsttCEFEFHFAxFEAvAEEFECAyxvtsotxvsttqttxttyyttxxttyyttxxstvxyvsotvxyAAqsttxttyyttxxttyyttxxtvxyvsotxvsttoqoqtstvxyCAxAxvtxvtvxvsosvsFEFHFAxFEAvAEEFECAyxvtsottxttyyttxxttyyttxxstvxyvsotvxyAAosttxttyyttxxttyyttxxstvxyvsotxvsttqs"
+ },
+ "1194": {
+  "meter": "3/2",
+  "mode": "Amajor",
+  "abc": "|:{g}a4 e2fg agfe|(3cdcA2 .a2(A2 cdec)|a4 e2fg agfe|d2B2 {g}.f2(B2 d2f2):|\r\n|:ABcd (3efec2 (3efec2|ABcd (3efec2 e2{g}a2|ABcd (3efec2 (3efec2|Bcde {g}.f2(B2 d2f2):|\r\n|:(e2.a2) (cdec .a2)(c2|e2.a2) cdec d2(3fgf|(e2.a2) (cdec .a2)c2|Bcde {g}.f2(B2 d2f2):|\r\n|:ABcd efed cdec|efed cdec e2{g}a2|ABcd efed cdec|Bcde {g}.f2(B2 d2f2):|",
+  "contour": "GHHHHCCGHGECzAvvHvvzACzHHHHCCEGHGECAAxxGxxAAEEGHHHHCCGHGECzAvvHvvzACzHHHHCCEGHGECAAxxExxAAEEvxzACEzzCEzzvxzACCzzCCHHvxzACCzzCCzzxzACExxAAEEvxzACCzzCCzzvxzACCzzCCHHvxzACCzzCCzzxzACExxAAEECCHzACzHzzCCHzACzAAGECCHzACzHzzxzACExxAAEECCHzACzHzzCCHzACzAAGECCHzACzHzzxzACExxAAEEvxzACECAzACzCCAzACzCCGHHxzACECAzACzxzACGxxAAEEvxzACECAzACzCECAzACzCCGHHxzACECAzACzxzACExxAAEE"
+ },
+ "2772": {
+  "meter": "2/4",
+  "mode": "Amajor",
+  "abc": "|:c>c BA|FA AB|cB/c/ BA|B/c/d e>f|\r\nec BA|FA A>B|c>c ec|BA A2:|\r\n|:a>f ec|ec BA|a>f ec|B/c/d e2|\r\na>f ec|ec BA|B/c/c ec|BA A2:|",
+  "contour": "zzxvsvvxzxxvxACCCzxvsvvvzzCzxvvvzzxvsvvxzxxvxACCCzxvsvvvzzCzxvvvHHCzCzxvHHCzxACCHHCzCzxvxzCzxvvvHHCzCzxvHHCzxACCHHCzCzxvzzCzxvvv"
+ },
+ "6242": {
+  "meter": "4/4",
+  "mode": "Gmajor",
+  "abc": "|:G2 Bd ~g3e|=fdc_B AFFD|C=F F/F/F dFcF|_BAGA =F/E/D ^CE|\r\nDGBd ~g3e|=fdc_B AFFD|C=F F/F/F dFcF|1 _BGAF DGGF:|2 _BGAF GA=Bd||\r\ng2 b/a/g dgbg|e/f/g ag fdef|g2 bg dgbg|agfa ~g3a|\r\nbgaf gfde|e/f/g ag fdcA|DGBd g2 ag|1 fdcA G/G/G Bd:|2 fdcA G3E||",
+  "contour": "ttxAFHECDAywvrromrrrAryrwvtvronqotxAFHECDAywvrromrrrAryrwtvsottsttxAFFFCDAywvrromrrrAryrwvtvronqotxAFFFCDAywvrromrrrAryrwtvstvxAFFHFAFJFEFHFEACEFFJFAFJFHFEHFFFHJFHEFEACEFHFEAyvotxAFFHFEAyvtttq"
+ },
+ "14639": {
+  "meter": "4/4",
+  "mode": "Adorian",
+  "abc": "|:EA A/B/c/d/ e>d cA|BG G/F/G/A/ B/G/A/G/ ED|~\r\nE2 A2 AB cd|e3 d c2 A2|B2 G2 GF G>A|BG AG E/F/E D2|\r\nE2 Az zB c>d|e2 a>b a2 g2|e2 d2 Be dB|A2 A>^G A2:|\r\na2 e2 e2 g/f/e|za zg e2 fg|a>b af g>a ge|d2 c/B/A G2 fg|\r\nza ze e2 fg|ab ag e3 d|B2 e/f/e d2 B/c/B|A3 B A2:|",
+  "contour": "qvvyCCyvxtttxvqoqqvvvxyACCCAyyvvxxtttsttxtvtqqooqqvxyyCCHHHHFFCCAAxCAxvvvvvvqvvyCCyvxtttxvqoqqvvvxyACCCAyyvvxxtttsttxtvtqqooqqvxyyCCHHHHFFCCAAxCAxvvvvvvHHCCCCECHFCCEFHHHEFFFCAAxvttEFHCCCEFHJHFCCCAxxECAAyxvvvxvvHHCCCCECHFCCEFHHHEFFFCAAxvttEFHCCCEFHJHFCCCAxxECAAyxvvvxvv"
+ }
+}

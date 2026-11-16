@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findCardDetections, theSessionTuneId, cardsByExternalTuneId, detectionsOnCards, sessionsOf } from './detections';
+import { findCardDetections, theSessionTuneId, cardsByExternalTuneId, cardOfTuneId, detectionTuneId, detectionsOnCards, sessionsOf } from './detections';
 import { findByExternalId } from '../services/theSessionService';
 import { TUNE_ANALYSER_MODULE_KEY, type Analysis, type Detection } from './model';
 import type { Card } from '../types';
@@ -114,6 +114,35 @@ describe('findCardDetections', () => {
       session('dated', '2020-01-01T20:00:00Z', [ann('b', '7', 10)]),
     ));
     expect(groups.map(g => g.session.id)).toEqual(['dated', 'undated']);
+  });
+});
+
+// A tune card recognised from its own ABC (cardIndex.ts, 2026-11-16): its
+// detections carry `card:<guid>`, or its TheSession tune when it is one.
+describe('a card\'s own tune id', () => {
+  const handMade: Card = { ...card(), id: 'h', guid: 'hg', type: 'tune' };
+  const fromSession: Card = { ...card('thesession:7'), id: 's', guid: 'sg', type: 'tune' };
+  const cards = { h: handMade, s: fromSession };
+
+  it('names a TheSession card by its tune, any other by its guid', () => {
+    expect(detectionTuneId(fromSession)).toBe('7');
+    expect(detectionTuneId(handMade)).toBe('card:hg');
+  });
+
+  it('finds the card of either id, by guid for its own', () => {
+    expect(cardOfTuneId('card:hg', cards)?.id).toBe('h');
+    expect(cardOfTuneId('7', cards)?.id).toBe('s');
+    expect(cardOfTuneId('card:sg', cards)?.id).toBe('s');
+    expect(cardOfTuneId('card:gone', cards)).toBeUndefined();
+    expect(cardOfTuneId('8', cards)).toBeUndefined();
+    const cardOf = cardsByExternalTuneId(cards);
+    for (const id of ['card:hg', '7', 'card:sg', 'card:gone', '8']) expect(cardOf(id)?.id).toBe(cardOfTuneId(id, cards)?.id);
+  });
+
+  it('lists a hand-made card\'s detections, and both kinds for a TheSession card', () => {
+    const sessions = lib(session('s1', '2026-09-01T20:00:00Z', [ann('a', 'card:hg', 10), ann('b', '7', 100), ann('c', 'card:sg', 200)]));
+    expect(findCardDetections(handMade, sessions)[0]!.detections.map(d => d.id)).toEqual(['a']);
+    expect(findCardDetections(fromSession, sessions)[0]!.detections.map(d => d.id)).toEqual(['b', 'c']);
   });
 });
 

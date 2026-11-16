@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
-import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, type AliasMatch } from '../utils';
+import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, formatBytes, type AliasMatch } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, CrossIcon, PlusIcon, MoreHorizontalIcon, UploadIcon, NotesIcon, CopyIcon, ShareIcon, iconElement } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
 import { CARD_SOURCES, cardSource, cardSourceLabel } from '../services/cardSourceService';
@@ -10,8 +10,8 @@ import { showDeckChoiceModal } from '../components/deckSelector';
 import { generateId } from '../utils';
 import { tagsWithTunes, setsMatchTuneTags } from '../services/cardRefService';
 import { CardMap } from '../components/cardMap';
-import { exportCards, exportCardsCSV, exportCardsTXT, cardsTextReport, cardPackageText } from '../services/importExport';
-import { uploadShare } from '../services/shareService';
+import { exportCards, exportCardsCSV, exportCardsTXT, cardsTextReport, cardPackageBlob } from '../services/importExport';
+import { uploadShare, isAbortError, ShareTooLargeError } from '../services/shareService';
 import { confirmModal, closeAllModals, MODAL_BACKDROP, MODAL_TITLE_CLASS, MODAL_W } from '../components/modal';
 import { modalMaxW, modalMaxH } from '../services/zoomService';
 import { askIncompleteExport } from '../components/incompleteExportModal';
@@ -125,7 +125,10 @@ function showExportModal(cards: Card[], user: AppState): void {
   overlay.appendChild(dialog);
 
   let unregister = () => {};
-  const close = () => { unregister(); overlay.remove(); };
+  // A share waiting its turn on the server, or uploading, stops with the
+  // window: a key nobody will see is not worth the room it takes.
+  const shareAbort = new AbortController();
+  const close = () => { shareAbort.abort(); unregister(); overlay.remove(); };
   unregister = registerOverlay(close);
   closeBtn.onclick = close;
   let mouseDownOnOverlay = false;
@@ -215,9 +218,15 @@ function showExportModal(cards: Card[], user: AppState): void {
       // Built before anything is sent: a share is the one export that leaves
       // this device for good, so an attachment it could not fetch back has to
       // be settled here rather than discovered by whoever receives the key.
-      const text = await cardPackageText(cards, askIncompleteExport);
-      if (text === null) { renderCdc(); return; }
-      const { key, secondsRemaining } = await uploadShare(text);
+      const pkg = await cardPackageBlob(cards, askIncompleteExport);
+      if (pkg === null) { renderCdc(); return; }
+      const { key, secondsRemaining } = await uploadShare(pkg, {
+        signal: shareAbort.signal,
+        onWaiting: position => { status.textContent = t('sessions.share.waitingInQueue', { position }); },
+        onProgress: (sent, total) => {
+          status.textContent = t('sessions.share.uploadingProgress', { sent: formatBytes(sent), total: formatBytes(total) });
+        },
+      });
       body.innerHTML = '';
       const keyEl = document.createElement('div');
       keyEl.className = 'text-center font-mono text-3xl font-bold tracking-[0.3em] text-primary py-2';
@@ -237,7 +246,10 @@ function showExportModal(cards: Card[], user: AppState): void {
       validity.textContent = t('library.share.validity', { minutes: Math.floor(secondsRemaining / 60) });
       body.append(keyEl, copyBtn, validity);
     } catch (e) {
-      status.textContent = t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
+      if (isAbortError(e)) return;   // the window closed: nothing left to show
+      status.textContent = e instanceof ShareTooLargeError
+        ? t('library.share.tooBig', { max: formatBytes(e.maxBytes) })
+        : t('theSession.error', { message: e instanceof Error ? e.message : String(e) });
       status.classList.replace('text-muted', 'text-danger');
       backBtn.classList.remove('hidden');
       backBtn.onclick = renderCdc;

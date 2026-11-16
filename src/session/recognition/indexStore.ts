@@ -1,5 +1,6 @@
 import { kvGet, kvSet } from '../db';
 import { TUNE_INDEX_URL, TUNE_INDEX_META_URL, INDEX_MAX_AGE_DAYS } from '../sessionConfig';
+import { cardVersionHashOf, isCardId } from './cardIndex';
 
 // ── FolkFriend tune index: fetch + IndexedDB cache + ABC strip ────────────────
 // Mirrors the official app's strategy: cache in IndexedDB, load cached copy
@@ -28,6 +29,10 @@ interface IndexMeta { v: number }
 
 const KV_INDEX = 'tuneIndex';
 const KV_META = 'tuneIndexMeta';
+/** The cards' contours, by the hash of their ABC (cardIndex.ts): kept from one
+ *  recognition to the next, so only versions added or edited since are
+ *  converted again. */
+export const KV_CARD_CONTOURS = 'cardContours';
 
 export type IndexProgress =
   | { phase: 'downloading'; loadedBytes: number }
@@ -128,7 +133,9 @@ export interface SettingAbcMeta {
   /** TheSession tune id — same numeric id used by theSessionService.ts, not a
    *  FolkFriend-internal renumbering (verified: index setting ids and tune_ids
    *  match TheSession's own /tunes/{id} API 1:1). Combined with the settingId
-   *  key, builds the exact-setting URL: /tunes/{tune_id}#setting{settingId}. */
+   *  key, builds the exact-setting URL: /tunes/{tune_id}#setting{settingId}.
+   *  Not for a card's version (cardIndex.ts, `card:` setting id): its tune is
+   *  the TheSession tune the card is, or `card:<guid>`, and no URL leads to it. */
   tune_id: string;
 }
 
@@ -143,6 +150,7 @@ let abcMetaLooks = 0;
  *  So the next call looks again — a missing key costs IndexedDB next to
  *  nothing. */
 export function getSettingAbcMeta(settingId: string): Promise<SettingAbcMeta | null> {
+  if (isCardId(settingId)) return cardSettingResolver ? cardSettingResolver.load(settingId) : Promise.resolve(null);
   if (!abcMetaPromise) {
     const look = ++abcMetaLooks;
     abcMetaPromise = (async () => {
@@ -192,6 +200,9 @@ export function onTuneIndexCached(listener: () => void): () => void {
  *  hold the setting. */
 const KV_CONTOUR = (settingId: string) => `tuneContour:${settingId}`;
 export async function getSettingContour(settingId: string): Promise<string | null> {
+  // A card's version: its contour is in the cards' cache, under its ABC's hash.
+  const hash = cardVersionHashOf(settingId);
+  if (hash) return (await kvGet<Record<string, string>>(KV_CARD_CONTOURS))?.[hash] || null;
   const kept = await kvGet<string>(KV_CONTOUR(settingId));
   if (kept) return kept;
   const cached = await kvGet<TuneIndexData>(KV_INDEX);
@@ -203,6 +214,26 @@ export async function getSettingContour(settingId: string): Promise<string | nul
 /** Synchronous lookup once the map is loaded — undefined while still loading.
  *  Lets UI that re-renders often draw the final state immediately (no flash). */
 export function getSettingAbcMetaSync(settingId: string): SettingAbcMeta | null | undefined {
+  if (isCardId(settingId)) return cardSettingResolver ? cardSettingResolver.now(settingId) : null;
   if (!abcMetaMap) return undefined;
   return abcMetaMap.get(settingId) ?? null;
+}
+
+// ── A card's version (cardIndex.ts) ──────────────────────────────────────────
+// Its ABC is on the card, not in the index. Read by the page, which has the
+// cards: it installs the reader here (cardIndexSource.ts) rather than this file
+// importing the app's state, since the recognition worker loads this file too.
+// Without one — the worker, the standalone pages — a card's version is unknown.
+
+interface CardSettingResolver {
+  /** From what the page already holds; null when it would have to fetch. */
+  now(settingId: string): SettingAbcMeta | null;
+  /** Fetching the card's file if it must (an attachment kept out of the state). */
+  load(settingId: string): Promise<SettingAbcMeta | null>;
+}
+
+let cardSettingResolver: CardSettingResolver | null = null;
+
+export function setCardSettingResolver(resolver: CardSettingResolver): void {
+  cardSettingResolver = resolver;
 }
