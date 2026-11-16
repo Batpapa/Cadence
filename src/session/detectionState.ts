@@ -65,6 +65,8 @@ export interface DetectionConfirmation {
    *  to whichever decoder detection it rests on. */
   liked: boolean;
   manualAlternates?: DetectionAlternate[];
+  /** Optional: absent on drafts written before notes existed, read as none. */
+  notes?: string;
   /** The detection as last shown — what stays on screen should the decoder
    *  abandon the whole range. */
   last: Detection;
@@ -88,7 +90,7 @@ function overlap(c: { start: number; end: number }, d: Detection): number {
 }
 
 function confirmedView(base: Detection, c: DetectionConfirmation): Detection {
-  return {
+  const view: Detection = {
     ...base,
     id: c.id,
     tuneId: c.pick.tuneId,
@@ -100,6 +102,10 @@ function confirmedView(base: Detection, c: DetectionConfirmation): Detection {
     liked: c.liked,
     manualAlternates: c.manualAlternates,
   };
+  // The confirmation's note, never the base's: the decoder detection it stands
+  // on may still hold the note it had when it was confirmed, since cleared.
+  if (c.notes) view.notes = c.notes; else delete view.notes;
+  return view;
 }
 
 /** The identity a detection currently shows, as a pick — what rating it
@@ -214,8 +220,8 @@ export class DetectionTracker {
   private readonly settledEnds = new Map<string, number>();
 
   /** Folds a batch of decoder events in. The decoder's own detections carry
-   *  the like marker and hand-named variants of an unconfirmed detection
-   *  forward — the aggregator has never heard of either. */
+   *  the like marker, the note and hand-named variants of an unconfirmed
+   *  detection forward — the aggregator has never heard of any of them. */
   apply(events: readonly DetectionEvent[]): void {
     // Most windows change nothing — and a 5-hour import feeds thousands of them.
     if (events.length === 0 && !this.final) return;
@@ -226,6 +232,7 @@ export class DetectionTracker {
         ...ev.detection,
         liked: existing?.liked ?? false,
         manualAlternates: existing?.manualAlternates,
+        ...(existing?.notes ? { notes: existing.notes } : {}),
       });
     }
     this.refresh();
@@ -260,7 +267,11 @@ export class DetectionTracker {
       // under its own id.
       const rawId = this.resolution.claims.get(id);
       const r = rawId ? this.raw.get(rawId) : undefined;
-      if (r) this.raw.set(r.id, { ...r, liked: c.liked, manualAlternates: c.manualAlternates });
+      if (r) {
+        const back: Detection = { ...r, liked: c.liked, manualAlternates: c.manualAlternates };
+        if (c.notes) back.notes = c.notes; else delete back.notes;
+        this.raw.set(r.id, back);
+      }
     } else if (c) {
       c.pick = { ...pick };
       c.seq = ++this.seq;
@@ -273,6 +284,7 @@ export class DetectionTracker {
         pick: { ...pick },
         liked: shown.liked,
         manualAlternates: shown.manualAlternates,
+        ...(shown.notes ? { notes: shown.notes } : {}),
         last: shown,
       });
     }
@@ -281,6 +293,11 @@ export class DetectionTracker {
 
   toggleLike(id: string): void {
     this.mark(id, d => ({ liked: !d.liked }));
+  }
+
+  /** The whole text of a shown detection's note; blank clears it. */
+  setNotes(id: string, notes: string): void {
+    this.mark(id, () => ({ notes: notes.trim() ? notes : undefined }));
   }
 
   // ── The sets heard so far (2026-10-19) ──
@@ -306,6 +323,13 @@ export class DetectionTracker {
     const rec = this.sets.find(r => r.id === id);
     if (!rec) return;
     if (rec.liked) delete rec.liked; else rec.liked = true;
+  }
+
+  /** The set's note, whole text — blank clears it. */
+  setSetNotes(id: string, notes: string): void {
+    const rec = this.sets.find(r => r.id === id);
+    if (!rec) return;
+    if (notes.trim()) rec.notes = notes; else delete rec.notes;
   }
 
   /** What the saved analysis carries: the settled sets, ids and hearts kept —
@@ -404,7 +428,7 @@ export class DetectionTracker {
     return out;
   }
 
-  private mark(id: string, change: (shown: Detection) => Partial<Pick<Detection, 'liked' | 'manualAlternates'>>): void {
+  private mark(id: string, change: (shown: Detection) => Partial<Pick<Detection, 'liked' | 'manualAlternates' | 'notes'>>): void {
     const shown = this.get(id);
     if (!shown) return;
     const patch = change(shown);
@@ -415,7 +439,10 @@ export class DetectionTracker {
       const rawId = this.resolution.rawIdOf.get(id);
       const r = rawId ? this.raw.get(rawId) : undefined;
       if (!r) return;
-      this.raw.set(r.id, { ...r, ...patch });
+      const next: Detection = { ...r, ...patch };
+      // A cleared note is no key at all, as on a saved analysis.
+      if (!next.notes) delete next.notes;
+      this.raw.set(r.id, next);
     }
     this.refresh();
   }

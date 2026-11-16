@@ -3,7 +3,7 @@ import { appState, navigate, getContext } from '../../store';
 import { t } from '../../services/i18nService';
 import { tuneAnalyserOffered } from '../../services/extensions';
 import { findCardDetections, sessionsOf, detectionsOnCards, setDetectionOn } from '../detections';
-import { PassRow, PlayPassButton, useSlicePlayer, type SlicePlayer } from './PassRow';
+import { PassRow, PlayPassButton, NoteMark, useSlicePlayer, type SlicePlayer } from './PassRow';
 import { HeartIcon } from '../../components/icons';
 import { isTuneset } from '../../services/cardTypeService';
 import { hasRecognisedSetting, keyOffsetOf, type Analysis, type Detection } from '../model';
@@ -139,7 +139,8 @@ export function SetHearingRow({ session, chain, setCard, title, player, interact
 }) {
   const span = chainSpan(chain, session.duration);
   const asAnn = { ...chain[0]!, id: chainPlayId(chain), ...span };
-  const liked = !!recordOf(session.tunesets, chain)?.liked;
+  const record = recordOf(session.tunesets, chain);
+  const liked = !!record?.liked;
   return (
     <div class="flex items-center gap-2 min-w-0">
       <div class="shrink-0 flex items-center">
@@ -169,6 +170,7 @@ export function SetHearingRow({ session, chain, setCard, title, player, interact
       >
         <span class="truncate min-w-0">{session.name}</span>
         {liked && <span class="text-danger shrink-0 flex items-center"><HeartIcon size={12} filled /></span>}
+        <NoteMark notes={record?.notes} />
       </button>
       <div class="shrink-0 flex items-center">
         <SetClipControls

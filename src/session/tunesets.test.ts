@@ -107,6 +107,22 @@ describe('reconcileTunesets', () => {
     expect(next.map(r => r.id)).toEqual(['S2']);
   });
 
+  it('two sets merged keep both notes, the survivor’s first', () => {
+    const prev: TunesetRecord[] = [{ id: 'S1', detectionIds: ['a', 'b'], notes: 'small' }, { id: 'S2', detectionIds: ['c', 'd', 'e'], notes: 'big' }];
+    const merged = [[ann('a', 0, 1), ann('b', 1, 2), ann('c', 2, 3), ann('d', 3, 4), ann('e', 4, 5)]];
+    const next = reconcileTunesets(prev, merged, newId);
+    expect(next).toEqual([{ id: 'S2', detectionIds: ['a', 'b', 'c', 'd', 'e'], notes: 'big\n\nsmall' }]);
+    // Folded once: the entry it came from is gone from the table.
+    expect(reconcileTunesets(next, merged, newId)).toEqual(next);
+  });
+
+  it('a set split in two keeps its note on the larger half, and a note change is a change', () => {
+    const prev: TunesetRecord[] = [{ id: 'S', detectionIds: ['a', 'b', 'c'], notes: 'n' }];
+    const next = reconcileTunesets(prev, [[ann('a', 0, 1)], [ann('b', 20, 21), ann('c', 21, 22)]], () => 'fresh');
+    expect(next).toEqual([{ id: 'fresh', detectionIds: ['a'] }, { id: 'S', detectionIds: ['b', 'c'], notes: 'n' }]);
+    expect(sameTunesets(next, next.map(r => ({ ...r, notes: 'other' })))).toBe(false);
+  });
+
   it('an entry nothing matches any more is dropped', () => {
     const prev: TunesetRecord[] = [{ id: 'S', detectionIds: ['x', 'y'] }];
     expect(reconcileTunesets(prev, [], newId)).toEqual([]);

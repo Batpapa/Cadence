@@ -2,7 +2,8 @@ import { useState } from 'preact/hooks';
 import type { ComponentChild } from 'preact';
 import type { AppContext } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon, HourglassIcon, TuneSetIcon } from '../../components/icons';
+import { HeartIcon, HourglassIcon, TuneSetIcon, NotesIcon } from '../../components/icons';
+import { showDetectionNotesModal } from './AnalysisNotesModal';
 import { IconButton } from '../../components/ui';
 import { getContext } from '../../store';
 import { hasRecognisedSetting, keyOffsetOf, type Detection, type TunesetRecord } from '../model';
@@ -41,6 +42,9 @@ export interface TunesetCardOptions {
   playFromDrive?: boolean;
   playLoadingId?: string | null;
   onToggleLike?: (record: TunesetRecord) => void;
+  /** Saves the set's note, whole text — blank clears it. The button sits
+   *  right of the set's heart, as a tune's does (2026-11-16). */
+  onEditNotes?: (record: TunesetRecord, notes: string) => void;
   /** Unix ms of the session's t=0 — what a rating is filed against. */
   sessionStartMs?: number;
   /** Where the clip controls go — absent on the feeds, which have none. */
@@ -202,6 +206,22 @@ export function TunesetDetectionCard({ chain, opts, children }: {
             onClick={(e) => { e.stopPropagation(); opts.onToggleLike!(opts.record!); }}
           >
             <HeartIcon size={14} filled={!!opts.record.liked} />
+          </IconButton>
+        )}
+
+        {/* Settled only, as the review: a set still being decoded can be
+            split or merged under its note. */}
+        {opts.onEditNotes && opts.record && (settled || !!opts.record.notes) && (
+          <IconButton
+            label={t(opts.record.notes ? 'sessions.set.notes.open' : 'sessions.set.notes.add')}
+            on={!!opts.record.notes}
+            onClick={(e) => {
+              e.stopPropagation();
+              const record = opts.record!;
+              showDetectionNotesModal(name, record.notes ?? '', (notes) => opts.onEditNotes!(record, notes));
+            }}
+          >
+            <NotesIcon size={14} />
           </IconButton>
         )}
       </div>

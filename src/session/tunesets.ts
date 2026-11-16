@@ -66,13 +66,27 @@ export function reconcileTunesets(
     takenPrev.add(p);
   }
 
+  // A note is the user's writing, not a mark to drop with its entry: an entry
+  // that lost its chain to another (two sets merged into one) hands its note
+  // to the chain it shares the most with, under that one's own (2026-11-16).
+  // An entry sharing nothing any more takes its note with it, as its heart —
+  // its tunes are all gone.
+  const folded = new Map<number, string[]>();
+  prev.forEach((rec, p) => {
+    if (takenPrev.has(p) || !rec.notes?.trim()) return;
+    const best = pairs.find(x => x.p === p);
+    if (best) folded.set(best.c, [...(folded.get(best.c) ?? []), rec.notes]);
+  });
+
   return settled.map((detectionIds, c) => {
     const p = takenChain.get(c);
     const was = p === undefined ? undefined : prev[p];
+    const notes = [was?.notes, ...(folded.get(c) ?? [])].filter((n): n is string => !!n?.trim()).join('\n\n');
     return {
       id: was?.id ?? newId(),
       detectionIds,
       ...(was?.liked ? { liked: true } : {}),
+      ...(notes ? { notes } : {}),
     };
   });
 }
@@ -84,7 +98,7 @@ export function sameTunesets(a: readonly TunesetRecord[] | undefined, b: readonl
   if (x.length !== b.length) return false;
   return x.every((r, i) => {
     const s = b[i]!;
-    return r.id === s.id && !!r.liked === !!s.liked
+    return r.id === s.id && !!r.liked === !!s.liked && (r.notes ?? '') === (s.notes ?? '')
       && r.detectionIds.length === s.detectionIds.length
       && r.detectionIds.every((id, j) => id === s.detectionIds[j]);
   });
