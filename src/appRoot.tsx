@@ -28,6 +28,7 @@ import { ModulesView } from './views/modules';
 import { SessionsView } from './views/sessions';
 import { TrendingView } from './views/trending';
 import { CadenceMark } from './components/cadenceMark';
+import { useDrawerSwipe } from './components/drawerSwipe';
 
 const SIDEBAR_WIDTH_KEY     = 'cadence_sidebar_width';
 const SIDEBAR_COLLAPSED_KEY = 'cadence_sidebar_collapsed';
@@ -134,6 +135,21 @@ function AppRoot() {
     });
   };
 
+  // The drawer opened and closed by a swipe from the left edge (2026-11-18,
+  // group feedback) — the narrow layout only. Setting, not toggling: a swipe
+  // says where the drawer goes. The drawer is never remembered (see above).
+  const areaRef  = useRef<HTMLDivElement>(null);
+  const shadeRef = useRef<HTMLDivElement>(null);
+  useDrawerSwipe({
+    enabled: isNarrow,
+    open: !sidebarCollapsed,
+    area: areaRef,
+    panel: wrapperRef,
+    shade: shadeRef,
+    onOpen: () => setSidebarCollapsed(false),
+    onClose: () => setSidebarCollapsed(true),
+  });
+
   // Explicitly read every signal so Preact subscribes AppRoot to re-render on each change.
   const ctx: AppContext = {
     user:         appState.value,
@@ -187,9 +203,21 @@ function AppRoot() {
   return (
     <div class="flex flex-col flex-1 overflow-hidden">
       <AppHeader ctx={ctx} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} isPortraitPhone={isPortraitPhone} />
-      <div class="relative flex flex-1 overflow-hidden min-h-0">
-        {isNarrow && !sidebarCollapsed && (
-          <div class="absolute inset-0 z-20 bg-black/40" data-tour="sidebar-backdrop" onClick={toggleSidebar} />
+      <div ref={areaRef} class="relative flex flex-1 overflow-hidden min-h-0">
+        {/* Always there in the narrow layout, faded out and click-through
+            while the drawer is put away: a swipe fades it with the drawer
+            (drawerSwipe.ts), which a shade that only existed once open could
+            not follow. */}
+        {isNarrow && (
+          <div
+            ref={shadeRef}
+            class={`absolute inset-0 z-20 bg-black/40 transition-opacity duration-200 ${sidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+            data-tour="sidebar-backdrop"
+            // Closes, never toggles: it is there while the drawer is put away
+            // too, and the walkthrough clicks it to close the drawer after a
+            // row (scenarios.ts) — a toggle would open it again.
+            onClick={() => setSidebarCollapsed(true)}
+          />
         )}
         <div
           ref={wrapperRef}
