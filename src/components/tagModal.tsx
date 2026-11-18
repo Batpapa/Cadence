@@ -201,14 +201,13 @@ export function showCardTagModal(
   const { el, cleanup } = renderModalBody(
     <CardTagBody cardId={cardId} renaming={renaming} draft={draft} noop={noop} onSubmit={commit} />,
   );
-  // [Cancel][Primary], as every footer of the charter (2026-11-11): the ✕,
-  // Escape and a click outside back out too, but a lone primary left a finger
-  // without a way out it could see at the bottom of the dialog.
+  // The primary alone, no Cancel (the user's call, 2026-11-18, against the
+  // charter's [Cancel][Primary] of 2026-11-11): a one-field dialog opened from
+  // a pill, which the ✕, Escape and a click outside all close.
   showModal(
     renaming === null ? t('card.tags.add') : t('card.tags.rename'),
     el,
     [
-      { label: t('common.cancel'), onClick: () => { closeModal(); cleanup(); } },
       {
         label: renaming === null ? t('common.add') : t('common.save'),
         primary: true,
