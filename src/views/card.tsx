@@ -23,6 +23,7 @@ import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/k
 import { fetchTuneById, applyTheSessionName, applyTheSessionAliases, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { showCardTagModal } from '../components/tagModal';
+import { tagDisplay } from '../services/tagGroups';
 import { showAliasModal } from '../components/aliasModal';
 import { cardAliases } from '../services/aliasService';
 import { removeCards } from '../services/cardService';
@@ -347,15 +348,21 @@ function clearTagIndicator(scratch: TagDragScratch): void {
   scratch.markedEl = null;
 }
 
-function TagPill({ tag, index, selected, scratch, onSelect, onReorder }: {
+function TagPill({ tag, index, editing, scratch, onOpen, onRename, onRemove, onReorder }: {
   tag: string;
   index: number;
-  selected: boolean;
+  /** The section's pencil is on: the pill carries its own pencil and bin, and
+   *  its name stops being a way into the library. */
+  editing: boolean;
   scratch: TagDragScratch;
-  onSelect: () => void;
+  onOpen: () => void;
+  onRename: () => void;
+  onRemove: () => void;
   onReorder: (from: number, insertBefore: number) => void;
 }) {
-  const ref = useRef<HTMLButtonElement>(null);
+  // The same element in both modes — the drag wiring is attached to it once,
+  // and a pill that became another element would come back without it.
+  const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => { if (ref.current) addTouchDragSupport(ref.current); }, []);
 
@@ -411,20 +418,37 @@ function TagPill({ tag, index, selected, scratch, onSelect, onReorder }: {
     };
   }, [index, tag, scratch, onReorder]);
 
+  // The bin: a 24 px circle, pulled into the pill's own vertical padding so
+  // the row keeps its height.
+  const tool = 'inline-flex items-center justify-center w-6 h-6 -my-1 rounded-full text-muted transition-colors cursor-pointer';
   return (
-    <button
-      ref={ref}
-      type="button"
-      aria-pressed={selected}
-      // The same pin the tag filters and the tag dialog use, so a selected tag
-      // looks selected everywhere in the app.
-      class={`chip cursor-grab active:cursor-grabbing select-none ${
-        selected ? 'chip-on' : 'hoverable:border-accent hoverable:text-accent'
-      }`}
-      onClick={onSelect}
-    >
-      <TagText tag={tag} />
-    </button>
+    // The same pin the tag filters use.
+    <span ref={ref} class={`chip select-none ${editing ? 'pr-1' : 'hoverable:border-accent hoverable:text-accent'}`}>
+      {/* The name is a button in both modes, and never a direct child of the
+          pill: the chip is a flex row, whose gap would open between a group
+          and its value ("key ›  Dmajor") in one mode and not the other. It
+          covers the pill's padding on its side, so the pill is the target.
+          In edit mode the name and its pencil are ONE button that renames,
+          lit together under the pointer (the user's call). The name sits in
+          a span of its own for the same reason: the button is a flex row too. */}
+      <button
+        type="button"
+        class={`${editing ? '-ml-2.5 pl-2.5 pr-1 inline-flex items-center gap-1.5 hover:text-accent' : '-mx-2.5 px-2.5'} -my-0.5 py-0.5 rounded-full cursor-pointer transition-colors`}
+        title={editing ? t('card.tags.rename') : t('card.tags.showInLibrary', { tag: tagDisplay(tag) })}
+        onClick={editing ? onRename : onOpen}
+      >
+        <span><TagText tag={tag} /></span>
+        {editing && <PencilIcon size={12} />}
+      </button>
+      {/* Immediate, and a neutral bin: a tag taken off ONE card is put back
+          in two taps (the deletion rule of 2026-11-11). Off the whole library,
+          it is the library's tag filter that asks. */}
+      {editing && (
+        <button type="button" class={`${tool} hover:text-danger`} title={t('card.tags.remove')} aria-label={t('card.tags.remove')} onClick={onRemove}>
+          <TrashIcon size={12} />
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -438,7 +462,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   // All hooks before conditional returns
   const [isEditingName,  setIsEditingName]  = useState(false);
   const [editName,       setEditName]       = useState('');
-  const [pickedTag,      setPickedTag]      = useState<string | null>(null);
+  const [editingTags,    setEditingTags]    = useState(false);
   const [isEditingImportance, setIsEditingImportance] = useState(false);
   const [importanceDraft,     setImportanceDraft]     = useState('');
   const [importanceCtx,       setImportanceCtx]       = useState(contextDeckId ?? ''); // '' = Défaut
@@ -446,12 +470,6 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesDraft,     setNotesDraft]     = useState(card?.content.notes ?? '');
   const notesRef = useRef<HTMLTextAreaElement>(null);
-
-  // A selection only means something while the tag is still on the card. A tag
-  // removed here, or one that vanished with a state arriving from another
-  // device, must not leave the rename and remove buttons aimed at a name that
-  // no longer exists.
-  const selectedTag = pickedTag !== null && (card?.tags ?? []).includes(pickedTag) ? pickedTag : null;
 
   // One scratchpad for the whole row: which pill is being dragged, and which
   // one currently wears the drop indicator. A ref, not module state — two cards
@@ -629,6 +647,10 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const stabWindow = fsrsState?.stability !== undefined ? retentionWindowDays(fsrsState.stability, user.availabilityThreshold, user.forgettingRate ?? 1) : undefined;
   const ease       = fsrsState?.difficulty !== undefined ? (10 - fsrsState.difficulty) / 9 : undefined;
   const deckIds    = decksContainingCard(cardId, user);
+  // The tags' edit mode means nothing without a tag: the pencil goes, and the
+  // mode with it, until a tag is back.
+  const tagsEditable = (card.tags ?? []).length > 0;
+  const tagsEditing  = editingTags && tagsEditable;
   const sorted     = work ? [...work.history].sort((a, b) => a.ts - b.ts) : [];
 
   const rColor    = k >= 0.75 ? 'text-success' : k >= 0.4 ? 'text-warn' : k > 0 ? 'text-danger' : 'text-dim';
@@ -996,68 +1018,52 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       </div>
 
       {/* ── Tags ── */}
-      {/* Nothing here is revealed by hover any more (2026-09-13). The ✕ that
-          used to sit on each pill appeared on hover and on nothing else, so a
-          finger reached it only because :hover sticks to the last thing
-          tapped; and a plain tap on a pill dropped it into an edit field,
-          which put a rename one mis-tap away. A tap now selects, and selecting
-          is all it does — the actions live on the title line, as targets. */}
+      {/* A tap on a tag lists every card carrying it in the library
+          (2026-11-18, the user's design after group feedback): a tag is what a
+          card IS, and the way to its kin. Fixing one is a mode, behind the
+          pencil on the title line: on, every pill carries its own pencil
+          (rename) and bin (off this card). The + beside it adds one,
+          and a long press (a drag, with the mouse) reorders them, in either
+          mode.
+          Until then a tap SELECTED the tag for a pencil and a bin on the
+          title line (2026-09-13); before that, a tap dropped it into an edit
+          field, a rename one mis-tap away — which the mode keeps away too. */}
       <div class="space-y-2" data-tour="card-tags">
-        {/* Actions hard right, where every other section in this view keeps
-            them (the review history's "+", the metrics row above). */}
+        {/* The actions hard right, where every other section in this view
+            keeps them: the +, then the edit pencil — only with tags to edit
+            (the user's call). */}
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.tags')}</span>
           <div class="flex items-center gap-0.5 shrink-0">
-            {/* Rename and remove show with a selection rather than sitting
-                greyed out without one (the user's call, 2026-09-13): someone
-                who wants to fix a tag reaches for the tag itself first, and
-                finds the two buttons by doing exactly that. */}
-            {selectedTag !== null && (
-              <>
-                <IconButton
-                  label={t('card.tags.rename')}
-                  onClick={() => showCardTagModal(cardId, selectedTag, setPickedTag)}
-                >
-                  <PencilIcon size={14} />
-                </IconButton>
-                {/* Immediate, and a neutral bin: a tag taken off ONE card is put
-                    back in two taps (the deletion rule of 2026-11-11). Off the
-                    whole library, it is asked first (tagModal). */}
-                <IconButton
-                  class="hover:text-danger"
-                  label={t('card.tags.remove')}
-                  onClick={() => {
-                    void mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.filter(tg => tg !== selectedTag); });
-                    setPickedTag(null);
-                  }}
-                >
-                  <TrashIcon size={14} />
-                </IconButton>
-              </>
-            )}
-            <IconButton
-              label={t('card.tags.add')}
-              onClick={() => showCardTagModal(cardId, null)}
-            >
+            <IconButton label={t('card.tags.add')} onClick={() => showCardTagModal(cardId, null)}>
               <PlusIcon size={14} />
             </IconButton>
+            {tagsEditable && (
+              <IconButton
+                label={t(editingTags ? 'card.tags.editDone' : 'card.tags.edit')}
+                on={editingTags}
+                onClick={() => setEditingTags(!editingTags)}
+              >
+                <PencilIcon size={14} />
+              </IconButton>
+            )}
           </div>
         </div>
-        {(card.tags ?? []).length > 0 && (
-          <div class="flex flex-wrap items-center gap-1.5">
-            {(card.tags ?? []).map((tag, i) => (
-              <TagPill
-                key={tag}
-                tag={tag}
-                index={i}
-                selected={tag === selectedTag}
-                scratch={tagDrag}
-                onSelect={() => setPickedTag(tag === selectedTag ? null : tag)}
-                onReorder={reorderTags}
-              />
-            ))}
-          </div>
-        )}
+        {tagsEditable && <div class="flex flex-wrap items-center gap-1.5">
+          {(card.tags ?? []).map((tag, i) => (
+            <TagPill
+              key={tag}
+              tag={tag}
+              index={i}
+              editing={tagsEditing}
+              scratch={tagDrag}
+              onOpen={() => navigate({ view: 'library', tags: [[tag, 'include']] })}
+              onRename={() => showCardTagModal(cardId, tag)}
+              onRemove={() => { void mutate(s => { const c = s.cards[cardId]; if (c) c.tags = c.tags.filter(tg => tg !== tag); }); }}
+              onReorder={reorderTags}
+            />
+          ))}
+        </div>}
       </div>
 
       {/* ── Notes ── */}
