@@ -11,10 +11,11 @@ import { isTuneset } from '../services/cardTypeService';
 import { IncipitRow } from '../components/incipit';
 import { TuneIcon, CheckIcon, StarIcon } from '../components/icons';
 import { STRATEGY_ICONS } from '../components/studyModal';
-import { RATING_BUTTONS, RATING_GRID } from '../components/ratingButtons';
+import { RATING_BUTTONS, RATING_GRID, ratingButtonClass } from '../components/ratingButtons';
 import type { Deck, StudyStrategy, DeckEntry, AppState, SessionRating } from '../types';
 import { fmtDate } from '../services/dateFormat';
 import { TagText } from '../components/tagText';
+import { RatingLabel } from '../components/ratingLabel';
 
 const STRATEGY_LABEL_KEYS: Record<StudyStrategy, string> = {
   random: 'study.strategy.random', optimal: 'study.strategy.optimal', stochastic: 'study.strategy.stochastic',
@@ -369,18 +370,19 @@ export function StudyView({ deckId, cardIds, studyTitle, strategy, currentCardId
           <div class="space-y-2">
             <p class="text-xs text-dim text-center">{t(ratedEntry ? 'study.ratedHint' : 'study.ratingHint')}</p>
             <div class={RATING_GRID} data-tour="study-ratings">
-              {RATINGS.map(({ rating, key, cls, shortcut }) => (
+              {RATINGS.map((b) => { const { rating, key, shortcut } = b; return (
                 <button
                   key={rating}
-                  // Ringed in its own colour: the one given on this visit.
-                  class={`${cls} ${ratedEntry?.rating === rating ? 'ring-2 ring-current' : ''}`}
+                  // Ringed in its own colour: the one given on this visit; the
+                  // others muted.
+                  class={ratingButtonClass(b, ratedEntry?.rating)}
                   aria-pressed={ratedEntry ? ratedEntry.rating === rating : undefined}
                   title={`${t(key)} [${shortcut}]`}
                   onClick={() => logRating(rating)}
                 >
-                  {t(key)}
+                  <RatingLabel rating={rating} />
                 </button>
-              ))}
+              ); })}
             </div>
             {ratedEntry && (
               // Neutral at rest: the rating just given is put back in one tap,

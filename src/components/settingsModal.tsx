@@ -299,11 +299,6 @@ function StudySection({ ctx }: { ctx: AppContext }) {
       </div>
       <Sep />
 
-      <Row label={t('settings.weightByImportance')} hint={t('settings.weightByImportanceHint')}>
-        <Switch checked={user.weightByImportance ?? true} onChange={(v) => void saveField({ weightByImportance: v })} />
-      </Row>
-      <Sep />
-
       <Row label={t('settings.forgettingRate')} hint={t('settings.forgettingRateHint')} stacked>
         <div class="flex items-center gap-2 w-full">
           <span class="text-sm font-mono w-10 text-right tabular-nums shrink-0">×{lambdaDraft.toFixed(2)}</span>

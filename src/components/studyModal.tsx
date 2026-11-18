@@ -6,8 +6,8 @@ import { pickRandom, pickOptimal, pickStochastic, pickSequential } from '../serv
 import { buildContextualEntries } from '../services/knowledgeService';
 import { t } from '../services/i18nService';
 import { showModal, closeModal, renderModalBody, MODAL_W } from './modal';
-import { Switch, ChoiceCard } from './ui';
-import { DiceIcon, BullseyeIcon, WeightedBarsIcon, SequentialIcon, ArrowRightIcon, StudyIcon } from './icons';
+import { Switch, ChoiceCard, IconButton } from './ui';
+import { DiceIcon, BullseyeIcon, WeightedBarsIcon, SequentialIcon, ArrowRightIcon, StudyIcon, HelpIcon } from './icons';
 import type { Deck, StudyStrategy, DeckEntry } from '../types';
 
 export interface StudyModalOpts {
@@ -44,12 +44,34 @@ const STRATEGIES: Array<{ id: StudyStrategy; labelKey: string; subKey: string }>
 ];
 
 /** A labelled row around the app's one Switch (ui.tsx): the label on the left,
- *  as this dialog always had it. */
-function SwitchRow({ label, value, tour, onChange }: { label: string; value: boolean; tour?: string; onChange: (v: boolean) => void }) {
+ *  as this dialog always had it. `hint`: the settings' "?" beside the label
+ *  (settingsModal's Row), which unfolds the explanation under the row
+ *  (2026-11-18, the user's request). */
+function SwitchRow({ label, hint, value, tour, onChange }: { label: string; hint?: string; value: boolean; tour?: string; onChange: (v: boolean) => void }) {
+  const [hintOpen, setHintOpen] = useState(false);
   return (
-    <div class="flex items-center justify-between gap-3" data-tour={tour}>
-      <span class="label mb-0">{label}</span>
-      <Switch checked={value} label={label} onChange={onChange} />
+    <div data-tour={tour}>
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="label mb-0">{label}</span>
+          {hint && (
+            // A 32 px target around the 14 px drawing, its margins cancelled
+            // so that the label's line keeps its height — as in the settings.
+            <IconButton
+              label={t('settings.explain')}
+              class={`-my-2 -mx-1.5${hintOpen ? ' text-accent hover:text-accent' : ''}`}
+              aria-expanded={hintOpen}
+              onClick={() => setHintOpen(o => !o)}
+            >
+              <HelpIcon size={14} />
+            </IconButton>
+          )}
+        </div>
+        <Switch checked={value} label={label} onChange={onChange} />
+      </div>
+      {hint && hintOpen && (
+        <p class="text-xs text-dim leading-relaxed mt-2 px-3 py-2 rounded-lg border border-border bg-bg">{hint}</p>
+      )}
     </div>
   );
 }
@@ -125,11 +147,13 @@ function StudyModalBody({ entries, title, defaultContext = null, deckId }: Study
 
       <SwitchRow
         label={t('settings.weightByImportance')}
+        hint={t('study.weightByImportanceHint')}
         value={useWeight}
         onChange={v => { setUseWeight(v); void mutate(s => { s.weightByImportance = v; }); }}
       />
       <SwitchRow
         label={t('study.excludeMastered')}
+        hint={t('study.excludeMasteredHint')}
         value={exclMastered}
         tour="study-exclude"
         onChange={v => { setExclMastered(v); void mutate(s => { s.excludeMastered = v; }); }}

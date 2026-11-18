@@ -268,9 +268,9 @@ function DeckItem({ ctx, deck, depth }: { ctx: AppContext; deck: Deck; depth: nu
       {deck.entries.length > 0 && (() => {
         const user = ctx.user;
         const profileId = user.currentProfileId;
-        const w = user.weightByImportance ?? true;
-        const avail = deckAvailability(user, profileId, deck, user.cards, user.cardWorks, w);
-        const ease  = deckEase(profileId, deck, user.cards, user.cardWorks, w);
+        // Weighted by importance, always (deck.tsx).
+        const avail = deckAvailability(user, profileId, deck, user.cards, user.cardWorks);
+        const ease  = deckEase(profileId, deck, user.cards, user.cardWorks);
         return (
           <span class="flex gap-0.5 items-center shrink-0">
             <span class={`w-2 h-2 rounded-full ${availabilityColor(avail, ease === 0)}`} title={ease === 0 ? t('deck.neverReviewed') : t('deck.dot.recall', { pct: pct(avail) })} />

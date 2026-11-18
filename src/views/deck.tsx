@@ -27,7 +27,6 @@ export function DeckView({ deckId }: { deckId: string }) {
   const user      = appState.value;
   const deck      = user.decks[deckId];
   const profileId = user.currentProfileId;
-  const w         = user.weightByImportance ?? true;
 
   // Inline name editing
   const [isEditingName, setIsEditingName] = useState(false);
@@ -55,9 +54,12 @@ export function DeckView({ deckId }: { deckId: string }) {
   if (!deck) return <div class="flex flex-col h-full view-enter">{t('deck.notFound')}</div>;
 
   // ── Metrics ──────────────────────────────────────────────────────────────────
-  const avail       = deckAvailability(user, profileId, deck, user.cards, user.cardWorks, w);
-  const stab        = deckStability(profileId, deck, user.cards, user.cardWorks, w);
-  const ease        = deckEase(profileId, deck, user.cards, user.cardWorks, w);
+  // Always weighted by importance (2026-11-18, the user's call): what a deck
+  // says it knows is what its cards weigh in it. "Weight by importance" is a
+  // study option now, about the draw only (studyModal.tsx).
+  const avail       = deckAvailability(user, profileId, deck, user.cards, user.cardWorks);
+  const stab        = deckStability(profileId, deck, user.cards, user.cardWorks);
+  const ease        = deckEase(profileId, deck, user.cards, user.cardWorks);
   const stabWindow  = stab > 0 ? retentionWindowDays(stab, user.availabilityThreshold, user.forgettingRate ?? 1) : 0;
   const candidates  = deck.entries.filter(e => !isAvailable(user, user.cardWorks[`${profileId}:${e.cardId}`])).length;
   const noCards     = deck.entries.length === 0;
