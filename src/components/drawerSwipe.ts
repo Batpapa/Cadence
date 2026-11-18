@@ -21,6 +21,10 @@ import { touchDragActive } from '../utils';
 // reaches the page, or is cancelled once the system claims it — hence a zone
 // wider than the system's, and a cancel that puts the drawer back.
 
+/** Off for now (2026-11-19): too awkward to use as it stands, to be reworked.
+ *  Everything else stays wired; true turns the gesture back on. */
+const DRAWER_SWIPE_ENABLED = false;
+
 /** How far from the left edge an opening swipe may start, in the touch's
  *  pixels. Measured on the Android 17 emulator, gesture navigation
  *  (2026-11-18): a swipe starting 23 px in is the system's Back (the app went
@@ -67,7 +71,7 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
 
   useEffect(() => {
     const el = area.current;
-    if (!el) return;
+    if (!DRAWER_SWIPE_ENABLED || !el) return;
     let state: 'idle' | 'pending' | 'dragging' = 'idle';
     let opening = false;
     let x0 = 0, y0 = 0, t0 = 0, width = 1, dx = 0;
