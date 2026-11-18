@@ -3,7 +3,8 @@ import { cardOfTuneId } from '../detections';
 import type { ComponentChild } from 'preact';
 import type { AppContext, SessionRating } from '../../types';
 import { t } from '../../services/i18nService';
-import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon, CrossIcon, CheckIcon, NotesIcon } from '../../components/icons';
+import { HeartIcon, HourglassIcon, ChevronDownIcon, PencilIcon, TrashIcon, CheckIcon, NotesIcon, RatingIcon } from '../../components/icons';
+import { RatingLabel } from '../../components/ratingLabel';
 import { showDetectionNotesModal } from './AnalysisNotesModal';
 import { IconButton } from '../../components/ui';
 import { isCardId } from '../recognition/cardIndex';
@@ -19,7 +20,7 @@ import { reviewEntryIndex } from '../../services/reviewEntries';
 import { detectionReviewId, reviewEntryTs } from '../reviewLink';
 import { currentPick, provisionalEnd } from '../detectionState';
 import { fmtDateTime } from '../../services/dateFormat';
-import { RATING_BUTTONS } from '../../components/ratingButtons';
+import { RATING_BUTTONS, ratingButtonClass } from '../../components/ratingButtons';
 import { tempoText } from './tempoText';
 import { analysisTempo } from './analysisView';
 import { approxTempo } from '../tempoSummary';
@@ -164,8 +165,8 @@ function fmtLongTime(s: number): string {
 // "I played it at this session" = one review entry at the detection's end
 // time, in the same history the card view and FSRS read. The entry names the
 // detection it came from, and that is what tells this card its rating is
-// already filed: when one is found, the four rating buttons give way to a
-// single remove control. The instant alone used to do that job — see
+// already filed: when one is found, its button is ringed, and tapping it again
+// takes it back. The instant alone used to do that job — see
 // services/reviewEntries.ts for everything that broke while it did.
 
 // `btn` is the tint the study screen's rating buttons use. These used to be
@@ -176,18 +177,16 @@ function fmtLongTime(s: number): string {
 // circle is the 24 px drawing; the button around it is the 32 px target
 // (styles.css, .icon-disc), so the look did not grow, the finger's room did.
 //
-// The four levels keep four drawings. "Again" and "easy" are the app's cross
-// and tick; △ and ○ stay as text, since icons.tsx has no plain triangle or
-// ring (its warning triangle carries a "!", which would say something else).
-const RATING_GLYPHS: Array<{ rating: SessionRating; glyph: ComponentChild; cls: string; btn: string; labelKey: string }> = [
-  { rating: 'again', glyph: <CrossIcon size={12} />, cls: 'text-danger',  btn: 'bg-danger/10 group-hover:bg-danger/20 text-danger',    labelKey: 'rating.again' },
-  { rating: 'hard',  glyph: '△',                    cls: 'text-warn',    btn: 'bg-warn/10 group-hover:bg-warn/20 text-warn',          labelKey: 'rating.hard' },
-  { rating: 'good',  glyph: '○',                    cls: 'text-accent',  btn: 'bg-accent/10 group-hover:bg-accent/20 text-accent',    labelKey: 'rating.good' },
-  { rating: 'easy',  glyph: <CheckIcon size={12} />, cls: 'text-success', btn: 'bg-success/10 group-hover:bg-success/20 text-success', labelKey: 'rating.easy' },
+// The four levels keep four drawings: RatingIcon's ✗ △ ○ ✓, the same SVGs as
+// every other rating button (2026-11-18). △ and ○ were text glyphs until
+// then, beside two icons: neither the same size nor the same layout.
+// `muted`: once another rating is given, as the study buttons (ratingButtons.ts).
+const RATING_GLYPHS: Array<{ rating: SessionRating; btn: string; muted: string; labelKey: string }> = [
+  { rating: 'again', btn: 'bg-danger/10 group-hover:bg-danger/20 text-danger',    muted: 'bg-elevated text-dim group-hover:bg-danger/10 group-hover:text-danger',   labelKey: 'rating.again' },
+  { rating: 'hard',  btn: 'bg-warn/10 group-hover:bg-warn/20 text-warn',          muted: 'bg-elevated text-dim group-hover:bg-warn/10 group-hover:text-warn',       labelKey: 'rating.hard' },
+  { rating: 'good',  btn: 'bg-accent/10 group-hover:bg-accent/20 text-accent',    muted: 'bg-elevated text-dim group-hover:bg-accent/10 group-hover:text-accent',   labelKey: 'rating.good' },
+  { rating: 'easy',  btn: 'bg-success/10 group-hover:bg-success/20 text-success', muted: 'bg-elevated text-dim group-hover:bg-success/10 group-hover:text-success', labelKey: 'rating.easy' },
 ];
-
-/** A rating's glyph alone — the Focus view's buttons once their words go. */
-const glyphOf = (rating: SessionRating): ComponentChild => RATING_GLYPHS.find(g => g.rating === rating)?.glyph ?? '';
 
 /** How long the "remove" control ignores taps after a rating is given. It
  *  appears where the rating buttons were, so the second tap of a double tap
@@ -234,58 +233,68 @@ export function ReviewLogControl({ cardId, reviewId, ts, ctx, onRated }: {
   const ratedAt = useRef(0);
   const existing = ratingOf(cardId, reviewId, ts);
 
-  if (existing) {
-    const glyph = RATING_GLYPHS.find(r => r.rating === existing.rating);
-    return (
-      <span class="inline-flex items-center gap-1.5">
-        <button
-          class="text-xs text-muted cursor-pointer inline-flex items-center gap-1 min-h-8 hover:text-danger"
-          title={fmtDateTime(existing.ts, { seconds: true })}
-          onClick={() => {
-            if (Date.now() - ratedAt.current < REMOVE_GUARD_MS) return;
-            void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1));
-          }}
-        >
-          <span class={`inline-flex items-center ${glyph?.cls ?? ''}`}>{glyph?.glyph ?? ''}</span>
-          <span class="hover:underline">{t('sessions.review.remove')}</span>
-        </button>
-      </span>
-    );
-  }
-
-  // Nothing to offer: no instant means no place in time to file a rating at.
-  // The card's own history is where one can still be added by hand.
-  if (ts === null) return null;
+  // Nothing to offer: no rating, and no instant to file one at. The card's
+  // own history is where one can still be added by hand. A rating already
+  // given still shows, to be changed or taken back.
+  if (!existing && ts === null) return null;
 
   // The glyph alone, its name in the tooltip: a row of four labelled buttons
-  // was tried and outweighed the card itself (2026-10-09, user's call).
+  // was tried and outweighed the card itself (2026-10-09, user's call). The
+  // four stay once one is given (2026-11-18, the user's call — the Focus
+  // view's grid already worked so): the given one ringed, another replacing
+  // it, the same one again taking it back. It used to give way to a single
+  // "remove" link, so changing a rating meant removing it first.
   return (
     <span class="inline-flex items-center gap-1.5">
       <span class="text-xs text-dim">{t('sessions.review.log')}</span>
       <span class="inline-flex items-center">
-        {RATING_GLYPHS.map(({ rating, glyph, btn, labelKey }) => (
-          <button
-            key={rating}
-            class="group icon-btn hover:bg-transparent"
-            title={t(labelKey)}
-            aria-label={t(labelKey)}
-            onClick={() => {
-              ratedAt.current = Date.now();
-              onRated?.();
-              void ctx.mutate(s => {
-                const key = `${s.currentProfileId}:${cardId}`;
-                if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
-                s.cardWorks[key]!.history.push({ ts, rating, id: reviewId });
-                s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
-              }).then(() => setTick(x => x + 1));
-            }}
-          >
-            <span class={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition-colors ${btn}`}>{glyph}</span>
-          </button>
-        ))}
+        {RATING_GLYPHS.map(({ rating, btn, muted, labelKey }) => {
+          const given = existing?.rating === rating;
+          return (
+            <button
+              key={rating}
+              class="group icon-btn hover:bg-transparent"
+              // The one given carries its date, as the old remove link did.
+              title={given ? `${t(labelKey)} · ${fmtDateTime(existing!.ts, { seconds: true })}` : t(labelKey)}
+              aria-label={t(labelKey)}
+              aria-pressed={existing ? given : undefined}
+              onClick={() => {
+                if (!existing) onRated?.();
+                void giveRating(ctx, cardId, reviewId, ts, rating, existing?.rating, ratedAt).then(() => setTick(x => x + 1));
+              }}
+            >
+              <span class={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center transition-colors ${given ? `${btn} ring-2 ring-current` : existing ? muted : btn}`}><RatingIcon rating={rating} size={14} /></span>
+            </button>
+          );
+        })}
       </span>
     </span>
   );
+}
+
+/** A tap on a rating, as both ways of giving one take it: the rating already
+ *  given taken back, another one replacing it — the same entry, its id and
+ *  instant kept — or a new one filed. `ratedAt` guards the take-back: the
+ *  second tap of a double tap would remove what the first just gave. */
+function giveRating(
+  ctx: AppContext, cardId: string, reviewId: string, ts: number | null,
+  rating: SessionRating, given: SessionRating | undefined, ratedAt: { current: number },
+): Promise<void> {
+  if (given === rating) {
+    if (Date.now() - ratedAt.current < REMOVE_GUARD_MS) return Promise.resolve();
+    return removeRating(ctx, cardId, reviewId, ts);
+  }
+  ratedAt.current = Date.now();
+  return ctx.mutate(s => {
+    const key = `${s.currentProfileId}:${cardId}`;
+    if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
+    const h = s.cardWorks[key]!.history;
+    const i = reviewEntryIndex(h, reviewId, ts);
+    if (i !== -1) { h[i]!.rating = rating; return; }
+    if (ts === null) return;
+    h.push({ ts, rating, id: reviewId });
+    h.sort((a, b) => a.ts - b.ts);
+  });
 }
 
 // ── How the Focus view lays its four rating buttons out (2026-10-30) ─────────
@@ -419,25 +428,8 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
   if (!shown) return null;
 
   const rate = (rating: SessionRating) => {
-    if (existing?.rating === rating) {
-      // The second tap of a double tap would take straight back what the
-      // first just gave — the same guard as ReviewLogControl's.
-      if (Date.now() - ratedAt.current < REMOVE_GUARD_MS) return;
-      void removeRating(ctx, cardId, reviewId, ts).then(() => setTick(x => x + 1));
-      return;
-    }
-    ratedAt.current = Date.now();
     if (!existing) onRated?.();
-    void ctx.mutate(s => {
-      const key = `${s.currentProfileId}:${cardId}`;
-      if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
-      const h = s.cardWorks[key]!.history;
-      const i = reviewEntryIndex(h, reviewId, ts);
-      if (i !== -1) { h[i]!.rating = rating; return; }
-      if (ts === null) return;
-      h.push({ ts, rating, id: reviewId });
-      h.sort((a, b) => a.ts - b.ts);
-    }).then(() => setTick(x => x + 1));
+    void giveRating(ctx, cardId, reviewId, ts, rating, existing?.rating, ratedAt).then(() => setTick(x => x + 1));
   };
 
   return (
@@ -447,22 +439,27 @@ export function ReviewRatingGrid({ cardId, reviewId, ts, ctx, onRated }: {
       <p class="text-xs text-dim text-center">{t('study.ratingHint')}</p>
       {/* Laid out by ratingFit. */}
       <div ref={gridRef} class={`relative grid gap-2 ${fit.cols === 4 ? 'grid-cols-4' : fit.cols === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        {RATING_BUTTONS.map(({ rating, key, cls }) => (
+        {RATING_BUTTONS.map((b) => { const { rating, key } = b; return (
           <button
             key={rating}
-            class={`${cls} min-w-0 ${existing?.rating === rating ? 'ring-2 ring-current' : ''}`}
+            // Ringed in its own colour: the one given; the others muted.
+            class={`${ratingButtonClass(b, existing?.rating)} min-w-0`}
             // The one given carries its date, as the old remove button did.
             title={existing?.rating === rating ? `${t(key)} · ${fmtDateTime(existing.ts, { seconds: true })}` : t(key)}
             aria-label={t(key)}
             aria-pressed={existing ? existing.rating === rating : undefined}
             onClick={() => rate(rating)}
           >
-            {fit.bare ? glyphOf(rating) : t(key)}
+            {/* The study screen's label, drawing and word — the drawing alone
+                once the words no longer fit. */}
+            <RatingLabel rating={rating} bare={fit.bare} />
           </button>
-        ))}
+        ); })}
+        {/* What ratingFit measures: each label as a button would draw it,
+            drawing included. */}
         <span class="absolute w-0 h-0 overflow-hidden invisible pointer-events-none" aria-hidden="true">
-          {RATING_BUTTONS.map(({ rating, key }) => (
-            <span key={rating} data-rating-word class="block w-max whitespace-nowrap text-sm font-semibold">{t(key)}</span>
+          {RATING_BUTTONS.map(({ rating }) => (
+            <span key={rating} data-rating-word class="block w-max whitespace-nowrap text-sm font-semibold"><RatingLabel rating={rating} /></span>
           ))}
         </span>
       </div>

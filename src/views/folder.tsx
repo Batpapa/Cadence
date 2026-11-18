@@ -352,7 +352,6 @@ export function FolderView({ folderId }: { folderId: string | null }) {
   const user      = appState.value;
   const folder    = folderId ? user.folders[folderId] : null;
   const profileId = user.currentProfileId;
-  const w         = user.weightByImportance ?? true;
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName,      setEditName]      = useState('');
@@ -679,8 +678,9 @@ export function FolderView({ folderId }: { folderId: string | null }) {
           <div class="space-y-1">
             {deckIds.map(deckId => {
               const deck = user.decks[deckId]; if (!deck) return null;
-              const avail   = deckAvailability(user, profileId, deck, user.cards, user.cardWorks, w);
-              const ease    = deckEase(profileId, deck, user.cards, user.cardWorks, w);
+              // Weighted by importance, always (deck.tsx).
+              const avail   = deckAvailability(user, profileId, deck, user.cards, user.cardWorks);
+              const ease    = deckEase(profileId, deck, user.cards, user.cardWorks);
               const lastTs  = deck.entries.reduce<number | undefined>((max, e) => {
                 const ts = user.cardWorks[`${profileId}:${e.cardId}`]?.history.at(-1)?.ts;
                 return ts !== undefined && (max === undefined || ts > max) ? ts : max;

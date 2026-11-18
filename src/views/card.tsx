@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'preact/hooks';
-import { Fragment } from 'preact';
+import { Fragment, render } from 'preact';
+import { RatingLabel } from '../components/ratingLabel';
 import { appState, navigate, mutate, leaveDeletedPage } from '../store';
 import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets';
 import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
@@ -128,7 +129,9 @@ function mkSessionForm(defaultTs: number, defaultRating: SessionRating) {
     btn.className = def.rating === defaultRating
       ? `btn border text-xs py-1.5 transition-colors ${def.activeClass}`
       : `${IDLE_BTN} transition-colors`;
-    btn.textContent = t(def.key);
+    // The study buttons' label, drawing and word (components/ratingLabel).
+    // Never unmounted: the whole form goes with its dialog.
+    render(<RatingLabel rating={def.rating} />, btn);
     btn.onclick = () => {
       selected = def.rating;
       ratingRow.querySelectorAll('button').forEach(b => { (b as HTMLElement).className = `${IDLE_BTN} transition-colors`; });
@@ -140,27 +143,29 @@ function mkSessionForm(defaultTs: number, defaultRating: SessionRating) {
   return { body, dt, dtHost, getRating: () => selected };
 }
 
+/** Logs a review by hand (`add`) or corrects one (`edit`). Deleting one is no
+ *  longer here: it is the bin on its row of the history list (2026-11-18). */
 function openSessionModal(
+  mode: 'add' | 'edit',
   defaultTs: number,
   defaultRating: SessionRating,
   onSave: (ts: number, rating: SessionRating) => void,
-  onDelete?: () => void,
 ) {
   const { body, dt, dtHost, getRating } = mkSessionForm(defaultTs, defaultRating);
   // The field is a Preact tree of its own: down with the dialog, whichever way
   // it goes (a footer button closes without running onDismiss).
   const close = () => { closeModal(); dt.unmount(); };
-  showModal(onDelete ? t('card.logReview.editTitle') : t('card.logReview.title'), body, [
-    // An old review is costly to redo — its date and rating are gone, and the
-    // schedule is replayed without it — so it is asked first (the deletion
-    // rule of 2026-11-11). The review study just took stays immediate there.
-    ...(onDelete ? [{ label: '', icon: iconElement(TrashIcon), danger: true, align: 'start' as const, onClick: () => {
-      close();
-      confirmModal(t('study.deleteReview'), t('card.logReview.deleteConfirm'), t('common.delete'), onDelete);
-    } }] : []),
-    { label: t('common.cancel'), onClick: close },
+  // The primary alone, no Cancel (the user's call, 2026-11-18): the ✕, Escape
+  // and a click outside close it.
+  showModal(mode === 'edit' ? t('card.logReview.editTitle') : t('card.logReview.title'), body, [
     { label: t('common.save'), primary: true, onClick: () => {
-      const ts = fieldValueToDate(dt.getValue())?.getTime() ?? defaultTs;
+      // The field holds minutes; a review's instant often has seconds and
+      // milliseconds (a detection's rating is filed at the instant its tune
+      // ended). A date left as it was keeps that instant: read back from the
+      // field it would come out a few seconds off — a review quietly moved,
+      // and one given from an analysis no longer found there (2026-11-18).
+      const field = dt.getValue();
+      const ts = field === toInputVal(defaultTs) ? defaultTs : (fieldValueToDate(field)?.getTime() ?? defaultTs);
       close(); onSave(ts, getRating());
     }},
   ], { onDismiss: () => dt.unmount() });
@@ -1277,7 +1282,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
               back — only with reviews to list (as the tags' pencil). */}
           <div class="flex items-center gap-0.5 shrink-0">
             <IconButton onClick={() =>
-              openSessionModal(Date.now(), 'good', (ts, rating) => mutate(s => {
+              openSessionModal('add', Date.now(), 'good', (ts, rating) => mutate(s => {
                 const key = `${s.currentProfileId}:${cardId}`;
                 if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
                 s.cardWorks[key]!.history.push({ ts, rating });
@@ -1310,7 +1315,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
             // detection's rating, reviewEntries.ts), which then shows the
             // corrected rating (the user's call, 2026-11-18). A new date makes
             // it another review, filed by hand — no id, as before.
-            onEdit={(entry) => openSessionModal(entry.ts, entry.rating,
+            onEdit={(entry) => openSessionModal('edit', entry.ts, entry.rating,
               (ts, rating) => mutate(s => {
                 const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
                 const i = h?.findIndex(e => e.ts === entry.ts && e.rating === entry.rating) ?? -1;
@@ -1320,15 +1325,16 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
                 h.sort((a, b) => a.ts - b.ts);
               }),
             )}
-            // Asked first, as the edit dialog's bin did: an old review is
-            // costly to redo (the deletion rule of 2026-11-11).
-            onDelete={(entry) => confirmModal(t('study.deleteReview'), t('card.logReview.deleteConfirm'), t('common.delete'), () => {
+            // Immediate, unasked (the user's call, 2026-11-18): the list's
+            // bin sits on its row, under the eye, in a mode turned on to fix
+            // the history.
+            onDelete={(entry) => {
               void mutate(s => {
                 const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
                 const i = h?.findIndex(e => e.ts === entry.ts && e.rating === entry.rating) ?? -1;
                 if (h && i !== -1) h.splice(i, 1);
               });
-            })}
+            }}
           />
         ) : (
           <ReviewSquares entries={sorted} onOpen={() => setHistoryAsList(true)} />

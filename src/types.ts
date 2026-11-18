@@ -269,6 +269,11 @@ export interface User {
 
   // Study settings
   availabilityThreshold: number;
+  /** The study modal's "Weight by importance": the Optimal and Stochastic
+   *  draws favour important cards (default true). STUDY DRAW ONLY since
+   *  2026-11-18 (the user's call) — it used to weight every deck, folder and
+   *  sidebar metric too, and its switch sat in the general settings as well.
+   *  The metrics are always weighted now. Name kept: it is serialized. */
   weightByImportance: boolean;
   /** Exclude mastered cards from study picks (default true). Off = study as if
    *  the mastery threshold were 100% — study flow only, deck metrics keep the

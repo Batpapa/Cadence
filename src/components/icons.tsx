@@ -1070,6 +1070,24 @@ export function EyeOffIcon({ size = 14 }: { size?: number }) {
 }
 
 /** A cross — "empty this field", inside a search box. */
+/** The four review ratings' drawings, ✗ △ ○ ✓ (2026-11-18, the user's call:
+ *  one set of SVGs wherever a rating is drawn, all behaving alike). They used
+ *  to be two icons and two text glyphs — △ and ○ — which neither had the same
+ *  size nor the same layout: text centres by text-align, an SVG is a block
+ *  under the base stylesheet. Drawn on one grid: the same stroke, and each
+ *  shape filling about the same 14 units of the 24, so that at one size the
+ *  four read as one size. */
+export function RatingIcon({ rating, size = 14 }: { rating: 'again' | 'hard' | 'good' | 'easy'; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      {rating === 'again' && <><path d="M6.5 6.5l11 11" /><path d="M17.5 6.5l-11 11" /></>}
+      {rating === 'hard' && <path d="M12 5L19.5 18H4.5z" />}
+      {rating === 'good' && <circle cx="12" cy="12" r="7" />}
+      {rating === 'easy' && <path d="M5 12.5l4.5 4.5L19 7.5" />}
+    </svg>
+  );
+}
+
 export function CrossIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
