@@ -1080,7 +1080,10 @@ export function EyeOffIcon({ size = 14 }: { size?: number }) {
 export function RatingIcon({ rating, size = 14 }: { rating: 'again' | 'hard' | 'good' | 'easy'; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      {rating === 'again' && <><path d="M6.5 6.5l11 11" /><path d="M17.5 6.5l-11 11" /></>}
+      {/* The cross a little wider than the others' 14 units: two diagonals
+          cover less than a ring or a triangle of the same span, and at 11
+          it read smaller than its three neighbours (user's screenshot). */}
+      {rating === 'again' && <><path d="M5.5 5.5l13 13" /><path d="M18.5 5.5l-13 13" /></>}
       {rating === 'hard' && <path d="M12 5L19.5 18H4.5z" />}
       {rating === 'good' && <circle cx="12" cy="12" r="7" />}
       {rating === 'easy' && <path d="M5 12.5l4.5 4.5L19 7.5" />}

@@ -2,6 +2,7 @@ import { IconButton } from './ui';
 import { PencilIcon, TrashIcon } from './icons';
 import { t } from '../services/i18nService';
 import { fmtDate, fmtDateTime } from '../services/dateFormat';
+import { ratingWord } from './ratingLabel';
 import type { SessionEntry } from '../types';
 
 // ── A card's review history, two ways (2026-11-18) ───────────────────────────
@@ -28,7 +29,7 @@ export function ReviewSquares({ entries, onOpen }: { entries: readonly SessionEn
         <div
           key={i}
           style={{ ...square(entry.rating, 10), cursor: 'pointer' }}
-          title={`${fmtDate(entry.ts)} — ${t(`rating.${entry.rating}`)}`}
+          title={`${fmtDate(entry.ts)} — ${ratingWord(entry.rating)}`}
           onClick={onOpen}
         />
       ))}
@@ -51,7 +52,7 @@ export function ReviewList({ entries, onEdit, onDelete }: {
         <div key={`${e.ts}-${i}`} class="flex items-center gap-2 px-3 py-0.5 rounded border border-border">
           <div style={square(e.rating, 10)} />
           <span class="text-sm text-primary tabular-nums">{fmtDateTime(e.ts)}</span>
-          <span class="text-sm text-muted flex-1 min-w-0 truncate">{t(`rating.${e.rating}`)}</span>
+          <span class="text-sm text-muted flex-1 min-w-0 truncate">{ratingWord(e.rating)}</span>
           <IconButton label={t('card.logReview.editTitle')} onClick={() => onEdit(e)}>
             <PencilIcon size={14} />
           </IconButton>
