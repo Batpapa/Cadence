@@ -23,6 +23,7 @@ import { cardAvailability, retentionWindowDays, replayFSRS } from '../services/k
 import { fetchTuneById, applyTheSessionName, applyTheSessionAliases, applyTheSessionAbc, applyTheSessionImportance, applyTheSessionMigration, fetchSet, buildSetCards, parseSetExternalId, findByExternalId, type TuneResult } from '../services/theSessionService';
 import { showDuplicateCardsModal } from '../components/duplicateCardModal';
 import { showCardTagModal } from '../components/tagModal';
+import { ReviewSquares, ReviewList } from '../components/reviewHistory';
 import { tagDisplay } from '../services/tagGroups';
 import { showAliasModal } from '../components/aliasModal';
 import { cardAliases } from '../services/aliasService';
@@ -35,7 +36,7 @@ import { t } from '../services/i18nService';
 import { CustomSelect } from '../components/customSelect';
 import { showDeckPickerPopover } from '../components/deckSelector';
 import type { Card, SessionRating } from '../types';
-import { fmtDate, fieldValueToDate } from '../services/dateFormat';
+import { fieldValueToDate } from '../services/dateFormat';
 import { mountDateField } from '../components/dateField';
 import { TagText } from '../components/tagText';
 
@@ -87,8 +88,6 @@ function formatDays(d: number): string {
   return t('common.durationLessThanDay');
 }
 
-const RATING_COLORS: Record<string, string> = { again: 'var(--color-danger)', hard: 'var(--color-warn)', good: 'var(--color-accent)', easy: 'var(--color-success)' };
-const RATING_LABELS: Record<string, string> = { again: 'Again', hard: 'Hard', good: 'Good', easy: 'Easy' };
 const RATING_DEFS: Array<{ rating: SessionRating; key: string; activeClass: string }> = [
   { rating: 'again', key: 'rating.again', activeClass: 'bg-danger/20 text-danger border-danger/40' },
   { rating: 'hard',  key: 'rating.hard',  activeClass: 'bg-warn/20 text-warn border-warn/40' },
@@ -463,6 +462,7 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
   const [isEditingName,  setIsEditingName]  = useState(false);
   const [editName,       setEditName]       = useState('');
   const [editingTags,    setEditingTags]    = useState(false);
+  const [historyAsList,  setHistoryAsList]  = useState(false);
   const [isEditingImportance, setIsEditingImportance] = useState(false);
   const [importanceDraft,     setImportanceDraft]     = useState('');
   const [importanceCtx,       setImportanceCtx]       = useState(contextDeckId ?? ''); // '' = Défaut
@@ -1273,38 +1273,66 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       <div class="space-y-2" data-tour="card-history">
         <div class="flex items-center justify-between">
           <span class="section-title">{t('card.section.reviewHistory')}</span>
-          <IconButton onClick={() =>
-            openSessionModal(Date.now(), 'good', (ts, rating) => mutate(s => {
-              const key = `${s.currentProfileId}:${cardId}`;
-              if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
-              s.cardWorks[key]!.history.push({ ts, rating });
-              s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
-            }))
-          } label={t('card.logReview.add')}>
-            <PlusIcon size={14} />
-          </IconButton>
-        </div>
-        {sorted.length > 0 && (
-          <div class="flex flex-wrap gap-[3px]">
-            {sorted.map((entry, i) => {
-              const originalIndex = work!.history.findIndex(e => e.ts === entry.ts && e.rating === entry.rating);
-              return (
-                <div
-                  key={i}
-                  style={{ width: '10px', height: '10px', borderRadius: '2px', background: RATING_COLORS[entry.rating] ?? 'var(--color-dim)', opacity: 0.75, cursor: 'pointer', flexShrink: 0 }}
-                  title={`${fmtDate(entry.ts)} — ${RATING_LABELS[entry.rating] ?? entry.rating}`}
-                  onClick={() => openSessionModal(entry.ts, entry.rating,
-                    (ts, rating) => mutate(s => {
-                      const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
-                      if (h) { h.splice(originalIndex, 1, { ts, rating }); h.sort((a, b) => a.ts - b.ts); }
-                    }),
-                    () => mutate(s => { s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history.splice(originalIndex, 1); }),
-                  )}
-                />
-              );
-            })}
+          {/* The +, then the pencil that switches the squares to the list and
+              back — only with reviews to list (as the tags' pencil). */}
+          <div class="flex items-center gap-0.5 shrink-0">
+            <IconButton onClick={() =>
+              openSessionModal(Date.now(), 'good', (ts, rating) => mutate(s => {
+                const key = `${s.currentProfileId}:${cardId}`;
+                if (!s.cardWorks[key]) s.cardWorks[key] = { profileId: s.currentProfileId, cardId, history: [] };
+                s.cardWorks[key]!.history.push({ ts, rating });
+                s.cardWorks[key]!.history.sort((a, b) => a.ts - b.ts);
+              }))
+            } label={t('card.logReview.add')}>
+              <PlusIcon size={14} />
+            </IconButton>
+            {sorted.length > 0 && (
+              <IconButton
+                label={t(historyAsList ? 'card.history.squares' : 'card.history.list')}
+                on={historyAsList}
+                onClick={() => setHistoryAsList(!historyAsList)}
+              >
+                <PencilIcon size={14} />
+              </IconButton>
+            )}
           </div>
-        )}
+        </div>
+        {/* The squares, or the list where each review is fixed or removed
+            (components/reviewHistory.tsx). */}
+        {sorted.length > 0 && (historyAsList ? (
+          <ReviewList
+            entries={sorted}
+            // Found again by its instant and rating at the moment of the
+            // action, not by an index taken when the list was drawn: the
+            // history may have moved since (another edit, a sync).
+            // The rating alone corrected, the review stays the one it was:
+            // it keeps the id that ties it to where it was given (a
+            // detection's rating, reviewEntries.ts), which then shows the
+            // corrected rating (the user's call, 2026-11-18). A new date makes
+            // it another review, filed by hand — no id, as before.
+            onEdit={(entry) => openSessionModal(entry.ts, entry.rating,
+              (ts, rating) => mutate(s => {
+                const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
+                const i = h?.findIndex(e => e.ts === entry.ts && e.rating === entry.rating) ?? -1;
+                if (!h || i === -1) return;
+                const id = ts === entry.ts ? h[i]!.id : undefined;
+                h.splice(i, 1, id !== undefined ? { ts, rating, id } : { ts, rating });
+                h.sort((a, b) => a.ts - b.ts);
+              }),
+            )}
+            // Asked first, as the edit dialog's bin did: an old review is
+            // costly to redo (the deletion rule of 2026-11-11).
+            onDelete={(entry) => confirmModal(t('study.deleteReview'), t('card.logReview.deleteConfirm'), t('common.delete'), () => {
+              void mutate(s => {
+                const h = s.cardWorks[`${s.currentProfileId}:${cardId}`]?.history;
+                const i = h?.findIndex(e => e.ts === entry.ts && e.rating === entry.rating) ?? -1;
+                if (h && i !== -1) h.splice(i, 1);
+              });
+            })}
+          />
+        ) : (
+          <ReviewSquares entries={sorted} onOpen={() => setHistoryAsList(true)} />
+        ))}
       </div>
     </div>
   );
