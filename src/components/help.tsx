@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import type { AppContext, Route } from '../types';
+import type { AppContext, Route, SessionRating } from '../types';
 import { showModal, renderModalBody, MODAL_W } from './modal';
 import { t } from '../services/i18nService';
 import { CARD_TYPE_TUNE, isTuneset } from '../services/cardTypeService';
@@ -9,7 +9,8 @@ import { liveScreenActive, importScreenActive } from '../session/ui/sessionModul
 import { setDetectionOn } from '../session/detections';
 import { EXTENSIONS, type ExtensionId, theSessionOffered, irishTuneInfoOffered, tuneAnalyserOffered, trendingOffered } from '../services/extensions';
 import { offeredModules } from './pinnedModule';
-import { MusicNoteIcon, CheckIcon } from './icons';
+import { MusicNoteIcon, CheckIcon, RatingIcon } from './icons';
+import { ratingWord } from './ratingLabel';
 import { Segmented } from './ui';
 import { offeredScenarios, scenarioDone, anyScenarioPending, type Scenario } from '../walkthrough/scenarios';
 
@@ -242,12 +243,16 @@ function getGuideSteps(): HelpSection[] {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-/** Help strings carry two marks and nothing else: `**bold**` for what a reader
- *  scans for — a button's label, the term being defined — and a backtick span
- *  for something typed or pressed exactly as written, a key or a bit of markup.
- *  Backtick spans are cut out first and never parsed further, which is what
- *  lets a line show `**gras**` literally. Built as nodes rather than HTML: these
- *  are translations, and nothing in them should be able to become markup. */
+/** Help strings carry three marks and nothing else: `**bold**` for what a
+ *  reader scans for — a button's label, the term being defined — a backtick
+ *  span for something typed or pressed exactly as written, a key or a bit of
+ *  markup, and `[[again]]` `[[hard]]` `[[good]]` `[[easy]]` for a rating's
+ *  drawing — the very SVG its buttons show (RatingIcon), in its button's
+ *  colour, where the help used to print ✗ △ ○ ✓ as text (2026-11-18, the
+ *  user's call). Backtick spans are cut out first and never parsed further,
+ *  which is what lets a line show `**gras**` literally. Built as nodes rather
+ *  than HTML: these are translations, and nothing in them should be able to
+ *  become markup. */
 function Rich({ text }: { text: string }) {
   const out: ComponentChildren[] = [];
   text.split(/(`[^`]+`)/).forEach((part, i) => {
@@ -261,13 +266,33 @@ function Rich({ text }: { text: string }) {
     }
     part.split(/(\*\*[^*]+\*\*)/).forEach((seg, j) => {
       if (seg.length > 4 && seg.startsWith('**') && seg.endsWith('**')) {
-        out.push(<strong key={`${i}-${j}`} class="font-semibold text-primary">{seg.slice(2, -2)}</strong>);
+        out.push(<strong key={`${i}-${j}`} class="font-semibold text-primary">{withRatings(seg.slice(2, -2))}</strong>);
       } else if (seg) {
-        out.push(seg);
+        out.push(...withRatings(seg));
       }
     });
   });
   return <>{out}</>;
+}
+
+const RATING_MARK_COLOR: Record<SessionRating, string> = { again: 'text-danger', hard: 'text-warn', good: 'text-accent', easy: 'text-success' };
+
+/** A run of text with its rating marks drawn. Inline-flex around the SVG — a
+ *  block under the base stylesheet — set on the middle of the lower-case
+ *  letters (vertical-align: middle). A fixed nudge (-0.15em) centred it on the
+ *  capitals instead, and it read as sitting too high (2026-11-18, user's
+ *  screenshot). */
+function withRatings(text: string): ComponentChildren[] {
+  return text.split(/(\[\[(?:again|hard|good|easy)\]\])/).filter(Boolean).map((seg, k) => {
+    const m = /^\[\[(again|hard|good|easy)\]\]$/.exec(seg);
+    if (!m) return seg;
+    const rating = m[1] as SessionRating;
+    return (
+      <span key={`r${k}`} class={`inline-flex align-middle ${RATING_MARK_COLOR[rating]}`} role="img" aria-label={ratingWord(rating)}>
+        <RatingIcon rating={rating} size={14} />
+      </span>
+    );
+  });
 }
 
 /** One colour for every kind of section: the success green and the warning
