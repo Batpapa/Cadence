@@ -1,6 +1,6 @@
 import { signal, type Signal } from '@preact/signals';
 import { render } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { SyncedScore, scoreContour, bareScore, meterOf, type LiveClock } from '../../components/syncedScore';
 import { startPlayAlong, playAlongOffset, setPlayAlongOffset, type PlayAlong, type PlayAlongStatus } from '../playAlongClient';
 import { beatOfDance, type Beat } from '../liveFollow';
@@ -13,6 +13,7 @@ import type { PlayAlongView } from '../../components/fileViewer';
 import type { Attachment, ScoreFace } from '../../types';
 import { askRecordingName, recordingAttachment, stampedName, RecorderRow } from '../../components/recordMicModal';
 import { askUnsavedChanges } from '../../components/modal';
+import { NodeSlot } from '../../components/nodeSlot';
 import type { MemoryRecorder } from '../../thesessionEmbed/memoryRecorder';
 import { t } from '../../services/i18nService';
 import { downloadBlob } from '../../utils';
@@ -47,15 +48,6 @@ const SMOOTH_MATCH_S = 4;
 const BPM_HYSTERESIS = 1.5;
 
 interface Smoothed { rate: number | null; match: number | null; at: number }
-/** The score's floor on its full page, as the audio sync's. */
-const MIN_SCORE_PX = 128;
-/** The pane's gap between the score and what is under it (gap-3). */
-const BELOW_GAP_REM = 0.75;
-/** What the dialog keeps around the pane — its header and padding, the
- *  viewer's row of tabs — taken from the score's height with what is
- *  under it (measured): expanded, and not. */
-const AROUND_EXPANDED_REM = 13.5;
-const AROUND_REM = 17.5;
 /** One press of − or + on the latency. */
 const OFFSET_STEP_MS = 10;
 
@@ -216,7 +208,6 @@ interface PaneProps {
   suggest: boolean;
   onShowVersion: (index: number) => void;
   face: Signal<ScoreFace>;
-  expanded: Signal<boolean>;
   source: Signal<Source>;
   /** Null where there is no card to keep a take on: no record button. */
   take: PlayAlongTake | null;
@@ -225,9 +216,11 @@ interface PaneProps {
    *  never looks for the key itself — one note held would fit a score in any
    *  key somewhere; a player in another key transposes the score. */
   transpose: Signal<number>;
+  /** The viewer's source tabs, at the top of what is under the score. */
+  below?: HTMLElement;
 }
 
-function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face, expanded, source, take, transpose }: PaneProps) {
+function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face, source, take, transpose, below }: PaneProps) {
   const shown = version.value;
   const shift = transpose.value;
   const shownIndex = index.value;
@@ -244,31 +237,6 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   const [watch, setWatch] = useState<{ slots: number[]; setShown: (slot: number) => void; mute: (slot: number) => void } | null>(null);
   /** The version offered, by its index in the file. */
   const [offer, setOffer] = useState<number | null>(null);
-  /** The height of everything under the score — the messages, the offer,
-   *  the bar and its take line — in layout pixels (offsetHeight: the space
-   *  rem and the score's calc are in, whatever the app's zoom). The score
-   *  gives it up: counted as a fixed allowance, the bar's second line (the
-   *  take) pushed the pane out of the dialog (2026-11-01, the user). */
-  const belowRef = useRef<HTMLDivElement>(null);
-  const [belowPx, setBelowPx] = useState(0);
-  useLayoutEffect(() => {
-    const el = belowRef.current;
-    if (!el) return;
-    const measure = () => setBelowPx(prev => (prev === el.offsetHeight ? prev : el.offsetHeight));
-    // At once, before the first paint; then at the next frame, not in the
-    // observer: the score's height follows, a scrollbar may come or go with
-    // it, the width and the lines under it with that — inside the observer
-    // the browser reports a loop (2026-11-01, the user, resizing the window).
-    measure();
-    let raf = 0;
-    const watch = new ResizeObserver(() => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(measure);
-    });
-    watch.observe(el);
-    return () => { watch.disconnect(); cancelAnimationFrame(raf); };
-  }, []);
-
   // The version's notes, as drawn, given to the follower — again for another
   // version, or another source.
   useEffect(() => {
@@ -397,35 +365,10 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   useEffect(() => () => leavePage(false), []);
 
   // The score takes what is left — of the overlay on the full page, of the
-  // place the viewer's own takes in the dialog (fileViewer.ts lays the
-  // Play-along over it): its box as it is, plus the room to spare (or minus
-  // what overflows). Measured at the next frame, not in the observer: the
-  // height set resizes what is observed (ScoreFollowView's, 2026-10-29).
-  const [fit, setFit] = useState<number | null>(null);
+  // dialog's column in it (fileViewer.ts): the view is a column whose middle
+  // is the score (SyncedScoreProps.fill), what is under it below — since
+  // 2026-11-20 (the user), where its height was measured or guessed.
   const shownFace = face.value;
-  useEffect(() => {
-    setFit(null);
-    const root = rootRef.current;
-    const body = page ? pageRef.current?.overlay ?? null : root?.parentElement ?? null;
-    if (!root || !body) return;
-    const measure = () => {
-      const box = root.querySelector<HTMLElement>(shownFace === 'text' ? '.score-follow-text' : '.score-follow-paper');
-      if (!box) return;
-      const cs = getComputedStyle(body);
-      const space = body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-      const used = Array.from(body.children).reduce((sum, c) => sum + (c as HTMLElement).offsetHeight, 0);
-      const next = Math.max(MIN_SCORE_PX, box.clientHeight + space - used);
-      setFit(prev => (prev !== null && Math.abs(prev - next) < 2 ? prev : next));
-    };
-    let raf = 0;
-    const ro = new ResizeObserver(() => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(measure);
-    });
-    ro.observe(body);
-    ro.observe(root);
-    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
-  }, [page, shownFace, score]);
 
   const nudge = (by: number) => {
     const next = offset + by;
@@ -459,61 +402,36 @@ function PlayAlongPane({ version, index, versions, suggest, onShowVersion, face,
   const chip = 'inline-flex items-center justify-center rounded-full border transition-colors cursor-pointer';
   const idle = `${chip} border-border text-muted hover:text-primary hover:border-accent/50`;
   const offering = offer !== null && offer !== shownIndex;
-  // What is under the score takes its room from it (2026-11-01, the user):
-  // its height as measured — the offer's words wrap on a narrow screen, the
-  // take adds a line — and the gap above it. No loop: that height follows
-  // the width alone, and the score gives up exactly what it takes.
-  const room = ` - ${belowPx}px - ${BELOW_GAP_REM}rem`;
-  // Full page: all the height the overlay has, measured (what is under the
-  // score is counted in it); until it is in, a guess. Floor and cap alike
-  // there (2026-11-01, the user): the paper fills the page, as the viewer's
-  // full page does, however short the tune.
-  const maxHeight = fit !== null ? `${fit}px`
-    : page ? `calc(100dvh / var(--zoom-factor, 1) - 4.5rem${room})`
-    : expanded.value
-      ? `calc(100dvh / var(--zoom-factor, 1) - ${AROUND_EXPANDED_REM}rem${room})`
-      : `min(60vh, calc(100dvh / var(--zoom-factor, 1) - ${AROUND_REM}rem${room}))`;
-
   // In the score's corner, as in the viewer and the audio sync: the way in,
   // then the way out — and, as in the viewer, none with the stave and the
   // text together (the user, 2026-11-04).
   const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
-  // On the full page, a ✕ beside it: the page has no title bar, and the small
-  // "reduce" drawing alone was not read as a way out (UI review, 2026-11-11).
-  // It does what that one does — back to the dialog.
+  // The way out alone on the full page: a ✕ beside it (UI review,
+  // 2026-11-11) did what it does, twice over — dropped (2026-11-20, the user).
   const tools = shownFace === 'both' && !page ? undefined : (
-    <>
-      <button
-        class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
-        title={pageLabel}
-        aria-label={pageLabel}
-        onClick={(ev) => { ev.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
-      >
-        {page ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
-      </button>
-      {page && (
-        <button
-          class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
-          title={t('common.close')}
-          aria-label={t('common.close')}
-          onClick={(ev) => { ev.currentTarget.blur(); leavePage(); }}
-        >
-          <CrossIcon size={16} />
-        </button>
-      )}
-    </>
+    <button
+      class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
+      title={pageLabel}
+      aria-label={pageLabel}
+      onClick={(ev) => { ev.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
+    >
+      {page ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+    </button>
   );
 
   return (
-    <div ref={rootRef} class={`flex flex-col gap-3${page ? ' p-3' : ''}`}>
+    <div ref={rootRef} class={`flex-1 min-h-0 flex flex-col gap-3${page ? ' p-3' : ''}`}>
       {score && (
         <SyncedScore
           abc={score.abc} meter={score.meter} follow={null} engine={null} region={null}
-          transpose={shift} playing={false} maxHeight={maxHeight} minHeight={fit !== null ? maxHeight : undefined} face={face.value} clock={clock ?? undefined} tools={tools}
+          transpose={shift} playing={false} maxHeight="none" fill face={face.value} clock={clock ?? undefined} tools={tools}
         />
       )}
-      {/* Under the score, measured as one (belowRef). */}
-      <div ref={belowRef} class="flex flex-col gap-3">
+      {/* Under the score: its own height, the score taking the rest. */}
+      <div class="shrink-0 flex flex-col gap-3">
+        {/* Not on the full page: the score and the playing, nothing to
+            choose there (2026-11-20, the user). */}
+        {below && !page && <NodeSlot node={below} />}
         {src.kind === 'failed' && src.message && <div class="text-xs text-danger text-center">{src.message}</div>}
         {noNotes && <div class="text-xs text-danger text-center">{t('fileViewer.abc.playAlong.noNotes')}</div>}
         {offering && offer !== null && (
@@ -629,26 +547,29 @@ export function mountPlayAlong(host: HTMLElement, opts: {
   onKeepRecording?: (a: Attachment) => void;
   /** The viewer's transposition (see PaneProps.transpose). */
   transpose: number;
+  /** The viewer's source tabs (see PaneProps.below). */
+  below?: HTMLElement;
 }): PlayAlongView {
   const take = opts.onKeepRecording ? new PlayAlongTake(opts.onKeepRecording) : null;
   const version = signal(opts.versions[opts.index] ?? '');
   const index = signal(opts.index);
   const face = signal(opts.face);
-  const expanded = signal(opts.expanded);
   const transpose = signal(opts.transpose);
   const source = signal<Source>({ kind: 'opening' });
   open(source, () => { source.value = { kind: 'failed', message: t('fileViewer.abc.playAlong.error.ended') }; });
   render(
     <PlayAlongPane
       version={version} index={index} versions={opts.versions} suggest={opts.suggest} onShowVersion={opts.onShowVersion}
-      face={face} expanded={expanded} source={source} take={take} transpose={transpose}
+      face={face} source={source} take={take} transpose={transpose} below={opts.below}
     />,
     host,
   );
   return {
     setVersion: (v, i) => { version.value = v; index.value = i; },
     setFace: (f) => { face.value = f; },
-    setExpanded: (v) => { expanded.value = v; },
+    // Nothing to do: the score fills the room the dialog has, grown or not
+    // (2026-11-20) — it used to be measured against it.
+    setExpanded: () => {},
     setTranspose: (t) => { transpose.value = t; },
     settleTake: (proceed) => take?.settle(proceed) ?? false,
     unmount: () => {

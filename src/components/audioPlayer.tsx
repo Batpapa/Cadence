@@ -1,5 +1,5 @@
 import { render, type ComponentChildren } from 'preact';
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { AudioPreset, FileEntry, ScoreFace } from '../types';
 import { generateId } from '../utils';
 import { t } from '../services/i18nService';
@@ -9,7 +9,8 @@ import { SyncedScore, passStartsOf } from './syncedScore';
 import { localMatch, type FollowResult } from '../session/scoreFollow';
 import { qualityColour, faded } from './followColour';
 import { CustomSelect } from './customSelect';
-import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon, AddClipIcon, CrossIcon, ResetIcon, ChevronDownIcon } from './icons';
+import { NodeSlot } from './nodeSlot';
+import { StarIcon, PencilIcon, TrashIcon, CheckIcon, PlusIcon, AddClipIcon, CrossIcon, ResetIcon, ChevronDownIcon, TuningForkIcon } from './icons';
 import { IconButton } from './ui';
 import {
   AUDIO_LIMITS, MIN_REGION_S, fmtTime, neutralSettings, fitSettings, sameSettings, settingsOf, suggestedPresetName,
@@ -44,10 +45,14 @@ function injectSliderStyle(): void {
 }
 
 const WAVE_H = 56;
-/** Below this width the three sliders go one under the other (2026-10-10, the
- *  user): side by side, a label and a value such as "TRANSPOSE +12 st" no
- *  longer fit a third of a phone. */
+/** Below this width the three sliders leave the row (2026-10-10, the user):
+ *  side by side, a label and a value such as "TRANSPOSE +12 st" no longer fit
+ *  a third of a phone. The least it is: wider, a row that does not fit after
+ *  all — French's "TRANSPOSITION" pushed its value under it (2026-11-20, the
+ *  user) — raises it to the width that was seen not to (`rowMinW`). */
 const SLIDERS_IN_A_ROW_MIN_PX = 420;
+/** Room the row is given back with, past the width it was seen not to fit. */
+const SLIDERS_ROW_SLACK_PX = 12;
 
 /** Seconds either side of a bar its colour is judged over: about a bar of a
  *  reel each way — a single quaver's few frames say too little. */
@@ -131,24 +136,37 @@ function Slider({ label, min, max, step, def, fmt, value, onChange }: {
   const atDefault = value === def;
 
   return (
-    <div class="flex flex-col gap-0.5">
-      <div class="flex justify-between items-center">
-        <div class="inline-flex items-center gap-0.5">
-          <span class="text-2xs font-medium uppercase tracking-wider text-dim">{label}</span>
-          {/* A 32 px target on a 16 px line: the negative margins keep the
-              row the height of its label, so the three sliders do not grow
-              by a reset that is invisible most of the time. */}
-          <IconButton
-            label={t('audioPlayer.reset')}
-            class={`-my-1.5 transition-opacity ${atDefault ? 'opacity-0 pointer-events-none' : ''}`}
-            onClick={() => onChange(def)}
-          >
-            <ResetIcon size={12} />
-          </IconButton>
-        </div>
+    <div class="flex flex-col gap-0.5 min-w-0">
+      {/* The head, one line never wrapped: the label and its reset alone —
+          the player measures it (data-slider-head) to know whether the three
+          fit in a row. The value went to the end of the track (2026-11-20):
+          beside the label, "TRANSPOSITION", its reset's room and "+0 st" took
+          more than a third of a medium dialog, and the row left for the narrow
+          layout on a desktop (the user). */}
+      <div class="flex items-center gap-0.5 whitespace-nowrap min-w-0" data-slider-head>
+        <span class="text-2xs font-medium uppercase tracking-wider text-dim">{label}</span>
+        {/* A 32 px target on a 16 px line: the negative margins keep the
+            row the height of its label, so the three sliders do not grow
+            by a reset that is invisible most of the time. */}
+        <IconButton
+          label={t('audioPlayer.reset')}
+          class={`-my-1.5 transition-opacity ${atDefault ? 'opacity-0 pointer-events-none' : ''}`}
+          onClick={() => onChange(def)}
+        >
+          <ResetIcon size={12} />
+        </IconButton>
+      </div>
+      <div class="flex items-center gap-2 min-w-0">
+        <input
+          type="range"
+          class="cad-range flex-1 min-w-0"
+          min={min} max={max} step={step} value={value}
+          style={{ '--pct': `${((value - min) / (max - min)) * 100}%` }}
+          onInput={(e) => onChange(parseFloat((e.target as HTMLInputElement).value))}
+        />
         {editing === null ? (
           <span
-            class="text-2xs font-mono font-medium text-accent cursor-pointer"
+            class="shrink-0 text-2xs font-mono font-medium text-accent cursor-pointer whitespace-nowrap"
             onClick={() => setEditing(String(value))}
           >{fmt(value)}</span>
         ) : (
@@ -156,7 +174,7 @@ function Slider({ label, min, max, step, def, fmt, value, onChange }: {
             ref={inputRef}
             type="text"
             value={editing}
-            class="text-2xs font-mono font-medium text-accent bg-transparent border-0 border-b border-accent outline-none w-10 text-right p-0"
+            class="shrink-0 text-2xs font-mono font-medium text-accent bg-transparent border-0 border-b border-accent outline-none w-10 text-right p-0"
             onInput={(e) => setEditing((e.target as HTMLInputElement).value.replace(/[^\d\-.]/g, ''))}
             onBlur={commit}
             onKeyDown={(e) => {
@@ -166,13 +184,6 @@ function Slider({ label, min, max, step, def, fmt, value, onChange }: {
           />
         )}
       </div>
-      <input
-        type="range"
-        class="cad-range"
-        min={min} max={max} step={step} value={value}
-        style={{ '--pct': `${((value - min) / (max - min)) * 100}%` }}
-        onInput={(e) => onChange(parseFloat((e.target as HTMLInputElement).value))}
-      />
     </div>
   );
 }
@@ -398,6 +409,12 @@ export interface PlayerScore {
   /** Semitones the score is drawn moved by, before the player's own
    *  transposition: the score viewer's (fileViewer.ts). */
   keyShift?: number;
+  /** Put between the score and the player: the score viewer's source tabs,
+   *  just above what plays (fileViewer.ts, 2026-11-20). */
+  below?: HTMLElement;
+  /** The player as tall as its column, the score taking what the controls
+   *  leave (SyncedScoreProps.fill): the score viewer's audio sync. */
+  fill?: boolean;
 }
 
 export function AudioPlayer({ entry, binding, hooks, score }: {
@@ -413,6 +430,20 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
   const [region, setRegionState] = useState<Region>({ start: 0, end: 1 });
   const [effects, setEffectsState] = useState<AudioEffects>({ tempo: 100, transpose: 0, pitch: 0 });
   const [waveW, setWaveW] = useState(400);
+  /** The width the sliders' row needs, as last seen (SLIDERS_IN_A_ROW_MIN_PX). */
+  const [rowMinW, setRowMinW] = useState(SLIDERS_IN_A_ROW_MIN_PX);
+  /** Transposition and pitch unfolded, when they are behind their fork. */
+  const [slidersOpen, setSlidersOpen] = useState(false);
+  const slidersRef = useRef<HTMLDivElement>(null);
+  // A row that does not fit — a head wider than its third — leaves for the
+  // button, and stays there below the width it was seen at. Before the
+  // paint: never seen overflowing.
+  useLayoutEffect(() => {
+    const grid = slidersRef.current;
+    if (!grid || waveW < rowMinW) return;
+    const heads = Array.from(grid.querySelectorAll<HTMLElement>('[data-slider-head]'));
+    if (heads.some(h => h.scrollWidth > h.clientWidth + 1)) setRowMinW(waveW + SLIDERS_ROW_SLACK_PX);
+  });
 
   const duration = status.kind === 'ready' ? status.duration : 1;
   // What the animation frame reads: never a render's copy, which would be the
@@ -532,7 +563,10 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
   }, []);
 
   // The waveform's width, for its bars.
-  useEffect(() => {
+  // Before the paint (2026-11-20): the 400 it starts at is under the
+  // sliders' row (SLIDERS_IN_A_ROW_MIN_PX), and every player showed its
+  // narrow layout for a frame.
+  useLayoutEffect(() => {
     const el = waveWrapRef.current;
     if (!el) return;
     setWaveW(el.offsetWidth || 400);
@@ -720,14 +754,16 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
 
   if (status.kind !== 'ready') {
     return (
-      <div style={{ width: '100%', padding: '14px 16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ width: '100%', padding: '14px 16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px', ...(score?.fill ? { flex: '1 1 0', minHeight: 0 } : {}) }}>
         {/* The score is there before the sound is: something to read. */}
         {score && (
           <SyncedScore
             abc={score.abc} meter={score.meter} follow={score.follow} engine={null} region={null}
             transpose={score.keyShift ?? 0} playing={false} maxHeight={score.maxHeight} minHeight={score.minHeight} face={score.face} tools={score.tools}
+            fill={score.fill}
           />
         )}
+        {score?.below && <NodeSlot node={score.below} />}
         <div class={`text-2xs text-center py-5 ${status.kind === 'error' ? 'text-danger' : 'text-dim'}`}>
           {status.kind === 'loading' ? t('audioPlayer.loading') : t('audioPlayer.error', { msg: status.msg })}
         </div>
@@ -736,15 +772,20 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
   }
 
   // The player's own width, not the screen's: it lives in a dialog, and the
-  // waveform already measures it.
-  const stacked = waveW < SLIDERS_IN_A_ROW_MIN_PX;
+  // waveform already measures it. Narrower than the row needs (2026-11-20,
+  // the user), the tempo alone stays, across the width, and transposition
+  // and pitch are behind a tuning fork — the synth's own key button — that
+  // unfolds them under it: one under the other, the three took three lines
+  // from the score above.
+  const inRow = waveW >= rowMinW;
+  const keyMoved = effects.transpose !== AUDIO_LIMITS.transpose.def || effects.pitch !== AUDIO_LIMITS.pitch.def;
   const bars = status.waveform;
   const n = bars.length;
   const barW = Math.max(1, (waveW / n) * 0.65);
   const gap = waveW / n;
 
   return (
-    <div style={{ width: '100%', padding: '14px 16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div style={{ width: '100%', padding: '14px 16px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px', ...(score?.fill ? { flex: '1 1 0', minHeight: 0 } : {}) }}>
       {binding && (
         <PresetHeader
           presets={presets}
@@ -772,8 +813,10 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
           minHeight={score.minHeight}
           face={score.face}
           tools={score.tools}
+          fill={score.fill}
         />
       )}
+      {score?.below && <NodeSlot node={score.below} />}
 
       {/* Waveform */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -866,19 +909,40 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
         <SmallButton html={boundIcon('in', 12)} title={t('audioPlayer.setStart.title')} onClick={setStartHere} />
         <SmallButton html={boundIcon('out', 12)} title={t('audioPlayer.setEnd.title')} onClick={setEndHere} />
         <SmallButton text={t('audioPlayer.reset')} title={t('audioPlayer.reset.title')} onClick={resetRegion} />
+        {!inRow && (
+          // An icon, the names in its tooltip: worded, it did not fit the row
+          // of a 360 px phone (measured: 341 px wanted for 320).
+          <button
+            type="button"
+            title={t('audioPlayer.keySettings')}
+            aria-label={t('audioPlayer.keySettings')}
+            aria-expanded={slidersOpen}
+            // In the accent while one of them is moved: a transposition behind
+            // a closed button would otherwise go unnoticed.
+            class={`min-h-8 px-2 inline-flex items-center gap-1 text-2xs font-medium bg-transparent border rounded-md cursor-pointer ${
+              slidersOpen || keyMoved ? 'border-accent text-accent' : 'border-border text-dim hover:border-dim hover:text-muted'}`}
+            onClick={() => setSlidersOpen(o => !o)}
+          >
+            <TuningForkIcon size={14} />
+            <span class={`inline-flex transition-transform ${slidersOpen ? 'rotate-180' : ''}`}><ChevronDownIcon size={10} /></span>
+          </button>
+        )}
       </div>
 
-      {/* Sliders */}
+      {/* Sliders: the three in a row; or the tempo, and under it what the
+          fork unfolds. */}
       <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-        <div style={stacked
-          ? { display: 'grid', gridTemplateColumns: '1fr', gap: '10px 0' }
-          : { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16px' }}>
+        <div ref={slidersRef} style={inRow
+          ? { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0 16px' }
+          : { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '10px 0' }}>
           <Slider label={t('audioPlayer.tempo')} min={AUDIO_LIMITS.tempo.min} max={AUDIO_LIMITS.tempo.max} step={1} def={AUDIO_LIMITS.tempo.def}
             fmt={v => `${v}%`} value={effects.tempo} onChange={v => setEffect({ tempo: v })} />
+          {(inRow || slidersOpen) && <>
           <Slider label={t('audioPlayer.transpose')} min={AUDIO_LIMITS.transpose.min} max={AUDIO_LIMITS.transpose.max} step={1} def={AUDIO_LIMITS.transpose.def}
             fmt={v => `${v >= 0 ? '+' : ''}${v} st`} value={effects.transpose} onChange={v => setEffect({ transpose: v })} />
           <Slider label={t('audioPlayer.pitch')} min={AUDIO_LIMITS.pitch.min} max={AUDIO_LIMITS.pitch.max} step={1} def={AUDIO_LIMITS.pitch.def}
             fmt={v => `${v >= 0 ? '+' : ''}${v} ¢`} value={effects.pitch} onChange={v => setEffect({ pitch: v })} />
+          </>}
         </div>
       </div>
 

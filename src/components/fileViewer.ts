@@ -6,10 +6,10 @@ import { renderMarkdown, sanitizeEmphasisOnly } from './markdown';
 import { mkCustomSelect } from './customSelectVanilla';
 import { qualityColour, faded } from './followColour';
 import { keyGapText } from '../session/keyName';
-import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, ExpandIcon, CollapseIcon,
+import { starIconElement, iconElement, ExternalLinkIcon, GearIcon, TrashIcon, PlusIcon, SaveIcon, ExpandIcon, CollapseIcon,
   MetronomeIcon, TuningForkIcon, SwingStraightIcon, SwingLightIcon, SwingMediumIcon, SwingStrongIcon,
-  WarningTriangleIcon, ChevronDownIcon, ScoreFollowIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon,
-  MinusIcon, CrossIcon } from './icons';
+  WarningTriangleIcon, ChevronDownIcon, WaveformIcon, CloudIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, MusicNoteIcon,
+  MinusIcon, CrossIcon, PencilIcon } from './icons';
 import { t } from '../services/i18nService';
 import { unlockAbcjsAudio, claimAudioFocus, releaseAudioFocus } from '../services/audioSession';
 import { injectDefaultTempo, stripForRender, isAbcFile, decodeAbc, splitAbcTunes, parseAbcBlock, abcOpenMode,
@@ -99,17 +99,17 @@ const TEMPO_STEP_PERCENT = 5;
  *  itself. Offset by exactly the padding, it lands flush with the edge.
  *  Opaque background and a stacking order, or the notation shows through.
  *
- *  All of that is on the ROW the transport sits in since 2026-10-15
- *  (BOTTOM_ROW_CLASS): the source face's version and save buttons share its
- *  line, and a sticky element only sticks within its parent — on the
- *  transport, inside a row its own height, it would no longer stick at all. */
+ *  Not stuck any more since 2026-11-20 (BOTTOM_BLOCK_CLASS): the viewer is a
+ *  column whose middle, the score, is the only thing that scrolls — the
+ *  bottom stays where it is by being below it. */
 const TRANSPORT_CLASS = 'abc-transport flex items-center justify-center gap-2 flex-wrap';
-/** The bottom row: the transport in the middle, the source face's version
- *  buttons on its left and Save on its right — on one line while they fit,
- *  the transport on a line of its own above them when they do not (the user,
- *  2026-10-15; laid out by `.abc-bottom-row` in styles.css, decided by
- *  `layoutBottomRow`). */
-const BOTTOM_ROW_CLASS = 'abc-bottom-row sticky -bottom-4 z-10 bg-elevated py-2';
+/** The bottom row: the transport, alone on it since 2026-11-20 — the source
+ *  face's version buttons and Save, on its sides from 2026-10-15, went to the
+ *  versions' box and the text's frame (`.abc-bottom-row` in styles.css). */
+const BOTTOM_ROW_CLASS = 'abc-bottom-row';
+/** The source tabs (who plays the score) over the bottom row: the foot of the
+ *  viewer's column, its own height. */
+const BOTTOM_BLOCK_CLASS = 'shrink-0 flex flex-col gap-2';
 
 function abcTempoPercent(): number {
   const stored = appState.value.abcTempoPercent;
@@ -639,6 +639,9 @@ export interface PreviewModalOpts {
    *  it (2026-10-28, the user). Today a detection's score, its recording the
    *  analysis's (session/ui/ScoreFollowView.tsx). */
   audioSync?: AudioSyncBinding;
+  /** False: no source tabs (Synth, Audio sync, Play-along) over the transport
+   *  — the synth alone. A set's score (the user, 2026-11-20). */
+  sources?: boolean;
   /** Adds a recording to the card the score belongs to: the Play-along's
    *  take, kept (2026-11-01, the user). Absent — a score with no card, a
    *  detection's — the Play-along has no record button. */
@@ -657,10 +660,12 @@ export interface AudioSyncBinding {
   choose?: (version: string) => Promise<boolean>;
   /** Puts the audio sync of `version` in `host`, on the viewer's face (stave
    *  or text) and at its size, drawn in the viewer's key (`transpose`,
-   *  semitones). `onState` hears how its alignment goes. */
+   *  semitones). `onState` hears how its alignment goes. `below`: the
+   *  viewer's source tabs, to put between the score and the player. */
   mount: (
     host: HTMLElement, version: string, face: ScoreFace, expanded: boolean,
     onState: (s: AudioSyncState) => void, forced: boolean, transpose: number,
+    below?: HTMLElement,
   ) => AudioSyncView;
 }
 
@@ -678,9 +683,18 @@ export type AudioSyncState =
 // it (2026-11-07, the user: the gap is said wherever audio and score meet),
 // -5 to +6; absent or 0 when they agree.
 
-/** Room the toggles' labels need beyond their own width to come back once
- *  they were dropped (fitToggles). */
-const TOGGLE_SLACK_PX = 8;
+/** Room the versions' arrows need beyond their own width to widen again once
+ *  they were narrowed (fitTopRow). */
+const ROW_SLACK_PX = 8;
+
+/** The narrowest the editor's "+", Save and bin get (fitTopRow): the arrows'
+ *  own narrow width (.abc-nav-narrow, 1.25rem). */
+const EDIT_MIN_PX = 20;
+
+/** Where the key gap and its fork go in the audio sync's short name: a text
+ *  for the translation, an icon in the tab. */
+const GAP_MARK = '\u0001';
+
 
 /** A press this long on the toggle is the hidden "follow anyway". */
 const LONG_PRESS_MS = 550;
@@ -1099,14 +1113,25 @@ export function showPreviewModal(
     const container = document.createElement('div');
     // `abc-viewer`: the container the "both" face asks how wide it is, to put
     // its two faces side by side or one above the other (styles.css).
-    container.className = 'abc-viewer w-full space-y-3';
+    //
+    // A column of three (2026-11-20, the user): the faces, the versions and the
+    // editing tools above; the stave and/or its text in the middle; what plays
+    // and its controls below. The middle takes whatever the two others leave
+    // of the dialog's height (showModal's `fill`) and is the only thing that
+    // scrolls — where the dialog body used to scroll as a whole, the score
+    // capped at a share of the screen guessed beforehand (capScore), the
+    // controls stuck over its foot (sticky), a cursor going under them.
+    container.className = 'abc-viewer w-full flex-1 min-h-0 flex flex-col gap-3';
+    // The dialog's body, a column too, for the viewer to fill.
+    body.className = 'w-full flex-1 min-h-0 flex flex-col';
 
-    // ── Top row: Sheet/ABC tabs + version nav + the tools that act on the score ──
-    // One line, never wrapped (2026-11-01, the user): the toggles at the end
-    // give up their labels, then the versions' arrows their width
-    // (`fitToggles`). It wrapped until then, the tools going under the tabs.
+    // ── Top row: Sheet/ABC tabs + version nav ──
+    // Never wrapped (2026-11-01, the user): the versions' arrows give up their
+    // width when it is short (`fitTopRow`). The audio sync's and the
+    // Play-along's toggles were at its end until 2026-11-20; they are the
+    // source tabs over the transport now (below).
     const topRow = document.createElement('div');
-    topRow.className = 'flex items-center justify-between gap-2 flex-nowrap';
+    topRow.className = 'shrink-0 flex items-center justify-between gap-2 flex-nowrap';
 
     const tabBar = document.createElement('div');
     tabBar.className = 'seg seg-lg w-fit shrink-0';
@@ -1128,22 +1153,19 @@ export function showPreviewModal(
       return g;
     };
     const abcGlyph = mkAbcGlyph();
-    // The two others side by side with a "+" between them (2026-11-04, the
-    // user): the stave and its text at once, to write ABC while reading what
-    // it says — what the tester switched to abcTools for.
-    const bothGlyph = document.createElement('span');
-    bothGlyph.className = 'flex items-center';
-    const plus = document.createElement('span');
-    plus.className = 'text-2xs font-bold leading-none';
-    plus.textContent = '+';
-    bothGlyph.append(iconElement(MusicNoteIcon, 12), plus, mkAbcGlyph());
+    // The stave and its text at once (2026-11-04, the user), to write ABC
+    // while reading what it says — what the tester switched to abcTools for.
+    // The editor, then (2026-11-20, the user): a pencil, where it was the two
+    // others' icons with a "+" between them; and the only face the text is
+    // written on. None where nothing can save it.
     const sheetTabBtn = mkAbcTab(t('fileViewer.abc.sheetTab'), iconElement(MusicNoteIcon, 14));
     const textTabBtn  = mkAbcTab(t('fileViewer.abc.textTab'), abcGlyph);
-    const bothTabBtn  = mkAbcTab(t('fileViewer.abc.bothTab'), bothGlyph);
+    const bothTabBtn  = mkAbcTab(t('fileViewer.abc.bothTab'), iconElement(PencilIcon, 14));
     sheetTabBtn.onclick = () => chooseMode('sheet');
     textTabBtn.onclick  = () => chooseMode('text');
     bothTabBtn.onclick  = () => chooseMode('both');
-    tabBar.append(sheetTabBtn, textTabBtn, bothTabBtn);
+    tabBar.append(sheetTabBtn, textTabBtn);
+    if (onSave) tabBar.appendChild(bothTabBtn);
     tabBar.dataset.tour = 'abc-tabs';
 
     const versionNav = document.createElement('div');
@@ -1163,7 +1185,43 @@ export function showPreviewModal(
     // Leaving a version with an edit pending asks first — see `draft`.
     prevBtn.onclick = () => settleDraft(() => goToVersion(currentIndex - 1));
     nextBtn.onclick = () => settleDraft(() => goToVersion(currentIndex + 1));
-    versionNav.append(prevBtn, versionLabel, nextBtn);
+    // ── Adding / deleting a version ───────────────────────────────────────────
+    // In the versions' box since 2026-11-20 (the user), where they were on the
+    // bottom row beside the transport: a version added after the last arrow,
+    // deleted after the star. On the source face only, and only when the
+    // caller passed a save callback (`paintVersionNav`).
+    const mkEditBtn = (icon: Element, title: string, danger: boolean): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.appendChild(icon);
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.className = `abc-tool-btn text-muted hover:bg-elevated ${danger ? 'hover:text-danger' : 'hover:text-primary'}`;
+      return b;
+    };
+    const addVersionBtn = mkEditBtn(iconElement(PlusIcon, 14), t('fileViewer.abc.addVersion'), false);
+    const deleteVersionBtn = mkEditBtn(iconElement(TrashIcon, 14), t('fileViewer.abc.deleteVersion'), true);
+    // ── Save, between the two (2026-11-20, the user) ──
+    // It was a button on the bottom row beside the transport, then for a day
+    // an icon in the text's corner shown only with an edit pending: here,
+    // always there on the editor's face, muted when there is nothing to save —
+    // which also says a save went through. A failed one turns it red, the
+    // reason in its tooltip, until the next keystroke.
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.setAttribute('aria-label', t('fileViewer.abc.save'));
+    saveBtn.appendChild(iconElement(SaveIcon, 14));
+    saveBtn.disabled = true;
+    let saveFailed = false;
+    const paintSave = (): void => {
+      saveBtn.style.display = editsText() ? '' : 'none';
+      const look = saveFailed ? 'text-danger hover:bg-elevated'
+        : 'text-accent hover:bg-elevated disabled:text-muted disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent';
+      // Narrowed or not by the row (setEditWidth), as it was.
+      const narrow = saveBtn.classList.contains('abc-nav-narrow');
+      saveBtn.className = `abc-tool-btn ${look}${narrow ? ' abc-nav-narrow' : ''}`;
+      saveBtn.title = saveFailed ? t('fileViewer.saveFailed') : t('fileViewer.abc.save');
+    };
+    versionNav.append(prevBtn, versionLabel, nextBtn, addVersionBtn, saveBtn, deleteVersionBtn);
     versionNav.dataset.tour = 'abc-versions';
 
     // ★ "set as default version" — independent of onSave, works read-only too
@@ -1220,6 +1278,91 @@ export function showPreviewModal(
     topRow.append(tabBar, versionNav);
     container.appendChild(topRow);
 
+    // ── Who plays the score: tabs (2026-11-20, the user) ─────────────────────
+    // The synth, the recording (audio sync) or the one playing (Play-along):
+    // one score, one cursor, so one of the three — tabs, where they were two
+    // toggles at the end of the row above, which on a phone shrank to a bare
+    // microphone nobody knew to press ("far from intuitive", for what a tester
+    // uses most — Bédou, 2026-11-16). They choose what plays, not what the ABC
+    // says: down with the playing, just above whatever plays — the transport,
+    // and in the other two their player or their bar, whose views give them a
+    // place under the score (`below`). Named always; a way that cannot play
+    // this score is greyed, and says why when pressed. None on a set's score
+    // (`sources: false`, the user): the synth alone, as before.
+    const sourcesOn = opts?.sources !== false;
+    const sourceRow = document.createElement('div');
+    // One line always (styles.css, .abc-sources-row): the full names while
+    // they fit, else short ones — Synth, Audio, Play, and the audio sync's
+    // figure beside "Audio" when it is the one on (2026-11-20, the user). A phone's
+    // French names with that figure were cut short on one line, and stood
+    // icon over name in three shares for a day.
+    sourceRow.className = 'abc-sources-row flex justify-center min-w-0';
+    const sourceSeg = document.createElement('div');
+    sourceSeg.className = 'seg seg-lg max-w-full';
+    sourceSeg.setAttribute('role', 'group');
+    sourceSeg.setAttribute('aria-label', t('fileViewer.abc.sources'));
+    sourceSeg.dataset.tour = 'abc-sources';
+    sourceRow.appendChild(sourceSeg);
+    /** The names the row has room for, measured (styles.css): full; else
+     *  short (`abc-sources-short`); else short without the audio sync's key
+     *  gap (`abc-sources-tight`). Measured, not a width in CSS: the audio
+     *  sync's full name runs from "Audio sync" to "Audio sync (83 %, 1
+     *  semitone up)". A level given back only with a few pixels to spare;
+     *  the row's own width, which the names cannot change, is what is watched. */
+    let sourcesLevel = 0;
+    const fitSources = (): void => {
+      const room = sourceRow.clientWidth;
+      if (!room) return;
+      const was = sourcesLevel;
+      const fits = (level: number): boolean => sourceSeg.scrollWidth + (level < was ? ROW_SLACK_PX : 0) <= room;
+      sourceRow.classList.remove('abc-sources-short', 'abc-sources-tight');
+      sourcesLevel = 0;
+      if (fits(0)) return;
+      sourceRow.classList.add('abc-sources-short');
+      sourcesLevel = 1;
+      if (fits(1)) return;
+      sourceRow.classList.add('abc-sources-tight');
+      sourcesLevel = 2;
+    };
+    const sourcesWatch = new ResizeObserver(() => fitSources());
+    sourcesWatch.observe(sourceRow);
+    /** A tab's look: on, off, or greyed — `colour`, the audio sync's quality,
+     *  overriding the accent once its alignment is in. */
+    const paintSourceTab = (btn: HTMLElement, on: boolean, usable: boolean): void => {
+      btn.className = `seg-btn abc-source${on ? ' seg-btn-on' : ''}${usable ? '' : ' opacity-40'}`;
+      btn.setAttribute('aria-pressed', String(on));
+      btn.setAttribute('aria-disabled', String(!usable));
+    };
+    /** A tab's name, full and short, the stylesheet showing one of the two. */
+    const mkSourceLabel = (): { el: HTMLSpanElement; full: HTMLSpanElement; short: HTMLSpanElement } => {
+      const el = document.createElement('span');
+      const full = document.createElement('span');
+      full.className = 'abc-source-full';
+      const short = document.createElement('span');
+      short.className = 'abc-source-short';
+      el.append(full, short);
+      return { el, full, short };
+    };
+    /** Why a way cannot play this score, said when its greyed tab is pressed. */
+    const explainSource = (title: string, why: string): void => {
+      const body = document.createElement('p');
+      body.className = 'text-sm text-muted leading-relaxed';
+      body.textContent = why;
+      showModal(title, body, []);
+    };
+    const synthTab = document.createElement('button');
+    synthTab.type = 'button';
+    const synthLabel = mkSourceLabel();
+    synthLabel.full.textContent = t('fileViewer.abc.source.synth');
+    synthLabel.short.textContent = t('fileViewer.abc.source.synth.short');
+    synthTab.setAttribute('aria-label', t('fileViewer.abc.source.synth'));
+    synthTab.append(iconElement(MusicNoteIcon, 14), synthLabel.el);
+    synthTab.title = t('fileViewer.abc.source.synth.hint');
+    sourceSeg.appendChild(synthTab);
+    /** The synth's tab: on whenever neither of the other two is. Assigned
+     *  once they exist (below). */
+    let paintSynthTab: () => void = () => {};
+
     // ── Audio sync (2026-10-28, the user) ────────────────────────────────────
     // A toggle at the end of the row, for a score that comes with a recording
     // of it: on, the recording's player takes the score's place — waveform,
@@ -1235,26 +1378,40 @@ export function showPreviewModal(
     let audioSyncHost: HTMLElement | null = null;
     /** What the audio sync hid, with how each was shown, to put back. */
     let hiddenByAudioSync: Array<[HTMLElement, string]> = [];
-    const audioSyncBtn = audioSync ? document.createElement('button') : null;
+    // Its tab is there with or without a recording: greyed without, saying
+    // where one comes from.
+    const audioSyncBtn = sourcesOn ? document.createElement('button') : null;
+    /** Whether the version on screen can be played along its recording. */
+    const audioSyncUsable = (): boolean => !!audioSync && audioSync.plays(shownBlock(currentIndex));
     /** How the alignment of the version on screen stands: the toggle shows it
      *  (AudioSyncState) instead of anything over the score. Kept when the
      *  toggle is turned off once it is known — the alignment is still the
      *  same — and dropped with the version. */
     let audioSyncState: AudioSyncState | null = null;
     const paintAudioSync = (): void => {
-      if (!audioSyncBtn || !audioSync) return;
+      paintSynthTab();
+      if (!audioSyncBtn) return;
       const on = !!audioSyncView;
+      if (!audioSync) {
+        paintSourceTab(audioSyncBtn, false, false);
+        audioSyncLabel.full.textContent = t('fileViewer.abc.audioSync');
+        audioSyncLabel.short.textContent = t('fileViewer.abc.audioSync.short');
+        audioSyncBtn.setAttribute('aria-label', t('fileViewer.abc.audioSync'));
+        audioSyncBtn.title = t('fileViewer.abc.audioSync.hint');
+        return;
+      }
       const s = audioSyncState;
       // Once the alignment is in: the quality's colour, continuous — the
-      // waveform's tint uses the same scale.
+      // waveform's tint uses the same scale — on the tab's text, and under it
+      // when it is the one on, in place of the accent.
       const colour = !s || s.kind === 'aligning' ? null
         : s.percent !== undefined ? qualityColour(s.percent / 100) : 'var(--color-danger)';
-      const look = colour ? 'hover:brightness-110'
-        : on ? 'border-accent/60 text-accent' : 'border-border text-muted hover:text-primary hover:border-accent/50';
-      audioSyncBtn.className = `ml-auto inline-flex items-center gap-1.5 ${togglesCompact ? 'px-2.5' : 'px-3'} min-h-[2.25rem] text-xs font-medium rounded-full border transition-colors cursor-pointer ${look}`;
-      audioSyncBtn.style.color = colour ?? '';
-      audioSyncBtn.style.borderColor = colour ? faded(colour, on ? 0.6 : 0.4) : '';
-      audioSyncBtn.style.backgroundColor = colour && on ? faded(colour, 0.14) : '';
+      // While it aligns, the tab is its progress bar (below): in the accent,
+      // over no fill of its own.
+      const aligning = s?.kind === 'aligning';
+      paintSourceTab(audioSyncBtn, on && !colour && !aligning, audioSyncUsable());
+      audioSyncBtn.style.color = colour ?? (aligning ? 'var(--color-accent)' : '');
+      audioSyncBtn.style.backgroundColor = colour && on ? faded(colour, 0.18) : '';
       // The toggle as a progress bar while the alignment is made: filled from
       // the left as far as it has gone.
       if (s?.kind === 'aligning') {
@@ -1263,7 +1420,6 @@ export function showPreviewModal(
       } else {
         audioSyncBtn.style.backgroundImage = '';
       }
-      audioSyncBtn.setAttribute('aria-pressed', String(on));
       // How well, in figures, on the toggle itself (2026-10-29, the user).
       const percent = s && s.kind !== 'aligning' ? s.percent : undefined;
       const gap = s && s.kind !== 'aligning' ? s.keyGap ?? 0 : 0;
@@ -1272,29 +1428,34 @@ export function showPreviewModal(
         : gap !== 0
           ? t('fileViewer.abc.audioSync.percentKey', { percent, shift: keyGapText(gap) })
           : t('fileViewer.abc.audioSync.percent', { percent });
-      audioSyncLabel.textContent = label;
+      audioSyncLabel.full.textContent = label;
+      // Short: "Audio", with its figure while it is the one on and has one —
+      // and the key the recording plays in, its semitones beside the
+      // transposition's fork: "Audio (83 %, +1⑂)" (2026-11-20, the user). That
+      // part is the first given up on the narrowest (.abc-source-extra).
+      if (on && percent !== undefined && gap !== 0) {
+        const extra = document.createElement('span');
+        extra.className = 'abc-source-extra';
+        extra.append(`, ${gap > 0 ? '+' : '−'}${Math.abs(gap)}`, iconElement(TuningForkIcon, 11));
+        const [before, after] = t('fileViewer.abc.audioSync.percentKeyShort', { percent, gap: GAP_MARK }).split(GAP_MARK);
+        audioSyncLabel.short.replaceChildren(before ?? '', extra, after ?? '');
+      } else {
+        audioSyncLabel.short.textContent = on && percent !== undefined
+          ? t('fileViewer.abc.audioSync.percentShort', { percent })
+          : t('fileViewer.abc.audioSync.short');
+      }
       audioSyncBtn.setAttribute('aria-label', label);
-      const title = s?.title ?? t(audioSync.fromDrive ? 'fileViewer.abc.audioSync.hintDrive' : 'fileViewer.abc.audioSync.hint');
-      // Its name in the tooltip once the label is gone.
-      audioSyncBtn.title = togglesCompact ? `${label} · ${title}` : title;
-      // The label may have grown (its figure): does it still fit?
-      fitToggles();
+      audioSyncBtn.title = s?.title ?? t(audioSync.fromDrive ? 'fileViewer.abc.audioSync.hintDrive' : 'fileViewer.abc.audioSync.hint');
+      // Its name grew or shrank (its figure, its key gap): which names fit.
+      fitSources();
     };
-    const audioSyncLabel = document.createElement('span');
-    /** The icons alone when the toggles' labels do not fit at the end of the
-     *  row (the user, 2026-10-29) rather than a toggle wrapping onto a line of
-     *  its own: the audio sync's colour still says how well, the tooltips the
-     *  rest. Both labels go and come back together (2026-10-31, the user):
-     *  the audio sync's and the Play-along's (below, which sets `fitToggles`
-     *  once both toggles are in the row). */
-    let togglesCompact = false;
-    let fitToggles: () => void = () => {};
-    const showAudioSyncBtn = (): void => {
-      if (!audioSyncBtn || !audioSync) return;
-      audioSyncBtn.style.display = audioSync.plays(shownBlock(currentIndex)) ? '' : 'none';
-      fitToggles();
-    };
-    /** Puts the audio sync of the version on screen in its place. */
+    const audioSyncLabel = mkSourceLabel();
+    /** The row of tabs and versions over the score, kept on one line: the
+     *  versions' arrows give up their width when it is short (`fitTopRow`,
+     *  below). */
+    let fitTopRow: () => void = () => {};
+    /** Puts the audio sync of the version on screen in its place — the source
+     *  tabs with it, between its score and its player. */
     const mountAudioSync = (): void => {
       audioSyncState = null;
       audioSyncView = audioSync!.mount(audioSyncHost!, shownBlock(currentIndex), currentMode, modalExpanded, (s) => {
@@ -1302,8 +1463,10 @@ export function showPreviewModal(
         if (!audioSyncView) return;
         audioSyncState = s;
         paintAudioSync();
-      }, audioSyncForced, transpose);
+      }, audioSyncForced, transpose, sourcesOn ? sourceRow : undefined);
     };
+    /** The source tabs back over the transport, from a view that had them. */
+    let homeSources: () => void = () => {};
     /** The hidden way round the verdict (2026-10-29, the user): a right click
      *  — a long press on a touch screen — follows the alignment even when it
      *  is judged too poor to be, turning the toggle on if it was off; the same
@@ -1360,6 +1523,8 @@ export function showPreviewModal(
           .map(el => [el, el.style.display]);
         for (const [el] of hiddenByAudioSync) el.style.display = 'none';
         audioSyncHost = document.createElement('div');
+        // The middle and the foot of the column: its score over its player.
+        audioSyncHost.className = 'flex-1 min-h-0 flex flex-col';
         container.appendChild(audioSyncHost);
         mountAudioSync();
       } else {
@@ -1371,6 +1536,7 @@ export function showPreviewModal(
         if (audioSyncState?.kind === 'aligning') audioSyncState = null;
         audioSyncHost?.remove();
         audioSyncHost = null;
+        homeSources();
         for (const [el, display] of hiddenByAudioSync) el.style.display = display;
         hiddenByAudioSync = [];
         // Everything the face decides, decided again — the stave redrawn, as
@@ -1385,7 +1551,6 @@ export function showPreviewModal(
     const versionChangedForAudioSync = (): void => {
       if (!audioSync) return;
       audioSyncState = null;
-      showAudioSyncBtn();
       if (audioSyncView) {
         if (audioSync.plays(shownBlock(currentIndex))) {
           audioSyncView.setVersion(shownBlock(currentIndex));
@@ -1395,17 +1560,27 @@ export function showPreviewModal(
       }
       paintAudioSync();
     };
+    if (audioSyncBtn && !audioSync) {
+      // No recording to follow: the tab says where one would come from.
+      audioSyncBtn.type = 'button';
+      audioSyncBtn.append(iconElement(WaveformIcon, 14), audioSyncLabel.el);
+      audioSyncBtn.onclick = () => explainSource(t('fileViewer.abc.audioSync'), t('fileViewer.abc.source.noRecording'));
+      paintAudioSync();
+      sourceSeg.appendChild(audioSyncBtn);
+    }
     if (audioSyncBtn && audioSync) {
       audioSyncBtn.type = 'button';
-      audioSyncBtn.append(iconElement(ScoreFollowIcon, 14), audioSyncLabel);
+      audioSyncBtn.append(iconElement(WaveformIcon, 14), audioSyncLabel.el);
       if (audioSync.fromDrive) audioSyncBtn.appendChild(iconElement(CloudIcon, 12));
       // A long press is not also a click once it has done its work.
       let pressTimer = 0, pressed = false;
       audioSyncBtn.onclick = () => {
         if (pressed) { pressed = false; return; }
-        if (audioSyncView) setAudioSync(false); else turnOnAudioSync(false);
+        if (!audioSyncUsable()) { explainSource(t('fileViewer.abc.audioSync'), t('fileViewer.abc.source.noKey')); return; }
+        // A tab: pressed again while on, it stays on.
+        if (!audioSyncView) turnOnAudioSync(false);
       };
-      audioSyncBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); forceAudioSync(); });
+      audioSyncBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); if (audioSyncUsable()) forceAudioSync(); });
       // iOS has no contextmenu on a long press: timed by hand, touch only —
       // and its own callout and text selection kept off the button.
       audioSyncBtn.style.setProperty('-webkit-touch-callout', 'none');
@@ -1414,14 +1589,14 @@ export function showPreviewModal(
         if (e.pointerType === 'mouse') return;
         pressed = false;
         window.clearTimeout(pressTimer);
+        if (!audioSyncUsable()) return;
         pressTimer = window.setTimeout(() => { pressed = true; forceAudioSync(); }, LONG_PRESS_MS);
       });
       for (const end of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
         audioSyncBtn.addEventListener(end, () => window.clearTimeout(pressTimer));
       }
       paintAudioSync();
-      showAudioSyncBtn();
-      topRow.appendChild(audioSyncBtn);
+      sourceSeg.appendChild(audioSyncBtn);
       releaseAudioSync = () => {
         audioSyncView?.unmount();
         audioSyncView = null;
@@ -1433,61 +1608,24 @@ export function showPreviewModal(
     // in the viewer's place, as the audio sync's player takes it — the tabs,
     // the versions and the full page driving it the same way, the viewer's
     // own sound and space bar standing down. The two exclude each other: one
-    // score, one cursor. Labelled as the audio sync's is, the two labels
-    // dropped together when the row is short (2026-10-31, the user). Out of
+    // score, one cursor. Labelled as the audio sync's is, the two moving
+    // together to their own row when the row is short (2026-11-20). Out of
     // developer mode since 2026-11-01 (the user: « it pleases me »).
     let playAlongView: PlayAlongView | null = null;
     let playAlongHost: HTMLElement | null = null;
     /** What the Play-along hid, with how each was shown, to put back. */
     let hiddenByPlayAlong: Array<[HTMLElement, string]> = [];
-    /** The viewer's height held at what the dialog shows of it while the
-     *  Play-along is laid over it. A long tune makes the viewer taller than
-     *  the dialog, whose body scrolls with the transport stuck at its foot
-     *  (BOTTOM_ROW_CLASS): laid over the whole viewer, the Play-along ran on
-     *  under that foot and its bar was cut off (2026-11-02, the user). It now
-     *  ends above the body's bottom padding — not over it, as the transport
-     *  does: its bar would touch the dialog's edge (2026-11-02, the user) —
-     *  and nothing scrolls under it. */
-    const holdPlayAlongHeight = (): void => {
-      const s = container.style;
-      s.height = s.overflow = '';
-      const scroller = container.parentElement ? nearestScroller(container.parentElement) : null;
-      if (scroller) scroller.scrollTop = 0;
-      const box = container.getBoundingClientRect();
-      // Rects are in the page's pixels, styles in layout ones (the app's zoom).
-      const scale = container.offsetHeight > 0 ? box.height / container.offsetHeight : 1;
-      const limit = scroller
-        ? scroller.getBoundingClientRect().top
-          + (scroller.clientTop + scroller.clientHeight - parseFloat(getComputedStyle(scroller).paddingBottom)) * scale
-        : box.bottom;
-      s.height = `${(Math.min(box.bottom, limit) - box.top) / scale}px`;
-      s.overflow = 'hidden';
-    };
-    const releasePlayAlongHeight = (): void => {
-      const s = container.style;
-      s.height = s.overflow = '';
-      window.removeEventListener('resize', holdPlayAlongHeight);
-    };
     const playAlongBtn = document.createElement('button');
-    const playAlongLabel = document.createElement('span');
-    playAlongLabel.textContent = t('fileViewer.abc.playAlong');
-    const paintPlayAlong = (): void => {
-      const on = !!playAlongView;
-      // At the end of the row: the audio sync's toggle has the margin that
-      // puts it there, when it is shown.
-      const afterSync = !!audioSyncBtn && audioSyncBtn.style.display !== 'none';
-      playAlongBtn.className = `${afterSync ? '' : 'ml-auto '}inline-flex items-center gap-1.5 ${togglesCompact ? 'px-2.5' : 'px-3'} min-h-[2.25rem] text-xs font-medium rounded-full border transition-colors cursor-pointer ${
-        on ? 'border-accent/60 text-accent bg-accent/10' : 'border-border text-muted hover:text-primary hover:border-accent/50'}`;
-      playAlongBtn.setAttribute('aria-pressed', String(on));
-      const hint = t('fileViewer.abc.playAlong.hint');
-      // Its name in the tooltip once the label is gone.
-      playAlongBtn.title = togglesCompact ? `${t('fileViewer.abc.playAlong')} · ${hint}` : hint;
-      // Shown or hidden with its version, it changes the room the audio
-      // sync's label has.
-      fitToggles();
-    };
+    const playAlongLabel = mkSourceLabel();
+    playAlongLabel.full.textContent = t('fileViewer.abc.playAlong');
+    playAlongLabel.short.textContent = t('fileViewer.abc.playAlong.short');
     /** Offered on a version with a key, as the audio sync's is. */
     const playsAlong = (): boolean => /^K:/m.test(shownBlock(currentIndex));
+    const paintPlayAlong = (): void => {
+      paintSynthTab();
+      paintSourceTab(playAlongBtn, !!playAlongView, playsAlong());
+      playAlongBtn.title = t('fileViewer.abc.playAlong.hint');
+    };
     const setPlayAlong = (on: boolean): void => {
       if (on === !!playAlongView) return;
       if (on) {
@@ -1495,22 +1633,18 @@ export function showPreviewModal(
         // As for the audio sync: the score's own sound stops for good.
         stopPlay();
         if (fullscreen) exitFullscreen();
-        // The viewer stays where it is, laid out but unseen, and the
-        // Play-along is laid over it: the dialog keeps the very size it had
-        // (2026-11-01, the user: it shrank on turning the Play-along on and
-        // grew back on turning it off, the pane sizing itself on its own
-        // allowances). The score inside fills what the bar leaves.
+        // In the viewer's place under the top row, as the audio sync's player
+        // is: the middle of the column (the score, filling it) and its foot
+        // (the bar). The dialog keeps its size — it has its full height
+        // whatever it holds (showModal's `fill`), where until 2026-11-20 the
+        // Play-along was laid over the hidden viewer at a height held for it
+        // (2026-11-01, the user: it shrank on turning on, grew on turning off).
         hiddenByPlayAlong = Array.from(container.children)
           .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== topRow)
-          .map(el => [el, el.style.visibility]);
-        for (const [el] of hiddenByPlayAlong) el.style.visibility = 'hidden';
-        container.classList.add('relative');
-        holdPlayAlongHeight();
-        window.addEventListener('resize', holdPlayAlongHeight);
+          .map(el => [el, el.style.display]);
+        for (const [el] of hiddenByPlayAlong) el.style.display = 'none';
         playAlongHost = document.createElement('div');
-        // From under the tabs' row (the container's gap is the host's own
-        // margin) to the bottom of what the viewer takes.
-        playAlongHost.style.cssText = `position:absolute;left:0;right:0;bottom:0;top:${topRow.offsetTop + topRow.offsetHeight}px`;
+        playAlongHost.className = 'flex-1 min-h-0 flex flex-col';
         container.appendChild(playAlongHost);
         // Within the tap: the microphone is asked for at once.
         playAlongView = mountPlayAlong(playAlongHost, {
@@ -1523,16 +1657,16 @@ export function showPreviewModal(
           expanded: modalExpanded,
           onKeepRecording: opts?.onKeepRecording,
           transpose,
+          below: sourcesOn ? sourceRow : undefined,
         });
       } else {
         playAlongView!.unmount();
         playAlongView = null;
         playAlongHost?.remove();
         playAlongHost = null;
-        for (const [el, visibility] of hiddenByPlayAlong) el.style.visibility = visibility;
+        homeSources();
+        for (const [el, display] of hiddenByPlayAlong) el.style.display = display;
         hiddenByPlayAlong = [];
-        container.classList.remove('relative');
-        releasePlayAlongHeight();
         sheetNeedsRerender = true;
         setAbcMode(currentMode);
       }
@@ -1541,7 +1675,6 @@ export function showPreviewModal(
     /** Another version on screen: followed in its turn — or no Play-along,
      *  for one without a key. */
     const versionChangedForPlayAlong = (): void => {
-      playAlongBtn.style.display = playsAlong() ? '' : 'none';
       if (playAlongView) {
         if (playsAlong()) playAlongView.setVersion(shownBlock(currentIndex), currentIndex);
         else setPlayAlong(false);
@@ -1549,28 +1682,32 @@ export function showPreviewModal(
       paintPlayAlong();
     };
     playAlongBtn.type = 'button';
-    playAlongBtn.append(iconElement(MicIcon, 14), playAlongLabel);
+    playAlongBtn.append(iconElement(MicIcon, 14), playAlongLabel.el);
     playAlongBtn.setAttribute('aria-label', t('fileViewer.abc.playAlong'));
-    // Turned off with a take in hand: asked first (PlayAlongView.settleTake).
     playAlongBtn.onclick = () => {
-      if (playAlongView?.settleTake(() => setPlayAlong(false))) return;
-      setPlayAlong(!playAlongView);
+      if (!playsAlong()) { explainSource(t('fileViewer.abc.playAlong'), t('fileViewer.abc.source.noKey')); return; }
+      // A tab: pressed again while on, it stays on.
+      setPlayAlong(true);
     };
-    topRow.appendChild(playAlongBtn);
+    if (sourcesOn) sourceSeg.appendChild(playAlongBtn);
     versionChangedForPlayAlong();
     releasePlayAlong = () => {
       playAlongView?.unmount();
       playAlongView = null;
-      releasePlayAlongHeight();
     };
-    // ── The toggles' labels: both, or neither ────────────────────────────────
-    const toggles: Array<[HTMLElement, HTMLElement]> = [];
-    if (audioSyncBtn) toggles.push([audioSyncBtn, audioSyncLabel]);
-    toggles.push([playAlongBtn, playAlongLabel]);
+    // The synth's tab, now that the other two exist: back to the score's own
+    // sound — a Play-along's take in hand asked about first.
+    paintSynthTab = () => paintSourceTab(synthTab, !audioSyncView && !playAlongView, true);
+    synthTab.onclick = () => {
+      if (audioSyncView) setAudioSync(false);
+      if (playAlongView && !playAlongView.settleTake(() => setPlayAlong(false))) setPlayAlong(false);
+    };
+    paintSynthTab();
+    // ── The row over the score: on one line ──────────────────────────────────
     // At once, in the observer — which runs after layout and before paint: at
-    // the next frame, the toggle was seen wrapping onto a line of its own for
-    // one frame before it shrank (2026-10-29, the user). What is observed is
-    // a ruler as wide as the row and of no height, which the change cannot
+    // the next frame, the row was seen wrapping onto a second line for one
+    // frame before it shrank (2026-10-29, the user). What is observed is a
+    // ruler as wide as the row and of no height, which the change cannot
     // resize: observing the row itself, whose height the change does move,
     // is the loop the browser reports (see syncedScore.tsx).
     const rowRuler = document.createElement('div');
@@ -1582,62 +1719,64 @@ export function showPreviewModal(
       const shown = Array.from(topRow.children).filter(el => el !== rowRuler && (el as HTMLElement).offsetParent) as HTMLElement[];
       return shown.reduce((sum, el) => sum + el.offsetWidth, 0) + gap * Math.max(0, shown.length - 1);
     };
-    /** The versions' arrows narrowed: the last thing given up before the row
-     *  would wrap (2026-11-01, the user — it no longer does), once the
-     *  toggles are down to their icons. */
-    let navNarrow = false;
-    const setNavNarrow = (narrow: boolean): void => {
-      navNarrow = narrow;
-      prevBtn.classList.toggle('abc-nav-narrow', narrow);
-      nextBtn.classList.toggle('abc-nav-narrow', narrow);
+    /** What the row gives up before it would wrap (2026-11-01, the user — it
+     *  no longer does), in order (2026-11-20, the user): first the versions'
+     *  selection itself — its arrows and its gaps; then the editor's "+", Save
+     *  and bin, the three together and by as little as it takes, down to the
+     *  arrows' own narrow width; and only then, last resort, the faces' tabs.
+     *  0 to 3, each keeping what the ones before gave up. */
+    let narrowStep = 0;
+    const editBtns = [addVersionBtn, saveBtn, deleteVersionBtn];
+    const setSelectionNarrow = (on: boolean): void => {
+      prevBtn.classList.toggle('abc-nav-narrow', on);
+      nextBtn.classList.toggle('abc-nav-narrow', on);
+      versionNav.style.columnGap = on ? '0.125rem' : '';
+    };
+    /** The three editing buttons at `px` layout pixels wide each, no padding;
+     *  null, their own width. */
+    const setEditWidth = (px: number | null): void => {
+      for (const b of editBtns) {
+        b.classList.toggle('abc-nav-narrow', px !== null);
+        b.style.minWidth = px === null ? '' : `${px}px`;
+      }
     };
     {
-      fitToggles = (): void => {
-        // The toggles are judged against the arrows at their full width:
-        // they give up their labels first.
-        if (navNarrow) setNavNarrow(false);
-        const shown = toggles.filter(([btn]) => btn.style.display !== 'none' && btn.isConnected);
-        if (shown.length) fitLabels(shown);
-        // Measured as it now stands, in the same task — nothing painted in
-        // between; with the same few pixels to spare before widening again.
-        const need = rowNeed();
+      fitTopRow = (): void => {
+        // Tried from nothing given up, measured as the row then stands, in
+        // the same task — nothing painted in between. A step that jumps (the
+        // arrows, the tabs) is only given back with a few pixels to spare;
+        // the buttons' width follows the room, nothing to flicker between.
+        const was = narrowStep;
         const room = topRow.clientWidth;
-        if (wasNarrow ? need + TOGGLE_SLACK_PX > room : need > room) setNavNarrow(true);
-        wasNarrow = navNarrow;
+        setSelectionNarrow(false);
+        setEditWidth(null);
+        tabBar.classList.remove('abc-tabs-narrow');
+        narrowStep = 0;
+        // The arrows jump back to their width: with room to spare only.
+        if (rowNeed() + (was > 0 ? ROW_SLACK_PX : 0) <= room) return;
+        setSelectionNarrow(true);
+        narrowStep = 1;
+        if (rowNeed() <= room) return;
+        const shown = editBtns.filter(b => b.style.display !== 'none' && b.offsetParent);
+        if (shown.length) {
+          // The tabs, too, jump back: the buttons leave them the spare room.
+          const spare = was === 3 ? ROW_SLACK_PX : 0;
+          const full = shown[0]!.offsetWidth;
+          const short = rowNeed() + spare - room;
+          const width = Math.floor(full - short / shown.length);
+          setEditWidth(Math.min(full, Math.max(EDIT_MIN_PX, width)));
+          narrowStep = 2;
+          if (width >= EDIT_MIN_PX) return;
+        }
+        tabBar.classList.add('abc-tabs-narrow');
+        narrowStep = 3;
       };
-      let wasNarrow = false;
-      const fitLabels = (shown: Array<[HTMLElement, HTMLElement]>): void => {
-        // Their widths in their FULL shape, labels shown and full padding —
-        // measured so whichever shape they are in, in the same task, so
-        // nothing is painted in between. Measured in the icon's narrower
-        // padding, the label seemed to fit by a few pixels, came back,
-        // overflowed, went: the toggle flickered between the two for as long
-        // as the width stood at the edge (2026-10-29, the user).
-        const full = shown.reduce((sum, [btn, label]) => {
-          label.style.display = '';
-          btn.classList.replace('px-2.5', 'px-3');
-          const w = btn.offsetWidth;
-          btn.classList.replace('px-3', togglesCompact ? 'px-2.5' : 'px-3');
-          return sum + w;
-        }, 0);
-        const gap = parseFloat(getComputedStyle(topRow).columnGap) || 0;
-        const others = Array.from(topRow.children).reduce((sum, el) => (
-          toggles.some(([btn]) => btn === el) || el === rowRuler || !(el as HTMLElement).offsetParent ? sum : sum + (el as HTMLElement).offsetWidth + gap
-        ), 0);
-        const need = full + gap * (shown.length - 1);
-        const room = topRow.clientWidth - others;
-        // And a few pixels to spare before the labels come back: at the edge,
-        // a rounding either way must not toggle them.
-        const compact = togglesCompact ? need + TOGGLE_SLACK_PX > room : need > room;
-        for (const [, label] of shown) label.style.display = compact ? 'none' : '';
-        if (compact !== togglesCompact) { togglesCompact = compact; paintAudioSync(); paintPlayAlong(); }
-      };
-      const rowWatch = new ResizeObserver(() => fitToggles());
+      const rowWatch = new ResizeObserver(() => fitTopRow());
       topRow.classList.add('relative');
       topRow.appendChild(rowRuler);
       rowWatch.observe(rowRuler);
-      releaseToggleRow = () => rowWatch.disconnect();
-      fitToggles();
+      releaseToggleRow = () => { rowWatch.disconnect(); sourcesWatch.disconnect(); };
+      fitTopRow();
     }
     /** A tab pressed: the viewer's face, or the audio sync's, or the
      *  Play-along's. */
@@ -1664,7 +1803,7 @@ export function showPreviewModal(
     // objects to (see `textWarnMarks`), and this strip is folded to its count
     // until it is opened.
     const warnRow = document.createElement('div');
-    warnRow.className = 'hidden flex-col gap-1 px-3 py-2 rounded-lg text-xs border border-warn/30 bg-warn/10 text-primary';
+    warnRow.className = 'hidden shrink-0 flex-col gap-1 px-3 py-2 rounded-lg text-xs border border-warn/30 bg-warn/10 text-primary';
     container.appendChild(warnRow);
     /** Folded or not: kept for the life of the viewer, since the strip is
      *  rebuilt at every pause in the typing. */
@@ -2084,15 +2223,17 @@ export function showPreviewModal(
     // in styles.css), never by measuring here: a layout that measures itself
     // can chase its own scrollbar.
     const facesBox = document.createElement('div');
+    // The middle of the column: whatever the rows above and below leave.
+    facesBox.className = 'abc-faces';
     facesBox.appendChild(scoreFrame);
     container.appendChild(facesBox);
     // The transport goes UNDER the faces, which is why it is not appended
     // where it was built (see TRANSPORT_CLASS) — nor here: after the ABC
     // source's box, which goes into `facesBox` beside the stave.
 
-    // The score's own scrolling viewport, capped well below the modal's
-    // height: the score is the only thing that should move while the cursor
-    // advances. When the modal body was the scroller, centring a staff dragged
+    // The score's own scrolling viewport, as tall as the middle of the column
+    // (styles.css, .abc-faces): the score is the only thing that should move
+    // while the cursor advances. When the modal body was the scroller, centring a staff dragged
     // the tabs and the transport controls out of view along with it.
     //
     // A box of its own, and NOT the element abcjs draws into: a responsive
@@ -2103,12 +2244,13 @@ export function showPreviewModal(
     // Carrying both jobs on one element meant neither cap nor scrollbar ever
     // took, and the modal body quietly went on being the scroller.
     const scoreScroll = document.createElement('div');
-    // `pt-8`: the room the full-page button sits in (scoreTools, `top-1`, a
-    // 2rem target whose glyph ends ~27 px down). It used to fall, by accident,
-    // in empty bands above the first staff — the hidden tempo mark's, and the
-    // drawing shrunk inside a box too tall for it — and landed on the last
-    // notes of the first line once both were gone (2026-10-24).
-    scoreScroll.className = 'abc-score-paper w-full rounded p-2 pt-8 overflow-y-auto';
+    // No room kept over the first staff for the full-page button (scoreTools):
+    // `pt-8` held 32 px of the score's height for it from 2026-10-24, when it
+    // had landed on the last notes of the first line; the user would rather
+    // have the height (2026-11-20 — the score is the point of this crowded
+    // dialog) and the button floating, on a paper-coloured ground of its own
+    // (`.abc-score-tool-small`) so that it reads over whatever it covers.
+    scoreScroll.className = 'abc-score-paper w-full rounded p-2 overflow-y-auto';
     scoreFrame.appendChild(scoreScroll);
 
     // Full page, in the score's top right corner, over the paper (2026-10-10,
@@ -2158,16 +2300,10 @@ export function showPreviewModal(
     // Declared here rather than beside the full-page code below: the cap has to
     // know to keep its hands off while the score owns the page.
     let fullscreen: HTMLElement | null = null;
-    const capScore = () => {
-      if (fullscreen) return; // full page sizes itself from its own flex column
-      const cap = modalExpanded ? `calc(${modalMaxH(1)} - 12rem)` : modalMaxH(0.62);
-      // With the text beside it or under it, the stylesheet has the last word:
-      // the full cap side by side, a share of it under the text.
-      facesBox.style.setProperty('--abc-score-cap', cap);
-      scoreScroll.style.maxHeight = currentMode === 'both' ? '' : cap;
-    };
-    capScore();
-    onModalExpanded = (expanded) => { modalExpanded = expanded; capScore(); audioSyncView?.setExpanded(expanded); if (playAlongView) { holdPlayAlongHeight(); playAlongView.setExpanded(expanded); } };
+    // No cap on the score's height any more (2026-11-20): it is the middle of
+    // a column the dialog's height (see the container). The dialog grown to the
+    // page gives it the room by itself.
+    onModalExpanded = (expanded) => { modalExpanded = expanded; audioSyncView?.setExpanded(expanded); playAlongView?.setExpanded(expanded); };
 
     /** Re-engraves for the box the score is in NOW, keeping the reader's place
      *  and whatever is playing. Assigned once abcjs has loaded; a resize that
@@ -2241,7 +2377,6 @@ export function showPreviewModal(
       transportAnchor.replaceWith(transportBar);
       fullscreen.remove();
       fullscreen = null;
-      capScore();
       fullscreenBtn.replaceChildren(iconElement(ExpandIcon, 14));
       fullscreenBtn.title = t('fileViewer.abc.fullscreen');
       fullscreenBtn.setAttribute('aria-label', t('fileViewer.abc.fullscreen'));
@@ -2325,7 +2460,9 @@ export function showPreviewModal(
     // the attachment when the caller passed a save callback (card view);
     // read-only otherwise (study).
     const textarea = document.createElement('textarea');
-    textarea.className = 'relative block w-full h-72 font-mono text-xs p-3 border border-border rounded-lg bg-transparent text-primary resize-y outline-none focus:border-accent';
+    // As tall as its share of the middle (styles.css, .abc-faces): no handle
+    // to resize it by — it had one while the box was a fixed 18rem.
+    textarea.className = 'relative block w-full h-full font-mono text-xs p-3 border border-border rounded-lg bg-transparent text-primary resize-none outline-none focus:border-accent';
     textarea.spellcheck = false;
     textarea.readOnly = !onSave;
     textarea.value = tunes[0] ?? '';
@@ -2345,7 +2482,14 @@ export function showPreviewModal(
     const bottomRow = document.createElement('div');
     bottomRow.className = BOTTOM_ROW_CLASS;
     bottomRow.appendChild(transportBar);
-    container.appendChild(bottomRow);
+    // The source tabs over it, stuck with it (`homeSources`: back here from
+    // the audio sync's or the Play-along's view).
+    const bottomBlock = document.createElement('div');
+    bottomBlock.className = BOTTOM_BLOCK_CLASS;
+    if (sourcesOn) bottomBlock.appendChild(sourceRow);
+    bottomBlock.appendChild(bottomRow);
+    container.appendChild(bottomBlock);
+    homeSources = () => { if (sourcesOn) bottomBlock.prepend(sourceRow); };
     // The positions marked are positions in the text as it was: a keystroke
     // makes them wrong, so typing stops it — on the "both" face too, where
     // the music could have gone on round the loop with the change in it: the
@@ -2528,101 +2672,7 @@ export function showPreviewModal(
     // as you type by PARSING the text and drawing nothing at all (see
     // `checkWarnings`). A mistake is still named the moment it is made.
 
-    // ── Adding / deleting a version ───────────────────────────────────────────
-    // On the bottom row rather than beside the version nav: these two write to
-    // the file, like Save and unlike the nav. Shown on the source face only,
-    // and only when the caller passed a save callback.
-    const versionEdit = document.createElement('div');
-    versionEdit.className = 'abc-bottom-start flex items-center gap-1 p-1 bg-bg rounded-lg w-fit';
-    versionEdit.style.display = 'none';
-    const mkEditBtn = (icon: Element, title: string, danger: boolean): HTMLButtonElement => {
-      const b = document.createElement('button');
-      b.appendChild(icon);
-      b.title = title;
-      b.setAttribute('aria-label', title);
-      b.className = `abc-tool-btn text-muted hover:bg-elevated ${danger ? 'hover:text-danger' : 'hover:text-primary'}`;
-      return b;
-    };
-    const addVersionBtn = mkEditBtn(iconElement(PlusIcon, 14), t('fileViewer.abc.addVersion'), false);
-    const deleteVersionBtn = mkEditBtn(iconElement(TrashIcon, 14), t('fileViewer.abc.deleteVersion'), true);
-    versionEdit.append(addVersionBtn, deleteVersionBtn);
 
-    const saveGroup = document.createElement('div');
-    // Against the right edge; `min-w-0` lets the status text wrap inside it
-    // rather than pushing Save off the row.
-    saveGroup.className = 'abc-bottom-end flex items-center gap-2 min-w-0 justify-end';
-    saveGroup.style.display = 'none';
-    const saveStatus = document.createElement('span');
-    saveStatus.className = 'text-xs text-dim';
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'btn-primary text-xs';
-    saveBtn.textContent = t('fileViewer.abc.save');
-    saveBtn.disabled = true;
-    saveGroup.append(saveStatus, saveBtn);
-    bottomRow.prepend(versionEdit);
-    bottomRow.appendChild(saveGroup);
-
-    /** One line or two: the transport keeps its natural width in the middle
-     *  and each side gets the room of the wider one, so it stays centred —
-     *  the whole has to fit, or the transport goes up a line of its own. Read
-     *  off the pieces' natural widths (`max-content`), never off the layout
-     *  they are in.
-     *
-     *  That alone did not keep it still (2026-11-08, an Android tablet in
-     *  portrait, reproduced in Chromium at 795-801 px wide, zoom 125 %, a set's
-     *  score: ~30 switches in 0.7 s, for ever). Nothing beside the transport,
-     *  the score face, was decided by the same sum without the grid's two gaps:
-     *  "it fits" while its column was 16 px short, so the transport wrapped
-     *  onto two lines by itself; the taller row made the dialog scroll, its
-     *  scrollbar (6 px, styles.css) took that off the row, "it does not fit",
-     *  stacked — on one line again, shorter, no scrollbar, and round again.
-     *  Hence:
-     *  - nothing beside it: nothing measured. The transport has the row
-     *    (`abc-bottom-solo`) and wraps by CSS alone, which nothing can chase;
-     *  - beside the source face's buttons: a slack wider than that scrollbar
-     *    before going back to one line, and a stop after a few switches a
-     *    second, kept until the window is resized. */
-    const STACK_SLACK_PX = 12;
-    let stackFlips: number[] = [];
-    let stackFrozenAt = '';
-    const layoutBottomRow = (): void => {
-      const natural = (el: HTMLElement): number => {
-        const prev = el.style.width;
-        el.style.width = 'max-content';
-        const w = el.offsetWidth;
-        el.style.width = prev;
-        return w;
-      };
-      const sideW = (el: HTMLElement) => (el.style.display === 'none' ? 0 : natural(el));
-      const side = Math.max(sideW(versionEdit), sideW(saveGroup));
-      bottomRow.classList.toggle('abc-bottom-solo', side === 0);
-      if (side === 0) { bottomRow.classList.remove('abc-bottom-stacked'); return; }
-      const gap = parseFloat(getComputedStyle(bottomRow).columnGap) || 0;
-      const need = natural(transportBar) + 2 * (side + gap);
-      const room = bottomRow.clientWidth;
-      const stacked = bottomRow.classList.contains('abc-bottom-stacked');
-      const stack = stacked ? need + STACK_SLACK_PX > room : need > room;
-      if (stack === stacked) return;
-      const windowSize = `${window.innerWidth}x${window.innerHeight}`;
-      if (stackFrozenAt === windowSize) return;
-      const now = performance.now();
-      stackFlips = stackFlips.filter((at) => now - at < 1000);
-      stackFlips.push(now);
-      if (stackFlips.length > 4) { stackFrozenAt = windowSize; return; }
-      bottomRow.classList.toggle('abc-bottom-stacked', stack);
-    };
-    let bottomRaf = 0;
-    const bottomRo = new ResizeObserver(() => {
-      cancelAnimationFrame(bottomRaf);
-      bottomRaf = requestAnimationFrame(layoutBottomRow);
-    });
-    // The row's width, and what decides the pieces' own: a chip showing up, a
-    // value growing, a "Saved." beside Save.
-    for (const el of [bottomRow, versionEdit, saveGroup, practiceRow]) bottomRo.observe(el);
-    // Taken down with the dialog — on the hook assigned once, above, rather
-    // than releaseKeys, which the abcjs branch reassigns.
-    const exitFullscreenFirst = releaseFullscreen;
-    releaseFullscreen = () => { exitFullscreenFirst(); cancelAnimationFrame(bottomRaf); bottomRo.disconnect(); };
 
     body.appendChild(container);
 
@@ -2727,7 +2777,7 @@ export function showPreviewModal(
         discard: () => {
           draft = null;
           markDraft();
-          saveBtn.disabled = true;
+          saveBtn.disabled = true; paintSave();
           // The stave was drawing the edit: stale now. Whatever proceeds next
           // redraws it straight away when it is on screen, or the dialog is
           // going away.
@@ -2759,8 +2809,7 @@ export function showPreviewModal(
       // deleting a version changes the count under an open viewer. Deleting is
       // hidden on a single-version file rather than offered and refused — the
       // last version cannot go without the file going with it.
-      versionNav.classList.toggle('hidden', versionCount <= 1);
-      deleteVersionBtn.classList.toggle('hidden', versionCount <= 1);
+      paintVersionNav();
       updateStarBtn?.();
       versionChangedForAudioSync();
       versionChangedForPlayAlong();
@@ -2771,12 +2820,37 @@ export function showPreviewModal(
       if (showsText(currentMode)) {
         fillBox(pendingBody() ?? currentBody());
         saveBtn.disabled = pendingBody() === null;
-        saveStatus.textContent = '';
+        saveFailed = false; paintSave();
         checkWarnings();
         previewText();
       }
       // The sound of the version now on screen.
       prepareSound();
+    }
+
+    /** The editor's face: the stave and its text together, of a file that can
+     *  be saved (2026-11-20, the user — "that is the editor mode"). The text
+     *  is written there only: read-only on the ABC face alone, as it is when
+     *  nothing can save it; and the version and save tools are there only. */
+    function editsText(): boolean {
+      return !!onSave && currentMode === 'both';
+    }
+
+    /** The versions' box: there with two versions or more — and on the
+     *  editor's face of a file with one, for its "+" (2026-11-20). Adding and
+     *  deleting on that face only; the last version cannot be deleted without
+     *  the file going with it, so not offered. The row's width changes with
+     *  them: its arrows judged again. */
+    function paintVersionNav(): void {
+      const editing = editsText();
+      versionNav.classList.toggle('hidden', versionCount <= 1 && !editing);
+      addVersionBtn.style.display = editing ? '' : 'none';
+      deleteVersionBtn.style.display = editing && versionCount > 1 ? '' : 'none';
+      // Save too, BEFORE the row is fitted: shown after, on a narrow screen
+      // the editor's face opened overflowing until the next resize
+      // (2026-11-20, the user).
+      paintSave();
+      fitTopRow();
     }
 
     function paintTabs(mode: ScoreFace): void {
@@ -2792,7 +2866,7 @@ export function showPreviewModal(
       const tabBase = 'seg-btn px-0 gap-0 min-w-[2.25rem]';
       sheetTabBtn.className = `${tabBase}${mode === 'sheet' ? ' seg-btn-on' : ''}`;
       textTabBtn.className  = `${tabBase}${mode === 'text'  ? ' seg-btn-on' : ''}`;
-      bothTabBtn.className  = `${tabBase} px-1.5${mode === 'both' ? ' seg-btn-on' : ''}`;
+      bothTabBtn.className  = `${tabBase}${mode === 'both' ? ' seg-btn-on' : ''}`;
     }
 
     /** Whether the ABC source is on screen — to refill the box only when it
@@ -2822,12 +2896,8 @@ export function showPreviewModal(
       // The warnings are the source face's alone (2026-10-19).
       if (!showsText(mode)) showWarnings([]);
 
-      if (onSave) {
-        versionEdit.style.display = showsText(mode) ? '' : 'none';
-        saveGroup.style.display = showsText(mode) ? '' : 'none';
-      }
-      layoutBottomRow();
-      capScore();
+      paintVersionNav();
+      textarea.readOnly = !editsText();
       if (showsSheet(mode) && sheetNeedsRerender) {
         sheetNeedsRerender = false;
         doRenderTune?.(currentIndex);
@@ -2835,7 +2905,7 @@ export function showPreviewModal(
       if (showsText(mode) && !textShown) {
         fillBox(pendingBody() ?? currentBody());
         saveBtn.disabled = pendingBody() === null;
-        saveStatus.textContent = '';
+        saveFailed = false; paintSave();
       }
       textShown = showsText(mode);
       // No focus: switching to the source face is often just a look, and
@@ -2869,7 +2939,7 @@ export function showPreviewModal(
           // Not written (a full device, typically): say so where the edit is,
           // keep the editor as it is, and do not pretend it was saved.
           console.warn('[viewer] save failed', e);
-          saveStatus.textContent = t('fileViewer.saveFailed');
+          saveFailed = true; paintSave();
           return false;
         }
         if (result === false) return false;
@@ -2940,7 +3010,7 @@ export function showPreviewModal(
         draft = body === currentBody() ? null : { index: currentIndex, body };
         markDraft();
         saveBtn.disabled = draft === null;
-        saveStatus.textContent = '';
+        saveFailed = false; paintSave();
         // The stave is drawn from the draft, so it is stale from now on:
         // redrawn as it is typed when it is on screen beside the text, else
         // when it is next shown.
@@ -2952,12 +3022,12 @@ export function showPreviewModal(
         if (!draft) return true;
         const nextTunes = [...tunes];
         nextTunes[draft.index] = withXLine(draft.index, draft.body);
-        saveBtn.disabled = true;
+        saveBtn.disabled = true; paintSave();
         if (!await persist(nextTunes, currentIndex)) {
-          saveBtn.disabled = pendingBody() === null;
+          saveBtn.disabled = pendingBody() === null; paintSave();
           return false;
         }
-        saveStatus.textContent = t('fileViewer.abc.saved');
+        saveFailed = false; paintSave();
         return true;
       };
       saveBtn.onclick = () => { void saveDraft(); };
@@ -2967,7 +3037,7 @@ export function showPreviewModal(
         nextTunes.push(newVersionBlock(nextTunes));
         // Straight onto the new one: it is empty, and there is nothing else to
         // do with it than write in it.
-        if (await persist(nextTunes, nextTunes.length - 1)) setAbcMode(currentMode === 'sheet' ? 'text' : currentMode);
+        if (await persist(nextTunes, nextTunes.length - 1)) setAbcMode('both');
       };
 
       deleteVersionBtn.onclick = () => {
@@ -4046,6 +4116,9 @@ export function showPreviewModal(
     // The version arrows and the Sheet / ABC tabs are pressed again and again,
     // and every version, every face, is its own height (reported 2026-10-23).
     pinTop: true,
+    // A score lays itself out in the dialog's whole height: its tools, the
+    // score taking what is left, its controls (2026-11-20, the user).
+    fill: isScore,
     onDismiss,
     guardDismiss: (dismiss) => guardClose?.(dismiss) ?? false,
     expandable: isScore || m.startsWith('audio/') || m === 'application/pdf',

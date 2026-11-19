@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { t } from '../services/i18nService';
-import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIcon, ArrowRightIcon, ScoreFollowIcon, MicIcon, PlayIcon, VideoIcon } from './icons';
+import { FolderIcon, DeckIcon, MusicNoteIcon, ModulesIcon, WaveformIcon, TrendIcon, ArrowRightIcon, MicIcon, PlayIcon, VideoIcon } from './icons';
 
 // ── What Cadence does, on the welcome screen (2026-10-26) ────────────────────
 // Two sections under the user list, as tiles of uneven sizes ("bento", picked
@@ -288,7 +288,7 @@ export function WelcomeTour() {
         <Tile wide class="flex gap-3">
           <div class="flex-1 min-w-0 flex flex-col gap-2">
             <TileTitle>{t('welcome.tour.follow.title')}</TileTitle>
-            <FollowWay icon={<ScoreFollowIcon size={14} />} name={t('fileViewer.abc.audioSync')} text={t('welcome.tour.follow.audioSync')} />
+            <FollowWay icon={<WaveformIcon size={14} />} name={t('fileViewer.abc.audioSync')} text={t('welcome.tour.follow.audioSync')} />
             <FollowWay icon={<MicIcon size={14} />} name={t('fileViewer.abc.playAlong')} text={t('welcome.tour.follow.playAlong')} />
           </div>
           <FollowingScore />

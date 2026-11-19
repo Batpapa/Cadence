@@ -105,6 +105,13 @@ export interface ModalOptions {
    *  usePinnedTop. For a dialog pressed several times at the same place while
    *  its height changes under the finger. */
   pinTop?: boolean;
+  /** Default false. The dialog as tall as it may be, whatever it holds, and
+   *  its body a column for the body element to fill (flex-1) rather than a
+   *  box that scrolls: for a body that lays itself out in that height — the
+   *  score viewer (fileViewer.ts, 2026-11-20): its tools above, its controls
+   *  below, and the score taking whatever is left between them. Still
+   *  scrolled as a whole if what it holds cannot fit at all. */
+  fill?: boolean;
 }
 
 /** The widths a dialog may take (UI charter, 2026-11-11) — there were about
@@ -187,6 +194,7 @@ interface ModalEntry {
   titleEdit?: ModalOptions['titleEdit'];
   guardDismiss?: ModalOptions['guardDismiss'];
   pinTop: boolean;
+  fill: boolean;
 }
 
 let nextId = 0;
@@ -308,6 +316,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     onBack: opts.onBack,
     guardDismiss: opts.guardDismiss,
     pinTop: opts.pinTop ?? false,
+    fill: opts.fill ?? false,
   }];
 }
 
@@ -440,13 +449,15 @@ export function renderModalBody(node: ComponentChild): { el: HTMLElement; cleanu
  *  post-commit (useLayoutEffect, not useEffect) so it's there before the
  *  browser paints, same reasoning as sidebar.ts/trending.tsx's identical
  *  pattern: an effect-mounted node would flash in one frame late. */
-function BodyMount({ el }: { el: HTMLElement }) {
+function BodyMount({ el, fill }: { el: HTMLElement; fill: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     ref.current!.appendChild(el);
     return () => { el.remove(); };
   }, [el]);
-  return <div ref={ref} class="px-5 py-4 overflow-y-auto flex-1" />;
+  // `fill`: a column of the dialog's height for the body to fill — see
+  // ModalOptions.fill. `min-h-0` lets it be squeezed rather than grow.
+  return <div ref={ref} class={`px-5 py-4 overflow-y-auto flex-1${fill ? ' min-h-0 flex flex-col' : ''}`} />;
 }
 
 function IconMount({ el }: { el: Element }) {
@@ -552,7 +563,13 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
         class={`bg-elevated shadow-2xl overflow-hidden flex flex-col ${
           expanded ? 'w-full h-full safe-area-pad' : 'border border-border rounded-xl w-full mx-4'
         }`}
-        style={expanded ? undefined : { maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`, maxHeight: modalMaxH(0.85), ...pinned.dialogStyle }}
+        style={expanded ? undefined : {
+          maxWidth: `min(${modalMaxW(0.9)}, ${entry.maxWidth})`,
+          maxHeight: modalMaxH(0.85),
+          // As tall as it may be (ModalOptions.fill).
+          ...(entry.fill ? { height: modalMaxH(0.85) } : {}),
+          ...pinned.dialogStyle,
+        }}
         onPointerDownCapture={pinned.onPointerDownCapture}
         onKeyDownCapture={pinned.onKeyDownCapture}
       >
@@ -606,7 +623,7 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
           </div>
         </div>
 
-        <BodyMount el={entry.body} />
+        <BodyMount el={entry.body} fill={entry.fill} />
 
         {entry.actions.length > 0 && (
           <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-border shrink-0">

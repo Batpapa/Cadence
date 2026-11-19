@@ -1007,6 +1007,9 @@ async function openResolvedScore(
     // Its score following one of its recordings — not a set's generated
     // score for now (2026-10-31, the user).
     audioSync: att.generatedBy === 'tuneset' ? undefined : cardAudioSync(options.attachments),
+    // Nor, there, the choice of who plays it: the synth alone (2026-11-20,
+    // the user).
+    sources: att.generatedBy !== 'tuneset',
     onKeepRecording: options.onKeepRecording,
   });
 }

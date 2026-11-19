@@ -216,9 +216,14 @@ export interface SyncedScoreProps {
   /** Followed live rather than along `engine`: the cursor goes where this
    *  says, and `follow`, `engine` and `region` are not read. */
   clock?: LiveClock;
+  /** As tall as the column it is in leaves it (flex-1), its box scrolling
+   *  inside, `maxHeight` and `minHeight` unread: the score viewer's audio
+   *  sync and Play-along (2026-11-20, the user), whose score is the middle of
+   *  the viewer's column, between its tools and its controls. */
+  fill?: boolean;
 }
 
-export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, minHeight = '8rem', face = 'sheet', tools, clock }: SyncedScoreProps) {
+export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, minHeight = '8rem', face = 'sheet', tools, clock, fill = false }: SyncedScoreProps) {
   const paperRef = useRef<HTMLDivElement>(null);
   /** What abcjs draws into, inside the paper — never the paper itself: abcjs
    *  writes `overflow: hidden` and a height on its target, and the score,
@@ -582,10 +587,14 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
    *  (its scoreTools, `top-1 right-1`): `right-3` here put the button 8 px off
    *  the viewer's (2026-11-01, the user). */
   const toolsBox = tools && (
-    <div class="absolute top-1 right-1 z-20 flex items-center" style={{ '--abc-ink': colours.ink }}>{tools}</div>
+    <div class="absolute top-1 right-1 z-20 flex items-center" style={{ '--abc-ink': colours.ink, '--abc-paper': colours.paper }}>{tools}</div>
   );
   return (
-    <div ref={gridRef} class={both ? 'abc-faces-both' : 'relative rounded overflow-hidden'} style={both ? undefined : paperStyle}>
+    <div
+      ref={gridRef}
+      class={both ? `abc-faces-both${fill ? ' score-fill-both' : ''}` : `relative rounded overflow-hidden${fill ? ' score-fill' : ''}`}
+      style={both ? undefined : paperStyle}
+    >
       {/* Behind the text face the stave is still drawn, at the box's width:
           its timeline is what the text's cursor reads. Out of sight in a box
           of no height that clips it all — not display:none, a box of no width
@@ -593,14 +602,16 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
           cursor and bounds override (`visibility="visible"`): they were seen
           floating over the text (2026-10-29). */}
       <div
-        class={both ? 'abc-score-frame relative rounded overflow-hidden' : undefined}
+        class={both ? 'abc-score-frame relative rounded overflow-hidden' : fill ? 'flex-1 min-h-0 flex flex-col' : undefined}
         style={face === 'text' ? { position: 'absolute', left: 0, right: 0, top: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' } : both ? paperStyle : undefined}
       >
         <div
           ref={paperRef}
           onClick={onPaperClick}
-          class={`abc-score-paper score-follow-paper overflow-y-auto p-2 ${tools ? 'pt-8' : ''}`}
-          style={{ color: colours.ink, '--abc-paper': colours.paper, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, maxHeight, minHeight }}
+          // No room kept over the first staff for the tools: they float, as
+          // the viewer's do (fileViewer.ts, 2026-11-20).
+          class={`abc-score-paper score-follow-paper overflow-y-auto p-2${fill ? ' flex-1 min-h-0' : ''}`}
+          style={{ color: colours.ink, '--abc-paper': colours.paper, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, ...(fill ? {} : { maxHeight, minHeight }) }}
         >
           <div ref={drawingRef} />
         </div>
@@ -614,8 +625,8 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         <div class={both ? 'abc-text-box relative rounded overflow-hidden' : 'contents'} style={both ? paperStyle : undefined}>
           <pre
             ref={textRef}
-            class={`score-follow-text relative m-0 overflow-y-auto p-3 font-mono text-xs whitespace-pre-wrap break-words ${tools && !both ? 'pt-8' : ''}`}
-            style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, ...(both ? {} : { maxHeight, minHeight }) }}
+            class={`score-follow-text relative m-0 overflow-y-auto p-3 font-mono text-xs whitespace-pre-wrap break-words ${tools && !both ? 'pt-8' : ''}${fill && !both ? ' flex-1 min-h-0' : ''}`}
+            style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, ...(both || fill ? {} : { maxHeight, minHeight }) }}
           />
         </div>
       )}
