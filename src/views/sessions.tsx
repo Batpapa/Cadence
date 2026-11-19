@@ -110,8 +110,8 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
           onImportSession={() => showImportSessionModal(ctx)}
           onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}
           initialSearch={search}
-          initialTab={tab}
-          initialFolder={folder}
+          tab={tab}
+          folder={folder}
           initialSort={sort}
           initialSortAsc={sortAsc}
           initialOthers={others}

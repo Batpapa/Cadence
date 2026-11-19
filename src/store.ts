@@ -8,6 +8,7 @@ import { normaliseState } from './services/stateNormalise';
 import { setDateFormatPref } from './services/dateFormat';
 import { closeTopOverlay } from './components/overlayStack';
 import { sessionsOf } from './session/detections';
+import { sessionTreeOf } from './session/sessionTree';
 
 export const appState    = signal<AppState>(emptyState());
 export const routeSignal = signal<Route>({ view: 'folder', folderId: null });
@@ -35,7 +36,10 @@ function isValidRoute(route: Route, user: AppState): boolean {
     // answers here like a card does. A draft being recorded is not there, but
     // no route names one: the live screen is the bare `{view:'sessions'}`, and
     // stop() promotes the analysis before navigating to it (LiveSession.tsx).
-    case 'sessions': return !route.sessionId || !!sessionsOf(user)[route.sessionId];
+    // The folder of analyses too, since it became a history entry of its own
+    // (2026-11-20): back after deleting one would otherwise land in it.
+    case 'sessions': return (!route.sessionId || !!sessionsOf(user)[route.sessionId])
+      && (!route.folder || !!sessionTreeOf(user).folders[route.folder]);
     case 'trending': return true;
   }
 }
@@ -46,7 +50,15 @@ export function loadSavedRoute(user: AppState): Route | null {
     const raw = localStorage.getItem(`${ROUTE_STORAGE_KEY}:${user.id}`);
     if (!raw) return null;
     const route = JSON.parse(raw) as Route;
-    return isValidRoute(route, user) ? route : null;
+    if (isValidRoute(route, user)) return route;
+    // A folder of analyses deleted since: the analyser is still where the user
+    // was, so reopen it at its root rather than send them home — which is what
+    // this did before that folder counted in isValidRoute.
+    if (route.view === 'sessions' && route.folder) {
+      const atRoot = { ...route, folder: undefined };
+      return isValidRoute(atRoot, user) ? atRoot : null;
+    }
+    return null;
   } catch {
     return null;
   }

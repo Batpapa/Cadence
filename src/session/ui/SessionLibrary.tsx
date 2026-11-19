@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, ExternalLinkIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
@@ -17,8 +17,9 @@ import { TuneRankingPanel, tuneFilterCount, type TuneViewState } from './TuneRan
 import { FiltersButton, useFiltersPanel } from '../../components/filterSection';
 import { SearchField } from '../../components/searchField';
 import { TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
-import { replaceRoute } from '../../store';
+import { replaceRoute, replaceRouteNow, routeSignal, navEntry } from '../../store';
 import { mayHoldAudio } from '../../services/audioSniff';
+import { hasLibrary } from '../../services/pageMode';
 import { pickFiles } from '../../services/filePicker';
 import type { AppContext, FilterState, TuneSort } from '../../types';
 import type { Analysis } from '../model';
@@ -61,12 +62,18 @@ interface SessionLibraryProps {
   onImportLink: (folderId: string | null) => void;
   onImportSession: () => void;
   onOpenSession: (sessionId: string) => void;
-  /** What the screen starts as, from the route — so coming back to it restores
-   *  the list that was running, exactly as the card library restores its
-   *  filters. All optional: absent means the default. */
+  /** Which tab and which folder are on screen: read from the route on every
+   *  render, never copied into state. Both are PLACES since 2026-11-20 (S3,
+   *  Aurélien: ‹ › did not climb back through the folders) — each is its own
+   *  history entry, as a folder of decks is, so back and forward move the
+   *  route under this component and it has to follow. */
+  tab?: 'sessions' | 'tunes';
+  folder?: string;
+  /** What the rest of the screen starts as, from the route — so coming back to
+   *  it restores the list that was running, exactly as the card library
+   *  restores its filters. All optional: absent means the default. Copied into
+   *  state, and copied again when back or forward lands on another entry. */
   initialSearch?: string;
-  initialTab?: 'sessions' | 'tunes';
-  initialFolder?: string;
   initialSort?: TuneSort;
   initialSortAsc?: boolean;
   initialOthers?: [string, FilterState][];
@@ -86,42 +93,84 @@ interface SessionLibraryProps {
   initialCardTagsOr?: boolean;
 }
 
-export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, initialSearch, initialTab, initialFolder, initialSort, initialSortAsc, initialAnalyses, initialAnalysesOr, initialOthers, initialOthersOr, initialDances, initialModes, initialKinds, initialTags, initialTagsOr, initialDetectedFrom, initialDetectedTo, initialDecks, initialDecksOr, initialCardTags, initialCardTagsOr }: SessionLibraryProps) {
+/** The tune list's settings as the route carries them. */
+function tuneViewFromRoute(p: SessionLibraryProps): TuneViewState {
+  return {
+    sort: p.initialSort ?? 'alpha',
+    sortAsc: p.initialSortAsc ?? TUNE_SORT_DEFAULT_ASC,
+    analyses: new Map(p.initialAnalyses ?? []),
+    analysesOr: p.initialAnalysesOr ?? true,
+    others: new Map(p.initialOthers ?? []),
+    othersOr: p.initialOthersOr ?? false,
+    // A route saved while types and keys were two sections lands in Tags.
+    tags: new Map(p.initialTags ?? [...(p.initialDances ?? []), ...(p.initialModes ?? [])]),
+    tagsOr: p.initialTagsOr ?? false,
+    kinds: new Map(p.initialKinds ?? []),
+    detectedFrom: p.initialDetectedFrom ?? '',
+    detectedTo: p.initialDetectedTo ?? '',
+    decks: new Map(p.initialDecks ?? []),
+    decksOr: p.initialDecksOr ?? false,
+    cardTags: new Map(p.initialCardTags ?? []),
+    cardTagsOr: p.initialCardTagsOr ?? false,
+  };
+}
+
+export function SessionLibrary(props: SessionLibraryProps) {
+  const { ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, tab: routeTab, folder } = props;
   const [allSessions, setAllSessions] = useState<Analysis[]>([]);
   /** Whether `allSessions` has been read at least once. The tunes tab waits for
    *  it: its chips ignore any analysis they cannot find, and before the first
    *  read that is every one of them — the sections would open collapsed, as if
    *  the route had carried no filter at all. */
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const [query, setQuery] = useState(initialSearch ?? '');
+  const [query, setQuery] = useState(props.initialSearch ?? '');
   const [dragOver, setDragOver] = useState(false);
   /** Which way the same material is being read: by evening, or by tune. */
-  const [tab, setTab] = useState<'sessions' | 'tunes'>(initialTab ?? 'sessions');
-  /** Which folder the analyses list is showing; null is the root ("Home").
-   *  In the route like everything else here, so that opening an analysis and
-   *  coming back lands in the folder you left rather than at the top. */
-  const [folderId, setFolderId] = useState<string | null>(initialFolder ?? null);
+  const tab = routeTab ?? 'sessions';
+  /** Which folder the analyses list is showing; null is the root ("Home"). */
+  const folderId = folder ?? null;
   /** The tune list's own settings, held here rather than inside the panel so
    *  that ONE effect writes the route. Two writers would take turns erasing
    *  each other's fields, which is the whole failure mode this avoids. */
-  const [tuneView, setTuneView] = useState<TuneViewState>(() => ({
-    sort: initialSort ?? 'alpha',
-    sortAsc: initialSortAsc ?? TUNE_SORT_DEFAULT_ASC,
-    analyses: new Map(initialAnalyses ?? []),
-    analysesOr: initialAnalysesOr ?? true,
-    others: new Map(initialOthers ?? []),
-    othersOr: initialOthersOr ?? false,
-    // A route saved while types and keys were two sections lands in Tags.
-    tags: new Map(initialTags ?? [...(initialDances ?? []), ...(initialModes ?? [])]),
-    tagsOr: initialTagsOr ?? false,
-    kinds: new Map(initialKinds ?? []),
-    detectedFrom: initialDetectedFrom ?? '',
-    detectedTo: initialDetectedTo ?? '',
-    decks: new Map(initialDecks ?? []),
-    decksOr: initialDecksOr ?? false,
-    cardTags: new Map(initialCardTags ?? []),
-    cardTagsOr: initialCardTagsOr ?? false,
-  }));
+  const [tuneView, setTuneView] = useState<TuneViewState>(() => tuneViewFromRoute(props));
+
+  // Back or forward onto another entry of this same screen (a folder, a tab):
+  // the component stays mounted (appRoot keys it on the analysis alone), so
+  // what it copied from the route at mount is the PREVIOUS entry's — the
+  // search typed there, the chips set there. Re-read from the entry reached.
+  // A layout effect, so the route-writing effect below never runs on a render
+  // that pairs the new entry with the old entry's search. After one of this
+  // screen's own navigations it changes nothing: that entry was built from
+  // this very state.
+  const entry = navEntry.value;
+  const seenEntry = useRef(entry);
+  useLayoutEffect(() => {
+    if (seenEntry.current === entry) return;
+    seenEntry.current = entry;
+    setQuery(props.initialSearch ?? '');
+    setTuneView(tuneViewFromRoute(props));
+    // eslint-disable-next-line
+  }, [entry]);
+
+  /** A new history entry for another folder or tab, carrying the rest of the
+   *  screen along — the search and the chips are the same visit, and the
+   *  entry being left gets its last keystroke written first (a trailing
+   *  replaceRoute would otherwise land on the NEW entry, see replaceRouteNow). */
+  const go = (next: { tab: 'sessions' | 'tunes'; folder: string | null; keepSearch?: boolean }) => {
+    const here = routeSignal.peek();
+    if (here.view !== 'sessions') return;
+    replaceRouteNow(here);
+    ctx.navigate({
+      ...here,
+      tab: next.tab === 'sessions' ? undefined : next.tab,
+      folder: next.folder ?? undefined,
+      // Dropped for a folder the search found (AnalysisBrowser); the entry
+      // reached then copies the empty box back (the layout effect above).
+      search: next.keepSearch === false ? undefined : here.search,
+    });
+  };
+  const openFolder = (id: string | null, keepSearch?: boolean) => { if (id !== folderId) go({ tab, folder: id, keepSearch }); };
+  const openTab = (next: 'sessions' | 'tunes') => { if (next !== tab) go({ tab: next, folder: folderId }); };
   /** The tune list's funnel, beside the search box both tabs share — shown on
    *  the tunes tab only, the analyses having no filter sections. Held here with
    *  the view it clears; kept across a tab switch, like the view. Counted
@@ -188,15 +237,17 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
   // search stays a route that carries no search.
   //
   // Everything that shapes the list travels with it, not just the search: the
-  // tab, the ordering, the chips. A default is written as ABSENT rather than
-  // as its value, so a route that was never touched stays a bare
-  // `{view:'sessions'}` instead of accumulating the defaults it already has.
+  // ordering, the chips. A default is written as ABSENT rather than as its
+  // value, so a route that was never touched stays a bare `{view:'sessions'}`
+  // instead of accumulating the defaults it already has. The tab and the folder
+  // are copied through as the route has them: they are changed by navigating
+  // (`go`), never here.
   useEffect(() => {
     replaceRoute({
       view: 'sessions',
       search: query || undefined,
-      tab: tab === 'sessions' ? undefined : tab,
-      folder: folderId ?? undefined,
+      tab: routeTab,
+      folder,
       sort: tuneView.sort === 'alpha' ? undefined : tuneView.sort,
       sortAsc: tuneView.sortAsc === TUNE_SORT_DEFAULT_ASC ? undefined : tuneView.sortAsc,
       others: tuneView.others.size > 0 ? [...tuneView.others] : undefined,
@@ -213,7 +264,8 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
       cardTags: tuneView.cardTags.size > 0 ? [...tuneView.cardTags] : undefined,
       cardTagsOr: tuneView.cardTagsOr || undefined,
     });
-  }, [query, tab, folderId, tuneView]);
+    // eslint-disable-next-line
+  }, [query, tuneView]);
 
   /** Where a new analysis is filed: the folder on screen — but only while the
    *  analyses tab is the one being looked at. The entry buttons sit ABOVE the
@@ -351,7 +403,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
           options={([['sessions', 'sessions.tab.sessions'], ['tunes', 'sessions.tab.tunes']] as const).map(([id, key]) => ({
             value: id, label: t(key), tour: `analyser-tab-${id}`,
           }))}
-          onChange={setTab}
+          onChange={openTab}
         />
       </div>
 
@@ -363,7 +415,9 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
         <SearchField
           value={query}
           onInput={setQuery}
-          placeholder={t(tab === 'tunes' ? 'sessions.ranking.search' : 'sessions.search')}
+          // Folders are found too, where there are any: not on the standalone
+          // page, which has no library and so no folders (AnalysisBrowser).
+          placeholder={t(tab === 'tunes' ? 'sessions.ranking.search' : hasLibrary() ? 'sessions.searchWithFolders' : 'sessions.search')}
         />
         {tab === 'tunes' && <FiltersButton shown={filters.shown} count={tuneFilters} onPress={filters.press} />}
       </div>
@@ -376,7 +430,7 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
           sessions={allSessions}
           query={q}
           folderId={folderId}
-          onOpenFolder={setFolderId}
+          onOpenFolder={openFolder}
           onOpenSession={onOpenSession}
           onSessionsChanged={reloadSessions}
         />

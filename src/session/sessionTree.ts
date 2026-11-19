@@ -176,6 +176,58 @@ export function levelItems(
   return [...folders, ...analyses].sort(compareByDateThenName).map(e => e.item);
 }
 
+/** What a search shows: every folder and analysis UNDER `folderId` (`null` =
+ *  the whole library) that `rank` finds, flattened into one list. Folders are
+ *  searched too since 2026-11-20 (the user: "Rechercher une analyse ou un
+ *  dossier"). The open folder itself is not a result: it is where the search
+ *  runs.
+ *
+ *  Ordered by relevance first, as the card library is (the user, same day):
+ *  `rank` is scoreMatch's tier, lower is better, null for no match. Within a
+ *  tier, the analyser's own order (compareByDateThenName, levelItems' rule)
+ *  rather than the card library's alphabet — analyses are found by when as
+ *  much as by name, and many names differ only by their date.
+ *
+ *  Below the root, an analysis counts if the tree files it there; at the root
+ *  every analysis that exists does, filed or not, as levelItems has it.
+ *  Guards against a cycle, as folderDate does: this walks merged user data. */
+export function searchItems(
+  tree: SessionTree,
+  folderId: string | null,
+  sessions: { id: string; date: string | null; name: string }[],
+  rank: (name: string) => number | null,
+): TreeItem[] {
+  const byId = new Map(sessions.map(s => [s.id, s]));
+  const dateOf = (id: string) => byId.get(id)?.date;
+  const folderIds: string[] = [];
+  const seen = new Set<string>();
+  const walk = (id: string | null) => {
+    for (const sub of childFolderIds(tree, id)) {
+      if (seen.has(sub)) continue;
+      seen.add(sub);
+      folderIds.push(sub);
+      walk(sub);
+    }
+  };
+  walk(folderId);
+  const sessionIds = folderId === null
+    ? sessions.map(s => s.id)
+    : [folderId, ...folderIds].flatMap(id => tree.folders[id]?.sessionIds ?? []).filter(id => byId.has(id));
+  const folders = folderIds.map(id => ({
+    item: { type: 'folder' as const, id }, date: folderDate(tree, id, dateOf), name: tree.folders[id]!.name,
+  }));
+  const analyses = [...new Set(sessionIds)].map(id => ({
+    item: { type: 'session' as const, id }, date: byId.get(id)!.date, name: byId.get(id)!.name,
+  }));
+  // Folders first into a stable sort, as in levelItems: a full tie puts the
+  // folder first.
+  return [...folders, ...analyses]
+    .map(e => ({ ...e, rank: rank(e.name) }))
+    .filter((e): e is typeof e & { rank: number } => e.rank !== null)
+    .sort((a, b) => a.rank - b.rank || compareByDateThenName(a, b))
+    .map(e => e.item);
+}
+
 /** Sub-folders of a level, in stored order — which is shown nowhere since
  *  2026-10-15 (see levelItems). `null` = the root level. */
 export function childFolderIds(tree: SessionTree, folderId: string | null): string[] {

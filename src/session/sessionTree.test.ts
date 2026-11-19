@@ -4,7 +4,7 @@ import { TUNE_ANALYSER_MODULE_KEY, type TuneAnalyserModuleData } from './model';
 import {
   allFolderIds, childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
   editSessionTree, emptyTree, folderChain, folderDate, folderOrder, folderPathOf, forgetSession,
-  isFolderDescendant, levelItems, moveFolder, parentFolderOf, placeSession, renameFolder, rootOrder,
+  isFolderDescendant, levelItems, moveFolder, parentFolderOf, placeSession, renameFolder, rootOrder, searchItems,
   sessionTreeOf, type SessionTree,
 } from './sessionTree';
 
@@ -285,5 +285,68 @@ describe('forgetSession', () => {
     placeSession(t, 's1', 'f2');
     forgetSession(t, 's1');
     expect(folderOrder(t, 'f2', ['s1'])).toEqual([]);
+  });
+});
+
+describe('searchItems', () => {
+  // Mardis (f1) ⊃ Été (f2) ⊃ s2 ; f1 holds s1 ; s3 and s4 unfiled ; Jeudis (f3) at the root, empty.
+  const setup = () => {
+    const t = tree();
+    createFolder(t, 'f3', 'Jeudis', null);
+    placeSession(t, 's1', 'f1');
+    placeSession(t, 's2', 'f2');
+    const sessions = [
+      { id: 's1', date: '2026-03-01', name: 'Mardi kesh' },
+      { id: 's2', date: '2026-07-01', name: 'Été kesh' },
+      { id: 's3', date: '2026-05-01', name: 'Jeudi kesh' },
+      { id: 's4', date: '2026-01-01', name: 'Kesh' },
+    ];
+    return { t, sessions };
+  };
+  /** A stand-in for scoreMatch's tiers: whole name, then start, then anywhere. */
+  const rank = (needle: string) => (name: string) => {
+    const n = name.toLowerCase();
+    return n === needle ? 0 : n.startsWith(needle) ? 1 : n.includes(needle) ? 2 : null;
+  };
+  const ids = (items: { id: string }[]) => items.map(i => i.id);
+
+  it('searches the whole library from the root, filed or not', () => {
+    const { t, sessions } = setup();
+    expect(ids(searchItems(t, null, sessions, rank('kesh')))).toEqual(['s4', 's2', 's3', 's1']);
+  });
+
+  it('ranks by relevance first, then by the analyser order (most recent first)', () => {
+    const { t, sessions } = setup();
+    // The oldest leads: it IS the query. The others tie, and go by date.
+    const found = ids(searchItems(t, null, sessions, rank('kesh')));
+    expect(found[0]).toBe('s4');
+    expect(found.slice(1)).toEqual(['s2', 's3', 's1']);
+  });
+
+  it('searches only under the open folder, sub-folders included', () => {
+    const { t, sessions } = setup();
+    expect(ids(searchItems(t, 'f1', sessions, rank('kesh')))).toEqual(['s2', 's1']);
+    expect(ids(searchItems(t, 'f2', sessions, rank('kesh')))).toEqual(['s2']);
+  });
+
+  it('finds folders too, but never the open folder itself', () => {
+    const { t, sessions } = setup();
+    expect(searchItems(t, null, sessions, rank('jeudi'))).toEqual([
+      { type: 'session', id: 's3' },   // Jeudi kesh: same tier, dated
+      { type: 'folder', id: 'f3' },    // Jeudis: empty, so undated, after
+    ]);
+    expect(ids(searchItems(t, 'f1', sessions, rank('mardi')))).toEqual(['s1']);
+  });
+
+  it('dates a folder by what it holds, and puts it first on a full tie', () => {
+    const { t, sessions } = setup();
+    // Été (f2) is dated by s2, 07-01, the same as s2 itself.
+    expect(ids(searchItems(t, 'f1', sessions, () => 0))).toEqual(['f2', 's2', 's1']);
+  });
+
+  it('skips an id the tree names that no longer exists', () => {
+    const { t, sessions } = setup();
+    placeSession(t, 'gone', 'f1');
+    expect(ids(searchItems(t, 'f1', sessions, () => 0))).toEqual(['f2', 's2', 's1']);
   });
 });
