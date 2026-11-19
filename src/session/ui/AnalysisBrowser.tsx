@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { hasLibrary } from '../../services/pageMode';
 import type { AppContext } from '../../types';
-import { generateId, addTouchDragSupport, matchesSearch } from '../../utils';
+import { generateId, addTouchDragSupport, scoreMatch, NO_SCORE_MATCH } from '../../utils';
 import { promptModal, confirmModal } from '../../components/modal';
 import { MicIcon, FileAudioIcon, DeviceAudioIcon, PencilIcon, TrashIcon, FolderIcon, PlusIcon } from '../../components/icons';
 import { IconButton, EmptyState } from '../../components/ui';
@@ -12,10 +12,11 @@ import { fmtSessionDateTime } from '../sessionNaming';
 import type { Analysis } from '../model';
 import { deleteSessions } from '../db';
 import { showBlockingProgress } from './batchRunner';
+import { leaveDeletedPage, navEntry } from '../../store';
 import {
   childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
   editSessionTree, folderChain, folderOrder, isFolderDescendant, levelItems, moveFolder, parentFolderOf,
-  placeSession, renameFolder, sessionTreeOf, type TreeItem,
+  placeSession, renameFolder, searchItems, sessionTreeOf, type TreeItem,
 } from '../sessionTree';
 
 // ── Browsing the analyses, one folder at a time ──────────────────────────────
@@ -219,7 +220,8 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
   query: string;
   /** Which folder is open; null is the root, shown as "Home". */
   folderId: string | null;
-  onOpenFolder: (folderId: string | null) => void;
+  /** `keepSearch` false: the search is left behind (a folder found by it). */
+  onOpenFolder: (folderId: string | null, keepSearch?: boolean) => void;
   onOpenSession: (id: string) => void;
   /** Deleting a folder deletes the recordings in it — the one action here that
    *  changes what EXISTS rather than how it is arranged, so the library has to
@@ -267,7 +269,12 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
   /** Deletes the folder you are standing in, and everything under it. The
    *  recordings go first — `deleteSessions` also drops their audio, locally and
    *  on Drive — then the now-empty folders leave the tree, and the screen
-   *  climbs to the parent, which is the only place left to be. */
+   *  turns round to the page it was reached from, as a deleted folder of decks
+   *  does (leaveDeletedPage): a folder is a history entry since 2026-11-20, and
+   *  the entries naming it, or anything below it, are stepped over by back and
+   *  forward (store.ts, isValidRoute). Opened straight onto it, with nowhere
+   *  alive to go, it stays — and this screen shows the root for a folder it
+   *  cannot find. */
   const removeFolder = () => {
     if (!current) return;
     const doomed = collectFolderSessionIds(tree, current.id);
@@ -277,11 +284,15 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
       t('common.delete'),
       () => { void (async () => {
         const names = new Map(doomed.map(id => [id, byId.get(id)?.name ?? id]));
+        // Where the user stood when they confirmed: deleting a full folder
+        // takes a while, and by the end they may have moved on — then there is
+        // nothing to leave.
+        const stood = navEntry.peek();
         // All of them in one write, at once (deleteSessions): no folder is
         // ever left half emptied.
         const leftovers = doomed.length > 0 ? await deleteSessions(doomed) : [];
         edit(tr => deleteFolderTree(tr, current.id));
-        onOpenFolder(parentId);
+        if (navEntry.peek() === stood) leaveDeletedPage();
         onSessionsChanged();
         // Then their recordings, here and on Drive — in view, behind a dialog
         // that stays until it is done: a folder of thirty evenings is thirty
@@ -309,41 +320,14 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
     });
   };
 
-  // Searching flattens everything: what is being asked is "where is that
-  // evening", and an answer three folders down is not one. The breadcrumb goes
-  // with it — there is no "here" while the whole library is being searched, and
-  // nothing is dragged either, for the same reason: a list that is not a place
-  // has no order to rearrange.
-  if (query) {
-    const found = sessions.filter(s => matchesSearch(s.name, query));
-    return (
-      <div class="mt-4 space-y-2">
-        {found.length === 0
-          ? <EmptyState>{t('sessions.noSearchResults')}</EmptyState>
-          : found.map(s => (
-            <Card
-              key={s.id}
-              icon={SOURCE_BADGE[s.source].icon}
-              iconTitle={t(SOURCE_BADGE[s.source].title)}
-              name={s.name}
-              detail={analysisDetail(s)}
-              onOpen={() => onOpenSession(s.id)}
-              target={{ kind: 'session', id: s.id }}
-              accepts={() => false}
-              onDrop={() => {}}
-            />
-          ))}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {/* No folders without a library (the standalone page, 2026-10-26): its
-          analyses are to go into an account one day, and folders made here
-          would have to be merged into that account's own tree. With none to
-          make, the row would hold only "Home". */}
-      {hasLibrary() && (
+  /** The row above the list: the breadcrumb, then the open folder's actions
+   *  — those only while browsing, see the search below. */
+  const breadcrumbRow = (withActions: boolean) => (
+    // No folders without a library (the standalone page, 2026-10-26): its
+    // analyses are to go into an account one day, and folders made here
+    // would have to be merged into that account's own tree. With none to
+    // make, the row would hold only "Home".
+    hasLibrary() && (
       <div class="mt-3 flex items-center gap-2">
         {/* The breadcrumb. Every step but the last is a way back up; the last
             is where you are, so it is not a link. Wraps rather than scrolls —
@@ -378,26 +362,90 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
         {/* Renaming happens from INSIDE the folder, as asked: the name being
             edited is then the one on screen, not one picked out of a list of
             siblings. So there is nothing to rename at the root. */}
-        {current && (
+        {withActions && current && (
           <IconButton label={t('sessions.folder.rename')} class="hover:text-accent" onClick={rename}>
             <PencilIcon size={14} />
           </IconButton>
         )}
         {/* The plus is an icon, as on the sidebar and the folder page — it was
             a "+" written into the label. */}
-        <button type="button" class="btn-ghost text-xs px-2 py-1 min-h-8 shrink-0 inline-flex items-center gap-1.5 text-dim hover:text-accent" onClick={newFolder}>
-          <PlusIcon size={12} /><FolderIcon size={14} />{t('sessions.folder.new')}
-        </button>
+        {withActions && (
+          <button type="button" class="btn-ghost text-xs px-2 py-1 min-h-8 shrink-0 inline-flex items-center gap-1.5 text-dim hover:text-accent" onClick={newFolder}>
+            <PlusIcon size={12} /><FolderIcon size={14} />{t('sessions.folder.new')}
+          </button>
+        )}
         {/* Like the rename beside it: only from inside, and for the same
             reason — this one takes a whole subtree, so it must never sit on a
             row you were only scrolling past. */}
-        {current && (
+        {withActions && current && (
           <IconButton label={t('sessions.folder.delete.title')} variant="danger" onClick={removeFolder}>
             <TrashIcon size={14} />
           </IconButton>
         )}
       </div>
-      )}
+    )
+  );
+
+  // Searching looks through the folder on screen and everything below it,
+  // flattened — from the root, the whole library (2026-11-20, the user: once a
+  // folder is a place, searching from it searches IN it; it used to search
+  // everywhere). Folders are found too, the same day, and the list is ranked
+  // by relevance as the card library's is (searchItems). The
+  // breadcrumb stays, to say where the search runs and to climb out and widen
+  // it — the search goes along; the folder's own actions go, a new folder made
+  // here landing nowhere in sight. Nothing is dragged either: a flattened list
+  // has no levels to drop into. Opening a folder found leaves the search
+  // behind: that folder is where you were looking to go, not a narrower search.
+  if (query) {
+    const found = searchItems(tree, here, sessions, name => {
+      const tier = scoreMatch(name, query);
+      return tier < NO_SCORE_MATCH ? tier : null;
+    });
+    return (
+      <>
+      {breadcrumbRow(false)}
+      <div class="mt-4 space-y-2">
+        {found.length === 0
+          ? <EmptyState>{t(hasLibrary() ? 'sessions.noSearchResultsWithFolders' : 'sessions.noSearchResults')}</EmptyState>
+          : found.map(item => {
+            if (item.type === 'folder') {
+              const folder = tree.folders[item.id]!;
+              return (
+                <Card
+                  key={folder.id}
+                  icon={<FolderIcon size={12} />}
+                  name={folder.name}
+                  detail={folderDetail(childFolderIds(tree, folder.id).length, folderOrder(tree, folder.id, allIds).length)}
+                  onOpen={() => onOpenFolder(folder.id, false)}
+                  target={{ kind: 'folder', id: folder.id }}
+                  accepts={() => false}
+                  onDrop={() => {}}
+                />
+              );
+            }
+            const s = byId.get(item.id)!;
+            return (
+              <Card
+                key={s.id}
+                icon={SOURCE_BADGE[s.source].icon}
+                iconTitle={t(SOURCE_BADGE[s.source].title)}
+                name={s.name}
+                detail={analysisDetail(s)}
+                onOpen={() => onOpenSession(s.id)}
+                target={{ kind: 'session', id: s.id }}
+                accepts={() => false}
+                onDrop={() => {}}
+              />
+            );
+          })}
+      </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {breadcrumbRow(true)}
 
       <div class="mt-3 space-y-2">
         {/* The way out, first in the list and before anything else — it is both

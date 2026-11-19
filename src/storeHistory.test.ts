@@ -2,9 +2,10 @@
 // The store reaches driveService, which reads localStorage at module evaluation
 // — in a bare node environment the import throws before a single test runs.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState } from './store';
+import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState, loadSavedRoute } from './store';
 import { emptyState } from './utils';
-import type { Card, Route } from './types';
+import { TUNE_ANALYSER_MODULE_KEY } from './session/model';
+import type { AppState, Card, Route } from './types';
 
 // ── The browser history bridge ───────────────────────────────────────────────
 // Added with it (2026-09-10). The app declares `display: standalone`, so before
@@ -181,6 +182,31 @@ describe('deleted pages', () => {
     expect(routeSignal.value).toEqual(MODULES);
   });
 
+  // A folder of analyses is a history entry since 2026-11-20 (S3), so a
+  // deleted one is stepped over like a deleted analysis — and the analyser's
+  // root, which names no folder, is never.
+  it('treats a folder of analyses that is no longer in the tree as deleted', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    navigate({ view: 'sessions', folder: 'gone' });
+    navigate(MODULES);
+    pop(entry(1, { view: 'sessions', folder: 'gone' }));
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(routeSignal.value).toEqual(MODULES);
+  });
+
+  it('keeps a folder of analyses that still exists, and the analyser root', () => {
+    appState.value = {
+      ...emptyState(),
+      modules: { [TUNE_ANALYSER_MODULE_KEY]: { folders: { f1: { id: 'f1', name: 'Kesh', folderIds: [], sessionIds: [] } }, rootFolderIds: ['f1'] } },
+    } as AppState;
+    navigate({ view: 'sessions' });
+    navigate({ view: 'sessions', folder: 'f1' });
+    pop(entry(1, { view: 'sessions' }));
+    expect(routeSignal.value).toEqual({ view: 'sessions' });
+    pop(entry(2, { view: 'sessions', folder: 'f1' }));
+    expect(routeSignal.value).toEqual({ view: 'sessions', folder: 'f1' });
+  });
+
   it('turns round to where the gesture started when nothing alive lies that way', () => {
     // Never onto the sentinel, which would leave the app.
     routeSignal.value = GONE;
@@ -259,5 +285,15 @@ describe('leaveDeletedPage', () => {
     leaveDeletedPage();
     expect(back).not.toHaveBeenCalled();
     expect(forward).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadSavedRoute', () => {
+  // The folder counts in isValidRoute since 2026-11-20; before, a reload in a
+  // folder deleted since reopened the analyser, and it still must — at its root.
+  it('reopens the analyser at its root when the saved folder is gone', () => {
+    const user = { ...emptyState(), id: 'u9' };
+    localStorage.setItem('cadence_last_route:u9', JSON.stringify({ view: 'sessions', folder: 'gone', search: 'kesh' }));
+    expect(loadSavedRoute(user)).toEqual({ view: 'sessions', search: 'kesh' });
   });
 });
