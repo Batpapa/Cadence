@@ -2,8 +2,6 @@ import { useEffect, useRef } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import { anyOverlayOpen } from './overlayStack';
 import { isAppleTouchDevice, touchDragActive } from '../utils';
-import { devMode } from '../services/devMode';
-
 // ── The drawer under a finger (2026-11-18) ───────────────────────────────────
 // Where the side panel is a drawer (the narrow layout), it opens with a swipe
 // to the right from the left edge, and closes with one to the left — on the
@@ -21,12 +19,6 @@ import { devMode } from '../services/devMode';
 // Back) and to Safari's tab history on iOS: a touch starting there never
 // reaches the page, or is cancelled once the system claims it — hence a zone
 // wider than the system's, and a cancel that puts the drawer back.
-
-/** For developer mode only while it is tried in the Android app (2026-11-19):
- *  the first version was too awkward to use, and the rework — measured in
- *  Chrome on a phone — has not been tried there yet. true gives it to
- *  everyone. */
-const DRAWER_SWIPE_FOR_EVERYONE = false;
 
 /** Opening by a swipe on an iPhone or iPad: off, as MUI's SwipeableDrawer has
  *  it by default (disableSwipeToOpen = iOS) — Safari takes the left edge for
@@ -124,8 +116,6 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
     const onStart = (e: TouchEvent) => {
       state = 'idle';
       const { enabled: on, open: isOpen } = live.current;
-      // Read at each touch: developer mode switched on takes effect at once.
-      if (!(DRAWER_SWIPE_FOR_EVERYONE || devMode.value)) return;
       if (!on || e.touches.length !== 1 || anyOverlayOpen() || touchDragActive.value) return;
       const touch = e.touches[0]!;
       opening = !isOpen;

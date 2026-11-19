@@ -41,6 +41,8 @@ const SIDEBAR_MAX           = 400;
  *  common gesture. */
 const RESIZE_PRESS_MS       = 300;
 const RESIZE_PRESS_SLOP_PX  = 8;
+/** Two taps on the edge this close together fit its width to the names. */
+const DOUBLE_TAP_MS         = 300;
 /** The drawer's handle, made for a finger: 28 layout px (Tailwind w-7), of
  *  which this much over the drawer and the rest over the shade — the 8 px of
  *  the mouse's handle were about 13 physical pixels on a phone, under a
@@ -225,17 +227,71 @@ function AppRoot() {
     document.addEventListener('touchcancel', onEnd);
   };
 
+  /** A double click on the edge (2026-11-19): the panel as wide as its
+   *  longest name needs — the narrowest width at which no folder or deck
+   *  name is cut short, within the bounds, and the widest if even that cuts
+   *  one. Found by trying widths on the live panel, between two paints:
+   *  a row's room for its name depends on its depth, its icons and its dots,
+   *  which only the layout knows. */
+  const fitSidebarWidth = () => {
+    const panel = wrapperRef.current;
+    if (!panel) return;
+    const names = Array.from(panel.querySelectorAll<HTMLElement>('.truncate'));
+    const before = panel.style.width;
+    panel.style.transition = 'none';
+    // The text against its box, both to the fraction of a pixel. scrollWidth
+    // and clientWidth are whole pixels: a name over its box by 0.06 px
+    // rounded to 102 against 102 — "fits" — and lost its last letters to the
+    // ellipsis (app at 90 %, measured 2026-11-20; seen on a desktop too).
+    const range = document.createRange();
+    const cut = (n: HTMLElement) => {
+      range.selectNodeContents(n);
+      return range.getBoundingClientRect().width > n.getBoundingClientRect().width;
+    };
+    const cutAt = (w: number) => {
+      panel.style.width = w + 'px';
+      return names.some(cut);
+    };
+    // The narrowest width that cuts nothing lies between lo (cuts) and hi.
+    let lo = SIDEBAR_MIN, hi = SIDEBAR_MAX;
+    if (!cutAt(lo)) hi = lo;
+    else if (cutAt(hi)) lo = hi;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (cutAt(mid)) lo = mid; else hi = mid;
+    }
+    // From where it stood, so the change of width below is animated.
+    panel.style.width = before;
+    void panel.offsetWidth;
+    panel.style.removeProperty('transition');
+    setSidebarWidth(hi);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(hi));
+  };
+
+  /** When the last tap on the edge ended, for a second one to make a double
+   *  tap; and the drawer's close that first tap put off meanwhile. */
+  const lastEdgeTap = useRef(0);
+  const pendingClose = useRef<ReturnType<typeof setTimeout>>();
+
   const onResizeStart  = (e: MouseEvent) => { e.preventDefault(); startResize(e.clientX); };
   // In the drawer, the handle waits for a long press (2026-11-19): the swipe
   // that closes the drawer starts at its edge, right there, and a touch that
   // resized at once took that swipe — the blue line lit, the drawer neither
   // closed nor resized as meant. Held still, it resizes; moved first, the
   // swipe has it. Beside the content (wide layout), no swipe: at once.
+  // Two taps in a row fit the width, as a double click does.
   const onResizeTouch  = (e: TouchEvent) => {
     const touch = e.touches[0];
     if (!touch || e.touches.length !== 1) return;
-    if (!isNarrow) { e.preventDefault(); startResize(touch.clientX, true); return; }
+    if (performance.now() - lastEdgeTap.current < DOUBLE_TAP_MS) {
+      e.preventDefault();
+      lastEdgeTap.current = 0;
+      clearTimeout(pendingClose.current);
+      fitSidebarWidth();
+      return;
+    }
     const x = touch.clientX, y = touch.clientY;
+    let held = false;
     const stop = () => {
       clearTimeout(timer);
       document.removeEventListener('touchmove', onMove);
@@ -246,14 +302,22 @@ function AppRoot() {
       const t = ev.touches[0];
       if (!t || Math.hypot(t.clientX - x, t.clientY - y) > RESIZE_PRESS_SLOP_PX) stop();
     };
-    // Lifted before the long press, without moving: a tap. The handle reaches
-    // over the shade, whose tap closes the drawer — so does this one there.
+    // Lifted without moving, before any long press: a tap. The drawer's handle
+    // reaches over the shade, whose tap closes the drawer — so does this one
+    // there, once it is clear no second tap follows.
     const onTap = () => {
       stop();
+      if (held) return;
+      lastEdgeTap.current = performance.now();
       const panel = wrapperRef.current;
-      if (panel && x > panel.getBoundingClientRect().right) setSidebarCollapsed(true);
+      if (isNarrow && panel && x > panel.getBoundingClientRect().right) {
+        pendingClose.current = setTimeout(() => setSidebarCollapsed(true), DOUBLE_TAP_MS);
+      }
     };
-    const timer = setTimeout(() => { stop(); startResize(x, true); }, RESIZE_PRESS_MS);
+    const timer = isNarrow
+      ? setTimeout(() => { held = true; startResize(x, true); }, RESIZE_PRESS_MS)
+      : undefined;
+    if (!isNarrow) { e.preventDefault(); startResize(x, true); }
     document.addEventListener('touchmove', onMove, { passive: true });
     document.addEventListener('touchend', onTap);
     document.addEventListener('touchcancel', stop);
@@ -300,6 +364,7 @@ function AppRoot() {
             class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-7 z-30' : 'relative z-10 shrink-0 w-2 -mx-1'}`}
             style={isNarrow ? { left: sidebarWidth - NARROW_HANDLE_INSIDE_PX + 'px' } : undefined}
             onMouseDown={onResizeStart}
+            onDblClick={fitSidebarWidth}
             onTouchStart={onResizeTouch}
             // No mouse events made up after a tap: their mousedown would
             // start a resize the long press above was there to hold back.
