@@ -91,6 +91,8 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
     let x0 = 0, y0 = 0, width = 1, dx = 0;
     /** Smoothed speed (px/ms), from the previous move's place and time. */
     let speed = 0, lastX = 0, lastT = 0;
+    /** Whether touchDragActive is this swipe's own doing. */
+    let carrying = false;
 
     /** Where the drawer stands, 0 = put away, 1 = open. */
     const progress = () => Math.min(1, Math.max(0, opening ? dx / width : 1 + dx / width));
@@ -110,6 +112,7 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
     /** Back to the classes: the inline position goes, and the drawer's own
      *  transition carries it from where the finger left it. */
     const release = () => {
+      if (carrying) { carrying = false; touchDragActive.value = false; }
       for (const node of [panel.current, shade.current]) {
         if (!node) continue;
         node.style.removeProperty('transition');
@@ -140,7 +143,7 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
       // Not cancelable: the browser has taken the touch (its scroll, or
       // Chrome's own Back swipe) — following it too is what made the drawer
       // let go halfway and the page move under it (phone, 2026-11-19).
-      if (!touch || touchDragActive.value || !e.cancelable) { if (state === 'dragging') release(); state = 'idle'; return; }
+      if (!touch || (touchDragActive.value && !carrying) || !e.cancelable) { if (state === 'dragging') release(); state = 'idle'; return; }
       dx = touch.clientX - x0;
       const dy = touch.clientY - y0;
       if (state === 'pending') {
@@ -153,6 +156,14 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
         const rightWay = opening ? dx > 0 : dx < 0;
         if (!sideways || !rightWay) { state = 'idle'; return; }
         state = 'dragging';
+        // The finger carries the drawer: the Android app's pull-to-refresh
+        // stands aside (native/appShell.ts), and a long press under it stays
+        // a swipe (utils.ts's touch drag). Without it, a slow swipe drifting
+        // down took the native layout's slop: it claimed the touch, the page
+        // got a cancel, and the drawer sprang back open — in the app only,
+        // never in Chrome (2026-11-19).
+        carrying = true;
+        touchDragActive.value = true;
       }
       // The page must not scroll under a drawer being pulled.
       e.preventDefault();

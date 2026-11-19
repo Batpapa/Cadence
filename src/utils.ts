@@ -611,7 +611,9 @@ const touchDragAttached = new WeakSet<HTMLElement>();
 /** A finger is carrying something. The Android app's pull-to-refresh reads
  *  it (native/appShell.ts): a card dragged DOWN from a list scrolled to its
  *  top is, to the native layout around the WebView, a pull — and it reloaded
- *  the page under the drop (2026-10-27, group feedback). */
+ *  the page under the drop (2026-10-27, group feedback). Set as well by the
+ *  drawer being swiped and by its edge being resized (drawerSwipe.ts,
+ *  appRoot.tsx). */
 export const touchDragActive = signal(false);
 
 /** The scrolling box a drag can travel along: the nearest ancestor that
@@ -732,7 +734,9 @@ export function addTouchDragSupport(el: HTMLElement): void {
     const touch = e.touches[0]!;
     startX = touch.clientX; startY = touch.clientY;
     if (el.draggable) { el.draggable = false; suspendedNative = true; }
-    pressTimer = setTimeout(() => activate(touch), LONG_PRESS_MS);
+    // Not when the finger already carries something else — the drawer being
+    // swiped over this row (drawerSwipe.ts): one finger, one thing.
+    pressTimer = setTimeout(() => { if (!touchDragActive.value) activate(touch); }, LONG_PRESS_MS);
   }, { passive: true });
 
   el.addEventListener('touchmove', (e) => {
