@@ -1132,7 +1132,7 @@
   "fileViewer.abc.audioSync.percentKeyShort": "Audio ({percent}%{gap})",
   "fileViewer.abc.playAlong.short": "Play",
   "fileViewer.abc.source.synth.hint": "Hear the score played by the synth",
-  "fileViewer.abc.source.noRecording": "Audio sync plays a recording of this tune, the score following what is played. There is none here: attach an audio or video file to the card, or open the score from a detection in an analysis.",
+  "fileViewer.abc.source.noRecording": "Audio sync synchronises an audio file with the score. Requires the card to have at least one audio or video attachment.",
   "fileViewer.abc.source.noKey": "This version has no key (K: line): its notes cannot be followed. Another version of the file may be.",
   "fileViewer.abc.playAlong.opening": "Opening the audio source…",
   "fileViewer.abc.playAlong.state.search": "Listening",
