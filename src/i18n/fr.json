@@ -1132,7 +1132,7 @@
   "fileViewer.abc.audioSync.percentKeyShort": "Audio ({percent} %{gap})",
   "fileViewer.abc.playAlong.short": "Play",
   "fileViewer.abc.source.synth.hint": "Écouter la partition jouée par le synthé",
-  "fileViewer.abc.source.noRecording": "La synchro audio fait jouer un enregistrement de ce morceau, la partition suivant ce qui est joué. Il n'y en a pas ici : joindre un fichier audio ou vidéo à la carte, ou ouvrir la partition depuis une détection d'une analyse.",
+  "fileViewer.abc.source.noRecording": "La synchro audio permet de synchroniser un fichier audio avec la partition. Nécessite que la carte ait au moins une pièce jointe audio ou vidéo.",
   "fileViewer.abc.source.noKey": "Cette version n'a pas de tonalité (ligne K:) : ses notes ne peuvent pas être suivies. Une autre version du fichier peut l'être.",
   "fileViewer.abc.playAlong.opening": "Ouverture de la source audio…",
   "fileViewer.abc.playAlong.state.search": "À l'écoute",
