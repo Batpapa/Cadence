@@ -164,13 +164,17 @@ export function SessionLibrary(props: SessionLibraryProps) {
       ...here,
       tab: next.tab === 'sessions' ? undefined : next.tab,
       folder: next.folder ?? undefined,
-      // Dropped for a folder the search found (AnalysisBrowser); the entry
-      // reached then copies the empty box back (the layout effect above).
+      // Dropped for a folder the search found (AnalysisBrowser) and on a tab
+      // switch; the entry reached then copies the empty box back (the layout
+      // effect above).
       search: next.keepSearch === false ? undefined : here.search,
     });
   };
   const openFolder = (id: string | null, keepSearch?: boolean) => { if (id !== folderId) go({ tab, folder: id, keepSearch }); };
-  const openTab = (next: 'sessions' | 'tunes') => { if (next !== tab) go({ tab: next, folder: folderId }); };
+  // The search is left behind on a tab switch (2026-11-20, the user: two
+  // different pages, a tune's name typed on one means nothing on the other).
+  // Back returns to it: each entry keeps its own.
+  const openTab = (next: 'sessions' | 'tunes') => { if (next !== tab) go({ tab: next, folder: folderId, keepSearch: false }); };
   /** The tune list's funnel, beside the search box both tabs share — shown on
    *  the tunes tab only, the analyses having no filter sections. Held here with
    *  the view it clears; kept across a tab switch, like the view. Counted
@@ -408,9 +412,10 @@ export function SessionLibrary(props: SessionLibraryProps) {
       </div>
 
 
-      {/* Outside the tabs: one search box, whichever way the list is being
-          read. On the tunes side it filters tune names, on this side session
-          names — the same question either way, "where is the Kesh". */}
+      {/* One box for both tabs, but not one search: on the tunes side it
+          filters tune names, on this side analyses and folders, and a tab
+          switch empties it (openTab). Each tab's entry in the history keeps
+          what was typed there. */}
       <div class="flex gap-2 mt-3">
         <SearchField
           value={query}
