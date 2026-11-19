@@ -2,7 +2,7 @@ import { render, type ComponentChildren } from 'preact';
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks';
 import { appState, routeSignal, stateEpoch, canGoBack, canGoForward, navigate, goBack, goForward, mutate, navEntry } from './store';
 import type { AppContext } from './types';
-import { isMobileDevice } from './utils';
+import { isMobileDevice, touchDragActive } from './utils';
 import { Sidebar } from './components/sidebar';
 import { AppHeader, BottomNav, headerCompact } from './components/header';
 import { ModalHost } from './components/modal';
@@ -35,6 +35,17 @@ const SIDEBAR_COLLAPSED_KEY = 'cadence_sidebar_collapsed';
 const SIDEBAR_DEFAULT       = 224;
 const SIDEBAR_MIN           = 120;
 const SIDEBAR_MAX           = 400;
+/** The long press that takes the drawer's edge, and how far the finger may
+ *  wander meanwhile — the card list's own long press is 250 ms and 8 px
+ *  (addTouchDragSupport); longer here, the swipe beside it being the
+ *  common gesture. */
+const RESIZE_PRESS_MS       = 300;
+const RESIZE_PRESS_SLOP_PX  = 8;
+/** The drawer's handle, made for a finger: 28 layout px (Tailwind w-7), of
+ *  which this much over the drawer and the rest over the shade — the 8 px of
+ *  the mouse's handle were about 13 physical pixels on a phone, under a
+ *  fingertip, and hard to catch (2026-11-19). */
+const NARROW_HANDLE_INSIDE_PX = 6;
 
 /** Whether the side panel is put away in the wide layout: as last left, else
  *  away on a touch device. */
@@ -70,6 +81,7 @@ function ContentSwitch() {
 function AppRoot() {
   const wrapperRef    = useRef<HTMLDivElement>(null);
   const resizeLineRef = useRef<HTMLDivElement>(null);
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const n = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '', 10);
     return isNaN(n) ? SIDEBAR_DEFAULT : Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, n));
@@ -162,14 +174,25 @@ function AppRoot() {
     mutate,
   };
 
-  const startResize = (startX: number) => {
+  const startResize = (startX: number, byFinger = false) => {
     const startW = wrapperRef.current!.offsetWidth;
+    // Window pixels per layout pixel: the pointer moves in the first, the
+    // width is set in the second, and the app's zoom on <html> (90 % on a
+    // phone, 125 % on a desktop) parts them — unconverted, the edge ran ahead
+    // of the finger or lagged behind the mouse (2026-11-19).
+    const scale = (startW && wrapperRef.current!.getBoundingClientRect().width / startW) || 1;
     wrapperRef.current!.style.transition = 'none';
+    // A finger carrying the edge: the drawer's swipe stands aside
+    // (drawerSwipe.ts), and so does the Android app's pull-to-refresh.
+    if (byFinger) touchDragActive.value = true;
     if (resizeLineRef.current) resizeLineRef.current.style.background = 'rgb(var(--color-accent-ch)/0.4)';
 
     const onMove = (x: number) => {
-      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + x - startX));
+      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + (x - startX) / scale));
       wrapperRef.current!.style.width = w + 'px';
+      // Out of the flow over a drawer, the handle is placed, not carried:
+      // moved here with the edge, until the width is set on release.
+      if (isNarrow && resizeHandleRef.current) resizeHandleRef.current.style.left = w - NARROW_HANDLE_INSIDE_PX + 'px';
     };
     const onEnd = () => {
       const w = wrapperRef.current!.offsetWidth;
@@ -181,6 +204,8 @@ function AppRoot() {
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('touchmove', onTouchMove);
       document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
+      if (byFinger) touchDragActive.value = false;
       document.body.style.removeProperty('cursor');
       document.body.style.removeProperty('user-select');
     };
@@ -195,10 +220,44 @@ function AppRoot() {
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('touchmove', onTouchMove, { passive: false });
     document.addEventListener('touchend', onEnd);
+    // Taken over by the system: ended all the same — else the line stayed
+    // lit and the next touch went on resizing.
+    document.addEventListener('touchcancel', onEnd);
   };
 
   const onResizeStart  = (e: MouseEvent) => { e.preventDefault(); startResize(e.clientX); };
-  const onResizeTouch  = (e: TouchEvent) => { e.preventDefault(); startResize(e.touches[0]!.clientX); };
+  // In the drawer, the handle waits for a long press (2026-11-19): the swipe
+  // that closes the drawer starts at its edge, right there, and a touch that
+  // resized at once took that swipe — the blue line lit, the drawer neither
+  // closed nor resized as meant. Held still, it resizes; moved first, the
+  // swipe has it. Beside the content (wide layout), no swipe: at once.
+  const onResizeTouch  = (e: TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch || e.touches.length !== 1) return;
+    if (!isNarrow) { e.preventDefault(); startResize(touch.clientX, true); return; }
+    const x = touch.clientX, y = touch.clientY;
+    const stop = () => {
+      clearTimeout(timer);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onTap);
+      document.removeEventListener('touchcancel', stop);
+    };
+    const onMove = (ev: TouchEvent) => {
+      const t = ev.touches[0];
+      if (!t || Math.hypot(t.clientX - x, t.clientY - y) > RESIZE_PRESS_SLOP_PX) stop();
+    };
+    // Lifted before the long press, without moving: a tap. The handle reaches
+    // over the shade, whose tap closes the drawer — so does this one there.
+    const onTap = () => {
+      stop();
+      const panel = wrapperRef.current;
+      if (panel && x > panel.getBoundingClientRect().right) setSidebarCollapsed(true);
+    };
+    const timer = setTimeout(() => { stop(); startResize(x, true); }, RESIZE_PRESS_MS);
+    document.addEventListener('touchmove', onMove, { passive: true });
+    document.addEventListener('touchend', onTap);
+    document.addEventListener('touchcancel', stop);
+  };
 
   return (
     <div class="flex flex-col flex-1 overflow-hidden">
@@ -237,12 +296,21 @@ function AppRoot() {
             between the sidebar and the content. */}
         {!sidebarCollapsed && (
           <div
-            class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-2 z-30' : 'relative z-10 shrink-0 w-2 -mx-1'}`}
-            style={isNarrow ? { left: sidebarWidth + 'px' } : undefined}
+            ref={resizeHandleRef}
+            class={`cursor-col-resize touch-none group ${isNarrow ? 'absolute top-0 bottom-0 w-7 z-30' : 'relative z-10 shrink-0 w-2 -mx-1'}`}
+            style={isNarrow ? { left: sidebarWidth - NARROW_HANDLE_INSIDE_PX + 'px' } : undefined}
             onMouseDown={onResizeStart}
             onTouchStart={onResizeTouch}
+            // No mouse events made up after a tap: their mousedown would
+            // start a resize the long press above was there to hold back.
+            onTouchEnd={(e: TouchEvent) => { if (e.cancelable) e.preventDefault(); }}
           >
-            <div ref={resizeLineRef} class={`w-px h-full bg-transparent group-hover:bg-accent/40 transition-colors ${isNarrow ? '' : 'mx-auto'}`} />
+            <div
+              ref={resizeLineRef}
+              class={`w-px h-full bg-transparent group-hover:bg-accent/40 transition-colors ${isNarrow ? '' : 'mx-auto'}`}
+              // On the drawer's edge, wherever the handle reaches.
+              style={isNarrow ? { marginLeft: NARROW_HANDLE_INSIDE_PX + 'px' } : undefined}
+            />
           </div>
         )}
         <main class="flex-1 overflow-hidden bg-bg">

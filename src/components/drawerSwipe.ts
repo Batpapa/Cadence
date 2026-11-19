@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import { anyOverlayOpen } from './overlayStack';
-import { touchDragActive } from '../utils';
+import { isAppleTouchDevice, touchDragActive } from '../utils';
+import { devMode } from '../services/devMode';
 
 // ── The drawer under a finger (2026-11-18) ───────────────────────────────────
 // Where the side panel is a drawer (the narrow layout), it opens with a swipe
@@ -21,9 +22,16 @@ import { touchDragActive } from '../utils';
 // reaches the page, or is cancelled once the system claims it — hence a zone
 // wider than the system's, and a cancel that puts the drawer back.
 
-/** Off for now (2026-11-19): too awkward to use as it stands, to be reworked.
- *  Everything else stays wired; true turns the gesture back on. */
-const DRAWER_SWIPE_ENABLED = false;
+/** For developer mode only while it is tried in the Android app (2026-11-19):
+ *  the first version was too awkward to use, and the rework — measured in
+ *  Chrome on a phone — has not been tried there yet. true gives it to
+ *  everyone. */
+const DRAWER_SWIPE_FOR_EVERYONE = false;
+
+/** Opening by a swipe on an iPhone or iPad: off, as MUI's SwipeableDrawer has
+ *  it by default (disableSwipeToOpen = iOS) — Safari takes the left edge for
+ *  its own Back there. Closing by a swipe stays. true opens there too. */
+const SWIPE_TO_OPEN_ON_IOS = false;
 
 /** How far from the left edge an opening swipe may start, in the touch's
  *  pixels. Measured on the Android 17 emulator, gesture navigation
@@ -31,11 +39,16 @@ const DRAWER_SWIPE_ENABLED = false;
  *  to the background), one starting 36 px in reaches the page. With 40 px,
  *  that left a strip about 16 px wide — under a thumb's width — so 64. */
 const EDGE_PX = 64;
-/** Movement before the swipe is read as one direction or the other. */
-const DECIDE_PX = 10;
+/** Movement before the swipe is read as one direction or the other — MUI's
+ *  SwipeableDrawer (UNCERTAINTY_THRESHOLD) reads it at 3 px too: decided
+ *  later, the browser may have started its own scroll first (10 px lost a
+ *  third of the swipes on a Galaxy A22, 2026-11-19). */
+const DECIDE_PX = 3;
 /** How much more horizontal than vertical a swipe must be to be the drawer's. */
 const HORIZONTAL_RATIO = 1.5;
-/** A release this fast (px/ms) finishes the move, however short. */
+/** A release this fast (px/ms) finishes the move, however short. The speed
+ *  of the last moves, smoothed as MUI does — not the average since the
+ *  touch began, which a slow start then a flick never reached. */
 const FLICK_SPEED = 0.4;
 
 function startsInSomethingElse(target: EventTarget | null, opening: boolean): boolean {
@@ -71,10 +84,13 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
 
   useEffect(() => {
     const el = area.current;
-    if (!DRAWER_SWIPE_ENABLED || !el) return;
+    if (!el) return;
+    const swipeOpens = SWIPE_TO_OPEN_ON_IOS || !isAppleTouchDevice();
     let state: 'idle' | 'pending' | 'dragging' = 'idle';
     let opening = false;
-    let x0 = 0, y0 = 0, t0 = 0, width = 1, dx = 0;
+    let x0 = 0, y0 = 0, width = 1, dx = 0;
+    /** Smoothed speed (px/ms), from the previous move's place and time. */
+    let speed = 0, lastX = 0, lastT = 0;
 
     /** Where the drawer stands, 0 = put away, 1 = open. */
     const progress = () => Math.min(1, Math.max(0, opening ? dx / width : 1 + dx / width));
@@ -105,38 +121,51 @@ export function useDrawerSwipe({ enabled, open, area, panel, shade, onOpen, onCl
     const onStart = (e: TouchEvent) => {
       state = 'idle';
       const { enabled: on, open: isOpen } = live.current;
+      // Read at each touch: developer mode switched on takes effect at once.
+      if (!(DRAWER_SWIPE_FOR_EVERYONE || devMode.value)) return;
       if (!on || e.touches.length !== 1 || anyOverlayOpen() || touchDragActive.value) return;
       const touch = e.touches[0]!;
       opening = !isOpen;
+      if (opening && !swipeOpens) return;
       if (opening && touch.clientX - el.getBoundingClientRect().left > EDGE_PX) return;
       if (startsInSomethingElse(e.target, opening)) return;
       width = panel.current?.getBoundingClientRect().width || 1;
-      x0 = touch.clientX; y0 = touch.clientY; t0 = e.timeStamp; dx = 0;
+      x0 = lastX = touch.clientX; y0 = touch.clientY; lastT = e.timeStamp; dx = 0; speed = 0;
       state = 'pending';
     };
 
     const onMove = (e: TouchEvent) => {
       if (state === 'idle') return;
       const touch = e.touches[0];
-      if (!touch || touchDragActive.value) { if (state === 'dragging') release(); state = 'idle'; return; }
+      // Not cancelable: the browser has taken the touch (its scroll, or
+      // Chrome's own Back swipe) — following it too is what made the drawer
+      // let go halfway and the page move under it (phone, 2026-11-19).
+      if (!touch || touchDragActive.value || !e.cancelable) { if (state === 'dragging') release(); state = 'idle'; return; }
       dx = touch.clientX - x0;
       const dy = touch.clientY - y0;
       if (state === 'pending') {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) < DECIDE_PX) return;
+        // Held off until the swipe is read: the browser starts its own scroll
+        // on the first move left to it, and every later one is then out of
+        // reach. Measured on a Galaxy A22 in Chrome: a third of the swipes
+        // came under DECIDE_PX on their first move, and were lost that way.
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < DECIDE_PX) { e.preventDefault(); return; }
         const sideways = Math.abs(dx) > Math.abs(dy) * HORIZONTAL_RATIO;
         const rightWay = opening ? dx > 0 : dx < 0;
         if (!sideways || !rightWay) { state = 'idle'; return; }
         state = 'dragging';
       }
       // The page must not scroll under a drawer being pulled.
-      if (e.cancelable) e.preventDefault();
+      e.preventDefault();
+      if (e.timeStamp > lastT) {
+        speed = speed * 0.4 + (touch.clientX - lastX) / (e.timeStamp - lastT) * 0.6;
+        lastX = touch.clientX; lastT = e.timeStamp;
+      }
       paint();
     };
 
-    const onEnd = (e: TouchEvent) => {
+    const onEnd = () => {
       if (state !== 'dragging') { state = 'idle'; return; }
       state = 'idle';
-      const speed = dx / Math.max(1, e.timeStamp - t0);
       const p = progress();
       release();
       if (opening && (p > 1 / 3 || speed > FLICK_SPEED)) live.current.onOpen();
