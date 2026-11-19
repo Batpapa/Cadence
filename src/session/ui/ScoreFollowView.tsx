@@ -12,7 +12,7 @@ import { keyGapText } from '../keyName';
 import type { AudioSyncState, AudioSyncView } from '../../components/fileViewer';
 import { t } from '../../services/i18nService';
 import { formatBytes } from '../../utils';
-import { ExpandIcon, CollapseIcon, CrossIcon } from '../../components/icons';
+import { ExpandIcon, CollapseIcon } from '../../components/icons';
 import { registerOverlay } from '../../components/overlayStack';
 import type { ScoreFace } from '../../types';
 
@@ -168,18 +168,6 @@ export function alignedVerdict(f: SessionFollow, target: FollowTarget, shown = 0
   return { kind: 'aligned', title: `${word} · ${stats}`, percent, keyGap };
 }
 
-/** The score box's floor, as SyncedScore sets it (8rem). */
-const MIN_SCORE_PX = 128;
-
-/** The nearest ancestor that scrolls: the dialog's body. */
-function scrollingParent(el: HTMLElement): HTMLElement | null {
-  for (let p = el.parentElement; p; p = p.parentElement) {
-    const o = getComputedStyle(p).overflowY;
-    if (o === 'auto' || o === 'scroll') return p;
-  }
-  return null;
-}
-
 /** A promise settled from outside: the player asks for its samples at once,
  *  and they come when the worker has decoded them. */
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
@@ -196,12 +184,11 @@ const WHOLE: Region = { start: 0, end: Number.POSITIVE_INFINITY };
  *  closed meanwhile. */
 type GetAudio = (onStatus: (s: FollowStatus) => void, signal: AbortSignal) => Promise<FollowAudio | undefined>;
 
-function ScoreFollowView({ target, version, getAudio, expanded, face, onState, forced, transpose }: {
+function ScoreFollowView({ target, version, getAudio, face, onState, forced, transpose, below }: {
   target: FollowTarget;
   /** The version on the viewer's screen: its ABC. */
   version: Signal<string>;
   getAudio: GetAudio;
-  expanded: Signal<boolean>;
   face: Signal<ScoreFace>;
   onState: (s: AudioSyncState) => void;
   /** Followed whatever the verdict (the viewer's hidden gesture). */
@@ -209,6 +196,8 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   /** The viewer's transposition: the score is drawn in that key, and the gap
    *  to the recording's key (FollowResult.transpose) told from it. */
   transpose: Signal<number>;
+  /** Between the score and the player: the viewer's source tabs. */
+  below?: HTMLElement;
 }) {
   const shown = version.value;
   const shift = transpose.value;
@@ -342,89 +331,38 @@ function ScoreFollowView({ target, version, getAudio, expanded, face, onState, f
   // elsewhere — and an overlay nothing points at would stay on screen.
   useEffect(() => () => leavePage(false), []);
 
-  // The dialog's full page, and the score's own: all the height there is
-  // (the user, 2026-10-29) — measured, not guessed: the score's box as it is,
-  // plus whatever its container has to spare (or minus what overflows it).
-  // Again whenever the container or the view changes size.
-  const [fit, setFit] = useState<number | null>(null);
-  const isExpanded = expanded.value;
+  // All the height there is, in the dialog and on the full page alike: the
+  // view is a column whose middle is the score (SyncedScoreProps.fill), the
+  // player under it — since 2026-11-20 (the user), where the score's height
+  // was measured against the dialog or the page, or guessed from the screen.
   const shownFace = face.value;
-  useEffect(() => {
-    setFit(null);
-    const root = rootRef.current;
-    const body = !root ? null : page ? pageRef.current?.overlay ?? null : isExpanded ? scrollingParent(root) : null;
-    if (!root || !body) return;
-    const measure = () => {
-      const box = root.querySelector<HTMLElement>(shownFace === 'text' ? '.score-follow-text' : '.score-follow-paper');
-      if (!box) return;
-      // The body's room against what its content takes — not its
-      // scrollHeight, which never drops below its own height: the room to
-      // spare read as none, and the score stayed small over an empty half page.
-      const cs = getComputedStyle(body);
-      const room = body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-      const used = Array.from(body.children).reduce((sum, c) => sum + (c as HTMLElement).offsetHeight, 0);
-      const next = Math.max(MIN_SCORE_PX, box.clientHeight + room - used);
-      setFit(prev => (prev !== null && Math.abs(prev - next) < 2 ? prev : next));
-    };
-    // At the next frame, not in the observer: the height set resizes what it
-    // observes, which the browser reports as a loop (2026-10-29, the user).
-    let raf = 0;
-    const ro = new ResizeObserver(() => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(measure);
-    });
-    ro.observe(body);
-    ro.observe(root);
-    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
-  }, [isExpanded, shownFace, page]);
-
-  // In the dialog: what it leaves for the score once the player under it, and
-  // the viewer's row of tabs above it, are counted — so the player is never
-  // pushed below the fold. In layout pixels: the app zooms <html>, dvh does
-  // not know. Full page, the measure above; this until it is in.
-  const maxHeight = page || isExpanded
-    ? (fit !== null ? `${fit}px` : 'calc(100dvh / var(--zoom-factor, 1) - 28rem)')
-    : 'min(46vh, calc(100dvh / var(--zoom-factor, 1) - 32rem))';
-
-  // Full page, floor and cap alike (2026-11-01, the user): the paper fills
-  // the page, as the viewer's full page does, however short the tune.
 
   // In the score's corner, as in the viewer: the way in, then the way out —
   // and, as in the viewer, none with the stave and the text together (the
   // user, 2026-11-04).
   const pageLabel = t(page ? 'fileViewer.abc.fullscreenExit' : 'fileViewer.abc.fullscreen');
-  // On the full page, a ✕ beside it — see PlayAlongView's: the page has no
-  // title bar, and "reduce" alone was not read as a way out. Back to the dialog.
+  // The way out alone on the full page — see PlayAlongView's.
   const tools = shownFace === 'both' && !page ? undefined : (
-    <>
-      <button
-        class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
-        title={pageLabel}
-        aria-label={pageLabel}
-        onClick={(e) => { e.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
-      >
-        {page ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
-      </button>
-      {page && (
-        <button
-          class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
-          title={t('common.close')}
-          aria-label={t('common.close')}
-          onClick={(e) => { e.currentTarget.blur(); leavePage(); }}
-        >
-          <CrossIcon size={16} />
-        </button>
-      )}
-    </>
+    <button
+      class="abc-score-tool-small rounded-md transition-colors cursor-pointer flex items-center justify-center"
+      title={pageLabel}
+      aria-label={pageLabel}
+      onClick={(e) => { e.currentTarget.blur(); if (page) leavePage(); else enterPage(); }}
+    >
+      {page ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+    </button>
   );
 
   return (
     // The player's own padding taken back, so it sits flush in the dialog —
-    // not on the full page, which has none.
-    <div ref={rootRef} class={page ? '' : '-mx-4 -mt-1'}>
+    // not on the full page, which has none. All of its top (14 px), so the
+    // score starts as close under the tabs as the viewer's own does: 4 px of
+    // it were, and the audio sync's score sat 10 px lower (2026-11-20, the
+    // user — the score is the point of the dialog, it gets the room).
+    <div ref={rootRef} class={`flex-1 min-h-0 flex flex-col${page ? '' : ' -mx-4 -mt-3.5'}`}>
       <AudioPlayer
         hooks={{ ...hooks, region }}
-        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight, minHeight: page ? maxHeight : undefined, face: face.value, tools, tint, keyShift: shift } : undefined}
+        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight: 'none', fill: true, face: face.value, tools, tint, keyShift: shift, below: page ? undefined : below } : undefined}
       />
     </div>
   );
@@ -444,16 +382,17 @@ export function mountScoreFollow(host: HTMLElement, opts: {
   forced: boolean;
   /** The viewer's transposition (ScoreFollowView's `transpose`). */
   transpose: number;
+  /** The viewer's source tabs, put between the score and the player. */
+  below?: HTMLElement;
 }): AudioSyncView {
   const version = signal(opts.version);
   const face = signal(opts.face);
-  const expanded = signal(opts.expanded);
   const forced = signal(opts.forced);
   const transpose = signal(opts.transpose);
   render(
     <ScoreFollowView
-      target={opts.target} version={version} getAudio={opts.getAudio} expanded={expanded} face={face}
-      onState={opts.onState} forced={forced} transpose={transpose}
+      target={opts.target} version={version} getAudio={opts.getAudio} face={face}
+      onState={opts.onState} forced={forced} transpose={transpose} below={opts.below}
     />,
     host,
   );
@@ -461,7 +400,9 @@ export function mountScoreFollow(host: HTMLElement, opts: {
     setVersion: (v) => { version.value = v; },
     setForced: (v) => { forced.value = v; },
     setFace: (f) => { face.value = f; },
-    setExpanded: (v) => { expanded.value = v; },
+    // Nothing to do: the score fills the room the dialog has, grown or not
+    // (2026-11-20) — it used to be measured against it.
+    setExpanded: () => {},
     setTranspose: (v) => { transpose.value = v; },
     unmount: () => render(null, host),
   };

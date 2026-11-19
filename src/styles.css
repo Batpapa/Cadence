@@ -605,20 +605,62 @@
    container queries are missing (iOS before 16), the two stay one above the
    other, which is the narrow layout anyway.
 
-   `--abc-score-cap` is the stave's height cap alone (fileViewer.ts's
-   capScore). Under the text it gets a share of it, so both are on screen;
-   beside the text it gets all of it, and the text the row's height — at
-   least a box's worth, for a short tune.
+   Both share the middle of the viewer's column (.abc-faces, 2026-11-20):
+   one above the other, the text two fifths of it and the stave three; side
+   by side, each its whole height. Each scrolls inside.
 
    The order is the grid's, not the DOM's: the viewer keeps the stave first,
    where its full page and the audio sync look for it. */
 .abc-viewer { container: abc-viewer / inline-size; }
+/* The score viewer's source tabs — Synth, Audio sync, Play-along — over what
+   plays (fileViewer.ts, 2026-11-20). One line always: the full names while
+   they fit, short ones below that width — Synth, Audio, Play, the audio
+   sync's figure beside "Audio" when it is on (the user). On one line with the full
+   names a phone cut them all short (« Sy… »). */
+/* Which names: measured (fileViewer.ts, fitSources) rather than a width in
+   CSS, the audio sync's full name going from "Audio sync" to "Audio sync
+   (83 %, 1 semitone up)" — `abc-sources-short`, then `abc-sources-tight`
+   without the key gap. */
+.abc-source { white-space: nowrap; }
+.abc-source-short { display: none; }
+.abc-sources-short .abc-source-full { display: none; }
+.abc-sources-short .abc-source-short { display: inline-flex; align-items: center; }
+/* The audio sync's key gap in its short name, its fork an svg (a block, by
+   Tailwind's preflight) kept in the line; the first thing given up. */
+.abc-source-extra { display: inline-flex; align-items: center; gap: 0.0625rem; }
+.abc-sources-tight .abc-source-extra { display: none; }
+/* The middle of the score viewer's column (fileViewer.ts, 2026-11-20): what
+   the rows above and below leave of the dialog's height, the faces filling it
+   — the stave's paper or the text's box, scrolled inside. Never squeezed to
+   nothing: below that floor the dialog's body scrolls instead. */
+.abc-faces {
+  flex: 1 1 0;
+  min-height: 8rem;
+  display: flex;
+  flex-direction: column;
+}
+.abc-faces > .abc-score-frame,
+.abc-faces > .abc-text-box { flex: 1 1 0; min-height: 0; }
+.abc-faces > .abc-score-frame { display: flex; flex-direction: column; }
+.abc-score-frame > .abc-score-paper { flex: 1 1 0; min-height: 0; }
+/* The audio sync's and the Play-along's score (syncedScore.tsx, `fill`): the
+   same, in their own column — one face, or the two together. */
+.score-fill { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.score-fill-both { flex: 1 1 0; min-height: 0; }
+
 .abc-faces-both {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* One above the other: the text, then the stave, sharing the height. */
+  grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
   gap: 0.75rem;
 }
+.abc-faces.abc-faces-both { display: grid; }
+.abc-faces-both > * { min-height: 0; }
 .abc-faces-both > .abc-text-box { order: -1; }
+.abc-faces-both > .abc-score-frame { display: flex; flex-direction: column; }
+.abc-faces-both > .abc-score-frame .abc-score-paper { flex: 1 1 0; min-height: 0; }
+.abc-faces-both > .abc-text-box > .score-follow-text { height: 100%; }
 /* The line between the two, which shares the width when they stand side by
    side (fileViewer.ts, 2026-11-04): faint at rest so it can be found, the
    accent once it is pointed at or held — the sidebar's handle's colours. */
@@ -636,13 +678,6 @@
   background-color: rgb(var(--color-accent-ch) / 0.6);
 }
 .abc-faces-split:focus-visible { outline: none; }
-.abc-faces-both > .abc-score-frame .abc-score-paper {
-  max-height: calc(var(--abc-score-cap) * 0.55);
-}
-/* The audio sync's and the Play-along's text (syncedScore.tsx), read-only:
-   a fixed height under the stave, whose own height those views measure and
-   set — the text's must not depend on it. */
-.abc-faces-both > .abc-text-box > .score-follow-text { max-height: 12rem; }
 @container abc-viewer (min-width: 56rem) {
   /* Text, line, stave — placed by column, not by order: the DOM keeps the
      stave first. The shares are the line's (`--abc-text-fr`, faceSplit.ts),
@@ -650,7 +685,8 @@
      score (syncedScore.tsx). */
   .abc-faces-both {
     grid-template-columns: minmax(0, var(--abc-text-fr, 1fr)) 0.75rem minmax(0, var(--abc-score-fr, 1fr));
-    grid-auto-rows: minmax(18rem, auto);
+    /* One row, the middle's whole height. */
+    grid-template-rows: minmax(0, 1fr);
     column-gap: 0;
   }
   .abc-faces-both > .abc-text-box { grid-column: 1; grid-row: 1; }
@@ -663,18 +699,6 @@
     touch-action: none;
   }
   .abc-faces-both > .abc-score-frame { grid-column: 3; grid-row: 1; }
-  .abc-faces-both > .abc-score-frame .abc-score-paper {
-    height: 100%;
-    max-height: var(--abc-score-cap);
-  }
-  /* `!important` against the height the box's own handle writes on it, one
-     above the other (an inline style): taken there, it held the box at that
-     height side by side as well (2026-11-04, the user). Kept, it is the
-     height the box has again under the stave. */
-  .abc-faces-both > .abc-text-box textarea {
-    height: 100% !important;
-    resize: none;
-  }
   /* Beside the stave, the row's height — never more: the text scrolls. */
   .abc-faces-both > .abc-text-box > .score-follow-text {
     position: absolute;
@@ -813,6 +837,9 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 }
 /* The versions' arrows when the row is short of room (fileViewer.ts
    `setNavNarrow`): as tall, narrower. */
+/* The faces' tabs, when the row over the score is short (fileViewer.ts,
+   setNavNarrow): as tall, a little narrower. */
+.abc-tabs-narrow > .seg-btn { min-width: 1.875rem; }
 .abc-tool-btn.abc-nav-narrow {
   min-width: 1.25rem;
   padding-inline: 0;
@@ -835,29 +862,16 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 }
 .abc-chip-on:hover { @apply text-accent; }
 
-/* The ABC viewer's bottom row (fileViewer.ts, 2026-10-15): the transport in
-   the middle, the source face's version buttons on the left and Save on the
-   right, on one line. Equal outer columns keep the transport centred whatever
-   is beside it. When the whole does not fit, `abc-bottom-stacked` (decided in
-   code, from the pieces' natural widths) puts the transport on a line of its
-   own and the two sides on the next. */
+/* The ABC viewer's bottom row (fileViewer.ts): the transport, alone since
+   2026-11-20 — one column, the transport's own wrapping and nothing measured.
+   From 2026-10-15 the source face's version buttons and Save stood on its
+   sides, in three columns that were measured, stacked and kept from
+   flickering; they went to the versions' box and the text's frame. */
 .abc-bottom-row {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 0.5rem;
 }
-.abc-bottom-row > .abc-bottom-start { grid-column: 1; grid-row: 1; justify-self: start; }
-.abc-bottom-row > .abc-transport { grid-column: 2; grid-row: 1; }
-.abc-bottom-row > .abc-bottom-end { grid-column: 3; grid-row: 1; justify-self: end; }
-.abc-bottom-row.abc-bottom-stacked { grid-template-columns: 1fr 1fr; }
-.abc-bottom-row.abc-bottom-stacked > .abc-transport { grid-column: 1 / -1; }
-.abc-bottom-row.abc-bottom-stacked > .abc-bottom-start { grid-column: 1; grid-row: 2; }
-.abc-bottom-row.abc-bottom-stacked > .abc-bottom-end { grid-column: 2; grid-row: 2; }
-/* Nothing beside the transport (every face but the source): one column, the
-   transport's own wrapping and nothing measured — see layoutBottomRow. */
-.abc-bottom-row.abc-bottom-solo { grid-template-columns: minmax(0, 1fr); }
-.abc-bottom-row.abc-bottom-solo > .abc-transport { grid-column: 1; }
 
 /* The ABC source face's marks (fileViewer.ts, 2026-10-15), in its layer
    under the text. Where play will start: a bar against the note's left edge,
@@ -917,15 +931,18 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
    request: no plate of its own, just the glyph on the paper, in the paper's
    ink, with a hit area still worth a finger. `color-mix` keeps one rule for
    three papers instead of three rules that can drift apart. */
+/* Floating over the score since 2026-11-20 (no room kept for it above the
+   first staff): a ground of the paper's own colour, nearly opaque, so that it
+   reads over the notes it may cover. */
 .abc-score-tool-small {
   min-width: 2rem;
   min-height: 2rem;
-  background: transparent;
+  background: color-mix(in srgb, var(--abc-paper, #ffffff) 85%, transparent);
   color: color-mix(in srgb, var(--abc-ink, #000000) 55%, transparent);
 }
 .abc-score-tool-small:hover {
   color: var(--abc-ink, #000000);
-  background: color-mix(in srgb, var(--abc-ink, #000000) 8%, transparent);
+  background: color-mix(in srgb, var(--abc-ink, #000000) 8%, var(--abc-paper, #ffffff));
 }
 
 
