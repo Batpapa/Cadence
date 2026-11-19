@@ -206,18 +206,22 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
         { target: 'modal', action: 'do', until: created, deny: ['modal-close'],
           titleKey: 'walkthrough.createCard.decks.title', textKey: 'walkthrough.createCard.decks.text', available: hasDecks },
         { target: 'newcard-open', action: 'click', titleKey: 'walkthrough.createCard.open.title', textKey: 'walkthrough.createCard.open.text' },
-        // The card it opened on — the one just made.
+        // The card it opened on — the one just made. What it is made of first,
+        // the tags straight after the decks so that the two are told apart —
+        // outside the card, part of it (2026-11-20, the user: testers took
+        // one for the other); then its reviews, and last the figures drawn
+        // from them, back at the top of the page (the user).
         { target: 'card-name', titleKey: 'walkthrough.createCard.cardName.title', textKey: 'walkthrough.createCard.cardName.text' },
         { target: 'card-decks', titleKey: 'walkthrough.createCard.cardDecks.title', textKey: 'walkthrough.createCard.cardDecks.text' },
-        { target: 'card-stats', titleKey: 'walkthrough.createCard.stats.title', textKey: 'walkthrough.createCard.stats.text' },
-        { target: 'card-type', titleKey: 'walkthrough.createCard.type.title', textKey: 'walkthrough.createCard.type.text' },
         { target: 'card-tags', titleKey: 'walkthrough.createCard.tags.title', textKey: 'walkthrough.createCard.tags.text' },
+        { target: 'card-type', titleKey: 'walkthrough.createCard.type.title', textKey: 'walkthrough.createCard.type.text' },
         { target: 'card-notes-edit', action: 'click', titleKey: 'walkthrough.createCard.notes.title', textKey: 'walkthrough.createCard.notes.edit' },
         { target: 'card-notes-text', action: 'do', titleKey: 'walkthrough.createCard.notes.title', textKey: 'walkthrough.createCard.notes.write' },
         { target: 'card-notes-edit', action: 'click', titleKey: 'walkthrough.createCard.notes.title', textKey: 'walkthrough.createCard.notes.save' },
         { target: 'card-notes', titleKey: 'walkthrough.createCard.notes.title', textKey: 'walkthrough.createCard.notes.result' },
         { target: 'card-attachments', titleKey: 'walkthrough.createCard.attachments.title', textKey: 'walkthrough.createCard.attachments.text' },
         { target: 'card-history', titleKey: 'walkthrough.createCard.history.title', textKey: 'walkthrough.createCard.history.text' },
+        { target: 'card-stats', titleKey: 'walkthrough.createCard.stats.title', textKey: 'walkthrough.createCard.stats.text' },
       ];
     },
   },

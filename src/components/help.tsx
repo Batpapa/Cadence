@@ -221,7 +221,7 @@ function getInfoContent(ctx: AppContext): { title: string; sections: HelpSection
 function getGuideSteps(): HelpSection[] {
   return [
     { heading: t('help.guide.s1.heading'),  items: [t('help.guide.s1.1'), t('help.guide.s1.2'), t('help.guide.s1.3'), t('help.guide.s1.4')] },
-    { heading: t('help.guide.s2.heading'),  items: [t('help.guide.s2.1'), t('help.guide.s2.2'), t('help.guide.s2.3'), t('help.guide.s2.4'), t('help.guide.s2.5')] },
+    { heading: t('help.guide.s2.heading'),  items: [t('help.guide.s2.1'), t('help.guide.s2.2'), t('help.guide.s2.tag'), t('help.guide.s2.3'), t('help.guide.s2.4'), t('help.guide.s2.5')] },
     { heading: t('help.guide.s3.heading'),  items: [t('help.guide.s3.1'), t('help.guide.s3.2'), t('help.guide.s3.3'), t('help.guide.s3.4')] },
     { heading: t('help.guide.s4.heading'),  items: [t('help.guide.s4.1'), t('help.guide.s4.2'), t('help.guide.s4.3'), t('help.guide.s4.4'), t('help.guide.s4.5')],
       extension: irish(importLine(t('help.guide.s4.import'), t('help.guide.s4.importIti'))) },
