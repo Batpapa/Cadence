@@ -43,6 +43,9 @@ const RESIZE_PRESS_MS       = 300;
 const RESIZE_PRESS_SLOP_PX  = 8;
 /** Two taps on the edge this close together fit its width to the names. */
 const DOUBLE_TAP_MS         = 300;
+/** Left after a fitted name, on top of the row's gap: the margin of the icon
+ *  in its slot before the name — (24 − 14) / 2 in sidebar.tsx. */
+const FIT_ROOM_PX           = 5;
 /** The drawer's handle, made for a finger: 28 layout px (Tailwind w-7), of
  *  which this much over the drawer and the rest over the shade — the 8 px of
  *  the mouse's handle were about 13 physical pixels on a phone, under a
@@ -243,10 +246,15 @@ function AppRoot() {
     // and clientWidth are whole pixels: a name over its box by 0.06 px
     // rounded to 102 against 102 — "fits" — and lost its last letters to the
     // ellipsis (app at 90 %, measured 2026-11-20; seen on a desktop too).
+    // And as much room after the name as before it: before, the icon's own
+    // margin in its slot adds to the row's gap (sidebar.tsx: a 14 px icon in
+    // a 24 px slot), so a name fitted to the gap alone sat closer to its dots
+    // than to its icon (2026-11-20). In window pixels, like the rects.
+    const room = FIT_ROOM_PX * ((panel.offsetWidth && panel.getBoundingClientRect().width / panel.offsetWidth) || 1);
     const range = document.createRange();
     const cut = (n: HTMLElement) => {
       range.selectNodeContents(n);
-      return range.getBoundingClientRect().width > n.getBoundingClientRect().width;
+      return range.getBoundingClientRect().width + room > n.getBoundingClientRect().width;
     };
     const cutAt = (w: number) => {
       panel.style.width = w + 'px';
