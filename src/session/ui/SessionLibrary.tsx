@@ -21,7 +21,7 @@ import { replaceRoute, replaceRouteNow, routeSignal, navEntry } from '../../stor
 import { mayHoldAudio } from '../../services/audioSniff';
 import { hasLibrary } from '../../services/pageMode';
 import { pickFiles } from '../../services/filePicker';
-import type { AppContext, FilterState, TuneSort } from '../../types';
+import type { AppContext, FilterState, Route, TuneSort } from '../../types';
 import type { Analysis } from '../model';
 
 // ── Screen: library ───────────────────────────────────────────────────────────
@@ -156,35 +156,42 @@ export function SessionLibrary(props: SessionLibraryProps) {
    *  screen along — the search and the chips are the same visit, and the
    *  entry being left gets its last keystroke written first (a trailing
    *  replaceRoute would otherwise land on the NEW entry, see replaceRouteNow). */
-  const go = (next: { tab: 'sessions' | 'tunes'; folder: string | null; keepSearch?: boolean }) => {
+  const go = (patch: (here: Extract<Route, { view: 'sessions' }>) => Partial<Extract<Route, { view: 'sessions' }>>) => {
     const here = routeSignal.peek();
     if (here.view !== 'sessions') return;
     replaceRouteNow(here);
-    ctx.navigate({
-      ...here,
-      tab: next.tab === 'sessions' ? undefined : next.tab,
-      folder: next.folder ?? undefined,
-      // Dropped for a folder the search found (AnalysisBrowser) and on a tab
-      // switch; the entry reached then copies the empty box back (the layout
-      // effect above).
-      search: next.keepSearch === false ? undefined : here.search,
-    });
+    // The entry reached copies its search back into the box (the layout
+    // effect above).
+    ctx.navigate({ ...here, ...patch(here) });
   };
-  const openFolder = (id: string | null, keepSearch?: boolean) => { if (id !== folderId) go({ tab, folder: id, keepSearch }); };
-  // The search is left behind on a tab switch (2026-11-20, the user: two
-  // different pages, a tune's name typed on one means nothing on the other).
-  // Back returns to it: each entry keeps its own.
-  const openTab = (next: 'sessions' | 'tunes') => { if (next !== tab) go({ tab: next, folder: folderId, keepSearch: false }); };
+  // A folder the search found leaves the search behind (AnalysisBrowser):
+  // that folder is where the user was going.
+  const openFolder = (id: string | null, keepSearch?: boolean) => {
+    if (id !== folderId) go(here => ({ folder: id ?? undefined, search: keepSearch === false ? undefined : here.search }));
+  };
+  // A tab opens BARE — the root, no search, no chips, the default order —
+  // like any page reached by a click in this app (the library from the menu
+  // opens unfiltered); back is what returns to a state left behind
+  // (2026-11-20, the user: "le sauvegarder en entier, ou pas du tout", then
+  // "nowhere else does the app keep the last state met"). Half of it used to
+  // follow: the folder and the tunes' chips did, the search did not.
+  const openTab = (next: 'sessions' | 'tunes') => {
+    if (next === tab) return;
+    const here = routeSignal.peek();
+    if (here.view !== 'sessions') return;
+    replaceRouteNow(here);
+    ctx.navigate({ view: 'sessions', tab: next === 'sessions' ? undefined : next });
+  };
   /** The tune list's funnel, beside the search box both tabs share — shown on
    *  the tunes tab only, the analyses having no filter sections. Held here with
-   *  the view it clears; kept across a tab switch, like the view. Counted
+   *  the view it clears (which a tab switch resets, see openTab). Counted
    *  before the first read too: the analyses chips then count for nothing,
    *  and the sections open once the read brings them in (useFiltersPanel). */
   const tuneFilters = tuneFilterCount(tuneView, allSessions, ctx.user);
   const filters = useFiltersPanel(tuneFilters, () => setTuneView(v => ({
     ...v, analyses: new Map(), tags: new Map(), others: new Map(), kinds: new Map(),
     detectedFrom: '', detectedTo: '', decks: new Map(), cardTags: new Map(),
-  })));
+  })), entry);
   const [source, setSource] = useState<LiveSourceKind>('mic');
   // Where an import comes from, chosen the same way and kept the same way:
   // for now, not as a preference (see the live source's split button below).
@@ -413,9 +420,8 @@ export function SessionLibrary(props: SessionLibraryProps) {
 
 
       {/* One box for both tabs, but not one search: on the tunes side it
-          filters tune names, on this side analyses and folders, and a tab
-          switch empties it (openTab). Each tab's entry in the history keeps
-          what was typed there. */}
+          filters tune names, on this side analyses and folders, and each tab
+          keeps its own (openTab swaps them). */}
       <div class="flex gap-2 mt-3">
         <SearchField
           value={query}

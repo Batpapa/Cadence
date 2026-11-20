@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { FilterState } from '../types';
 import { t } from '../services/i18nService';
@@ -257,10 +257,26 @@ export function FilterGroup({ labelKey, active, children }: {
  *  next press hides them.
  *
  *  An effect rather than a value taken at mount: the analyser learns which of
- *  its pinned analyses still exist only once it has read them, after mount. */
-export function useFiltersPanel(count: number, clear: () => void): { shown: boolean; press: () => void } {
+ *  its pinned analyses still exist only once it has read them, after mount.
+ *
+ *  `entry`: the history entry on screen, for a list that stays mounted from
+ *  one entry to the next (the analyser's tabs, 2026-11-20). Arriving on
+ *  another entry starts the sections as arriving on a fresh page does — shown
+ *  only while a filter is active — rather than as the previous entry left
+ *  them. A remounted list (the card library) needs none. */
+export function useFiltersPanel(count: number, clear: () => void, entry?: number): { shown: boolean; press: () => void } {
   const active = count > 0;
   const [open, setOpen] = useState(active);
+  // Before the effect below, so that a filter brought by the entry reached
+  // still opens the sections. Folded rather than set to `active`: that is
+  // still the previous entry's count on this render — `shown` follows the
+  // new one by itself.
+  const seenEntry = useRef(entry);
+  useEffect(() => {
+    if (seenEntry.current === entry) return;
+    seenEntry.current = entry;
+    setOpen(false);
+  }, [entry]);
   useEffect(() => { if (active) setOpen(true); }, [active]);
   return {
     shown: open || active,
