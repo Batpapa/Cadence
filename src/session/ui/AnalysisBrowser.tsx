@@ -1,4 +1,4 @@
-import type { JSX, RefObject } from 'preact';
+import type { ComponentChildren, JSX, RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { t } from '../../services/i18nService';
 import { hasLibrary } from '../../services/pageMode';
@@ -211,7 +211,7 @@ function Card({ icon, iconTitle, name, detail, onOpen, dragItem, target, accepts
   );
 }
 
-export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, onOpenSession, onSessionsChanged }: {
+export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, onOpenSession, onSessionsChanged, toolbar }: {
   ctx: AppContext;
   /** Every analysis, in library order — NOT filtered: the tree needs the whole
    *  list to know which ones it has no opinion about (see rootOrder). */
@@ -227,6 +227,10 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
    *  changes what EXISTS rather than how it is arranged, so the library has to
    *  re-read its list rather than re-derive it. */
   onSessionsChanged: () => void;
+  /** The search box, owned by the screen, shown just under the breadcrumb,
+   *  browsing or searching: the search runs in the folder the breadcrumb
+   *  names. */
+  toolbar: ComponentChildren;
 }) {
   const tree = sessionTreeOf(ctx.user);
   const allIds = sessions.map(s => s.id);
@@ -404,6 +408,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
     return (
       <>
       {breadcrumbRow(false)}
+      {toolbar}
       <div class="mt-4 space-y-2">
         {found.length === 0
           ? <EmptyState>{t(hasLibrary() ? 'sessions.noSearchResultsWithFolders' : 'sessions.noSearchResults')}</EmptyState>
@@ -446,6 +451,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
   return (
     <>
       {breadcrumbRow(true)}
+      {toolbar}
 
       <div class="mt-3 space-y-2">
         {/* The way out, first in the list and before anything else — it is both

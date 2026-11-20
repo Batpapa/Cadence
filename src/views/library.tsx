@@ -37,6 +37,7 @@ import type { AppState, Card, LibrarySort } from '../types';
 import { IconButton, EmptyState } from '../components/ui';
 import { FilterSection, FiltersButton, ReviewedRangeSection, cycleFilter, useFiltersPanel, type FilterMap } from '../components/filterSection';
 import { SearchField } from '../components/searchField';
+import { FitText } from '../components/fitText';
 import { createLongPressHandlers } from '../components/longPress';
 import { registerOverlay } from '../components/overlayStack';
 
@@ -915,8 +916,12 @@ export function LibraryView() {
 
       {/* ── Header ── */}
       <div class="flex items-center justify-between px-6 pt-6 pb-4">
-        <div>
-          <h1 class="text-xl font-semibold text-primary">{t('library.title')}</h1>
+        {/* flex-1 min-w-0: the title's room is what the buttons leave, which
+            is what FitText measures it against. */}
+        <div class="flex-1 min-w-0 mr-2">
+          {/* The long name where it fits, the short one rather than a wrap
+              (2026-11-20, the user) — the menu's own pair. */}
+          <h1 class="text-xl font-semibold text-primary"><FitText long={t('sidebar.library')} short={t('bottomNav.library')} /></h1>
           <p class="text-xs text-muted mt-0.5">
             {t(allCards.length !== 1 ? 'library.cardCountPlural' : 'library.cardCount', { count: allCards.length })}
           </p>

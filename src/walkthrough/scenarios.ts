@@ -523,8 +523,9 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
         { target: 'module-sessions', action: 'click', deny: ['module-pin-sessions'], titleKey: 'walkthrough.analyser.open.title', textKey: 'walkthrough.analyser.open.text' },
         { target: 'analyser-start', titleKey: 'walkthrough.analyser.start.title', textKey: 'walkthrough.analyser.start.text' },
         { target: 'analyser-gear', titleKey: 'walkthrough.analyser.gear.title', textKey: 'walkthrough.analyser.gear.text' },
-        { target: 'analyser-tabs', action: 'do', titleKey: 'walkthrough.analyser.tabs.title', textKey: 'walkthrough.analyser.tabs.text',
-          after: act => act.click('analyser-tab-sessions') },
+        // Shown, not pressed: the detections are a page of their own since
+        // 2026-11-20, and the tour goes on from the analyses.
+        { target: 'analyser-detections', titleKey: 'walkthrough.analyser.tabs.title', textKey: 'walkthrough.analyser.tabs.text' },
         { target: 'analyser-start', titleKey: 'walkthrough.analyser.first.title', textKey: 'walkthrough.analyser.first.text', available: () => !hasAnalyses() },
         { target: 'analysis-row', action: 'click', titleKey: 'walkthrough.analyser.analysis.title', textKey: 'walkthrough.analyser.analysis.text', available: hasAnalyses },
         { target: 'summary-views', titleKey: 'walkthrough.analyser.views.title', textKey: 'walkthrough.analyser.views.text', available: hasAnalyses },

@@ -6,6 +6,7 @@ import { loadSessionMeta } from '../session/db';
 import type { Analysis } from '../session/model';
 import { activeLive, activeImport } from '../session/ui/sessionStore';
 import { SessionLibrary } from '../session/ui/SessionLibrary';
+import { DetectionsLibrary } from '../session/ui/DetectionsLibrary';
 import { LiveSessionScreen } from '../session/ui/LiveSession';
 import { ImportAnalysis } from '../session/ui/ImportAnalysis';
 import { SessionSummary } from '../session/ui/SessionSummary';
@@ -65,7 +66,8 @@ function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; 
   );
 }
 
-export function SessionsView({ sessionId, annotationId, search, tab, folder, sort, sortAsc, others, othersOr, analyses, analysesOr, dances, modes, tags, tagsOr, kinds, detectedFrom, detectedTo, decks, decksOr, cardTags, cardTagsOr }: Extract<Route, { view: 'sessions' }>) {
+export function SessionsView(route: Extract<Route, { view: 'sessions' }>) {
+  const { sessionId, annotationId, search, tab, folder } = route;
   const ctx = getContext();
   const onOpenCard = (cardId: string) => ctx.navigate({ view: 'card', cardId });
 
@@ -82,7 +84,11 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
   } else if (imp && importScreenActive()) {
     content = <ImportAnalysis imp={imp} ctx={ctx} onOpenCard={onOpenCard} />;
   } else {
-    content = (
+    // `tab: 'tunes'` is the detections, a page of their own since 2026-11-20
+    // (DetectionsLibrary), with its own title — titled as the card library
+    // is, and without the analyser's settings (the user, same day). The name
+    // `tunes` stays, written in saved routes and in history entries.
+    content = tab === 'tunes' ? <DetectionsLibrary ctx={ctx} route={route} /> : (
       <>
         <div class="flex items-center justify-between mb-4">
           {/* The module's own icon before its name, as Trending has it. */}
@@ -110,25 +116,7 @@ export function SessionsView({ sessionId, annotationId, search, tab, folder, sor
           onImportSession={() => showImportSessionModal(ctx)}
           onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}
           initialSearch={search}
-          tab={tab}
           folder={folder}
-          initialSort={sort}
-          initialSortAsc={sortAsc}
-          initialOthers={others}
-          initialOthersOr={othersOr}
-          initialAnalyses={analyses}
-          initialAnalysesOr={analysesOr}
-          initialDances={dances}
-          initialModes={modes}
-          initialKinds={kinds}
-          initialTags={tags}
-          initialTagsOr={tagsOr}
-          initialDetectedFrom={detectedFrom}
-          initialDetectedTo={detectedTo}
-          initialDecks={decks}
-          initialDecksOr={decksOr}
-          initialCardTags={cardTags}
-          initialCardTagsOr={cardTagsOr}
         />
       </>
     );

@@ -113,6 +113,11 @@ export interface TuneViewState {
    *  a section apart from "Tags", which reads each pass. */
   cardTags: FilterMap;
   cardTagsOr: boolean;
+  /** The row whose passages are unfolded — a tune id, or a set's key — or
+   *  null. Not a filter: in the view so that it travels in the route, and back
+   *  from a card finds the list as it was left, unfolded row included (the
+   *  user, 2026-11-20). */
+  open: string | null;
 }
 
 /** Chip keys for the "other" section. Strings rather than an enum because
@@ -242,7 +247,8 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
       (parent !== undefined && nodes.has(parent) ? nodes.get(parent)!.children : analysisTree).push(node);
     }
   }
-  const [openTuneId, setOpenTuneId] = useState<string | null>(null);
+  const openTuneId = view.open;
+  const setOpenTuneId = (open: string | null) => onView({ open });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** Bumped after anything that changes the user blob (a card created, a clip
    *  attached), since this tree reads it directly rather than through a signal. */
@@ -317,19 +323,27 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
   const occurrences = openTuneId === null || tuneIdsOfSetKey(openTuneId) ? [] : occurrencesOf(heard, openTuneId);
   const setOccurrences = openTuneId !== null && tuneIdsOfSetKey(openTuneId) ? heardSets.occurrences.get(openTuneId) ?? [] : [];
 
+  /** Which recordings are on this device, probed only for the row that is
+   *  open, never for the whole library. */
+  const probeOpen = (key: string) => {
+    const ids = tuneIdsOfSetKey(key)
+      ? (heardSets.occurrences.get(key) ?? []).map(o => o.session.id)
+      : occurrencesOf(heard, key).map(o => o.session.id);
+    player.probe(ids);
+  };
   /** Opens one tune's passages and closes whatever was open. Shared by the
    *  chevron and by the row behind it, so the two can never disagree. */
   const toggleOpen = (tuneId: string) => {
     const next = openTuneId === tuneId ? null : tuneId;
     setOpenTuneId(next);
-    // Probed only for the tune that is open, never for the whole library.
-    if (next) {
-      const ids = tuneIdsOfSetKey(next)
-        ? (heardSets.occurrences.get(next) ?? []).map(o => o.session.id)
-        : occurrencesOf(heard, next).map(o => o.session.id);
-      player.probe(ids);
-    }
+    if (next) probeOpen(next);
   };
+  // A row the route brought back open (back from a card) is probed as a tap
+  // would have: once, on arrival.
+  useEffect(() => {
+    if (openTuneId) probeOpen(openTuneId);
+    // eslint-disable-next-line
+  }, []);
 
   /** The kind chips: a row answers to `tune` or to `tuneset`. */
   const kindOk = (isSet: boolean) => (!isSet || setsOn) && passesChips([isSet ? KIND_SET : KIND_TUNE], kinds);

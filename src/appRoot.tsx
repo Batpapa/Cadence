@@ -78,7 +78,10 @@ function ContentSwitch() {
   // Spread, not field by field: this route now carries the whole shape of the
   // list (tab, ordering, chips), and enumerating them here was one more place
   // to forget one.
-  if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? "library"} {...route} />;
+  // The analyses and the detections keyed apart (2026-11-20): two pages, so
+  // arriving on one mounts it afresh — the detections read their route at
+  // mount only. The analyses' folders share one key, see SessionLibrary.
+  if (route.view === 'sessions') return <SessionsView key={route.sessionId ?? (route.tab === 'tunes' ? 'detections' : 'library')} {...route} />;
   if (route.view === 'trending') return <TrendingView key={e} />;
   const _: never = route; return _;
 }
