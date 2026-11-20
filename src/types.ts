@@ -543,6 +543,8 @@ export type Route =
        *  `folder:<id>`, as in the library's `decks`) and the cards' own tags. */
       decks?: [string, FilterState][]; decksOr?: boolean;
       cardTags?: [string, FilterState][]; cardTagsOr?: boolean;
+      /** The detections' row unfolded, a tune id or a set's key (2026-11-20). */
+      open?: string;
     }
   // `from`/`to` are YYYY-MM-DD, snapped to the closest synced snapshot on load.
   // Deliberately excludes the deck-picker target — that stays session-only, never persisted.

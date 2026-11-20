@@ -1,30 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
-import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, ExternalLinkIcon } from '../../components/icons';
+import { MicIcon, FileAudioIcon, ImportTrayIcon, DeviceAudioIcon, ChevronDownIcon, ExternalLinkIcon, LibraryIcon } from '../../components/icons';
 import { CustomSelect } from '../../components/customSelect';
-import { Segmented } from '../../components/ui';
-import { listSessions } from '../db';
-import { recoverOrphanedSessions } from '../recovery';
-import { showRecoveryFailures } from './RecoveryFailureModal';
-import { showLiveBackupOffers } from './LiveBackupOfferModal';
-import { sweepLiveBackups } from '../liveBackup';
 import { canCaptureDeviceAudio, type LiveSourceKind } from '../audio/sources';
 import { isNative } from '../../native/platform';
-import { activeLive } from './sessionStore';
 import { useTuneNames } from './sessionUiShared';
 import { AnalysisBrowser } from './AnalysisBrowser';
-import { TuneRankingPanel, tuneFilterCount, type TuneViewState } from './TuneRankingPanel';
-import { FiltersButton, useFiltersPanel } from '../../components/filterSection';
+import { useAnalysesList } from './useAnalysesList';
 import { SearchField } from '../../components/searchField';
-import { TUNE_SORT_DEFAULT_ASC } from './tuneRanking';
 import { replaceRoute, replaceRouteNow, routeSignal, navEntry } from '../../store';
 import { mayHoldAudio } from '../../services/audioSniff';
 import { hasLibrary } from '../../services/pageMode';
 import { pickFiles } from '../../services/filePicker';
-import type { AppContext, FilterState, Route, TuneSort } from '../../types';
-import type { Analysis } from '../model';
+import type { AppContext } from '../../types';
 
-// ── Screen: library ───────────────────────────────────────────────────────────
+// ── Screen: the analyses ─────────────────────────────────────────────────────
 // Past sessions + entry points into a new live recording / file import. Pure
 // presentational component: every action (start live, import a file, import
 // a shared session, open a past one) is a callback prop, wired up by
@@ -32,7 +22,10 @@ import type { Analysis } from '../model';
 // sessionModule.ts import here, on purpose: keeps this a leaf presentational
 // component (also avoids a circular import — sessionModule.ts doesn't need
 // to know about this component at all any more).
-
+//
+// The detections were this screen's second tab until 2026-11-20; they are a
+// page of their own now (DetectionsLibrary), reached by the button beside the
+// search box.
 
 /** Whether a drag is carrying FILES from outside the page.
  *
@@ -62,136 +55,62 @@ interface SessionLibraryProps {
   onImportLink: (folderId: string | null) => void;
   onImportSession: () => void;
   onOpenSession: (sessionId: string) => void;
-  /** Which tab and which folder are on screen: read from the route on every
-   *  render, never copied into state. Both are PLACES since 2026-11-20 (S3,
-   *  Aurélien: ‹ › did not climb back through the folders) — each is its own
-   *  history entry, as a folder of decks is, so back and forward move the
-   *  route under this component and it has to follow. */
-  tab?: 'sessions' | 'tunes';
+  /** Which folder is on screen: read from the route on every render, never
+   *  copied into state. A PLACE since 2026-11-20 (S3, Aurélien: ‹ › did not
+   *  climb back through the folders) — each is its own history entry, as a
+   *  folder of decks is, so back and forward move the route under this
+   *  component and it has to follow. */
   folder?: string;
-  /** What the rest of the screen starts as, from the route — so coming back to
-   *  it restores the list that was running, exactly as the card library
-   *  restores its filters. All optional: absent means the default. Copied into
-   *  state, and copied again when back or forward lands on another entry. */
+  /** The search, from the route — so coming back to the screen restores the
+   *  list that was running. Copied into state, and copied again when back or
+   *  forward lands on another folder. */
   initialSearch?: string;
-  initialSort?: TuneSort;
-  initialSortAsc?: boolean;
-  initialOthers?: [string, FilterState][];
-  initialOthersOr?: boolean;
-  initialAnalyses?: [string, FilterState][];
-  initialAnalysesOr?: boolean;
-  initialDances?: [string, FilterState][];
-  initialKinds?: [string, FilterState][];
-  initialTags?: [string, FilterState][];
-  initialTagsOr?: boolean;
-  initialModes?: [string, FilterState][];
-  initialDetectedFrom?: string;
-  initialDetectedTo?: string;
-  initialDecks?: [string, FilterState][];
-  initialDecksOr?: boolean;
-  initialCardTags?: [string, FilterState][];
-  initialCardTagsOr?: boolean;
 }
 
-/** The tune list's settings as the route carries them. */
-function tuneViewFromRoute(p: SessionLibraryProps): TuneViewState {
-  return {
-    sort: p.initialSort ?? 'alpha',
-    sortAsc: p.initialSortAsc ?? TUNE_SORT_DEFAULT_ASC,
-    analyses: new Map(p.initialAnalyses ?? []),
-    analysesOr: p.initialAnalysesOr ?? true,
-    others: new Map(p.initialOthers ?? []),
-    othersOr: p.initialOthersOr ?? false,
-    // A route saved while types and keys were two sections lands in Tags.
-    tags: new Map(p.initialTags ?? [...(p.initialDances ?? []), ...(p.initialModes ?? [])]),
-    tagsOr: p.initialTagsOr ?? false,
-    kinds: new Map(p.initialKinds ?? []),
-    detectedFrom: p.initialDetectedFrom ?? '',
-    detectedTo: p.initialDetectedTo ?? '',
-    decks: new Map(p.initialDecks ?? []),
-    decksOr: p.initialDecksOr ?? false,
-    cardTags: new Map(p.initialCardTags ?? []),
-    cardTagsOr: p.initialCardTagsOr ?? false,
-  };
-}
-
-export function SessionLibrary(props: SessionLibraryProps) {
-  const { ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, tab: routeTab, folder } = props;
-  const [allSessions, setAllSessions] = useState<Analysis[]>([]);
-  /** Whether `allSessions` has been read at least once. The tunes tab waits for
-   *  it: its chips ignore any analysis they cannot find, and before the first
-   *  read that is every one of them — the sections would open collapsed, as if
-   *  the route had carried no filter at all. */
-  const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const [query, setQuery] = useState(props.initialSearch ?? '');
+export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, onImportSession, onOpenSession, folder, initialSearch }: SessionLibraryProps) {
+  const { sessions: allSessions, reload: reloadSessions } = useAnalysesList();
+  const [query, setQuery] = useState(initialSearch ?? '');
   const [dragOver, setDragOver] = useState(false);
-  /** Which way the same material is being read: by evening, or by tune. */
-  const tab = routeTab ?? 'sessions';
   /** Which folder the analyses list is showing; null is the root ("Home"). */
   const folderId = folder ?? null;
-  /** The tune list's own settings, held here rather than inside the panel so
-   *  that ONE effect writes the route. Two writers would take turns erasing
-   *  each other's fields, which is the whole failure mode this avoids. */
-  const [tuneView, setTuneView] = useState<TuneViewState>(() => tuneViewFromRoute(props));
 
-  // Back or forward onto another entry of this same screen (a folder, a tab):
-  // the component stays mounted (appRoot keys it on the analysis alone), so
-  // what it copied from the route at mount is the PREVIOUS entry's — the
-  // search typed there, the chips set there. Re-read from the entry reached.
-  // A layout effect, so the route-writing effect below never runs on a render
-  // that pairs the new entry with the old entry's search. After one of this
-  // screen's own navigations it changes nothing: that entry was built from
-  // this very state.
+  // Back or forward onto another folder: the component stays mounted (appRoot
+  // keys it on the page, not the folder — a remount would read the whole list
+  // again and rerun the recovery pass at every step), so the search it copied
+  // at mount is the PREVIOUS entry's. Re-read from the entry reached. A layout
+  // effect, so the route-writing effect below never runs on a render that
+  // pairs the new folder with the old folder's search. After this screen's own
+  // navigation it changes nothing: that entry was built from this very state.
   const entry = navEntry.value;
   const seenEntry = useRef(entry);
   useLayoutEffect(() => {
     if (seenEntry.current === entry) return;
     seenEntry.current = entry;
-    setQuery(props.initialSearch ?? '');
-    setTuneView(tuneViewFromRoute(props));
+    setQuery(initialSearch ?? '');
     // eslint-disable-next-line
   }, [entry]);
 
-  /** A new history entry for another folder or tab, carrying the rest of the
-   *  screen along — the search and the chips are the same visit, and the
-   *  entry being left gets its last keystroke written first (a trailing
-   *  replaceRoute would otherwise land on the NEW entry, see replaceRouteNow). */
-  const go = (patch: (here: Extract<Route, { view: 'sessions' }>) => Partial<Extract<Route, { view: 'sessions' }>>) => {
+  /** A new history entry: another folder, or the detections. The entry being
+   *  left gets its last keystroke written first — a trailing replaceRoute would
+   *  otherwise land on the NEW entry (see replaceRouteNow). */
+  const leaveFor = (next: (here: { search?: string; folder?: string }) => Parameters<typeof ctx.navigate>[0]) => {
     const here = routeSignal.peek();
     if (here.view !== 'sessions') return;
     replaceRouteNow(here);
-    // The entry reached copies its search back into the box (the layout
-    // effect above).
-    ctx.navigate({ ...here, ...patch(here) });
+    ctx.navigate(next(here));
   };
-  // A folder the search found leaves the search behind (AnalysisBrowser):
-  // that folder is where the user was going.
+  // The search goes along up the breadcrumb, to widen it; a folder the search
+  // found leaves it behind (AnalysisBrowser): that folder is where the user was
+  // going.
   const openFolder = (id: string | null, keepSearch?: boolean) => {
-    if (id !== folderId) go(here => ({ folder: id ?? undefined, search: keepSearch === false ? undefined : here.search }));
+    if (id === folderId) return;
+    leaveFor(here => ({ view: 'sessions', folder: id ?? undefined, search: keepSearch === false ? undefined : here.search }));
   };
-  // A tab opens BARE — the root, no search, no chips, the default order —
-  // like any page reached by a click in this app (the library from the menu
-  // opens unfiltered); back is what returns to a state left behind
-  // (2026-11-20, the user: "le sauvegarder en entier, ou pas du tout", then
-  // "nowhere else does the app keep the last state met"). Half of it used to
-  // follow: the folder and the tunes' chips did, the search did not.
-  const openTab = (next: 'sessions' | 'tunes') => {
-    if (next === tab) return;
-    const here = routeSignal.peek();
-    if (here.view !== 'sessions') return;
-    replaceRouteNow(here);
-    ctx.navigate({ view: 'sessions', tab: next === 'sessions' ? undefined : next });
-  };
-  /** The tune list's funnel, beside the search box both tabs share — shown on
-   *  the tunes tab only, the analyses having no filter sections. Held here with
-   *  the view it clears (which a tab switch resets, see openTab). Counted
-   *  before the first read too: the analyses chips then count for nothing,
-   *  and the sections open once the read brings them in (useFiltersPanel). */
-  const tuneFilters = tuneFilterCount(tuneView, allSessions, ctx.user);
-  const filters = useFiltersPanel(tuneFilters, () => setTuneView(v => ({
-    ...v, analyses: new Map(), tags: new Map(), others: new Map(), kinds: new Map(),
-    detectedFrom: '', detectedTo: '', decks: new Map(), cardTags: new Map(),
-  })), entry);
+  // Bare, like any page reached by a click in this app (the library from the
+  // menu opens unfiltered); back is what returns to a state left behind
+  // (2026-11-20, the user).
+  const openDetections = () => leaveFor(() => ({ view: 'sessions', tab: 'tunes' }));
+
   const [source, setSource] = useState<LiveSourceKind>('mic');
   // Where an import comes from, chosen the same way and kept the same way:
   // for now, not as a preference (see the live source's split button below).
@@ -213,77 +132,20 @@ export function SessionLibrary(props: SessionLibraryProps) {
     { value: 'link', label: t('sessions.importFrom.link') },
   ];
 
-  // Deleting a folder deletes the recordings it holds, and that is the only
-  // action on this screen that changes what EXISTS rather than how it is
-  // arranged — so the list has to be re-read rather than re-derived.
-  const reloadSessions = () => { void listSessions().then(setAllSessions); };
-
-  useEffect(() => {
-    // The list loads whatever recovery did. It used to wait on recovery
-    // succeeding outright, so a single orphan that threw left the library empty
-    // on every visit, silently (2026-09-17). Recordings that could not be
-    // recovered are put in front of the user instead, once the list is up.
-    void recoverOrphanedSessions(activeLive.value?.sessionId)
-      .catch((err: unknown) => {
-        console.error('[sessions] recovery pass failed', err);
-        return [];
-      })
-      .then(async failures => {
-        setAllSessions(await listSessions());
-        setSessionsLoaded(true);
-        // Then the Drive backups, once the local failures have all been
-        // decided — a recording this device lost entirely only exists there.
-        showRecoveryFailures(failures, reloadSessions, () => {
-          void sweepLiveBackups(activeLive.value?.sessionId).then(offers => showLiveBackupOffers(offers, reloadSessions));
-        });
-      });
-    // eslint-disable-next-line
-  }, []);
-
   // The search lives in the route, like the card library's filters. Same
   // reasons: leaving for a session and coming back must not throw the search
   // away, and `replaceRoute` (not navigate) keeps typing out of the history —
   // it is throttled in store.ts precisely because this fires per keystroke.
   // Empty is written as absent rather than as '', so a route that carries no
-  // search stays a route that carries no search.
-  //
-  // Everything that shapes the list travels with it, not just the search: the
-  // ordering, the chips. A default is written as ABSENT rather than as its
-  // value, so a route that was never touched stays a bare `{view:'sessions'}`
-  // instead of accumulating the defaults it already has. The tab and the folder
-  // are copied through as the route has them: they are changed by navigating
-  // (`go`), never here.
+  // search stays a bare `{view:'sessions'}`. The folder is copied through as
+  // the route has it: it is changed by navigating, never here.
   useEffect(() => {
-    replaceRoute({
-      view: 'sessions',
-      search: query || undefined,
-      tab: routeTab,
-      folder,
-      sort: tuneView.sort === 'alpha' ? undefined : tuneView.sort,
-      sortAsc: tuneView.sortAsc === TUNE_SORT_DEFAULT_ASC ? undefined : tuneView.sortAsc,
-      others: tuneView.others.size > 0 ? [...tuneView.others] : undefined,
-      othersOr: tuneView.othersOr || undefined,
-      analyses: tuneView.analyses.size > 0 ? [...tuneView.analyses] : undefined,
-      analysesOr: tuneView.analysesOr ? undefined : false,
-      tags: tuneView.tags.size > 0 ? [...tuneView.tags] : undefined,
-      tagsOr: tuneView.tagsOr || undefined,
-      kinds: tuneView.kinds.size > 0 ? [...tuneView.kinds] : undefined,
-      detectedFrom: tuneView.detectedFrom || undefined,
-      detectedTo: tuneView.detectedTo || undefined,
-      decks: tuneView.decks.size > 0 ? [...tuneView.decks] : undefined,
-      decksOr: tuneView.decksOr || undefined,
-      cardTags: tuneView.cardTags.size > 0 ? [...tuneView.cardTags] : undefined,
-      cardTagsOr: tuneView.cardTagsOr || undefined,
-    });
+    replaceRoute({ view: 'sessions', search: query || undefined, folder });
     // eslint-disable-next-line
-  }, [query, tuneView]);
+  }, [query]);
 
-  /** Where a new analysis is filed: the folder on screen — but only while the
-   *  analyses tab is the one being looked at. The entry buttons sit ABOVE the
-   *  tabs and work from the tunes side too, where "the open folder" is not
-   *  something the user can see, and filing into it would be a surprise rather
-   *  than a convenience. */
-  const destinationFolder = tab === 'sessions' ? folderId : null;
+  /** Where a new analysis is filed: the folder on screen. */
+  const destinationFolder = folderId;
 
   const q = query.trim().toLowerCase();
 
@@ -401,51 +263,45 @@ export function SessionLibrary(props: SessionLibraryProps) {
         <span>{t('sessions.share.importSession')}</span>
       </button>
       </div>
-      {/* Two readings of the same material, side by side: the evenings, and
-          what was played across them. A tab rather than a second module —
-          the ranking is derived from these sessions and means nothing without
-          them. The search box below serves both. */}
-      {/* The app's segmented control (Segmented), the ABC viewer's and the
-          analysis views': a background pill holding the two choices, rather
-          than two loose buttons. Same gesture everywhere, so the same look. */}
-      <div class="mt-3 w-fit" data-tour="analyser-tabs">
-        <Segmented
-          value={tab}
-          options={([['sessions', 'sessions.tab.sessions'], ['tunes', 'sessions.tab.tunes']] as const).map(([id, key]) => ({
-            value: id, label: t(key), tour: `analyser-tab-${id}`,
-          }))}
-          onChange={openTab}
-        />
-      </div>
 
+      {/* The way to the detections: a fourth full-width button under the
+          three ways in, with the long name (the user, 2026-11-20). It went
+          beside the search first, then into the breadcrumb's row — both read
+          as being about the open folder, which it is not. Outside the block
+          above, which the walkthrough lights as "three ways to start". The
+          library's icon, as they are a library of what was played. */}
+      <button
+        type="button"
+        class="btn-outline w-full justify-center flex items-center gap-2 mt-2"
+        data-tour="analyser-detections"
+        onClick={openDetections}
+      >
+        <LibraryIcon size={14} />
+        <span>{t('sessions.detectionsLibrary')}</span>
+      </button>
 
-      {/* One box for both tabs, but not one search: on the tunes side it
-          filters tune names, on this side analyses and folders, and each tab
-          keeps its own (openTab swaps them). */}
-      <div class="flex gap-2 mt-3">
-        <SearchField
-          value={query}
-          onInput={setQuery}
-          // Folders are found too, where there are any: not on the standalone
-          // page, which has no library and so no folders (AnalysisBrowser).
-          placeholder={t(tab === 'tunes' ? 'sessions.ranking.search' : hasLibrary() ? 'sessions.searchWithFolders' : 'sessions.search')}
-        />
-        {tab === 'tunes' && <FiltersButton shown={filters.shown} count={tuneFilters} onPress={filters.press} />}
-      </div>
-
-      {tab === 'tunes' && sessionsLoaded && <div class="mt-3"><TuneRankingPanel sessions={allSessions} query={q} view={tuneView} onView={(patch) => setTuneView(v => ({ ...v, ...patch }))} filtersShown={filters.shown} /></div>}
-
-      {tab === 'sessions' && (
-        <AnalysisBrowser
-          ctx={ctx}
-          sessions={allSessions}
-          query={q}
-          folderId={folderId}
-          onOpenFolder={openFolder}
-          onOpenSession={onOpenSession}
-          onSessionsChanged={reloadSessions}
-        />
-      )}
+      <AnalysisBrowser
+        ctx={ctx}
+        sessions={allSessions}
+        query={q}
+        folderId={folderId}
+        onOpenFolder={openFolder}
+        onOpenSession={onOpenSession}
+        onSessionsChanged={reloadSessions}
+        toolbar={(
+          // Under the breadcrumb (2026-11-20, the user): the search runs in the
+          // folder the breadcrumb names.
+          <div class="mt-3 flex">
+            <SearchField
+              value={query}
+              onInput={setQuery}
+              // Folders are found too, where there are any: not on the
+              // standalone page, which has no library and so no folders.
+              placeholder={t(hasLibrary() ? 'sessions.searchWithFolders' : 'sessions.search')}
+            />
+          </div>
+        )}
+      />
     </div>
   );
 }
