@@ -18,6 +18,11 @@ import { OPS_FORMAT } from './ops';
 // Every rule below has its twin in ops.ts, which refuses what breaks it. The
 // text is the outside half of that contract; keep the two in step, and change
 // the format names when a change breaks what was written against them.
+//
+// The examples (2026-11-22, asked by Antione on 11-16: the text read as "language for an AI",
+// a minimal working JSON would have said more) are run by instructions.test.ts
+// through the real checks, against a library holding the ids they quote — an
+// example that stopped working would fail there, not in a user's hands.
 
 const INSTRUCTIONS = `# Cadence — smart edit instructions
 
@@ -29,6 +34,8 @@ It works in two directions:
 2. **The answer.** You produce a list of **operations** that transforms the library. Cadence checks the whole list, shows the user what it will change, and applies it.
 
 The data is a view to read, not a document to edit and send back. Every change goes through an operation.
+
+To see what an answer looks like first, go to "Examples": short, complete answers to copy from.
 
 ## Formats
 
@@ -64,6 +71,90 @@ These are the mistakes that are easy to make and costly for the user. They apply
 - Existing things are referred to by their \`id\` from the data, copied exactly.
 - Something you create gets a temporary id of your choice that starts with \`new:\` — e.g. \`"new:reel-deck"\`, \`"new:card-1"\` — unique within the list. Use that same id to refer to it in later operations.
 - An operation that uses a \`new:\` id created further down is rejected.
+
+## Examples
+
+Each block below is a complete answer, ready to paste into Cadence. An id like \`"7c1e9a20-…"\` stands for an id copied from the data (real ids are longer); ids starting with \`new:\` are made up in the answer itself. Every operation is described in "Operations" further down.
+
+The smallest answer: one new card.
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "createCard", "id": "new:1", "name": "Bonjour", "notes": "Hello"}
+]}
+\`\`\`
+
+A vocabulary deck in a new folder, the answers hidden until tapped (\`||…||\`), and a tag on each card.
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "createFolder", "id": "new:languages", "name": "Languages"},
+  {"op": "createDeck", "id": "new:spanish", "name": "Spanish verbs", "folderId": "new:languages"},
+  {"op": "createCard", "id": "new:1", "name": "hablar", "tags": ["verb"], "notes": "||to speak||", "decks": ["new:spanish"]},
+  {"op": "createCard", "id": "new:2", "name": "comer", "tags": ["verb"], "notes": "||to eat||", "decks": ["new:spanish"]}
+]}
+\`\`\`
+
+A card for a lesson, with a question, its answer and a link to the course page; more important than the others (\`defaultImportance\` 2).
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "createCard", "id": "new:1", "name": "Photosynthesis", "tags": ["biology", "exam"], "defaultImportance": 2,
+   "notes": "What does a leaf make from light, water and CO2?\\n\\n||Glucose and oxygen.||",
+   "attachments": [{"type": "embed", "url": "https://example.org/biology/photosynthesis", "mode": "link", "title": "Course page"}]}
+]}
+\`\`\`
+
+One card per file, each with its file attached, in a new deck — e.g. built by a script from a folder of files: here scores in ABC notation, but lyrics, recipes or course notes in plain text go the same way. In the file's \`text\`, a line break is written \`\\n\`.
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "createDeck", "id": "new:deck", "name": "Dances"},
+  {"op": "createCard", "id": "new:1", "name": "Bourrée in G", "type": "tune", "decks": ["new:deck"],
+   "attachments": [{"type": "file", "name": "bourree-in-g.abc", "text": "X:1\\nT:Bourrée in G\\nM:3/8\\nL:1/8\\nK:G\\nGAB c2B|A3 G3|"}]},
+  {"op": "createCard", "id": "new:2", "name": "Waltz in D", "type": "tune", "decks": ["new:deck"],
+   "attachments": [{"type": "file", "name": "waltz-in-d.abc", "text": "X:1\\nT:Waltz in D\\nM:3/4\\nL:1/8\\nK:D\\nD2 F2 A2|d6|"}]}
+]}
+\`\`\`
+
+Add a tag to an existing card that already has the tag \`history\` (the list replaces the current one), and attach a video to it.
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "updateCard", "id": "7c1e9a20-…", "tags": ["history", "exam"],
+   "addAttachments": [{"type": "embed", "url": "https://www.youtube.com/watch?v=abcdefghijk"}]}
+]}
+\`\`\`
+
+Move a card from one deck to another.
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "removeFromDeck", "deckId": "4b8d0f13-…", "cardIds": ["7c1e9a20-…"]},
+  {"op": "addToDeck", "deckId": "e52a7c94-…", "cards": [{"cardId": "7c1e9a20-…"}]}
+]}
+\`\`\`
+
+Record two past reviews of a card in a profile.
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "addReviews", "profileId": "9b2e…", "cardId": "7c1e9a20-…",
+   "entries": [["2026-03-01T18:00:00.000Z", "good"], ["2026-03-08T18:30:00.000Z", "easy"]]}
+]}
+\`\`\`
+
+A longer one. The request: "Create a deck Reels in my Irish folder with two new tunes, Cooley's and The Wise Maid, as a set; and rename my profile to Fiddle."
+
+\`\`\`json
+{"format": "${OPS_FORMAT}", "operations": [
+  {"op": "createDeck", "id": "new:reels", "name": "Reels", "folderId": "f3a1c2d4-…"},
+  {"op": "createCard", "id": "new:cooleys", "name": "Cooley's", "type": "tune", "tags": ["reel"], "decks": ["new:reels"]},
+  {"op": "createCard", "id": "new:wise-maid", "name": "The Wise Maid", "type": "tune", "tags": ["reel"], "decks": ["new:reels"]},
+  {"op": "createCard", "id": "new:set", "name": "Cooley's / The Wise Maid", "type": "tuneset", "tunes": [{"cardId": "new:cooleys"}, {"cardId": "new:wise-maid"}], "decks": ["new:reels"]},
+  {"op": "renameProfile", "id": "9b2e…", "name": "Fiddle"}
+]}
+\`\`\`
 
 ## The data
 
@@ -137,20 +228,6 @@ To change what is inside a file, remove it and add the new version — only poss
 - **Linking a card to TheSession.org or irishtune.info.** Only when the user gave the exact numeric id themselves (a URL, or "id 1234"), or when it is a detection's \`externalId\` in the analyses (Cadence's recogniser wrote it, not memory). Never recall an id from memory because a tune's name is familiar: exact ids are easy to get wrong, and a wrong id silently links a different tune. With a confirmed id: \`"externalId": "thesession:1234"\` or \`"externalId": "irishtuneinfo:1234"\` on createCard. Cadence fetches the tune: its title, type, score and importance come from the source. **Leave \`name\` out** — Cadence names the card with the source's title; give a \`name\` only when the user explicitly wants the card called something else, since it then replaces that title. The \`tags\` given are added to the source's, the \`notes\` and \`attachments\` are kept. A tune already in the library (same \`externalId\`) cannot be created again — use the existing card.
 - TheSession only, optional: \`"preferredSetting": 2\` (the 2nd setting listed — only if the user said so) or \`{"settingId": 5678}\` (only if they gave that id). Otherwise leave it out.
 - Everything inferred or recognised by name alone is an ordinary card or tune, with no \`externalId\`.
-
-## Example
-
-The request: "Create a deck Reels in my Irish folder with two new tunes, Cooley's and The Wise Maid, as a set; and rename my profile to Fiddle."
-
-\`\`\`json
-{"format": "${OPS_FORMAT}", "operations": [
-  {"op": "createDeck", "id": "new:reels", "name": "Reels", "folderId": "f3a1c2d4-…"},
-  {"op": "createCard", "id": "new:cooleys", "name": "Cooley's", "type": "tune", "tags": ["reel"], "decks": ["new:reels"]},
-  {"op": "createCard", "id": "new:wise-maid", "name": "The Wise Maid", "type": "tune", "tags": ["reel"], "decks": ["new:reels"]},
-  {"op": "createCard", "id": "new:set", "name": "Cooley's / The Wise Maid", "type": "tuneset", "tunes": [{"cardId": "new:cooleys"}, {"cardId": "new:wise-maid"}], "decks": ["new:reels"]},
-  {"op": "renameProfile", "id": "9b2e…", "name": "Fiddle"}
-]}
-\`\`\`
 `;
 
 /** The instructions, as one Markdown document. */
