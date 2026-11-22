@@ -346,6 +346,14 @@ export function playDiscTitle(o: { playing: boolean; fromDrive: boolean; loading
   return o.fromDrive ? t('sessions.playFromDrive.hint') : t('sessions.playSlice');
 }
 
+/** The title of an analysis card's ▶ (SessionSummary's playFrom): from the
+ *  recording here, a "from here" that plays on, and its pause; from Drive, the
+ *  passage alone, as a pass's. */
+export function playFromTitle(o: { playing: boolean; fromDrive: boolean; loading?: boolean }): string {
+  if (o.fromDrive || o.loading) return playDiscTitle(o);
+  return t(o.playing ? 'sessions.pause' : 'sessions.playFromHere');
+}
+
 /** The play button of a pass. No button at all when the recording is neither
  *  here nor on Drive. */
 export function PlayPassButton({ sessionId, detection, player }: {

@@ -11,7 +11,7 @@ import { setCardFor, chainSpan, isSettled } from '../tunesets';
 import { hasLibrary } from '../../services/pageMode';
 import { setDetectionOn } from '../detections';
 import { HeardSetAbc } from './abcPreview';
-import { PlayDisc, playDiscTitle } from './PassRow';
+import { PlayDisc, playFromTitle } from './PassRow';
 import { ReviewLogControl, ratingOf } from './DetectionCard';
 import { fmtLongTime, tuneName, type ClipSessionRef } from './sessionUiShared';
 import { SetClipControls, TunesetDeckButton, setReviewId } from './tunesetShared';
@@ -38,7 +38,8 @@ export interface TunesetCardOptions {
   /** After anything this card wrote to the user blob. */
   onChanged?: () => void;
   onPlay?: (chain: Detection[]) => void;
-  playingId?: string | null;
+  /** Its ▶ shows ⏸: what plays is in the set (SessionSummary's `sounds`). */
+  playing?: boolean;
   playFromDrive?: boolean;
   playLoadingId?: string | null;
   onToggleLike?: (record: TunesetRecord) => void;
@@ -134,7 +135,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
     : `${fmtLongTime(span.start)} – ${fmtLongTime(span.end)}`;
 
   const playId = chainPlayId(chain);
-  const playing = !!opts.onPlay && opts.playingId === playId;
+  const playing = !!opts.onPlay && !!opts.playing;
 
   const reviewId = opts.record ? setReviewId(opts.session.id, opts.record.id) : null;
   const reviewTs = opts.sessionStartMs !== undefined && !open ? reviewEntryTs(opts.sessionStartMs, span.end) : null;
@@ -154,7 +155,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
 
         {opts.onPlay && (() => {
           const state = { playing, fromDrive: !!opts.playFromDrive, loading: opts.playLoadingId === playId };
-          return <PlayDisc {...state} title={playDiscTitle(state)} onClick={() => opts.onPlay!(chain)} />;
+          return <PlayDisc {...state} title={playFromTitle(state)} onClick={() => opts.onPlay!(chain)} />;
         })()}
 
         <HeardSetAbc

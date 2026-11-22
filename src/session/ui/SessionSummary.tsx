@@ -184,7 +184,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // At the app's playback volume (Settings → Misc., per device).
   useMediaVolume(audioRef);
   const timeLblRef = useRef<HTMLSpanElement>(null);
-  const playingIdRef = useRef<string | null>(null);
   // The timeline IS the seek bar now — one axis, so there is nothing left to
   // keep aligned. Its head is moved by writing style.left straight from the
   // audio element's own events, never through a re-render.
@@ -276,13 +275,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   // re-renders this screen through the state it changes.
   const driveOn = isDriveConnected();
   const [playing, setPlaying] = useState(false);
-  const [playingId, setPlayingId] = useState<string | null>(null);
   /** The recording is not here but is on Drive: a card's ▶ plays its passage
    *  straight from there (2026-10-10), through the same player as the lists of
    *  passes — the timeline's own element has nothing loaded to seek in. */
   const drivePlayer = useSlicePlayer();
-  playingIdRef.current = playingId;
-  const sliceEndRef = useRef(0);
 
   // Not a selection — a READING of where the play head stands. Every detection
   // covering that instant is lit, in the strip and in the list alike: none in a
@@ -598,9 +594,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
   }, []);
 
   // Play head + time label (direct DOM writes on 'timeupdate' — high
-  // frequency, not worth a Preact re-render) and per-detection slice
-  // playback: pauses at the slice's end bound, clears playingId when the
-  // player stops for any reason.
+  // frequency, not worth a Preact re-render).
   //
   // 'timeupdate' fires about four times a second, which sounds coarse for a
   // moving head and is not: on a 48 min session in a 700 px strip the head
@@ -636,18 +630,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       }
       updateTime(false);
     };
-    const onTimeUpdate = () => {
-      updateTime();
-      if (playingIdRef.current !== null && a.currentTime >= sliceEndRef.current) a.pause();
-    };
-    const onPause = () => { if (playingIdRef.current !== null) setPlayingId(null); };
+    const onTimeUpdate = () => updateTime();
     a.addEventListener('loadedmetadata', onLoadedMeta);
     a.addEventListener('timeupdate', onTimeUpdate);
-    a.addEventListener('pause', onPause);
     return () => {
       a.removeEventListener('loadedmetadata', onLoadedMeta);
       a.removeEventListener('timeupdate', onTimeUpdate);
-      a.removeEventListener('pause', onPause);
     };
     // eslint-disable-next-line
   }, []);
@@ -662,17 +650,35 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     return was === annId;
   };
 
-  const playSlice = (ann: Detection) => {
+  /** Whether the head stands in [start, end) — where it was last put, which
+   *  is where the player is (applyHead). Read at render: the head crossing a
+   *  detection's bound changes `lit`, so the screen is drawn again there. */
+  const headIn = (start: number, end: number): boolean => {
+    const h = headTimeRef.current;
+    return h >= start && h < end;
+  };
+
+  /** Whether a card's ▶ shows ⏸: its passage from Drive is playing, or the
+   *  recording is, with the head inside it — every card under the head, so
+   *  both across a join (the user's call, 2026-11-22). `span`: the
+   *  detection's, or the set's for a set's card. */
+  const sounds = (playId: string, span: { start: number; end: number }): boolean =>
+    drivePlayer.playingId === playId || (!!playUrl && playing && headIn(span.start, span.end));
+
+  /** A card's ▶: plays the recording FROM its start, and on past its end —
+   *  one playback for the whole analysis, the card's button a "from here"
+   *  (2026-11-22, the user: on a 3 h session the timeline is no way to get
+   *  about on a phone, and stopping at each tune's end was in the way). Its ⏸,
+   *  shown while the head is inside it, pauses. */
+  const playFrom = (ann: Detection) => {
     const a = audioRef.current;
     if (!a) return;
     if (stopDrivePassage(ann.id)) return;
-    if (playingIdRef.current === ann.id) { a.pause(); return; }
-    sliceEndRef.current = ann.end ?? session.duration;
-    // Through seekTo, so this gesture gets the same floor: playing a slice
-    // must light its own tune, not the one that ends where it begins.
+    if (!a.paused && headIn(ann.start, ann.end ?? session.duration)) { a.pause(); return; }
+    // Through seekTo, so this gesture gets the same floor: playing from a
+    // tune must light that tune, not the one that ends where it begins.
     seekTo(ann.start);
-    void a.play().catch(() => setPlayingId(null));
-    setPlayingId(ann.id);
+    void a.play().catch(() => {});
   };
 
   /** Seconds under a pointer x, from the strip's own box. */
@@ -942,10 +948,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     // No ▶ at all when the recording is neither here nor on Drive.
     // From the recording the player has — stored here or brought down for
     // this visit — else straight from Drive, the passage alone.
-    onPlay: playUrl ? playSlice : synced ? (a) => { void drivePlayer.play(session.id, a); } : undefined,
+    onPlay: playUrl ? playFrom : synced ? (a) => { void drivePlayer.play(session.id, a); } : undefined,
     // A passage from Drive goes on playing when the recording arrives under it:
     // its ▶ still says ■ until it is stopped.
-    playingId: playUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
+    playing: sounds(ann.id, { start: ann.start, end: ann.end ?? session.duration }),
     playFromDrive: !playUrl && !!synced,
     playLoadingId: playUrl ? null : drivePlayer.loadingId,
     sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
@@ -1057,10 +1063,11 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       t('sessions.detection.delete.message', { name: ann.displayName }),
       t('common.delete'),
       () => {
-        // Its passage stops with it — often the very reason for deleting
-        // (listened to, found to be talk) — and its card, the only stop button
-        // it had, is about to go. Only ITS passage: any other playback stands.
-        if (playingIdRef.current === ann.id) audioRef.current?.pause();
+        // The playing stops with it when the head is inside it — often the
+        // very reason for deleting (listened to, found to be talk) — and its
+        // card, the nearest stop button, is about to go. Anywhere else, the
+        // playing stands.
+        if (audioRef.current && !audioRef.current.paused && headIn(ann.start, ann.end ?? session.duration)) audioRef.current.pause();
         if (drivePlayer.playingId === ann.id) drivePlayer.stop();
         session.annotations.splice(i, 1);
         persist();
@@ -1273,8 +1280,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       onOpenCard,
       getPinnedDeckIds: () => pinnedDeckIdsRef.current,
       onChanged: bump,
-      onPlay: playUrl ? (c) => playSlice(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
-      playingId: playUrl ? (playingId ?? drivePlayer.playingId) : drivePlayer.playingId,
+      onPlay: playUrl ? (c) => playFrom(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
+      playing: sounds(chainPlayId(chain), chainSpan(chain, session.duration)),
       playFromDrive: !playUrl && !!synced,
       playLoadingId: playUrl ? null : drivePlayer.loadingId,
       sessionStartMs: session.date === null ? undefined : Date.parse(session.date),

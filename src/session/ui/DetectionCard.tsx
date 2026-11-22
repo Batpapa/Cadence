@@ -10,7 +10,7 @@ import { IconButton } from '../../components/ui';
 import { isCardId } from '../recognition/cardIndex';
 import { hasLibrary } from '../../services/pageMode';
 import { AbcPreview, TuneFacts } from './abcPreview';
-import { PlayDisc, playDiscTitle, detectionAudioSync } from './PassRow';
+import { PlayDisc, playFromTitle, detectionAudioSync } from './PassRow';
 import { scrollContainerOf } from './domInterop';
 import { showAlternatesPopover } from './AlternatesPopover';
 import { BUCKET_BADGE, tuneName, useTuneNames, TuneDeckButton } from './sessionUiShared';
@@ -39,13 +39,15 @@ export interface DetectionCardOptions {
   ctx: AppContext;
   onOpenCard?: (cardId: string) => void;
   onCardAdded?: () => void;
-  /** Play/stop this detection's audio slice; shows a ▶ button when provided. */
+  /** Plays from this detection, or pauses (`playing`); shows a ▶ button when
+   *  provided. */
   onPlay?: (ann: Detection) => void;
   /** Which of its bounds the analysis has yet to put on the tune's passes —
    *  drawn with a ~. A live recording's or an import's
    *  (boundSuggest.ts); null or absent, none. */
   unrefined?: (ann: Detection) => { start: boolean; end: boolean } | null;
-  playingId?: string | null;
+  /** Its ▶ shows ⏸: what plays is in it (SessionSummary's `sounds`). */
+  playing?: boolean;
   /** The recording is only on Drive: the ▶ wears a small cloud, and the
    *  passage is played straight from there (2026-10-10) — the same button as
    *  the lists of passes (PassRow.tsx's PlayDisc). */
@@ -529,7 +531,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
   // the finalized-only edit controls (extraControls, gated by the container
   // on ann.finalized).
   const pending = !isOpen && !ann.finalized;
-  const playing = opts.onPlay && opts.playingId === ann.id;
+  const playing = opts.onPlay && opts.playing;
 
   // A bound the analysis has yet to put on the tune's passes reads "about".
   const rough = opts.unrefined?.(ann);
@@ -602,7 +604,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
 
         {opts.onPlay && (() => {
           const state = { playing: !!playing, fromDrive: !!opts.playFromDrive, loading: opts.playLoadingId === ann.id };
-          return <PlayDisc {...state} title={playDiscTitle(state)} onClick={() => opts.onPlay!(ann)} />;
+          return <PlayDisc {...state} title={playFromTitle(state)} onClick={() => opts.onPlay!(ann)} />;
         })()}
 
         <AbcPreview
