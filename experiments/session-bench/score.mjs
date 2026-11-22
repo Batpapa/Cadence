@@ -61,9 +61,19 @@ function truth(session) {
     return { kind, id: /^[1-9]\d*$/.test(raw) ? raw : '', start: toSeconds(s ?? ''), end: toSeconds(e ?? ''), comment };
   }).filter((r) => r.start !== undefined && r.end !== undefined);
 }
+// Tunes TheSession has since merged into another (its page now redirects there), still present
+// under their old number in the recognition index: naming one is naming the tune it redirects to.
+// A property of the index, not of a recording, so it lives here rather than as a second truth in
+// each timings file (every reader of those files expects one number per row).
+const REDIRECTS = { 12353: '759' };   // Crowley's No. 1 -> Crowley's
+const redirect = (id) => REDIRECTS[id] ?? id;
 function replay(session) {
   const p = path.join(DIR, `cadence-${session}.json`);
-  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf-8')) : null;
+  if (!fs.existsSync(p)) return null;
+  const r = JSON.parse(fs.readFileSync(p, 'utf-8'));
+  r.final = r.final.map((d) => ({ ...d, tuneId: redirect(d.tuneId) }));
+  r.log = r.log.map(([now, id, tuneId, ...rest]) => [now, id, redirect(tuneId), ...rest]);
+  return r;
 }
 const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
 
