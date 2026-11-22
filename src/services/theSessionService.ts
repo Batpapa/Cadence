@@ -555,12 +555,16 @@ export function setExternalId(memberId: number, setId: number): string {
  *
  *  Which score, when several carry the setting: the TheSession score itself
  *  first (`generatedBy: 'thesession'`). A user's copy of it carries every `S:`
- *  line too and sits just BEFORE it (2026-09-15), but its music may no longer be
- *  what was played. Otherwise the first ABC attachment that carries the
- *  setting, as the score reader does (abcService's blockForTune) — the marker
- *  only breaks ties, never excludes: it is younger than the data, and plenty of
- *  real libraries hold TheSession scores predating it (365 of them on one
- *  measured backup). */
+ *  line too (theSessionCopy.ts), but its music may no longer be what was
+ *  played: only TheSession's file is the setting the recogniser heard (the
+ *  user, 2026-11-22 — tried the other way round and turned back the same
+ *  day). A corrected copy is reached otherwise: its versions are in the cards'
+ *  index (recognition/cardIndex.ts), and a recognition that finds one closer
+ *  names it. Otherwise the first ABC attachment that carries the setting, as
+ *  the score reader does (abcService's blockForTune) — the marker only breaks
+ *  ties, never excludes: it is younger than the data, and plenty of real
+ *  libraries hold TheSession scores predating it (365 of them on one measured
+ *  backup). */
 export function findSettingInScore(
   card: Card,
   settingId: number,

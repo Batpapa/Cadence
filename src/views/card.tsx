@@ -4,9 +4,9 @@ import { RatingLabel } from '../components/ratingLabel';
 import { appState, navigate, mutate, leaveDeletedPage } from '../store';
 import { fromAttrs, originOf } from '../components/navOrigin';
 import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets';
-import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
+import { uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
+import { updateCardFile } from '../services/cardFiles';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
-import { copyFileName } from '../services/attachmentNames';
 import { TrashIcon, ExternalLinkIcon, iconElement, TuneIcon, TuneSetIcon, PencilIcon, EyeIcon, EyeOffIcon, SaveIcon, PlusIcon, GearIcon, DeckAddIcon, ChevronDownIcon, LinkIcon } from '../components/icons';
 import { IconButton, Metric, EmptyState } from '../components/ui';
 import { selectionIsHidden, toggleSpoiler } from '../components/spoilerToggle';
@@ -694,37 +694,8 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           condemnAttachmentFile(removed).catch(() => {});
         });
     },
-    onUpdateFile: (i, data) => {
-      const att = appState.value.cards[cardId]?.content.attachments[i];
-      // An externalised file is edited where its bytes actually are. Only text
-      // is editable and text is normally far below the threshold, so this is
-      // the rare case of a very large note — but writing `data` here would
-      // leave the card carrying both a copy and a pointer, and the pointer
-      // would win at every read.
-      if (att?.type === 'file' && isExternal(att)) {
-        return replaceExternalBytes(att, data)
-          // The edit lands under a NEW id, so every other device misses on its
-          // own copy and fetches the new content instead of serving the old
-          // one for ever. Which also means the previous bytes are now
-          // referenced by nothing — dropped here, and only once the state
-          // actually carries the new id.
-          .then(external => mutate(s => {
-            const target = s.cards[cardId]!.content.attachments[i];
-            if (target?.type === 'file' && target.external) target.external = external;
-          }).then(() => {
-            // The old content is referenced by nothing in the CURRENT state,
-            // so its Drive copy goes. Its local bytes stay for the sweep to
-            // judge, for the same reason as onRemove just above: a snapshot
-            // may still name them.
-            void condemnAttachmentFile(att, external.id);
-            uploadAttachmentSoon({ ...att, type: 'file', external });
-          }));
-      }
-      return mutate(s => {
-        const target = s.cards[cardId]!.content.attachments[i];
-        if (target && target.type === 'file') target.data = data;
-      });
-    },
+    // Shared with a score opened from a detection (services/cardFiles.ts).
+    onUpdateFile: (i, data) => updateCardFile(cardId, i, data),
     // Found by identity, not by position alone: see locatePresetHolder.
     onSetAudioPresets: (i, id, presets, defaultId) => mutate(s => {
       const atts = s.cards[cardId]?.content.attachments;
@@ -748,35 +719,6 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
       const atts = s.cards[cardId]!.content.attachments;
       if (atts[i]?.type === 'embed') atts[i] = { type: 'embed', ...entry };
     }),
-    // Answers synchronously, so the viewer can show the copy's name at once:
-    // mutate() runs its function before its first await, which is also what
-    // lets the number be chosen against the live list rather than a render's.
-    onCopyFile: (i, data) => {
-      // Named from the live state BEFORE the write, and the write re-checks it
-      // is still the same file: the viewer needs the name back synchronously,
-      // and mutateWithRule — which gives the copy the same rule as any new file
-      // (2026-10-01; it used to land in the blob whatever its size) — runs its
-      // recipe after a module load, too late to fill a variable returned here.
-      const current = appState.value.cards[cardId]?.content.attachments ?? [];
-      const source = current[i];
-      if (!source || source.type !== 'file') return '';
-      const name = copyFileName(source.name, current.flatMap(a => (a.type === 'file' ? [a.name] : [])));
-      void mutateWithRule(s => {
-        const atts = s.cards[cardId]!.content.attachments;
-        const original = atts[i];
-        if (!original || original.type !== 'file' || original.name !== source.name) return;
-        // Everything but the marker: the copy is the user's, so no refresh
-        // may ever replace it. The star comes along.
-        //
-        // `external` is dropped too, and that one is not cosmetic: the copy
-        // arrives with its own `data`, and keeping the pointer would leave two
-        // attachments sharing ONE set of bytes — removing either would take
-        // the other's file with it.
-        const { generatedBy: _generatedBy, external: _external, ...rest } = original;
-        atts.splice(i, 0, { ...rest, name, data });
-      });
-      return name;
-    },
     onReorder: (from, insertBefore) => mutate(s => {
       const atts = s.cards[cardId]!.content.attachments;
       const [moved] = atts.splice(from, 1);

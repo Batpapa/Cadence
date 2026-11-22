@@ -95,15 +95,14 @@ describe('findSettingInScore', () => {
     expect(findSettingInScore(c, 200)).toEqual({ attachmentIndex: 1, blockIndex: 1, preferredIndex: undefined });
   });
 
-  // A user's copy of a TheSession score keeps every S: line and sits before
-  // the original — but the original is what was played.
-  it('prefers the TheSession score over an earlier copy of it', () => {
+  // A user's copy of a TheSession score keeps every S: line — but its music
+  // may have been changed, and the original is what was played.
+  it('prefers the TheSession score over a copy of it, wherever it sits', () => {
     const s = score(block(1, 7, 100), block(2, 7, 200));
-    const c = card([
-      { type: 'file', ...s, name: 'A Tune (1).abc' },
-      { type: 'file', ...s, generatedBy: 'thesession' },
-    ]);
-    expect(findSettingInScore(c, 200)?.attachmentIndex).toBe(1);
+    const theSession = { type: 'file' as const, ...s, generatedBy: 'thesession' as const };
+    const copy = { type: 'file' as const, ...s, name: 'A Tune (1).abc' };
+    expect(findSettingInScore(card([copy, theSession]), 200)?.attachmentIndex).toBe(1);
+    expect(findSettingInScore(card([theSession, copy]), 200)?.attachmentIndex).toBe(0);
   });
 });
 

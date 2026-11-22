@@ -646,6 +646,14 @@ export interface PreviewModalOpts {
    *  take, kept (2026-11-01, the user). Absent — a score with no card, a
    *  detection's — the Play-along has no record button. */
   onKeepRecording?: (a: Attachment) => void;
+  /** A score written elsewhere — TheSession's, which "Refresh" replaces whole
+   *  (theSessionCopy.ts): the editor's tab is offered all the same, and
+   *  pressing it hands over to this, with the version on screen, instead of
+   *  opening the editor here. Without `onSave`. */
+  editGate?: (version: number) => void;
+  /** 'both': opens on the editor's face, a score opened to be written — the
+   *  copy just made of TheSession's. Only with `onSave`. */
+  initialFace?: 'both';
 }
 
 /** What the viewer is handed to play a score along its recording. */
@@ -1075,7 +1083,8 @@ export function showPreviewModal(
     // they said otherwise. Read once, at opening: the tabs below reassign it
     // freely and never write it back. Never the "both" face: that one is a
     // tab only, not a preference (the user, 2026-11-04).
-    let currentMode: ScoreFace = abcOpenMode(appState.value);
+    // Save where the opening is the editor's own (PreviewModalOpts.initialFace).
+    let currentMode: ScoreFace = opts?.initialFace === 'both' && onSave ? 'both' : abcOpenMode(appState.value);
     // Set when a text-mode edit is saved while notation is hidden — abcjs's
     // resize handling can make the SVG visibly reflow back in even inside a
     // display:none container (see setAbcMode's comment below), so the
@@ -1163,9 +1172,11 @@ export function showPreviewModal(
     const bothTabBtn  = mkAbcTab(t('fileViewer.abc.bothTab'), iconElement(PencilIcon, 14));
     sheetTabBtn.onclick = () => chooseMode('sheet');
     textTabBtn.onclick  = () => chooseMode('text');
-    bothTabBtn.onclick  = () => chooseMode('both');
+    // A score written elsewhere asks first (PreviewModalOpts.editGate).
+    const editGate = onSave ? undefined : opts?.editGate;
+    bothTabBtn.onclick  = () => (editGate ? editGate(currentIndex) : chooseMode('both'));
     tabBar.append(sheetTabBtn, textTabBtn);
-    if (onSave) tabBar.appendChild(bothTabBtn);
+    if (onSave || editGate) tabBar.appendChild(bothTabBtn);
     tabBar.dataset.tour = 'abc-tabs';
 
     const versionNav = document.createElement('div');
@@ -4029,7 +4040,7 @@ export function showPreviewModal(
         const next = textarea.value;
         saveBtn.disabled = true;
         // Awaited, then applied: a save may ask something first and be
-        // refused — see the ABC branch's theSessionScoreSaver.
+        // refused (PreviewSaveResult's `false`).
         let result: PreviewSaveResult;
         try {
           result = await onSave(arrayBufferToBase64(new TextEncoder().encode(next).buffer));
@@ -4112,7 +4123,7 @@ export function showPreviewModal(
   const isScore = isAbcFile(entry);
   const onRename = opts?.onRename;
   showModal(entry.name, body, [], {
-    maxWidth: modalWidth(entry),
+    maxWidth: isScore && opts?.initialFace === 'both' && onSave ? BOTH_FACES_WIDTH : modalWidth(entry),
     // The version arrows and the Sheet / ABC tabs are pressed again and again,
     // and every version, every face, is its own height (reported 2026-10-23).
     pinTop: true,

@@ -14,6 +14,7 @@ import { fromAttrs, originOf } from './navOrigin';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding, type PreviewModalOpts } from './fileViewer';
 import { cardAudioSync } from './cardAudioSync';
+import { theSessionEditGate } from './theSessionCopy';
 import { showRemoteFailure } from './remoteFailure';
 import { splitFileName, renamedFileName } from '../services/attachmentNames';
 import { showEmbedModal } from './embedViewer';
@@ -323,11 +324,13 @@ function clipExtractor(card: Card | undefined): AudioPresetsBinding['onExtractCl
 
 // ── Row content ──────────────────────────────────────────────────────────────
 
-function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPreferredIndex, audioPresets, audioSync, onKeepRecording, glyph, onOpen, onDownload }: {
+function FileRowContent({ entry, onRemove, editable, onSave, editGate, onRename, onSetPreferredIndex, audioPresets, audioSync, onKeepRecording, glyph, onOpen, onDownload }: {
   entry: FileEntry & { preferredIndex?: number };
   onRemove: () => void;
   editable: boolean;
   onSave?: (data: string) => PreviewSaveResult | Promise<PreviewSaveResult>;
+  /** TheSession's score: its editor's tab asks for a copy (theSessionGate). */
+  editGate?: (version: number) => void;
   /** The full new name, extension kept. Absent where a file cannot be renamed. */
   onRename?: (name: string) => void;
   onSetPreferredIndex?: (index: number | undefined) => void;
@@ -410,6 +413,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, onRename, onSetPref
           onClick={!previewable ? undefined : onOpen ?? (() => void withResolvedEntry(entry, resolved => showPreviewModal(resolved, editable ? onSave : undefined, {
             initialIndex: entry.preferredIndex, favoriteIndex: entry.preferredIndex, onSetPreferredIndex,
             onRename: editable ? onRename : undefined, audioPresets, audioSync, onKeepRecording,
+            editGate: editable ? editGate : undefined,
           })))}
         >
           {entry.name}
@@ -801,41 +805,26 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
   );
 }
 
-/** The save of a TheSession score's editor (2026-09-15). "Refresh ABC" replaces
- *  that file wholesale, so an edit made in it would be lost at the next refresh:
- *  the first save of an opened viewer asks, then writes the edit to a COPY
- *  inserted just before the original, which stays untouched.
- *
- *  The copy takes the original's index and the original moves down one, so
- *  every handler of this row bound to `i` — the next saves, the star, a rename —
- *  then addresses the copy, which is the file the viewer now shows. That is also
- *  why later saves from the same viewer go straight to it without asking again.
- *  One saver per row per render; an open viewer keeps the one it was given. */
-function theSessionScoreSaver(
-  i: number,
-  update: (i: number, data: string) => void,
-  copy: (i: number, data: string) => string,
-): (data: string) => PreviewSaveResult | Promise<PreviewSaveResult> {
-  let copied = false;
-  return (data) => {
-    if (copied) { update(i, data); return; }
-    return new Promise<PreviewSaveResult>(resolve => {
-      const body = document.createElement('p');
-      body.className = 'text-sm text-muted leading-relaxed';
-      body.textContent = t('fileViewer.abc.copy.message');
-      showModal(t('fileViewer.abc.copy.title'), body, [
-        { label: t('common.cancel'), onClick: () => { closeModal(); resolve(false); } },
-        {
-          label: t('fileViewer.abc.copy.confirm'), primary: true, onClick: () => {
-            closeModal();
-            const name = copy(i, data);
-            copied = !!name;
-            resolve(name || false);
-          },
-        },
-      ], { onDismiss: () => resolve(false) });
-    });
-  };
+/** The editor's tab of TheSession's score at `i`, which is never edited itself
+ *  — "Refresh ABC" replaces it whole: on a copy (theSessionCopy.ts), the
+ *  viewer reopened on it where the card's files open. None where the card's
+ *  files cannot be written. */
+function theSessionGate(options: AttachmentListOptions, i: number): ((version: number) => void) | undefined {
+  const card = options.card;
+  if (!options.editable || !card || !options.onUpdateFile) return undefined;
+  return (version) => void theSessionEditGate(card.id, i, version, (at, v) => {
+    const att = appState.value.cards[card.id]?.content.attachments[at];
+    if (att?.type === 'file') void openResolvedScore(options, att, at, v);
+  });
+}
+
+/** The save of the card's file at `i` from its viewer: none for a set's
+ *  generated score, nor for TheSession's (theSessionGate). */
+function fileSaver(options: AttachmentListOptions, att: FileAttachment, i: number): ((data: string) => void) | undefined {
+  const onUpdateFile = options.onUpdateFile;
+  return onUpdateFile && att.generatedBy !== 'tuneset' && att.generatedBy !== 'thesession'
+    ? (data) => onUpdateFile(i, data)
+    : undefined;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -864,9 +853,6 @@ export interface AttachmentListOptions {
   onSetAudioPresets?: (i: number, id: AttachmentIdentity, presets: AudioPreset[], defaultId: string | undefined) => void;
   /** Renames a file attachment — the full new name, extension already kept. */
   onRenameFile?: (i: number, name: string) => void;
-  /** Saves an edit to a TheSession score as a copy inserted just before it,
-   *  and answers the copy's name. See theSessionScoreSaver. */
-  onCopyFile?: (i: number, data: string) => string;
   /** Replaces a link attachment wholesale — its URL, its name and above all
    *  its mode, which is why this is a replacement and not a rename: switching
    *  an embed to an external link drops its `embedUrl`, and the entry that
@@ -882,19 +868,14 @@ export interface AttachmentListOptions {
  *  exactly as its row in the list below would wire it.
  *
  *  Here rather than at the call site because that wiring is not obvious: a
- *  generated set score is rebuilt rather than read, a TheSession score saves to
- *  a copy and may be refused, and a derived one has to be re-read whenever a
- *  preference changes underneath it. One reader for all of that, so the button
- *  in the opening-bars heading and the file row can never open the same score
- *  two different ways.
+ *  generated set score is rebuilt rather than read, a TheSession score is
+ *  edited on a copy (theSessionGate), and a derived one has to be re-read
+ *  whenever a preference changes underneath it. One reader for all of that, so
+ *  the button in the opening-bars heading and the file row can never open the
+ *  same score two different ways.
  *
  *  Answers whether there was a score to open, so a caller can decide not to
- *  offer the button at all.
- *
- *  The one difference from the row: its TheSession saver is built once per
- *  render and this one once per opening. Both give a freshly opened viewer a
- *  saver that has not yet asked its question, which is the behaviour that
- *  matters (see theSessionScoreSaver). */
+ *  offer the button at all. */
 export function openCardScore(options: AttachmentListOptions): boolean {
   const { attachments } = options;
   const i = cardScoreIndex(attachments);
@@ -959,8 +940,10 @@ async function resolvedTunesetEntry(card: Card): Promise<FileEntry | null> {
   return cards && tunesetAbcEntry(card, cards, { includeRepeats: appState.value.abcIncludeRepeats });
 }
 
+/** `editAt`: opened on the editor's face at that version — a copy of
+ *  TheSession's score, just made or found (theSessionGate). */
 async function openResolvedScore(
-  options: AttachmentListOptions, att: FileAttachment, i: number,
+  options: AttachmentListOptions, att: FileAttachment, i: number, editAt?: number,
 ): Promise<void> {
   const { editable, card } = options;
   const isSet = att.generatedBy === 'tuneset' && !!card;
@@ -986,16 +969,10 @@ async function openResolvedScore(
     ? { ...att, data: generated.data, mimeType: generated.mimeType, name: card.name + '.abc' }
     : att;
 
-  const onUpdateFile = options.onUpdateFile;
-  const onCopyFile = options.onCopyFile;
-  const onSave = onUpdateFile && att.generatedBy !== 'tuneset'
-    ? att.generatedBy === 'thesession' && onCopyFile
-      ? theSessionScoreSaver(i, onUpdateFile, onCopyFile)
-      : (data: string) => onUpdateFile(i, data)
-    : undefined;
-
-  showPreviewModal(entry, editable ? onSave : undefined, {
-    initialIndex: att.preferredIndex,
+  showPreviewModal(entry, editable ? fileSaver(options, att, i) : undefined, {
+    initialIndex: editAt ?? att.preferredIndex,
+    initialFace: editAt !== undefined ? 'both' : undefined,
+    editGate: att.generatedBy === 'thesession' ? theSessionGate(options, i) : undefined,
     favoriteIndex: att.preferredIndex,
     onSetPreferredIndex: options.onSetPreferredIndex && att.generatedBy !== 'tuneset'
       ? (index) => options.onSetPreferredIndex!(i, index)
@@ -1038,9 +1015,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
   const onAdd     = options.onAdd     ?? (() => {});
   const onRemove  = options.onRemove  ?? (() => {});
   const onReorder = options.onReorder ?? (() => {});
-  const onUpdateFile = options.onUpdateFile;
   const onRenameFile = options.onRenameFile;
-  const onCopyFile = options.onCopyFile;
   const onSetPreferredIndex = options.onSetPreferredIndex;
   const onSetAudioPresets = options.onSetAudioPresets;
   const onUpdateLink = options.onUpdateLink;
@@ -1116,12 +1091,10 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   glyph={att.generatedBy === 'tuneset' ? <GearIcon size={12} filled /> : undefined}
                   // A derived score has nowhere to save an edit back to, and a
                   // fused set is a single page — so neither editing its text
-                  // nor starring a version applies to it.
-                  onSave={onUpdateFile && att.generatedBy !== 'tuneset'
-                    ? att.generatedBy === 'thesession' && onCopyFile
-                      ? theSessionScoreSaver(i, onUpdateFile, onCopyFile)
-                      : (data) => onUpdateFile(i, data)
-                    : undefined}
+                  // nor starring a version applies to it. TheSession's is
+                  // edited on a copy.
+                  onSave={fileSaver(options, att, i)}
+                  editGate={att.generatedBy === 'thesession' ? theSessionGate(options, i) : undefined}
                   // Its name is derived from the set's, so it has none of its own to change.
                   onRename={onRenameFile && att.generatedBy !== 'tuneset' ? (name) => onRenameFile(i, name) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}

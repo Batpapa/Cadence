@@ -8,8 +8,10 @@ import { hydratedEntry } from '../../services/attachmentStore';
 import { getAttachmentBlob } from '../../services/attachmentDb';
 import { arrayBufferToBase64 } from '../../utils';
 import { showPreviewModal, type AudioSyncBinding } from '../../components/fileViewer';
+import { theSessionEditGate } from '../../components/theSessionCopy';
+import { updateCardFile } from '../../services/cardFiles';
 import { getContext } from '../../store';
-import type { AppContext, Attachment, Card } from '../../types';
+import type { AppContext, Attachment, Card, FileEntry } from '../../types';
 import { MusicNoteIcon } from '../../components/icons';
 import { transposeMode } from '../keyName';
 import { transposeAbcText } from '../../services/abcTranspose';
@@ -227,24 +229,47 @@ async function cardScorePreview(settingId: string, givenCardId: string | undefin
   if (!target) return null;
   const entry = resolved.content.attachments[target.attachmentIndex];
   if (!entry || entry.type !== 'file') return null;
-  return () => showPreviewModal(entry, undefined, {
-    audioSync,
-    initialIndex: target.blockIndex,
-    // In the key it was played in: the card's file is the user's and is never
-    // rewritten, so the viewer opens it transposed (abcTranspose.ts).
-    initialTranspose: keyOffset ?? undefined,
-    // The star stays where the card put it, NOT on the version we opened at.
-    favoriteIndex: target.preferredIndex,
+
+  /** The card's file at `at`, `shown` as read in, opened at `version` — on
+   *  the editor's face when `edit`. Written from here too (2026-11-22, the
+   *  user: the score is corrected along its recording): the user's own files
+   *  saved as on the card, TheSession's edited on a copy (theSessionCopy.ts),
+   *  a set's fused score and a link not at all. */
+  const show = (shown: FileEntry, at: number, version: number, favourite: number | undefined, edit: boolean): void => {
+    const att = getContext().user.cards[cardId]?.content.attachments[at];
     // None on a link: it keeps nothing but its URL.
-    onSetPreferredIndex: card.content.attachments[target.attachmentIndex]?.type !== 'file' ? undefined : (index) => {
-      void ctx.mutate(s => {
-        const att = s.cards[cardId]?.content.attachments[target.attachmentIndex];
-        if (att && att.type === 'file') {
-          if (index === undefined) delete att.preferredIndex; else att.preferredIndex = index;
-        }
-      });
-    },
-  });
+    const isFile = att?.type === 'file';
+    const fromTheSession = isFile && att.generatedBy === 'thesession';
+    const writable = isFile && !fromTheSession && att.generatedBy !== 'tuneset';
+    showPreviewModal(shown, writable ? (data) => updateCardFile(cardId, at, data) : undefined, {
+      audioSync,
+      initialIndex: version,
+      initialFace: edit ? 'both' : undefined,
+      // In the key it was played in: the card's file is the user's and is never
+      // rewritten, so the viewer opens it transposed (abcTranspose.ts).
+      initialTranspose: keyOffset ?? undefined,
+      // The star stays where the card put it, NOT on the version we opened at.
+      favoriteIndex: favourite,
+      onSetPreferredIndex: !isFile ? undefined : (index) => {
+        void ctx.mutate(s => {
+          const a = s.cards[cardId]?.content.attachments[at];
+          if (a && a.type === 'file') {
+            if (index === undefined) delete a.preferredIndex; else a.preferredIndex = index;
+          }
+        });
+      },
+      editGate: fromTheSession ? (v) => void theSessionEditGate(cardId, at, v, (to, tv) => void showCopy(to, tv)) : undefined,
+    });
+  };
+  /** The copy of TheSession's score, just made or found, on its editor. */
+  const showCopy = async (at: number, version: number): Promise<void> => {
+    const att = getContext().user.cards[cardId]?.content.attachments[at];
+    if (att?.type !== 'file') return;
+    let shown: FileEntry;
+    try { shown = await hydratedEntry(att, true); } catch { return; }
+    show(shown, at, version, att.preferredIndex, true);
+  };
+  return () => show(entry, target.attachmentIndex, target.blockIndex, target.preferredIndex, false);
 }
 
 /** findSettingInScore for a card's own version: the ABC file holding a block
