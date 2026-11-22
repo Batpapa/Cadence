@@ -1,5 +1,6 @@
 import { effect } from '@preact/signals';
-import { navEntry, recallScroll, rememberScroll, stateEpoch } from '../store';
+import { navEntry, recallScroll, rememberScroll, stateEpoch, takeBackFlash } from '../store';
+import { flashOrigin } from './navOrigin';
 
 // ── Scroll restoration ────────────────────────────────────────────────────────
 // Going back to a list returns to where that visit left off, instead of to the
@@ -97,7 +98,12 @@ function restoreTo(el: HTMLElement, target: number, onSettled: () => void): () =
   const tick = () => {
     raf = 0;
     if (finished) return;
-    if (el.scrollHeight - el.clientHeight >= target) { el.scrollTop = target; settle(); return; }
+    // Within a pixel: under the app's zoom an offset reads back fractional
+    // (3042.4) while the room to scroll is whole (3042), so an offset taken at
+    // the bottom of the page — where a card's references sit — never "fitted":
+    // the page stayed at the top for the whole budget, and a touch meanwhile
+    // left it there (measured 2026-11-22, headless).
+    if (el.scrollHeight - el.clientHeight >= target - 1) { el.scrollTop = target; settle(); return; }
     if (performance.now() >= deadline) {
       // Never grew back — content was deleted, or a filter is narrowing it.
       // The bottom is still nearer to where the reader was than the top is.
@@ -157,13 +163,20 @@ export function initScrollRestoration(): void {
 
     let cancelRestore: (() => void) | null = null;
     let detachSaver: (() => void) | null = null;
+    let cancelFlash: (() => void) | null = null;
+    // Gone back to from a row: that row lights up once the page is placed
+    // (navOrigin.ts).
+    const flashKey = takeBackFlash(id);
 
     // Preact re-renders on a microtask after the signal write, so by the next
     // animation frame the element in the document belongs to the new view.
     const raf = requestAnimationFrame(() => {
       const el = scroller();
       if (!el) return;
-      const startSaving = () => { detachSaver = attachSaver(el, id); };
+      const startSaving = () => {
+        detachSaver = attachSaver(el, id);
+        if (flashKey !== null) cancelFlash = flashOrigin(el, flashKey);
+      };
       // One path, whatever brought us here. recallScroll answers with this
       // history entry's own offset when it has one — going back, or a view
       // rebuilt underneath the reader by a Drive apply — and 0 for an entry
@@ -175,6 +188,7 @@ export function initScrollRestoration(): void {
       cancelAnimationFrame(raf);
       cancelRestore?.();
       detachSaver?.();
+      cancelFlash?.();
     };
   });
 }

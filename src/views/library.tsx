@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import type { ComponentType } from 'preact';
 import { appState, navigate, mutate, getContext, replaceRoute, routeSignal } from '../store';
+import { fromAttrs, originOf } from '../components/navOrigin';
 import { pct, availabilityColor, scoreWithAliases, NO_SCORE_MATCH, timeAgo, copyText, formatBytes, type AliasMatch } from '../utils';
 import { TrashIcon, SortAlphaIcon, ClockIcon, CalendarPlusIcon, StarIcon, CheckIcon, ScatterPlotIcon, GaugeIcon, FlameIcon, StudyIcon, ArrowLeftIcon, ArrowRightIcon, CrossIcon, PlusIcon, MoreHorizontalIcon, UploadIcon, NotesIcon, CopyIcon, ShareIcon, iconElement } from '../components/icons';
 import { CARD_TYPES, cardTypeLabelKey, knownCardType, isTune } from '../services/cardTypeService';
@@ -1209,9 +1210,11 @@ export function LibraryView() {
                 <div
                   key={card.id}
                   class={`flex items-center gap-3 px-3 py-2.5 rounded transition-colors group cursor-pointer ${isSel ? 'bg-elevated' : 'hover:bg-elevated'}`}
+                  // Lit up once, back from its card (navOrigin.ts).
+                  {...fromAttrs(`card:${card.id}`, true)}
                   onMouseDown={(e) => { if (selected.size > 0 && e.shiftKey) e.preventDefault(); }}
                   onClick={(e) => {
-                    if (selected.size === 0) { navigate({ view: 'card', cardId: card.id }); return; }
+                    if (selected.size === 0) { navigate({ view: 'card', cardId: card.id }, originOf(e)); return; }
                     selectRange(card, e.shiftKey);
                   }}
                   {...createLongPressHandlers(

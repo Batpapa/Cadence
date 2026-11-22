@@ -3,7 +3,8 @@ import { appState, navigate, getContext } from '../../store';
 import { t } from '../../services/i18nService';
 import { tuneAnalyserOffered } from '../../services/extensions';
 import { findCardDetections, sessionsOf, detectionsOnCards, setDetectionOn } from '../detections';
-import { PassRow, PlayPassButton, NoteMark, useSlicePlayer, type SlicePlayer } from './PassRow';
+import { PassRow, PlayPassButton, NoteMark, passKey, useSlicePlayer, type SlicePlayer } from './PassRow';
+import { fromAttrs, originOf } from '../../components/navOrigin';
 import { HeartIcon } from '../../components/icons';
 import { isTuneset } from '../../services/cardTypeService';
 import { hasRecognisedSetting, keyOffsetOf, type Analysis, type Detection } from '../model';
@@ -76,7 +77,7 @@ function TuneDetectedIn({ cardId }: { cardId: string }) {
             ctx={ctx}
             player={player}
             interactive
-            onOpen={() => navigate({ view: 'sessions', sessionId: session.id, annotationId: detection.id })}
+            onOpen={(e) => navigate({ view: 'sessions', sessionId: session.id, annotationId: detection.id }, originOf(e))}
           />
         )))}
       </div>
@@ -115,7 +116,7 @@ function SetDetectedIn({ cardId }: { cardId: string }) {
             title={card.name}
             player={player}
             interactive
-            onOpen={() => navigate({ view: 'sessions', sessionId: session.id, annotationId: chain[0]!.id })}
+            onOpen={(e) => navigate({ view: 'sessions', sessionId: session.id, annotationId: chain[0]!.id }, originOf(e))}
           />
         ))}
       </div>
@@ -142,7 +143,7 @@ export function SetHearingRow({ session, chain, setCard, title, player, interact
   const record = recordOf(session.tunesets, chain);
   const liked = !!record?.liked;
   return (
-    <div class="flex items-center gap-2 min-w-0">
+    <div class="flex items-center gap-2 min-w-0 rounded-md" {...fromAttrs(passKey(session.id, chain[0]!.id), true)}>
       <div class="shrink-0 flex items-center">
         <span class="w-8 flex items-center justify-center shrink-0">
           <PlayPassButton sessionId={session.id} detection={asAnn} player={player} />

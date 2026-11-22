@@ -60,7 +60,7 @@ function SessionByIdScreen({ ctx, sessionId, annotationId }: { ctx: AppContext; 
       session={session}
       ctx={ctx}
       annotationId={annotationId}
-      onOpenCard={(cardId) => ctx.navigate({ view: 'card', cardId })}
+      onOpenCard={(cardId, from) => ctx.navigate({ view: 'card', cardId }, from)}
       onReanalyze={(audio) => { void startReanalyze(ctx, session, audio); }}
     />
   );
@@ -114,7 +114,7 @@ export function SessionsView(route: Extract<Route, { view: 'sessions' }>) {
           onImportFile={(file, destination) => { void startImport(ctx, file, destination); }}
           onImportLink={(destination) => startLinkImport(ctx, destination)}
           onImportSession={() => showImportSessionModal(ctx)}
-          onOpenSession={(id) => ctx.navigate({ view: 'sessions', sessionId: id })}
+          onOpenSession={(id, from) => ctx.navigate({ view: 'sessions', sessionId: id }, from)}
           initialSearch={search}
           folder={folder}
         />

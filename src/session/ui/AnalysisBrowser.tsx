@@ -7,6 +7,7 @@ import { generateId, addTouchDragSupport, scoreMatch, NO_SCORE_MATCH } from '../
 import { promptModal, confirmModal } from '../../components/modal';
 import { MicIcon, FileAudioIcon, DeviceAudioIcon, PencilIcon, TrashIcon, FolderIcon, PlusIcon } from '../../components/icons';
 import { IconButton, EmptyState } from '../../components/ui';
+import { fromAttrs, originOf } from '../../components/navOrigin';
 import { fmtLongTime } from './sessionUiShared';
 import { fmtSessionDateTime } from '../sessionNaming';
 import type { Analysis } from '../model';
@@ -177,12 +178,15 @@ function useCardDrag(ref: RefObject<HTMLElement>, opts: {
 
 /** One card, whichever kind of thing it holds — a folder and an analysis are
  *  the same object to the eye here, which is the whole point of the shape. */
-function Card({ icon, iconTitle, name, detail, onOpen, dragItem, target, accepts, onDrop }: {
+function Card({ icon, iconTitle, name, detail, onOpen, dragItem, target, accepts, onDrop, fromKey }: {
   icon: JSX.Element;
   iconTitle?: string;
   name: string;
   detail: string;
-  onOpen: () => void;
+  onOpen: (e: MouseEvent) => void;
+  /** The card's key (navOrigin.ts): it lights up when what it opens is gone
+   *  back from. None on "..": climbing up is no way back. */
+  fromKey?: string;
   /** What this card carries when dragged. Absent on the ".." card, which is a
    *  destination and a direction, never a passenger. */
   dragItem?: TreeItem;
@@ -194,7 +198,7 @@ function Card({ icon, iconTitle, name, detail, onOpen, dragItem, target, accepts
   useCardDrag(ref, { dragItem, target, accepts, onDrop });
 
   return (
-    <div ref={ref} class="rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors">
+    <div ref={ref} class="rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors" {...(fromKey ? fromAttrs(fromKey) : {})}>
       <div class="flex items-center gap-3 p-3 cursor-pointer" data-tour={target.kind === 'session' ? 'analysis-row' : undefined} onClick={onOpen}>
         <div class="flex-1 min-w-0">
           <div class="text-sm font-medium text-primary truncate flex items-center gap-1.5">
@@ -221,8 +225,9 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
   /** Which folder is open; null is the root, shown as "Home". */
   folderId: string | null;
   /** `keepSearch` false: the search is left behind (a folder found by it). */
-  onOpenFolder: (folderId: string | null, keepSearch?: boolean) => void;
-  onOpenSession: (id: string) => void;
+  /** `from`: the key of the card opened from (navOrigin.ts). */
+  onOpenFolder: (folderId: string | null, keepSearch?: boolean, from?: string) => void;
+  onOpenSession: (id: string, from?: string) => void;
   /** Deleting a folder deletes the recordings in it — the one action here that
    *  changes what EXISTS rather than how it is arranged, so the library has to
    *  re-read its list rather than re-derive it. */
@@ -421,10 +426,11 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                   icon={<FolderIcon size={12} />}
                   name={folder.name}
                   detail={folderDetail(childFolderIds(tree, folder.id).length, folderOrder(tree, folder.id, allIds).length)}
-                  onOpen={() => onOpenFolder(folder.id, false)}
+                  onOpen={(e) => onOpenFolder(folder.id, false, originOf(e))}
                   target={{ kind: 'folder', id: folder.id }}
                   accepts={() => false}
                   onDrop={() => {}}
+                  fromKey={`folder:${folder.id}`}
                 />
               );
             }
@@ -436,10 +442,11 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                 iconTitle={t(SOURCE_BADGE[s.source].title)}
                 name={s.name}
                 detail={analysisDetail(s)}
-                onOpen={() => onOpenSession(s.id)}
+                onOpen={(e) => onOpenSession(s.id, originOf(e))}
                 target={{ kind: 'session', id: s.id }}
                 accepts={() => false}
                 onDrop={() => {}}
+                fromKey={`analysis:${s.id}`}
               />
             );
           })}
@@ -489,11 +496,12 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                   icon={<FolderIcon size={12} />}
                   name={folder.name}
                   detail={folderDetail(childFolderIds(tree, folder.id).length, folderOrder(tree, folder.id, allIds).length)}
-                  onOpen={() => onOpenFolder(folder.id)}
+                  onOpen={(e) => onOpenFolder(folder.id, undefined, originOf(e))}
                   dragItem={{ type: 'folder', id: folder.id }}
                   target={{ kind: 'folder', id: folder.id }}
                   accepts={folderAccepts(folder.id)}
                   onDrop={onDrop}
+                  fromKey={`folder:${folder.id}`}
                 />
               );
             }
@@ -505,11 +513,12 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                 iconTitle={t(SOURCE_BADGE[session.source].title)}
                 name={session.name}
                 detail={analysisDetail(session)}
-                onOpen={() => onOpenSession(session.id)}
+                onOpen={(e) => onOpenSession(session.id, originOf(e))}
                 dragItem={{ type: 'session', id: session.id }}
                 target={{ kind: 'session', id: session.id }}
                 accepts={sessionAccepts}
                 onDrop={onDrop}
+                fromKey={`analysis:${session.id}`}
               />
             );
           })

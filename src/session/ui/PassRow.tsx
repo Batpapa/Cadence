@@ -7,6 +7,7 @@ import type { AudioSyncBinding } from '../../components/fileViewer';
 import { showModal, closeModal, alertModal } from '../../components/modal';
 import { formatBytes } from '../../utils';
 import { appState } from '../../store';
+import { fromAttrs } from '../../components/navOrigin';
 import { COMPANION_GONE, readCompanionRange } from '../../services/driveService';
 import { loadSessionAudio, fetchSyncedAudio, audioDownloadProgress, audioArrivals } from '../db';
 import { audioDownloadMode } from '../audioDownloads';
@@ -456,6 +457,13 @@ export function NoteMark({ notes }: { notes: string | undefined }) {
   );
 }
 
+/** The key of a pass's line (navOrigin.ts): it lights up when the analysis
+ *  its link opens is gone back from. A set's pass by its first tune — the
+ *  detection its link names. */
+export function passKey(sessionId: string, detectionId: string): string {
+  return `pass:${sessionId}:${detectionId}`;
+}
+
 export function PassRow({ session, detection, cardId, ctx, player, interactive, onOpen, onAttached }: {
   session: ClipSessionRef;
   detection: Detection;
@@ -473,7 +481,7 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
   return (
     // Never wraps. A pass is one line, and its glyphs are columns read
     // downwards — a row that folded would take its columns with it.
-    <div class="flex items-center gap-2 min-w-0">
+    <div class="flex items-center gap-2 min-w-0 rounded-md" {...fromAttrs(passKey(session.id, detection.id), true)}>
       {/* Fixed slots, filled or not: what can be done with a pass depends on
           the pass — an analysis whose audio was forgotten offers no listening
           and no clip — and without reserved room the glyphs of one row would

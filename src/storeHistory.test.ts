@@ -2,7 +2,7 @@
 // The store reaches driveService, which reads localStorage at module evaluation
 // — in a bare node environment the import throws before a single test runs.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState, loadSavedRoute } from './store';
+import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState, loadSavedRoute, takeBackFlash, navEntry } from './store';
 import { emptyState } from './utils';
 import { TUNE_ANALYSER_MODULE_KEY } from './session/model';
 import type { AppState, Card, Route } from './types';
@@ -135,6 +135,58 @@ describe('popstate', () => {
     navigate(LIB);
     pop(entry(0, { view: 'card', cardId: 'someone-elses-card' }, 'u2'));
     expect(routeSignal.value).toEqual(HOME);
+  });
+});
+
+// The row a link left from, lit up on the way back (navOrigin.ts). Routes that
+// need nothing in the library: one naming something absent would be stepped
+// over.
+describe('takeBackFlash', () => {
+  it('hands back, going back, the row the page was left from', () => {
+    navigate(LIB, 'row-1');
+    expect(takeBackFlash(navEntry.value)).toBeNull();
+    pop(entry(0, HOME));
+    expect(takeBackFlash(navEntry.value)).toBe('row-1');
+  });
+
+  it('hands it over once', () => {
+    navigate(LIB, 'row-1');
+    pop(entry(0, HOME));
+    takeBackFlash(navEntry.value);
+    expect(takeBackFlash(navEntry.value)).toBeNull();
+  });
+
+  it('gives each page its own, and nothing going forward', () => {
+    // Home → library (from row-1) → modules (from row-2), back, back, forward.
+    navigate(LIB, 'row-1');
+    navigate({ view: 'modules' }, 'row-2');
+    pop(entry(1, LIB));
+    expect(takeBackFlash(navEntry.value)).toBe('row-2');
+    pop(entry(0, HOME));
+    expect(takeBackFlash(navEntry.value)).toBe('row-1');
+    pop(entry(1, LIB));
+    expect(takeBackFlash(navEntry.value)).toBeNull();
+  });
+
+  it('has nothing for a link that named no row — a breadcrumb climbing up', () => {
+    navigate(LIB);
+    pop(entry(0, HOME));
+    expect(takeBackFlash(navEntry.value)).toBeNull();
+  });
+
+  it('forgets the row once the page is left by a link naming none', () => {
+    navigate(LIB, 'row-1');
+    pop(entry(0, HOME));
+    navigate({ view: 'modules' });
+    pop(entry(0, HOME));
+    expect(takeBackFlash(navEntry.value)).toBeNull();
+  });
+
+  it('is gone after a fresh start, a reload or a user switch', () => {
+    navigate(LIB, 'row-1');
+    initRoutePersistence('u1');
+    pop(entry(0, HOME));
+    expect(takeBackFlash(navEntry.value)).toBeNull();
   });
 });
 

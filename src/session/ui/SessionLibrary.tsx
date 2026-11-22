@@ -54,7 +54,8 @@ interface SessionLibraryProps {
   /** "Import a link": the dialog that downloads a recording, then imports it. */
   onImportLink: (folderId: string | null) => void;
   onImportSession: () => void;
-  onOpenSession: (sessionId: string) => void;
+  /** `from`: the row left from, lit up on the way back (navOrigin.ts). */
+  onOpenSession: (sessionId: string, from?: string) => void;
   /** Which folder is on screen: read from the route on every render, never
    *  copied into state. A PLACE since 2026-11-20 (S3, Aurélien: ‹ › did not
    *  climb back through the folders) — each is its own history entry, as a
@@ -92,19 +93,20 @@ export function SessionLibrary({ ctx, onStartLive, onImportFile, onImportLink, o
 
   /** A new history entry: another folder, or the detections. The entry being
    *  left gets its last keystroke written first — a trailing replaceRoute would
-   *  otherwise land on the NEW entry (see replaceRouteNow). */
-  const leaveFor = (next: (here: { search?: string; folder?: string }) => Parameters<typeof ctx.navigate>[0]) => {
+   *  otherwise land on the NEW entry (see replaceRouteNow). `from`: the row
+   *  left from, lit up on the way back (navOrigin.ts). */
+  const leaveFor = (next: (here: { search?: string; folder?: string }) => Parameters<typeof ctx.navigate>[0], from?: string) => {
     const here = routeSignal.peek();
     if (here.view !== 'sessions') return;
     replaceRouteNow(here);
-    ctx.navigate(next(here));
+    ctx.navigate(next(here), from);
   };
   // The search goes along up the breadcrumb, to widen it; a folder the search
   // found leaves it behind (AnalysisBrowser): that folder is where the user was
   // going.
-  const openFolder = (id: string | null, keepSearch?: boolean) => {
+  const openFolder = (id: string | null, keepSearch?: boolean, from?: string) => {
     if (id === folderId) return;
-    leaveFor(here => ({ view: 'sessions', folder: id ?? undefined, search: keepSearch === false ? undefined : here.search }));
+    leaveFor(here => ({ view: 'sessions', folder: id ?? undefined, search: keepSearch === false ? undefined : here.search }), from);
   };
   // Bare, like any page reached by a click in this app (the library from the
   // menu opens unfiltered); back is what returns to a state left behind

@@ -5,6 +5,7 @@ import { t } from '../../services/i18nService';
 import { HeartIcon, HourglassIcon, TuneSetIcon, NotesIcon } from '../../components/icons';
 import { showDetectionNotesModal } from './AnalysisNotesModal';
 import { IconButton } from '../../components/ui';
+import { fromAttrs } from '../../components/navOrigin';
 import { getContext } from '../../store';
 import { hasRecognisedSetting, keyOffsetOf, type Detection, type TunesetRecord } from '../model';
 import { setCardFor, chainSpan, isSettled } from '../tunesets';
@@ -34,6 +35,9 @@ export interface TunesetCardOptions {
    *  set can be read and heard, and nothing else. */
   record?: TunesetRecord;
   onOpenCard?: (cardId: string) => void;
+  /** The key its card link passes as navigate's `from` (`onOpenCard`): the set
+   *  lights up when that card is gone back from (navOrigin.ts). */
+  fromKey?: string;
   getPinnedDeckIds?: () => Set<string>;
   /** After anything this card wrote to the user blob. */
   onChanged?: () => void;
@@ -147,6 +151,7 @@ export function TunesetDetectionCard({ chain, opts, children }: {
     // around it, = beside -. Three pixels is the least that draws both lines.
     <div
       class={`detection-card p-3 rounded-lg border-[3px] border-double space-y-2 ${setCard || !hasLibrary() ? 'bg-surface' : 'bg-bg'} ${open ? 'border-accent/60' : 'border-border'}`}
+      {...(opts.fromKey ? fromAttrs(opts.fromKey) : {})}
       data-set-id={opts.record?.id}
     >
       <div class="flex items-center gap-1">

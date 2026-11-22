@@ -555,7 +555,8 @@ export type Route =
 export interface AppContext {
   user: AppState;
   route: Route;
-  navigate: (route: Route) => void;
+  /** `from`: what was clicked to leave this page (store.ts's navigate). */
+  navigate: (route: Route, from?: string) => void;
   back: () => void;
   forward: () => void;
   canGoBack: boolean;

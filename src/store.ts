@@ -148,6 +148,32 @@ const MAX_SCROLL_MEMORY = 100;
  *  component tree, so navigating costs no extra re-render of the app shell. */
 export const navEntry = signal(0);
 
+// ── Where one came from, lit up on the way back (2026-11-22, the user) ──────
+// Back in a folder, "which recording was I in?". A link that leaves a page
+// from one of its rows names that row — navigate's `from`, a key the row also
+// carries as `data-from` (components/navOrigin.ts) — and the key is kept with
+// the entry left. Going BACK to that entry, and only back, hands the key to
+// the scroll restoration, which flashes the row once the page is placed. Not
+// forward, not a breadcrumb climbing up, not any other link: those are not a
+// way back (the user's rule). Nothing is stored: a reload starts with none.
+
+/** What was clicked to leave each entry, by position. */
+const _fromByIdx = new Map<number, string>();
+
+/** The row to flash on the entry now on screen: set by a back, for that
+ *  entry alone. */
+let _flash: { nav: number; key: string } | null = null;
+
+/** The `data-from` key to flash on entry `navId`, if it was reached by going
+ *  back from a link that named one (scrollRestoration.ts). Handed over once:
+ *  the page rebuilt later by a Drive apply does not flash it again. */
+export function takeBackFlash(navId: number): string | null {
+  if (_flash?.nav !== navId) return null;
+  const key = _flash.key;
+  _flash = null;
+  return key;
+}
+
 export function rememberScroll(navId: number, top: number): void {
   _scrollByNav.set(navId, top);
   if (_scrollByNav.size > MAX_SCROLL_MEMORY) {
@@ -196,11 +222,16 @@ function refreshNavFlags(): void {
   canGoForward.value = forward;
 }
 
-export function navigate(route: Route): void {
+/** `from`: the `data-from` key of the row clicked on the page being left,
+ *  flashed when it is gone back to (takeBackFlash). */
+export function navigate(route: Route, from?: string): void {
   _arrivedBack = false;
+  if (from !== undefined) _fromByIdx.set(_idx, from); else _fromByIdx.delete(_idx);
   _idx = _maxIdx = _idx + 1;
+  _fromByIdx.delete(_idx);
   _currentNav = ++_navSeq;
   _routeByIdx.set(_idx, route);
+  _flash = null;
   routeSignal.value  = route;
   refreshNavFlags();
   navEntry.value     = _currentNav;
@@ -298,6 +329,8 @@ function initHistory(userId: string): void {
   _arrivedBack = false;
   _skipFrom = null;
   _idx = _maxIdx = 0;
+  _flash = null;
+  _fromByIdx.clear();
   _routeByIdx.clear();
   _routeByIdx.set(0, routeSignal.value);
   _currentNav = ++_navSeq;
@@ -387,6 +420,9 @@ function initHistory(userId: string): void {
     _idx = st.idx;
     _currentNav = st.nav;
     refreshNavFlags();
+    // Back only: the row this entry was left from, to be flashed once placed.
+    const from = wentBack ? _fromByIdx.get(_idx) : undefined;
+    _flash = from !== undefined ? { nav: _currentNav, key: from } : null;
     routeSignal.value  = st.userId === _userId ? st.route : { view: 'folder', folderId: null };
     navEntry.value     = _currentNav;
   });

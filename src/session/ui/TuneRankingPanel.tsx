@@ -3,6 +3,7 @@ import type { ComponentType } from 'preact';
 import { t } from '../../services/i18nService';
 import { HeartIcon, ChevronDownIcon, SortAlphaIcon, ClockIcon, WeightedBarsIcon, LibraryIcon, TuneSetIcon, UploadIcon, MoreHorizontalIcon } from '../../components/icons';
 import { IconButton, EmptyState } from '../../components/ui';
+import { fromAttrs, originOf } from '../../components/navOrigin';
 import { CustomSelect } from '../../components/customSelect';
 import { FilterSection, FilterGroup, ReviewedRangeSection, cycleFilter, type FilterMap, type FilterTreeNode } from '../../components/filterSection';
 import { deckChipKnown, deckChipSection } from '../../components/deckChips';
@@ -1121,7 +1122,9 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                     the box is matched instead, which is what the eye compares
                     down a column. */}
                 <div
-                  class="flex items-center gap-2 px-3 py-1 cursor-pointer"
+                  class="flex items-center gap-2 px-3 py-1 cursor-pointer rounded"
+                  // Lit up once, back from its card (navOrigin.ts).
+                  {...fromAttrs(`tune:${row.tuneId}`, true)}
                   // Shift-clicking a row would otherwise select the text
                   // between the two, which is never what was meant.
                   onMouseDown={(e) => { if (selected.size > 0 && e.shiftKey) e.preventDefault(); }}
@@ -1196,7 +1199,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                         onClick={(e) => {
                           if (claimedBySelection(e, row.tuneId)) return;
                           e.stopPropagation();
-                          navigate({ view: 'card', cardId });
+                          navigate({ view: 'card', cardId }, originOf(e));
                         }}
                       >
                         {name}
@@ -1269,7 +1272,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                         interactive={selected.size === 0}
                         onOpen={(e) => {
                           if (claimedBySelection(e, row.tuneId)) return;
-                          navigate({ view: 'sessions', sessionId: session.id, annotationId: chain[0]!.id });
+                          navigate({ view: 'sessions', sessionId: session.id, annotationId: chain[0]!.id }, originOf(e));
                         }}
                         onAttached={refresh}
                       />
@@ -1289,7 +1292,7 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                         interactive={selected.size === 0}
                         onOpen={(e) => {
                           if (claimedBySelection(e, row.tuneId)) return;
-                          navigate({ view: 'sessions', sessionId: session.id, annotationId: detection.id });
+                          navigate({ view: 'sessions', sessionId: session.id, annotationId: detection.id }, originOf(e));
                         }}
                         onAttached={refresh}
                       />

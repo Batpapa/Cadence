@@ -8,6 +8,11 @@ import { CheckIcon, WarningTriangleIcon, CrossIcon } from './icons';
 
 type ButtonProps = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'size' | 'label'>;
 
+/** "Here is the one you were after": the detection a "detected in" link
+ *  points at — a gold ring, kept until the next gesture. The row gone back to
+ *  flashes the same gold, once (navOrigin.ts). */
+export const TARGET_RING = 'ring-2 ring-warn';
+
 /** An icon control: a 32 px target at least (36 `md`, 44 `lg`), whatever is
  *  drawn inside. `label` is required — it is what a screen reader says and the
  *  tooltip a mouse gets; a finger has nothing else to go on but the drawing,

@@ -1,5 +1,6 @@
 import { useState, useRef, useLayoutEffect } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
+import { fromAttrs, originOf } from '../components/navOrigin';
 import { pct, timeAgo, availabilityColor, addTouchDragSupport } from '../utils';
 import { CardSearchField } from '../components/cardSearchField';
 import { TrashIcon, StarIcon, PlusIcon, LibraryIcon, ChevronDownIcon } from '../components/icons';
@@ -331,6 +332,8 @@ export function DeckView({ deckId }: { deckId: string }) {
                   <div
                     key={entry.cardId}
                     draggable
+                    // Lit up once, back from its card (navOrigin.ts).
+                    {...fromAttrs(`card:${entry.cardId}`, true)}
                     ref={(el) => { if (el) addTouchDragSupport(el as HTMLElement); }}
                     class={[
                       'flex items-center gap-3 px-3 py-2 rounded hover:bg-elevated transition-colors group',
@@ -357,7 +360,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                     <span
                       class="text-sm text-primary flex-1 truncate cursor-pointer hover:text-accent"
                       data-tour="deck-row-name"
-                      onClick={() => navigate({ view: 'card', cardId: card.id, contextDeckId: deckId })}
+                      onClick={(e) => navigate({ view: 'card', cardId: card.id, contextDeckId: deckId }, originOf(e))}
                     >
                       {card.name}
                     </span>

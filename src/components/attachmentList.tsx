@@ -10,6 +10,7 @@ import {
   MusicNoteIcon, FileAudioIcon, VideoIcon, ImageIcon, NotesIcon, FileIcon,
 } from './icons';
 import { IconButton } from './ui';
+import { fromAttrs, originOf } from './navOrigin';
 import { useContextMenu } from './contextMenu';
 import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding, type PreviewModalOpts } from './fileViewer';
 import { cardAudioSync } from './cardAudioSync';
@@ -236,17 +237,21 @@ function useReorderDrag(
   }, [index, editable]);
 }
 
-function AttachmentRow({ index, editable, onReorder, scratch, children }: {
+function AttachmentRow({ index, editable, onReorder, scratch, fromKey, children }: {
   index: number;
   editable: boolean;
   onReorder: (from: number, insertBefore: number) => void;
   scratch: DragScratch;
+  /** The row's key, for a card reference (navOrigin.ts): the row lights up
+   *  when the card it opens is gone back from. By position: a set can hold
+   *  one tune twice. */
+  fromKey?: string;
   children: preact.ComponentChildren;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useReorderDrag(ref, index, editable, scratch, onReorder);
   return (
-    <div ref={ref} class="flex items-center gap-1 px-3 py-0.5 rounded border border-border group">
+    <div ref={ref} class="flex items-center gap-1 px-3 py-0.5 rounded border border-border group" {...(fromKey ? fromAttrs(fromKey) : {})}>
       {editable && (
         <span class="text-dim cursor-grab active:cursor-grabbing shrink-0 text-xs select-none">⠿</span>
       )}
@@ -663,7 +668,7 @@ function CardRefRowContent({ entry, onRemove, editable, glyph = <LinkIcon size={
       {resolved ? (
         <span
           class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
-          title={t('fileViewer.cardRef.open')} onClick={() => navigate({ view: 'card', cardId: resolved.id })}
+          title={t('fileViewer.cardRef.open')} onClick={(e) => navigate({ view: 'card', cardId: resolved.id }, originOf(e))}
         >{resolved.name}</span>
       ) : (
         <>
@@ -750,7 +755,7 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
   return (
     <div class="space-y-1">
       {refs.map((ref, i) => (
-        <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch}>
+        <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch} fromKey={`setTune:${i}`}>
           <CardRefRowContent
             entry={ref} editable={editable} onRemove={() => onRemove(i)} glyph={glyph}
             // This list IS a set's tune list — its repeat counter says as much
@@ -1101,7 +1106,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
       {attachments.length > 0 && (
         <div class="space-y-1">
           {attachments.map((att, i) => (
-            <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch}>
+            <AttachmentRow key={i} index={i} editable={editable} onReorder={onReorder} scratch={scratch} fromKey={att.type === 'card' ? `ref:${i}` : undefined}>
               {att.type === 'file' ? (
                 <FileRowContent
                   entry={resolve(att) as FileEntry & { preferredIndex?: number }}

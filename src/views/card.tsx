@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } fr
 import { Fragment, render } from 'preact';
 import { RatingLabel } from '../components/ratingLabel';
 import { appState, navigate, mutate, leaveDeletedPage } from '../store';
+import { fromAttrs, originOf } from '../components/navOrigin';
 import { locatePresetHolder, writeAudioPresets } from '../services/audioPresets';
 import { replaceExternalBytes, isExternal, uploadAttachmentSoon, condemnAttachmentFile, condemnCardAttachments, mutateWithRule } from '../services/attachmentStore';
 import { pct, focusIfDesktop, externalSourceLink, addTouchDragSupport } from '../utils';
@@ -1232,12 +1233,13 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           <span class="section-title">{t('card.section.inSets')}</span>
           <div class="space-y-1">
             {inSets.map(set => (
-              <div key={set.id} class="flex items-center gap-2">
+              // Lit up once, back from that set (navOrigin.ts).
+              <div key={set.id} class="flex items-center gap-2 rounded" {...fromAttrs(`inSet:${set.id}`)}>
                 <span class="text-dim shrink-0 w-4 flex items-center justify-center"><TuneSetIcon size={12} /></span>
                 <span
                   class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
                   title={t('card.backlinks.open')}
-                  onClick={() => navigate({ view: 'card', cardId: set.id })}
+                  onClick={(e) => navigate({ view: 'card', cardId: set.id }, originOf(e))}
                 >{set.name}</span>
               </div>
             ))}
@@ -1255,12 +1257,12 @@ export function CardView({ cardId, contextDeckId }: { cardId: string; contextDec
           <span class="section-title">{t('card.section.backlinks')}</span>
           <div class="space-y-1">
             {backlinks.map(src => (
-              <div key={src.id} class="flex items-center gap-2">
+              <div key={src.id} class="flex items-center gap-2 rounded" {...fromAttrs(`backlink:${src.id}`)}>
                 <span class="text-dim shrink-0 w-4 flex items-center justify-center"><LinkIcon size={12} /></span>
                 <span
                   class="text-xs font-mono truncate flex-1 text-muted hover:text-primary cursor-pointer transition-colors"
                   title={t('card.backlinks.open')}
-                  onClick={() => navigate({ view: 'card', cardId: src.id })}
+                  onClick={(e) => navigate({ view: 'card', cardId: src.id }, originOf(e))}
                 >{src.name}</span>
               </div>
             ))}

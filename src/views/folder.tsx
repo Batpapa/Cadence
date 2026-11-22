@@ -1,5 +1,6 @@
 import { useState, useRef } from 'preact/hooks';
 import { appState, navigate, mutate, getContext, leaveDeletedPage } from '../store';
+import { fromAttrs, originOf } from '../components/navOrigin';
 import { generateId, DAY_NAMES_KEYS, timeAgo, pct, availabilityColor, addTouchDragSupport } from '../utils';
 import { TrashIcon, StarIcon, LibraryIcon, WandIcon, FolderIcon, ChevronDownIcon, PlusIcon } from '../components/icons';
 import { IconButton, EmptyState } from '../components/ui';
@@ -594,7 +595,8 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                 <button
                   key={deck.id}
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-elevated hover:border-accent/50 transition-colors cursor-pointer text-sm text-primary"
-                  onClick={() => navigate({ view: 'deck', deckId: deck.id })}
+                  {...fromAttrs(`fav:${deck.id}`)}
+                  onClick={(e) => navigate({ view: 'deck', deckId: deck.id }, originOf(e))}
                 >
                   <span class="text-gold flex items-center"><StarIcon size={12} filled /></span>
                   {deck.name}
@@ -645,7 +647,9 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   onDragOver={(e) => onFolderDragOver(subId, e as unknown as DragEvent)}
                   onDragLeave={(e) => onFolderDragLeave(e as unknown as DragEvent)}
                   onDrop={(e) => onFolderDrop(subId, e as unknown as DragEvent)}
-                  onClick={() => navigate({ view: 'folder', folderId: subId })}
+                  // Lit up once, back from that folder (navOrigin.ts).
+                  {...fromAttrs(`folder:${subId}`, true)}
+                  onClick={(e) => navigate({ view: 'folder', folderId: subId }, originOf(e))}
                 >
                   {/* Half-visible at rest rather than hidden: under a finger there is no hover
                       to reveal it, and nothing else says a long press moves the row. */}
@@ -703,7 +707,8 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   onDragOver={(e) => onDeckDragOver(deckId, e as unknown as DragEvent)}
                   onDragLeave={(e) => onDeckDragLeave(e as unknown as DragEvent)}
                   onDrop={(e) => onDeckDrop(deckId, e as unknown as DragEvent)}
-                  onClick={() => navigate({ view: 'deck', deckId })}
+                  {...fromAttrs(`deck:${deckId}`, true)}
+                  onClick={(e) => navigate({ view: 'deck', deckId }, originOf(e))}
                 >
                   <span class="text-dim opacity-40 group-hover:opacity-100 cursor-grab active:cursor-grabbing shrink-0 text-xs select-none transition-opacity">⠿</span>
 

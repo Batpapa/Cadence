@@ -5,7 +5,8 @@ import type { AppContext } from '../../types';
 import { formatBytes, downloadBlob } from '../../utils';
 import { PlusIcon, CloudIcon, CloudUpIcon, TrashIcon, ResetIcon, UploadIcon, PlayIcon, PauseIcon, StopIcon } from '../../components/icons';
 import { downloadIcon } from '../../components/playbackIcons';
-import { IconButton } from '../../components/ui';
+import { IconButton, TARGET_RING } from '../../components/ui';
+import { fromAttrs } from '../../components/navOrigin';
 import type { ContextMenuEntry } from '../../components/contextMenu';
 import { confirmModal, alertModal, showModal, closeModalOf, renderModalBody } from '../../components/modal';
 import { signal, type Signal } from '@preact/signals';
@@ -167,10 +168,20 @@ function NotOnDriveBtn({ state, onClick }: { state: Exclude<DriveAudioState, 'on
   );
 }
 
+/** A detection row's key, which its card link passes as navigate's `from`
+ *  (navOrigin.ts): two detections of one tune open the same card, and the way
+ *  back lights up the one clicked. Passed by hand, not read off the row
+ *  (originOf): the card links hand over no click. */
+const detKey = (id: string) => `det:${id}`;
+/** The same for a set, whose card its pill opens. */
+const setKey = (chain: Detection[]) => `set:${chainPlayId(chain)}`;
+
 interface SessionSummaryProps {
   session: Analysis;
   ctx: AppContext;
-  onOpenCard: (cardId: string) => void;
+  /** `from`: the detection's or the set's key (detKey, `set:`), lit up when
+   *  this analysis is gone back to (navOrigin.ts). */
+  onOpenCard: (cardId: string, from?: string) => void;
   /** `audio`: a recording brought down from Drive for it, not to be stored. */
   onReanalyze: (audio?: Blob) => void;
   /** One detection to arrive on, from a card's "detected in" link. Marks and
@@ -956,7 +967,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     playLoadingId: playUrl ? null : drivePlayer.loadingId,
     sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
     sessionId: session.id,
-    onOpenCard,
+    onOpenCard: (cardId) => onOpenCard(cardId, detKey(ann.id)),
     onCardAdded: bump,
     // The curve is worked out from the recording: only when it is here.
     onTempo: audioUrl ? (a) => showDetectionTempo(a, { audio: () => loadSessionAudio(session.id) }) : undefined,
@@ -1141,8 +1152,10 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
         // The answer to "which one did I just scroll to": the card is
         // ringed, not merely centred among identical neighbours.
         class={`rounded-lg transition-shadow ${
-          ann.id === targetId ? 'ring-2 ring-warn'
+          ann.id === targetId ? TARGET_RING
           : lit.ids.includes(ann.id) ? 'ring-2 ring-accent' : ''}`}
+        // Lit up once, back from its card (navOrigin.ts).
+        {...fromAttrs(detKey(ann.id))}
       >
         <DetectionCard ann={ann} opts={cardOptsFor(ann, i)} />
       </div>
@@ -1277,7 +1290,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       record,
       details,
       study,
-      onOpenCard,
+      onOpenCard: (cardId) => onOpenCard(cardId, setKey(chain)),
+      fromKey: setKey(chain),
       getPinnedDeckIds: () => pinnedDeckIdsRef.current,
       onChanged: bump,
       onPlay: playUrl ? (c) => playFrom(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
