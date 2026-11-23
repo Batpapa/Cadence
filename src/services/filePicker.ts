@@ -7,7 +7,7 @@
 
 /** Each use its own memory: the folder of the recordings is not the folder of
  *  the scores. */
-export type PickerId = 'attachments' | 'analysis-import';
+export type PickerId = 'attachments' | 'analysis-import' | 'transcription';
 
 /** The few members of the picker used here — not in TypeScript's DOM types. */
 type OpenFilePicker = (opts: {

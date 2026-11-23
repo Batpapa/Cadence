@@ -2,7 +2,7 @@ import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
 import { followScore, contourToMidi, FEATURE_PITCHES, type FollowResult } from '../scoreFollow';
 import { openAudioInput } from '../audio/clipExtract';
 import { getSettingContour } from './indexStore';
-import { FF_PCM_WINDOW } from '../sessionConfig';
+import { FF_PCM_WINDOW, FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM } from '../sessionConfig';
 import { Novelty } from '../liveTempo';
 
 // ── Score following worker ───────────────────────────────────────────────────
@@ -57,7 +57,9 @@ export type ScoreFollowRequest =
   /** The tempo's novelty of [from, to) (liveTempo.ts), for a detection's
    *  curve worked out when asked (2026-11-01): the novelty is never saved.
    *  Sent as it is worked out, so the curve grows (2026-11-02, the user). */
-  | { type: 'tempo'; audio: Blob; from: number; to: number };
+  | { type: 'tempo'; audio: Blob; from: number; to: number }
+  /** The whole recording written out as ABC (transcribeRecording.tsx). */
+  | { type: 'transcribe'; audio: Blob };
 export type ScoreFollowResponse =
   | { type: 'progress'; stage: FollowStage; ratio: number }
   /** The stretch, mono, at its own rate — sent before the alignment is done.
@@ -71,6 +73,11 @@ export type ScoreFollowResponse =
   /** The next stretch of novelty: `fps` frames a second, from the request's `from`. */
   | { type: 'novelty'; fps: number; values: Float32Array }
   | { type: 'tempo-done' }
+  /** The transcription: FolkFriend's ABC (a K: line and the bars), and the
+   *  crotchets a minute of the quaver grid it was quantised on. */
+  | { type: 'transcribed'; abc: string; bpm: number }
+  /** Longer than a transcription is followed whole (LONG_S). */
+  | { type: 'too-long'; seconds: number; max: number }
   | { type: 'failed'; reason: FollowFailure }
   | { type: 'error'; message: string };
 
@@ -333,6 +340,44 @@ function locate(features: Float32Array, fps: number, score: number[], onRatio: (
   return { from: Math.max(0, start - ZONE_MARGIN_S), to: end + ZONE_MARGIN_S };
 }
 
+// ── A recording written out (2026-11-23, the user: a hidden gesture) ─────────
+// FolkFriend's own transcription, with its octaves: the 48-note engine — not
+// the analyser's pitch classes, which have none. Put back between D4 and C#5
+// for the ABC (contourShift.ts), every note above C#5 came out an octave low
+// (the user, the same day). Measured against Ableton's melody MIDI of three
+// of the user's test recordings, exact pitches, repeated notes merged: the
+// 48-note engine 96.9 / 71.4 / 56.6 % in agreement (clean, ornaments, several
+// notes at once), the pitch classes folded 62.1 / 53.3 / 44.7 %, each class
+// at the octave nearest the note before 8.4 / 15.2 / 41.2 % (leaps of a fifth
+// are everywhere) — the classes alone, octave ignored, 95.8 / 75.2 / 59.6 %.
+// What is given up: the pitch classes' tuning correction — a recording a
+// quarter-tone off is transcribed worse. The analyser's tempo range. Over the
+// whole recording at once rather than window by window: each note's length is
+// rounded on its own, so a tempo that drifts a little is absorbed. Measured
+// in Node on a 13th Moon session: 6 minutes in 0.7 s.
+
+/** The transcription of `pcm` at `rate`, or null when no notes were heard.
+ *  Its own engine, thrown away after; the tempo range is the module's (a
+ *  worker is made for each request). */
+function transcribe(pcm: Float32Array, rate: number): { abc: string; bpm: number } | null {
+  const f = new FolkFriendWASM();
+  try {
+    f.set_sample_rate(rate);
+    f.set_tempo_range(FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM);
+    const at = f.alloc_single_pcm_window();
+    const n = Math.floor(pcm.length / FF_PCM_WINDOW);
+    for (let i = 0; i < n; i++) {
+      f.get_allocated_pcm_window(at).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
+      f.feed_single_pcm_window(at);
+    }
+    const raw = JSON.parse(f.transcribe_pcm_buffer_debug()) as { contour: string; features: { best_bpm: number } } | { error: string };
+    if ('error' in raw || raw.contour.length < 2) return null;
+    return { abc: f.contour_to_abc(raw.contour), bpm: raw.features.best_bpm };
+  } finally {
+    f.free();
+  }
+}
+
 /** At most this often — a message per frame would cost more than the work. */
 const PROGRESS_EVERY_MS = 80;
 
@@ -400,6 +445,22 @@ ctx.onmessage = (e) => {
           progress('tempo', i / d.pcm.length);
         }
         ctx.postMessage({ type: 'tempo-done' });
+        return;
+      }
+      if (msg.type === 'transcribe') {
+        const duration = await durationOf(msg.audio);
+        if (duration === null) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
+        // Followed whole afterwards: a longer one would be searched for the
+        // tune (locate), which a score of the whole recording is not.
+        if (duration > LONG_S) { ctx.postMessage({ type: 'too-long', seconds: duration, max: LONG_S }); return; }
+        progress('decode', 0);
+        const d = await decodeSpan(msg.audio, 0, duration, r => progress('decode', r));
+        if (!d) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
+        progress('listen', 0);
+        await engine(); // the module's init
+        const written = transcribe(d.pcm, d.rate);
+        if (!written) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
+        ctx.postMessage({ type: 'transcribed', ...written });
         return;
       }
       let from = msg.from;
