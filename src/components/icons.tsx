@@ -250,6 +250,24 @@ export function ChevronDownIcon({ size = 10 }: { size?: number }) {
   );
 }
 
+/** Previous in a list — an analysis's neighbours in its folder. Not the
+ *  arrows: ← → are back and forward in the header. */
+export function ChevronLeftIcon({ size = 10 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 6 9 12 15 18"/>
+    </svg>
+  );
+}
+
+export function ChevronRightIcon({ size = 10 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 6 15 12 9 18"/>
+    </svg>
+  );
+}
+
 /** Language. */
 export function GlobeIcon({ size = 14 }: { size?: number }) {
   return (

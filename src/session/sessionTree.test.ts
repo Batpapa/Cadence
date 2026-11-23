@@ -5,7 +5,7 @@ import {
   allFolderIds, childFolderIds, collectFolderSessionIds, createFolder, deleteFolderTree,
   editSessionTree, emptyTree, folderChain, folderDate, folderOrder, folderPathOf, forgetSession,
   isFolderDescendant, levelItems, moveFolder, parentFolderOf, placeSession, renameFolder, rootOrder, searchItems,
-  sessionTreeOf, type SessionTree,
+  sessionTreeOf, siblingSessions, type SessionTree,
 } from './sessionTree';
 
 /** A tree with two folders and nothing arranged at the root. */
@@ -276,6 +276,43 @@ describe('a level\'s order — folders and analyses together, by date', () => {
     const t = tree();
     t.folders['f2']!.folderIds.push('f1');
     expect(folderDate(t, 'f1', () => null)).toBeNull();
+  });
+});
+
+describe('siblingSessions', () => {
+  const s = (id: string, date: string | null, name = id) => ({ id, date, name });
+  const ids = (r: { prev?: { id: string }; next?: { id: string } }) => [r.prev?.id, r.next?.id];
+  // Mardis (f1) ⊃ Été (f2) ; f1 holds a, b, c and the sub-folder ; d unfiled, at the root.
+  const setup = () => {
+    const t = tree();
+    for (const id of ['a', 'b', 'c']) placeSession(t, id, 'f1');
+    return t;
+  };
+  const all = [
+    s('c', '2026-03-01T20:00:00.000Z'), s('d', '2026-02-15T20:00:00.000Z'),
+    s('a', '2026-01-01T20:00:00.000Z'), s('b', '2026-02-01T20:00:00.000Z'),
+  ];
+
+  it('reads the folder backwards: next is the more recent, prev the older', () => {
+    // The folder lists c, b, a (most recent first).
+    expect(ids(siblingSessions(setup(), all, 'b'))).toEqual(['a', 'c']);
+    expect(ids(siblingSessions(setup(), all, 'a'))).toEqual([undefined, 'b']);
+    expect(ids(siblingSessions(setup(), all, 'c'))).toEqual(['b', undefined]);
+  });
+
+  it('stays in the folder — the root holds only the unfiled one', () => {
+    expect(ids(siblingSessions(setup(), all, 'd'))).toEqual([undefined, undefined]);
+  });
+
+  it('steps over sub-folders, and the undated come before the dated', () => {
+    // Listed: dated most recent first, then the undated by name — read backwards.
+    const t = setup();
+    placeSession(t, 'u', 'f1');
+    expect(ids(siblingSessions(t, [...all, s('u', null)], 'a'))).toEqual(['u', 'b']);
+  });
+
+  it('has nothing to say about an analysis the list does not hold', () => {
+    expect(ids(siblingSessions(setup(), all, 'draft'))).toEqual([undefined, undefined]);
   });
 });
 

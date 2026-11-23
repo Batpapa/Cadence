@@ -176,6 +176,32 @@ export function levelItems(
   return [...folders, ...analyses].sort(compareByDateThenName).map(e => e.item);
 }
 
+/** The analyses either side of `sessionId` in the folder that holds it (the
+ *  root for one filed nowhere), for the arrows at the top of an analysis
+ *  (2026-11-23). The folder's list read BACKWARDS, the user's call: it shows
+ *  the most recent first, and "next" is the one recorded after — the row
+ *  above; "prev" the one below. Analyses only: a sub-folder is no step.
+ *
+ *  `sessions` is every analysis, in any order — sorted here as the library
+ *  sorts them (listSessions) before levelItems, so ties fall as they do in
+ *  the list. Empty for an analysis the list does not hold (a draft). */
+export function siblingSessions<T extends { id: string; date: string | null; name: string }>(
+  tree: SessionTree,
+  sessions: T[],
+  sessionId: string,
+): { prev?: T; next?: T } {
+  const sorted = [...sessions].sort(compareByDateThenName);
+  const parent = parentFolderOf(tree, { type: 'session', id: sessionId });
+  const ids = levelItems(tree, parent, sorted).filter(i => i.type === 'session').map(i => i.id);
+  const at = ids.indexOf(sessionId);
+  if (at < 0) return {};
+  const byId = new Map(sessions.map(s => [s.id, s]));
+  return {
+    prev: at + 1 < ids.length ? byId.get(ids[at + 1]!) : undefined,
+    next: at > 0 ? byId.get(ids[at - 1]!) : undefined,
+  };
+}
+
 /** What a search shows: every folder and analysis UNDER `folderId` (`null` =
  *  the whole library) that `rank` finds, flattened into one list. Folders are
  *  searched too since 2026-11-20 (the user: "Rechercher une analyse ou un

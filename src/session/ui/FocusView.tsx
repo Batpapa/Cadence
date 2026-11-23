@@ -1,6 +1,7 @@
 import type { ComponentChild } from 'preact';
-import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../services/i18nService';
+import { anyOverlayOpen } from '../../components/overlayStack';
 import { ArrowLeftIcon, ArrowRightIcon, SkipToEndIcon, TuneSetIcon } from '../../components/icons';
 import { EmptyState } from '../../components/ui';
 import type { Detection } from '../model';
@@ -88,12 +89,51 @@ const NAV_DOT = 10;
  *  Never the dot alone — a lone red dot reads as the recording's own switch. */
 type NavWords = 'all' | 'bare' | 'short';
 
+/** One way the arrows can go: what it does, and what it names on hover. */
+interface NavStep { go: () => void; title?: string }
+
+/** The keyboard's ← and → doing `prev` and `next`. One place on screen at a
+ *  time has them — the caller decides which (AnalysisNav, the Focus view). */
+export function useArrowKeys(on: boolean, prev: (() => void) | undefined, next: (() => void) | undefined): void {
+  // Read at the key press, so the listener need not follow every render.
+  const stepsRef = useRef({ prev, next });
+  stepsRef.current = { prev, next };
+  useEffect(() => {
+    if (!on) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      // Alt+← is the browser's own back; a modifier is never ours.
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return;
+      // A dialog on top (the score viewer has arrows of its own), or a field,
+      // or a slider — a detection's seek bar steps its head with them.
+      if (anyOverlayOpen()) return;
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || active?.isContentEditable
+        || active?.getAttribute('role') === 'slider') return;
+      const step = e.key === 'ArrowLeft' ? stepsRef.current.prev : stepsRef.current.next;
+      if (!step) return;
+      e.preventDefault(); // or the page scrolls sideways
+      step();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [on]);
+}
+
 /** The Focus view's arrows, FIRST in the view (2026-10-30): tapped in quick
  *  succession, they moved under the finger while they sat under the card, as
  *  names wrapped and sets came and went above them. On top, nothing of the
  *  view is above them, and the row itself never changes: one line, the same
- *  three (or two) columns whatever the state. "Previous" and "Next", no tune
- *  names: the card right below says where one is (the user's call).
+ *  three (or two) columns whatever the state. "Previous detection" and "Next
+ *  detection", no tune names: the card right below says where one is (the
+ *  user's call). "Detection" since the analyses' row came above it, worded
+ *  "analysis" (2026-11-23, the user).
+ *
+ *  The same row stepped from analysis to analysis at the top of an analysis
+ *  for an hour (2026-11-23) — "énormément de place", the user: those went
+ *  onto the folder's line as two chevrons (AnalysisNav). The words and where
+ *  they go are still the caller's.
  *
  *  On a feed, the way back to the latest sits between them (the user's pick
  *  over a floating button, which covered the rating buttons): "Back to live"
@@ -106,13 +146,18 @@ type NavWords = 'all' | 'bare' | 'short';
  *  in turn, never from what is on screen — so the answer cannot flip back and
  *  forth. Both arrows lose their words together, as soon as either would be
  *  cut. The words stay as each button's accessible name. */
-function FocusNav({ anns, spot, onGo, feed }: {
-  anns: Detection[];
-  spot: FocusSpot;
-  onGo: (ann: Detection) => void;
+function NavArrows({ prev, next, prevLabel, nextLabel, feed, keys }: {
+  /** Absent: greyed, there is nothing that way. */
+  prev?: NavStep;
+  next?: NavStep;
+  prevLabel: string;
+  nextLabel: string;
   feed?: FocusFeed;
+  /** The keyboard's ← and → press these buttons (useArrowKeys). */
+  keys?: boolean;
 }) {
-  const { prev, next } = neighboursOf(anns, spot);
+  useArrowKeys(!!keys, prev?.go, next?.go);
+
   const rowRef = useRef<HTMLDivElement>(null);
   const prevWordRef = useRef<HTMLSpanElement>(null);
   const nextWordRef = useRef<HTMLSpanElement>(null);
@@ -149,20 +194,19 @@ function FocusNav({ anns, spot, onGo, feed }: {
 
   const box = 'h-12 px-3 rounded-md border border-border bg-bg flex items-center gap-2 text-sm font-medium transition-colors';
   const usable = (on: boolean) => on ? 'cursor-pointer text-primary hover:border-accent/60 hover:bg-accent/5' : 'text-primary opacity-40 cursor-default';
-  const prevLabel = t('sessions.focus.prev');
-  const nextLabel = t('sessions.focus.next');
   const longLive = t('sessions.focus.backToLive');
   const shortLive = t('sessions.focus.live');
 
   /** One of the two arrows, its content against its outer edge. */
-  const arrow = (target: Detection | undefined, dir: 'prev' | 'next') => {
+  const arrow = (target: NavStep | undefined, dir: 'prev' | 'next') => {
     const label = dir === 'prev' ? prevLabel : nextLabel;
     return (
       <button
         class={`${box} min-w-0 justify-start ${dir === 'next' ? 'flex-row-reverse' : ''} ${usable(!!target)}`}
         disabled={!target}
         aria-label={label}
-        onClick={() => target && onGo(target)}
+        title={target?.title}
+        onClick={() => target?.go()}
       >
         <span class="shrink-0 flex items-center">{dir === 'prev' ? <ArrowLeftIcon size={20} /> : <ArrowRightIcon size={20} />}</span>
         {words === 'all' && <span class="whitespace-nowrap">{label}</span>}
@@ -211,6 +255,30 @@ function FocusNav({ anns, spot, onGo, feed }: {
   );
 }
 
+/** The tunes either side, as the arrows' two ways. The keyboard's arrows go
+ *  with them wherever the Focus view is — on an analysis, instead of the
+ *  analyses' chevrons, and stopping at the first and last tune (2026-11-23, the
+ *  user: going on to the next analysis from there was tried and dropped). */
+function FocusNav({ anns, spot, onGo, feed }: {
+  anns: Detection[];
+  spot: FocusSpot;
+  onGo: (ann: Detection) => void;
+  feed?: FocusFeed;
+}) {
+  const { prev, next } = neighboursOf(anns, spot);
+  const step = (ann: Detection | undefined): NavStep | undefined => ann && { go: () => onGo(ann) };
+  return (
+    <NavArrows
+      prev={step(prev)}
+      next={step(next)}
+      prevLabel={t('sessions.focus.prev')}
+      nextLabel={t('sessions.focus.next')}
+      feed={feed}
+      keys
+    />
+  );
+}
+
 /** What a live or import feed adds to the Focus view: whether the latest
  *  detection is the one shown, and the way back to it. */
 type FocusFeed = { kind: 'live' | 'import'; latest: boolean; onBack: () => void };
@@ -242,12 +310,15 @@ export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
 
       {/* Its tunes as the set's own name spells them — " / " between them
           (TUNESET_NAME_SEPARATOR), the user's call — wrapping in a column of
-          their own, the "Set" pill alone at the right. */}
+          their own, the "Set" pill alone at the right. Every line of names
+          and the pill are all 32 px tall, the other tunes' buttons' target:
+          the pill, at the top, then sits level with the first line rather
+          than 5 px above it (2026-11-23, the user). */}
       {chain && (
         <div class="flex items-start gap-3 text-xs text-muted">
           <div class="flex-1 min-w-0 flex items-center gap-x-1.5 gap-y-1 flex-wrap">
             {chain.map((d, k) => (
-              <span key={d.id} class="inline-flex items-center gap-1.5 min-w-0">
+              <span key={d.id} class="inline-flex items-center gap-1.5 min-w-0 min-h-8">
                 {k > 0 && <span class="text-dim">/</span>}
                 {d.id === shown!.id
                   ? <span class="font-semibold text-primary">{tuneName(d).text}</span>
@@ -255,9 +326,11 @@ export function FocusView({ anns, spot, chains, renderCard, onGo, feed }: {
               </span>
             ))}
           </div>
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border shrink-0">
-            <TuneSetIcon size={12} />
-            {t('sessions.set.label')}
+          <span class="shrink-0 min-h-8 flex items-center">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border">
+              <TuneSetIcon size={12} />
+              {t('sessions.set.label')}
+            </span>
           </span>
         </div>
       )}

@@ -26,13 +26,14 @@ import { showDetectionTempo } from './LiveTempo';
 import { useSlicePlayer } from './PassRow';
 import { showShareSessionModal } from './ShareSessionModal';
 import { showAnalysisNotesModal } from './AnalysisNotesModal';
-import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { detectAudioFile } from '../audio/clipExtract';
 import { audioExtension } from '../../services/zip';
 import {
   fmtLongTime, TitleRow, DateRow,
   ClipControls, recutAttachedClip, repinReviewEntry, absorbReviewEntry, dropReviewEntry, repinSessionDate,
 } from './sessionUiShared';
+import { AnalysisNav } from './AnalysisNav';
+import { AnalysisFolderPicker } from './AnalysisFolderPicker';
 import { showBoundEditor, type TwinEdit } from './BoundEditor';
 import { showAddDetection } from './AddDetection';
 import { lastImportDump, lastLiveDump } from './sessionStore';
@@ -759,7 +760,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     if (ann) goToAnn(ann, returningToOffset() ? null : 'auto');
     // eslint-disable-next-line
   }, [annotationId, session.id]);
-
   // …and once the recording finishes loading, the element is put where the head
   // already is. Without this, pressing play after following a link would start
   // from the top while the head says otherwise. Only while the mark still
@@ -1513,6 +1513,7 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
 
   return (
     <>
+      <AnalysisNav sessionId={session.id} keys={!focusOn} />
       <TitleRow
         getName={() => session.name}
         getDefaultName={() => session.name}
@@ -1672,8 +1673,13 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
           <div class="mt-3"><AnalysisViewBar /></div>
         </div>
 
-        <div class="flex items-center gap-2 mt-3">
-          {dump && (
+        {/* Only when there is a dump: always drawn, empty, it was 12 px of
+            nothing, and with the list's own `mt-3` the first tune stood 36 px
+            under the views (2026-11-23, the user: too much, and it looked
+            like part of the list). The bar's `pb-3` is the air now, as its
+            `pt-3` is above. */}
+        {dump && (
+          <div class="flex items-center gap-2">
             <button
               class="text-2xs text-dim hover:text-primary hover:underline cursor-pointer ml-auto min-h-8"
               onClick={() => {
@@ -1683,12 +1689,12 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
             >
               {t('sessions.dumpWindows')}
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* `analysis-list`: its width decides where every card's name goes
             (styles.css). */}
-        <div ref={listWrapRef} class="analysis-list mt-3 space-y-2">
+        <div ref={listWrapRef} class="analysis-list space-y-2">
           {focusOn ? (
             <FocusView
               anns={session.annotations}

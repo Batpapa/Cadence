@@ -272,6 +272,17 @@ export function replaceRouteNow(route: Route): void {
   history.replaceState(stateFor(route), '');
 }
 
+/** The page swapped for one of its siblings, in place — an analysis's
+ *  previous/next (2026-11-23): back then lands where the first of them was
+ *  opened from, the folder, not on each one seen (the user's call). That
+ *  page flashes on return the row it was left by; if that row was `was`, the
+ *  page now on screen, it flashes `now` instead — the last one seen, where
+ *  the user is, rather than the first one opened. */
+export function replaceSibling(route: Route, was: string, now: string): void {
+  if (_fromByIdx.get(_idx - 1) === was) _fromByIdx.set(_idx - 1, now);
+  replaceRouteNow(route);
+}
+
 // Deliberately thin: they hand the gesture to the platform and let popstate do
 // the work, so the button and the system gesture cannot diverge. Neither is
 // synchronous — popstate arrives on a later task — which is why the enabled

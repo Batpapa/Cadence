@@ -12,27 +12,60 @@ import { t } from '../../services/i18nService';
 // or dragged, the recording goes there; the head is read at every frame, the
 // summary's player is never re-rendered for it. With the recording on this
 // device, its waveform behind (localWaveform.ts: the tune's stretch alone is
-// decoded, an envelope of 10 ms peaks kept).
+// decoded, an envelope of 10 ms peaks kept) — stopped if the bar goes first.
+
+/** A waveform being worked out, or worked out. */
+interface Wave {
+  buf: PeakBuffer;
+  /** The bars drawing it — one at most, in practice. */
+  listeners: Set<() => void>;
+  /** Read to the end (or found unreadable): nothing left to stop. */
+  done: boolean;
+  /** Let go of before it was done: the decoding still to start must not. */
+  stopped: boolean;
+  job: { cancel: () => void } | null;
+}
 
 /** Waveforms worked out, by stretch: the bar comes and goes with the head, and
  *  each time back would decode the tune again. A handful: a few hundred KB. */
-const waves = new Map<string, { buf: PeakBuffer; listeners: Set<() => void> }>();
+const waves = new Map<string, Wave>();
 const KEPT = 6;
 
-function waveOf(key: string, start: number, end: number, getAudio: () => Promise<Blob | undefined>): { buf: PeakBuffer; listeners: Set<() => void> } {
-  let w = waves.get(key);
-  if (w) return w;
-  const made = { buf: makePeakBuffer(start, end), listeners: new Set<() => void>() };
-  w = made;
+function waveOf(key: string, start: number, end: number, getAudio: () => Promise<Blob | undefined>): Wave {
+  const known = waves.get(key);
+  if (known) return known;
+  const made: Wave = { buf: makePeakBuffer(start, end), listeners: new Set(), done: false, stopped: false, job: null };
   waves.set(key, made);
-  if (waves.size > KEPT) waves.delete(waves.keys().next().value!);
+  if (waves.size > KEPT) {
+    const [oldKey, old] = waves.entries().next().value!;
+    waves.delete(oldKey);
+    if (old.listeners.size === 0) stop(old);
+  }
   const tell = () => { for (const l of made.listeners) l(); };
-  // Not cancelled when the bar goes: a tune's stretch is a second or two of
-  // decoding, and the bar is likely back on it soon.
   void getAudio().then((blob) => {
-    if (blob) readInto(blob, made.buf, start, end, tell, tell);
+    if (!blob || made.stopped) return;
+    made.job = readInto(blob, made.buf, start, end, tell, () => { made.done = true; made.job = null; tell(); });
   }, () => {});
   return made;
+}
+
+function stop(w: Wave): void {
+  if (w.done) return;
+  w.stopped = true;
+  w.job?.cancel();
+  w.job = null;
+}
+
+/** The bar showing `w` is gone. An unfinished waveform is stopped there and
+ *  forgotten — the tune changed (an arrow in the Focus view, the head moving
+ *  on) and its decoding would only compete with the next tune's (2026-11-23,
+ *  the user). It used to run to the end, on the grounds that the bar is
+ *  often back soon: then it starts again, from the beginning. A finished one
+ *  is kept. */
+function letGo(key: string, w: Wave): void {
+  if (w.done || w.listeners.size > 0) return;
+  stop(w);
+  if (waves.get(key) === w) waves.delete(key);
 }
 
 /** Arrow keys' step, in seconds. */
@@ -110,7 +143,12 @@ export function DetectionSeekBar({ sessionId, start, end, now, seek, getAudio }:
       g.fillRect(Math.min(w - 2, Math.max(0, x - 1)), 0, 2, h);
     };
     raf = requestAnimationFrame(draw);
-    return () => { cancelAnimationFrame(raf); wave?.listeners.delete(onWave); };
+    return () => {
+      cancelAnimationFrame(raf);
+      if (!wave) return;
+      wave.listeners.delete(onWave);
+      letGo(key, wave);
+    };
   }, [key, !!getAudio]);
 
   /** Seconds under a pointer x, within the tune. */

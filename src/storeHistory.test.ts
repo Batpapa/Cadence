@@ -2,7 +2,7 @@
 // The store reaches driveService, which reads localStorage at module evaluation
 // — in a bare node environment the import throws before a single test runs.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState, loadSavedRoute, takeBackFlash, navEntry } from './store';
+import { routeSignal, canGoBack, canGoForward, navigate, replaceRoute, initRoutePersistence, leaveStudy, leaveDeletedPage, appState, loadSavedRoute, takeBackFlash, navEntry, replaceSibling } from './store';
 import { emptyState } from './utils';
 import { TUNE_ANALYSER_MODULE_KEY } from './session/model';
 import type { AppState, Card, Route } from './types';
@@ -166,6 +166,24 @@ describe('takeBackFlash', () => {
     expect(takeBackFlash(navEntry.value)).toBe('row-1');
     pop(entry(1, LIB));
     expect(takeBackFlash(navEntry.value)).toBeNull();
+  });
+
+  it('flashes the sibling last seen, back from a page swapped in place', () => {
+    // An analysis's previous/next (AnalysisNav): back goes to the folder, its
+    // row of the last analysis seen lit, not the one first opened.
+    navigate(LIB, 'row-1');
+    replaceSibling({ view: 'modules' }, 'row-1', 'row-2');
+    expect(routeSignal.value).toEqual({ view: 'modules' });
+    pop(entry(0, HOME));
+    expect(takeBackFlash(navEntry.value)).toBe('row-2');
+  });
+
+  it('leaves alone a row that was not the swapped page', () => {
+    // Opened from elsewhere — a card's "Detected in" — that page's row stays.
+    navigate(LIB, 'pass-1');
+    replaceSibling({ view: 'modules' }, 'row-1', 'row-2');
+    pop(entry(0, HOME));
+    expect(takeBackFlash(navEntry.value)).toBe('pass-1');
   });
 
   it('has nothing for a link that named no row — a breadcrumb climbing up', () => {
