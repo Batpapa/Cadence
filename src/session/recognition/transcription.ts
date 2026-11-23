@@ -55,9 +55,12 @@ const MIN_FRAMES = 3;
  *  its share of the class's energy (`EPS` keeps an unheard octave possible), each leap
  *  costing `LEAP_COST` a semitone — a melody line moves by steps. On tuneset, against the
  *  loudest octave alone: note F 64.9 -> 75.0 %; flat between 0.4 and 1.0 a semitone. On the
- *  sessions (nothing tuned there): exact pitch sequences 68.0 -> 75.4 %. */
+ *  sessions (nothing tuned there): exact pitch sequences 68.0 -> 75.4 %. `EPS` caps what an
+ *  unheard octave costs: at 0.02 a note heard only an octave up, a sixth away from the notes
+ *  on both sides, was put an octave down (the user's solo recording, 2026-11-24); at 0.005
+ *  tuneset 75.3 %, sessions unchanged; lower, the sessions lose. */
 const LEAP_COST = 0.6;
-const EPS = 0.02;
+const EPS = 0.005;
 
 /** A heard note: MIDI pitch, first frame, frames. */
 export interface HeardNote {
@@ -168,15 +171,54 @@ export interface GridNote {
   sounds: number;
 }
 
-/** Each note at the grid point nearest its onset (strictly after the previous one), lasting
- *  until the next note; the last one its own length. */
-function onGrid(notes: HeardNote[], grid: number[], P: number): GridNote[] {
-  const at: number[] = [];
+/** How far from its nearest grid point a note may be put, in grid steps. */
+const PLACE_WINDOW = 3;
+
+/** Each note at a grid point, one note a point, in order, the notes as near their onsets as
+ *  can be (least total distance, by dynamic programming), lasting until the next note; the
+ *  last one its own length. Nearest point first come, first served pushed a note past a
+ *  dotted pair onto the next note's point, and that one onto the next: against the settings,
+ *  quaver by quaver 74.2 -> 75.9 %, notes as written 64.3 -> 65.2 %, bars 46.4 -> 47.4 %. */
+function placements(notes: HeardNote[], grid: number[], P: number): number[] {
+  const pos = (k: number): number => (k < grid.length ? grid[k]! : grid[grid.length - 1]! + (k - grid.length + 1) * P);
+  const W = 2 * PLACE_WINDOW + 1;
+  if (!notes.length) return [];
+  const near: number[] = [], first: number[] = [];
   let g = 0;
   for (const n of notes) {
     while (g + 1 < grid.length && Math.abs(grid[g + 1]! - n.start) <= Math.abs(grid[g]! - n.start)) g++;
-    at.push(at.length && g <= at[at.length - 1]! ? at[at.length - 1]! + 1 : g);
+    near.push(g);
+    first.push(Math.max(0, g - PLACE_WINDOW));
   }
+  // cost[i * W + j]: the least distance with note i at first[i] + j
+  const cost = new Float64Array(notes.length * W).fill(Infinity);
+  const back = new Int8Array(notes.length * W);
+  notes.forEach((n, i) => {
+    for (let j = 0; j < W; j++) {
+      const k = first[i]! + j, d = Math.abs(pos(k) - n.start);
+      if (i === 0) { cost[j] = d; continue; }
+      for (let p = 0; p < W; p++) {
+        const v = cost[(i - 1) * W + p]! + d;
+        if (first[i - 1]! + p < k && v < cost[i * W + j]!) { cost[i * W + j] = v; back[i * W + j] = p; }
+      }
+    }
+  });
+  const last = notes.length - 1;
+  let j = 0;
+  for (let q = 1; q < W; q++) if (cost[last * W + q]! < cost[last * W + j]!) j = q;
+  if (!Number.isFinite(cost[last * W + j]!)) {
+    // notes crowding beyond the window: nearest point, pushed on
+    const at: number[] = [];
+    for (const k of near) at.push(at.length && k <= at[at.length - 1]! ? at[at.length - 1]! + 1 : k);
+    return at;
+  }
+  const at = new Array<number>(notes.length);
+  for (let i = last; i >= 0; i--) { at[i] = first[i]! + j; j = back[i * W + j]!; }
+  return at;
+}
+
+function onGrid(notes: HeardNote[], grid: number[], P: number): GridNote[] {
+  const at = placements(notes, grid, P);
   return notes.map((n, i) => {
     const own = Math.max(1, Math.round(n.frames / P));
     const quavers = i + 1 < notes.length ? at[i + 1]! - at[i]! : own;
@@ -196,8 +238,23 @@ function accentAt(novelty: ArrayLike<number>, f: number): number {
  *  — an accent over SPLIT x the median accent of the onsets — is split there. Against the
  *  notes as written (pitch and length): 57.9 -> 64.8 %. */
 const SPLIT = 0.7;
+/** Never where the note no longer sounds — its own energy there under SUSTAIN x its peak: the
+ *  decoder holds a note through the silence after it, and a breath before the next phrase
+ *  is an accent too. Solo flute (scales, no repeated note): notes written in excess
+ *  69 -> 38 %; sessions unchanged (notes as written 65.2 -> 65.0 %). */
+const SUSTAIN = 0.2;
 
-function splitRepeats(notes: GridNote[], grid: number[], novelty: ArrayLike<number>): GridNote[] {
+function sounding(features: Float32Array, pitch: number, from: number, to: number, f: number): boolean {
+  const b = pitch - MIDI_LOW;
+  if (b < 0 || b >= PITCHES) return true;
+  const frames = Math.floor(features.length / PITCHES);
+  let peak = 0, here = 0;
+  for (let u = Math.max(0, from); u < Math.min(to, frames); u++) peak = Math.max(peak, features[u * PITCHES + b]!);
+  for (let u = Math.max(0, f - 2); u <= f + 3 && u < frames; u++) here = Math.max(here, features[u * PITCHES + b]!);
+  return here >= SUSTAIN * peak;
+}
+
+function splitRepeats(notes: GridNote[], grid: number[], novelty: ArrayLike<number>, features: Float32Array): GridNote[] {
   const accents = notes.map(n => accentAt(novelty, grid[n.at]!)).sort((a, b) => a - b);
   const threshold = SPLIT * (accents[accents.length >> 1] || 1);
   const out: GridNote[] = [];
@@ -206,7 +263,7 @@ function splitRepeats(notes: GridNote[], grid: number[], novelty: ArrayLike<numb
     const end = n.at + n.quavers;
     for (let k = n.at + 1; k < end && k < grid.length; k++) {
       if (k - n.at >= n.sounds) break; // in the silence after it
-      if (accentAt(novelty, grid[k]!) > threshold) {
+      if (accentAt(novelty, grid[k]!) > threshold && sounding(features, n.pitch, grid[n.at]!, grid[Math.min(end, grid.length - 1)]!, grid[k]!)) {
         out.push({ pitch: n.pitch, at: from, quavers: k - from, sounds: k - from });
         from = k;
       }
@@ -367,7 +424,7 @@ export function transcribe(classes: ArrayLike<number>, novelty: ArrayLike<number
   const last = placed[placed.length - 1]!;
   // the bars from the notes as heard (measured so), before the repeated notes are split
   const bars = barStarts(placed, last.at + last.quavers, frameOf, novelty, metre);
-  return { notes: splitRepeats(placed, frameOf, novelty), bars, grid: frameOf, metre, rate };
+  return { notes: splitRepeats(placed, frameOf, novelty, features), bars, grid: frameOf, metre, rate };
 }
 
 /** One MIDI pitch a quaver, rests left out: what FolkFriend's key detection reads. */

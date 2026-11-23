@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import abcjs from 'abcjs';
 import {
-  classNotes, withOctaves, quaverGrid, metreOf, makeKey, keyOfAbc, writeAbc, quaverContour,
+  classNotes, withOctaves, quaverGrid, metreOf, makeKey, keyOfAbc, writeAbc, quaverContour, transcribe,
   type ClassNote, type Transcription, type GridNote,
 } from './transcription';
 
@@ -47,6 +47,14 @@ describe('withOctaves', () => {
     expect(out.map(n => n.pitch)).toEqual([69, 71, 73, 74, 76]);
   });
 
+  it('trusts a note heard only an octave up, a sixth from the notes around it', () => {
+    // A f A (the user's recording): f heard at F5 alone, not F4
+    const out = withOctaves(classNotes(flat([
+      note(9, 0, [0, 1, 0, 0]), note(5, 6, [0, 0, 1, 0]), note(9, 12, [0, 1, 0, 0]),
+    ])));
+    expect(out.map(n => n.pitch)).toEqual([69, 77, 69]);
+  });
+
   it('follows an octave leap the energy is sure of over several notes', () => {
     // a leap costs 12 x 0.6: one note an octave off would cost less, three do not
     const out = withOctaves(classNotes(flat([
@@ -75,6 +83,45 @@ describe('quaverGrid', () => {
     const grid = quaverGrid(signal, 10.5);
     const onsets = new Set<number>(); for (let u = 0; u < 500; u++) if (signal[u]) onsets.add(u);
     expect(grid.filter(g => onsets.has(g)).length).toBeGreaterThanOrEqual(onsets.size - 2);
+  });
+});
+
+describe('transcribe', () => {
+  const FPS = 40, RATE = 4, P = FPS / RATE, FRAMES = 200;
+  /** Notes [MIDI pitch, first frame, frames, frames it sounds]; a novelty pulse on every
+   *  grid point (frame 5 + 10 k), `accents` overriding some; each note's energy while it sounds. */
+  function scene(notes: [number, number, number, number?][], accents: Record<number, number> = {}) {
+    const classes = flat(notes.map(([pitch, start, frames]) => {
+      const octaves = [0, 0, 0, 0];
+      octaves[Math.floor((pitch - 48) / 12)] = 1;
+      return note((pitch - 48) % 12, start, octaves, frames);
+    }));
+    const novelty = new Float32Array(FRAMES);
+    for (let f = 5; f < FRAMES; f += P) novelty[f] = 1;
+    for (const [f, v] of Object.entries(accents)) novelty[Number(f)] = v;
+    const features = new Float32Array(FRAMES * 48);
+    for (const [pitch, start, frames, sounds] of notes) {
+      for (let f = start; f < start + (sounds ?? frames); f++) features[f * 48 + pitch - 48] = 1;
+    }
+    return transcribe(classes, novelty, features, FPS, RATE)!;
+  }
+
+  it('puts a dotted pair\'s short note on its own quaver, not on the next note\'s', () => {
+    // B (1.5 quavers) c (0.5) d B A G: c's onset halfway between two grid points
+    const t = scene([[71, 5, 15], [72, 20, 5], [74, 25, 10], [71, 35, 10], [69, 45, 10], [67, 55, 10]]);
+    expect(t.notes.map(n => n.pitch)).toEqual([71, 72, 74, 71, 69, 67]);
+    expect(t.notes.map(n => n.at - t.notes[0]!.at)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('splits a re-attacked note, not one whose sound has stopped', () => {
+    // F# held 4 quavers by the decoder, an accent on its last quaver
+    const notes = (sounds: number): [number, number, number, number?][] =>
+      [[62, 5, 10], [64, 15, 10], [66, 25, 40, sounds], [67, 65, 10], [69, 75, 10]];
+    const accents = { 35: 0.1, 45: 0.1, 55: 2 };
+    const held = scene(notes(40), accents).notes.filter(n => n.pitch === 66);
+    expect(held.map(n => n.quavers)).toEqual([3, 1]);
+    const stopped = scene(notes(20), accents).notes.filter(n => n.pitch === 66);
+    expect(stopped.map(n => n.quavers)).toEqual([4]);
   });
 });
 
