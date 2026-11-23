@@ -21,6 +21,7 @@ import { TUNE_ANALYSER_MODULE_KEY } from '../model';
 import { alternatePickFields, withManualAlternate, manualAlternateRemovalFields, insertionIndex } from '../model';
 import { samePlayedPitch } from '../recognition/pitchSplit';
 import { DetectionCard, type DetectionCardOptions } from './DetectionCard';
+import { DetectionSeekBar } from './DetectionSeekBar';
 import { showDetectionTempo } from './LiveTempo';
 import { useSlicePlayer } from './PassRow';
 import { showShareSessionModal } from './ShareSessionModal';
@@ -952,10 +953,31 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     bump();
   };
 
+  /** Where the head is at this instant: the element's own time while it
+   *  plays — a tune's bar moves at every frame, not at each 'timeupdate' —
+   *  the floor of a seek still under way, else where it was put. */
+  const headNow = (): number => {
+    const a = audioRef.current;
+    if (!a || a.paused) return headTimeRef.current;
+    const floor = seekFloorRef.current;
+    return floor !== null && a.currentTime < floor ? floor : a.currentTime;
+  };
+
   const cardOptsFor = (ann: Detection, i: number): DetectionCardOptions => ({
     ctx,
     details,
     study,
+    // The tune's own seek bar (N3f), on the card the head is in — with the
+    // recording in the player, stored here or brought down for this visit.
+    seekBar: playUrl && ann.end !== null && headIn(ann.start, ann.end)
+      ? (
+        <DetectionSeekBar
+          sessionId={session.id} start={ann.start} end={ann.end} now={headNow}
+          seek={(tSec) => { dropTarget(); seekTo(tSec); }}
+          getAudio={temp ? () => Promise.resolve(temp.blob) : audioUrl ? () => loadSessionAudio(session.id) : undefined}
+        />
+      )
+      : undefined,
     // No ▶ at all when the recording is neither here nor on Drive.
     // From the recording the player has — stored here or brought down for
     // this visit — else straight from Drive, the passage alone.

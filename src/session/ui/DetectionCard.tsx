@@ -87,6 +87,9 @@ export interface DetectionCardOptions {
   /** In the Focus view, under the name: the view's word on where the tune
    *  stands (FocusView.tsx). */
   focusNote?: ComponentChild;
+  /** Under the name, the card's whole width: the tune's own seek bar
+   *  (DetectionSeekBar.tsx) — on the card the head is in only. */
+  seekBar?: ComponentChild;
   /** Extra controls rendered at the bottom of the card (bound-adjust/clip
    *  buttons — finalized annotations only, gated by the caller). */
   extraControls?: () => ComponentChild;
@@ -779,6 +782,7 @@ export function DetectionCard({ ann, opts }: { ann: Detection; opts: DetectionCa
 
       <NavigableName layout={focus ? 'large' : 'below'} label={ann.displayName} tuneId={ann.tuneId} settingId={ann.settingId} knownCardId={known?.id} onOpenCard={opts.onOpenCard} />
       {focus && opts.focusNote && <div class="flex">{opts.focusNote}</div>}
+      {opts.seekBar}
 
       {opts.details !== false && <div class={`${focus ? 'text-sm' : 'text-xs'} text-muted flex items-center gap-1.5 flex-wrap`}>
         {/* No meter (2026-10-28, the user's call): a reel's 4/4 and a jig's
