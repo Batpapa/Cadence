@@ -1,5 +1,6 @@
 import type { Attachment, EmbedEntry, FileAttachment } from '../types';
 import type { AudioSyncBinding } from './fileViewer';
+import type { FollowAudio } from '../session/scoreFollowClient';
 import { isFileEmbed } from '../services/embedService';
 import { typeFromUrl } from '../services/remoteFile';
 
@@ -7,17 +8,44 @@ import { typeFromUrl } from '../services/remoteFile';
 // The score viewer's "Audio sync" for a card's own ABC (2026-10-31, the user;
 // out of developer mode 2026-11-01): any of its scores but a set's generated one, with
 // the card's audio or video attachments — and its links to an audio file
-// (2026-11-01), which Cadence reads as its own player does. One recording:
-// followed at once. Several: asked which, with a way to compare them all first
-// (session/ui/cardRecordingSync.tsx, loaded only then). Nothing is
-// remembered: another recording is the toggle off and on again. A score
-// opened from a detection keeps the detection's recording alone
-// (abcPreview.tsx), whatever its card holds.
+// (2026-11-01), which Cadence reads as its own player does — and the passes
+// of its "Detected in" (2026-11-22, the user: all of them, compared like the
+// rest). One recording: followed at once. Several: asked which, with a way to
+// compare them all first (session/ui/cardRecordingSync.tsx, loaded only
+// then). Nothing is remembered: another recording is the toggle off and on
+// again. A score opened from a detection keeps the detection's recording
+// alone (abcPreview.tsx), whatever its card holds.
 
-/** A recording the score can follow: an attached file, or a link to one. */
+/** A stretch of a recording the card's tune was heard in: a pass of its
+ *  "Detected in". The Sessions module hands them over (registerCardPassages)
+ *  — the core knows nothing of analyses, as for its panel (cardPanels.ts). */
+export interface CardPassage {
+  /** The analysis it was heard in. */
+  name: string;
+  /** Where in it, in seconds. */
+  start: number;
+  end: number;
+  /** Where its recording is: on this device, only on Drive (the stretch
+   *  alone is fetched, when used), or nowhere any more — not offered then. */
+  where: () => Promise<'here' | 'drive' | null>;
+  /** The recording as the follow reads it — the whole, or the stretch from
+   *  Drive. Undefined when it could not be had, the user having been told. */
+  audio: () => Promise<FollowAudio | undefined>;
+}
+
+let passagesOf: ((cardId: string) => CardPassage[]) | null = null;
+
+/** Called once, at the Sessions module's load. */
+export function registerCardPassages(source: (cardId: string) => CardPassage[]): void {
+  passagesOf = source;
+}
+
+/** A recording the score can follow: an attached file, a link to one, or a
+ *  pass of an analysis. */
 export type CardRecording =
   | { kind: 'file'; att: FileAttachment }
-  | { kind: 'link'; entry: EmbedEntry };
+  | { kind: 'link'; entry: EmbedEntry }
+  | { kind: 'passage'; passage: CardPassage };
 
 /** Audio the follower cannot read, though the type says audio. */
 const NOT_SOUND = /midi|avi|msvideo/i;
@@ -51,11 +79,13 @@ export function cardRecordings(attachments: Attachment[]): CardRecording[] {
   return out;
 }
 
-/** The audio sync of a score among `attachments`, or undefined when there is
+/** The audio sync of a score among `attachments` — those of the card
+ *  `cardId`, whose passes are offered too — or undefined when there is
  *  nothing to follow it with. */
-export function cardAudioSync(attachments: Attachment[]): AudioSyncBinding | undefined {
+export function cardAudioSync(attachments: Attachment[], cardId?: string): AudioSyncBinding | undefined {
   const recordings = cardRecordings(attachments);
-  if (recordings.length === 0) return undefined;
+  const passages = cardId && passagesOf ? passagesOf(cardId) : [];
+  if (recordings.length === 0 && passages.length === 0) return undefined;
   let chosen: CardRecording | null = null;
   let ui: typeof import('../session/ui/cardRecordingSync') | null = null;
   return {
@@ -64,7 +94,14 @@ export function cardAudioSync(attachments: Attachment[]): AudioSyncBinding | und
     plays: (version) => /^K:/m.test(version),
     choose: async (version) => {
       ui ??= await import('../session/ui/cardRecordingSync');
-      chosen = recordings.length === 1 ? recordings[0]! : await ui.chooseRecording(recordings, version);
+      // A pass whose recording was let go, here and on Drive, is not offered:
+      // known only by asking, so only once the toggle is pressed.
+      const places = await Promise.all(passages.map(p => p.where()));
+      const offered: CardRecording[] = [
+        ...recordings,
+        ...passages.filter((_, i) => places[i] !== null).map(passage => ({ kind: 'passage' as const, passage })),
+      ];
+      chosen = offered.length === 1 ? offered[0]! : await ui.chooseRecording(offered, version);
       return chosen !== null;
     },
     mount: (host, version, face, expanded, onState, forced, transpose, below) =>

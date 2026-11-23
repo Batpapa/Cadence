@@ -881,7 +881,7 @@ export function openCardScore(options: AttachmentListOptions): boolean {
   const i = cardScoreIndex(attachments);
   const att = attachments[i];
   if (att && isAbcLink(att)) {
-    openRemoteFile(att, undefined, { audioSync: cardAudioSync(attachments), onKeepRecording: options.onKeepRecording });
+    openRemoteFile(att, undefined, { audioSync: cardAudioSync(attachments, options.card?.id), onKeepRecording: options.onKeepRecording });
     return true;
   }
   if (!att || att.type !== 'file') return false;
@@ -988,7 +988,7 @@ async function openResolvedScore(
       : undefined,
     // Its score following one of its recordings — not a set's generated
     // score for now (2026-10-31, the user).
-    audioSync: att.generatedBy === 'tuneset' ? undefined : cardAudioSync(options.attachments),
+    audioSync: att.generatedBy === 'tuneset' ? undefined : cardAudioSync(options.attachments, options.card?.id),
     // Nor, there, the choice of who plays it: the synth alone (2026-11-20,
     // the user).
     sources: att.generatedBy !== 'tuneset',
@@ -1099,7 +1099,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   onRename={onRenameFile && att.generatedBy !== 'tuneset' ? (name) => onRenameFile(i, name) : undefined}
                   onSetPreferredIndex={onSetPreferredIndex && att.generatedBy !== 'tuneset' ? (index) => onSetPreferredIndex(i, index) : undefined}
                   audioPresets={onSetAudioPresets ? audioPresetsBinding(att, i, onSetAudioPresets, card) : undefined}
-                  audioSync={isAbcFile(att) && att.generatedBy !== 'tuneset' ? cardAudioSync(attachments) : undefined}
+                  audioSync={isAbcFile(att) && att.generatedBy !== 'tuneset' ? cardAudioSync(attachments, card?.id) : undefined}
                   // The row opens the score itself (not openResolvedScore):
                   // the take's way to the card has to be handed to it too —
                   // missed at first, the record button was nowhere (2026-11-01).
@@ -1122,7 +1122,7 @@ export function AttachmentList({ options }: { options: AttachmentListOptions }) 
                   entry={att} onRemove={() => onRemove(i)} editable={editable}
                   onEdit={onUpdateLink ? () => showEditLinkModal(att, (next) => onUpdateLink(i, next)) : undefined}
                   audioPresets={onSetAudioPresets ? linkPresetsBinding(att, i, onSetAudioPresets, card) : undefined}
-                  score={isAbcLink(att) ? { audioSync: cardAudioSync(attachments), onKeepRecording: options.onKeepRecording } : undefined}
+                  score={isAbcLink(att) ? { audioSync: cardAudioSync(attachments, card?.id), onKeepRecording: options.onKeepRecording } : undefined}
                 />
               )}
             </AttachmentRow>

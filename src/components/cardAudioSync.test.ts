@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Attachment } from '../types';
-import { cardRecordings, cardAudioSync } from './cardAudioSync';
+import { cardRecordings, cardAudioSync, registerCardPassages, type CardPassage } from './cardAudioSync';
 
 const file = (name: string, mimeType: string): Attachment => ({ type: 'file', name, mimeType, data: '' } as Attachment);
 const link = (url: string, mode: 'embed' | 'link' = 'embed'): Attachment => ({ type: 'embed', id: url, url, mode } as Attachment);
@@ -32,5 +32,16 @@ describe('cardRecordings', () => {
   it('offers no audio sync without a recording', () => {
     expect(cardAudioSync([file('e.abc', 'text/vnd.abc'), link('https://host/tune.mp3', 'link')])).toBeUndefined();
     expect(cardAudioSync([link('https://host/tune.mp3')])).toBeDefined();
+  });
+
+  // The passes of its "Detected in" are recordings too: a card with none of
+  // its own still follows them — when the Sessions module has some for it.
+  it('offers the passes the Sessions module has for the card', () => {
+    const pass: CardPassage = { name: 'Session', start: 10, end: 70, where: async () => 'here', audio: async () => undefined };
+    registerCardPassages((cardId) => (cardId === 'heard' ? [pass] : []));
+    const score = [file('e.abc', 'text/vnd.abc')];
+    expect(cardAudioSync(score, 'heard')).toBeDefined();
+    expect(cardAudioSync(score, 'never-heard')).toBeUndefined();
+    expect(cardAudioSync(score)).toBeUndefined();
   });
 });

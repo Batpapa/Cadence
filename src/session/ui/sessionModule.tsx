@@ -44,6 +44,8 @@ import {
   lastImportDump, importStarting, importPlaybackWarn,
 } from './sessionStore';
 import { registerCardPanel } from '../../services/cardPanels';
+import { registerCardPassages } from '../../components/cardAudioSync';
+import { cardPassages } from './cardPassages';
 import { HelpIcon, ArrowRightIcon, ChevronDownIcon } from '../../components/icons';
 import { recognitionIndexesOf, storedRecognitionIndexes, type RecognitionIndexChoice } from '../recognition/recognitionIndexes';
 import { CustomSelect } from '../../components/customSelect';
@@ -563,6 +565,8 @@ export function startLiveSession(ctx: AppContext, kind: LiveSourceKind = 'mic', 
 // renders. The panel decides for itself whether it has anything to say — see
 // DetectedIn, which returns nothing for a card no session ever recognised.
 registerCardPanel((cardId) => <DetectedIn cardId={cardId} />);
+// Its passes, followed by a card's own score too (cardAudioSync.ts).
+registerCardPassages(cardPassages);
 
 // ── This module's own settings ────────────────────────────────────────────────
 // Behind a gear on the module's screen rather than inline on it: there is one

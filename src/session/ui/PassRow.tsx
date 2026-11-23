@@ -384,12 +384,13 @@ export function PlayPassButton({ sessionId, detection, player }: {
  *  the follow reads, fetched on its own like a passage played from there —
  *  the whole recording only for a format no passage can be read from, asked
  *  first in the manual mode, as for playing. Undefined when it could not be
- *  had, the user having been told. */
-async function followAudioFromDrive(sessionId: string, detection: Detection): Promise<FollowAudio | undefined> {
+ *  had, the user having been told. A card's score follows such a stretch too
+ *  (cardPassages.ts). */
+export async function followAudioFromDrive(sessionId: string, start: number, end: number): Promise<FollowAudio | undefined> {
   const entry = syncedAudioEntry(sessionId);
   if (!entry) return undefined;
-  const from = followFrom(detection.start);
-  const to = followTo(detection.end ?? detection.start + 60);
+  const from = followFrom(start);
+  const to = followTo(end);
   try {
     const clip = await fetchRemotePassage(
       (s, e) => readCompanionRange(entry.fileId, s, e, true),
@@ -425,7 +426,7 @@ export function detectionAudioSync(sessionId: string, detection: Detection, here
   const getAudio = here
     ? async (): Promise<FollowAudio | undefined> => { const blob = await loadSessionAudio(sessionId); return blob ? { blob, start: 0 } : undefined; }
     : () => {
-      fromDriveAudio ??= followAudioFromDrive(sessionId, detection).then((a) => { if (!a) fromDriveAudio = null; return a; });
+      fromDriveAudio ??= followAudioFromDrive(sessionId, detection.start, detection.end ?? detection.start + 60).then((a) => { if (!a) fromDriveAudio = null; return a; });
       return fromDriveAudio;
     };
   return {
