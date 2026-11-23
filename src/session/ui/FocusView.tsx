@@ -364,9 +364,16 @@ function useHighWater(on: boolean): { outerRef: RefObject<HTMLDivElement>; inner
     const outer = outerRef.current, inner = innerRef.current;
     if (!on || !outer || !inner) return;
     let high = 0;
-    let width = outer.clientWidth;
+    let width = inner.clientWidth;
+    let raf = 0;
+    // The inner box alone is watched — its width is the outer's, and the
+    // height written never changes it — and the height is written at the
+    // next frame, outside the observer's delivery: written inside it, onto a
+    // box it watched, the browser reported a loop ("ResizeObserver loop
+    // completed with undelivered notifications", 2026-11-23).
     const measure = () => {
-      const w = outer.clientWidth;
+      raf = 0;
+      const w = inner.clientWidth;
       if (Math.abs(w - width) > HIGH_WATER_RESET_PX) { width = w; high = 0; }
       const h = inner.offsetHeight;
       if (h <= high) return;
@@ -374,10 +381,9 @@ function useHighWater(on: boolean): { outerRef: RefObject<HTMLDivElement>; inner
       outer.style.minHeight = `${h}px`;
     };
     measure();
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(() => { if (!raf) raf = requestAnimationFrame(measure); });
     ro.observe(inner);
-    ro.observe(outer);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, [on]);
   return { outerRef, innerRef };
 }

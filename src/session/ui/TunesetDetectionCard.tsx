@@ -12,7 +12,6 @@ import { setCardFor, chainSpan, isSettled } from '../tunesets';
 import { hasLibrary } from '../../services/pageMode';
 import { setDetectionOn } from '../detections';
 import { HeardSetAbc } from './abcPreview';
-import { PlayDisc, playFromTitle } from './PassRow';
 import { ReviewLogControl, ratingOf } from './DetectionCard';
 import { fmtLongTime, tuneName, type ClipSessionRef } from './sessionUiShared';
 import { SetClipControls, TunesetDeckButton, setReviewId } from './tunesetShared';
@@ -41,11 +40,6 @@ export interface TunesetCardOptions {
   getPinnedDeckIds?: () => Set<string>;
   /** After anything this card wrote to the user blob. */
   onChanged?: () => void;
-  onPlay?: (chain: Detection[]) => void;
-  /** Its ▶ shows ⏸: what plays is in the set (SessionSummary's `sounds`). */
-  playing?: boolean;
-  playFromDrive?: boolean;
-  playLoadingId?: string | null;
   onToggleLike?: (record: TunesetRecord) => void;
   /** Saves the set's note, whole text — blank clears it. The button sits
    *  right of the set's heart, as a tune's does (2026-11-16). */
@@ -143,8 +137,6 @@ export function TunesetDetectionCard({ chain, opts, children }: {
     ? `${fmtLongTime(span.start)} · ${t('sessions.inProgress')}`
     : `${fmtLongTime(span.start)} – ${fmtLongTime(span.end)}`;
 
-  const playId = chainPlayId(chain);
-  const playing = !!opts.onPlay && !!opts.playing;
   const rank = opts.position && <span class="tabular-nums">{opts.position.at}/{opts.position.of}</span>;
 
   const reviewId = opts.record ? setReviewId(opts.session.id, opts.record.id) : null;
@@ -164,11 +156,8 @@ export function TunesetDetectionCard({ chain, opts, children }: {
         {open && <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />}
         {pending && <span class="text-dim shrink-0" title={t('sessions.consolidating')}><HourglassIcon size={12} /></span>}
 
-        {opts.onPlay && (() => {
-          const state = { playing, fromDrive: !!opts.playFromDrive, loading: opts.playLoadingId === playId };
-          return <PlayDisc {...state} title={playFromTitle(state)} onClick={() => opts.onPlay!(chain)} />;
-        })()}
-
+        {/* No ▶ (2026-11-23, the user): a tune's plays on from there, so
+            the first tune's plays the whole set. */}
         <HeardSetAbc
           title={name}
           tunes={chain.map((d, i) => ({ label: names[i]!, settingId: hasRecognisedSetting(d) ? d.settingId : null, keyOffset: keyOffsetOf(d) }))}

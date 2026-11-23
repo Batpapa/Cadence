@@ -1300,10 +1300,8 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
     </div>
   );
 
-  /** A set played as a whole: one passage from its first tune's start to its
-   *  last tune's end, under its own id so its ▶ is the only one lit. */
-  const chainAsAnn = (chain: Detection[]): Detection => ({ ...chain[0]!, id: chainPlayId(chain), ...chainSpan(chain, session.duration) });
-
+  // No ▶ on a set any more (2026-11-23, the user): a tune's plays on from
+  // there (N3g), so its first tune's already plays the whole set.
   const setOptsFor = (chain: Detection[]): TunesetCardOptions => {
     const record = records.find(r => r.detectionIds.length === chain.length && r.detectionIds.every((id, k) => id === chain[k]!.id));
     return {
@@ -1316,10 +1314,6 @@ export function SessionSummary({ session, ctx, onOpenCard, onReanalyze, annotati
       fromKey: setKey(chain),
       getPinnedDeckIds: () => pinnedDeckIdsRef.current,
       onChanged: bump,
-      onPlay: playUrl ? (c) => playFrom(chainAsAnn(c)) : synced ? (c) => { void drivePlayer.play(session.id, chainAsAnn(c)); } : undefined,
-      playing: sounds(chainPlayId(chain), chainSpan(chain, session.duration)),
-      playFromDrive: !playUrl && !!synced,
-      playLoadingId: playUrl ? null : drivePlayer.loadingId,
       sessionStartMs: session.date === null ? undefined : Date.parse(session.date),
       onToggleLike: (r) => {
         const target = session.tunesets?.find(x => x.id === r.id);
