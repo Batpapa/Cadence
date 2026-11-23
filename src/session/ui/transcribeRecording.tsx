@@ -7,10 +7,10 @@ import { t } from '../../services/i18nService';
 
 // ── A recording written out, then followed (2026-11-23, the user) ────────────
 // Hidden, for two testers: five taps in a row on the logo of "About"
-// (aboutModal.tsx) pick a recording, which FolkFriend's transcription writes
-// out as ABC (scoreFollowWorker.ts transcribe); the score viewer then
-// opens on it, its audio sync on, following the very recording. Nothing is
-// kept: the score is not saved anywhere, the viewer reads it only.
+// (aboutModal.tsx) pick a recording, written out as ABC in the worker
+// (scoreFollowWorker.ts, transcription.ts); the score viewer then opens on
+// it, its audio sync on, following the very recording. Nothing is kept: the
+// score is not saved anywhere, the viewer reads it only.
 
 function toBase64(text: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
@@ -19,12 +19,8 @@ function toBase64(text: string): string {
 /** The file's name without its extension. */
 const baseName = (name: string): string => name.replace(/\.[^.]+$/, '') || name;
 
-/** FolkFriend's ABC (a K: line, then the bars) made a whole tune: its quaver
- *  as the unit, the tempo it was quantised on. No metre is known — bars are
- *  FolkFriend's groups of eight notes — so none is written. */
-function wholeTune(abc: string, bpm: number, title: string): string {
-  return ['X: 1', `T: ${title}`, 'L: 1/8', `Q: 1/4=${bpm}`, abc.trim()].join('\n');
-}
+/** The worker's ABC (its M:, L:, Q:, K: lines and the tune) made a whole tune. */
+const wholeTune = (abc: string, title: string): string => ['X: 1', `T: ${title}`, abc.trim()].join('\n');
 
 /** The audio sync of the transcription: the recording itself, whole. Followed
  *  even when the alignment is judged poor — it is the recording's own score. */
@@ -73,7 +69,7 @@ export function transcribeRecording(file: File): void {
     }
     const title = baseName(file.name);
     showPreviewModal(
-      { name: `${title}.abc`, mimeType: 'text/vnd.abc', data: toBase64(wholeTune(result.abc, result.bpm, title)) },
+      { name: `${title}.abc`, mimeType: 'text/vnd.abc', data: toBase64(wholeTune(result.abc, title)) },
       undefined,
       { audioSyncCarry: { binding: followFile(file), forced: true } },
     );

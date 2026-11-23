@@ -31,6 +31,12 @@ export class FolkFriendWASM {
 */
   set_num_repass(num_repass: number): void;
 /**
+* Transcription (Cadence, 2026-11-23): frames fed from now on are kept as magnitude
+* spectra, for transcribe_notes — the query engine and the pitch-class mode are left as
+* they are. Call after set_sample_rate (a new rate makes a new extractor).
+*/
+  keep_magnitudes(): void;
+/**
 * Notes weaker than `min_power` or shorter than `min_duration_frames`
 * frames are dropped before quantisation. Default 0.10 / 3.
 * @param {number} min_power
@@ -66,6 +72,12 @@ export class FolkFriendWASM {
 * @param {(string)[]} order
 */
   set_source_order(order: (string)[]): void;
+/**
+* Transcription (Cadence, 2026-11-23): FolkFriend::transcribe_notes — 8 values a note
+* (class, first frame, frames, power, 4 octave energies), empty when no notes were heard.
+* @returns {Float32Array}
+*/
+  transcribe_notes(): Float32Array;
 /**
 * The cleaned frames fed since the last call (frames x 48, as take_features): each note
 * minus its median over `drone_frames` frames (centred, or the frames up to it when
@@ -132,6 +144,13 @@ export class FolkFriendWASM {
 */
   run_transcription_query(contour_string: string): string;
 /**
+* Transcription (Cadence, 2026-11-23): the 48-note frames take_features would give for the
+* frames kept as magnitudes (keep_magnitudes), frames x 48 — bit for bit the same, without
+* feeding the PCM twice. Keeps the magnitudes: transcribe_notes reads them after.
+* @returns {Float32Array}
+*/
+  take_magnitude_features(): Float32Array;
+/**
 * @param {number} ptr
 * @returns {Float32Array}
 */
@@ -171,6 +190,7 @@ export interface InitOutput {
   readonly folkfriendwasm_feed_single_pcm_window: (a: number, b: number) => void;
   readonly folkfriendwasm_flush_pcm_buffer: (a: number) => void;
   readonly folkfriendwasm_get_allocated_pcm_window: (a: number, b: number) => number;
+  readonly folkfriendwasm_keep_magnitudes: (a: number) => void;
   readonly folkfriendwasm_load_index_from_json_obj: (a: number, b: number) => void;
   readonly folkfriendwasm_new: () => number;
   readonly folkfriendwasm_run_name_query: (a: number, b: number, c: number, d: number) => void;
@@ -188,6 +208,8 @@ export interface InitOutput {
   readonly folkfriendwasm_settings_from_tune_id: (a: number, b: number, c: number, d: number) => void;
   readonly folkfriendwasm_take_clean_features: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly folkfriendwasm_take_features: (a: number) => number;
+  readonly folkfriendwasm_take_magnitude_features: (a: number) => number;
+  readonly folkfriendwasm_transcribe_notes: (a: number) => number;
   readonly folkfriendwasm_transcribe_pcm_buffer: (a: number, b: number) => void;
   readonly folkfriendwasm_transcribe_pcm_buffer_debug: (a: number, b: number) => void;
   readonly folkfriendwasm_version: (a: number, b: number) => void;

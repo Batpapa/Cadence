@@ -303,6 +303,14 @@ export class FolkFriendWASM {
         wasm.folkfriendwasm_set_num_repass(this.__wbg_ptr, num_repass);
     }
     /**
+    * Transcription (Cadence, 2026-11-23): frames fed from now on are kept as magnitude
+    * spectra, for transcribe_notes — the query engine and the pitch-class mode are left as
+    * they are. Call after set_sample_rate (a new rate makes a new extractor).
+    */
+    keep_magnitudes() {
+        wasm.folkfriendwasm_keep_magnitudes(this.__wbg_ptr);
+    }
+    /**
     * Notes weaker than `min_power` or shorter than `min_duration_frames`
     * frames are dropped before quantisation. Default 0.10 / 3.
     * @param {number} min_power
@@ -352,6 +360,15 @@ export class FolkFriendWASM {
         const ptr0 = passArrayJsValueToWasm0(order, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         wasm.folkfriendwasm_set_source_order(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+    * Transcription (Cadence, 2026-11-23): FolkFriend::transcribe_notes — 8 values a note
+    * (class, first frame, frames, power, 4 octave energies), empty when no notes were heard.
+    * @returns {Float32Array}
+    */
+    transcribe_notes() {
+        const ret = wasm.folkfriendwasm_transcribe_notes(this.__wbg_ptr);
+        return takeObject(ret);
     }
     /**
     * The cleaned frames fed since the last call (frames x 48, as take_features): each note
@@ -499,6 +516,16 @@ export class FolkFriendWASM {
             wasm.__wbindgen_add_to_stack_pointer(16);
             wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
         }
+    }
+    /**
+    * Transcription (Cadence, 2026-11-23): the 48-note frames take_features would give for the
+    * frames kept as magnitudes (keep_magnitudes), frames x 48 — bit for bit the same, without
+    * feeding the PCM twice. Keeps the magnitudes: transcribe_notes reads them after.
+    * @returns {Float32Array}
+    */
+    take_magnitude_features() {
+        const ret = wasm.folkfriendwasm_take_magnitude_features(this.__wbg_ptr);
+        return takeObject(ret);
     }
     /**
     * @param {number} ptr

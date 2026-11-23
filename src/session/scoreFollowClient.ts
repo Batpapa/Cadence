@@ -232,13 +232,14 @@ export function tempoOfSpan(
   });
 }
 
-/** What a transcription gave: the ABC and its tempo, or a recording too long
- *  to be followed whole afterwards (`seconds`, at most `max`). */
-export type Transcription = { abc: string; bpm: number } | { tooLong: number; max: number };
+/** What a transcription gave: the ABC (M:, L:, Q:, K: and the tune), or a
+ *  recording too long to be followed whole afterwards (`seconds`, at most
+ *  `max`). */
+export type Transcription = { abc: string } | { tooLong: number; max: number };
 
 /** The whole of `audio` written out as ABC, in the worker
- *  (scoreFollowWorker.ts transcribe). `onRatio` 0 to 1 along the decoding.
- *  `signal` as followAudio's. */
+ *  (scoreFollowWorker.ts transcribe). `onRatio` 0 to 1: the decoding, then
+ *  the listening. `signal` as followAudio's. */
 export function transcribeAudio(audio: Blob, onRatio?: (r: number) => void, signal?: AbortSignal): Promise<Transcription | FollowFailure> {
   const request: ScoreFollowRequest = { type: 'transcribe', audio };
   return new Promise((resolve, reject) => {
@@ -246,9 +247,9 @@ export function transcribeAudio(audio: Blob, onRatio?: (r: number) => void, sign
     signal?.addEventListener('abort', () => worker.terminate(), { once: true });
     worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => {
       const msg = e.data;
-      if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio : 1); return; }
+      if (msg.type === 'progress') { onRatio?.(msg.stage === 'decode' ? msg.ratio / 2 : 0.5 + msg.ratio / 2); return; }
       worker.terminate();
-      if (msg.type === 'transcribed') resolve({ abc: msg.abc, bpm: msg.bpm });
+      if (msg.type === 'transcribed') resolve({ abc: msg.abc });
       else if (msg.type === 'too-long') resolve({ tooLong: msg.seconds, max: msg.max });
       else if (msg.type === 'failed') resolve(msg.reason);
       else reject(new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`));

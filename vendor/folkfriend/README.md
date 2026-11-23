@@ -328,6 +328,46 @@ with `["cards", "thesession"]` and after it with `["thesession", "cards"]`, and 
 a setting of TheSession tune 5 represents that tune or not accordingly. New in the glue:
 `set_source_order(order: string[])`.
 
+## Transcription with octaves (2026-11-23), every result unchanged
+
+Cadence writes a recording out as ABC (the hidden transcription,
+`src/session/recognition/transcription.ts`). Two additive exports:
+
+- `keep_magnitudes()`: from now on the frames fed are kept as magnitude spectra, as the
+  pitch-class mode keeps them — without switching the instance (its query engine, its
+  `transcribe_pcm_buffer`) to pitch classes. Call it after `set_sample_rate`.
+- `transcribe_notes()`: those frames' harmonic part, drone removed, decoded as pitch classes
+  (`beam_search::decode_pitch_classes`, the recognition engine's decoder), each note returned
+  with the energy of every octave of its class in the same frames before the fold, octave-fixed
+  frame by frame as the default path fixes them. A `Float32Array`, 8 values a note: class
+  (0 = C), first frame, frames, power, the 4 octaves' energies from MIDI 48 up. The octave is
+  chosen by Cadence (a Viterbi path over the notes).
+- `take_magnitude_features()`: the 48-note frames `take_features` would give, frames x 48,
+  computed from the magnitudes kept — the default path's steps after its first FFT, in the same
+  order (`pitch_class::default_frames`), so the transcription feeds its PCM once. Checked bit
+  for bit against `take_features` on 6 two-minute stretches of 3 sessions (44.1 and 48 kHz,
+  scalar and SIMD builds). Keeps the magnitudes; `transcribe_notes` reads and flushes them.
+
+Speed, 6 minutes of a session in Node: 2.8 s with the scalar build and the PCM fed to two
+engines, 1.6 s fed once, 0.65 s with the SIMD build — whose results are the scalar one's bit for
+bit (transcriptions and the score following's cleaned features checked). The score following
+worker now loads the SIMD build where the browser has it, as the recognition worker does
+(`src/session/recognition/folkfriendInit.ts`).
+
+Why: on the tuneset corpus (Beauguitte, Duggan & Kelleher, ISMIR 2016 — Irish recordings
+annotated note by note; note F-measure, onset 50 ms, exact pitch) this decoder with Cadence's
+octave gives 75.0 %, the 48-note `transcribe_pcm_buffer` 65.9 %, Basic Pitch 55 %. The tuning
+correction (`set_any_pitch`) and leaving the drone in measured no better. The research exports
+that led there (other decoders, other octave choices) were not kept; their record and patch are
+outside the repos (`transcription-bench/JOURNAL.md`, `fork-research.patch`).
+
+Checked: the 18 annotated sessions' windows (18 725) regenerated with the new build are the
+committed fixtures' (contour, top 10, scores, transposition, features), save the `tuning` field
+the committed files predate; and two sessions regenerated with this build and with the fork's
+previous commit are the same files byte for byte.
+New in the glue: `keep_magnitudes()`, `take_magnitude_features(): Float32Array`,
+`transcribe_notes(): Float32Array`.
+
 ## Tune index
 
 The recognition index (~34 MB JSON, mapping directly to TheSession.org tune IDs) is

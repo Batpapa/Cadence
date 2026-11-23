@@ -1,9 +1,11 @@
-import init, { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
+import { FolkFriendWASM } from '../../../vendor/folkfriend/folkfriend.js';
+import { initFolkFriend } from './folkfriendInit';
 import { followScore, contourToMidi, FEATURE_PITCHES, type FollowResult } from '../scoreFollow';
 import { openAudioInput } from '../audio/clipExtract';
 import { getSettingContour } from './indexStore';
-import { FF_PCM_WINDOW, FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM } from '../sessionConfig';
-import { Novelty } from '../liveTempo';
+import { FF_PCM_WINDOW } from '../sessionConfig';
+import { Novelty, estimateRate } from '../liveTempo';
+import { transcribe, quaverContour, keyOfAbc, makeKey, writeAbc } from './transcription';
 
 // ── Score following worker ───────────────────────────────────────────────────
 // All of the work, off the main thread — which is playing the recording and
@@ -23,8 +25,10 @@ import { Novelty } from '../liveTempo';
 // of the recording decoded at its OWN rate (FolkFriend takes any rate; no
 // resampling, which would need an OfflineAudioContext a worker does not
 // have), the engine's features, the alignment. No tune index is loaded into
-// the engine — the score is given — and the scalar build is enough: SIMD only
-// speeds up index queries.
+// the engine — the score is given. The SIMD build where the browser has it
+// (folkfriendInit.ts, 2026-11-23): the harmonic part's medians, which the
+// cleaned features and the transcription read, are taken four at a time —
+// results identical bit for bit, the transcription 2.5x as fast.
 
 // A card's recording (2026-10-31, the user) has no detection to say where the
 // tune is: `to` null, the whole of it — and a long one is first SEARCHED for
@@ -73,9 +77,8 @@ export type ScoreFollowResponse =
   /** The next stretch of novelty: `fps` frames a second, from the request's `from`. */
   | { type: 'novelty'; fps: number; values: Float32Array }
   | { type: 'tempo-done' }
-  /** The transcription: FolkFriend's ABC (a K: line and the bars), and the
-   *  crotchets a minute of the quaver grid it was quantised on. */
-  | { type: 'transcribed'; abc: string; bpm: number }
+  /** The transcription: its M:, L:, Q:, K: lines and the tune (transcription.ts). */
+  | { type: 'transcribed'; abc: string }
   /** Longer than a transcription is followed whole (LONG_S). */
   | { type: 'too-long'; seconds: number; max: number }
   | { type: 'failed'; reason: FollowFailure }
@@ -97,7 +100,7 @@ let ptrClean = 0;
 
 async function engine(): Promise<FolkFriendWASM> {
   if (ff) return ff;
-  await init(new URL('../../../vendor/folkfriend/folkfriend_bg.wasm', import.meta.url));
+  await initFolkFriend();
   ff = new FolkFriendWASM();
   ptr = ff.alloc_single_pcm_window();
   return ff;
@@ -341,38 +344,48 @@ function locate(features: Float32Array, fps: number, score: number[], onRatio: (
 }
 
 // ── A recording written out (2026-11-23, the user: a hidden gesture) ─────────
-// FolkFriend's own transcription, with its octaves: the 48-note engine — not
-// the analyser's pitch classes, which have none. Put back between D4 and C#5
-// for the ABC (contourShift.ts), every note above C#5 came out an octave low
-// (the user, the same day). Measured against Ableton's melody MIDI of three
-// of the user's test recordings, exact pitches, repeated notes merged: the
-// 48-note engine 96.9 / 71.4 / 56.6 % in agreement (clean, ornaments, several
-// notes at once), the pitch classes folded 62.1 / 53.3 / 44.7 %, each class
-// at the octave nearest the note before 8.4 / 15.2 / 41.2 % (leaps of a fifth
-// are everywhere) — the classes alone, octave ignored, 95.8 / 75.2 / 59.6 %.
-// What is given up: the pitch classes' tuning correction — a recording a
-// quarter-tone off is transcribed worse. The analyser's tempo range. Over the
-// whole recording at once rather than window by window: each note's length is
-// rounded on its own, so a tempo that drifts a little is absorbed. Measured
-// in Node on a 13th Moon session: 6 minutes in 0.7 s.
+// The whole recording at once (LONG_S at most) by transcription.ts — where each
+// step is, and what measured it. One engine of its own, keeping the frames'
+// spectra (keep_magnitudes): the 48-note energies read off them
+// (take_magnitude_features — take_features' bit for bit, the PCM not fed
+// twice) for the novelty (liveTempo.ts), the tempo, the quaver grid, the metre
+// and the bars; the fork's pitch-class notes with the energy of each octave of
+// their class (transcribe_notes); then FolkFriend's key detection
+// (contour_to_abc's K: line) on the notes found. Measured in Node on 6 minutes
+// of a session: 0.65 s with the SIMD build (2.8 s with the scalar one and the
+// PCM fed to two engines, as first written).
 
-/** The transcription of `pcm` at `rate`, or null when no notes were heard.
- *  Its own engine, thrown away after; the tempo range is the module's (a
- *  worker is made for each request). */
-function transcribe(pcm: Float32Array, rate: number): { abc: string; bpm: number } | null {
+/** FolkFriend's contour alphabet: one letter a semitone from MIDI 48. */
+const CONTOUR_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV';
+
+/** The ABC of `pcm` at `rate` — its M:, L:, Q:, K: lines and the tune — or null
+ *  when no tune was heard. */
+async function writeOut(pcm: Float32Array, rate: number, onRatio: (r: number) => void): Promise<string | null> {
+  await engine(); // the module's init
   const f = new FolkFriendWASM();
   try {
     f.set_sample_rate(rate);
-    f.set_tempo_range(FF_TEMPO_MIN_BPM, FF_TEMPO_MAX_BPM);
+    f.keep_magnitudes();
     const at = f.alloc_single_pcm_window();
     const n = Math.floor(pcm.length / FF_PCM_WINDOW);
     for (let i = 0; i < n; i++) {
       f.get_allocated_pcm_window(at).set(pcm.subarray(i * FF_PCM_WINDOW, (i + 1) * FF_PCM_WINDOW));
       f.feed_single_pcm_window(at);
+      if ((i & 255) === 0) onRatio((0.6 * i) / n);
     }
-    const raw = JSON.parse(f.transcribe_pcm_buffer_debug()) as { contour: string; features: { best_bpm: number } } | { error: string };
-    if ('error' in raw || raw.contour.length < 2) return null;
-    return { abc: f.contour_to_abc(raw.contour), bpm: raw.features.best_bpm };
+    const features = f.take_magnitude_features();
+    onRatio(0.7);
+    const classes = f.transcribe_notes();
+    onRatio(0.95);
+    const fps = rate / FF_PCM_WINDOW;
+    const novelty = new Novelty().of(features);
+    const tempo = estimateRate(novelty, fps);
+    if (!tempo) return null;
+    const tune = transcribe(classes, novelty, features, fps, tempo.rate);
+    if (!tune) return null;
+    const contour = quaverContour(tune).map(m => CONTOUR_CHARS[Math.min(95, Math.max(48, m)) - 48]).join('');
+    const key = (contour.length ? keyOfAbc(f.contour_to_abc(contour)) : null) ?? makeKey(0, 'maj');
+    return writeAbc(tune, key);
   } finally {
     f.free();
   }
@@ -457,10 +470,9 @@ ctx.onmessage = (e) => {
         const d = await decodeSpan(msg.audio, 0, duration, r => progress('decode', r));
         if (!d) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
         progress('listen', 0);
-        await engine(); // the module's init
-        const written = transcribe(d.pcm, d.rate);
-        if (!written) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
-        ctx.postMessage({ type: 'transcribed', ...written });
+        const abc = await writeOut(d.pcm, d.rate, r => progress('listen', r));
+        if (!abc) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
+        ctx.postMessage({ type: 'transcribed', abc });
         return;
       }
       let from = msg.from;
