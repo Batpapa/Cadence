@@ -547,7 +547,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
         renderItem={(tune) => (
           <>
             <div class="flex-1 min-w-0">
-              <span class="text-sm text-primary truncate block">{tune.name}</span>
+              <span class="text-sm text-primary name-wrap block">{tune.name}</span>
               <span class="text-xs text-dim">{tune.rhythm}</span>
             </div>
             {knownIds().has(tune.id) && (

@@ -52,6 +52,43 @@ export function DeckView({ deckId }: { deckId: string }) {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget]     = useState<{ cardId: string; zone: 'before' | 'after' } | null>(null);
 
+  // The cards' names whole (N3e, 2026-11-23, the user): the last review's date
+  // gives way first — on every row at once, when one name would not fit on
+  // its line beside it — and a name goes on more lines only after that.
+  // Measured off the text itself (its natural width in its own font) against
+  // the width the name has WITHOUT a date, so the answer does not depend on
+  // whether the date is shown: nothing to go back and forth between.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [datesOff, setDatesOff] = useState(false);
+  const names = deck ? deck.entries.map(e => user.cards[e.cardId]?.name ?? '').join('\n') : '';
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const g = document.createElement('canvas').getContext('2d');
+    if (!list || !g) return;
+    let raf = 0;
+    const measure = () => {
+      const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-tour="deck-row-name"]'));
+      const dates = Array.from(list.querySelectorAll<HTMLElement>('.lib-date'));
+      if (!rows.length || !dates.length) return;
+      const dateStyle = getComputedStyle(dates[0]!);
+      g.font = dateStyle.font;
+      const dateW = Math.max(...dates.map(d => g.measureText(d.textContent ?? '').width));
+      const gap = parseFloat(getComputedStyle(rows[0]!.parentElement!).columnGap) || 0;
+      const shown = dateStyle.display !== 'none';
+      g.font = getComputedStyle(rows[0]!).font;
+      const tight = rows.some((r) => {
+        const room = r.clientWidth + (shown ? dateW + gap : 0) - dateW - gap;
+        return g.measureText(r.textContent ?? '').width > room;
+      });
+      setDatesOff(tight);
+    };
+    const later = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measure); };
+    measure();
+    const ro = new ResizeObserver(later);
+    ro.observe(list);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+  }, [names]);
+
   if (!deck) return <div class="flex flex-col h-full view-enter">{t('deck.notFound')}</div>;
 
   // ── Metrics ──────────────────────────────────────────────────────────────────
@@ -311,7 +348,7 @@ export function DeckView({ deckId }: { deckId: string }) {
           {deck.entries.length === 0 ? (
             <EmptyState>{t('deck.empty')}</EmptyState>
           ) : (
-            <div class="lib-list space-y-1">
+            <div ref={listRef} class={`lib-list space-y-1${datesOff ? ' lib-dates-off' : ''}`}>
               {(() => {
                 const impColWidth = Math.max(...deck.entries.map(e => {
                   const c = user.cards[e.cardId]; if (!c) return 2;
@@ -358,7 +395,7 @@ export function DeckView({ deckId }: { deckId: string }) {
                     </span>
 
                     <span
-                      class="text-sm text-primary flex-1 truncate cursor-pointer hover:text-accent"
+                      class="text-sm text-primary flex-1 name-wrap cursor-pointer hover:text-accent"
                       data-tour="deck-row-name"
                       onClick={(e) => navigate({ view: 'card', cardId: card.id, contextDeckId: deckId }, originOf(e))}
                     >

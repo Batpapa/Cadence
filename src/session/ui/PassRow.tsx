@@ -14,7 +14,7 @@ import { audioDownloadMode } from '../audioDownloads';
 import { fetchRemotePassage } from '../audio/remotePassage';
 import { TUNE_ANALYSER_MODULE_KEY, hasRecognisedSetting, keyOffsetOf, type Detection, type SyncedAudio, type TuneAnalyserModuleData } from '../model';
 import { followFrom, followTo, type FollowAudio } from '../scoreFollowClient';
-import { BUCKET_TEXT, ClipControls, fmtLongTime, type ClipSessionRef } from './sessionUiShared';
+import { ClipControls, fmtLongTime, type ClipSessionRef } from './sessionUiShared';
 import { AbcPreview } from './abcPreview';
 import { mountScoreFollow } from './ScoreFollowView';
 import { useMediaVolume } from '../../components/useMediaVolume';
@@ -497,22 +497,13 @@ export function PassRow({ session, detection, cardId, ctx, player, interactive, 
         />
       </div>
 
-      {/* The pill is the drawing, the button around it a 32 px target. */}
-      <button
-        class={`group shrink-0 inline-flex items-center min-h-8 ${interactive ? 'cursor-pointer' : ''}`}
-        title={t('sessions.openDetection')}
-        onClick={onOpen}
-      >
-        <span class={`text-2xs font-mono px-1.5 py-0.5 rounded-full border border-border ${interactive ? 'group-hover:border-accent' : ''} ${
-          detection.userConfirmed ? 'text-success' : BUCKET_TEXT[detection.bucket]}`}>
-          {fmtLongTime(detection.start)}
-        </span>
-      </button>
-
+      {/* No time code before the name (2026-11-23, the user): not needed in
+          these lists. In the tooltip still — two passes of one analysis are
+          told apart there. */}
       <button
         class={`text-sm text-muted min-w-0 min-h-8 text-left flex-1 inline-flex items-center gap-1.5 ${interactive ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
-        // The full name, since the visible one is cut.
-        title={session.name}
+        // The full name, since the visible one is cut, and where in it.
+        title={`${session.name} · ${fmtLongTime(detection.start)}`}
         onClick={onOpen}
       >
         <span class="truncate min-w-0">{session.name}</span>

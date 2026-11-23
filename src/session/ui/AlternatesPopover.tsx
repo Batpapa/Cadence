@@ -179,7 +179,7 @@ function AlternatesPopover({ initial, getLatest, onSelect, onAdd, onRemove, rate
 
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class="text-sm text-primary truncate">{tuneName(opt).text}</span>
+                  <span class="text-sm text-primary name-wrap">{tuneName(opt).text}</span>
                   {isViterbi && (
                     <span class="badge shrink-0 bg-accent/15 text-accent" title={t('sessions.alternates.viterbiHint')}>
                       {t('sessions.alternates.viterbiBadge')}

@@ -452,7 +452,7 @@ function TuneTab({ setStatus, importTune, importIds, initialQuery }: {
         renderItem={(tune) => (
           <>
             <div class="flex-1 min-w-0">
-              <span class="text-sm text-primary truncate block">{tune.name}</span>
+              <span class="text-sm text-primary name-wrap block">{tune.name}</span>
               <span class="text-xs text-dim truncate block">
                 {tune.via !== undefined ? `${tune.type} · ${t('search.viaAlias', { alias: tune.via })}` : tune.type}
               </span>
@@ -638,7 +638,7 @@ function MemberTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         items={suggestions}
         open={dropdownOpen}
         onPick={pick}
-        renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
+        renderItem={(m) => <span class="text-sm text-primary name-wrap">{m.name}</span>}
       />
     </>
   );
@@ -844,7 +844,7 @@ function BookmarksTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         items={suggestions}
         open={dropdownOpen}
         onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id, false); setStatus(''); }}
-        renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
+        renderItem={(m) => <span class="text-sm text-primary name-wrap">{m.name}</span>}
       />
     </>
   );
@@ -1073,7 +1073,7 @@ function SetsTab({ getTargetDeckIds, withDeckChoice, setStatus }: {
         items={suggestions}
         open={dropdownOpen}
         onPick={(m) => { setValue(m.name); setDropdownOpen(false); void showMemberPreview(m.id, false); setStatus(''); }}
-        renderItem={(m) => <span class="text-sm text-primary truncate">{m.name}</span>}
+        renderItem={(m) => <span class="text-sm text-primary name-wrap">{m.name}</span>}
       />
     </>
   );

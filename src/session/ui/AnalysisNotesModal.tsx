@@ -103,13 +103,15 @@ export function showAnalysisNotesModal(notes: string, onSave: (notes: string) =>
 /** The same, on one detection (2026-11-16): the very same two states, under
  *  the tune's name. */
 export function showDetectionNotesModal(name: string, notes: string, onSave: (notes: string) => void): void {
-  showNotesModal(t('sessions.detection.notes.title', { name }), t('sessions.detection.notes.placeholder'), notes, onSave);
+  showNotesModal(t('sessions.detection.notes.title', { name }), t('sessions.detection.notes.placeholder'), notes, onSave, 'whole');
 }
 
-function showNotesModal(title: string, placeholder: string, notes: string, onSave: (notes: string) => void): void {
+/** `nameTitle`: the title holds a tune's name, shown whole (ModalOptions). */
+function showNotesModal(title: string, placeholder: string, notes: string, onSave: (notes: string) => void, nameTitle?: 'whole'): void {
   const box: NotesBox = { saved: notes, draft: notes, save: () => false };
   const { el, cleanup } = renderModalBody(<NotesBody box={box} onSave={onSave} placeholder={placeholder} />);
   showModal(title, el, [], {
+    nameTitle,
     maxWidth: MODAL_W.l,
     onDismiss: cleanup,
     guardDismiss: (dismiss) => {

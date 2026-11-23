@@ -119,7 +119,7 @@ function DeckRow({ name, state, already, onCycle }: {
         disabled={already}
         onClick={() => onCycle(false)}
       />
-      <span class="text-sm text-primary flex-1 truncate">{name}</span>
+      <span class="text-sm text-primary flex-1 name-wrap">{name}</span>
       {state === 'pinned' && (
         <span class="text-accent shrink-0" title={t('deckChoice.pinned')}><PinIcon size={12} /></span>
       )}
@@ -332,7 +332,7 @@ function DeckPickerPopover({ selected, onChange }: { selected: Set<string>; onCh
                 checked={selected.has(deck.id)}
                 onChange={() => toggle(deck.id)}
               />
-              <span class="text-sm text-primary truncate">{deck.name}</span>
+              <span class="text-sm text-primary name-wrap">{deck.name}</span>
             </label>
           ))}
 

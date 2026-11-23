@@ -4239,6 +4239,9 @@ export function showPreviewModal(
   const isScore = isAbcFile(entry);
   const onRename = opts?.onRename;
   showModal(entry.name, body, [], {
+    // A file's name: in its own case, on one line — a viewer's title may be
+    // cut (N3e, the user).
+    nameTitle: 'line',
     maxWidth: isScore && opts?.initialFace === 'both' && onSave ? BOTH_FACES_WIDTH : modalWidth(entry),
     // The version arrows and the Sheet / ABC tabs are pressed again and again,
     // and every version, every face, is its own height (reported 2026-10-23).

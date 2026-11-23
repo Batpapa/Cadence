@@ -2209,7 +2209,6 @@
   "sessions.ranking.show": "Voir les passages",
   "sessions.ranking.inSessions.one": "dans 1 séance",
   "sessions.ranking.inSessions.other": "dans {s} séances",
-  "sessions.openDetection": "Ouvrir ce moment dans l'analyse",
   "sessions.seekBar": "Position dans le morceau",
   "sessions.forgetAudio": "Oublier l'audio",
   "sessions.forgetAudio.title": "Oublier l'audio",

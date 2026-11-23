@@ -79,7 +79,7 @@ function CheckboxList({ items, draft, extra }: {
       {[...items, ...added].map(({ id, label, info }) => (
         <label key={id} class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-elevated cursor-pointer">
           <input type="checkbox" class="card-checkbox" checked={chosen.has(id)} onChange={() => toggle(id)} />
-          <span class="text-sm text-primary flex-1 truncate">{label}</span>
+          <span class="text-sm text-primary flex-1 name-wrap">{label}</span>
           <span class="text-xs text-dim shrink-0">{info}</span>
         </label>
       ))}
@@ -382,7 +382,7 @@ function CardTypeBody({ cardIds, draft }: { cardIds: string[]; draft: Draft & { 
           {losing.map(c => (
             <div key={c.id} class="flex items-center gap-2 text-xs font-mono text-muted truncate">
               <span class="shrink-0 flex items-center text-dim">{cardTypeIcon(CARD_TYPE_TUNESET, 12)}</span>
-              <span class="truncate">{c.name}</span>
+              <span class="name-wrap">{c.name}</span>
               <span class="text-dim shrink-0">
                 {t((c.tunes?.length ?? 0) === 1 ? 'library.batch.type.tuneCount' : 'library.batch.type.tuneCountPlural', { count: c.tunes?.length ?? 0 })}
               </span>

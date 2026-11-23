@@ -153,20 +153,11 @@ export function SetHearingRow({ session, chain, setCard, title, player, interact
           tunes={chain.map(d => ({ label: tuneName(d).text, settingId: hasRecognisedSetting(d) ? d.settingId : null, keyOffset: keyOffsetOf(d) }))}
         />
       </div>
-      {/* The pill is the drawing, the button around it a 32 px target — as
-          PassRow's. */}
-      <button
-        class={`group shrink-0 inline-flex items-center min-h-8 ${interactive ? 'cursor-pointer' : ''}`}
-        title={t('sessions.openDetection')}
-        onClick={onOpen}
-      >
-        <span class={`text-2xs font-mono px-1.5 py-0.5 rounded-full border border-border text-muted ${interactive ? 'group-hover:border-accent' : ''}`}>
-          {fmtLongTime(span.start)}
-        </span>
-      </button>
+      {/* No time code before the name, as PassRow's (2026-11-23, the user):
+          in the tooltip only. */}
       <button
         class={`text-sm text-muted min-w-0 min-h-8 text-left flex-1 inline-flex items-center gap-1.5 ${interactive ? 'cursor-pointer hover:text-primary transition-colors' : ''}`}
-        title={session.name}
+        title={`${session.name} · ${fmtLongTime(span.start)}`}
         onClick={onOpen}
       >
         <span class="truncate min-w-0">{session.name}</span>

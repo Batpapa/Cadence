@@ -962,6 +962,8 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
 .lib-list { container-type: inline-size; }
 .lib-date { display: none; }
 @container (min-width: 450px) { .lib-date { display: block; } }
+/* A deck's list: the dates give way to the cards' names (deck.tsx, N3e). */
+.lib-dates-off .lib-date { display: none; }
 
 /* Stats grid — container-query responsive (4 → 2 → 1 columns) */
 .stats-container {
@@ -1004,6 +1006,17 @@ body > svg[style*="height: 1px"][style*="position: absolute"] {
    same pixels. The list is measured in layout pixels, after the zoom: at
    125 % both rules bite on a window 1.25 times wider, at 80 % on one 0.8
    times as wide. One number each to move. */
+/* A name of the user's — a card, a deck, an analysis, a folder, a tune
+   (N3e, 2026-11-23, the user): never cut short with an ellipsis; what is
+   beside it gives way first where something can, then it goes on another
+   line. `anywhere` rather than `break-word`: a flex item's minimum width then
+   counts the name as breakable, so it makes room instead of pushing its row
+   wider. Kept cut, as a file explorer cuts (the user): the sidebar (widened
+   by hand), a card's attachments and its links to other cards — "Referenced
+   by", "Played in sets" — the passes of "Detected in", the card's aliases, a
+   viewer's title, labels of the app's own. */
+.name-wrap { min-width: 0; overflow-wrap: anywhere; }
+
 .analysis-list { container: analysis-list / inline-size; }
 .detection-name-below, .detection-name-spacer { display: none; }
 @container analysis-list (max-width: 439.98px) {

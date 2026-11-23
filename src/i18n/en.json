@@ -2209,7 +2209,6 @@
   "sessions.ranking.show": "Show where it was heard",
   "sessions.ranking.inSessions.one": "in 1 session",
   "sessions.ranking.inSessions.other": "in {s} sessions",
-  "sessions.openDetection": "Open this moment in the analysis",
   "sessions.seekBar": "Position in the tune",
   "sessions.forgetAudio": "Forget audio",
   "sessions.forgetAudio.title": "Forget audio",

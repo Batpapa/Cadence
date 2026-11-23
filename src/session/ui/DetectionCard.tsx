@@ -490,7 +490,7 @@ function NavigableName({ label, tuneId, settingId, knownCardId, onOpenCard, layo
   // No `block` on the line below: its display is the stylesheet's to give.
   const size = layout === 'large' ? 'block w-fit max-w-full break-words text-2xl min-[480px]:text-3xl font-bold leading-tight'
     : layout === 'below' ? 'detection-name-below w-fit max-w-full break-words text-sm font-semibold leading-snug'
-    : 'detection-name-inline text-sm font-semibold truncate flex-1 min-w-0';
+    : 'detection-name-inline text-sm font-semibold leading-snug name-wrap flex-1';
   const cls = `${size} ${knownCardId || !hasLibrary() ? 'text-primary' : 'text-muted'} cursor-pointer hover:text-accent transition-colors`;
   label = tuneName({ tuneId, displayName: label }).text;
   if (knownCardId) {

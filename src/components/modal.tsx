@@ -91,6 +91,12 @@ export interface ModalOptions {
    *  the caller decides whether it is a new name, persists it, and shows it with
    *  `updateTopModal`. */
   titleEdit?: { suffix: string; onCommit: (value: string) => void };
+  /** The title is a name of the user's — a file's, a tune's (N3e, 2026-11-23,
+   *  the user): in its own case and whole, on more lines if need be, not the
+   *  dialogs' small spaced capitals cut short. 'line': its own case, on one
+   *  line, cut short if it must — a file viewer's (the user: a viewer's
+   *  title may be cut). */
+  nameTitle?: 'whole' | 'line';
   /** Asked before a USER dismissal (✕, Escape, the back gesture, a click
    *  outside) goes through. Return true to hold it — an edit not yet saved,
    *  typically, whose owner asks first — and call `dismiss` once the answer
@@ -192,6 +198,7 @@ interface ModalEntry {
   onExpandedChange?: (expanded: boolean) => void;
   onBack?: () => void;
   titleEdit?: ModalOptions['titleEdit'];
+  nameTitle: 'whole' | 'line' | null;
   guardDismiss?: ModalOptions['guardDismiss'];
   pinTop: boolean;
   fill: boolean;
@@ -318,6 +325,7 @@ export function showModal(title: string, body: HTMLElement, actions: ModalAction
     dismissable: opts.dismissable ?? true,
     maxWidth: opts.maxWidth ?? '28rem',
     titleEdit: opts.titleEdit,
+    nameTitle: opts.nameTitle ?? null,
     onDismiss: opts.onDismiss,
     headerActions: opts.headerActions ?? [],
     expandable: opts.expandable ?? false,
@@ -476,12 +484,16 @@ function IconMount({ el }: { el: Element }) {
 }
 
 const TITLE_CLASS = MODAL_TITLE_CLASS;
+/** A title that is a name (ModalOptions.nameTitle): whole, or on one line. */
+const NAME_TITLE_CLASS = 'text-sm font-semibold text-primary name-wrap leading-snug';
+const NAME_LINE_CLASS = 'text-sm font-semibold text-primary truncate';
 
 /** The header title, renamable in place when the modal asked for it (see
  *  ModalOptions.titleEdit). Module scope, not declared inside ModalDialog: a
  *  component defined during a render is a new type on every render, and its
  *  field would be torn down mid-typing. */
-function ModalTitle({ title, titleEdit }: { title: string; titleEdit?: ModalOptions['titleEdit'] }) {
+function ModalTitle({ title, titleEdit, nameTitle }: { title: string; titleEdit?: ModalOptions['titleEdit']; nameTitle: 'whole' | 'line' | null }) {
+  const cls = nameTitle === 'whole' ? NAME_TITLE_CLASS : nameTitle === 'line' ? NAME_LINE_CLASS : TITLE_CLASS;
   const [draft, setDraft] = useState<string | null>(null);
   // Enter commits and unmounts the field, and the unmount blurs it: without
   // this, the blur would commit the same name a second time.
@@ -494,14 +506,14 @@ function ModalTitle({ title, titleEdit }: { title: string; titleEdit?: ModalOpti
     inputRef.current?.focus({ preventScroll: true });
     inputRef.current?.select();
   }, [editing]);
-  if (!titleEdit) return <h2 class={TITLE_CLASS}>{title}</h2>;
+  if (!titleEdit) return <h2 class={cls}>{title}</h2>;
 
   const { suffix, onCommit } = titleEdit;
   const base = suffix && title.endsWith(suffix) ? title.slice(0, -suffix.length) : title;
   if (draft === null) {
     return (
       <h2
-        class={`${TITLE_CLASS} cursor-pointer hover:text-primary transition-colors`}
+        class={`${cls} cursor-pointer ${nameTitle ? 'hover:text-accent' : 'hover:text-primary'} transition-colors`}
         title={t('common.clickToRename')}
         onClick={() => { settled.current = false; setDraft(base); }}
       >{title}</h2>
@@ -582,11 +594,15 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
         onPointerDownCapture={pinned.onPointerDownCapture}
         onKeyDownCapture={pinned.onKeyDownCapture}
       >
-        <div class="flex items-center justify-between gap-2 px-5 py-2.5 min-h-[3.25rem] border-b border-border shrink-0">
+        {/* A name for a title (nameTitle): beside the controls while it has
+            14rem there, else on a line of its own over them, the whole width —
+            squeezed beside them, a file's name stood eight lines tall in a
+            narrow column on a phone (2026-11-23). */}
+        <div class={`flex items-center justify-between gap-2 px-5 py-2.5 min-h-[3.25rem] border-b border-border shrink-0${entry.nameTitle === 'whole' ? ' flex-wrap gap-y-1' : ''}`}>
           {/* Same shape as the card export modal, which is the reference:
               arrow and title share a row, the title truncates, the arrow
               never shrinks. */}
-          <div class="flex items-center gap-2 min-w-0">
+          <div class={`flex items-center gap-2 min-w-0${entry.nameTitle === 'whole' ? ' flex-[1_1_14rem]' : ''}`}>
             {entry.onBack && (
               <button
                 class="icon-btn -ml-2"
@@ -595,11 +611,12 @@ function ModalDialog({ entry }: { entry: ModalEntry }) {
                 onClick={entry.onBack}
               ><ArrowLeftIcon size={16} /></button>
             )}
-            <ModalTitle title={entry.title} titleEdit={entry.titleEdit} />
+            <ModalTitle title={entry.title} titleEdit={entry.titleEdit} nameTitle={entry.nameTitle} />
           </div>
           {/* No gap: each control is a 32 px target already, and the title,
-              which truncates, needs the room on a phone. */}
-          <div class="flex items-center shrink-0">
+              which truncates, needs the room on a phone. Kept to the right
+              when they go under a name. */}
+          <div class="flex items-center shrink-0 ml-auto">
             {entry.headerActions.map((action, i) => (
               <button
                 key={i}

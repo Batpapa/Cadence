@@ -657,10 +657,14 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                   <span class="text-muted shrink-0 flex items-center">
                     <FolderIcon size={14} />
                   </span>
-                  <span class="text-sm text-primary flex-1 truncate">{sub.name}</span>
-                  <span class="text-xs text-dim shrink-0">{t(sub.folderIds.length === 1 ? 'folder.meta.folders' : 'folder.meta.foldersPlural', { count: sub.folderIds.length })}
-                    {' · '}
-                    {t(sub.deckIds.length === 1 ? 'folder.meta.decks' : 'folder.meta.decksPlural', { count: sub.deckIds.length })}</span>
+                  {/* What it holds under its name, not beside it: the name
+                      has the row's width (N3e, 2026-11-23). */}
+                  <span class="flex-1 min-w-0">
+                    <span class="block text-sm text-primary name-wrap">{sub.name}</span>
+                    <span class="block text-xs text-dim">{t(sub.folderIds.length === 1 ? 'folder.meta.folders' : 'folder.meta.foldersPlural', { count: sub.folderIds.length })}
+                      {' · '}
+                      {t(sub.deckIds.length === 1 ? 'folder.meta.decks' : 'folder.meta.decksPlural', { count: sub.deckIds.length })}</span>
+                  </span>
                 </div>
               );
             })}
@@ -720,11 +724,16 @@ export function FolderView({ folderId }: { folderId: string | null }) {
                     />
                   </span>
 
-                  <span class="text-sm text-primary flex-1 truncate">{deck.name}</span>
-                  <span class="text-xs font-mono text-dim shrink-0">
-                    {lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}
+                  {/* Its cards and last review under its name, as a
+                      folder's contents: the name has the row's width. */}
+                  <span class="flex-1 min-w-0">
+                    <span class="block text-sm text-primary name-wrap">{deck.name}</span>
+                    <span class="block text-xs text-dim">
+                      {t(deck.entries.length === 1 ? 'folder.deckMeta' : 'folder.deckMetaPlural', { count: deck.entries.length })}
+                      {' · '}
+                      <span class="font-mono">{lastTs ? timeAgo(lastTs) : t('card.neverReviewed')}</span>
+                    </span>
                   </span>
-                  <span class="text-xs text-dim shrink-0">{t(deck.entries.length === 1 ? 'folder.deckMeta' : 'folder.deckMetaPlural', { count: deck.entries.length })}</span>
                 </div>
               );
             })}

@@ -573,7 +573,7 @@ function UserSelector({ users, onSelect, onCreate, onRecover }: {
                 <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background:rgb(var(--color-accent-ch)/0.18)">
                   <span class="text-xs font-mono font-bold text-accent">{initialsOf(u.name)}</span>
                 </div>
-                <span class="text-sm font-medium text-primary truncate flex-1">{u.name}</span>
+                <span class="text-sm font-medium text-primary name-wrap flex-1">{u.name}</span>
               </button>
             ))}
 

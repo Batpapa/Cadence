@@ -351,7 +351,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
         {trailing}
       </div>
 
-      {pending && <p class="text-xs text-muted truncate">{pending.name} · {factsText(pending)}</p>}
+      {pending && <p class="text-xs text-muted name-wrap">{pending.name} · {factsText(pending)}</p>}
       {status && (statusError
         ? <InlineStatus tone="error">{status}</InlineStatus>
         : <p class="text-xs text-dim">{status}</p>)}
@@ -369,7 +369,7 @@ export function TuneLookupField({ onResolved, trailing, onSubmit, autoFocus = tr
                   them: beside it, three of them left a phone's name a few
                   letters wide. The alias goes right under the name it stands
                   for, the facts after. */}
-              <span class="text-sm text-primary truncate block">{tune.name}</span>
+              <span class="text-sm text-primary name-wrap block">{tune.name}</span>
               {tune.via !== undefined && <span class="text-xs text-dim truncate block">{t('search.viaAlias', { alias: tune.via })}</span>}
               <span class="text-xs text-dim truncate block">{factsText(tune)}</span>
             </button>

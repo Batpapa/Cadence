@@ -1269,7 +1269,7 @@ export function LibraryView() {
                   </span>
 
                   <span class="flex-1 min-w-0">
-                    <span class={`text-sm text-primary block truncate ${selected.size === 0 ? 'hover:text-accent transition-colors' : ''}`}>
+                    <span class={`text-sm text-primary block name-wrap ${selected.size === 0 ? 'hover:text-accent transition-colors' : ''}`}>
                       {card.name}
                     </span>
                     {/* Why a row whose name does not contain the search is here. */}

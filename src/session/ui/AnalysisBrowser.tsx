@@ -201,12 +201,12 @@ function Card({ icon, iconTitle, name, detail, onOpen, dragItem, target, accepts
     <div ref={ref} class="rounded-lg border border-border bg-bg hover:border-accent/50 transition-colors" {...(fromKey ? fromAttrs(fromKey) : {})}>
       <div class="flex items-center gap-3 p-3 cursor-pointer" data-tour={target.kind === 'session' ? 'analysis-row' : undefined} onClick={onOpen}>
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium text-primary truncate flex items-center gap-1.5">
+          <div class="text-sm font-medium text-primary flex items-start gap-1.5">
             {/* Before the name, not after it: these are scanned down a column,
                 and an icon that moves with the end of a truncated name cannot
                 be scanned at all. */}
-            <span class="text-dim shrink-0 flex items-center" title={iconTitle}>{icon}</span>
-            <span class="truncate">{name}</span>
+            <span class="text-dim shrink-0 flex items-center h-5" title={iconTitle}>{icon}</span>
+            <span class="name-wrap">{name}</span>
           </div>
           <div class="text-xs text-dim">{detail}</div>
         </div>
@@ -357,7 +357,7 @@ export function AnalysisBrowser({ ctx, sessions, query, folderId, onOpenFolder, 
                 <span class="text-dim">/</span>
                 <button
                   type="button"
-                  class={`min-h-8 truncate cursor-pointer transition-colors ${last ? 'text-primary font-medium cursor-default' : 'text-dim hover:text-accent'}`}
+                  class={`min-h-8 name-wrap text-left cursor-pointer transition-colors ${last ? 'text-primary font-medium cursor-default' : 'text-dim hover:text-accent'}`}
                   disabled={last}
                   onClick={() => onOpenFolder(folder.id)}
                 >

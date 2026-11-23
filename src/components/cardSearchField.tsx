@@ -147,7 +147,7 @@ export function CardSearchField(props: Props) {
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => take(item)}
             >
-              <span class="block truncate text-primary">{item.name}</span>
+              <span class="block name-wrap text-primary">{item.name}</span>
               {via !== undefined && <span class="block truncate text-xs text-dim">{t('search.viaAlias', { alias: via })}</span>}
             </button>
           ))}

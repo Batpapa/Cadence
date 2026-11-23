@@ -207,7 +207,10 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
   };
 
   return (
-    <div class="flex items-center gap-2">
+    // The buttons top right, always, the name whole beside them on as many
+    // lines as it needs (N3e, 2026-11-23) — the deck's header rule
+    // (2026-11-11, the user). It used to be cut short.
+    <div class="flex items-start gap-2">
       {editing ? (
         <input
           ref={inputRef}
@@ -220,7 +223,7 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
         />
       ) : (
         <h1
-          class="text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors flex-1 min-w-0 truncate"
+          class="text-xl font-semibold text-primary cursor-text hover:text-accent transition-colors flex-1 name-wrap"
           title={t('common.clickToRename')}
           onClick={startEdit}
         >
@@ -228,6 +231,7 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
         </h1>
       )}
 
+      <div class="flex items-center gap-2 ml-auto shrink-0">
       {onNotes && (
         <IconButton
           label={t(hasNotes ? 'sessions.notes.open' : 'sessions.notes.add')}
@@ -266,6 +270,7 @@ export function TitleRow({ getName, getDefaultName, onRename, onDelete, menu, on
       >
         <TrashIcon size={14} />
       </IconButton>
+      </div>
     </div>
   );
 }

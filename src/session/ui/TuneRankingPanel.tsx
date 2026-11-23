@@ -1179,9 +1179,9 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                     <TuneDeckButton tuneId={row.tuneId} ctx={ctx} onCardAdded={refresh} cardOf={cardOf} />
                   )}
 
-                  {/* One line, truncated — a library row never grows to two,
-                      and a list whose rows are all the same height is a list
-                      you can run your eye down. */}
+                  {/* The name whole, on more lines if it must (N3e, 2026-11-23,
+                      the user) — it used to be one line, cut short, for rows
+                      all of a height. */}
                   <div class="flex-1 min-w-0 flex items-center gap-1.5">
                     {/* A set says what it is with the set icon — the library's
                         own glyph for a set card — before its name. */}
@@ -1191,10 +1191,10 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                         separate buttons for it — one name, one destination.
                         A set without a card has nowhere to go: plain text. */}
                     {members && !cardId ? (
-                      <span class={`text-sm ${hasLibrary() ? 'text-muted' : 'text-primary'} truncate`}>{name}</span>
+                      <span class={`text-sm ${hasLibrary() ? 'text-muted' : 'text-primary'} name-wrap`}>{name}</span>
                     ) : cardId ? (
                       <span
-                        class={`text-sm text-primary truncate ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
+                        class={`text-sm text-primary name-wrap ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
                         title={t('sessions.openCard')}
                         onClick={(e) => {
                           if (claimedBySelection(e, row.tuneId)) return;
@@ -1206,11 +1206,11 @@ export function TuneRankingPanel({ sessions, query, view, onView, filtersShown }
                       </span>
                     ) : isCardId(row.tuneId) ? (
                       // A card's own tune (cardIndex.ts) whose card is gone: nowhere to go.
-                      <span class="text-sm text-muted truncate">{name}</span>
+                      <span class="text-sm text-muted name-wrap">{name}</span>
                     ) : (
                       // Muted, as in an analysis: no card yet.
                       <a
-                        class={`text-sm ${hasLibrary() ? 'text-muted' : 'text-primary'} truncate ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
+                        class={`text-sm ${hasLibrary() ? 'text-muted' : 'text-primary'} name-wrap ${selected.size === 0 ? 'cursor-pointer hover:text-accent transition-colors' : ''}`}
                         title={t('sessions.viewOnTheSession')}
                         href={`https://thesession.org/tunes/${row.tuneId}`}
                         target="_blank"

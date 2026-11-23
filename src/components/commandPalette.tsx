@@ -199,7 +199,7 @@ function CommandPalette({ getCtx }: { getCtx: () => AppContext }) {
                   {t(`commandPalette.kind.${item.kind}`)}
                 </span>
                 <div class="flex-1 min-w-0">
-                  <span class="text-sm text-primary block truncate">{item.label}</span>
+                  <span class="text-sm text-primary block name-wrap">{item.label}</span>
                   {item.sublabel && <span class="text-xs text-dim truncate block">{item.sublabel}</span>}
                 </div>
               </div>
