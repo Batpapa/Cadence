@@ -434,12 +434,12 @@ export function detectionAudioSync(sessionId: string, detection: Detection, here
     // A version is a tune when it has a key: the header abcjs needs to read
     // the notes. One without notes fails on its own, and says so.
     plays: (version) => /^K:/m.test(version),
-    mount: (host, version, face, expanded, onState, forced, transpose, below) => {
+    mount: (host, version, face, expanded, onState, forced, transpose, below, editor) => {
       // Two players at once would talk over each other from behind the dialog.
       beforeOpen?.();
       return mountScoreFollow(host, {
         target: { kind: 'passage', start: detection.start, end: detection.end ?? detection.start + 60 },
-        version, getAudio, face, expanded, onState, forced, transpose, below,
+        version, getAudio, face, expanded, onState, forced, transpose, below, editor,
       });
     },
   };

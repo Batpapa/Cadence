@@ -1,6 +1,6 @@
 import type { FollowResult } from './scoreFollow';
 import { NoveltyStore } from './liveTempo';
-import type { ScoreFollowRequest, ScoreFollowResponse, FollowFailure, FollowStage } from './recognition/scoreFollowWorker';
+import type { ScoreFollowRequest, ScoreFollowResponse, FollowFailure, FollowStage, HeardSpan } from './recognition/scoreFollowWorker';
 
 export type { FollowFailure } from './recognition/scoreFollowWorker';
 
@@ -89,6 +89,14 @@ export interface FollowSamples { pcm: Float32Array; rate: number; from: number }
 const done = new Map<string, { follow: SessionFollow; from: number; to: number }>();
 let lastSamples: { key: string; samples: FollowSamples } | null = null;
 
+/** What the last stretch aligned gave the engine, for another score on the
+ *  same stretch — an edit aligned anew under the audio sync (N3b,
+ *  2026-11-23): decoding and listening are two thirds of the work, measured
+ *  that day (1.7 s and 2 s of 5.4 for a 2 min 30 pass), and depend on the
+ *  audio alone. The last one only: a few MB. `stretch`: the recording and
+ *  where the tune is in it — the score left out. */
+let lastHeard: { stretch: string; from: number; to: number; seconds: number; heard: HeardSpan } | null = null;
+
 /** Where `score` — one MIDI pitch per quaver of a pass (syncedScore.tsx's
  *  scoreContour) — is played in `range` of `audio`, or anywhere in it; or
  *  `settingId`'s index contour, when that fits the recording better (the
@@ -105,14 +113,19 @@ export function followAudio(
 ): Promise<SessionFollow | FollowFailure> {
   const where = range ? `${range.start.toFixed(3)}|${range.end.toFixed(3)}` : 'all';
   const key = `${audio.id ?? ''}|${audio.blob.size}@${audio.start}|${score.join('.')}|${settingId ?? ''}|${where}`;
+  const stretch = `${audio.id ?? ''}|${audio.blob.size}@${audio.start}|${where}`;
   const known = done.get(key);
   if (known && (!onSamples || lastSamples?.key === key)) {
     if (onSamples) onSamples(lastSamples!.samples);
     return Promise.resolve(known.follow);
   }
+  // Heard already, and no samples wanted: the alignment alone.
+  const heard = !known && !onSamples && lastHeard?.stretch === stretch ? lastHeard : null;
   // Known, but not its samples: decoded again — the quick part of the work.
   const request: ScoreFollowRequest = known
     ? { type: 'decode', audio: audio.blob, from: known.from, to: known.to }
+    : heard
+      ? { type: 'follow', audio: audio.blob, score, settingId, from: heard.from, to: heard.to, features: heard.heard }
     // In the audio's own time: a passage fetched from Drive starts at `from`.
     // The alignment's time 0 stays `from` either way.
     : range
@@ -122,7 +135,9 @@ export function followAudio(
     const worker = new Worker(new URL('./recognition/scoreFollowWorker.ts', import.meta.url), { type: 'module' });
     signal?.addEventListener('abort', () => worker.terminate(), { once: true });
     let weights = WEIGHTS;
-    let span: { from: number; to: number; seconds: number } | null = null;
+    let span: { from: number; to: number; seconds: number } | null = heard
+      ? { from: heard.from, to: heard.to, seconds: heard.seconds }
+      : null;
     worker.onmessage = (e: MessageEvent<ScoreFollowResponse>) => {
       const msg = e.data;
       if (msg.type === 'progress') {
@@ -145,6 +160,7 @@ export function followAudio(
         const at = span ?? { from: request.from, to: request.from, seconds: 0 };
         const follow = { ...msg.result, from: audio.start + at.from, seconds: at.seconds };
         done.set(key, { follow, from: at.from, to: at.to });
+        if (msg.heard && span) lastHeard = { stretch, ...span, heard: msg.heard };
         resolve(follow);
       } else if (msg.type === 'failed') resolve(msg.reason);
       else reject(new Error(msg.type === 'error' ? msg.message : `unexpected ${msg.type}`));

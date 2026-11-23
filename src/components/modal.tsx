@@ -228,6 +228,15 @@ export function closeModalOf(body: HTMLElement): void {
   modalStack.value = modalStack.value.filter(e => e !== entry);
 }
 
+/** Closes the topmost modal as a dismissal does, its `onDismiss` run — past
+ *  its guard: for a dialog whose own action hands over to another (the score
+ *  viewer to the copy it just made, theSessionCopy.ts). `closeModal` alone
+ *  left that viewer's audio sync playing behind the new one (2026-11-23). */
+export function dismissTopModal(): void {
+  const top = modalStack.value[modalStack.value.length - 1];
+  if (top) completeDismiss(top);
+}
+
 /** Pops the whole stack, running every entry's `onDismiss`. For the rare
  *  action inside a modal that navigates elsewhere: popping one would leave the
  *  dialogs below it hanging over a view they have nothing to do with. */

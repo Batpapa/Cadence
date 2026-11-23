@@ -1,4 +1,4 @@
-import { signal, type Signal } from '@preact/signals';
+import { batch, signal, type Signal } from '@preact/signals';
 import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import {
@@ -6,6 +6,7 @@ import {
 } from '../scoreFollowClient';
 import { AudioPlayer, stopCurrentAudio, type AudioPlayerHooks, type Region } from '../../components/audioPlayer';
 import { scoreContour, bareScore, meterOf } from '../../components/syncedScore';
+import type { ScoreEditor } from '../../components/scoreEditor';
 import { MATCH_GOOD, MATCH_USABLE, withPickup } from '../scoreFollow';
 import { signedKeyOffset } from '../model';
 import { keyGapText } from '../keyName';
@@ -129,8 +130,9 @@ function usable(phase: Phase, target: FollowTarget, forced: boolean): SessionFol
 /** What the viewer's Audio sync toggle shows of the alignment (AudioSyncState):
  *  its colour, the words and figures in its tooltip — which, followed by
  *  force, says so: the colour stays the verdict. */
-function stateOf(phase: Phase, target: FollowTarget, forced: boolean, shown: number): AudioSyncState {
+function stateOf(phase: Phase, target: FollowTarget, forced: boolean, shown: number, edited: boolean): AudioSyncState {
   const s = verdictOf(phase, target, shown);
+  if (s.kind === 'aligning' && edited) return { ...s, again: true };
   return forced && s.kind === 'none' && phase.kind === 'ready'
     ? { ...s, title: `${t('fileViewer.abc.audioSync.forced')} · ${s.title}` }
     : s;
@@ -184,10 +186,15 @@ const WHOLE: Region = { start: 0, end: Number.POSITIVE_INFINITY };
  *  closed meanwhile. */
 type GetAudio = (onStatus: (s: FollowStatus) => void, signal: AbortSignal) => Promise<FollowAudio | undefined>;
 
-function ScoreFollowView({ target, version, getAudio, face, onState, forced, transpose, below }: {
+function ScoreFollowView({ target, version, edited, getAudio, face, onState, forced, transpose, below, editor }: {
   target: FollowTarget;
   /** The version on the viewer's screen: its ABC. */
   version: Signal<string>;
+  /** That version is being written (AudioSyncView.setVersion): aligned on
+   *  what is drawn alone — the TheSession setting its `S:` line names is
+   *  the setting's music, which the edit has left (2026-11-22, the user:
+   *  only TheSession's own ABC is that setting). */
+  edited: Signal<boolean>;
   getAudio: GetAudio;
   face: Signal<ScoreFace>;
   onState: (s: AudioSyncState) => void;
@@ -198,13 +205,19 @@ function ScoreFollowView({ target, version, getAudio, face, onState, forced, tra
   transpose: Signal<number>;
   /** Between the score and the player: the viewer's source tabs. */
   below?: HTMLElement;
+  /** The viewer's text box, written in on the "both" face. */
+  editor?: ScoreEditor;
 }) {
   const shown = version.value;
+  const isEdited = edited.value;
   const shift = transpose.value;
   const isForced = forced.value;
   const [phase, setPhase] = useState<Phase>({ kind: 'aligning', status: null });
   const [score, setScore] = useState<{ abc: string; meter: string } | null>(null);
   const samples = useMemo(() => deferred<FollowSamples>(), []);
+  /** The player has them: a version aligned after that is not decoded again
+   *  (followAudio keeps what the recording alone gave). */
+  const samplesIn = useRef(false);
   const follow = usable(phase, target, isForced);
 
   // The region the player opens on. A detection's: its range, always — not
@@ -255,12 +268,12 @@ function ScoreFollowView({ target, version, getAudio, face, onState, forced, tra
         if (cancelled) return;
         if (!audio) { samples.reject(new Error(failureText('no_audio'))); setPhase({ kind: 'failed', reason: 'no_audio' }); return; }
         if (!contour) { setPhase({ kind: 'failed', reason: 'no_contour' }); return; }
-        const result = await followAudio(audio, contour, settingOfVersion(shown),
+        const result = await followAudio(audio, contour, isEdited ? undefined : settingOfVersion(shown),
           target.kind === 'passage' ? { start: target.start, end: target.end } : null,
           setStatus,
           stopWork.signal,
           // Only the first time counts: the player has its samples already.
-          s => samples.resolve(s));
+          samplesIn.current ? undefined : (s) => { samplesIn.current = true; samples.resolve(s); });
         if (cancelled) return;
         if (typeof result === 'string') {
           // Nothing to play when nothing was decoded — the recording
@@ -287,7 +300,7 @@ function ScoreFollowView({ target, version, getAudio, face, onState, forced, tra
   // with a version, which keeps the player.
   useEffect(() => () => stopCurrentAudio(), []);
 
-  useEffect(() => { onState(stateOf(phase, target, isForced, shift)); }, [phase, isForced, shift]);
+  useEffect(() => { onState(stateOf(phase, target, isForced, shift, isEdited)); }, [phase, isForced, shift, isEdited]);
   // No alignment followed: the whole waveform in its verdict's colour — the
   // share of notes when there is a fair one, red for a part aligned by
   // chance or none at all.
@@ -362,7 +375,7 @@ function ScoreFollowView({ target, version, getAudio, face, onState, forced, tra
     <div ref={rootRef} class={`flex-1 min-h-0 flex flex-col${page ? '' : ' -mx-4 -mt-3.5'}`}>
       <AudioPlayer
         hooks={{ ...hooks, region }}
-        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight: 'none', fill: true, face: face.value, tools, tint, keyShift: shift, below: page ? undefined : below } : undefined}
+        score={score ? { abc: score.abc, meter: score.meter, follow, maxHeight: 'none', fill: true, face: face.value, tools, tint, keyShift: shift, below: page ? undefined : below, editor } : undefined}
       />
     </div>
   );
@@ -384,20 +397,23 @@ export function mountScoreFollow(host: HTMLElement, opts: {
   transpose: number;
   /** The viewer's source tabs, put between the score and the player. */
   below?: HTMLElement;
+  /** The viewer's text box, for its editor's face (SyncedScoreProps.editor). */
+  editor?: ScoreEditor;
 }): AudioSyncView {
   const version = signal(opts.version);
+  const edited = signal(false);
   const face = signal(opts.face);
   const forced = signal(opts.forced);
   const transpose = signal(opts.transpose);
   render(
     <ScoreFollowView
-      target={opts.target} version={version} getAudio={opts.getAudio} face={face}
-      onState={opts.onState} forced={forced} transpose={transpose} below={opts.below}
+      target={opts.target} version={version} edited={edited} getAudio={opts.getAudio} face={face}
+      onState={opts.onState} forced={forced} transpose={transpose} below={opts.below} editor={opts.editor}
     />,
     host,
   );
   return {
-    setVersion: (v) => { version.value = v; },
+    setVersion: (v, isEdited = false) => batch(() => { edited.value = isEdited; version.value = v; }),
     setForced: (v) => { forced.value = v; },
     setFace: (f) => { face.value = f; },
     // Nothing to do: the score fills the room the dialog has, grown or not

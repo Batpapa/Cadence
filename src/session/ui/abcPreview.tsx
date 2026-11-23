@@ -7,7 +7,7 @@ import { fetchAbcLink, peekAbcLink } from '../../services/abcLink';
 import { hydratedEntry } from '../../services/attachmentStore';
 import { getAttachmentBlob } from '../../services/attachmentDb';
 import { arrayBufferToBase64 } from '../../utils';
-import { showPreviewModal, type AudioSyncBinding } from '../../components/fileViewer';
+import { showPreviewModal, type AudioSyncBinding, type AudioSyncCarry } from '../../components/fileViewer';
 import { theSessionEditGate } from '../../components/theSessionCopy';
 import { updateCardFile } from '../../services/cardFiles';
 import { getContext } from '../../store';
@@ -235,7 +235,7 @@ async function cardScorePreview(settingId: string, givenCardId: string | undefin
    *  user: the score is corrected along its recording): the user's own files
    *  saved as on the card, TheSession's edited on a copy (theSessionCopy.ts),
    *  a set's fused score and a link not at all. */
-  const show = (shown: FileEntry, at: number, version: number, favourite: number | undefined, edit: boolean): void => {
+  const show = (shown: FileEntry, at: number, version: number, favourite: number | undefined, edit: boolean, carry?: AudioSyncCarry): void => {
     const att = getContext().user.cards[cardId]?.content.attachments[at];
     // None on a link: it keeps nothing but its URL.
     const isFile = att?.type === 'file';
@@ -243,6 +243,7 @@ async function cardScorePreview(settingId: string, givenCardId: string | undefin
     const writable = isFile && !fromTheSession && att.generatedBy !== 'tuneset';
     showPreviewModal(shown, writable ? (data) => updateCardFile(cardId, at, data) : undefined, {
       audioSync,
+      audioSyncCarry: carry,
       initialIndex: version,
       initialFace: edit ? 'both' : undefined,
       // In the key it was played in: the card's file is the user's and is never
@@ -258,16 +259,16 @@ async function cardScorePreview(settingId: string, givenCardId: string | undefin
           }
         });
       },
-      editGate: fromTheSession ? (v) => void theSessionEditGate(cardId, at, v, (to, tv) => void showCopy(to, tv)) : undefined,
+      editGate: fromTheSession ? (v, c) => void theSessionEditGate(cardId, at, v, (to, tv, tc) => void showCopy(to, tv, tc), c) : undefined,
     });
   };
   /** The copy of TheSession's score, just made or found, on its editor. */
-  const showCopy = async (at: number, version: number): Promise<void> => {
+  const showCopy = async (at: number, version: number, carry?: AudioSyncCarry): Promise<void> => {
     const att = getContext().user.cards[cardId]?.content.attachments[at];
     if (att?.type !== 'file') return;
     let shown: FileEntry;
     try { shown = await hydratedEntry(att, true); } catch { return; }
-    show(shown, at, version, att.preferredIndex, true);
+    show(shown, at, version, att.preferredIndex, true, carry);
   };
   return () => show(entry, target.attachmentIndex, target.blockIndex, target.preferredIndex, false);
 }

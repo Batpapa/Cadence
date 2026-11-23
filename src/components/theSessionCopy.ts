@@ -2,7 +2,8 @@ import { appState } from '../store';
 import type { FileEntry } from '../types';
 import { hydratedEntry } from '../services/attachmentStore';
 import { copyCardFile } from '../services/cardFiles';
-import { showModal, closeModal } from './modal';
+import { showModal, closeModal, dismissTopModal } from './modal';
+import type { AudioSyncCarry } from './fileViewer';
 import { t } from '../services/i18nService';
 
 // ── Editing TheSession's score: on a copy (2026-11-22, the user) ─────────────
@@ -19,11 +20,13 @@ import { t } from '../services/i18nService';
 
 /** The editor's tab of TheSession's score at `index` of the card, pressed on
  *  `version` in a viewer still open. Asks, makes the copy, closes that viewer
- *  and calls `open` with the copy's place and the version to open it on.
- *  Nothing happens on a cancel, or once the file is gone. */
+ *  and calls `open` with the copy's place and the version to open it on —
+ *  and `carry`, that viewer's audio sync when it was on, for the copy's to
+ *  go on with it. Nothing happens on a cancel, or once the file is gone. */
 export async function theSessionEditGate(
   cardId: string, index: number, version: number,
-  open: (index: number, version: number) => void,
+  open: (index: number, version: number, carry?: AudioSyncCarry) => void,
+  carry?: AudioSyncCarry,
 ): Promise<void> {
   const att = appState.value.cards[cardId]?.content.attachments[index];
   if (!att || att.type !== 'file') return;
@@ -43,8 +46,11 @@ export async function theSessionEditGate(
         void copyCardFile(cardId, index, original.data).then(done => {
           closeModal();
           if (!done) return;
-          closeModal();
-          open(index, version);
+          // As a dismissal: its sound, its audio sync, its keys released —
+          // popped alone, its audio sync played on behind the copy's
+          // viewer (2026-11-23, the user).
+          dismissTopModal();
+          open(index, version, carry);
         });
       },
     },

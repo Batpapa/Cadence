@@ -12,7 +12,7 @@ import {
 import { IconButton } from './ui';
 import { fromAttrs, originOf } from './navOrigin';
 import { useContextMenu } from './contextMenu';
-import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding, type PreviewModalOpts } from './fileViewer';
+import { showPreviewModal, type PreviewSaveResult, type AudioSyncBinding, type AudioSyncCarry, type PreviewModalOpts } from './fileViewer';
 import { cardAudioSync } from './cardAudioSync';
 import { theSessionEditGate } from './theSessionCopy';
 import { showRemoteFailure } from './remoteFailure';
@@ -330,7 +330,7 @@ function FileRowContent({ entry, onRemove, editable, onSave, editGate, onRename,
   editable: boolean;
   onSave?: (data: string) => PreviewSaveResult | Promise<PreviewSaveResult>;
   /** TheSession's score: its editor's tab asks for a copy (theSessionGate). */
-  editGate?: (version: number) => void;
+  editGate?: (version: number, carry?: AudioSyncCarry) => void;
   /** The full new name, extension kept. Absent where a file cannot be renamed. */
   onRename?: (name: string) => void;
   onSetPreferredIndex?: (index: number | undefined) => void;
@@ -809,13 +809,13 @@ export function CardRefList({ refs, editable, onRemove, onReorder, glyph, onSetR
  *  — "Refresh ABC" replaces it whole: on a copy (theSessionCopy.ts), the
  *  viewer reopened on it where the card's files open. None where the card's
  *  files cannot be written. */
-function theSessionGate(options: AttachmentListOptions, i: number): ((version: number) => void) | undefined {
+function theSessionGate(options: AttachmentListOptions, i: number): ((version: number, carry?: AudioSyncCarry) => void) | undefined {
   const card = options.card;
   if (!options.editable || !card || !options.onUpdateFile) return undefined;
-  return (version) => void theSessionEditGate(card.id, i, version, (at, v) => {
+  return (version, carry) => void theSessionEditGate(card.id, i, version, (at, v, c) => {
     const att = appState.value.cards[card.id]?.content.attachments[at];
-    if (att?.type === 'file') void openResolvedScore(options, att, at, v);
-  });
+    if (att?.type === 'file') void openResolvedScore(options, att, at, v, c);
+  }, carry);
 }
 
 /** The save of the card's file at `i` from its viewer: none for a set's
@@ -943,7 +943,7 @@ async function resolvedTunesetEntry(card: Card): Promise<FileEntry | null> {
 /** `editAt`: opened on the editor's face at that version — a copy of
  *  TheSession's score, just made or found (theSessionGate). */
 async function openResolvedScore(
-  options: AttachmentListOptions, att: FileAttachment, i: number, editAt?: number,
+  options: AttachmentListOptions, att: FileAttachment, i: number, editAt?: number, carry?: AudioSyncCarry,
 ): Promise<void> {
   const { editable, card } = options;
   const isSet = att.generatedBy === 'tuneset' && !!card;
@@ -989,6 +989,7 @@ async function openResolvedScore(
     // Its score following one of its recordings — not a set's generated
     // score for now (2026-10-31, the user).
     audioSync: att.generatedBy === 'tuneset' ? undefined : cardAudioSync(options.attachments, options.card?.id),
+    audioSyncCarry: carry,
     // Nor, there, the choice of who plays it: the synth alone (2026-11-20,
     // the user).
     sources: att.generatedBy !== 'tuneset',

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import type { CharRange, ScoreEditor } from './scoreEditor';
 import type { AudioEngine } from './audioEngine';
 import { positionAt, passStarts, slotNotes, alignContour, quaverToMs, msToQuaver, type FollowResult } from '../session/scoreFollow';
 import { abcPaper, ABC_PAPERS, stripForRender } from '../services/abcService';
@@ -124,9 +125,6 @@ export function meterOf(abc: string): string {
   return m === 'C' ? '4/4' : m === 'C|' ? '2/2' : m && /^\d+\/\d+$/.test(m) ? m : '4/4';
 }
 
-/** Characters [from, to) of the ABC text. */
-type CharRange = [number, number];
-
 /** Where an event's notes are in the text — all of a chord, first to last. */
 function charRange(ev: NoteEvent | null): CharRange | null {
   const starts = ev?.startCharArray ?? [], ends = ev?.endCharArray ?? [];
@@ -221,9 +219,15 @@ export interface SyncedScoreProps {
    *  sync and Play-along (2026-11-20, the user), whose score is the middle of
    *  the viewer's column, between its tools and its controls. */
   fill?: boolean;
+  /** On the "both" face, the score viewer's own text box in place of the
+   *  read-only text: the version is written there while the stave follows
+   *  (N3b, 2026-11-23, the user — the audio sync is used to correct the ABC).
+   *  Lent, not owned: the viewer takes it back. Its marks are handed to it
+   *  (2026-11-23, the user: the cursor in the text, as on the text face). */
+  editor?: ScoreEditor;
 }
 
-export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, minHeight = '8rem', face = 'sheet', tools, clock, fill = false }: SyncedScoreProps) {
+export function SyncedScore({ abc, meter, follow, engine, region, transpose, playing, maxHeight, minHeight = '8rem', face = 'sheet', tools, clock, fill = false, editor }: SyncedScoreProps) {
   const paperRef = useRef<HTMLDivElement>(null);
   /** What abcjs draws into, inside the paper — never the paper itself: abcjs
    *  writes `overflow: hidden` and a height on its target, and the score,
@@ -261,12 +265,10 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
 
   // The text face: the whole text, nothing marked, until the frame marks it.
   useEffect(() => {
-    const pre = textRef.current;
-    if (!pre) return;
-    pre.replaceChildren(document.createTextNode(abc));
     textDrawn.current = '';
     dirty.current = true;
-  }, [abc, face]);
+    textRef.current?.replaceChildren(document.createTextNode(abc));
+  }, [abc, face, editor]);
 
   // The score box's width, for engraving: the dialog is resizable (full page,
   // a phone turned). Only real changes count — a scrollbar coming and going is
@@ -305,6 +307,27 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
   const gridRef = useRef<HTMLDivElement>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const both = face === 'both';
+  // The viewer's text box, in its own box's place: as tall as it, and put
+  // back as it was when the face changes or the view goes.
+  const editorRef = useRef<HTMLDivElement>(null);
+  const writes = both && !!editor;
+  /** Who the marks go to: the frame loop reads it. */
+  const marksTo = useRef<ScoreEditor | null>(null);
+  marksTo.current = writes ? editor! : null;
+  useLayoutEffect(() => {
+    const host = editorRef.current;
+    if (!writes || !host || !editor) return;
+    const box = editor.box;
+    host.appendChild(box);
+    box.style.height = '100%';
+    // seekAtChar reads refs only: this render's is as good as any.
+    editor.bind(seekAtChar);
+    return () => {
+      editor.bind(null);
+      if (box.parentElement === host) box.remove();
+      box.style.height = '';
+    };
+  }, [writes, editor]);
   useEffect(() => {
     if (!both || !gridRef.current || !splitRef.current) return;
     const split = bindFaceSplit(splitRef.current, gridRef.current, () => remeasure.current());
@@ -347,12 +370,60 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
    *  played once per time round it, so it appears in several events of the
    *  timeline; each is a different quaver of the unfolded score. */
   const onPaperClick = (e: MouseEvent) => {
+    const note = (e.target as Element | null)?.closest('.abcjs-note');
+    if (note) seekTo(ev => (ev.elements ?? []).some(group => group.some(el => el === note || el.contains(note) || note.contains(el))));
+  };
+
+  /** The read-only text pressed: the character under the pointer, counted in
+   *  the text — the marks' spans hold it whole. Read from the point, not from
+   *  the selection: playing, the text is rebuilt at every note, and the node
+   *  the press began in was gone by the click — it went somewhere else
+   *  (2026-11-23, the user). A drag selects, and seeks nowhere. */
+  const onTextClick = (e: MouseEvent) => {
+    const pre = textRef.current;
+    const sel = window.getSelection();
+    if (!pre || (sel && !sel.isCollapsed)) return;
+    const doc = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    };
+    let node: Node | null = null, offset = 0;
+    const pos = doc.caretPositionFromPoint?.(e.clientX, e.clientY);
+    if (pos) { node = pos.offsetNode; offset = pos.offset; }
+    else {
+      const r = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+      if (r) { node = r.startContainer; offset = r.startOffset; }
+    }
+    if (!node || !pre.contains(node)) return;
+    const upTo = document.createRange();
+    upTo.setStart(pre, 0);
+    upTo.setEnd(node, offset);
+    seekAtChar(upTo.toString().length);
+  };
+
+  /** A character of the text pressed (2026-11-23, the user: as a note on the
+   *  stave): the note it is in — or, between two, the next one. */
+  const seekAtChar = (p: number) => {
+    const tl = timeline.current;
+    if (!tl) return;
+    let target: CharRange | null = null;
+    for (const ev of tl.events) {
+      const r = charRange(ev);
+      if (!r) continue;
+      if (p >= r[0] && p < r[1]) { target = r; break; }
+      if (r[0] >= p && (!target || r[0] < target[0])) target = r;
+    }
+    if (target) seekTo(ev => charRange(ev)?.[0] === target[0]);
+  };
+
+  /** The recording to where the events `which` picks are played — the
+   *  occurrence nearest to what is being heard. */
+  const seekTo = (which: (ev: NoteEvent) => boolean) => {
     const { follow: f, engine: eng } = live.current;
     const tl = timeline.current;
-    const note = (e.target as Element | null)?.closest('.abcjs-note');
-    if (!f || !tl || !eng || !note) return;
+    if (!f || !tl || !eng) return;
     const wanted = new Set(tl.events
-      .filter(ev => (ev.elements ?? []).some(group => group.some(el => el === note || el.contains(note) || note.contains(el))))
+      .filter(which)
       .map(ev => msToQuaver(ev.milliseconds, f.quavers, slotsOf(tl, f), tl.lastMoment)));
     if (wanted.size === 0) return;
     const now = eng.position();
@@ -398,13 +469,17 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
      *  region's first and last notes bracketed. */
     const markText = (ev: NoteEvent | null) => {
       const pre = textRef.current;
-      if (!pre) return;
+      const to = marksTo.current;
+      if (!pre && !to) return;
       const abc = abcRef.current;
       const cur = trimmed(abc, charRange(ev));
       const { in: inR, out: outR } = textBounds.current;
       const key = `${cur}|${inR}|${outR}`;
       if (key === textDrawn.current) return;
       textDrawn.current = key;
+      // The viewer's own box: marked by the viewer, on its own text.
+      if (to) { to.mark({ text: abc, cur, in: inR, out: outR }); return; }
+      if (!pre) return;
       const cuts = new Set<number>([0, abc.length]);
       for (const r of [cur, inR, outR]) if (r) { cuts.add(r[0]); cuts.add(r[1]); }
       const points = [...cuts].sort((a, b) => a - b);
@@ -617,7 +692,8 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         </div>
         {both && toolsBox}
       </div>
-      {face !== 'sheet' && (
+      {writes && <div ref={editorRef} class="abc-text-box relative" />}
+      {face !== 'sheet' && !writes && (
         // Read-only: what is followed is the version as drawn, aligned as such.
         // Beside or under the stave, its height is the stylesheet's, never the
         // one measured for the stave: the views that measure it (fit) would
@@ -625,6 +701,7 @@ export function SyncedScore({ abc, meter, follow, engine, region, transpose, pla
         <div class={both ? 'abc-text-box relative rounded overflow-hidden' : 'contents'} style={both ? paperStyle : undefined}>
           <pre
             ref={textRef}
+            onClick={onTextClick}
             class={`score-follow-text relative m-0 overflow-y-auto p-3 font-mono text-xs whitespace-pre-wrap break-words ${tools && !both ? 'pt-8' : ''}${fill && !both ? ' flex-1 min-h-0' : ''}`}
             style={{ color: colours.ink, '--abc-cursor': colours.cursor, '--abc-in': colours.boundIn, '--abc-out': colours.boundOut, ...(both || fill ? {} : { maxHeight, minHeight }) }}
           />

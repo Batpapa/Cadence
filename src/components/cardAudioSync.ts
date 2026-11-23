@@ -104,7 +104,7 @@ export function cardAudioSync(attachments: Attachment[], cardId?: string): Audio
       chosen = offered.length === 1 ? offered[0]! : await ui.chooseRecording(offered, version);
       return chosen !== null;
     },
-    mount: (host, version, face, expanded, onState, forced, transpose, below) =>
-      ui!.mountRecordingFollow(host, chosen!, { version, face, expanded, onState, forced, transpose, below }),
+    mount: (host, version, face, expanded, onState, forced, transpose, below, editor) =>
+      ui!.mountRecordingFollow(host, chosen!, { version, face, expanded, onState, forced, transpose, below, editor }),
   };
 }

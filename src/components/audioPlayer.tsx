@@ -6,6 +6,7 @@ import { t } from '../services/i18nService';
 import { playIcon, pauseIcon, stopIcon, repeatIcon, boundIcon } from './playbackIcons';
 import { AudioEngine, type AudioEffects } from './audioEngine';
 import { SyncedScore, passStartsOf } from './syncedScore';
+import type { ScoreEditor } from './scoreEditor';
 import { localMatch, type FollowResult } from '../session/scoreFollow';
 import { qualityColour, faded } from './followColour';
 import { CustomSelect } from './customSelect';
@@ -412,6 +413,9 @@ export interface PlayerScore {
   /** Put between the score and the player: the score viewer's source tabs,
    *  just above what plays (fileViewer.ts, 2026-11-20). */
   below?: HTMLElement;
+  /** The score viewer's text box, written in on the "both" face
+   *  (SyncedScoreProps.editor). */
+  editor?: ScoreEditor;
   /** The player as tall as its column, the score taking what the controls
    *  leave (SyncedScoreProps.fill): the score viewer's audio sync. */
   fill?: boolean;
@@ -760,7 +764,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
           <SyncedScore
             abc={score.abc} meter={score.meter} follow={score.follow} engine={null} region={null}
             transpose={score.keyShift ?? 0} playing={false} maxHeight={score.maxHeight} minHeight={score.minHeight} face={score.face} tools={score.tools}
-            fill={score.fill}
+            fill={score.fill} editor={score.editor}
           />
         )}
         {score?.below && <NodeSlot node={score.below} />}
@@ -814,6 +818,7 @@ export function AudioPlayer({ entry, binding, hooks, score }: {
           face={score.face}
           tools={score.tools}
           fill={score.fill}
+          editor={score.editor}
         />
       )}
       {score?.below && <NodeSlot node={score.below} />}

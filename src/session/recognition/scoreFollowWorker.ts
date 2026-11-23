@@ -33,6 +33,9 @@ import { Novelty } from '../liveTempo';
 // 700 MB of samples and gigabytes of alignment tables.
 
 export type FollowFailure = 'no_contour' | 'no_audio' | 'no_alignment';
+/** The engine's cleaned features of a stretch, `fps` frames a second — all an
+ *  alignment needs of the audio. */
+export interface HeardSpan { values: Float32Array; fps: number }
 export type FollowStage = 'scan' | 'locate' | 'decode' | 'listen' | 'tempo' | 'align';
 /** `score`: one MIDI pitch per quaver of a pass of the tune, as drawn — or
  *  empty, the index contour alone then (a detection's stretch only).
@@ -43,7 +46,13 @@ export type FollowStage = 'scan' | 'locate' | 'decode' | 'listen' | 'tempo' | 'a
  *  `decode`: the stretch alone — its alignment is known already, its samples
  *  are not (scoreFollowClient keeps those for the last one only). */
 export type ScoreFollowRequest =
-  | { type: 'follow'; audio: Blob; score: number[]; settingId?: string; from: number; to: number | null; samples?: false }
+  | {
+    type: 'follow'; audio: Blob; score: number[]; settingId?: string; from: number; to: number | null; samples?: false;
+    /** What [from, to) gave the engine, kept from an alignment of it: not
+     *  decoded nor listened to again — another score on the same stretch
+     *  (N3b: an edit aligned anew). No samples are sent then. */
+    features?: HeardSpan;
+  }
   | { type: 'decode'; audio: Blob; from: number; to: number }
   /** The tempo's novelty of [from, to) (liveTempo.ts), for a detection's
    *  curve worked out when asked (2026-11-01): the novelty is never saved.
@@ -55,7 +64,10 @@ export type ScoreFollowResponse =
    *  `from`/`to`: the stretch as asked, in the recording's time — what
    *  decodes it again to the same first sample. */
   | { type: 'decoded'; pcm: Float32Array; rate: number; from: number; to: number }
-  | { type: 'followed'; result: FollowResult }
+  /** `heard`: what the stretch gave the engine, when the stretch did not
+   *  depend on the score — a range given, or a recording short enough to be
+   *  read whole — for the next score on it. */
+  | { type: 'followed'; result: FollowResult; heard?: HeardSpan }
   /** The next stretch of novelty: `fps` frames a second, from the request's `from`. */
   | { type: 'novelty'; fps: number; values: Float32Array }
   | { type: 'tempo-done' }
@@ -324,6 +336,28 @@ function locate(features: Float32Array, fps: number, score: number[], onRatio: (
 /** At most this often — a message per frame would cost more than the work. */
 const PROGRESS_EVERY_MS = 80;
 
+/** The better of the drawn score's alignment and the index contour's (the
+ *  header), over `features` — or null when neither aligns. */
+function alignBest(
+  features: Float32Array, fps: number, score: number[], contour: Parameters<typeof contourToMidi>[0] | null,
+  progress: (stage: FollowStage, ratio: number) => void,
+): FollowResult | null {
+  const scores = [...(score.length >= 2 ? [score] : []), ...(contour ? [contourToMidi(contour)] : [])];
+  // The alignments one after the other, their progress one forward run
+  // over the tempo and align stages together — a bar that went back to
+  // the tempo search for the second score would read as starting over.
+  // (The client gives tempo 0.55–0.8 and align 0.8–1: `x` of the two
+  // together is tempo x·9/5 below 5/9, align (x − 5/9)·9/4 above.)
+  const together = (x: number) => (x < 5 / 9 ? progress('tempo', x * 9 / 5) : progress('align', (x - 5 / 9) * 9 / 4));
+  let result: FollowResult | null = null;
+  for (let k = 0; k < scores.length; k++) {
+    const r = followScore(features, scores[k]!, { fps },
+      p => together((k + (p.stage === 'tempo' ? p.ratio / 2 : 0.5 + p.ratio / 2)) / scores.length));
+    if (r && (!result || r.perFrame > result.perFrame)) result = r;
+  }
+  return result;
+}
+
 ctx.onmessage = (e) => {
   const msg = e.data;
   void (async () => {
@@ -370,6 +404,8 @@ ctx.onmessage = (e) => {
       }
       let from = msg.from;
       let to = msg.to;
+      /** The stretch was found by the score: another score may find another. */
+      let located = false;
       if (to === null) {
         const duration = await durationOf(msg.audio);
         if (duration === null) { ctx.postMessage({ type: 'failed', reason: 'no_audio' }); return; }
@@ -383,9 +419,21 @@ ctx.onmessage = (e) => {
           if (!zone) { ctx.postMessage({ type: 'failed', reason: 'no_alignment' }); return; }
           from = zone.from;
           to = Math.min(zone.to, duration);
+          located = true;
         }
       }
       const span = { from, to };
+      if (msg.features) {
+        // Heard already: the tempo and the alignment alone.
+        if (msg.score.length < 2 && !msg.settingId) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
+        const contour = msg.settingId ? await getSettingContour(msg.settingId).catch(() => null) : null;
+        if (msg.score.length < 2 && !contour) { ctx.postMessage({ type: 'failed', reason: 'no_contour' }); return; }
+        progress('listen', 1);
+        const result = alignBest(msg.features.values, msg.features.fps, msg.score, contour, progress);
+        if (!result) { ctx.postMessage({ type: 'failed', reason: 'no_alignment' }); return; }
+        ctx.postMessage({ type: 'followed', result, heard: msg.features }, [msg.features.values.buffer]);
+        return;
+      }
       progress('decode', 0);
       // The samples go back to the page the moment they are decoded — the
       // player plays them while the alignment runs, and the cursor then
@@ -415,23 +463,15 @@ ctx.onmessage = (e) => {
         f.feed_single_pcm_window(ptrClean);
         if ((i & 127) === 0) progress('listen', i / n);
       }
-      const features = takeClean(f, decoded.rate / FF_PCM_WINDOW);
+      const fps = decoded.rate / FF_PCM_WINDOW;
+      const features = takeClean(f, fps);
       progress('listen', 1);
-      const scores = [...(msg.score.length >= 2 ? [msg.score] : []), ...(contour ? [contourToMidi(contour)] : [])];
-      // The alignments one after the other, their progress one forward run
-      // over the tempo and align stages together — a bar that went back to
-      // the tempo search for the second score would read as starting over.
-      // (The client gives tempo 0.55–0.8 and align 0.8–1: `x` of the two
-      // together is tempo x·9/5 below 5/9, align (x − 5/9)·9/4 above.)
-      const together = (x: number) => (x < 5 / 9 ? progress('tempo', x * 9 / 5) : progress('align', (x - 5 / 9) * 9 / 4));
-      let result: FollowResult | null = null;
-      for (let k = 0; k < scores.length; k++) {
-        const r = followScore(features, scores[k]!, { fps: decoded.rate / FF_PCM_WINDOW },
-          p => together((k + (p.stage === 'tempo' ? p.ratio / 2 : 0.5 + p.ratio / 2)) / scores.length));
-        if (r && (!result || r.perFrame > result.perFrame)) result = r;
-      }
+      const result = alignBest(features, fps, msg.score, contour, progress);
       if (!result) { ctx.postMessage({ type: 'failed', reason: 'no_alignment' }); return; }
-      ctx.postMessage({ type: 'followed', result });
+      if (located) ctx.postMessage({ type: 'followed', result });
+      // Copied, not transferred: a few MB, and whether the engine's array
+      // owns its buffer is wasm-bindgen's business.
+      else ctx.postMessage({ type: 'followed', result, heard: { values: features, fps } });
     } catch (err) {
       ctx.postMessage({ type: 'error', message: String(err) });
     }

@@ -6,6 +6,7 @@ import { getAttachmentBlob } from '../../services/attachmentDb';
 import { fetchRemoteFile, remoteDisplayName, refusalMessage, RemoteFileError } from '../../services/remoteFile';
 import { followAudio, type FollowAudio, type FollowStatus } from '../scoreFollowClient';
 import { scoreContour, bareScore, meterOf } from '../../components/syncedScore';
+import type { ScoreEditor } from '../../components/scoreEditor';
 import { showModal, closeModal, renderModalBody, alertModal } from '../../components/modal';
 import { showRemoteFailure } from '../../components/remoteFailure';
 import { qualityColour, faded } from '../../components/followColour';
@@ -457,6 +458,7 @@ export function mountRecordingFollow(host: HTMLElement, r: CardRecording, opts: 
   forced: boolean;
   transpose: number;
   below?: HTMLElement;
+  editor?: ScoreEditor;
 }): AudioSyncView {
   return mountScoreFollow(host, { ...opts, target: targetOf(r), getAudio: (onStatus, signal) => recordingAudio(r, onStatus, signal) });
 }

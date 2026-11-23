@@ -25,6 +25,7 @@ import {
 } from '../services/abcTextPlayback';
 import { createAbcPlayer, type AbcPlayer, type PlayState, type Place, type PlayerRun } from './abcPlayer';
 import { bindFaceSplit } from './faceSplit';
+import { rangeInSource, posInDrawn, type ScoreEditor } from './scoreEditor';
 import { tapTracks, tappedNote, secondsPerWhole, playTap, stopTap, tapPlaysNote, type MidiPitch } from '../services/abcTapNote';
 import { shiftPosition, boundNote, notesAcross, regionOf, setBound, type Bounds } from '../services/abcBounds';
 import { showModal, updateTopModal, setModalMaxWidth, confirmModal, askUnsavedChanges, MODAL_W } from './modal';
@@ -184,6 +185,11 @@ const TAP_SLOP_PX = 10;
  *  "both" face — the syntax check's pace, a little slower: engraving costs
  *  more than parsing. */
 const TYPING_REDRAW_MS = 300;
+
+/** How long the typing pauses before the edit is aligned anew on the
+ *  recording, under the audio sync (N3b): longer than the redraw — an
+ *  alignment is a second or more of work, started over by each keystroke. */
+const REALIGN_AFTER_TYPING_MS = 700;
 
 /** How long things settle before the tune's sound is made ahead of the next
  *  press — the stave drawn first, a run of presses on a stepper folded into
@@ -649,12 +655,21 @@ export interface PreviewModalOpts {
   /** A score written elsewhere — TheSession's, which "Refresh" replaces whole
    *  (theSessionCopy.ts): the editor's tab is offered all the same, and
    *  pressing it hands over to this, with the version on screen, instead of
-   *  opening the editor here. Without `onSave`. */
-  editGate?: (version: number) => void;
+   *  opening the editor here. Without `onSave`. `carry`: its audio sync, when
+   *  it is on, for the viewer opened next (`audioSyncCarry`). */
+  editGate?: (version: number, carry?: AudioSyncCarry) => void;
   /** 'both': opens on the editor's face, a score opened to be written — the
    *  copy just made of TheSession's. Only with `onSave`. */
   initialFace?: 'both';
+  /** An audio sync that was on in the viewer this one takes over from (the
+   *  copy of TheSession's score, 2026-11-23): its binding in place of
+   *  `audioSync`, turned on at opening. */
+  audioSyncCarry?: AudioSyncCarry;
 }
+
+/** A viewer's audio sync, on, handed to the next viewer: the binding, its
+ *  recording chosen already, and whether it was followed by force. */
+export interface AudioSyncCarry { binding: AudioSyncBinding; forced: boolean }
 
 /** What the viewer is handed to play a score along its recording. */
 export interface AudioSyncBinding {
@@ -669,11 +684,12 @@ export interface AudioSyncBinding {
   /** Puts the audio sync of `version` in `host`, on the viewer's face (stave
    *  or text) and at its size, drawn in the viewer's key (`transpose`,
    *  semitones). `onState` hears how its alignment goes. `below`: the
-   *  viewer's source tabs, to put between the score and the player. */
+   *  viewer's source tabs, to put between the score and the player.
+   *  `editor`: its text box, written in on the editor's face (N3b). */
   mount: (
     host: HTMLElement, version: string, face: ScoreFace, expanded: boolean,
     onState: (s: AudioSyncState) => void, forced: boolean, transpose: number,
-    below?: HTMLElement,
+    below?: HTMLElement, editor?: ScoreEditor,
   ) => AudioSyncView;
 }
 
@@ -684,12 +700,13 @@ export interface AudioSyncBinding {
  *  the share of notes on the score, when there was an alignment. `title` says
  *  it in full, for the tooltip. */
 export type AudioSyncState =
-  | { kind: 'aligning'; ratio: number; title: string }
+  | { kind: 'aligning'; ratio: number; title: string; again?: boolean }
   | { kind: 'aligned'; title: string; percent: number; keyGap?: number }
   | { kind: 'none'; title: string; percent?: number; keyGap?: number };
 // `keyGap`: how many semitones above the score as shown the recording plays
 // it (2026-11-07, the user: the gap is said wherever audio and score meet),
-// -5 to +6; absent or 0 when they agree.
+// -5 to +6; absent or 0 when they agree. `again`: aligned anew after an edit
+// (N3b), which the toggle says.
 
 /** Room the versions' arrows need beyond their own width to widen again once
  *  they were narrowed (fitTopRow). */
@@ -711,8 +728,9 @@ const LONG_PRESS_MS = 550;
  *  its full page. */
 export interface AudioSyncView {
   /** Another version on screen, one `plays` accepts: aligned anew, the
-   *  player kept — the recording has not changed (2026-10-29, the user). */
-  setVersion: (version: string) => void;
+   *  player kept — the recording has not changed (2026-10-29, the user).
+   *  `edited`: the version as it is being written, not saved (N3b). */
+  setVersion: (version: string, edited?: boolean) => void;
   /** Followed even when the alignment is judged too poor to be (the hidden
    *  gesture on the toggle). */
   setForced: (forced: boolean) => void;
@@ -1174,7 +1192,11 @@ export function showPreviewModal(
     textTabBtn.onclick  = () => chooseMode('text');
     // A score written elsewhere asks first (PreviewModalOpts.editGate).
     const editGate = onSave ? undefined : opts?.editGate;
-    bothTabBtn.onclick  = () => (editGate ? editGate(currentIndex) : chooseMode('both'));
+    // Its audio sync handed over with it when it is on: the copy is opened to
+    // be corrected along the recording (2026-11-23, the user).
+    bothTabBtn.onclick  = () => (editGate
+      ? editGate(currentIndex, audioSyncView && audioSync ? { binding: audioSync, forced: audioSyncForced } : undefined)
+      : chooseMode('both'));
     tabBar.append(sheetTabBtn, textTabBtn);
     if (onSave || editGate) tabBar.appendChild(bothTabBtn);
     tabBar.dataset.tour = 'abc-tabs';
@@ -1384,7 +1406,7 @@ export function showPreviewModal(
     // sync the recording to a version other than the one heard). Only a
     // version the binding can follow offers it (`plays`). The viewer's own
     // sound, its full page and its space bar stand down meanwhile.
-    const audioSync = opts?.audioSync;
+    const audioSync = opts?.audioSyncCarry?.binding ?? opts?.audioSync;
     let audioSyncView: AudioSyncView | null = null;
     let audioSyncHost: HTMLElement | null = null;
     /** What the audio sync hid, with how each was shown, to put back. */
@@ -1435,7 +1457,7 @@ export function showPreviewModal(
       const percent = s && s.kind !== 'aligning' ? s.percent : undefined;
       const gap = s && s.kind !== 'aligning' ? s.keyGap ?? 0 : 0;
       const label = percent === undefined
-        ? t('fileViewer.abc.audioSync')
+        ? t(s?.kind === 'aligning' && s.again ? 'fileViewer.abc.audioSync.realigning' : 'fileViewer.abc.audioSync')
         : gap !== 0
           ? t('fileViewer.abc.audioSync.percentKey', { percent, shift: keyGapText(gap) })
           : t('fileViewer.abc.audioSync.percent', { percent });
@@ -1474,10 +1496,16 @@ export function showPreviewModal(
         if (!audioSyncView) return;
         audioSyncState = s;
         paintAudioSync();
-      }, audioSyncForced, transpose, sourcesOn ? sourceRow : undefined);
+      }, audioSyncForced, transpose, sourcesOn ? sourceRow : undefined, onSave ? syncEditor : undefined);
+      lendEditor();
     };
     /** The source tabs back over the transport, from a view that had them. */
     let homeSources: () => void = () => {};
+    /** The editor's text box, lent to the audio sync on the editor's face —
+     *  and back in its place once the audio sync is off (both set with it). */
+    let lendEditor: () => void = () => {};
+    let homeEditor: () => void = () => {};
+    let syncEditor: ScoreEditor | undefined;
     /** The hidden way round the verdict (2026-10-29, the user): a right click
      *  — a long press on a touch screen — follows the alignment even when it
      *  is judged too poor to be, turning the toggle on if it was off; the same
@@ -1548,6 +1576,7 @@ export function showPreviewModal(
         audioSyncHost?.remove();
         audioSyncHost = null;
         homeSources();
+        homeEditor();
         for (const [el, display] of hiddenByAudioSync) el.style.display = display;
         hiddenByAudioSync = [];
         // Everything the face decides, decided again — the stave redrawn, as
@@ -1802,6 +1831,8 @@ export function showPreviewModal(
       currentMode = mode;
       paintTabs(mode);
       takenOver.setFace(mode);
+      // The editor's face under the audio sync: its box, written in there.
+      lendEditor();
     };
 
     // ── What abcjs made of the ABC ───────────────────────────────────────────
@@ -2565,6 +2596,10 @@ export function showPreviewModal(
      *  check is on. Positions in the text as it was last checked: a keystroke
      *  makes them wrong, so typing clears them until the next check. */
     let textWarnMarks: [number, number][] = [];
+    /** The audio sync's marks while it has the box (N3b): the note heard and
+     *  its region's bounds, in place of the viewer's own — whose player is
+     *  silent meanwhile. */
+    let syncMarks: { cur: [number, number] | null; in: [number, number] | null; out: [number, number] | null } | null = null;
 
     /** abcjs ends a note after the spaces that follow it: marked, "A3 " looks
      *  like a note and a gap. */
@@ -2580,16 +2615,19 @@ export function showPreviewModal(
      *  looking at the caret already. */
     const paintText = (follow = false): void => {
       const text = textarea.value;
-      const current = textCurrent.map(r => trimNote(text, r)).filter((r): r is [number, number] => !!r);
+      const sync = audioSyncView ? syncMarks ?? { cur: null, in: null, out: null } : null;
+      const current = (sync ? (sync.cur ? [sync.cur] : []) : textCurrent)
+        .map(r => trimNote(text, r)).filter((r): r is [number, number] => !!r);
       // The cursor's bar: on the notes sounding while there are any — it
       // follows the music, as the stave's cursor does (the user, 2026-10-15)
-      // — else on the caret's note.
-      const caretNote = trimNote(text, textHints.start);
+      // — else on the caret's note: not under the audio sync, whose player
+      // starts where it is told, not at the caret.
+      const caretNote = sync ? null : trimNote(text, textHints.start);
       const cursors = current.length ? current : caretNote ? [caretNote] : [];
       // The passage's start against its first note's left edge, its end
       // against its last note's right edge: it reads as [ … ].
-      const markIn = trimNote(text, textBoundMarks.in);
-      const markOut = trimNote(text, textBoundMarks.out);
+      const markIn = trimNote(text, sync ? sync.in : textBoundMarks.in);
+      const markOut = trimNote(text, sync ? sync.out : textBoundMarks.out);
       const cuts = new Set<number>([0, text.length]);
       for (const r of [caretNote, markIn, markOut, ...current, ...textWarnMarks]) if (r) { cuts.add(Math.min(r[0], text.length)); cuts.add(Math.min(r[1], text.length)); }
       const points = [...cuts].sort((a, b) => a - b);
@@ -2928,6 +2966,58 @@ export function showPreviewModal(
       prepareSound();
     }
 
+    // ── Writing under the audio sync (N3b, 2026-11-23, the user) ──
+    // The audio sync is used to correct the ABC: on the editor's face, its text
+    // is this box — lent to its view (SyncedScoreProps.editor), every tool of
+    // the editor with it — and the version is aligned anew at each pause in
+    // the typing (`realignAfterTyping`), the player going on meanwhile.
+    lendEditor = () => {
+      if (!audioSyncView) return;
+      const editing = editsText();
+      textarea.readOnly = !editing;
+      if (editing) {
+        textBox.style.display = '';
+        if (!textShown) {
+          fillBox(pendingBody() ?? currentBody());
+          saveBtn.disabled = pendingBody() === null;
+          saveFailed = false; paintSave();
+        }
+      }
+      textShown = editing;
+      paintVersionNav();
+    };
+    homeEditor = () => {
+      facesBox.insertBefore(textBox, splitter);
+      syncMarks = null;
+      paintText();
+    };
+    // Its marks from the audio sync, on the box's own text: drawn without
+    // its `X:` line and some header lines (rangeInSource). Brought into view
+    // only while the box is not being written in — the writer keeps the
+    // scroll.
+    let mapped: { drawn: string; source: string; map: ReturnType<typeof rangeInSource> } | null = null;
+    /** The audio sync's way to a character of the text it drew, while it
+     *  has the box. */
+    let syncSeek: ((drawnAt: number) => void) | null = null;
+    syncEditor = {
+      box: textBox,
+      mark: (m) => {
+        const source = textarea.value;
+        if (mapped?.drawn !== m.text || mapped.source !== source) mapped = { drawn: m.text, source, map: rangeInSource(m.text, source) };
+        syncMarks = { cur: mapped.map(m.cur), in: mapped.map(m.in), out: mapped.map(m.out) };
+        paintText(document.activeElement !== textarea);
+      },
+      bind: (seek) => { syncSeek = seek; },
+    };
+    // A click in the text sends the recording to its note, as a note pressed
+    // on the stave does (2026-11-23, the user) — a click, not a selection:
+    // the caret stays where it landed, to write there.
+    textarea.addEventListener('click', () => {
+      if (!audioSyncView || !syncSeek || !mapped || textarea.selectionStart !== textarea.selectionEnd) return;
+      const at = posInDrawn(mapped.drawn, textarea.value, textarea.selectionStart);
+      if (at !== null) syncSeek(at);
+    });
+
     if (onSave) {
       /** Writes a new version list to the attachment, then re-reads everything
        *  the viewer holds about the file from it. One place for the three
@@ -3024,10 +3114,26 @@ export function showPreviewModal(
         saveFailed = false; paintSave();
         // The stave is drawn from the draft, so it is stale from now on:
         // redrawn as it is typed when it is on screen beside the text, else
-        // when it is next shown.
-        if (showsSheet(currentMode)) redrawAfterTyping();
+        // when it is next shown. Under the audio sync, the stave on screen
+        // is its own: the edit aligned anew there.
+        if (audioSyncView) { sheetNeedsRerender = true; realignAfterTyping(); }
+        else if (showsSheet(currentMode)) redrawAfterTyping();
         else sheetNeedsRerender = true;
       });
+
+      /** The edit aligned on the recording once the typing pauses: every
+       *  keystroke would start the work again before it could end. Not
+       *  turned off when the text stops being a tune — a key line deleted on
+       *  the way to another: it says it cannot align, and aligns again once
+       *  it can. */
+      let realignTimer = 0;
+      const realignAfterTyping = (): void => {
+        window.clearTimeout(realignTimer);
+        realignTimer = window.setTimeout(() => {
+          if (closed || !audioSyncView) return;
+          audioSyncView.setVersion(shownBlock(currentIndex), draft?.index === currentIndex);
+        }, REALIGN_AFTER_TYPING_MS);
+      };
 
       saveDraft = async () => {
         if (!draft) return true;
@@ -3083,6 +3189,16 @@ export function showPreviewModal(
 
     goToVersion(currentIndex); // initializes prev/next disabled state + label (respects opts.initialIndex)
     setAbcMode(currentMode);
+    // Handed an audio sync that was on (PreviewModalOpts.audioSyncCarry): on
+    // again at once, its recording chosen already — once the dialog is up.
+    const carried = opts?.audioSyncCarry;
+    if (carried && audioSync?.plays(shownBlock(currentIndex))) {
+      requestAnimationFrame(() => {
+        if (closed || audioSyncView) return;
+        audioSyncForced = carried.forced;
+        setAudioSync(true);
+      });
+    }
 
     import('abcjs').then((abcjs) => {
       // ── The stave's face of the cursor ───────────────────────────────────
